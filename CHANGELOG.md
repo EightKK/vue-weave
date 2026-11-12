@@ -16,6 +16,13 @@
 - Framework-independent TypeScript core, ESM entry points, Bundler/NodeNext declarations, namespaced themes, localization, typed slots and navigation methods.
 - Manufacturing, project delivery, large-resource and scheduling demos; public-entry, SSR, browser and isolated tarball-consumer checks.
 - Verified local release preparation with matching source/demo archives, file inventories, offline smoke checks and SHA-256 records.
+- Opt-in Gantt dependency editing: `connectable` link handles with pointer and keyboard connection, `reconnectable` endpoint handles, synchronous `validateConnection`, `connect`, `reconnect` and `connect-rejected` proposals with FS/SS/FF/SF derived from the joined bar ends, plus dependency selection (`selectedDependencyId`, `dependency-select`) and `dependency-delete`.
+- Opt-in Gantt multiple selection (`multiSelect` with `update:selectedIds`) and batch moves emitted once as `edits`, validated by `validateEdits` and reported by `edits-rejected`.
+- Opt-in Gantt row moves (`rowDraggable`) by pointer drag or Up/Down arrows; `TimelineEdit.row` carries the proposed row.
+- Gantt `zoomPresets` with `zoomPreset`/`update:zoomPreset`, a `zoom-change` event, an SSR-safe `showNow`/`now` marker and opt-in two-pointer touch `pinchZoom`.
+- Gantt resource load histogram rows (`loadRows`, `loadSegments`, `loadRowHeight`, `load-row` and `load-segment` slots) with accessible segment labels and `--vft-load`, `--vft-load-overload`, `--vft-load-capacity` and `--vft-now` theme variables.
+- Core helpers `dependencyTypeForEnds`, `dependencyEndsForType`, `moveTimeRanges`, `calendarBands` and `resourceLoadHistogram`.
+- Timeline editing demo covering dependency, batch, row, preset, histogram and pinch interactions.
 
 ### Fixed
 

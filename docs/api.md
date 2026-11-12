@@ -136,6 +136,69 @@ The row slot also receives depth and expanded. The row index refers to the expan
 
 Enter or blur submits a default editor and Escape discards the input. The chart-level readonly prop disables editing. Keep the sticky columns narrow enough to leave room for the timeline.
 
+### Dependency editing
+
+| API | Behavior |
+| --- | --- |
+| connectable | Shows a link handle at the start and finish of every rendered bar. Drag from one handle to another handle or onto a bar body (the nearer end is used). Alternatively, activate two handles with click, tap, Enter or Space. |
+| reconnectable | Select a dependency, then drag its source or target endpoint handle to another bar end, or activate the endpoint handle and then a bar handle. |
+| validateConnection(connection, replacingDependencyId?) | Synchronous TimelineConnectionValidator. Accepts with true or undefined, rejects with false (default message "This dependency was rejected.") or a reason string. During reconnection it receives the existing dependency ID. |
+| connect(connection) | TimelineConnection with from, to and type. The type is derived from the joined ends: finish→start is FS, start→start SS, finish→finish FF and start→finish SF. The parent assigns an ID and updates dependencies. |
+| reconnect(change) | TimelineReconnect with id, before and after connections. The parent replaces from, to and type on the existing dependency. |
+| connect-rejected(connection, reason) | Reports a rejected proposal. The reason is announced in the live region. |
+| selectedDependencyId / update:selectedDependencyId | Optional controlled dependency selection. The component tracks the selection locally when the prop is omitted. |
+| dependency-select(id) | A dependency path was activated by click, Enter or Space. Dependency paths are focusable only when connectable or reconnectable is set. |
+| dependency-delete(id) | Delete or Backspace was pressed on a focused dependency. The parent removes it from dependencies to accept. |
+
+A bar cannot link to itself, and reconnecting a dependency to its existing endpoints proposes nothing. Escape, pointer cancellation and loss of capture discard a pending connection. Changes to bars, rows, dependencies, the coordinate system or the connectable and reconnectable props cancel an in-flight connection, including one armed from the keyboard. Handles are hidden when readonly is set.
+
+### Multiple selection, batch moves and row moves
+
+| API | Behavior |
+| --- | --- |
+| multiSelect | With selectedIds, a click emits update:selectedIds. Ctrl, Meta or Shift toggles membership; a plain click replaces the set. The select event still fires once per click. A click that ends a drag does not change the selection. |
+| edits(changes) | Moving a selected bar by pointer or arrow key moves every selected editable bar by the same snapped displacement. The displacement is clamped so all intervals stay inside editBounds. Several changes are emitted once as TimelineEdit[]; a single change uses edit. Resizing applies only to the bar being handled. |
+| validateEdits(changes) / edits-rejected(changes, reason) | Synchronous BatchEditValidator for the whole batch. Without it, each change runs through validateEdit and the first rejection rejects the batch. |
+| rowDraggable | A move drag also proposes the displayed row under the pointer, and Up/Down arrows move a focused editable bar to the adjacent displayed row. The proposal carries `row: { before, after }`. Selected bars move rows together and stop at the first or last row. Rows hidden by a collapsed parent are not targets. |
+
+The application accepts a row move by replacing the bar's rowId with change.row.after. Validate row changes in validateEdit or validateEdits, for example to keep work on a compatible resource. During a pointer row drag the bar is previewed with a vertical offset and stays in its source row element; the preview is discarded on cancellation like any other edit. After an accepted keyboard row move the chart scrolls the row into view and restores focus to the moved bar. GanttLabels.moveRowHint (default "Up and Down arrows move the bar to another row.") is added to the bar description when rowDraggable is set.
+
+### Zoom presets, now marker and touch zoom
+
+| API | Behavior |
+| --- | --- |
+| zoomPresets | TimelineZoomPreset[] with unique id, label, pixelsPerUnit and optional tickSteps, headerBands and snap. Renders a labelled button group (GanttLabels.zoomPresets, default "Zoom level"). The active preset replaces the corresponding props; omitted fields fall back to them. |
+| zoomPreset / update:zoomPreset | Optional controlled preset ID. An unknown ID is reported through validation-error. Choosing a preset resets the zoom factor to 100% and keeps the centered time in view. |
+| zoom-change(state) | TimelineZoomState with zoom factor and the active preset ID. Fires for zoom buttons, presets and pinch zoom. |
+| showNow / now | Draws a "now" marker (GanttLabels.now). Supply now for deterministic and server-rendered output. Without now, the clock is read only after mounting and refreshed every 30 seconds, so server and client markup match. The marker appears only inside range. |
+| pinchZoom | Two touch pointers on the timeline zoom the time axis around their midpoint, between 65% and 300%. The second touch cancels an in-flight edit or connection. One-finger touches and mouse input are unchanged. The scroll area uses `touch-action: pan-x pan-y` so native scrolling continues while the browser's page zoom is suppressed there. |
+
+Presets apply to the built-in linear scale. A custom scale prop still controls the mapping; only tick steps, header bands and snap come from the preset in that case. Use `calendarBands` from the core entry to build header levels for presets.
+
+### Resource load histogram
+
+| API | Behavior |
+| --- | --- |
+| loadRows | TimelineLoadRow[] with unique id, label and optional detail. Each row is drawn below the task rows on the same time axis, scroll surface and horizontal virtualization. |
+| loadSegments | TimelineLoadSegment[]: resourceId, start, end, load, capacity, optional overload and taskIds. The output of calculateResourceLoad can be passed directly. Segments must reference a load row and must not overlap within a resource. |
+| loadRowHeight | number / 44. At least 16. |
+| load-row slot | Customize the label using row and peak. |
+| load-segment slot | Customize a segment using segment, row, peak and overload. The slot content is inside an element with role img and an accessible label. |
+
+Each segment is scaled to the row's peak load or capacity. The default rendering fills load up to capacity, highlights the overloaded part and draws a dashed capacity line. Segments carry an accessible label such as "CNC cell 09:00–10:00: load 2 / capacity 1, overloaded by 1", built from formatTime and the GanttLabels fields load, capacity and overload; the load row group is named with loadRegion. Invalid load data is reported through validation-error.
+
+### Timeline editing helpers
+
+| Export | Purpose |
+| --- | --- |
+| dependencyTypeForEnds(fromEnd, toEnd) | Dependency type for a source and target TimelineBarEnd (start or finish) |
+| dependencyEndsForType(type = FS) | The bar ends a dependency type joins |
+| moveTimeRanges(ranges, delta, snap, bounds) | Move intervals by one snapped displacement, clamped so every interval stays in bounds |
+| calendarBands(range, unit, options) | One header band level of hours, days, weeks, months or years in epoch milliseconds, aligned to a fixed UTC offset and clipped to the range |
+| resourceLoadHistogram(segments, resourceIds?) | Validate load segments, group them by resource, sort them and report each resource's peak |
+
+`calendarBands` options are utcOffsetMinutes (integer, default 0), step (units per band, default 1; a divisor of 24 for hours), weekStartsOn (0 Sunday to 6 Saturday, default 1) and label(start, end), which receives the unclipped band. Default labels are HH:mm, YYYY-MM-DD (days and week starts), YYYY-MM and YYYY. Daylight-saving transitions are not applied. Results are capped at 10,000 bands.
+
 ## Core entry point
 
 Import pure functions and types from `vue-weave/core`. The Vue entry also re-exports them. Core has no Vue or DOM runtime dependency and does not mutate input data.
