@@ -15,7 +15,7 @@
       import { createApp, h, ref, shallowRef } from 'vue'
       import { NetworkGraph } from 'vue-weave'
 
-      // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match.
+      // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir.
       const query = new URLSearchParams(location.search)
       const ids = query.get('preset') === 'groups'
         ? ['A', 'B', 'C', 'D']
@@ -49,7 +49,7 @@
           h('output', { role: 'status', 'aria-label': 'Move events' }, String(moveEvents.value)),
           h('output', { role: 'status', 'aria-label': 'Viewport events' }, String(viewportEvents.value)),
           h(NetworkGraph, {
-            ref: graph, nodes, edges, groups, matchIds, height: 360,
+            ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
             draggable: query.get('draggable') === '1', positions: positions.value,
             selectedId: selectedId.value,

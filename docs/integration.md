@@ -111,3 +111,15 @@ URL.revokeObjectURL(url)
 The export reads the `--vft-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
 
 To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
+
+## Right-to-left languages
+
+Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to follow the direction inherited from the page (for example `<html dir="rtl">`). The default `ltr` leaves rendering unchanged; in a right-to-left page it keeps the inherited direction, which the timeline does not support, so pass `rtl` or `auto` there.
+
+```vue
+<GanttChart dir="rtl" :rows="rows" :bars="bars" :range="range" :format-time="formatTime" @edit="apply" />
+```
+
+The timeline then runs from right to left and its row headings sit on the right. Edit proposals keep the same times and units, so validation and persistence code needs no change. Arrow keys follow the screen: ArrowLeft makes a bar later. Translate the edit hint through `labels.editHint` to describe this to screen reader users. `auto` is resolved after mounting, so server-rendered markup is left-to-right until hydration; use an explicit `rtl` for server rendering.
+
+The new right-to-left rules are scoped to the `vft-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.

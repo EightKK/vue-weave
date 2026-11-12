@@ -226,6 +226,9 @@ export interface CalendarBandOptions {
   label?: (start: number, end: number) => string
 }
 
+/** Text direction of a component. `auto` follows the inherited CSS direction after mounting. */
+export type ChartDirection = 'ltr' | 'rtl' | 'auto'
+
 /** Options of the `exportSvg` method on GanttChart. Current props, collapsed rows and zoom supply everything else. */
 export interface GanttExportOptions {
   /** Export only this time window. Defaults to the whole `range`. */

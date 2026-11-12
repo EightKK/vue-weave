@@ -95,6 +95,7 @@ function apply(changes: readonly TimelineEdit[]) {
       : `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}.`
 }
 const chart = ref<InstanceType<typeof GanttChart>>()
+const rtl = ref(false)
 function exportSvg() {
   const svg = chart.value?.exportSvg({ title: 'Timeline editing', rowHeading: 'Team' })
   if (!svg) return
@@ -120,9 +121,9 @@ function onZoom(state: TimelineZoomState) {
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
       <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, batch moves, row moves, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
-    <GanttChart ref="chart" :rows="rows" :bars="model.bars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
+    <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="model.bars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"

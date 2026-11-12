@@ -10,7 +10,7 @@ import {
   summarizeTimelineRows, timeTicks, visibleRows, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
-import type { GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
+import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
@@ -57,7 +57,9 @@ const props = withDefaults(defineProps<{
   loadSegments?: readonly TimelineLoadSegment[]
   loadRowHeight?: number
   pinchZoom?: boolean
+  dir?: ChartDirection
 }>(), {
+  dir: 'ltr',
   showControls: true,
   autoScroll: true,
   dependencies: () => [],
@@ -192,7 +194,31 @@ const marker = useId()
 const scroller = ref<HTMLElement>()
 const canvas = ref<HTMLElement>()
 const viewport = ref({ width: 1150, height: 321, left: 0, top: 0, labels: 154 })
+// Right-to-left: the time axis starts at the right edge. Internally, horizontal positions are measured from the
+// inline-start edge (`left` in LTR, `right` in RTL), so `viewport.left` and all axis math stay direction-independent.
 const root = ref<HTMLElement>()
+const inheritedRtl = ref(false)
+const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
+const inlineSide = computed(() => rtl.value ? 'right' : 'left')
+function detectDirection() {
+  const element = root.value
+  inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+}
+/** Horizontal scroll distance from the inline start. RTL containers report zero or negative `scrollLeft`. */
+function scrollStart(el: HTMLElement) {
+  return rtl.value ? Math.max(0, -el.scrollLeft) : el.scrollLeft
+}
+function setScrollStart(el: HTMLElement, value: number) {
+  el.scrollLeft = rtl.value ? -Math.max(0, value) : value
+}
+/** A client x coordinate along the inline axis, increasing towards later times. */
+function inlineClientX(clientX: number) {
+  return rtl.value ? -clientX : clientX
+}
+/** Pixels from the visible time area's inline-start edge to a client x coordinate. */
+function timeAreaOffset(clientX: number, rect: DOMRect) {
+  return rtl.value ? rect.right - viewport.value.labels - clientX : clientX - rect.left - viewport.value.labels
+}
 const bandHeight = 26
 const headerHeight = computed(() => 40 + bandHeight * (activeBands.value?.length ?? 0))
 const localCollapsed = ref(new Set<string>())
@@ -409,7 +435,7 @@ function barStyle(bar: TimelineBar) {
   const box = barBox(bar)
   const shift = previews.value?.get(bar.id)?.rowShift
   return {
-    left: `calc(var(--vft-label-area-width) + ${box.left}px)`,
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${box.left}px)`,
     width: `${box.width}px`,
     height: `${barHeight.value}px`,
     top: `${laneTop(bar)}px`,
@@ -420,7 +446,7 @@ function barStyle(bar: TimelineBar) {
 function summaryStyle(summary: TimelineSummary) {
   const left = axis.value.toX(summary.start)
   return {
-    left: `calc(var(--vft-label-area-width) + ${left}px)`,
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left}px)`,
     width: `${Math.max(3, axis.value.toX(summary.end) - left)}px`,
   }
 }
@@ -430,7 +456,7 @@ function baselineStyle(bar: TimelineBar) {
   const left = axis.value.toX(baseline.start)
   const width = axis.value.toX(baseline.end) - left
   return {
-    left: `calc(var(--vft-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
     width: `${Math.max(3, width)}px`,
     top: `${laneTop(bar) + barHeight.value + 1}px`,
   }
@@ -441,7 +467,7 @@ function syncViewport() {
   if (!el) return
   const labels = el.querySelector('.vft-gantt-corner')?.getBoundingClientRect().width ?? 154
   viewport.value = {
-    width: el.clientWidth, height: el.clientHeight, left: el.scrollLeft, top: el.scrollTop, labels,
+    width: el.clientWidth, height: el.clientHeight, left: scrollStart(el), top: el.scrollTop, labels,
   }
 }
 
@@ -450,10 +476,10 @@ async function applyZoom(next: number, anchor?: number) {
   const el = scroller.value
   if (!el) return
   const offset = anchor ?? Math.max(0, (el.clientWidth - viewport.value.labels) / 2)
-  const time = axis.value.toTime(el.scrollLeft + offset)
+  const time = axis.value.toTime(scrollStart(el) + offset)
   zoom.value = Math.max(minZoom, Math.min(maxZoom, next))
   await nextTick()
-  el.scrollLeft = axis.value.toX(time) - offset
+  setScrollStart(el, axis.value.toX(time) - offset)
   syncViewport()
 }
 
@@ -466,7 +492,7 @@ let pendingCenter: number | undefined
 function choosePreset(id: string) {
   const el = scroller.value
   if (drag) return
-  if (el) pendingCenter = axis.value.toTime(el.scrollLeft + Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
+  if (el) pendingCenter = axis.value.toTime(scrollStart(el) + Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
   localPreset.value = id
   zoom.value = 1
   emit('update:zoomPreset', id)
@@ -477,7 +503,7 @@ watch(() => activePreset.value?.id, async () => {
   const el = scroller.value
   if (time === undefined || !el) return
   await nextTick()
-  el.scrollLeft = axis.value.toX(time) - Math.max(0, (el.clientWidth - viewport.value.labels) / 2)
+  setScrollStart(el, axis.value.toX(time) - Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
   syncViewport()
 })
 watch([zoom, () => activePreset.value?.id], ([value, preset]) => {
@@ -575,7 +601,7 @@ function startEdit(event: PointerEvent, bar: TimelineBar) {
   control.focus({ preventScroll: true })
   drag = {
     id: bar.id, pointerId: event.pointerId,
-    initialX: event.clientX + (scroller.value?.scrollLeft ?? 0),
+    initialX: inlineClientX(event.clientX) + (scroller.value ? scrollStart(scroller.value) : 0),
     initialY: event.clientY + (scroller.value?.scrollTop ?? 0),
     initial: { start: bar.start, end: bar.end }, mode, target: control,
     group: mode === 'move' ? movingGroup(bar) : [bar],
@@ -595,7 +621,7 @@ function moveEdit(event: PointerEvent) {
 
 function updatePreview() {
   if (!drag) return
-  const deltaX = lastClientX + (scroller.value?.scrollLeft ?? 0) - drag.initialX
+  const deltaX = inlineClientX(lastClientX) + (scroller.value ? scrollStart(scroller.value) : 0) - drag.initialX
   const deltaY = lastClientY + (scroller.value?.scrollTop ?? 0) - drag.initialY
   const shift = drag.mode === 'move' ? rowShiftFor(drag.group, Math.round(deltaY / props.rowHeight)) : 0
   if (Math.abs(deltaX) < 2 && !shift && !previews.value) return
@@ -615,12 +641,15 @@ function autoScrollStep() {
   if (!drag || !el) return
   if (previews.value) {
     const rect = el.getBoundingClientRect()
-    const left = rect.left + viewport.value.labels + scrollEdge
-    const right = rect.right - scrollEdge
+    // The time area excludes the sticky label column, which sits on the inline-start side.
+    const left = rect.left + (rtl.value ? 0 : viewport.value.labels) + scrollEdge
+    const right = rect.right - (rtl.value ? viewport.value.labels : 0) - scrollEdge
     const depth = lastClientX < left ? (left - lastClientX) / scrollEdge : lastClientX > right ? (lastClientX - right) / scrollEdge : 0
     if (depth > 0) {
       const before = el.scrollLeft
-      el.scrollLeft += (lastClientX < left ? -1 : 1) * Math.ceil(Math.min(1, depth) * scrollSpeed)
+      // Moving towards the visual left scrolls to earlier times in LTR and to later times in RTL.
+      const towardsStart = (lastClientX < left) !== rtl.value
+      setScrollStart(el, scrollStart(el) + (towardsStart ? -1 : 1) * Math.ceil(Math.min(1, depth) * scrollSpeed))
       if (el.scrollLeft !== before) updatePreview()
     }
   }
@@ -679,7 +708,8 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
   if (mode !== 'move' && bar.end - bar.start < minimum.value) return
   event.preventDefault()
   const before = { start: bar.start, end: bar.end }
-  const delta = event.key === 'ArrowLeft' ? -activeSnap.value : activeSnap.value
+  // Left and Right follow the visual direction: in RTL, ArrowLeft moves towards later times.
+  const delta = (event.key === 'ArrowLeft') !== rtl.value ? -activeSnap.value : activeSnap.value
   pendingReveal = bar.id
   const group = mode === 'move' ? movingGroup(bar) : [bar]
   if (group.length > 1) {
@@ -706,8 +736,9 @@ function revealBar(id: string) {
   const right = Math.max(left, axis.value.toX(bar.end))
   const visibleWidth = Math.max(0, el.clientWidth - viewport.value.labels)
   const margin = 16
-  if (left < el.scrollLeft) el.scrollLeft = Math.max(0, left - margin)
-  else if (right > el.scrollLeft + visibleWidth) el.scrollLeft = Math.max(0, right - visibleWidth + margin)
+  const scrolled = scrollStart(el)
+  if (left < scrolled) setScrollStart(el, Math.max(0, left - margin))
+  else if (right > scrolled + visibleWidth) setScrollStart(el, Math.max(0, right - visibleWidth + margin))
   syncViewport()
 }
 function focusBar(id: string) {
@@ -769,7 +800,7 @@ function linkHandleStyle(bar: TimelineBar, end: TimelineBarEnd) {
   // Keep handles inside the axis so the sticky label column never covers them.
   const x = Math.max(0, Math.min(axis.value.width - 12, end === 'start' ? box.left - 15 : box.left + box.width + 3))
   return {
-    left: `calc(var(--vft-label-area-width) + ${x}px)`,
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${x}px)`,
     top: `${laneTop(bar) + barHeight.value / 2 - 6}px`,
   }
 }
@@ -803,7 +834,7 @@ function moveLink(event: PointerEvent) {
   if (linkDrag?.pointerId !== event.pointerId || !canvas.value) return
   if (!linkPoint.value && Math.hypot(event.clientX - linkDrag.x, event.clientY - linkDrag.y) < 4) return
   const rect = canvas.value.getBoundingClientRect()
-  linkPoint.value = { x: event.clientX - rect.left - viewport.value.labels, y: event.clientY - rect.top - headerHeight.value }
+  linkPoint.value = { x: timeAreaOffset(event.clientX, rect), y: event.clientY - rect.top - headerHeight.value }
 }
 function clearLinkCapture() {
   const previous = linkDrag
@@ -836,7 +867,8 @@ function finishLink(event: PointerEvent) {
   }
   // Dropping on a bar body picks its nearer end.
   const rect = element.getBoundingClientRect()
-  completeLink({ bar: element.dataset.vftBar!, end: event.clientX < rect.left + rect.width / 2 ? 'start' : 'finish' })
+  const firstHalf = event.clientX < rect.left + rect.width / 2
+  completeLink({ bar: element.dataset.vftBar!, end: firstHalf !== rtl.value ? 'start' : 'finish' })
 }
 function activateLink(bar: TimelineBar, end: TimelineBarEnd, event: MouseEvent | KeyboardEvent) {
   if (event.type === 'click' && skipLinkClick) {
@@ -923,7 +955,7 @@ function trackTouch(event: PointerEvent) {
   if (touches.size !== 2 || !el) return
   cancelEdit()
   const span = touchSpan()
-  pinch = { distance: Math.max(1, span.distance), zoom: zoom.value, anchor: Math.max(0, span.x - el.getBoundingClientRect().left - viewport.value.labels) }
+  pinch = { distance: Math.max(1, span.distance), zoom: zoom.value, anchor: Math.max(0, timeAreaOffset(span.x, el.getBoundingClientRect())) }
 }
 function moveTouch(event: PointerEvent) {
   if (!touches.has(event.pointerId)) return
@@ -984,7 +1016,7 @@ const shownLoadRows = computed(() => {
 
 function scrollToTime(time: number) {
   if (!Number.isFinite(time)) throw new RangeError('time must be finite')
-  if (scroller.value) scroller.value.scrollLeft = axis.value.toX(time)
+  if (scroller.value) setScrollStart(scroller.value, axis.value.toX(time))
   syncViewport()
 }
 function scrollToRow(id: string) {
@@ -1026,6 +1058,7 @@ function exportSvg(options: GanttExportOptions = {}) {
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
     loadRowHeight: props.loadRowHeight,
     highlightedDependencyIds: props.highlightedDependencyIds,
+    direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
   })
@@ -1037,8 +1070,19 @@ async function exportPng(options: GanttPngExportOptions = {}) {
 }
 defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng })
 
+// Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
+watch(() => props.dir, detectDirection, { flush: 'post' })
+watch(rtl, async () => {
+  cancelEdit()
+  const start = viewport.value.left
+  await nextTick()
+  if (scroller.value) setScrollStart(scroller.value, start)
+  syncViewport()
+})
+
 onMounted(() => {
   mounted = true
+  detectDirection()
   syncClock()
   if (!scroller.value) return
   syncViewport()
@@ -1056,7 +1100,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vft-gantt">
+  <div ref="root" class="vft-gantt" :class="{ 'vft-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <div class="vft-gantt-toolbar">
       <slot name="legend" />
       <div v-if="zoomPresets?.length" class="vft-gantt-presets" role="group" :aria-label="messages.zoomPresets">
@@ -1091,21 +1135,21 @@ onUnmounted(() => {
             <div v-for="column in columns" :key="column.id" class="vft-extra-column" :style="{ width: column.width + 'px' }">{{ column.label }}</div>
           </div>
           <div class="vft-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
-            <span v-for="tick in ticks" :key="tick" class="vft-gantt-tick" :class="{ end: tick === range.end }" :style="{ left: `${axis.toX(tick)}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+            <span v-for="tick in ticks" :key="tick" class="vft-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${axis.toX(tick)}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vft-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
             <div v-for="band in level" :key="band.start" class="vft-gantt-band"
-              :style="{ left: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
+              :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
           </div>
         </div>
         <div class="vft-gantt-grid" aria-hidden="true"></div>
         <div v-for="item in shownMarkers" :key="item.id" class="vft-gantt-marker"
-          :style="{ left: `calc(var(--vft-label-area-width) + ${axis.toX(item.time)}px)` }">
+          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(item.time)}px)` }">
           <span>{{ item.label }}</span>
         </div>
         <div v-if="nowTime !== undefined" class="vft-gantt-marker vft-gantt-now" :title="`${messages.now} ${formatTime(nowTime)}`"
-          :style="{ left: `calc(var(--vft-label-area-width) + ${axis.toX(nowTime)}px)` }">
+          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(nowTime)}px)` }">
           <span>{{ messages.now }}</span>
         </div>
         <div v-for="row in shownRows" :key="row.row.id" class="vft-gantt-row"
@@ -1118,7 +1162,7 @@ onUnmounted(() => {
             <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
               :aria-expanded="!collapsed.has(row.row.id)"
               :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
-              @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? '▸' : '▾' }}</button>
+              @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
             <div class="vft-row-content">
               <slot name="row" :row="row.row" :index="row.index" :depth="row.depth" :expanded="!collapsed.has(row.row.id)">
                 <strong>{{ row.row.label }}</strong>
@@ -1177,7 +1221,7 @@ onUnmounted(() => {
         <svg v-if="shownLines.length" class="vft-gantt-links" aria-hidden="true"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
-            left: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
+            [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
             top: `${headerHeight + rowWindow.first * rowHeight}px`,
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
@@ -1195,7 +1239,7 @@ onUnmounted(() => {
         <svg v-if="dependencyTargets && shownLines.length" class="vft-gantt-link-hits"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
-            left: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
+            [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
             top: `${headerHeight + rowWindow.first * rowHeight}px`,
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
@@ -1206,7 +1250,7 @@ onUnmounted(() => {
             @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
         </svg>
         <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vft-gantt-reconnect-handle"
-          :style="{ left: `calc(var(--vft-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
+          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
           :aria-label="item.label" :aria-pressed="Boolean(linkDraft?.dependency && linkDraft.role === item.end)"
           @pointerdown="reconnectDependency(item.dependency, item.end, $event)"
           @click.stop="clickReconnect(item.dependency, item.end)"
@@ -1228,7 +1272,7 @@ onUnmounted(() => {
           <div v-for="segment in item.segments" :key="segment.key" class="vft-gantt-load-segment"
             :class="{ overloaded: segment.overload > 0, idle: segment.segment.load === 0 }" role="img"
             :aria-label="segment.label" :title="segment.label"
-            :style="{ left: `calc(var(--vft-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
+            :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
             <slot name="load-segment" :segment="segment.segment" :row="item.row" :peak="item.peak" :overload="segment.overload">
               <span class="vft-load-fill" :style="{ height: segment.fill + '%' }"></span>
               <span v-if="segment.overload > 0" class="vft-load-over" :style="{ bottom: segment.capacity + '%', height: segment.over + '%' }"></span>
