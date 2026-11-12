@@ -846,3 +846,84 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   }
   expect(errors).toEqual([])
 })
+
+test('opt-in dark theme classes apply built-in variables; auto follows the colour scheme', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  const gantt = page.locator('.vft-gantt').first()
+  const graph = page.locator('.vft-network').first()
+  const read = (locator: typeof gantt) => locator.evaluate(el => ({
+    surface: getComputedStyle(el).getPropertyValue('--vft-surface').trim(),
+    now: getComputedStyle(el).getPropertyValue('--vft-now').trim(),
+    color: getComputedStyle(el).color,
+  }))
+  const light = await read(gantt)
+  expect(light.surface).toBe('')
+  await gantt.evaluate(el => el.classList.add('vft-theme-dark'))
+  await graph.evaluate(el => el.classList.add('vft-theme-dark'))
+  expect(await read(gantt)).toEqual({ surface: '#182a37', now: '#ff8f7a', color: 'rgb(229, 237, 243)' })
+  expect((await read(graph)).surface).toBe('#182a37')
+  await expect(gantt).toHaveCSS('background-color', 'rgb(24, 42, 55)')
+  await gantt.evaluate(el => el.classList.replace('vft-theme-dark', 'vft-theme-auto'))
+  expect((await read(gantt)).surface).toBe('')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect((await read(gantt)).surface).toBe('#182a37')
+  await page.emulateMedia({ colorScheme: 'light' })
+  expect((await read(gantt)).surface).toBe('')
+  expect(errors).toEqual([])
+})
+
+test('forced colors use system colours for bars and selection', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ forcedColors: 'active' })
+  await openComponentFixture(page)
+  const bar = page.locator('.vft-gantt-bar').first()
+  await expect(bar).toBeVisible()
+  expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
+  const styles = await bar.evaluate(el => {
+    const probe = document.createElement('span')
+    probe.style.color = 'CanvasText'
+    document.body.append(probe)
+    const canvasText = getComputedStyle(probe).color
+    probe.remove()
+    const cs = getComputedStyle(el)
+    return { adjust: cs.forcedColorAdjust, border: cs.borderTopColor, canvasText }
+  })
+  expect(styles.adjust).toBe('none')
+  expect(styles.border).toBe(styles.canvasText)
+  await bar.focus()
+  await expect(bar).toHaveCSS('outline-style', 'solid')
+  expect(errors).toEqual([])
+})
+
+test('reduced motion removes stylesheet transitions and animations', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await openComponentFixture(page)
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
+  const offenders = await page.evaluate(() => [...document.querySelectorAll('.vft-gantt, .vft-gantt *, .vft-network, .vft-network *')]
+    .filter(el => { const cs = getComputedStyle(el); return cs.transitionDuration.split(', ').some(d => d !== '0s') || cs.animationName !== 'none' })
+    .map(el => el.className.toString()))
+  expect(offenders).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('print media hides interactive chrome and expands the Gantt scroller', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  await page.locator('.vft-gantt-bar').first().click()
+  const display = (selector: string) => page.evaluate(sel => [...document.querySelectorAll(sel)].map(el => getComputedStyle(el).display), selector)
+  const zoomTools = await display('.vft-zoom-tools')
+  expect(zoomTools.length).toBeGreaterThan(0)
+  expect(zoomTools.every(value => value !== 'none')).toBe(true)
+  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
+  await page.emulateMedia({ media: 'print' })
+  expect((await display('.vft-zoom-tools, .vft-minimap, .vft-bar-handle, .vft-gantt-toolbar')).every(value => value === 'none')).toBe(true)
+  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
+  await expect(page.locator('.vft-network').first()).toHaveCSS('print-color-adjust', 'exact')
+  expect(errors).toEqual([])
+})

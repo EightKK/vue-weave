@@ -4,6 +4,8 @@ Identifiers are nonempty strings and must be unique within their corresponding c
 
 The package is ESM-only. Import Vue components and shared types from `vue-weave`, headless calculations from `vue-weave/core`, and the stylesheet from `vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency.
 
+The stylesheet also ships opt-in `vft-theme-dark` and `vft-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
+
 ## NetworkGraph
 
 | Prop | Type / default | Meaning |

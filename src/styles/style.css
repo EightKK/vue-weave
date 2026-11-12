@@ -142,3 +142,98 @@
 .vft-load-over { background: var(--vft-load-overload, #b4441c); }
 .vft-load-capacity { height: 0; border-top: 2px dashed var(--vft-load-capacity, #31495b); }
 .vft-gantt-load-segment.idle .vft-load-capacity { opacity: .55; }
+
+/* Built-in dark theme. Opt in with `vft-theme-dark`, or follow the OS with `vft-theme-auto`; place the class on a component root or any ancestor. */
+.vft-theme-dark {
+  color-scheme: dark;
+  --vft-surface: #182a37; --vft-surface-muted: #1e3343; --vft-surface-hover: #2d4656;
+  --vft-text: #e5edf3; --vft-muted: #b1c7d7; --vft-border: #355164; --vft-grid: #324c60;
+  --vft-edge: #8da9bb; --vft-accent: #82badf; --vft-on-solid: #0d1a24;
+  --vft-blue-ink: #b6d9f5; --vft-blue-pale: #243e58; --vft-blue-line: #6388ad; --vft-blue-solid: #8fc1e6;
+  --vft-teal-ink: #adede1; --vft-teal-pale: #20453f; --vft-teal-line: #65a295; --vft-teal-solid: #7fd0c0;
+  --vft-amber-ink: #f3d49a; --vft-amber-pale: #43331a; --vft-amber-line: #b58848; --vft-amber-solid: #e6b86a;
+  --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
+  --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
+  --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
+  --vft-dimmed-opacity: .4;
+}
+.vft-theme-dark.vft-gantt { background: var(--vft-surface); }
+@media (prefers-color-scheme: dark) {
+  .vft-theme-auto {
+    color-scheme: dark;
+    --vft-surface: #182a37; --vft-surface-muted: #1e3343; --vft-surface-hover: #2d4656;
+    --vft-text: #e5edf3; --vft-muted: #b1c7d7; --vft-border: #355164; --vft-grid: #324c60;
+    --vft-edge: #8da9bb; --vft-accent: #82badf; --vft-on-solid: #0d1a24;
+    --vft-blue-ink: #b6d9f5; --vft-blue-pale: #243e58; --vft-blue-line: #6388ad; --vft-blue-solid: #8fc1e6;
+    --vft-teal-ink: #adede1; --vft-teal-pale: #20453f; --vft-teal-line: #65a295; --vft-teal-solid: #7fd0c0;
+    --vft-amber-ink: #f3d49a; --vft-amber-pale: #43331a; --vft-amber-line: #b58848; --vft-amber-solid: #e6b86a;
+    --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
+    --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
+    --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
+    --vft-dimmed-opacity: .4;
+  }
+  .vft-theme-auto.vft-gantt { background: var(--vft-surface); }
+}
+/* Text on marker and now-marker labels; defaults to white. */
+.vft-gantt-marker span { color: var(--vft-marker-ink, #fff); }
+
+@media (prefers-reduced-motion: reduce) {
+  .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+
+@media (forced-colors: active) {
+  .vft-network, .vft-gantt { forced-color-adjust: auto; }
+  .vft-network { background: Canvas; border-color: CanvasText; }
+  .vft-network-edge, .vft-gantt-links path { stroke: CanvasText; }
+  .vft-gantt-links marker path { fill: CanvasText; }
+  .vft-network-edge.related, .vft-gantt-links path.related { stroke: Highlight; stroke-width: 3px; }
+  .vft-gantt-links path.highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
+  .vft-gantt-links path.selected { stroke: Highlight; stroke-width: 3.5px; }
+  .vft-network-node rect, .vft-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vft-network-node text, .vft-network-group text, .vft-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
+  .vft-network-node.related rect { stroke: Highlight; stroke-width: 2.5px; }
+  .vft-network-node:hover rect, .vft-network-node:focus-visible rect { stroke: Highlight; stroke-width: 4px; }
+  .vft-network-node.selected rect { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
+  .vft-network-node.selected text { fill: HighlightText; }
+  .vft-gantt-bar { forced-color-adjust: none; border: 1px solid CanvasText; }
+  .vft-gantt-bar.solid { background: CanvasText; color: Canvas; border-color: CanvasText; }
+  .vft-gantt-bar.outline { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .vft-gantt-bar.selected { border-width: 2px; outline: 3px solid Highlight; outline-offset: 2px; }
+  .vft-gantt-bar:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+  .vft-gantt-bar.milestone { background: CanvasText; }
+  .vft-bar-progress { inset-block: auto 0; height: 4px; background: Highlight; opacity: 1; }
+  .vft-bar-handle::after { background: currentColor; }
+  .vft-gantt-bar:hover .vft-bar-handle::after, .vft-gantt-bar.selected .vft-bar-handle::after { opacity: 1; }
+  .vft-gantt-baseline { background: GrayText; }
+  .vft-gantt-summary { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; border-bottom-width: 3px; }
+  .vft-gantt-summary span { background: Highlight; opacity: 1; }
+  .vft-gantt-marker { border-left: 2px dashed CanvasText; }
+  .vft-gantt-marker span { forced-color-adjust: none; background: Canvas; color: CanvasText; border: 1px solid CanvasText; }
+  .vft-gantt-now { border-left: 3px solid Highlight; }
+  .vft-gantt-now span { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .vft-gantt-grid, .vft-gantt-time-head { background: repeating-linear-gradient(to right, GrayText 0 1px, transparent 1px var(--vft-grid-step)); }
+  .vft-gantt-load-segment { forced-color-adjust: none; }
+  .vft-load-fill { background: GrayText; }
+  .vft-load-over { background: repeating-linear-gradient(45deg, CanvasText 0 2px, Highlight 2px 5px); }
+  .vft-load-capacity { border-top: 2px dashed CanvasText; }
+  .vft-gantt-link-handle, .vft-gantt-reconnect-handle, .vft-connect-handle, .vft-reconnect-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .vft-gantt-link-handle.active, .vft-gantt-link-handle:focus-visible, .vft-gantt-reconnect-handle, .vft-connect-handle.active, .vft-connect-handle:focus-visible, .vft-reconnect-handle { fill: Highlight; stroke: CanvasText; background: Highlight; border-color: CanvasText; outline: 2px solid Highlight; outline-offset: 2px; }
+  .vft-edge-hit.active, .vft-edge-hit:focus-visible, .vft-dependency-hit.active, .vft-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
+  .vft-connection-preview, .vft-gantt-link-preview path { stroke: Highlight; }
+  .vft-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
+  .vft-minimap rect { fill: CanvasText; }
+  .vft-minimap rect.selected, .vft-minimap .vft-minimap-window { fill: none; stroke: Highlight; }
+  .vft-minimap rect.selected { fill: Highlight; }
+  .vft-gantt-presets button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .vft-network button:focus-visible, .vft-gantt button:focus-visible, .vft-gantt-scroll:focus-visible, .vft-cell-input:focus-visible { outline-color: Highlight; }
+}
+
+@media print {
+  .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
+  .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit { display: none !important; }
+  .vft-gantt-toolbar { display: none; }
+  .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
+  .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
+  .vft-gantt-head { break-after: avoid; page-break-after: avoid; }
+}

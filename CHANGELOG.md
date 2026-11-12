@@ -5,6 +5,7 @@
 ### Added
 
 - `NetworkGraph` accepts `RL` and `BT` directions and the opt-in `crossingReduction` and `crossingSweeps` layout options; the demo can switch direction, crossing reduction and layout.
+- Opt-in `vft-theme-dark` and `vft-theme-auto` (follows `prefers-color-scheme`) stylesheet classes, a new `--vft-marker-ink` variable, and `forced-colors`, `prefers-reduced-motion` and print styles for both components.
 - `NetworkGraph` with LR/TB layouts, branches, merges, disconnected nodes, directed cycles, self-loops, edge labels and custom layout/rendering.
 - Controlled graph editing with named ports, drag and keyboard connections, endpoint reconnection, box selection, disjoint visual groups, batch movement and a navigable minimap.
 - `GanttChart` with controlled pointer and keyboard editing, validation, cancellation on source changes, lanes, milestones, progress and FS/SS/FF/SF dependencies.
