@@ -12,7 +12,7 @@ The package is ESM-only. Import Vue components and shared types from `vue-weave`
 | edges | readonly GraphEdge[] / required | ID, from/to node IDs, optional label and data |
 | selectedId | string / undefined | Controlled selection; also supports v-model:selected-id |
 | relatedIds | ReadonlySet<string> / undefined | Emphasizes included nodes and edges joining two included nodes |
-| options | GraphLayoutOptions / defaults below | Built-in layout configuration |
+| options | GraphLayeredLayoutOptions / defaults below | Built-in layout configuration |
 | layout | GraphLayoutFunction / undefined | Overrides built-in layout |
 | labels | Partial<GraphLabels> / English | Region, empty, zoom, zoomIn, zoomOut and fit |
 | height | number or CSS string / 220px | SVG viewport height |
@@ -320,3 +320,7 @@ The exported types are `ScheduleSuccess`, `ScheduleFailure`, `ScheduleCycle`, `S
 Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
 
 Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+
+### NetworkGraph directions and crossing reduction
+
+`NetworkGraph` `options.direction` accepts `LR`, `TB`, `RL` and `BT`. Edge endpoints, edited positions, ports, groups, the minimap and culling follow the chosen direction; unnamed endpoints use the mirrored sides for RL and BT, and the default handle of a node without ports sits on its left edge in RL. `options.crossingReduction` (`none`, `barycenter`, `median`) and `options.crossingSweeps` are passed to `layoutLayeredGraph`; the defaults (`none`, 8) leave the layout identical to earlier versions. When the `layout` prop is set, it replaces the built-in layout and these two options are ignored, while `options.direction` still controls edge routing for moved nodes.
