@@ -927,3 +927,161 @@ test('print media hides interactive chrome and expands the Gantt scroller', asyn
   await expect(page.locator('.vft-network').first()).toHaveCSS('print-color-adjust', 'exact')
   expect(errors).toEqual([])
 })
+
+test('export controls download a whole-chart SVG and a scaled PNG for both components', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const pngSize = (bytes: Buffer) => {
+    expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG')
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  }
+  const save = async (name: string) => {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    const file = await pending
+    return { name: file.suggestedFilename(), bytes: await readFile((await file.path())!) }
+  }
+  const { errors, chart, status } = await openTimelineEditing(page)
+  // Scroll away first: the export still covers the whole range and every row.
+  await chart.evaluate(element => { element.scrollLeft = 400 })
+  const svg = await save('Export SVG')
+  expect(svg.name).toBe('timeline.svg')
+  const text = svg.bytes.toString('utf8')
+  // 138 px heading column + 10 h at 115 px; 66 px header, 4 rows of 66 px and 2 load rows of 44 px.
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="1288" height="418"/)
+  for (const label of ['Wireframes', 'Billing API', 'Checkout UI', 'Acceptance tests', 'Quality', 'Engineering pool', 'Day 2026-11-09', 'Now', 'Team']) {
+    expect(text).toContain('>' + label + '<')
+  }
+  expect(text).not.toContain('<script')
+  await expect(status('Exported SVG (')).toBeVisible()
+  const png = await save('Export PNG')
+  expect(png.name).toBe('timeline.png')
+  expect(pngSize(png.bytes)).toEqual({ width: 2576, height: 836 })
+  await expect(status('Exported PNG 2576 × 836 px.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  const graphSvg = await save('Export graph SVG')
+  const graphText = graphSvg.bytes.toString('utf8')
+  expect(graphSvg.name).toBe('network.svg')
+  const nodeCount = await page.locator('.vft-network-node').count()
+  expect(graphText.match(/<g transform="translate\(/g)?.length).toBe(nodeCount + 1)
+  const [, width, height] = /^<svg [^>]*width="([\d.]+)" height="([\d.]+)"/.exec(graphText)!
+  const graphPng = await save('Export graph PNG')
+  expect(graphPng.name).toBe('network.png')
+  expect(pngSize(graphPng.bytes)).toEqual({ width: Math.ceil(Number(width) * 2), height: Math.ceil(Number(height) * 2) })
+
+  // Culling and the camera do not limit the export, and oversized PNGs are refused with a RangeError message.
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(page.getByText('3750 nodes')).toBeVisible()
+  const large = (await save('Export graph SVG')).bytes.toString('utf8')
+  expect(large.match(/<g transform="translate\(/g)?.length).toBe(3751)
+  await page.getByRole('button', { name: 'Export graph PNG', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'exceeds the maximum canvas size' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves and scrollToTime', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  await expect(chart.locator('xpath=ancestor::div[contains(@class, "vft-gantt")][1]')).toHaveAttribute('dir', 'rtl')
+  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
+  const corner = chart.locator('.vft-gantt-corner')
+  const box = async (locator: typeof api) => (await locator.boundingBox())!
+  // The heading column is on the right and time runs from right to left: 08:00 touches the headings,
+  // and Billing API (from 10:00) starts where Wireframes (until 10:00) ends.
+  const heading = await box(corner)
+  const wireframes = await box(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true }))
+  let bar = await box(api)
+  expect(heading.x).toBeGreaterThan(bar.x)
+  expect(Math.abs(wireframes.x + wireframes.width - heading.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(bar.x + bar.width - wireframes.x)).toBeLessThanOrEqual(1)
+  expect(await chart.evaluate(element => element.scrollLeft)).toBeLessThanOrEqual(0)
+
+  // Dragging to the left proposes a later interval: 58 px at 115 px per hour snaps to 30 minutes.
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + bar.width / 2 - 58, bar.y + bar.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Billing API → 10:30–13:30.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+
+  // The start handle sits on the right edge; dragging it 29 px to the left moves the start 15 minutes later.
+  const startHandle = await box(api.locator('.vft-bar-handle.first'))
+  bar = await box(api)
+  expect(startHandle.x + startHandle.width).toBeGreaterThan(bar.x + bar.width - 2)
+  await page.mouse.move(startHandle.x + startHandle.width / 2, startHandle.y + startHandle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(startHandle.x + startHandle.width / 2 - 29, startHandle.y + startHandle.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
+
+  // Arrow keys follow the visual direction: Left is later, Right is earlier; Shift still resizes the end.
+  await api.focus()
+  await api.press('ArrowLeft')
+  await expect(status('Billing API → 11:00–13:45.')).toBeVisible()
+  await expect(api).toBeFocused()
+  await api.press('ArrowRight')
+  await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
+  await api.press('Shift+ArrowLeft')
+  await expect(status('Billing API → 10:45–13:45.')).toBeVisible()
+
+  // scrollToTime puts 12:00 at the inline-start (right) edge of the time area, using a negative scrollLeft.
+  const zoomIn = page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.click()
+  await zoomIn.click()
+  await expect(status('182% · hours')).toBeVisible()
+  await page.getByRole('button', { name: 'Scroll to 12:00', exact: true }).click()
+  await expect.poll(() => chart.evaluate(element => element.scrollLeft)).toBeLessThan(-800)
+  const tests = chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })
+  const pixelsPerHour = 115 * 1.35 * 1.35
+  await expect.poll(async () => {
+    const [edge, target] = [await box(corner), await box(tests)]
+    return Math.abs(target.x + target.width - (edge.x - 2 * pixelsPerHour))
+  }).toBeLessThanOrEqual(1.5)
+
+  // Back to left-to-right: the headings return to the left and 12:00 stays at the inline-start edge.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).uncheck()
+  await expect.poll(async () => {
+    const [edge, target] = [await box(corner), await box(tests)]
+    return Math.abs(target.x - (edge.x + edge.width + 2 * pixelsPerHour))
+  }).toBeLessThanOrEqual(1.5)
+  expect(await chart.evaluate(element => element.scrollLeft)).toBeGreaterThan(800)
+  expect(errors).toEqual([])
+})
+
+test('right-to-left network graph mirrors the chrome and label alignment but not the geometry', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const measure = async () => {
+    const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+    const minimap = (await page.getByRole('button', { name: 'Navigate graph overview', exact: true }).boundingBox())!
+    const tools = (await page.getByRole('group', { name: 'Graph zoom', exact: true }).boundingBox())!
+    const node = page.getByRole('button', { name: 'A', exact: true })
+    const box = (await node.locator('rect').first().boundingBox())!
+    const text = (await node.locator('text.vft-node-title').boundingBox())!
+    return { stage, minimap, tools, box, text }
+  }
+  await openNetworkFixture(page, '?preset=groups&minimap=1')
+  const ltr = await measure()
+  await openNetworkFixture(page, '?preset=groups&minimap=1&dir=rtl')
+  await expect(page.locator('.vft-network')).toHaveAttribute('dir', 'rtl')
+  const rtl = await measure()
+  // Geometry is unchanged; the minimap and zoom tools move to the left; labels align to the right.
+  expect(rtl.box).toEqual(ltr.box)
+  expect(ltr.minimap.x).toBeGreaterThan(ltr.stage.x + ltr.stage.width / 2)
+  expect(rtl.minimap.x + rtl.minimap.width).toBeLessThan(rtl.stage.x + rtl.stage.width / 2)
+  expect(rtl.tools.x + rtl.tools.width).toBeLessThan(rtl.stage.x + rtl.stage.width / 2)
+  expect(ltr.text.x - ltr.box.x).toBeLessThan(ltr.box.x + ltr.box.width - (ltr.text.x + ltr.text.width))
+  expect(rtl.box.x + rtl.box.width - (rtl.text.x + rtl.text.width)).toBeLessThan(rtl.text.x - rtl.box.x)
+  await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
+
+  // dir="auto" follows an inherited right-to-left direction after mounting.
+  // The attribute is set once parsing ends, before the deferred module script mounts the app.
+  await page.addInitScript(() => document.addEventListener('readystatechange', () => {
+    if (document.readyState === 'interactive') document.documentElement.setAttribute('dir', 'rtl')
+  }))
+  await openNetworkFixture(page, '?preset=groups&minimap=1&dir=auto')
+  await expect(page.locator('.vft-network')).toHaveClass(/vft-rtl/)
+  await expect(page.locator('.vft-network')).not.toHaveAttribute('dir', /./)
+  expect(errors).toEqual([])
+})

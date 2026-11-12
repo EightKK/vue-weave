@@ -1,0 +1,691 @@
+import { indexGraph, type GraphEdge, type GraphLayout } from './graph.js'
+import { graphPathBounds } from './graphView.js'
+import {
+  createTimelineRowTree, dependencyPath, dependencyTimes, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
+  summarizeTimelineRows, timeTicks, validateTimelineData, type TimeRange, type TimeScale,
+} from './timeline.js'
+import type {
+  ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
+  TimelineMarker, TimelineRow,
+} from './types.js'
+
+/** Colours of one tone, matching the `--vft-<tone>-*` custom properties. */
+export interface SvgToneColors {
+  ink: string
+  line: string
+  pale: string
+  solid: string
+}
+
+/** Colours used by the SVG exporters. Each field mirrors a `--vft-*` custom property. */
+export interface SvgExportTheme {
+  surface: string
+  surfaceMuted: string
+  text: string
+  muted: string
+  border: string
+  grid: string
+  edge: string
+  accent: string
+  onSolid: string
+  baseline: string
+  marker: string
+  now: string
+  load: string
+  loadOverload: string
+  loadCapacity: string
+  dependencyHighlight: string
+  tones: Record<ChartTone, SvgToneColors>
+}
+
+/** A partial theme; omitted colours fall back to `defaultSvgExportTheme`. */
+export type SvgExportThemeInput = Partial<Omit<SvgExportTheme, 'tones'>> & {
+  tones?: Partial<Record<ChartTone, Partial<SvgToneColors>>>
+}
+
+/** The stylesheet's fallback colours. */
+export const defaultSvgExportTheme: Readonly<SvgExportTheme> = Object.freeze({
+  surface: '#ffffff', surfaceMuted: '#f6f9fb', text: '#172c3b', muted: '#4c6371', border: '#d8e2e9', grid: '#d9e4eb',
+  edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
+  load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
+  tones: {
+    teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
+    blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
+    amber: { ink: '#764908', line: '#b58848', pale: '#f9efdc', solid: '#825411' },
+    violet: { ink: '#523b78', line: '#9983ba', pale: '#efe7f8', solid: '#624888' },
+  },
+})
+
+/** Options shared by the SVG exporters. */
+export interface SvgExportOptions {
+  /** Colours; omitted values use `defaultSvgExportTheme`. */
+  theme?: SvgExportThemeInput
+  /** CSS font-family list written on the root element. */
+  fontFamily?: string
+  /** Document title, written as `<title>` and the accessible name. */
+  title?: string
+  /** Paint an opaque background. Default true. */
+  background?: boolean
+  /** Prefix for the IDs of markers and clip paths, so several exports can be inlined in one page. Default `vft-export`. */
+  idPrefix?: string
+  /** Text direction of labels. For timelines, `rtl` also mirrors the time axis and places row headings on the right. */
+  direction?: 'ltr' | 'rtl'
+}
+
+const tones: readonly ChartTone[] = ['teal', 'blue', 'amber', 'violet']
+const defaultFont = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+// Characters that XML 1.0 forbids, and unpaired surrogates.
+const invalidXml = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&apos;' }
+
+/** Escape text for XML content and attribute values and drop characters that XML 1.0 does not allow. */
+export function escapeXml(value: string): string {
+  return String(value).replace(invalidXml, '').replace(/[&<>"']/g, char => entities[char]!)
+}
+
+function num(value: number) {
+  if (!Number.isFinite(value)) throw new RangeError('SVG export produced a non-finite coordinate')
+  const rounded = Math.round(value * 1000) / 1000
+  return String(rounded === 0 ? 0 : rounded)
+}
+
+const round = (value: number) => Number(num(value))
+
+type Attributes = Record<string, string | number | undefined>
+function tag(name: string, attributes: Attributes, content?: string) {
+  let out = '<' + name
+  for (const key in attributes) {
+    const value = attributes[key]
+    if (value === undefined) continue
+    out += ' ' + key + '="' + (typeof value === 'number' ? num(value) : escapeXml(value)) + '"'
+  }
+  return content === undefined ? out + '/>' : out + '>' + content + '</' + name + '>'
+}
+
+function resolveTheme(input: SvgExportThemeInput = {}): SvgExportTheme {
+  const { tones: toneInput, ...rest } = input
+  const theme: SvgExportTheme = { ...defaultSvgExportTheme, tones: { ...defaultSvgExportTheme.tones } }
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !(key in defaultSvgExportTheme)) throw new Error('Invalid export theme colour: ' + key)
+    if (value.trim()) (theme as unknown as Record<string, string>)[key] = value.trim()
+  }
+  for (const tone of tones) {
+    const custom = toneInput?.[tone]
+    if (!custom) continue
+    const merged = { ...theme.tones[tone] }
+    for (const part of ['ink', 'line', 'pale', 'solid'] as const) {
+      const value = custom[part]
+      if (value !== undefined && typeof value !== 'string') throw new Error('Invalid export theme colour: ' + tone + '.' + part)
+      if (value?.trim()) merged[part] = value.trim()
+    }
+    theme.tones[tone] = merged
+  }
+  return theme
+}
+
+function common(options: SvgExportOptions) {
+  const prefix = options.idPrefix ?? 'vft-export'
+  if (!/^[A-Za-z_][\w.-]*$/.test(prefix)) throw new Error('idPrefix must start with a letter or underscore and contain only letters, digits, _, . and -')
+  if (options.direction !== undefined && options.direction !== 'ltr' && options.direction !== 'rtl') {
+    throw new Error('direction must be ltr or rtl')
+  }
+  return {
+    prefix, theme: resolveTheme(options.theme), rtl: options.direction === 'rtl',
+    font: options.fontFamily?.trim() || defaultFont, background: options.background !== false,
+  }
+}
+
+function svgDocument(width: number, height: number, options: SvgExportOptions, font: string, defs: string, body: string) {
+  if (!(width > 0) || !(height > 0)) throw new RangeError('The exported image must have a positive size')
+  const title = options.title
+  return tag('svg', {
+    xmlns: 'http://www.w3.org/2000/svg', width, height, viewBox: `0 0 ${num(width)} ${num(height)}`,
+    'font-family': font, role: 'img', 'aria-label': title || undefined,
+  }, (title ? tag('title', {}, escapeXml(title)) : '') + (defs ? '<defs>' + defs + '</defs>' : '') + body)
+}
+
+/** A text run clipped to a box. `inset` is measured from the inline start edge of the box. */
+function clippedText(
+  box: { x: number; y: number; width: number; height: number }, rtl: boolean,
+  lines: readonly { text: string; y: number; size: number; fill: string; weight?: number; inset?: number }[],
+) {
+  if (box.width <= 0 || box.height <= 0) return ''
+  const content = lines.filter(line => line.text !== '').map(line => {
+    const inset = line.inset ?? 0
+    return tag('text', {
+      x: rtl ? box.width - inset : inset, y: line.y, 'font-size': line.size, 'font-weight': line.weight, fill: line.fill,
+      direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+    }, escapeXml(line.text))
+  }).join('')
+  if (!content) return ''
+  return tag('svg', { x: box.x, y: box.y, width: box.width, height: box.height, overflow: 'hidden' }, content)
+}
+
+/** A group rectangle in layout coordinates, for example the groups NetworkGraph draws. */
+export interface GraphSvgGroup {
+  id: string
+  label: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface GraphSvgOptions extends SvgExportOptions {
+  /** Group rectangles drawn behind the nodes. */
+  groups?: readonly GraphSvgGroup[]
+  /** Node IDs drawn in the selected style. */
+  selectedIds?: Iterable<string>
+  /** Margin around the content, in pixels. Default 16. */
+  padding?: number
+  /** Node title text. Defaults to `node.label`. */
+  nodeLabel?: (node: NetworkNode) => string
+  /** Node detail text. Defaults to `node.detail`. */
+  nodeDetail?: (node: NetworkNode) => string | undefined
+  /** Edge label text. Defaults to `edge.label`. */
+  edgeLabel?: (edge: GraphEdge) => string | undefined
+}
+
+/**
+ * Build a standalone SVG document of a whole graph with the default node rendering. Every node, edge, label and
+ * group is included regardless of any camera or culling. Runs without a DOM.
+ */
+export function renderGraphSvg(
+  layout: GraphLayout, nodes: readonly NetworkNode[], edges: readonly GraphEdge[], options: GraphSvgOptions = {},
+): string {
+  indexGraph(nodes, edges)
+  const { prefix, theme, rtl, font, background } = common(options)
+  const padding = options.padding ?? 16
+  if (!Number.isFinite(padding) || padding < 0) throw new RangeError('padding must be finite and nonnegative')
+  if (!Number.isFinite(layout.width) || !Number.isFinite(layout.height) || layout.width < 0 || layout.height < 0) {
+    throw new RangeError('The layout must have finite nonnegative dimensions')
+  }
+  let left = 0, top = 0, right = layout.width, bottom = layout.height
+  const include = (x: number, y: number, width = 0, height = 0) => {
+    left = Math.min(left, x)
+    top = Math.min(top, y)
+    right = Math.max(right, x + width)
+    bottom = Math.max(bottom, y + height)
+  }
+  for (const node of nodes) {
+    const box = layout.boxes.get(node.id)
+    if (!box || ![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
+      throw new RangeError('Missing or invalid layout box: ' + node.id)
+    }
+    include(box.x, box.y, box.width, box.height)
+  }
+  const edgeText = options.edgeLabel ?? ((edge: GraphEdge) => edge.label)
+  for (const edge of edges) {
+    const path = layout.paths.get(edge.id)
+    if (path === undefined) throw new Error('Missing layout path: ' + edge.id)
+    const bounds = graphPathBounds(path)
+    if (bounds) include(bounds.x, bounds.y, bounds.width, bounds.height)
+    const label = layout.edgeLabels.get(edge.id)
+    if (label && edgeText(edge)) include(label.x - 60, label.y - 14, 120, 20)
+  }
+  const groupIds = new Set<string>()
+  for (const group of options.groups ?? []) {
+    if (!group.id || groupIds.has(group.id)) throw new Error('Invalid or duplicate export group: ' + group.id)
+    if (![group.x, group.y, group.width, group.height].every(Number.isFinite) || group.width < 0 || group.height < 0) {
+      throw new RangeError('Invalid export group geometry: ' + group.id)
+    }
+    groupIds.add(group.id)
+    include(group.x, group.y, group.width, group.height)
+  }
+  const width = right - left + 2 * padding, height = bottom - top + 2 * padding
+  const selected = new Set(options.selectedIds ?? [])
+  const nodeLabel = options.nodeLabel ?? ((node: NetworkNode) => node.label)
+  const nodeDetail = options.nodeDetail ?? ((node: NetworkNode) => node.detail)
+  const arrow = prefix + '-arrow'
+  const defs = tag('marker', { id: arrow, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
+    tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: theme.edge }))
+  const parts: string[] = []
+  if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
+  const content: string[] = []
+  for (const group of options.groups ?? []) {
+    content.push(tag('g', {}, tag('rect', {
+      x: group.x, y: group.y, width: group.width, height: group.height, rx: 10,
+      fill: theme.surfaceMuted, 'fill-opacity': 0.7, stroke: theme.border, 'stroke-dasharray': '4 3',
+    }) + tag('text', {
+      x: rtl ? group.x + group.width - 8 : group.x + 8, y: group.y + 15, 'font-size': 10, fill: theme.text,
+      direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+    }, escapeXml(group.label))))
+  }
+  for (const edge of edges) {
+    content.push(tag('path', {
+      d: layout.paths.get(edge.id)!, fill: 'none', stroke: theme.edge, 'stroke-width': 1.65, 'marker-end': `url(#${arrow})`,
+    }))
+  }
+  for (const edge of edges) {
+    const label = layout.edgeLabels.get(edge.id)
+    const text = edgeText(edge)
+    if (!label || !text) continue
+    content.push(tag('text', {
+      x: label.x, y: label.y, 'font-size': 11, 'text-anchor': 'middle', fill: theme.text, stroke: theme.surfaceMuted,
+      'stroke-width': 4, 'stroke-linejoin': 'round', 'paint-order': 'stroke',
+      direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+    }, escapeXml(text)))
+  }
+  for (const node of nodes) {
+    const box = layout.boxes.get(node.id)!
+    const colors = theme.tones[node.tone ?? 'blue'] ?? theme.tones.blue
+    const active = selected.has(node.id)
+    const label = nodeLabel(node), detail = nodeDetail(node)
+    const ink = active ? theme.onSolid : colors.ink
+    const shape = tag('rect', {
+      x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8,
+      fill: active ? colors.solid : colors.pale, stroke: active ? colors.ink : colors.line, 'stroke-width': active ? 2.8 : 1.25,
+    })
+    const text = clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
+      { text: label, y: detail ? 24 : 34, size: 15.5, weight: 700, fill: ink, inset: 13 },
+      { text: detail ?? '', y: 43, size: 12, weight: 550, fill: ink, inset: 13 },
+    ])
+    content.push(tag('g', { transform: `translate(${num(box.x)} ${num(box.y)})` },
+      tag('title', {}, escapeXml([label, detail].filter(Boolean).join(' ')))
+      + tag('svg', { width: box.width, height: box.height, overflow: 'hidden' }, shape + text)))
+  }
+  parts.push(tag('g', { transform: `translate(${num(padding - left)} ${num(padding - top)})` }, content.join('')))
+  return svgDocument(width, height, options, font, defs, parts.join(''))
+}
+
+export interface TimelineSvgOptions extends SvgExportOptions {
+  /** Collapsed parent rows; their descendants and the descendants' bars are omitted. */
+  collapsedIds?: Iterable<string>
+  /** Export only this time window. Defaults to the whole scale, from `toTime(0)` to `toTime(width)`. */
+  timeRange?: TimeRange
+  /** Export only displayed rows `start` (inclusive) to `end` (exclusive), counted after collapsing. */
+  rowRange?: { start: number; end: number }
+  /** Default 66. At least 8 + laneCount × 14. */
+  rowHeight?: number
+  /** Default 1. */
+  laneCount?: number
+  /** Width of the row heading column in pixels. Default 154. */
+  labelWidth?: number
+  /** Extra columns after the row heading column. */
+  columns?: readonly TimelineColumn[]
+  /** Draw rollup bars on parent rows without bars of their own. */
+  showSummaries?: boolean
+  headerBands?: readonly (readonly TimelineBand[])[]
+  markers?: readonly TimelineMarker[]
+  /** Time of a "now" line. */
+  now?: number
+  /** Tick interval. Defaults to the first of `tickSteps` that is at least 76 px wide. */
+  tickStep?: number
+  /** Candidate tick intervals. Default 30 minutes to 24 hours in milliseconds. */
+  tickSteps?: readonly number[]
+  /** Tick alignment. Defaults to the start of the scale. */
+  tickAnchor?: number
+  /** Tick and tooltip labels. Default UTC HH:mm. */
+  formatTime?: (time: number) => string
+  /** Heading of the row column. Default "Rows". */
+  rowHeading?: string
+  /** Label of the now line. Default "Now". */
+  nowLabel?: string
+  loadRows?: readonly TimelineLoadRow[]
+  loadSegments?: readonly TimelineLoadSegment[]
+  /** Default 44. At least 16. */
+  loadRowHeight?: number
+  highlightedDependencyIds?: Iterable<string>
+  /** Bar label text. Defaults to `bar.label`. */
+  barLabel?: (bar: TimelineBar) => string
+  /** Row heading text. Defaults to `row.label`. */
+  rowLabel?: (row: TimelineRow) => string
+}
+
+const defaultTickSteps = [1_800_000, 3_600_000, 7_200_000, 14_400_000, 86_400_000]
+const defaultFormat = (time: number) => new Date(time).toISOString().slice(11, 16)
+const bandHeight = 26
+
+/**
+ * Build a standalone SVG document of a timeline with the default rendering: row headings and columns, header bands
+ * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, the now line and load rows.
+ * Every displayed row is included (collapsed descendants are omitted) unless `rowRange` narrows it. Runs without a DOM.
+ */
+export function renderTimelineSvg(
+  rows: readonly TimelineRow[], bars: readonly TimelineBar[], dependencies: readonly TimelineDependency[], scale: TimeScale,
+  options: TimelineSvgOptions = {},
+): string {
+  const rowHeight = options.rowHeight ?? 66
+  const laneCount = options.laneCount ?? 1
+  validateTimelineData(rows, bars, dependencies, laneCount)
+  const { prefix, theme, rtl, font, background } = common(options)
+  if (!Number.isFinite(rowHeight) || rowHeight < 8 + laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
+  const labelWidth = options.labelWidth ?? 154
+  if (!Number.isFinite(labelWidth) || labelWidth < 0) throw new RangeError('labelWidth must be finite and nonnegative')
+  if (!scale || typeof scale.toX !== 'function' || typeof scale.toTime !== 'function') throw new Error('A time scale is required')
+  if (!Number.isFinite(scale.width) || scale.width <= 0) throw new RangeError('Invalid time scale width')
+  const full = { start: scale.toTime(0), end: scale.toTime(scale.width) }
+  const window = options.timeRange ?? full
+  if (!Number.isFinite(window.start) || !Number.isFinite(window.end) || window.end <= window.start) {
+    throw new RangeError('timeRange must have finite endpoints with start < end')
+  }
+  const offset = scale.toX(window.start)
+  const axisWidth = scale.toX(window.end) - offset
+  if (!Number.isFinite(offset) || !Number.isFinite(axisWidth) || axisWidth <= 0) throw new RangeError('The exported time window has no width')
+
+  const columns = options.columns ?? []
+  const columnIds = new Set<string>()
+  let columnsWidth = 0
+  for (const column of columns) {
+    if (!column.id || columnIds.has(column.id)) throw new Error('Invalid timeline column: ' + column.id)
+    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
+    columnIds.add(column.id)
+    columnsWidth += column.width
+  }
+
+  const tree = createTimelineRowTree(rows)
+  const collapsed = new Set(options.collapsedIds ?? [])
+  const displayed: typeof tree = []
+  for (let index = 0; index < tree.length;) {
+    const item = tree[index]!
+    displayed.push(item)
+    index = collapsed.has(item.row.id) ? item.afterSubtree : index + 1
+  }
+  const rowRange = options.rowRange ?? { start: 0, end: displayed.length }
+  if (!Number.isInteger(rowRange.start) || !Number.isInteger(rowRange.end) || rowRange.start < 0
+    || rowRange.end < rowRange.start || rowRange.end > displayed.length) {
+    throw new RangeError(`rowRange must be integers with 0 <= start <= end <= ${displayed.length} (the displayed row count)`)
+  }
+  const shown = displayed.slice(rowRange.start, rowRange.end)
+  const rowIndex = new Map(shown.map((item, index) => [item.row.id, index]))
+  const summaries = options.showSummaries || columns.length ? summarizeTimelineRows(tree, bars) : undefined
+
+  const loadRowHeight = options.loadRowHeight ?? 44
+  let histogram: ReturnType<typeof resourceLoadHistogram> | undefined
+  const loadRows = options.loadRows ?? []
+  if (loadRows.length) {
+    const ids = new Set<string>()
+    for (const row of loadRows) {
+      if (!row.id || ids.has(row.id)) throw new Error('Invalid or duplicate load row ID: ' + row.id)
+      ids.add(row.id)
+    }
+    if (!Number.isFinite(loadRowHeight) || loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
+    histogram = resourceLoadHistogram(options.loadSegments ?? [], ids)
+  } else if (options.loadSegments?.length) {
+    throw new Error('loadSegments require loadRows')
+  }
+
+  const bands = options.headerBands ?? []
+  for (const level of bands) {
+    let previousEnd = -Infinity
+    for (const band of level) {
+      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
+        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
+      }
+      previousEnd = band.end
+    }
+  }
+  const markerIds = new Set<string>()
+  for (const item of options.markers ?? []) {
+    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
+    markerIds.add(item.id)
+  }
+  if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')
+
+  const anchor = options.tickAnchor ?? full.start
+  if (!Number.isFinite(anchor)) throw new RangeError('tickAnchor must be finite')
+  let step = options.tickStep
+  if (step !== undefined) {
+    if (!Number.isFinite(step) || step <= 0) throw new RangeError('tickStep must be finite and positive')
+  } else {
+    const steps = options.tickSteps ?? defaultTickSteps
+    if (!steps.length || steps.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value < steps[i - 1]!))) {
+      throw new RangeError('tickSteps must be positive and ascending')
+    }
+    step = steps.find(value => scale.toX(anchor + value) - scale.toX(anchor) >= 76) ?? steps.at(-1)!
+  }
+  const ticks = timeTicks(window, step, anchor)
+  const format = options.formatTime ?? defaultFormat
+  const barLabel = options.barLabel ?? ((bar: TimelineBar) => bar.label)
+  const rowLabel = options.rowLabel ?? ((row: TimelineRow) => row.label)
+  const highlighted = new Set(options.highlightedDependencyIds ?? [])
+
+  // Geometry. `local` measures from the window start; `view` mirrors it for right-to-left output.
+  const local: TimeScale = { width: axisWidth, toX: time => scale.toX(time) - offset, toTime: x => scale.toTime(x + offset) }
+  const view = rtl ? mirrorTimeScale(local) : local
+  const labelArea = labelWidth + columnsWidth
+  const axisLeft = rtl ? 0 : labelArea
+  const labelLeft = rtl ? axisWidth : 0
+  const X = (time: number) => axisLeft + view.toX(time)
+  const span = (start: number, end: number) => {
+    const a = X(start), b = X(end)
+    return { x: Math.min(a, b), width: Math.abs(b - a) }
+  }
+  /** A box measured from the inline start of the label area. */
+  const labelBox = (inset: number, width: number) => ({ x: rtl ? labelLeft + labelArea - inset - width : labelLeft + inset, width })
+  const headerHeight = 40 + bandHeight * bands.length
+  const bodyHeight = shown.length * rowHeight
+  const loadTop = headerHeight + bodyHeight
+  const totalHeight = loadTop + (histogram ? loadRows.length * loadRowHeight : 0)
+  const width = labelArea + axisWidth
+  const laneHeight = (rowHeight - 8) / laneCount
+  const barHeight = Math.max(1, laneHeight - 6)
+  const laneTop = (bar: TimelineBar) => 7 + (bar.lane ?? 0) * laneHeight
+
+  const clip = prefix + '-axis', arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
+  const defs = tag('clipPath', { id: clip }, tag('rect', { x: axisLeft, y: 0, width: axisWidth, height: totalHeight }))
+    + tag('marker', { id: arrow, markerWidth: 6, markerHeight: 6, refX: 5, refY: 3, orient: 'auto' },
+      tag('path', { d: 'M 0 0 L 6 3 L 0 6 z', fill: theme.edge }))
+    + tag('marker', { id: arrowHighlight, markerWidth: 6, markerHeight: 6, refX: 5, refY: 3, orient: 'auto' },
+      tag('path', { d: 'M 0 0 L 6 3 L 0 6 z', fill: theme.dependencyHighlight }))
+
+  const out: string[] = []
+  if (background) out.push(tag('rect', { width, height: totalHeight, fill: theme.surface }))
+  out.push(tag('rect', { x: 0, y: 0, width, height: headerHeight, fill: theme.surfaceMuted }))
+  if (histogram) out.push(tag('rect', { x: 0, y: loadTop, width, height: totalHeight - loadTop, fill: theme.surfaceMuted }))
+
+  // Time area: everything here is clipped to the exported window.
+  const area: string[] = []
+  bands.forEach((level, index) => {
+    for (const band of level) {
+      const start = Math.max(band.start, window.start), end = Math.min(band.end, window.end)
+      if (end <= start) continue
+      const box = { ...span(start, end), y: index * bandHeight, height: bandHeight }
+      area.push(tag('rect', { ...box, fill: 'none', stroke: theme.grid }))
+      area.push(clippedText(box, rtl, [{ text: band.label, y: 17, size: 11, weight: 700, fill: theme.text, inset: 7 }]))
+    }
+  })
+  for (const tick of ticks) {
+    const x = X(tick)
+    area.push(tag('line', { x1: x, y1: headerHeight - 40, x2: x, y2: totalHeight, stroke: theme.grid, 'stroke-width': 1 }))
+    const atEnd = tick === window.end
+    // The label sits after the tick line in reading order, or before it for the closing tick.
+    const after = atEnd ? rtl : !rtl
+    area.push(tag('text', {
+      x: after ? x + 7 : x - 7, y: headerHeight - 40 + 24, 'font-size': 11, 'font-weight': 700, fill: theme.text,
+      'text-anchor': after ? 'start' : 'end',
+    }, escapeXml(format(tick))))
+  }
+  const barsByRow = new Map<string, TimelineBar[]>()
+  for (const bar of bars) {
+    if (!rowIndex.has(bar.rowId)) continue
+    let list = barsByRow.get(bar.rowId)
+    if (!list) barsByRow.set(bar.rowId, list = [])
+    list.push(bar)
+  }
+  shown.forEach((item, index) => {
+    const top = headerHeight + index * rowHeight
+    const own = barsByRow.get(item.row.id) ?? []
+    const summary = item.hasChildren && options.showSummaries && !own.length ? summaries?.get(item.row.id) : undefined
+    if (summary && intersectsWindow(summary, window)) {
+      const box = span(summary.start, summary.end)
+      const w = Math.max(3, box.width)
+      const y = top + rowHeight / 2 - 7
+      let shape = tag('rect', { x: box.x, y, width: w, height: 14, rx: 3, fill: theme.grid })
+      if (summary.progress !== undefined) {
+        const filled = w * summary.progress
+        shape += tag('rect', { x: rtl ? box.x + w - filled : box.x, y, width: filled, height: 14, fill: theme.accent, 'fill-opacity': 0.75 })
+      }
+      shape += tag('line', { x1: box.x, y1: y + 13, x2: box.x + w, y2: y + 13, stroke: theme.edge, 'stroke-width': 2 })
+      area.push(tag('g', {}, tag('title', {}, escapeXml(`${rowLabel(item.row)} · ${summary.count} · ${format(summary.start)}–${format(summary.end)}`)) + shape))
+    }
+    for (const bar of own) {
+      if (!bar.baseline || !intersectsWindow(bar.baseline, window)) continue
+      const box = span(bar.baseline.start, bar.baseline.end)
+      area.push(tag('rect', {
+        x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + 1, width: Math.max(3, box.width), height: 4, rx: 2,
+        fill: theme.baseline,
+      }))
+    }
+    for (const bar of own) {
+      if (!intersectsWindow(bar, window)) continue
+      const colors = theme.tones[bar.tone ?? 'blue'] ?? theme.tones.blue
+      const solid = bar.appearance !== 'outline'
+      const fill = solid ? colors.solid : colors.pale
+      const stroke = solid ? colors.solid : colors.line
+      const ink = solid ? theme.onSolid : colors.ink
+      const y = top + laneTop(bar)
+      const label = barLabel(bar)
+      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
+      if (bar.start === bar.end) {
+        const x = X(bar.start)
+        area.push(tag('g', {}, title + tag('polygon', {
+          points: [[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]
+            .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
+          fill, stroke,
+        })))
+        continue
+      }
+      const box = { ...span(bar.start, bar.end), y, height: barHeight }
+      let shape = tag('rect', { ...box, rx: 5, fill, stroke })
+      if (bar.progress !== undefined && bar.progress > 0) {
+        const filled = box.width * bar.progress
+        shape += tag('rect', {
+          x: rtl ? box.x + box.width - filled : box.x, y, width: filled, height: barHeight, rx: 5, fill: ink, 'fill-opacity': 0.18,
+        })
+      }
+      shape += clippedText(box, rtl, [{ text: label, y: barHeight / 2 + 4, size: 11, weight: 650, fill: ink, inset: 7 }])
+      area.push(tag('g', {}, title + shape))
+    }
+  })
+  // Dependency paths are computed from the window start and mirrored as a whole for right-to-left output.
+  const paths: string[] = []
+  const barById = new Map(bars.map(bar => [bar.id, bar]))
+  for (const dep of dependencies) {
+    const source = barById.get(dep.from)!, target = barById.get(dep.to)!
+    const sourceIndex = rowIndex.get(source.rowId), targetIndex = rowIndex.get(target.rowId)
+    if (sourceIndex === undefined || targetIndex === undefined) continue
+    const ends = dependencyTimes(source, target, dep.type)
+    const y1 = headerHeight + sourceIndex * rowHeight + laneTop(source) + barHeight / 2
+    const y2 = headerHeight + targetIndex * rowHeight + laneTop(target) + barHeight / 2
+    const strong = highlighted.has(dep.id)
+    paths.push(tag('path', {
+      d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2)), fill: 'none',
+      stroke: strong ? theme.dependencyHighlight : theme.edge, 'stroke-width': strong ? 2 : 1.3,
+      'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
+    }))
+  }
+  if (paths.length) {
+    area.push(tag('g', { transform: rtl ? `matrix(-1 0 0 1 ${num(axisWidth)} 0)` : `translate(${num(labelArea)} 0)` }, paths.join('')))
+  }
+  const flag = (x: number, text: string, color: string, strokeWidth: number, dashed: boolean) => {
+    const flagWidth = 10 + 6 * Array.from(text).length
+    return tag('line', {
+      x1: x, y1: headerHeight, x2: x, y2: totalHeight, stroke: color, 'stroke-width': strokeWidth,
+      'stroke-dasharray': dashed ? '4 3' : undefined,
+    }) + tag('rect', { x: rtl ? x - flagWidth : x, y: headerHeight, width: flagWidth, height: 16, fill: color })
+      + tag('text', {
+        x: rtl ? x - 5 : x + 5, y: headerHeight + 11.5, 'font-size': 10, fill: '#ffffff',
+        direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+      }, escapeXml(text))
+  }
+  for (const item of options.markers ?? []) {
+    if (item.time < window.start || item.time >= window.end) continue
+    area.push(tag('g', {}, tag('title', {}, escapeXml(`${item.label} ${format(item.time)}`)) + flag(X(item.time), item.label, theme.marker, 1, true)))
+  }
+  if (options.now !== undefined && options.now >= window.start && options.now <= window.end) {
+    const label = options.nowLabel ?? 'Now'
+    area.push(tag('g', {}, tag('title', {}, escapeXml(`${label} ${format(options.now)}`)) + flag(X(options.now), label, theme.now, 2, false)))
+  }
+  if (histogram) {
+    loadRows.forEach((row, index) => {
+      const { segments, peak } = histogram.get(row.id)!
+      const peakScale = Math.max(1e-9, peak)
+      const top = loadTop + index * loadRowHeight + 4
+      const height = loadRowHeight - 8
+      for (const segment of segments) {
+        if (!intersectsWindow(segment, window)) continue
+        const box = span(segment.start, segment.end)
+        const overload = segment.overload ?? Math.max(0, segment.load - segment.capacity)
+        const fillHeight = Math.min(segment.load, segment.capacity) / peakScale * height
+        const capacityHeight = segment.capacity / peakScale * height
+        const overHeight = overload / peakScale * height
+        let shape = tag('rect', { x: box.x, y: top + height - fillHeight, width: box.width, height: fillHeight, fill: theme.load })
+        if (overload > 0) {
+          shape += tag('rect', { x: box.x, y: top + height - capacityHeight - overHeight, width: box.width, height: overHeight, fill: theme.loadOverload })
+        }
+        shape += tag('line', {
+          x1: box.x, y1: top + height - capacityHeight, x2: box.x + box.width, y2: top + height - capacityHeight,
+          stroke: theme.loadCapacity, 'stroke-width': 2, 'stroke-dasharray': '4 3', 'stroke-opacity': segment.load === 0 ? 0.55 : undefined,
+        })
+        area.push(tag('g', {}, tag('title', {}, escapeXml(`${row.label} ${format(segment.start)}–${format(segment.end)}: ${segment.load} / ${segment.capacity}`)) + shape))
+      }
+    })
+  }
+  out.push(tag('g', { 'clip-path': `url(#${clip})` }, area.join('')))
+
+  // Row separators span both areas.
+  for (let index = 1; index <= shown.length; index++) {
+    const y = headerHeight + index * rowHeight - 0.5
+    out.push(tag('line', { x1: 0, y1: y, x2: width, y2: y, stroke: theme.border }))
+  }
+  if (histogram) {
+    for (let index = 1; index <= loadRows.length; index++) {
+      const y = loadTop + index * loadRowHeight - 0.5
+      out.push(tag('line', { x1: 0, y1: y, x2: width, y2: y, stroke: theme.border }))
+    }
+  }
+  out.push(tag('line', { x1: 0, y1: headerHeight - 0.5, x2: width, y2: headerHeight - 0.5, stroke: theme.border }))
+
+  // Label area: the corner, row headings, column cells and load row headings.
+  if (labelArea > 0) {
+    out.push(tag('rect', { x: labelLeft, y: 0, width: labelArea, height: totalHeight, fill: theme.surfaceMuted }))
+    const edgeX = rtl ? labelLeft + 0.5 : labelArea - 0.5
+    out.push(tag('line', { x1: edgeX, y1: 0, x2: edgeX, y2: totalHeight, stroke: theme.border }))
+    const name = labelBox(0, labelWidth)
+    out.push(clippedText({ x: name.x, y: 0, width: name.width, height: headerHeight }, rtl, [
+      { text: options.rowHeading ?? 'Rows', y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 11 },
+    ]))
+    let inset = labelWidth
+    const columnBoxes = columns.map(column => {
+      const box = labelBox(inset, column.width)
+      inset += column.width
+      const lineX = rtl ? box.x + box.width - 0.5 : box.x + 0.5
+      out.push(tag('line', { x1: lineX, y1: 0, x2: lineX, y2: headerHeight + bodyHeight, stroke: theme.border }))
+      out.push(clippedText({ x: box.x, y: 0, width: box.width, height: headerHeight }, rtl, [
+        { text: column.label, y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 6 },
+      ]))
+      return { column, box }
+    })
+    shown.forEach((item, index) => {
+      const top = headerHeight + index * rowHeight
+      const nested = item.hasChildren || item.depth > 0
+      let indent = nested ? 9 + Math.min(item.depth, 5) * 11 : 11
+      const lines: Parameters<typeof clippedText>[2][number][] = []
+      if (item.hasChildren) {
+        lines.push({ text: collapsed.has(item.row.id) ? (rtl ? '◂' : '▸') : '▾', y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: indent })
+        indent += 16
+      }
+      const detail = item.row.detail
+      lines.push({ text: rowLabel(item.row), y: detail ? rowHeight / 2 - 2 : rowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: indent })
+      if (detail) lines.push({ text: detail, y: rowHeight / 2 + 11, size: 10, fill: theme.muted, inset: indent })
+      out.push(clippedText({ x: name.x, y: top, width: name.width, height: rowHeight }, rtl, lines))
+      for (const { column, box } of columnBoxes) {
+        out.push(clippedText({ x: box.x, y: top, width: box.width, height: rowHeight }, rtl, [{
+          text: String(column.value(item.row, summaries?.get(item.row.id))), y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: 6,
+        }]))
+      }
+    })
+    if (histogram) {
+      loadRows.forEach((row, index) => {
+        const top = loadTop + index * loadRowHeight
+        out.push(clippedText({ x: labelLeft, y: top, width: labelArea, height: loadRowHeight }, rtl, [
+          { text: row.label, y: row.detail ? loadRowHeight / 2 - 2 : loadRowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: 11 },
+          { text: row.detail ?? '', y: loadRowHeight / 2 + 11, size: 10, fill: theme.muted, inset: 11 },
+        ]))
+      })
+    }
+  }
+  return svgDocument(width, totalHeight, options, font, defs, out.join(''))
+}

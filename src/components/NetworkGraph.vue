@@ -3,6 +3,9 @@ import { computed, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
 import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphViewportRect } from '../core/graphView.js'
+import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
+import { renderGraphSvg } from '../core/exportSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   nodes: readonly NetworkNode[]
@@ -27,7 +30,8 @@ const props = withDefaults(defineProps<{
   cullOverscan?: number
   matchIds?: ReadonlySet<string>
   dimmedIds?: ReadonlySet<string>
-}>(), { showControls: true, cullOverscan: 200 })
+  dir?: ChartDirection
+}>(), { showControls: true, cullOverscan: 200, dir: 'ltr' })
 const emit = defineEmits<{
   select: [id: string]
   'update:selectedId': [id: string]
@@ -66,7 +70,16 @@ function select(id: string, event: MouseEvent | KeyboardEvent) {
   emit('update:selectedId', id)
 }
 const svg = ref<SVGSVGElement>()
+const root = ref<HTMLElement>()
 const marker = useId()
+// Right-to-left only affects chrome and label alignment; graph geometry stays as laid out.
+const inheritedRtl = ref(false)
+const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
+function detectDirection() {
+  const element = root.value
+  inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+}
+watch(() => props.dir, detectDirection, { flush: 'post' })
 const viewport = ref({ width: 1150, height: 270 })
 const options = computed<GraphLayeredLayoutOptions>((previous) => {
   const next = props.options
@@ -692,7 +705,26 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
   fitMode.value = 'manual'
   camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)
 }
-defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode })
+/** A standalone SVG document of the whole graph with the default rendering and the current theme colours. */
+function exportSvg(options: GraphExportOptions = {}) {
+  const { includeSelection = true, theme, ...rest } = options
+  const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
+  return renderGraphSvg(layout.value, props.nodes, props.edges, {
+    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    ...rest,
+    groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
+    selectedIds: selection,
+    direction: rtl.value ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: GraphPngExportOptions = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng })
 
 watch(savedLayout, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value], cancelInteraction)
@@ -705,6 +737,7 @@ watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()
 })
 onMounted(() => {
+  detectDirection()
   if (!svg.value) return
   observer = new ResizeObserver(([entry]) => {
     if (!entry) return
@@ -719,7 +752,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
 </script>
 
 <template>
-  <div class="vft-network">
+  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
@@ -738,7 +771,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
         <g v-for="group in renderedGroups" :key="group.id" class="vft-network-group">
           <rect :x="group.x" :y="group.y" :width="group.width" :height="group.height" rx="10" />
-          <text :x="group.x + 8" :y="group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="group.id"
+          <text :x="rtl ? group.x + group.width - 8 : group.x + 8" :y="group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="group.id"
             :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(group) : undefined"
             @pointerdown.stop="startNodeDrag($event, group.members)" @keydown="moveWithKeys($event, group.members)">{{ group.label }}</text>
         </g>
@@ -767,8 +800,8 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
           <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)">
           <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
           <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
-          <text x="13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
-          <text v-if="node.detail" x="13" y="43" class="vft-node-detail">{{ node.detail }}</text>
+          <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
+          <text v-if="node.detail" :x="rtl ? node.box.width - 13 : 13" y="43" class="vft-node-detail">{{ node.detail }}</text>
           </svg>
           </slot>
         </g>

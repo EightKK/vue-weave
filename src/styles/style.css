@@ -143,6 +143,34 @@
 .vft-load-capacity { height: 0; border-top: 2px dashed var(--vft-load-capacity, #31495b); }
 .vft-gantt-load-segment.idle .vft-load-capacity { opacity: .55; }
 
+/* Right-to-left (opt-in through the dir prop). Positions come from the component as `right` offsets; these rules
+   mirror the sticky label column, header, grid, handles and dependency layers. */
+.vft-gantt.vft-rtl .vft-gantt-corner, .vft-gantt.vft-rtl .vft-gantt-row-label { left: auto; right: 0; border-right: 0; border-inline-start: 0; border-inline-end: 1px solid var(--vft-border, #d8e2e9); }
+.vft-gantt.vft-rtl .vft-gantt-time-head, .vft-gantt.vft-rtl .vft-gantt-grid { left: auto; inset-inline-start: var(--vft-label-area-width); }
+.vft-gantt.vft-rtl .vft-gantt-time-head { background: repeating-linear-gradient(to left, var(--vft-grid, #d9e4eb) 0 1px, transparent 1px var(--vft-grid-step)); }
+.vft-gantt.vft-rtl .vft-gantt-grid { background: repeating-linear-gradient(to left, var(--vft-grid, #e2e9ef) 0 1px, transparent 1px var(--vft-grid-step)); }
+.vft-gantt.vft-rtl .vft-gantt-tick { padding-left: 0; padding-inline-start: 7px; }
+.vft-gantt.vft-rtl .vft-gantt-tick.end { transform: translateX(100%); padding-inline: 0 7px; }
+.vft-gantt.vft-rtl .vft-gantt-band-level { left: auto; inset-inline-start: var(--vft-label-area-width); }
+.vft-gantt.vft-rtl .vft-gantt-band { border-right: 0; border-inline-end: 1px solid var(--vft-grid, #d9e4eb); }
+.vft-gantt.vft-rtl .vft-gantt-bar { text-align: start; }
+.vft-gantt.vft-rtl .vft-bar-handle.first { left: auto; inset-inline-start: 0; }
+.vft-gantt.vft-rtl .vft-bar-handle.last { right: auto; inset-inline-end: 0; }
+.vft-gantt.vft-rtl .vft-bar-progress { left: auto; inset-inline-start: 0; }
+.vft-gantt.vft-rtl .vft-gantt-marker { border-left: 0; border-inline-start: 1px dashed var(--vft-marker, #a74f08); }
+.vft-gantt.vft-rtl .vft-gantt-now { border-inline-start: 2px solid var(--vft-now, #c23b22); }
+.vft-gantt.vft-rtl .vft-gantt-links, .vft-gantt.vft-rtl .vft-gantt-link-hits, .vft-gantt.vft-rtl .vft-gantt-link-preview { transform: scaleX(-1); }
+.vft-gantt.vft-rtl .vft-gantt-link-preview { left: auto; inset-inline-start: var(--vft-label-area-width); }
+.vft-gantt.vft-rtl .vft-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vft-surface, #fff); }
+.vft-gantt.vft-rtl .vft-extra-column { border-left: 0; border-inline-start: 1px solid var(--vft-border, #d8e2e9); }
+.vft-gantt.vft-rtl .vft-name-column.vft-tree-row { padding-left: 0; padding-inline-start: calc(9px + var(--vft-row-depth) * 11px); }
+.vft-gantt.vft-rtl .vft-column-group > .vft-tree-row { padding-left: 9px; padding-inline-start: calc(8px + var(--vft-row-depth) * 9px); }
+.vft-gantt.vft-rtl .vft-gantt-presets { margin-left: 0; margin-inline-start: auto; }
+.vft-network.vft-rtl .vft-zoom-tools { right: auto; inset-inline-end: 8px; }
+.vft-network.vft-rtl .vft-minimap { right: auto; inset-inline-end: 8px; }
+.vft-network.vft-rtl .vft-zoom-tools .vft-fit-button { border-left: 0; border-inline-start: 1px solid var(--vft-border, #e0e9ef); }
+.vft-network.vft-rtl .vft-network-node text, .vft-network.vft-rtl .vft-network-group text, .vft-network.vft-rtl .vft-edge-label { direction: rtl; unicode-bidi: embed; }
+
 /* Built-in dark theme. Opt in with `vft-theme-dark`, or follow the OS with `vft-theme-auto`; place the class on a component root or any ancestor. */
 .vft-theme-dark {
   color-scheme: dark;

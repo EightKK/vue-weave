@@ -1,6 +1,7 @@
 import type { GraphBox, GraphEdge, GraphLayout, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
+import type { SvgExportThemeInput } from './exportSvg.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -224,3 +225,54 @@ export interface CalendarBandOptions {
   /** Label for an unclipped band. Times are epoch milliseconds. */
   label?: (start: number, end: number) => string
 }
+
+/** Text direction of a component. `auto` follows the inherited CSS direction after mounting. */
+export type ChartDirection = 'ltr' | 'rtl' | 'auto'
+
+/** Options of the `exportSvg` method on GanttChart. Current props, collapsed rows and zoom supply everything else. */
+export interface GanttExportOptions {
+  /** Export only this time window. Defaults to the whole `range`. */
+  timeRange?: TimeRange
+  /** Export displayed rows `start` (inclusive) to `end` (exclusive), counted after collapsing. Defaults to all. */
+  rowRange?: { start: number; end: number }
+  /** Include load histogram rows. Default true. */
+  includeLoad?: boolean
+  /** Paint an opaque background. Default true. */
+  background?: boolean
+  title?: string
+  /** Heading of the row column. Defaults to `labels.rows`; the `row-heading` slot is not exported. */
+  rowHeading?: string
+  /** Prefix for marker and clip-path IDs. Defaults to an ID unique to the component instance. */
+  idPrefix?: string
+  /** Colours that replace the values read from the `--vft-*` custom properties. */
+  theme?: SvgExportThemeInput
+  barLabel?: (bar: TimelineBar) => string
+  rowLabel?: (row: TimelineRow) => string
+}
+
+/** Options of the `exportSvg` method on NetworkGraph. */
+export interface GraphExportOptions {
+  /** Margin around the content in pixels. Default 16. */
+  padding?: number
+  /** Paint an opaque background. Default true. */
+  background?: boolean
+  title?: string
+  /** Prefix for marker IDs. Defaults to an ID unique to the component instance. */
+  idPrefix?: string
+  /** Colours that replace the values read from the `--vft-*` custom properties. */
+  theme?: SvgExportThemeInput
+  /** Draw selected nodes in the selected style. Default true. */
+  includeSelection?: boolean
+  nodeLabel?: (node: NetworkNode) => string
+  nodeDetail?: (node: NetworkNode) => string | undefined
+  edgeLabel?: (edge: GraphEdge) => string | undefined
+}
+
+/** Raster options shared by the `exportPng` methods. */
+export interface PngExportOptions {
+  /** Device pixels per CSS pixel, greater than 0 and at most 8. Default 1. */
+  scale?: number
+}
+
+export interface GanttPngExportOptions extends GanttExportOptions, PngExportOptions {}
+export interface GraphPngExportOptions extends GraphExportOptions, PngExportOptions {}

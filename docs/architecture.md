@@ -31,3 +31,11 @@ Graph movement applies an overlay of absolute coordinates over the base layout. 
 The default renderer handles text, SVG and HTML. Slot authors own content dimensions and accessibility of custom content. Keyboard selection and interval editing are included; assistive-technology testing with dedicated screen readers is still needed before claiming broad accessibility conformance.
 
 Scheduling and resource-load analysis are explicit core operations called by the application. The chart renders accepted results. Capacity conflicts are diagnostic. `levelResources` provides a baseline priority-based leveling heuristic; setup sequencing and optimization policies remain the application's concern. Calendar generation uses a fixed UTC offset or an IANA time zone with daylight-saving rules from `Intl`. See [Scheduling and resource load](scheduling.md).
+
+## Export
+
+SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` build a standalone document string from data, a layout or time scale and an explicit theme, so they run in Node, workers and tests. The components only gather their current props, collapsed rows, zoom and the computed `--vft-*` colours and call those builders. PNG export is the one browser-only step: the SVG is loaded into an image, drawn on a canvas and encoded with `toBlob`, after a size check. Export uses the default rendering because slots render arbitrary DOM that a string builder cannot reproduce.
+
+## Right-to-left layout
+
+GanttChart measures every horizontal position from the inline-start edge of the time axis. In right-to-left mode the same offsets are written as `right` instead of `left`, the scroll offset is read as the distance from the inline start (`-scrollLeft` in a right-to-left scroll container), and pointer deltas are negated. The time scale itself is not mirrored, so `toX`/`toTime` round trips, snapping and edit proposals are identical in both directions. SVG layers (dependency paths and their hit areas) are flipped with a CSS transform. The SVG exporter has no CSS, so it mirrors the axis with `mirrorTimeScale` instead. NetworkGraph geometry is direction-independent; only the controls and label alignment change.

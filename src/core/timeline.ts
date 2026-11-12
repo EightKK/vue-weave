@@ -36,6 +36,22 @@ export function createTimeScale(range: TimeRange, pixelsPerUnit: number): TimeSc
   }
 }
 
+/**
+ * Mirror a scale for a right-to-left axis: the range start maps to `width` and the range end to 0. Both mappings
+ * stay inverse; round trips are exact whenever they are exact for `scale` and `width - x` is exactly representable
+ * (for example integer pixel positions). GanttChart does not need it, because it positions elements from the inline
+ * start edge; it is used to export right-to-left SVG and is available for custom renderers.
+ */
+export function mirrorTimeScale(scale: TimeScale): TimeScale {
+  const width = scale.width
+  if (!Number.isFinite(width) || width <= 0) throw new RangeError('A time scale needs a positive finite width')
+  return {
+    width,
+    toX: time => width - scale.toX(time),
+    toTime: x => scale.toTime(width - x),
+  }
+}
+
 export function timeTicks(window: TimeRange, step: number, anchor = 0): number[] {
   checkRange(window, true)
   if (!Number.isFinite(anchor) || !Number.isFinite(step) || step <= 0) throw new RangeError('Invalid tick step or anchor')

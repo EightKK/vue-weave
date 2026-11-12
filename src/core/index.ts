@@ -15,3 +15,4 @@ export type {
 } from './graphAlgorithms.js'
 export * from './graphView.js'
 export * from './leveling.js'
+export * from './exportSvg.js'
