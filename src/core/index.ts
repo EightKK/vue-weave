@@ -13,3 +13,4 @@ export { topologicalOrder, findGraphCycles, shortestGraphPath, searchGraphNodes,
 export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
+export * from './graphView.js'

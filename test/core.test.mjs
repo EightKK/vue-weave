@@ -273,3 +273,126 @@ test('production builds do not render invalid Gantt data', () => {
   assert.equal(result.rendered, false)
   assert.equal(result.errors.length, 1)
 })
+
+import {
+  cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphRectsIntersect, graphViewportRect,
+} from 'vue-weave/core'
+
+test('viewport rectangles invert the camera transform and grow by a screen-space overscan', () => {
+  const camera = { x: -200, y: -100, scale: 2 }
+  assert.deepEqual(graphViewportRect(camera, { width: 400, height: 300 }), { x: 100, y: 50, width: 200, height: 150 })
+  assert.deepEqual(graphViewportRect(camera, { width: 400, height: 300 }, 20), { x: 90, y: 40, width: 220, height: 170 })
+  assert.throws(() => graphViewportRect({ x: 0, y: 0, scale: 0 }, { width: 1, height: 1 }), RangeError)
+  assert.throws(() => graphViewportRect(camera, { width: NaN, height: 1 }), RangeError)
+  const center = graphCameraAt({ x: 100, y: 50 }, { width: 400, height: 300 }, 2)
+  const rect = graphViewportRect(center, { width: 400, height: 300 })
+  assert.equal(rect.x + rect.width / 2, 100)
+  assert.equal(rect.y + rect.height / 2, 50)
+})
+
+test('rectangle intersection includes touching edges and rejects separated boxes', () => {
+  const a = { x: 0, y: 0, width: 10, height: 10 }
+  assert.ok(graphRectsIntersect(a, { x: 10, y: 10, width: 5, height: 5 }))
+  assert.ok(!graphRectsIntersect(a, { x: 10.5, y: 0, width: 5, height: 5 }))
+  assert.ok(!graphRectsIntersect(a, { x: 0, y: -8, width: 5, height: 7 }))
+})
+
+test('path bounds cover absolute and relative commands, curves, arcs and malformed input', () => {
+  assert.deepEqual(graphPathBounds('M 10 20 C 30 0, 50 80, 60 40'), { x: 10, y: 0, width: 50, height: 80 })
+  assert.deepEqual(graphPathBounds('M 5 5 H 25 V 45 H 15'), { x: 5, y: 5, width: 20, height: 40 })
+  assert.deepEqual(graphPathBounds('m 10 10 l 5 5 h -20 v 10'), { x: -5, y: 10, width: 20, height: 15 })
+  assert.deepEqual(graphPathBounds('M 0 0 L 4 4 8 0'), { x: 0, y: 0, width: 8, height: 4 })
+  assert.deepEqual(graphPathBounds('M 10 10 A 5 5 0 0 1 20 10'), { x: 5, y: 5, width: 20, height: 10 })
+  assert.equal(graphPathBounds(''), undefined)
+  assert.throws(() => graphPathBounds('M 1'), /Invalid SVG path/)
+  assert.throws(() => graphPathBounds('M 0 0 X 3 3'), /Unsupported/)
+})
+
+test('culling keeps boxes and edge paths that cross the viewport and any forced IDs', () => {
+  const layout = layoutLayeredGraph(nodes('a', 'b', 'c', 'd'), edges(['a', 'b'], ['b', 'c'], ['c', 'd']))
+  const bounds = graphLayoutBounds(layout)
+  assert.equal(bounds.nodes.size, 4)
+  assert.equal(bounds.edges.size, 3)
+  const a = layout.boxes.get('a')
+  // A window between a and b shows the connecting edge but neither node box.
+  const gap = { x: a.x + a.width + 5, y: a.y + a.height / 2, width: 5, height: 1 }
+  const between = cullGraphElements(bounds, gap)
+  assert.deepEqual([...between.nodes], [])
+  assert.deepEqual([...between.edges], ['0'])
+  const first = cullGraphElements(bounds, { x: a.x, y: a.y, width: 1, height: 1 })
+  assert.deepEqual([...first.nodes], ['a'])
+  const kept = cullGraphElements(bounds, { x: a.x, y: a.y, width: 1, height: 1 }, { nodes: ['d', 'missing'], edges: ['2'] })
+  assert.deepEqual([...kept.nodes].sort(), ['a', 'd'])
+  assert.ok(kept.edges.has('2'))
+  const everything = cullGraphElements(bounds, { x: -1e6, y: -1e6, width: 2e6, height: 2e6 })
+  assert.equal(everything.nodes.size, 4)
+})
+
+test('long edge routes are culled by their full path, not only their end points', () => {
+  const layout = layoutLayeredGraph(nodes('a', 'b', 'c', 'd'), edges(['a', 'b'], ['b', 'c'], ['c', 'd'], ['a', 'd']))
+  const bounds = graphLayoutBounds(layout)
+  const long = bounds.edges.get('3')
+  const middle = { x: long.x + long.width / 2, y: long.y, width: 1, height: long.height }
+  assert.ok(cullGraphElements(bounds, middle).edges.has('3'))
+})
+
+function bigGraph(count) {
+  const n = nodes(...Array.from({ length: count }, (_, i) => 'n' + i))
+  return { nodes: n, edges: edges(...n.slice(1).map((node, i) => [n[i].id, node.id])) }
+}
+const renderedNodeCount = html => (html.match(/class="vft-network-node/g) ?? []).length
+
+test('server rendering with cullOffscreen is deterministic and renders only the initial viewport', async () => {
+  const graph = bigGraph(400)
+  const render = (extra = {}) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { ...graph, cullOffscreen: true, ...extra }) }))
+  const first = await render(), second = await render()
+  assert.equal(first, second)
+  const all = await renderToString(createSSRApp({ render: () => h(NetworkGraph, graph) }))
+  assert.equal(renderedNodeCount(all), 400)
+  const culled = renderedNodeCount(first)
+  assert.ok(culled > 0 && culled < 400, 'rendered ' + culled)
+  assert.ok(!first.includes('aria-label="n399"'))
+  const selected = await render({ selectedId: 'n399' })
+  assert.match(selected, /aria-label="n399"/)
+  // The initial camera centers the selected node, so the window moves but stays small.
+  assert.ok(renderedNodeCount(selected) < 400)
+  assert.ok(!selected.includes('aria-label="n0"'))
+  const wide = await render({ cullOverscan: 1e6 })
+  assert.equal(renderedNodeCount(wide), 400)
+})
+
+test('nested groups validate their hierarchy and render parents before children', async () => {
+  const n = nodes('a', 'b', 'c')
+  const render = groups => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [], groups, draggable: true }) }))
+  const html = await render([
+    { id: 'inner', label: 'Inner', nodeIds: ['a'], parentId: 'outer' },
+    { id: 'outer', label: 'Outer', nodeIds: ['b'] },
+  ])
+  assert.ok(html.indexOf('>Outer<') < html.indexOf('>Inner<'))
+  assert.match(html, /aria-label="Move group Inner within Outer"/)
+  assert.match(html, /aria-label="Move group Outer"/)
+  assert.doesNotMatch(html, /NaN|Infinity/)
+  const onlyChildren = await render([{ id: 'outer', label: 'Outer', nodeIds: [] }, { id: 'inner', label: 'Inner', nodeIds: ['a'], parentId: 'outer' }])
+  assert.doesNotMatch(onlyChildren, /NaN|Infinity/)
+  await assert.rejects(render([{ id: 'g', label: 'G', nodeIds: ['a'], parentId: 'missing' }]), /Unknown parent group: missing/)
+  await assert.rejects(render([
+    { id: 'x', label: 'X', nodeIds: ['a'], parentId: 'y' }, { id: 'y', label: 'Y', nodeIds: ['b'], parentId: 'x' },
+  ]), /cycle/)
+  await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: ['a'], parentId: 'x' }]), /cycle/)
+  await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: [] }]), /Invalid graph group: x/)
+  await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: ['a'] }, { id: 'y', label: 'Y', nodeIds: ['a'], parentId: 'x' }]), /repeated group member: a/)
+})
+
+test('matchIds and dimmedIds dim nodes and the edges that touch them', async () => {
+  const n = nodes('a', 'b', 'c')
+  const html = await renderToString(createSSRApp({ render: () => h(NetworkGraph, {
+    nodes: n, edges: edges(['a', 'b'], ['b', 'c']), matchIds: new Set(['a', 'b']),
+  }) }))
+  // Node c and the edge b to c are dimmed; edge a to b and nodes a and b are not.
+  assert.equal((html.match(/vft-dimmed/g) ?? []).length, 2)
+  assert.match(html, /class="[^"]*vft-dimmed[^"]*"[^>]*aria-label="c"/)
+  const plain = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [] }) }))
+  assert.doesNotMatch(plain, /vft-dimmed/)
+  const explicit = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [], dimmedIds: new Set(['b']) }) }))
+  assert.equal((explicit.match(/vft-dimmed/g) ?? []).length, 1)
+})

@@ -380,3 +380,249 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await expect(page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
   expect(errors).toEqual([])
 })
+
+async function openNetworkFixture(page: Page, search: string) {
+  await page.route('**/network-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/network-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/network.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/network-test/' + search)
+  await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
+}
+
+type Camera = { x: number; y: number; scale: number }
+const readCamera = (page: Page) => page.evaluate(() => (window as any).__vw.graph().getViewport() as Camera)
+const chainNode = (page: Page, name?: string) => name
+  ? page.getByRole('button', { name, exact: true }) : page.getByRole('button', { name: /^N\d{4}$/ })
+
+test('viewport culling renders the visible window, keeps selected and focused nodes and follows focusNode', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&minimap=1')
+  const rendered = await chainNode(page).count()
+  expect(rendered).toBeGreaterThan(0)
+  expect(rendered).toBeLessThan(600)
+  await expect(chainNode(page, 'N0000')).toBeVisible()
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  // The minimap still shows every node, plus its viewport window.
+  await expect(page.getByRole('button', { name: 'Navigate graph overview' }).locator('rect')).toHaveCount(601)
+
+  await chainNode(page, 'N0000').focus()
+  await page.keyboard.press('Enter')
+  await expect(chainNode(page, 'N0000')).toHaveAttribute('aria-pressed', 'true')
+  const before = await readCamera(page)
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0450'))
+  const after = await readCamera(page)
+  expect(after.scale).toBe(before.scale)
+  const target = chainNode(page, 'N0450')
+  await expect(target).toHaveCount(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await target.boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(25)
+  expect(Math.abs(box.y + box.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(25)
+  // N0000 is far away but selected, so it stays in the DOM. Distant unrelated nodes do not.
+  await expect(chainNode(page, 'N0000')).toHaveCount(1)
+  await expect(chainNode(page, 'N0300')).toHaveCount(0)
+
+  // Selecting another node (which also moves focus) releases N0000.
+  await target.click()
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  // A focused, unselected node survives a jump of the camera.
+  const neighbor = chainNode(page, 'N0452')
+  await neighbor.focus()
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 1 }))
+  await expect(chainNode(page, 'N0000')).toHaveCount(1)
+  await expect(neighbor).toHaveCount(1)
+  await expect(neighbor).toBeFocused()
+  await expect(chainNode(page, 'N0200')).toHaveCount(0)
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  await expect(chainNode(page, 'N0452')).toHaveCount(1)
+  expect(await chainNode(page).count()).toBeLessThan(600)
+  expect(await page.evaluate(() => {
+    try { (window as any).__vw.graph().focusNode('missing') } catch (error) { return (error as Error).message }
+  })).toBe('Unknown node: missing')
+  expect(errors).toEqual([])
+})
+
+test('without cullOffscreen every node stays in the DOM', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=0')
+  await expect(chainNode(page)).toHaveCount(600)
+  expect(errors).toEqual([])
+})
+
+test('dragging a node under culling emits one proposal and keeps the node rendered', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30, { steps: 6 })
+  await expect(node).toHaveCount(1)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Last move', exact: true })).toHaveText('N0001')
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('1')
+  await expect(node).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+type TouchPoint = { x: number; y: number; id: number }
+async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>, type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) {
+  await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
+}
+
+test('two-finger pinch zooms around the midpoint, clamps, pans and leaves one-finger gestures alone', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=3&draggable=1')
+  const cdp = await page.context().newCDPSession(page)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const cx = stage.x + stage.width / 2, cy = stage.y + stage.height / 2
+  const events = page.getByRole('status', { name: 'Viewport events', exact: true })
+
+  // One finger on the background still pans.
+  const start = await readCamera(page)
+  const eventsBefore = Number(await events.textContent())
+  await touch(cdp, 'touchStart', [{ x: stage.x + 8, y: stage.y + 8, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: stage.x + 38, y: stage.y + 28, id: 1 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => (await readCamera(page)).x - start.x).toBeCloseTo(30, 0)
+  const panned = await readCamera(page)
+  expect(panned.y - start.y).toBeCloseTo(20, 0)
+  expect(panned.scale).toBe(start.scale)
+
+  // Spreading two fingers to twice the distance doubles the scale and keeps the midpoint anchored.
+  const a = { x: cx - 50, y: cy, id: 1 }, b = { x: cx + 50, y: cy, id: 2 }
+  const rect = { left: stage.x, top: stage.y }
+  const worldAt = (camera: Camera, x: number, y: number) => ({ x: (x - rect.left - camera.x) / camera.scale, y: (y - rect.top - camera.y) / camera.scale })
+  const beforePinch = await readCamera(page)
+  const anchor = worldAt(beforePinch, cx, cy)
+  await touch(cdp, 'touchStart', [a, b])
+  await touch(cdp, 'touchMove', [{ ...a, x: cx - 100 }, { ...b, x: cx + 100 }])
+  await expect.poll(async () => (await readCamera(page)).scale / beforePinch.scale).toBeCloseTo(2, 1)
+  const zoomed = await readCamera(page)
+  const anchored = worldAt(zoomed, cx, cy)
+  expect(anchored.x).toBeCloseTo(anchor.x, 0)
+  expect(anchored.y).toBeCloseTo(anchor.y, 0)
+  expect(Number(await events.textContent())).toBeGreaterThan(eventsBefore)
+  // Moving both fingers together pans without changing the scale.
+  await touch(cdp, 'touchMove', [{ ...a, x: cx - 60, y: cy + 20 }, { ...b, x: cx + 140, y: cy + 20 }])
+  await expect.poll(async () => (await readCamera(page)).x - zoomed.x).toBeCloseTo(40, 0)
+  const dragged = await readCamera(page)
+  expect(dragged.scale).toBeCloseTo(zoomed.scale, 5)
+  expect(dragged.y - zoomed.y).toBeCloseTo(20, 0)
+  // Extreme spreading and squeezing respects the zoom clamp.
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2 }, { ...b, x: stage.x + stage.width - 2 }])
+  await touch(cdp, 'touchMove', [{ ...a, x: cx, y: cy }, { ...b, x: cx + 1, y: cy }])
+  await expect.poll(async () => (await readCamera(page)).scale).toBe(0.1)
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2, y: cy }, { ...b, x: stage.x + stage.width - 2, y: cy }])
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2, y: stage.y + 2 }, { ...b, x: stage.x + stage.width - 2, y: stage.y + stage.height - 2 }])
+  await expect.poll(async () => (await readCamera(page)).scale).toBe(3)
+  await touch(cdp, 'touchEnd', [])
+
+  // A node drag in progress is cancelled by the second finger and never proposes a move.
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  const node = (await chainNode(page, 'N0001').boundingBox())!
+  const nx = node.x + node.width / 2, ny = node.y + node.height / 2
+  await touch(cdp, 'touchStart', [{ x: nx, y: ny, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: nx + 25, y: ny + 15, id: 1 }])
+  const fitScale = (await readCamera(page)).scale
+  await touch(cdp, 'touchStart', [{ x: nx + 25, y: ny + 15, id: 1 }, { x: nx + 125, y: ny + 15, id: 2 }])
+  await touch(cdp, 'touchMove', [{ x: nx + 25, y: ny + 15, id: 1 }, { x: nx + 225, y: ny + 15, id: 2 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => (await readCamera(page)).scale).toBeGreaterThan(fitScale)
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('0')
+
+  // Plain wheel input does not move the camera.
+  const wheelStart = await readCamera(page)
+  await page.mouse.move(cx, cy)
+  await page.mouse.wheel(0, 120)
+  expect(await readCamera(page)).toEqual(wheelStart)
+  expect(errors).toEqual([])
+})
+
+test('moving a parent group proposes one batch with every descendant; a child moves only its own members', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&draggable=1')
+  const outer = page.getByRole('button', { name: 'Move group Outer', exact: true })
+  const inner = page.getByRole('button', { name: 'Move group Inner within Outer', exact: true })
+  await expect(outer).toBeVisible()
+  await expect(inner).toBeVisible()
+  const last = page.getByRole('status', { name: 'Last move', exact: true })
+  const events = page.getByRole('status', { name: 'Move events', exact: true })
+
+  const o = (await outer.boundingBox())!
+  await page.mouse.move(o.x + o.width / 2, o.y + o.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(o.x + o.width / 2 + 30, o.y + o.height / 2 + 20, { steps: 5 })
+  await page.mouse.up()
+  await expect(last).toHaveText('B,C,D')
+  await expect(events).toHaveText('1')
+
+  const i = (await inner.boundingBox())!
+  await page.mouse.move(i.x + i.width / 2, i.y + i.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(i.x + i.width / 2 + 30, i.y + i.height / 2 + 20, { steps: 5 })
+  await page.mouse.up()
+  await expect(last).toHaveText('C,D')
+  await expect(events).toHaveText('2')
+
+  await outer.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(last).toHaveText('B,C,D')
+  await expect(events).toHaveText('3')
+  expect(errors).toEqual([])
+})
+
+test('matchIds dims non-matching nodes and focusNode accepts a scale', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=5&match=N0001,N0002')
+  await expect(chainNode(page, 'N0000')).toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0001')).not.toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0002')).not.toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0004')).toHaveClass(/vft-dimmed/)
+  // Dimming is presentational: the node still reports its name and can be selected.
+  await chainNode(page, 'N0000').click()
+  await expect(chainNode(page, 'N0000')).toHaveAttribute('aria-pressed', 'true')
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0004', { scale: 1 }))
+  expect((await readCamera(page)).scale).toBe(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await chainNode(page, 'N0004').boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(25)
+  expect(errors).toEqual([])
+})
+
+test('the large graph demo preset renders a viewport slice of thousands of nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(page.getByText('3750 nodes')).toBeVisible()
+  const nodes = page.getByRole('button', { name: /^Node \d+ Rank \d+$/ })
+  await expect(nodes.first()).toBeVisible()
+  const rendered = await nodes.count()
+  expect(rendered).toBeGreaterThan(0)
+  expect(rendered).toBeLessThan(3000)
+  await page.getByRole('searchbox', { name: 'Search nodes' }).fill('Node 3750')
+  await page.getByRole('searchbox', { name: 'Search nodes' }).press('Enter')
+  await expect(page.getByRole('button', { name: 'Node 3750 Rank 150', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

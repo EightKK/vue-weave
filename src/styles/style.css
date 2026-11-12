@@ -114,3 +114,5 @@
 .vft-cell-input:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: -1px; }
 .vft-gantt-summary { position: absolute; z-index: 2; height: 14px; top: calc(50% - 7px); background: var(--vft-grid, #d1dde6); border-bottom: 2px solid var(--vft-edge, #50677a); border-radius: 3px; overflow: hidden; }
 .vft-gantt-summary span { display: block; height: 100%; background: var(--vft-accent, #245e96); opacity: .75; }
+
+.vft-network .vft-dimmed { opacity: var(--vft-dimmed-opacity, .28); }

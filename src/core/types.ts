@@ -1,4 +1,5 @@
 import type { GraphBox, GraphEdge, GraphLayout, IdentifiedNode } from './graph.js'
+import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
@@ -106,6 +107,7 @@ export interface GraphLabels {
   moveGroup?: string
   rejected?: string
   selectEdge?: string
+  groupWithin?: string
 }
 
 export interface GanttLabels {
@@ -126,4 +128,15 @@ export interface NetworkNodeSlot {
   node: NetworkNode
   box: GraphBox
   selected: boolean
+  dimmed?: boolean
+}
+
+/** A visual group. `parentId` nests it inside another group; `nodeIds` lists only its direct members. */
+export interface NetworkGroup extends GraphGroup {
+  parentId?: string
+}
+
+export interface NetworkFocusOptions {
+  /** Camera scale after centering, between 0.1 and 3. Defaults to the current scale. */
+  scale?: number
 }
