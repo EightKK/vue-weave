@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
-import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
+import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphViewportRect } from '../core/graphView.js'
 
 const props = withDefaults(defineProps<{
@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<{
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
   showMinimap?: boolean
   relatedIds?: ReadonlySet<string>
-  options?: GraphLayoutOptions
+  options?: GraphLayeredLayoutOptions
   layout?: GraphLayoutFunction
   labels?: Partial<GraphLabels>
   height?: number | string
@@ -68,13 +68,14 @@ function select(id: string, event: MouseEvent | KeyboardEvent) {
 const svg = ref<SVGSVGElement>()
 const marker = useId()
 const viewport = ref({ width: 1150, height: 270 })
-const options = computed<GraphLayoutOptions>((previous) => {
+const options = computed<GraphLayeredLayoutOptions>((previous) => {
   const next = props.options
   const value = {
     direction: next?.direction, nodeWidth: next?.nodeWidth, nodeHeight: next?.nodeHeight,
     columnGap: next?.columnGap, rowGap: next?.rowGap, padding: next?.padding,
+    crossingReduction: next?.crossingReduction, crossingSweeps: next?.crossingSweeps,
   }
-  return previous && (Object.keys(value) as (keyof GraphLayoutOptions)[]).every(key => previous[key] === value[key])
+  return previous && (Object.keys(value) as (keyof GraphLayeredLayoutOptions)[]).every(key => previous[key] === value[key])
     ? previous : value
 })
 const baseLayout = computed(() => {
@@ -205,7 +206,7 @@ function groupName(group: GroupShape) {
 type PortRef = { node: string; port?: string }
 type PortHandle = PortRef & GraphPoint & { label: string; direction: NonNullable<GraphPort['direction']> }
 const handles = computed(() => positioned.value.flatMap<PortHandle>(node => {
-  if (!node.ports) return [{ node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: node.box.x + node.box.width - 10, y: node.box.y + 11 }]
+  if (!node.ports) return [{ node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: direction.value === 'RL' ? node.box.x + 10 : node.box.x + node.box.width - 10, y: node.box.y + 11 }]
   return node.ports.map(port => ({
     node: node.id, port: port.id, label: node.label + ' · ' + (port.label ?? port.id),
     direction: port.direction ?? 'both', ...graphPortAnchor(node.box, port),

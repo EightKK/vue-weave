@@ -396,3 +396,18 @@ test('matchIds and dimmedIds dim nodes and the edges that touch them', async () 
   const explicit = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [], dimmedIds: new Set(['b']) }) }))
   assert.equal((explicit.match(/vft-dimmed/g) ?? []).length, 1)
 })
+
+test('NetworkGraph renders RL and BT and keeps default output unchanged', async () => {
+  const n = nodes('a', 'b', 'c')
+  const e = edges(['a', 'b'], ['a', 'c'])
+  const render = options => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: e, options }) }))
+  const base = await render(undefined)
+  assert.equal(await render({ crossingReduction: 'none' }), base)
+  assert.equal(await render({ direction: 'LR' }), base)
+  for (const direction of ['RL', 'BT']) {
+    const html = await render({ direction, crossingReduction: 'barycenter', crossingSweeps: 3 })
+    assert.ok(html.includes('vft-network'))
+    assert.ok(!/NaN|Infinity/.test(html))
+    assert.notEqual(html, base)
+  }
+})

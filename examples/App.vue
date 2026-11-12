@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 
@@ -12,7 +12,12 @@ const canUndo = history.canUndo
 const canRedo = history.canRedo
 const initialBars = ref(data.value.bars)
 const selected = ref('split')
-const direction = ref<'LR' | 'TB'>('LR')
+const direction = ref<GraphLayoutDirection>('LR')
+const crossingReduction = ref<GraphCrossingReduction>('none')
+const layoutKind = ref<'layered' | 'tree' | 'radial'>('layered')
+const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
+  ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
+  : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e) : undefined)
 const dark = ref(false)
 const custom = ref(false)
 const locked = ref(false)
@@ -144,9 +149,9 @@ function commit(change: TimelineEdit) {
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
-        <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction }" :height="direction === 'TB' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
+        <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
           :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
           :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
           :positions="positions" :selected-ids="graphEditing ? graphSelection : undefined"

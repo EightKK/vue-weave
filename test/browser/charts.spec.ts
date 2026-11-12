@@ -626,3 +626,21 @@ test('the large graph demo preset renders a viewport slice of thousands of nodes
   await expect(page.getByRole('button', { name: 'Node 3750 Rank 150', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('network direction, crossing reduction and layout controls', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const split = page.getByRole('button', { name: /^Split/ }).first()
+  await expect(split).toBeVisible()
+  for (const direction of ['RL', 'BT', 'LR']) {
+    await page.getByLabel('Direction').selectOption(direction)
+    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  }
+  await page.getByLabel('Crossing reduction').selectOption('barycenter')
+  for (const layout of ['tree', 'radial', 'layered']) {
+    await page.getByLabel('Graph layout').selectOption(layout)
+    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  }
+  expect(errors).toEqual([])
+})
