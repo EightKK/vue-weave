@@ -626,3 +626,205 @@ test('the large graph demo preset renders a viewport slice of thousands of nodes
   await expect(page.getByRole('button', { name: 'Node 3750 Rank 150', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+async function openTimelineEditing(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Timeline editing', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Editable timeline', exact: true })
+  await expect(chart).toBeVisible()
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  return { errors, chart, status }
+}
+
+test('gantt dependencies connect by keyboard and pointer, reject duplicates, reconnect, delete and cancel', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const links = chart.getByRole('button', { name: /^Select dependency / })
+  await expect(links).toHaveCount(1)
+
+  await chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('Added FS dependency from Billing API to Acceptance tests.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+  await chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true }).press('Space')
+  await chart.getByRole('button', { name: 'Connect dependency to finish of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('These bars are already linked.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+
+  // Escape discards an armed handle.
+  await chart.getByRole('button', { name: 'Start dependency from start of Checkout UI', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Connect dependency to finish of Wireframes', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Wireframes', exact: true })).toBeVisible()
+
+  // Pointer drag between handles derives the type from the joined ends.
+  const source = (await chart.getByRole('button', { name: 'Start dependency from finish of Wireframes', exact: true }).boundingBox())!
+  const target = (await chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true }).boundingBox())!
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
+  await expect(chart.locator('.vft-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
+  await page.mouse.up()
+  await expect(status('Added FF dependency from Wireframes to Checkout UI.')).toBeVisible()
+  await expect(links).toHaveCount(3)
+  await expect(chart.locator('.vft-gantt-link-preview')).toHaveCount(0)
+
+  // Select a dependency, move its target end with the keyboard, then delete it.
+  await chart.getByRole('button', { name: 'Select dependency Wireframes → Billing API FS', exact: true }).press('Enter')
+  await expect(status('Selected dependency wireframes-api.')).toBeVisible()
+  await chart.getByRole('button', { name: 'Reconnect target of Wireframes → Billing API FS', exact: true }).press('Enter')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('Reconnected wireframes-api as FS to Acceptance tests.')).toBeVisible()
+  const moved = chart.getByRole('button', { name: 'Select dependency Wireframes → Acceptance tests FS', exact: true })
+  await moved.press('Enter')
+  await moved.press('Delete')
+  await expect(status('Deleted dependency wireframes-api.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+
+  // A source-data change cancels an armed connection.
+  await chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Connect dependency to start of Billing API', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Reset timeline', exact: true }).dispatchEvent('click')
+  await expect(chart.getByRole('button', { name: 'Start dependency from start of Billing API', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(links).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('gantt multi-selection moves bars as one batch and bars move between rows with validation', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
+  const ui = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
+  await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Shift'] })
+  await expect(api).toHaveAttribute('aria-pressed', 'true')
+  await expect(ui).toHaveAttribute('aria-pressed', 'true')
+  await ui.press('ArrowRight')
+  await expect(status('Moved 2 bars.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:15–13:15')
+  await expect(ui).toHaveAttribute('aria-label', 'Checkout UI 10:15–14:15')
+
+  // A pointer drag moves the whole selection and keeps it selected.
+  await page.getByRole('button', { name: 'Reset timeline', exact: true }).click()
+  await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
+  await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Control'] })
+  const box = (await api.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+  await expect(ui).toHaveAttribute('aria-label', 'Checkout UI 10:30–14:30')
+  await expect(api).toHaveAttribute('aria-pressed', 'true')
+  await expect(ui).toHaveAttribute('aria-pressed', 'true')
+
+  // A batch row move that the application rejects changes nothing.
+  await api.press('ArrowDown')
+  await expect(status('Only acceptance work can move to Quality.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+
+  // Keyboard row move keeps focus on the moved bar.
+  const wireframes = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
+  await wireframes.click()
+  await expect(api).toHaveAttribute('aria-pressed', 'false')
+  await wireframes.press('ArrowDown')
+  await expect(status('Moved Wireframes to Platform team.')).toBeVisible()
+  await expect(chart.locator('.vft-gantt-bar:focus')).toHaveAttribute('aria-label', 'Wireframes 08:00–10:00')
+  await page.keyboard.press('ArrowUp')
+  await expect(status('Moved Wireframes to Product team.')).toBeVisible()
+
+  // Pointer row drags propose the row under the pointer; Escape cancels a drag.
+  const tests = chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })
+  const start = (await tests.boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
+  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveAttribute('style', /translateY\(-66px\)/)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveCount(0)
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Moved Acceptance tests to Web team.')).toBeVisible()
+  const checkout = (await ui.boundingBox())!
+  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2 + 66, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Only acceptance work can move to Quality.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt zoom presets, now marker and resource load histogram share the time axis', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const presets = page.getByRole('group', { name: 'Zoom level', exact: true })
+  await expect(presets.getByRole('button', { name: 'Hours', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart.getByText('Day 2026-11-09', { exact: true })).toBeVisible()
+  await expect(chart.locator('.vft-gantt-now')).toHaveText('Now')
+  await expect(chart.locator('.vft-gantt-now')).toHaveAttribute('title', 'Now 11:30')
+  await expect(chart.getByRole('group', { name: 'Resource load Engineering pool', exact: true })).toBeVisible()
+  const overload = chart.getByRole('img', { name: 'Engineering pool 10:00–13:00: load 2 / capacity 1, overloaded by 1', exact: true })
+  await expect(overload).toBeVisible()
+  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  const bar = (await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).boundingBox())!
+  const segment = (await overload.boundingBox())!
+  expect(Math.abs(segment.x - bar.x)).toBeLessThanOrEqual(1)
+
+  // Moving work updates the histogram.
+  const checkout = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  await checkout.click()
+  for (let i = 0; i < 12; i++) await checkout.press('ArrowRight')
+  await expect(checkout).toHaveAttribute('aria-label', 'Checkout UI 13:00–17:00')
+  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  await expect(chart.getByRole('img', { name: 'Engineering pool 14:00–16:00: load 2 / capacity 1, overloaded by 1', exact: true })).toBeAttached()
+
+  await presets.getByRole('button', { name: 'Shifts', exact: true }).click()
+  await expect(presets.getByRole('button', { name: 'Shifts', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart.getByText('Shift from 08:00', { exact: true })).toBeVisible()
+  await expect(status('100% · shifts')).toBeVisible()
+  const zoomIn = page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.click()
+  await expect(status('135% · shifts')).toBeVisible()
+  await presets.getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(status('100% · hours')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt two-pointer touch pinch zooms the time axis', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  await expect(output).toHaveText('100%')
+  await chart.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const x = rect.left + rect.width / 2, y = rect.top + 200
+    const fire = (type: string, pointerId: number, clientX: number) => element.dispatchEvent(new PointerEvent(type, {
+      pointerId, pointerType: 'touch', isPrimary: pointerId === 11, clientX, clientY: y, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', 11, x - 50)
+    fire('pointerdown', 12, x + 50)
+    for (let step = 1; step <= 5; step++) {
+      fire('pointermove', 11, x - 50 - step * 10)
+      fire('pointermove', 12, x + 50 + step * 10)
+    }
+    fire('pointerup', 11, x - 100)
+    fire('pointerup', 12, x + 100)
+  })
+  await expect(output).toHaveText('200%')
+  await expect(status('200% · hours')).toBeVisible()
+  // A single touch pointer does not zoom.
+  await chart.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const fire = (type: string, clientX: number) => element.dispatchEvent(new PointerEvent(type, {
+      pointerId: 21, pointerType: 'touch', isPrimary: true, clientX, clientY: rect.top + 200, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', rect.left + 300)
+    fire('pointermove', rect.left + 500)
+    fire('pointerup', rect.left + 500)
+  })
+  await expect(output).toHaveText('200%')
+  expect(errors).toEqual([])
+})

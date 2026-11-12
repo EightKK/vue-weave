@@ -116,3 +116,29 @@
 .vft-gantt-summary span { display: block; height: 100%; background: var(--vft-accent, #245e96); opacity: .75; }
 
 .vft-network .vft-dimmed { opacity: var(--vft-dimmed-opacity, .28); }
+/* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
+.vft-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vft-surface, #fff); }
+.vft-gantt-presets button { border: none; border-left: 1px solid var(--vft-border, #e0e9ef); background: var(--vft-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
+.vft-gantt-presets button:first-child { border-left: none; }
+.vft-gantt-presets button[aria-pressed="true"] { background: var(--vft-accent, #245e96); color: var(--vft-on-solid, #fff); }
+.vft-gantt-presets button:focus-visible { outline-offset: -2px; }
+.vft-gantt-now { border-left: 2px solid var(--vft-now, #c23b22); z-index: 3; }
+.vft-gantt-now span { background: var(--vft-now, #c23b22); }
+.vft-gantt-link-handle, .vft-gantt-reconnect-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--vft-accent, #245e96); background: var(--vft-surface, #fff); cursor: crosshair; touch-action: none; }
+.vft-gantt-link-handle.active, .vft-gantt-link-handle:focus-visible, .vft-gantt-reconnect-handle { background: var(--vft-accent, #245e96); border-color: var(--vft-surface, #fff); }
+.vft-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vft-accent, #245e96); }
+.vft-gantt-link-hits { position: absolute; z-index: 2; pointer-events: none; overflow: visible; }
+.vft-dependency-hit { fill: none; stroke: transparent; stroke-width: 12px; pointer-events: stroke; cursor: pointer; outline: none; }
+.vft-dependency-hit.active, .vft-dependency-hit:focus-visible { stroke: var(--vft-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
+.vft-gantt-links path.selected { stroke: var(--vft-accent, #245e96); stroke-width: 2.4px; }
+.vft-gantt-link-preview { position: absolute; left: var(--vft-label-area-width); z-index: 5; pointer-events: none; }
+.vft-gantt-link-preview path { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; }
+.vft-gantt-bar.dragging { z-index: 4; }
+.vft-gantt-scroll.vft-pinch-zoom { touch-action: pan-x pan-y; }
+.vft-gantt-load-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vft-border, #e5edf1); background: var(--vft-surface-muted, #f9fbfc); }
+.vft-gantt-load-segment { position: absolute; top: 4px; bottom: 4px; z-index: 2; border-right: 1px solid var(--vft-surface, #fff); }
+.vft-gantt-load-segment > span { position: absolute; left: 0; right: 0; }
+.vft-load-fill { bottom: 0; background: var(--vft-load, #6b96c5); }
+.vft-load-over { background: var(--vft-load-overload, #b4441c); }
+.vft-load-capacity { height: 0; border-top: 2px dashed var(--vft-load-capacity, #31495b); }
+.vft-gantt-load-segment.idle .vft-load-capacity { opacity: .55; }

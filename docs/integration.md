@@ -72,6 +72,8 @@ Styles use the vft- class prefix. Set CSS variables on an ancestor to change the
 
 Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo contains a dark theme using this contract. `--vft-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
 
+GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
+
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
 ## Persistence
@@ -79,6 +81,8 @@ Supply partial labels objects to translate controls and accessible names. The ro
 The edit event carries the previous interval so your parent can detect a stale proposal. A synchronous local commit is shown in the README.
 
 For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize pending updates per bar or reject another edit while a save is pending. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
+
+Treat a Gantt `edits` batch as one transaction: apply every change or none, and commit it as one history entry. Row moves arrive as `change.row.after`. Dependency `connect`, `reconnect` and `dependency-delete` events are proposals as well; assign dependency IDs in the application or on the server, and check for cycles there if your scheduling rules forbid them.
 
 ## Alternative time scales
 

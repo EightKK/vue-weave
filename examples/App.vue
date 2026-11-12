@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { NetworkGraph, GanttChart, useEditHistory, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
+import GanttEditingDemo from './GanttEditingDemo.vue'
 
 const preset = ref('manufacturing')
 const history = useEditHistory({ data: makeExample(preset.value), positions: new Map<string, GraphPoint>() })
@@ -137,10 +138,12 @@ function commit(change: TimelineEdit) {
         <button v-for="item in [{ id: 'manufacturing', label: 'Manufacturing' }, { id: 'project', label: 'Project delivery' }, { id: 'scale', label: '1,000 resources' }, { id: 'large', label: 'Large graph' }]"
           :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
         <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
+        <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
         <button v-if="preset !== 'scheduling'" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="preset !== 'scheduling'" type="button" :disabled="!canRedo" @click="redo">Redo</button>
       </nav>
       <SchedulingDemo v-if="preset === 'scheduling'" />
+      <GanttEditingDemo v-else-if="preset === 'editing'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
