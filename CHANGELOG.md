@@ -16,6 +16,11 @@
 - Framework-independent TypeScript core, ESM entry points, Bundler/NodeNext declarations, namespaced themes, localization, typed slots and navigation methods.
 - Manufacturing, project delivery, large-resource and scheduling demos; public-entry, SSR, browser and isolated tarball-consumer checks.
 - Verified local release preparation with matching source/demo archives, file inventories, offline smoke checks and SHA-256 records.
+- Scheduling failure diagnostics: `cycle` results list `cycles` (task and dependency IDs of each strongly connected group), and `infeasible` results add the binding `constraints` and `dependencyIds`. Code that compares whole failure objects, for example with `deepEqual`, sees the new fields.
+- `ScheduleTask.mode: 'alap'` places a task as late as its free float allows without moving other tasks or the project finish. ALAP results add `earliestStart` and `earliestEnd`.
+- `ScheduleTask.pauses` interrupts a task's work for caller-specified intervals.
+- `levelResources` delays tasks with a deterministic priority-based serial heuristic so that assigned load stays within capacity, using `ScheduleTask.priority` and `splittable`, and reports delays, added pauses, remaining overloads and unresolved tasks. `calculateResourceLoad` is unchanged.
+- `WorkWeek.timeZone` builds work periods in an IANA time zone with daylight-saving gaps and overlaps resolved deterministically, using only `Intl.DateTimeFormat`.
 
 ### Fixed
 
