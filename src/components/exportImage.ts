@@ -8,7 +8,7 @@ export const maxCanvasArea = 268_435_456
 
 const properties: Record<string, string> = {
   surface: '--vft-surface', surfaceMuted: '--vft-surface-muted', text: '--vft-text', muted: '--vft-muted', border: '--vft-border',
-  grid: '--vft-grid', edge: '--vft-edge', accent: '--vft-accent', onSolid: '--vft-on-solid', baseline: '--vft-baseline',
+  grid: '--vft-grid', edge: '--vft-edge', accent: '--vft-accent', onSolid: '--vft-on-solid', markerInk: '--vft-marker-ink', baseline: '--vft-baseline',
   marker: '--vft-marker', now: '--vft-now', load: '--vft-load', loadOverload: '--vft-load-overload',
   loadCapacity: '--vft-load-capacity', dependencyHighlight: '--vft-dependency-highlight',
 }

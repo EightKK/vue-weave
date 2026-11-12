@@ -134,7 +134,7 @@ export function buildWorkPeriods(range: TimeRange, week: WorkWeek): TimeRange[] 
     return Math.floor((instant + shift) / dayMs) * dayMs
   }
   const toInstant = (wall: number) => format ? zonedInstant(format, wall) : wall - offsetMs
-  if (format && !Number.isFinite(new Date(range.start - 2 * dayMs).getTime()) || !Number.isFinite(new Date(range.end + 2 * dayMs).getTime())) {
+  if (format && (!Number.isFinite(new Date(range.start - 2 * dayMs).getTime()) || !Number.isFinite(new Date(range.end + 2 * dayMs).getTime()))) {
     throw new RangeError('Calendar horizon must be within 3,661 civil dates')
   }
   const firstDay = localDay(range.start)

@@ -78,7 +78,7 @@ GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` 
 
 Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
-`--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels. In the dark theme the solid tones are light and `--vft-on-solid` is dark.
+`--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vft-on-solid` is dark.
 
 ### Media queries
 

@@ -205,3 +205,11 @@ test('escapeXml escapes markup characters and drops characters XML forbids', () 
   assert.equal(escapeXml('a\u0000b\u0007c\uD800d'), 'abcd')
   assert.equal(escapeXml('tab\tnew\nline 😀'), 'tab\tnew\nline 😀')
 })
+
+test('renderTimelineSvg colours marker and now-flag text with the markerInk theme colour', () => {
+  const run = theme => renderTimelineSvg(rows, bars, [], scale, { markers: [{ id: 'm', time: 3 * hour, label: 'Review' }], now: 4 * hour, theme })
+  const flagFills = svg => [...svg.matchAll(/<text [^>]*fill="([^"]+)"[^>]*>(?:Review|Now)</g)].map(match => match[1])
+  assert.equal(defaultSvgExportTheme.markerInk, '#ffffff')
+  assert.deepEqual(flagFills(run({})), ['#ffffff', '#ffffff'])
+  assert.deepEqual(flagFills(run({ markerInk: '#0d1a24' })), ['#0d1a24', '#0d1a24'])
+})

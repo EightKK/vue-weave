@@ -171,9 +171,9 @@ Enter or blur submits a default editor and Escape discards the input. The chart-
 | connect-rejected(connection, reason) | Reports a rejected proposal. The reason is announced in the live region. |
 | selectedDependencyId / update:selectedDependencyId | Optional controlled dependency selection. The component tracks the selection locally when the prop is omitted. |
 | dependency-select(id) | A dependency path was activated by click, Enter or Space. Dependency paths are focusable only when connectable or reconnectable is set. |
-| dependency-delete(id) | Delete or Backspace was pressed on a focused dependency. The parent removes it from dependencies to accept. |
+| dependency-delete(id) | Delete or Backspace was pressed on a focused dependency. The parent removes it from dependencies to accept. Not emitted when readonly is set. |
 
-A bar cannot link to itself, and reconnecting a dependency to its existing endpoints proposes nothing. Escape, pointer cancellation and loss of capture discard a pending connection. Changes to bars, rows, dependencies, the coordinate system or the connectable and reconnectable props cancel an in-flight connection, including one armed from the keyboard. Handles are hidden when readonly is set.
+A bar cannot link to itself, and reconnecting a dependency to its existing endpoints proposes nothing. Escape, pointer cancellation and loss of capture discard a pending connection. Changes to bars, rows, dependencies, the coordinate system or the connectable and reconnectable props cancel an in-flight connection, including one armed from the keyboard. Handles are hidden and no `connect`, `reconnect` or `dependency-delete` proposal is emitted when readonly is set; selecting a dependency (`dependency-select`) stays possible, like selecting a bar.
 
 ### Multiple selection, batch moves and row moves
 
@@ -376,7 +376,7 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
 
-Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight` and per-tone `ink`, `line`, `pale`, `solid`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight` and per-tone `ink`, `line`, `pale`, `solid`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
 
 ### Right-to-left layout
 

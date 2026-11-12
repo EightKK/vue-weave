@@ -86,3 +86,9 @@ test('time-zone calendars validate the zone and are deterministic', () => {
   assert.throws(() => buildWorkPeriods(span, { weekly: [], timeZone: 'UTC', utcOffsetMinutes: 0 }), /either/)
   assert.throws(() => buildWorkPeriods(range('2026-01-01T00:00', '2037-01-10T00:00'), week), /3,661/)
 })
+
+test('fixed-offset calendars are not subject to the time-zone horizon margin', () => {
+  const day = 86_400_000, max = 8.64e15
+  assert.deepEqual(buildWorkPeriods({ start: max - 3 * day, end: max - day }, { weekly: [] }), [])
+  assert.throws(() => buildWorkPeriods({ start: max - 3 * day, end: max - day }, { weekly: [], timeZone: 'UTC' }), /horizon/)
+})

@@ -28,6 +28,8 @@ export interface SvgExportTheme {
   edge: string
   accent: string
   onSolid: string
+  /** Text colour on marker and now-flag labels. */
+  markerInk: string
   baseline: string
   marker: string
   now: string
@@ -46,7 +48,7 @@ export type SvgExportThemeInput = Partial<Omit<SvgExportTheme, 'tones'>> & {
 /** The stylesheet's fallback colours. */
 export const defaultSvgExportTheme: Readonly<SvgExportTheme> = Object.freeze({
   surface: '#ffffff', surfaceMuted: '#f6f9fb', text: '#172c3b', muted: '#4c6371', border: '#d8e2e9', grid: '#d9e4eb',
-  edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
+  edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', markerInk: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
@@ -586,7 +588,7 @@ export function renderTimelineSvg(
       'stroke-dasharray': dashed ? '4 3' : undefined,
     }) + tag('rect', { x: rtl ? x - flagWidth : x, y: headerHeight, width: flagWidth, height: 16, fill: color })
       + tag('text', {
-        x: rtl ? x - 5 : x + 5, y: headerHeight + 11.5, 'font-size': 10, fill: '#ffffff',
+        x: rtl ? x - 5 : x + 5, y: headerHeight + 11.5, 'font-size': 10, fill: theme.markerInk,
         direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
       }, escapeXml(text))
   }
