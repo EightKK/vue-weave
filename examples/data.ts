@@ -15,8 +15,8 @@ export interface ExampleData {
 
 export function makeExample(name: string): ExampleData {
   if (name === 'large') {
-    // 60 ranks of 50 nodes: about 3,000 nodes and 6,000 edges for viewport culling.
-    const ranks = 60, perRank = 50
+    // 150 ranks of 25 nodes: 3,750 nodes and about 7,400 edges, far wider than one viewport.
+    const ranks = 150, perRank = 25
     const nodes: NetworkNode[] = [], edges: GraphEdge[] = []
     for (let rank = 0; rank < ranks; rank++) {
       for (let row = 0; row < perRank; row++) {
