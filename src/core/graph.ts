@@ -1,3 +1,6 @@
+import { flipGraphLayout } from './graphOrient.js'
+import { reduceCrossings } from './graphCrossings.js'
+
 export interface GraphPort {
   id: string
   side: 'left' | 'right' | 'top' | 'bottom'
@@ -184,13 +187,27 @@ export interface GraphLayout {
   height: number
 }
 
+/** LR and TB are the defaults; RL and BT mirror them so ranks grow right-to-left or bottom-to-top. */
+export type GraphLayoutDirection = 'LR' | 'TB' | 'RL' | 'BT'
+
+/** Ordering heuristic that reduces edge crossings between adjacent ranks. */
+export type GraphCrossingReduction = 'none' | 'barycenter' | 'median'
+
 export interface GraphLayoutOptions {
-  direction?: 'LR' | 'TB' 
+  direction?: GraphLayoutDirection
   nodeWidth?: number
   nodeHeight?: number
   columnGap?: number
   rowGap?: number
   padding?: number
+}
+
+/** Options accepted by layoutLayeredGraph: the shared layout options plus opt-in crossing reduction. */
+export interface GraphLayeredLayoutOptions extends GraphLayoutOptions {
+  /** Opt-in reordering of nodes within each rank. Default 'none' keeps input order. */
+  crossingReduction?: GraphCrossingReduction
+  /** Maximum number of alternating down/up sweeps when crossingReduction is enabled. Default 8. */
+  crossingSweeps?: number
 }
 
 type LaneEntry = [end: number, lane: number]
@@ -251,14 +268,20 @@ function assignLongEdgeLanes(edges: readonly GraphEdge[], ranks: ReadonlyMap<str
 export function layoutLayeredGraph(
   nodes: readonly IdentifiedNode[],
   edges: readonly GraphEdge[],
-  options: GraphLayoutOptions = {},
+  options: GraphLayeredLayoutOptions = {},
 ): GraphLayout {
-  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20 } = options
-  if (!['LR', 'TB'].includes(direction)) throw new RangeError('Unknown layout direction')
+  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20, crossingReduction = 'none', crossingSweeps = 8 } = options
+  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
+  if (!['none', 'barycenter', 'median'].includes(crossingReduction)) throw new RangeError('Unknown crossingReduction method')
+  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
   for (const [name, value] of Object.entries({ nodeWidth, nodeHeight, columnGap, rowGap, padding })) {
     if (!Number.isFinite(value) || value < 0 || ((name === 'nodeWidth' || name === 'nodeHeight') && value === 0)) {
       throw new RangeError(name + ' must be finite and positive (spacing may be zero)')
     }
+  }
+  if (direction === 'RL' || direction === 'BT') {
+    const base = layoutLayeredGraph(nodes, edges, { ...options, direction: direction === 'RL' ? 'LR' : 'TB' })
+    return flipGraphLayout(base, direction === 'RL' ? 'x' : 'y')
   }
   if (direction === 'TB') {
     const base = layoutLayeredGraph(nodes, edges, { ...options, direction: 'LR', nodeWidth: nodeHeight, nodeHeight: nodeWidth })
@@ -279,6 +302,8 @@ export function layoutLayeredGraph(
     const column = columns[rank] ??= []
     column.push(id)
   }
+
+  if (crossingReduction !== 'none') reduceCrossings(columns, edges, ranks, crossingReduction, crossingSweeps)
 
   const largestColumn = columns.reduce((max, column) => Math.max(max, column?.length ?? 0), 0)
   const longLanes = assignLongEdgeLanes(edges, ranks)
@@ -390,15 +415,17 @@ export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
   return { x: box.x + box.width * offset, y: box.y + (port.side === 'bottom' ? box.height : 0) }
 }
 
-export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: 'LR' | 'TB') {
+export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: GraphLayoutDirection) {
   const box = layout.boxes.get(edge[end])!
   const port = nodes.get(edge[end])?.ports?.find(port => port.id === (end === 'from' ? edge.fromPort : edge.toPort))
-  const side = port?.side ?? (direction === 'TB' ? (end === 'from' ? 'bottom' : 'top') : (end === 'from' ? 'right' : 'left'))
+  const side = port?.side ?? (direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
+    : direction === 'BT' ? (end === 'from' ? 'top' : 'bottom')
+    : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left'))
   return { ...graphPortAnchor(box, port ?? { id: '', side }), side }
 }
 
 /** Route named endpoints after the node layout and any saved positions are applied. */
-export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: 'LR' | 'TB'): GraphLayout {
+export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: GraphLayoutDirection): GraphLayout {
   if (!edges.some(edge => edge.fromPort !== undefined || edge.toPort !== undefined)) return layout
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
@@ -439,7 +466,7 @@ export function applyGraphPositions(
   layout: GraphLayout,
   edges: readonly GraphEdge[],
   positions: ReadonlyMap<string, GraphPoint>,
-  direction: 'LR' | 'TB' = 'LR',
+  direction: GraphLayoutDirection = 'LR',
 ): GraphLayout {
   if (!positions.size) return layout
   const boxes = new Map(layout.boxes)
@@ -470,7 +497,7 @@ export function applyGraphPositions(
       const y = source.y + source.height / 2
       paths.set(edge.id, `M ${x} ${y} C ${x + 30} ${y + 18}, ${x + 30} ${y - 28}, ${x} ${y - 12}`)
       edgeLabels.set(edge.id, { x: x + 21, y: y - 16 })
-    } else if (direction === 'TB') {
+    } else if (direction === 'TB' || direction === 'BT') {
       const forward = target.y + target.height / 2 >= source.y + source.height / 2
       const x1 = source.x + source.width / 2, x2 = target.x + target.width / 2
       const y1 = source.y + (forward ? source.height : 0), y2 = target.y + (forward ? 0 : target.height)

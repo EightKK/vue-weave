@@ -12,7 +12,7 @@ The ESM root exports Vue components and core functions. The separate core export
 
 An iterative Kosaraju traversal finds strongly connected components. The condensed graph supplies ranks; nodes in a component occupy the same rank. Input order determines the order within a column. Curves connect adjacent columns, bypass lanes route long edges, and same-rank edges use a side route. TB transposes the geometry while preserving node sizes.
 
-This is a deterministic layout baseline. Dense edge sets and cycles can produce overlapping routes or labels. Crossings are not optimized. All supplied nodes and edges are rendered; applications can use graphNeighborhood to narrow the input. Pan/zoom transforms one SVG group without rerunning layout.
+This is a deterministic layout baseline. Dense edge sets and cycles can produce overlapping routes or labels. By default crossings are not optimized; set crossingReduction to barycenter or median for opt-in sweeps that reorder nodes within each rank (long edges and same-rank edges are not part of the objective). RL and BT mirror the LR and TB geometry. layoutTreeGraph and layoutRadialGraph use a breadth-first spanning forest and route the remaining edges separately. All supplied nodes and edges are rendered; applications can use graphNeighborhood to narrow the input. Pan/zoom transforms one SVG group without rerunning layout.
 
 ## Timeline rendering and editing
 
