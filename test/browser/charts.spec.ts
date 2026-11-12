@@ -628,6 +628,57 @@ test('matchIds dims non-matching nodes and focusNode accepts a scale', async ({ 
   expect(errors).toEqual([])
 })
 
+test('nested group rectangles stay inside the fitted view, the minimap and the exported SVG', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&minimap=1')
+  const stage = page.getByLabel('Network graph', { exact: true })
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  const rects = page.locator('.vft-network-group rect')
+  await expect(rects).toHaveCount(2)
+  const frame = (await stage.boundingBox())!
+  const boxes = await rects.evaluateAll(list => list.map(el => {
+    const r = el.getBoundingClientRect()
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }
+  }))
+  const top = Math.min(...boxes.map(box => box.top)), bottom = Math.max(...boxes.map(box => box.bottom))
+  const left = Math.min(...boxes.map(box => box.left)), right = Math.max(...boxes.map(box => box.right))
+  // Every group, including the parent that reaches above the first node row, is inside the stage and centred.
+  expect(top).toBeGreaterThanOrEqual(frame.y - 0.5)
+  expect(bottom).toBeLessThanOrEqual(frame.y + frame.height + 0.5)
+  expect(Math.abs((top - frame.y) - (frame.y + frame.height - bottom))).toBeLessThan(1.5)
+  expect(left).toBeGreaterThanOrEqual(frame.x - 0.5)
+  expect(right).toBeLessThanOrEqual(frame.x + frame.width + 0.5)
+  // The minimap frames the groups too.
+  const viewTop = await page.getByRole('button', { name: 'Navigate graph overview' }).locator('svg').evaluate(el => el.viewBox.baseVal.y)
+  expect(viewTop).toBeLessThan(0)
+  // The export frames them as well: no content coordinate is negative after the export translation.
+  const svg = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+  expect(svg).toMatch(/<svg[^>]* width="[\d.]+" height="[\d.]+"/)
+  expect(errors).toEqual([])
+})
+
+test('culled drag previews keep the edges of dragged nodes rendered', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
+  const edges = page.locator('.vft-network-edge')
+  const node = chainNode(page, 'N0002')
+  const box = (await node.boundingBox())!
+  const before = await edges.count()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 6 })
+  await expect(node).toHaveCount(1)
+  expect(await edges.count()).toBeGreaterThanOrEqual(before)
+  // The edges attached to the dragged node follow it.
+  const [incoming, outgoing] = await edges.evaluateAll(list => list.slice(1, 3).map(el => el.getAttribute('d')))
+  expect(incoming).toMatch(/^M /)
+  expect(outgoing).not.toBe(incoming)
+  await page.mouse.up()
+  expect(errors).toEqual([])
+})
+
 test('the large graph demo preset renders a viewport slice of thousands of nodes', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -847,6 +898,146 @@ test('gantt two-pointer touch pinch zooms the time axis', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+async function openGanttFixture(page: Page, search: string) {
+  await page.route('**/gantt-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/gantt-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/gantt.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/gantt-test/' + search)
+  const chart = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect(chart).toBeVisible()
+  const out = (name: string) => page.getByRole('status', { name, exact: true })
+  return { chart, out }
+}
+
+test('gantt keyboard row moves emit plain time ranges like pointer moves', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '?rowDraggable=1')
+  await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).press('ArrowDown')
+  await expect(out('Last edit')).not.toHaveText('')
+  expect(JSON.parse((await out('Last edit').textContent())!)).toEqual({
+    id: 'a', before: { start: 0, end: 2 }, after: { start: 0, end: 2 }, mode: 'move', source: 'keyboard', row: { before: 'r1', after: 'r2' },
+  })
+  expect(errors).toEqual([])
+})
+
+test('gantt readonly keeps dependency selection but proposes no delete', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '?readonly=1')
+  const link = chart.getByRole('button', { name: 'Select dependency Task A → Task B FS', exact: true })
+  await link.press('Delete')
+  await link.press('Backspace')
+  await link.press('Enter')
+  await expect(out('Dependency selects')).toHaveText('1')
+  await expect(out('Dependency deletes')).toHaveText('0')
+  await expect(chart.getByRole('button', { name: /^Start dependency / })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('gantt zoom presets ignore the active preset and a controlled parent that declines a change', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['', '?controlled=1']) {
+    const { chart } = await openGanttFixture(page, search)
+    const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+    const presets = page.getByRole('group', { name: 'Zoom level', exact: true })
+    if (!search) await presets.getByRole('button', { name: 'Wide', exact: true }).click()
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await expect(zoom).toHaveText('135%')
+    const scroller = chart
+    await scroller.evaluate(el => { el.scrollLeft = 1500 })
+    // The active preset is a no-op: zoom and scroll stay.
+    await presets.getByRole('button', { name: 'Wide', exact: true }).click()
+    await expect(zoom).toHaveText('135%')
+    expect(await scroller.evaluate(el => el.scrollLeft)).toBe(1500)
+    if (search) {
+      // A parent that ignores the update keeps the zoom, and its stale centre is not applied to a later change.
+      await presets.getByRole('button', { name: 'Narrow', exact: true }).click()
+      await expect(zoom).toHaveText('135%')
+      await expect(presets.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      await scroller.evaluate(el => { el.scrollLeft = 1500 })
+      await page.getByRole('button', { name: 'Parent switches to Narrow', exact: true }).click()
+      await expect(presets.getByRole('button', { name: 'Narrow', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      expect(await scroller.evaluate(el => el.scrollLeft)).toBe(1500)
+      await expect(zoom).toHaveText('135%')
+    } else {
+      // A real change resets the zoom and keeps the centre.
+      const centreAt = (el: HTMLElement, scale: number) =>
+        (el.scrollLeft + (el.clientWidth - el.querySelector('.vft-gantt-corner')!.getBoundingClientRect().width) / 2) / scale
+      const centre = await scroller.evaluate(centreAt, 1.35 * 50)
+      await presets.getByRole('button', { name: 'Narrow', exact: true }).click()
+      await expect(zoom).toHaveText('100%')
+      await expect.poll(() => scroller.evaluate(centreAt, 25)).toBeCloseTo(centre, -1)
+    }
+  }
+  expect(errors).toEqual([])
+})
+
+test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page }) => {
+  const { errors, chart } = await openTimelineEditing(page)
+  const cdp = await page.context().newCDPSession(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  // Zoom in first so the scroller can pan, then pinch on empty row background where touch-action is pan-x pan-y.
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await expect(output).toHaveText('182%')
+  const spot = await chart.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    for (const y of [150, 200, 250, 300]) for (let x = 400; x < r.width - 200; x += 10) {
+      const free = [x - 100, x + 100].every(px => /^vft-gantt-(row|grid)/.test(String(document.elementFromPoint(r.left + px, r.top + y)?.className ?? '')))
+      if (free) return { x: r.left + x, y: r.top + y }
+    }
+    return undefined
+  })
+  expect(spot).toBeDefined()
+  await chart.evaluate(el => {
+    const log = { cancels: 0, twoFingerMoves: 0, prevented: 0, singleMoves: 0, singlePrevented: 0 }
+    el.addEventListener('pointercancel', () => { log.cancels++ })
+    // Registered after the component's own listener, so it sees the final defaultPrevented state.
+    el.addEventListener('touchmove', event => {
+      if (event.touches.length >= 2) { log.twoFingerMoves++; if (event.defaultPrevented) log.prevented++ }
+      else { log.singleMoves++; if (event.defaultPrevented) log.singlePrevented++ }
+    }, { passive: true })
+    ;(window as any).__pinchLog = log
+  })
+  const { x: cx, y: cy } = spot!
+  await touch(cdp, 'touchStart', [{ x: cx - 40, y: cy, id: 1 }, { x: cx + 40, y: cy, id: 2 }])
+  // The midpoint drifts down and sideways while the fingers spread, as a real pinch does.
+  for (let step = 1; step <= 12; step++) {
+    await touch(cdp, 'touchMove', [{ x: cx - 40 + step * 4, y: cy + step * 5, id: 1 }, { x: cx + 40 + step * 16, y: cy + step * 5, id: 2 }])
+  }
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => Number.parseInt((await output.textContent())!, 10)).toBeGreaterThan(182)
+  const log = await page.evaluate(() => (window as any).__pinchLog)
+  expect(log.cancels).toBe(0)
+  expect(log.twoFingerMoves).toBeGreaterThan(0)
+  expect(log.prevented).toBe(log.twoFingerMoves)
+  // One finger still scrolls natively.
+  const scrollBefore = await chart.evaluate(el => el.scrollLeft)
+  await touch(cdp, 'touchStart', [{ x: cx, y: cy, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: cx - 80, y: cy, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: cx - 160, y: cy, id: 1 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(() => chart.evaluate(el => el.scrollLeft)).not.toBe(scrollBefore)
+  expect((await page.evaluate(() => (window as any).__pinchLog)).singlePrevented).toBe(0)
+  expect(errors).toEqual([])
+})
+
 test('network direction, crossing reduction and layout controls', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -913,6 +1104,25 @@ test('forced colors use system colours for bars and selection', async ({ page })
   expect(styles.border).toBe(styles.canvasText)
   await bar.focus()
   await expect(bar).toHaveCSS('outline-style', 'solid')
+  expect(errors).toEqual([])
+})
+
+test('forced colors emphasise the now line and markers in both directions', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ forcedColors: 'active' })
+  for (const [search, side] of [['', 'left'], ['?rtl=1', 'right']] as const) {
+    const { chart } = await openGanttFixture(page, search)
+    await expect(chart.getByText('Review', { exact: true })).toBeVisible()
+    const edges = (selector: string) => chart.locator(selector).first().evaluate(el => {
+      const cs = getComputedStyle(el)
+      return { left: cs.borderLeftWidth, right: cs.borderRightWidth, style: cs.borderInlineStartStyle }
+    })
+    const marker = { left: '0px', right: '0px', style: 'dashed', [side]: '2px' }
+    const now = { left: '0px', right: '0px', style: 'solid', [side]: '3px' }
+    expect(await edges('.vft-gantt-marker')).toEqual(marker)
+    expect(await edges('.vft-gantt-now')).toEqual(now)
+  }
   expect(errors).toEqual([])
 })
 

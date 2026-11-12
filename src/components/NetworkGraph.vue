@@ -115,10 +115,11 @@ const dragPreview = ref<ReadonlyMap<string, GraphPoint>>()
 const savedLayout = computed(() => props.positions?.size
   ? applyGraphPositions(baseLayout.value, props.edges, props.positions, direction.value)
   : baseLayout.value)
+const savedRouted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, props.edges, direction.value))
 const layout = computed(() => {
-  const positions = dragPreview.value ? new Map([...props.positions ?? [], ...dragPreview.value]) : undefined
-  const geometry = positions ? applyGraphPositions(baseLayout.value, props.edges, positions, direction.value) : savedLayout.value
-  return routeGraphPorts(geometry, nodesById.value, props.edges, direction.value)
+  if (!dragPreview.value) return savedRouted.value
+  const positions = new Map([...props.positions ?? [], ...dragPreview.value])
+  return routeGraphPorts(applyGraphPositions(baseLayout.value, props.edges, positions, direction.value), nodesById.value, props.edges, direction.value)
 })
 const positioned = computed(() => props.nodes.map(node => ({ ...node, box: layout.value.boxes.get(node.id)! })))
 
@@ -230,19 +231,34 @@ function portKey(ref: PortRef) {
   return JSON.stringify([ref.node, ref.port])
 }
 
+// The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
+// the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
+const contentBounds = computed(() => {
+  let left = 0, top = 0, right = layout.value.width, bottom = layout.value.height
+  for (const group of shownGroups.value) {
+    left = Math.min(left, group.x)
+    top = Math.min(top, group.y)
+    right = Math.max(right, group.x + group.width)
+    bottom = Math.max(bottom, group.y + group.height)
+  }
+  return { left, top, right, bottom, width: right - left, height: bottom - top }
+})
+
 function fitCamera(overview = false) {
   const { width, height } = viewport.value
   const geometry = layout.value
-  const overviewScale = Math.max(0.1, Math.min(1.15, width / geometry.width, height / geometry.height))
+  const content = contentBounds.value
+  const overviewScale = Math.max(0.1, Math.min(1.15, width / content.width, height / content.height))
   const scale = overview || width >= 650 ? overviewScale
-    : Math.max(overviewScale, Math.min(0.72, height / geometry.height))
-  const canvasWidth = geometry.width * scale
+    : Math.max(overviewScale, Math.min(0.72, height / content.height))
+  const canvasWidth = content.width * scale
   const selected = props.selectedId ? geometry.boxes.get(props.selectedId) : undefined
   const focusX = selected ? (selected.x + selected.width / 2) * scale : 0
+  const originX = -content.left * scale
   return {
-    x: canvasWidth <= width ? (width - canvasWidth) / 2
-      : Math.max(width - canvasWidth, Math.min(0, width / 2 - focusX)),
-    y: (height - geometry.height * scale) / 2,
+    x: canvasWidth <= width ? (width - canvasWidth) / 2 + originX
+      : Math.max(width - canvasWidth + originX, Math.min(originX, width / 2 - focusX)),
+    y: (height - content.height * scale) / 2 - content.top * scale,
     scale,
   }
 }
@@ -527,15 +543,16 @@ function navigateMinimap(event: MouseEvent) {
   const point = map.createSVGPoint()
   point.x = event.clientX
   point.y = event.clientY
+  const content = contentBounds.value
   const world = event.detail ? point.matrixTransform(transform.inverse()) : {
-    x: layout.value.width / 2, y: layout.value.height / 2,
+    x: (content.left + content.right) / 2, y: (content.top + content.bottom) / 2,
   }
   cancelInteraction()
   fitMode.value = 'manual'
   camera.value = {
     scale: camera.value.scale,
-    x: viewport.value.width / 2 - Math.min(layout.value.width, Math.max(0, world.x)) * camera.value.scale,
-    y: viewport.value.height / 2 - Math.min(layout.value.height, Math.max(0, world.y)) * camera.value.scale,
+    x: viewport.value.width / 2 - Math.min(content.right, Math.max(content.left, world.x)) * camera.value.scale,
+    y: viewport.value.height / 2 - Math.min(content.bottom, Math.max(content.top, world.y)) * camera.value.scale,
   }
 }
 
@@ -604,17 +621,33 @@ function trackFocus(event: FocusEvent) {
 function releaseFocus(event: FocusEvent) {
   if (!(event.relatedTarget instanceof Node) || !svg.value?.contains(event.relatedTarget)) focused.value = undefined
 }
-const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(layout.value) : undefined)
+// Bounds come from the saved layout, so a drag preview does not re-parse every edge path. Dragged nodes and
+// the edges attached to them are kept rendered separately instead (see `visible`).
+const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedRouted.value) : undefined)
+const incidentEdges = computed(() => {
+  const index = new Map<string, string[]>()
+  for (const edge of props.edges) {
+    for (const id of edge.from === edge.to ? [edge.from] : [edge.from, edge.to]) {
+      const list = index.get(id)
+      if (list) list.push(edge.id)
+      else index.set(id, [edge.id])
+    }
+  }
+  return index
+})
 const visible = computed(() => {
   const bounds = layoutBounds.value
   if (!bounds) return undefined
   const view = graphViewportRect(camera.value, viewport.value, Math.max(0, props.cullOverscan ?? 0))
   const nodes = new Set<string>(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
   for (const id of gestureIds.value) nodes.add(id)
-  for (const id of dragPreview.value?.keys() ?? []) nodes.add(id)
+  const edges = new Set<string>()
+  for (const id of dragPreview.value?.keys() ?? []) {
+    nodes.add(id)
+    for (const edgeId of incidentEdges.value.get(id) ?? []) edges.add(edgeId)
+  }
   if (draft.value) nodes.add(draft.value.fixed.node)
   if (focused.value?.node) nodes.add(focused.value.node)
-  const edges = new Set<string>()
   for (const id of [activeEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
   const result = cullGraphElements(bounds, view, { nodes, edges })
   const groups = new Set<string>()
@@ -828,7 +861,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
     <div v-if="!nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
     <button v-if="showMinimap && nodes.length" type="button" class="vft-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
-      <svg :viewBox="`0 0 ${layout.width} ${layout.height}`" aria-hidden="true">
+      <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
         <rect v-for="node in positioned" :key="node.id" :class="{ selected: isSelected(node.id) }"
           :x="node.box.x" :y="node.box.y" :width="node.box.width" :height="node.box.height" rx="3" />
         <rect class="vft-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
   BatchEditValidator, TimelineBarEnd, TimelineConnection, TimelineConnectionValidator, TimelineLoadRow, TimelineLoadSegment,
@@ -488,22 +488,30 @@ async function setZoom(factor: number) {
   await applyZoom(zoom.value * factor)
 }
 
-let pendingCenter: number | undefined
+// The centre time to keep when a preset chosen by the user takes effect. It is tagged with the chosen id, so a
+// controlled parent that ignores the update neither resets the zoom nor leaves a stale centre for a later change.
+let pendingPreset: { id: string; time: number } | undefined
 function choosePreset(id: string) {
   const el = scroller.value
-  if (drag) return
-  if (el) pendingCenter = axis.value.toTime(scrollStart(el) + Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
+  if (drag || id === activePreset.value?.id) return
+  pendingPreset = el
+    ? { id, time: axis.value.toTime(scrollStart(el) + Math.max(0, (el.clientWidth - viewport.value.labels) / 2)) }
+    : undefined
   localPreset.value = id
-  zoom.value = 1
   emit('update:zoomPreset', id)
+  // A parent that accepts the id has applied it by the end of this flush. Otherwise drop the stale centre.
+  const requested = pendingPreset
+  void nextTick(() => { if (pendingPreset === requested) pendingPreset = undefined })
 }
-watch(() => activePreset.value?.id, async () => {
-  const time = pendingCenter
-  pendingCenter = undefined
+watch(() => activePreset.value?.id, async id => {
+  const pending = pendingPreset
+  pendingPreset = undefined
   const el = scroller.value
-  if (time === undefined || !el) return
+  if (!pending || pending.id !== id) return
+  zoom.value = 1
+  if (!el) return
   await nextTick()
-  setScrollStart(el, axis.value.toX(time) - Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
+  setScrollStart(el, axis.value.toX(pending.time) - Math.max(0, (el.clientWidth - viewport.value.labels) / 2))
   syncViewport()
 })
 watch([zoom, () => activePreset.value?.id], ([value, preset]) => {
@@ -585,7 +593,7 @@ function rowShiftFor(group: readonly TimelineBar[], delta: number) {
 function buildChanges(group: readonly TimelineBar[], ranges: readonly TimeRange[], mode: EditMode, source: TimelineEdit['source'], shift: number) {
   return group.flatMap((bar, i) => {
     const after = ranges[i]!
-    const change: TimelineEdit = { id: bar.id, before: { start: bar.start, end: bar.end }, after: { ...after }, mode, source }
+    const change: TimelineEdit = { id: bar.id, before: { start: bar.start, end: bar.end }, after: { start: after.start, end: after.end }, mode, source }
     if (shift) change.row = { before: bar.rowId, after: displayedRows.value[rowOrder.value.get(bar.rowId)! + shift]!.row.id }
     return change.row || after.start !== bar.start || after.end !== bar.end ? [change] : []
   })
@@ -882,7 +890,7 @@ function completeLink(target: LinkEnd) {
   const pending = linkDraft.value
   linkDraft.value = undefined
   notice.value = ''
-  if (!pending || pending.fixed.bar === target.bar || !barById.value.has(target.bar)) return
+  if (props.readonly || !pending || pending.fixed.bar === target.bar || !barById.value.has(target.bar)) return
   const [from, to] = pending.role === 'from' ? [target, pending.fixed] : [pending.fixed, target]
   const connection: TimelineConnection = { from: from.bar, to: to.bar, type: dependencyTypeForEnds(from.end, to.end) }
   const dependency = pending.dependency
@@ -909,7 +917,8 @@ function dependencyKeys(event: KeyboardEvent, id: string) {
     selectDependency(id)
   } else if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
-    emit('dependency-delete', id)
+    // Selection stays possible when readonly, like bar selection; deleting is an edit proposal.
+    if (!props.readonly) emit('dependency-delete', id)
   }
 }
 const reconnectHandles = computed(() => {
@@ -973,6 +982,12 @@ watch(() => props.pinchZoom, () => {
   touches.clear()
   pinch = undefined
 })
+// `touch-action: pan-x pan-y` keeps one-finger scrolling native but lets the browser take over a two-finger pan,
+// which ends the pinch with `pointercancel`. A non-passive `touchmove` listener refuses that takeover while two
+// touches are down; single-touch moves stay untouched.
+function holdPinch(event: TouchEvent) {
+  if (props.pinchZoom && event.touches.length >= 2 && event.cancelable) event.preventDefault()
+}
 
 // A new source interval or coordinate system invalidates an in-flight gesture.
 watch([
@@ -1090,7 +1105,9 @@ onMounted(() => {
   observer.observe(scroller.value)
   const corner = scroller.value.querySelector('.vft-gantt-corner')
   if (corner) observer.observe(corner)
+  scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
 })
+onBeforeUnmount(() => scroller.value?.removeEventListener('touchmove', holdPinch))
 onUnmounted(() => {
   mounted = false
   cancelEdit()
