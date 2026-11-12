@@ -1,0 +1,118 @@
+# Vue Weave
+
+[日本語](README.ja.md)
+
+[Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues)
+
+Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, production views, project schedules and resource timelines with typed components and framework-independent graph, scheduling and resource-load calculations.
+
+## Install
+
+The package is not distributed through npm. [Build a local package](CONTRIBUTING.md#build-a-local-package), then install the generated `.tgz` from your application's directory. Replace the example path with the actual tarball path.
+
+```sh
+npm install ./path/to/package.tgz
+```
+
+Vue 3.5+ is a peer dependency. The library ships ES modules, TypeScript declarations and one stylesheet. Import the stylesheet once in your application. The `vue-weave/core` entry runs without Vue and supports TypeScript `NodeNext` resolution.
+
+## A network graph
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { NetworkGraph, type NetworkNode, type GraphEdge } from 'vue-weave'
+import 'vue-weave/style.css'
+
+const selected = ref('design')
+const nodes: NetworkNode[] = [
+  { id: 'design', label: 'Design' },
+  { id: 'build', label: 'Build' },
+  { id: 'release', label: 'Release' },
+]
+const edges: GraphEdge[] = [
+  { id: 'db', from: 'design', to: 'build' },
+  { id: 'br', from: 'build', to: 'release', label: 'Approved' },
+]
+</script>
+
+<template>
+  <NetworkGraph
+    v-model:selected-id="selected"
+    :nodes="nodes"
+    :edges="edges"
+    :options="{ direction: 'LR' }"
+  />
+</template>
+```
+
+The built-in layout supports branches, merges, disconnected nodes, directed cycles and self-loops. Choose `LR` or `TB`. Supply a `layout` function to own placement and edge routing. Customize the SVG through the `node` and `edge` slots. Opt in to node moves, connections, multiple selection and the minimap through component props.
+
+## A controlled Gantt chart
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { GanttChart, type TimelineBar, type TimelineEdit } from 'vue-weave'
+import 'vue-weave/style.css'
+
+const start = Date.parse('2026-11-09T08:00:00Z')
+const hour = 3_600_000
+const range = { start, end: start + 8 * hour }
+const rows = [{ id: 'team', label: 'Engineering' }]
+const bars = ref<TimelineBar[]>([
+  {
+    id: 'build', rowId: 'team', label: 'Build',
+    start: start + hour, end: start + 3 * hour,
+    editable: true, progress: 0.4,
+  },
+])
+
+function commit(change: TimelineEdit) {
+  bars.value = bars.value.map(bar =>
+    bar.id === change.id ? { ...bar, ...change.after } : bar,
+  )
+}
+</script>
+
+<template>
+  <GanttChart :rows="rows" :bars="bars" :range="range" @edit="commit" />
+</template>
+```
+
+The component previews pointer edits, then emits a proposal. The parent commits it by replacing the affected interval. This supports application-specific validation, API persistence and asynchronous approval. A synchronous `validateEdit` hook can reject a proposal before the event is emitted.
+
+Intervals support multiple lanes, progress, milestones and FS/SS/FF/SF dependencies. Row groups, baselines, header bands and date markers support planning views. Row and time-window virtualization limit rendered elements. `formatTime`, `labels`, slots and CSS variables control presentation.
+
+Use `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad` from `vue-weave/core` for working calendars, dependency scheduling, critical tasks and resource overload diagnostics. The application calls these functions and passes accepted results to the chart. See the [scheduling guide](docs/scheduling.md).
+
+## Run the demo
+
+Use Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
+
+```sh
+npm ci
+npm run build:demo
+npm start
+```
+
+The demo includes manufacturing, project delivery, a 1,000-row timeline and scheduling. Enable **Edit graph** for connections, reconnection, box selection and group movement. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar. Edits remain in the demo's local state.
+
+If you have a prebuilt demo archive containing `preview/`, extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
+
+For development and verification commands, see [Contributing](CONTRIBUTING.md).
+
+## Documentation
+
+- [Public API and input contracts](docs/api.md)
+- [Vue, Nuxt, custom rendering, time scales and persistence](docs/integration.md)
+- [Architecture, performance and scope](docs/architecture.md)
+- [Scheduling and resource load](docs/scheduling.md)
+- [Contributing and release process](CONTRIBUTING.md)
+- [Security and private vulnerability reporting](docs/security.md)
+- [Code of conduct](docs/code-of-conduct.md)
+- [Changelog](CHANGELOG.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE). Third-party notices for the prebuilt demo are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [Third-party licenses](docs/third-party-licenses.md).

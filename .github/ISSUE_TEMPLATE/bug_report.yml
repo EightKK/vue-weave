@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a reproducible problem in the library or demo.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, follow docs/security.md rather than opening a public issue.
+        Remove credentials, personal information and confidential data from reproductions.
+  - type: input
+    id: version
+    attributes:
+      label: Package version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Vue and Node.js versions, operating system, browser and framework or bundler.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide a small code example or reproduction link and steps using synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant error messages and screenshots when useful.
+    validations:
+      required: true

@@ -1,0 +1,88 @@
+# Contributing
+
+Bug reports, documentation corrections and focused pull requests are welcome. For security concerns, follow the [security policy](docs/security.md) instead of opening a public issue. Everyone participating is expected to follow the [code of conduct](docs/code-of-conduct.md).
+
+## Set up a checkout
+
+Use Node.js 22.18 or later and npm. CI covers Node.js 22 and 24 on Linux and Windows. Clone [EightKK/vue-weave](https://github.com/EightKK/vue-weave) or extract its source archive, then run:
+
+```sh
+npm ci
+npm run dev
+```
+
+The development demo is at http://127.0.0.1:5173. A fresh GitHub checkout or automatically generated GitHub source ZIP does not include `preview/`. To run the static demo, first run `npm run build:demo`, then `npm start`. A separately prepared demo archive can include `preview/` and run offline with Node.js; Windows users can launch it with `Start.cmd`.
+
+## Report a problem or propose a feature
+
+Search existing issues first. Include the installed package version, Vue version, Node.js version, browser and operating system, a minimal reproduction, expected behavior and actual behavior. Use synthetic data and remove credentials, personal data and confidential business data. Describe a feature's use case before proposing a new API. Questions about using the library can be opened as issues.
+
+Maintainers review API and scope changes before accepting them. A response or fix deadline is not guaranteed.
+
+## Make a change
+
+- Keep comments, API documentation and test descriptions in English. Keep `README.md` and `README.ja.md` aligned.
+- Preserve the controlled editing contract: components emit proposals and parents replace accepted data. Cancel gestures when their source data or coordinate mapping changes.
+- Keep `src/core/` independent of Vue, the DOM and browser globals. Keep imports within `src/` independent of `examples/`.
+- Use `.js` extensions in relative TypeScript imports that are emitted into declarations. This lets ESM consumers resolve them with TypeScript's `NodeNext` mode.
+- Match the existing two-space indentation, single quotes, no semicolons and trailing commas. Use type-only imports where appropriate.
+- Add tests for changed public behavior, especially cycles, input validation, coordinate inversion, cancelled edits and stale source data. Tests must import the public package entry points.
+- Document public API changes in `docs/api.md`, affected guides and `CHANGELOG.md` under `Unreleased`. Identify breaking changes explicitly. New features should be opt-in.
+- Discuss new dependencies before adding them. There are no runtime dependencies; Vue remains a peer dependency and is externalized from the library bundle.
+
+Do not edit `dist/` or `preview/` manually. Generate `package-lock.json` with npm when an approved dependency change requires it. Do not commit local configuration, secrets, test output or release artifacts.
+
+## Build a local package
+
+From a source checkout, run:
+
+```sh
+npm ci
+npm pack
+```
+
+`npm pack` builds the library through the `prepack` script and creates a `.tgz` in the checkout. Install that file from a consumer application's directory, replacing the example path with the generated tarball path:
+
+```sh
+npm install ./path/to/package.tgz
+```
+
+The package includes ES modules, declarations, the stylesheet and documentation. Vue remains a peer dependency. Use `vue-weave/core` for calculations without importing Vue components.
+
+## Verify a pull request
+
+```sh
+npm run check
+npx playwright install chromium
+npm run test:e2e
+npm run test:package
+```
+
+`check` type-checks the library and examples, builds the library, runs core/SSR tests and rebuilds the demo. Run browser tests after changes to components, styles, examples or accessible names. Browser regression fixtures also load the built library from `dist/`; build both the library and demo first, or use `check` as above. The Playwright server needs port 4173 free; `CHROMIUM_PATH` can select an existing Chromium installation. Accessible-name changes may require updating `test/browser/charts.spec.ts`.
+
+`test:package` builds and packs the actual release files, rejects unexpected files, installs the tarball into a temporary consumer, checks core use without Vue, then checks Vue SSR, stylesheet resolution and strict TypeScript consumption with `noUncheckedSideEffectImports`. It uses the project's existing TypeScript compiler and installs the pinned development Vue version into the consumer; registry access or a populated npm cache is required. It removes that temporary consumer and retains the reviewed tarball in `artifacts/`. It never publishes or changes the repository lockfile. CI runs it on the Node/OS package matrix. Run it after package, declaration, build or export changes and before a release.
+
+Include the checks run and any failures or unverified behavior in the pull request. Explain the user-visible result, relevant compatibility constraints and documentation changes.
+
+## Licensing contributions
+
+By submitting a contribution, you agree to provide it under this project's [MIT license](LICENSE). Submit only work you have permission to distribute under that license. Identify third-party code or assets and their license requirements in your pull request. Preserve existing copyright and third-party notices. No contributor license agreement or sign-off requirement is currently imposed.
+
+## Prepare a release
+
+1. Review the release version, package metadata and distribution rights for source, examples and assets. Move the relevant `Unreleased` entries into the release's changelog entry. Generate lockfile updates with npm when package metadata or dependencies change.
+2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
+3. Verify that the security and conduct reporting routes work. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
+4. Create the release tag and notes from the checked revision. Use the tarball retained by `test:package` for package distribution and record its checksum with the release assets. Verify registry publishing access before npm distribution. Source releases and npm releases can be distributed independently.
+
+To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
+
+```sh
+npm run prepare:release
+```
+
+This command reruns the full check, browser tests, package-consumer tests and dependency audit. It requires registry access (or a populated npm cache), Chromium and a `tar` executable, which is supplied by current Windows and Linux environments. It uses an explicit source-file allowlist, rejects symlinks, and excludes `.git`, `node_modules`, local settings, credentials and test output. It checks that source files stay unchanged during verification, creates an archive with the generated `preview/`, compares every extracted file against the source inventory, and smoke-tests the extracted demo without installing dependencies. It then replaces the local candidates, `artifacts/SHA256SUMS` and `artifacts/release-verification.json` together. The verification record lists file hashes and outstanding publication checks; it does not certify distribution rights, Git history or hosted settings. No publishing, tags or repository changes are performed. Review the allowlisted source files for confidential content before sharing them. GitHub's generated source ZIP omits ignored `preview/` and requires a demo build.
+
+Host a public demo as static files from `preview/`, with the relevant third-party notices. The local preview server binds to `127.0.0.1`.
+
+The included CI validates changes; publishing is a separate maintainer action. Keep registry credentials out of source files, issues and pull requests.

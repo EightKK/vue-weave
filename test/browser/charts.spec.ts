@@ -1,0 +1,382 @@
+import { test, expect, type Page } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
+
+async function openComponentFixture(page: Page) {
+  // Serve built public entries and Vue without adding diagnostic pages to the distributed demo.
+  await page.route('**/component-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/component-test/'.length)
+    if (filename === '') {
+      return route.fulfill({ path: fileURLToPath(new URL('./fixtures/components.html', import.meta.url)) })
+    }
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/component-test/')
+}
+
+test('row hierarchy failures notify, cancel pending edits and recover on replacement data', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  const timeline = page.getByRole('region', { name: 'Timeline fixture', exact: true })
+  const bar = timeline.getByRole('button', { name: 'Editable bar 1–3', exact: true })
+  await expect(bar).toBeVisible()
+  const box = (await bar.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
+  await timeline.getByRole('button', { name: 'Missing parent', exact: true }).dispatchEvent('click')
+  await page.mouse.up()
+  await expect(timeline.getByRole('status', { name: 'Validation reports' })).toHaveText('Unknown parent for row: a')
+  await expect(timeline.getByText('No rows to display', { exact: true })).toBeVisible()
+  await expect(timeline.getByRole('status', { name: 'Accepted edits' })).toHaveText('0')
+  await timeline.getByRole('button', { name: 'Restore rows', exact: true }).click()
+  await expect(bar).toBeVisible()
+  await timeline.getByRole('button', { name: 'Cyclic rows', exact: true }).click()
+  await expect(timeline.getByRole('status', { name: 'Validation reports' })).toHaveText('Unknown parent for row: a; The timeline row hierarchy contains a cycle')
+  await expect(timeline.getByText('No rows to display', { exact: true })).toBeVisible()
+  await timeline.getByRole('button', { name: 'Restore rows', exact: true }).click()
+  await expect(bar).toBeVisible()
+  await bar.press('ArrowRight')
+  await expect(timeline.getByRole('button', { name: 'Editable bar 2–4', exact: true })).toBeVisible()
+  await expect(timeline.getByRole('status', { name: 'Accepted edits' })).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('zero-padding graphs recover from empty data in both directions', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  const graph = page.getByRole('region', { name: 'Graph fixture', exact: true })
+  for (const direction of ['LR', 'TB']) {
+    await graph.getByRole('button', { name: direction + ' direction', exact: true }).click()
+    await expect(graph.getByRole('button', { name: 'Node A', exact: true })).toBeVisible()
+    await graph.getByRole('button', { name: 'Empty graph', exact: true }).click()
+    await expect(graph.getByText('No nodes to display', { exact: true })).toBeVisible()
+    await expect(graph.getByRole('button', { name: 'Node A', exact: true })).toHaveCount(0)
+    await graph.getByRole('button', { name: 'Restore nodes', exact: true }).click()
+    await expect(graph.getByRole('button', { name: 'Node A', exact: true })).toBeVisible()
+    await graph.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await graph.getByRole('button', { name: 'Fit to view', exact: true }).click()
+  }
+  expect(errors).toEqual([])
+})
+
+test('selection, controlled edits, validation and cancellation', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await expect(page).toHaveTitle('Vue Weave — Examples')
+  await expect(page.getByRole('link', { name: 'Vue Weave 0.4', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCount(2)
+  await page.locator('.vft-zoom-tools').getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
+  const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+  await expect(plan).toBeVisible()
+  await page.getByRole('button', { name: 'Split Operation 101', exact: true }).click()
+  await expect(plan).toHaveAttribute('aria-pressed', 'true')
+  await plan.press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true }).press('Shift+ArrowRight')
+  await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:30', exact: true })).toBeVisible()
+  await page.getByLabel('Reject edits').check()
+  await page.getByRole('button', { name: 'Split · plan 09:15–11:30', exact: true }).press('ArrowRight')
+  await expect(page.getByRole('status').filter({ hasText: 'locked' })).toBeVisible()
+  await page.getByLabel('Reject edits').uncheck()
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
+
+  async function dragEnd(delta: number, cancel = false) {
+    const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+    const box = (await bar.boundingBox())!
+    await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width - 4 + delta, box.y + box.height / 2, { steps: 6 })
+    if (cancel) await page.keyboard.press('Escape')
+    await page.mouse.up()
+  }
+  await dragEnd(29)
+  await expect(page.getByRole('button', { name: 'Split · plan 09:00–11:15', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
+  await dragEnd(58, true)
+  await expect(plan).toBeVisible()
+  // Simulate a source refresh while the pointer gesture owns capture.
+  const initial = (await plan.boundingBox())!
+  await page.mouse.move(initial.x + initial.width / 2, initial.y + initial.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(initial.x + initial.width / 2 + 58, initial.y + initial.height / 2, { steps: 5 })
+  await page.getByRole('button', { name: 'Reset', exact: true }).dispatchEvent('click')
+  await page.mouse.up()
+  await expect(plan).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Direction').selectOption('TB')
+  await expect(page.locator('.vft-network-stage')).toHaveCSS('height', '470px')
+  await page.getByLabel('Custom nodes').check()
+  await expect(page.locator('.vft-network-node > rect')).toHaveCount(6)
+  await page.getByLabel('Dark theme').check()
+  await expect(page.locator('.demo')).toHaveClass(/dark/)
+  await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
+  await expect(page.locator('.vft-gantt-bar.milestone')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Release 15:00–15:00', exact: true }).press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'Release 15:15–15:15', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '1,000 resources', exact: true }).click()
+  expect(await page.locator('.vft-gantt-row').count()).toBeLessThan(15)
+  await page.getByRole('button', { name: 'Last resource', exact: true }).click()
+  await expect(page.getByText('Resource 1000', { exact: true })).toBeVisible()
+  expect(await page.locator('.vft-gantt-row').count()).toBeLessThan(15)
+  await page.screenshot({ path: 'test-results/large-dark.png', fullPage: true })
+})
+
+test('mobile layout and horizontal scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+  const viewport = page.locator('.vft-gantt-scroll')
+  expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/mobile.png', fullPage: true })
+})
+
+test('graph moves are controlled and connections can be accepted or rejected', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+  const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
+  await split.click()
+  await finish.click({ modifiers: ['Shift'] })
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(finish).toHaveAttribute('aria-pressed', 'true')
+
+  const initial = await split.getAttribute('transform')
+  const box = (await split.boundingBox())!
+  await page.mouse.move(box.x + 35, box.y + 30)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 35, box.y + 110, { steps: 8 })
+  await page.mouse.up()
+  await expect(split).not.toHaveAttribute('transform', initial!)
+  await expect(page.getByText('Moved 2 nodes.', { exact: true })).toBeVisible()
+  const committed = await split.getAttribute('transform')
+  await split.press('ArrowRight')
+  await expect(split).not.toHaveAttribute('transform', committed!)
+  const beforeNavigation = await page.locator('.vft-network-stage > g').getAttribute('transform')
+  await page.getByRole('button', { name: 'Navigate graph overview' }).click({ position: { x: 20, y: 30 } })
+  await expect(page.locator('.vft-network-stage > g')).not.toHaveAttribute('transform', beforeNavigation!)
+  await page.getByRole('button', { name: 'Fit to view' }).click()
+
+  await page.getByRole('button', { name: 'Start connection from Material A1', exact: true }).press('Enter')
+  await page.getByRole('button', { name: 'Connect to Split', exact: true }).press('Enter')
+  await expect(page.getByRole('status').filter({ hasText: 'already exists' })).toBeVisible()
+  await page.getByRole('button', { name: 'Start connection from Material A1', exact: true }).press('Enter')
+  await page.getByRole('button', { name: 'Connect to Finish', exact: true }).press('Enter')
+  await expect(page.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible()
+  await expect(page.locator('.vft-network-edge')).toHaveCount(7)
+  expect(errors).toEqual([])
+})
+
+test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Planning overlays').check()
+  await expect(page.getByText('Operating window · UTC')).toBeVisible()
+  await expect(page.getByText('Shift review', { exact: true })).toBeVisible()
+  await expect(page.locator('.vft-gantt-row')).toHaveCount(3)
+  await expect(page.locator('.vft-gantt-baseline')).toHaveCount(4)
+  const baseline = page.locator('.vft-gantt-baseline').first()
+  const original = await baseline.getAttribute('style')
+  await page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true }).press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
+  await expect(baseline).toHaveAttribute('style', original!)
+  await page.getByRole('button', { name: 'Collapse Production schedule' }).click()
+  await expect(page.locator('.vft-gantt-row')).toHaveCount(1)
+  await expect(page.locator('.vft-gantt-bar')).toHaveCount(0)
+  await expect(page.locator('.vft-gantt-links')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Expand Production schedule' }).click()
+  await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
+})
+
+test('named port drag, edge reconnection and undo preserve the graph', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
+  await page.getByLabel('Edit graph').check()
+  const source = page.getByRole('button', { name: 'Start connection from Design · Output', exact: true })
+  const target = page.getByRole('button', { name: /^(Start connection from|Connect to) Release · Input$/ })
+  await expect(source).toBeVisible()
+  const a = (await source.boundingBox())!, b = (await target.boundingBox())!
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 })
+  await expect(page.locator('.vft-connection-preview')).toHaveAttribute('d', /^M .+ L /)
+  await page.mouse.up()
+  await expect(page.locator('.vft-network-edge')).toHaveCount(5)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+
+  const edge = page.getByRole('button', { name: 'Select edge da', exact: true })
+  const path = await edge.getAttribute('d')
+  await edge.press('Enter')
+  await page.getByRole('button', { name: 'Reconnect target of da', exact: true }).press('Enter')
+  await page.getByRole('button', { name: 'Connect to Release · Input', exact: true }).press('Enter')
+  await expect(page.getByRole('status').filter({ hasText: 'Reconnected edge da' })).toBeVisible()
+  await expect(edge).not.toHaveAttribute('d', path!)
+  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(edge).toHaveAttribute('d', path!)
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await expect(edge).not.toHaveAttribute('d', path!)
+
+  const secondEdge = page.getByRole('button', { name: 'Select edge du', exact: true })
+  await secondEdge.press('Enter')
+  const endpoint = (await page.getByRole('button', { name: 'Reconnect source of du', exact: true }).boundingBox())!
+  const replacement = (await page.getByRole('button', { name: 'Start connection from API · Output', exact: true }).boundingBox())!
+  await page.mouse.move(endpoint.x + endpoint.width / 2, endpoint.y + endpoint.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(replacement.x + replacement.width / 2, replacement.y + replacement.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await expect(page.getByRole('status').filter({ hasText: 'Reconnected edge du' })).toBeVisible()
+  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+  expect(errors).toEqual([])
+})
+
+test('range selection and group movement commit an atomic batch', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  const lots = page.locator('.vft-network-node').filter({ hasText: 'Lot A123-' })
+  const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])
+  const [a, b] = boxes
+  await page.keyboard.down('Shift')
+  await page.mouse.move(a!.x - 9, a!.y - 12)
+  await page.mouse.down()
+  await page.mouse.move(b!.x + b!.width + 8, b!.y + b!.height + 7, { steps: 8 })
+  await expect(page.locator('.vft-box-selection')).toBeVisible()
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expect(lots.first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(lots.last()).toHaveAttribute('aria-pressed', 'true')
+  const before = await Promise.all([lots.first().getAttribute('transform'), lots.last().getAttribute('transform')])
+  await page.getByRole('button', { name: 'Move group Intermediate lots', exact: true }).press('ArrowDown')
+  await expect(lots.first()).not.toHaveAttribute('transform', before[0]!)
+  await expect(lots.last()).not.toHaveAttribute('transform', before[1]!)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(lots.first()).toHaveAttribute('transform', before[0]!)
+  await expect(lots.last()).toHaveAttribute('transform', before[1]!)
+})
+
+test('timeline columns edit through validation and keep summary bars when collapsed', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Planning overlays').check()
+  const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
+  await expect(input).toHaveValue('Machine 01')
+  await input.fill('Cancelled note')
+  await input.press('Escape')
+  await expect(input).toHaveValue('Machine 01')
+  await input.fill('Machine 01 — Cell A')
+  await input.press('Enter')
+  await expect(input).toHaveValue('Machine 01 — Cell A')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(input).toHaveValue('Machine 01')
+  await input.fill('')
+  await input.press('Enter')
+  await expect(page.getByRole('status').filter({ hasText: 'cannot be empty' })).toBeVisible()
+  await expect(input).toHaveValue('Machine 01')
+  const summary = page.locator('.vft-gantt-summary')
+  await expect(summary).toHaveCount(1)
+  const style = await summary.getAttribute('style')
+  await page.getByRole('button', { name: 'Collapse Production schedule' }).click()
+  await expect(summary).toHaveAttribute('style', style!)
+  await expect(input).toHaveCount(0)
+})
+
+test('calendar-aware edits propagate downstream, expose overload and preserve the accepted plan on failure', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const finish = page.getByTestId('schedule-finish')
+  const cutting = page.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
+  const inspection = page.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
+  const packing = page.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
+  await expect(finish).toHaveText('09 Nov 16:00')
+  await expect(page.locator('.vft-gantt-links path.highlighted')).toHaveCount(2)
+  await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
+  await expect(page.getByRole('table', { name: 'Overload intervals' })).toContainText('Cut order A, Cut order B')
+  await cutting.press('ArrowRight')
+  await expect(finish).toHaveText('09 Nov 17:00')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 13:00–09 Nov 15:00')
+  await expect(page.getByTestId('schedule-overload')).toHaveText('2 resource-hours')
+  await cutting.press('ArrowRight')
+  await expect(finish).toHaveText('11 Nov 09:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 16:00–11 Nov 09:00')
+  for (let edit = 0; edit < 8; edit++) await cutting.press('ArrowRight')
+  await expect(page.getByRole('status').filter({ hasText: 'exceed the available shifts' })).toBeVisible()
+  await expect(finish).toHaveText('11 Nov 17:00')
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 11 Nov 09:00–11 Nov 12:00')
+  await page.getByRole('button', { name: 'Reset schedule' }).click()
+  await expect(finish).toHaveText('09 Nov 16:00')
+  await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
+})
+
+test('a bar click or drag emits select once and keyboard edits keep focus in a narrow viewport', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 640, height: 900 })
+  await page.goto('/')
+  const count = page.getByRole('status', { name: 'Select events', exact: true })
+  const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+  await expect(plan).toBeVisible()
+  await expect(count).toHaveText('0')
+  await plan.click()
+  await expect(count).toHaveText('1')
+  const box = (await plan.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(count).toHaveText('2')
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
+
+  // Moving a focused bar far to the right keeps focus and scrolls it into view.
+  const moving = page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')
+  await moving.focus()
+  for (let i = 0; i < 24; i++) await moving.press('ArrowRight')
+  await expect(page.locator('.vft-gantt-bar:focus')).toHaveCount(1)
+  const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+  const focused = (await page.locator('.vft-gantt-bar:focus').boundingBox())!
+  const area = (await region.boundingBox())!
+  expect(focused.x + focused.width).toBeLessThanOrEqual(area.x + area.width + 1)
+  expect(errors).toEqual([])
+})
+
+test('dragging a bar near the viewport edge scrolls the timeline and keeps the preview in sync', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 640, height: 900 })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
+  const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  const area = (await region.boundingBox())!
+  const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+  const box = (await bar.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(area.x + area.width - 10, box.y + box.height / 2, { steps: 8 })
+  await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
+  await page.mouse.up()
+  await expect(page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
+  expect(errors).toEqual([])
+})
