@@ -62,7 +62,7 @@
     "@playwright/test": "^1.57.0",
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "6.0.10",
-    "typescript": "~7.0.2",
+    "typescript": "~6.0.3",
     "vite": "8.3.7",
     "vue": "3.5.45",
     "vue-tsc": "^3.2.0"
