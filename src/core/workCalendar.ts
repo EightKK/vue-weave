@@ -17,6 +17,11 @@ export interface WeeklyShift extends WorkShift {
 export interface WorkWeek {
   weekly: readonly WeeklyShift[]
   utcOffsetMinutes?: number
+  /**
+   * IANA time zone such as `Europe/Berlin`. Shift minutes are then local wall-clock times,
+   * resolved with daylight-saving rules. Cannot be combined with `utcOffsetMinutes`.
+   */
+  timeZone?: string
   exceptions?: Readonly<Record<string, readonly WorkShift[]>>
 }
 
@@ -57,14 +62,83 @@ function checkShift(shift: WorkShift) {
   }
 }
 
-/** Build epoch-millisecond periods for a weekly calendar in a fixed UTC offset. */
+const zoneFormats = new Map<string, Intl.DateTimeFormat>()
+
+function zoneFormat(timeZone: string) {
+  let format = zoneFormats.get(timeZone)
+  if (!format) {
+    if (typeof timeZone !== 'string' || !timeZone) throw new RangeError('Invalid time zone: ' + timeZone)
+    try {
+      format = new Intl.DateTimeFormat('en-US', {
+        timeZone, hourCycle: 'h23', era: 'short', year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+      })
+    } catch {
+      throw new RangeError('Invalid time zone: ' + timeZone)
+    }
+    zoneFormats.set(timeZone, format)
+  }
+  return format
+}
+
+/** Local wall-clock time minus UTC at an instant, in milliseconds (second resolution). */
+function zoneOffset(format: Intl.DateTimeFormat, instant: number) {
+  const fields: Record<string, string> = {}
+  for (const part of format.formatToParts(instant)) fields[part.type] = part.value
+  const year = fields.era === 'BC' ? 1 - Number(fields.year) : Number(fields.year)
+  const wall = new Date(0)
+  wall.setUTCFullYear(year, Number(fields.month) - 1, Number(fields.day))
+  wall.setUTCHours(Number(fields.hour), Number(fields.minute), Number(fields.second), 0)
+  return wall.getTime() - (instant - (((instant % 1000) + 1000) % 1000))
+}
+
+/**
+ * Resolve a local wall-clock time (expressed as if it were UTC) to an instant.
+ * A wall time skipped by a forward transition resolves to the transition instant.
+ * A repeated wall time resolves to its earlier occurrence.
+ */
+function zonedInstant(format: Intl.DateTimeFormat, wall: number) {
+  const before = zoneOffset(format, wall - dayMs), after = zoneOffset(format, wall + dayMs)
+  // Zone rules change at most once within two days.
+  if (before === after) return wall - before
+  const candidates = [...new Set([before, after])].map(offset => wall - offset)
+    .filter(instant => wall - zoneOffset(format, instant) === instant)
+  if (candidates.length) return Math.min(...candidates)
+  // Gap: the offset changes from `before` to `after` between these two instants.
+  let low = Math.floor((wall - after) / 1000), high = Math.ceil((wall - before) / 1000)
+  while (high - low > 1) {
+    const middle = low + Math.floor((high - low) / 2)
+    if (zoneOffset(format, middle * 1000) === before) low = middle
+    else high = middle
+  }
+  return high * 1000
+}
+
+/**
+ * Build epoch-millisecond periods for a weekly calendar in a fixed UTC offset or an IANA time zone.
+ * With `timeZone`, shift minutes are local wall-clock times: a shift that crosses a daylight-saving
+ * transition gains or loses the difference.
+ */
 export function buildWorkPeriods(range: TimeRange, week: WorkWeek): TimeRange[] {
   assertScheduleRange(range)
+  if (week.timeZone !== undefined && week.utcOffsetMinutes !== undefined) {
+    throw new Error('Specify either timeZone or utcOffsetMinutes, not both')
+  }
+  const format = week.timeZone === undefined ? undefined : zoneFormat(week.timeZone)
   const offset = week.utcOffsetMinutes ?? 0
   if (!Number.isInteger(offset) || Math.abs(offset) > 840) throw new RangeError('Invalid fixed UTC offset')
   const offsetMs = offset * minuteMs
-  const firstDay = Math.floor((range.start + offsetMs) / dayMs) * dayMs
-  const lastDay = Math.floor((range.end - 1 + offsetMs) / dayMs) * dayMs
+  // Civil dates are handled as UTC midnights of the local calendar date.
+  const localDay = (instant: number) => {
+    const shift = format ? zoneOffset(format, instant) : offsetMs
+    return Math.floor((instant + shift) / dayMs) * dayMs
+  }
+  const toInstant = (wall: number) => format ? zonedInstant(format, wall) : wall - offsetMs
+  if (format && !Number.isFinite(new Date(range.start - 2 * dayMs).getTime()) || !Number.isFinite(new Date(range.end + 2 * dayMs).getTime())) {
+    throw new RangeError('Calendar horizon must be within 3,661 civil dates')
+  }
+  const firstDay = localDay(range.start)
+  const lastDay = localDay(range.end - 1)
   // Bound civil-date generation. Explicit periods have no such day count limit.
   if (!Number.isFinite(new Date(firstDay - dayMs).getTime()) || !Number.isFinite(new Date(lastDay + dayMs).getTime())
     || lastDay - firstDay > 3660 * dayMs) throw new RangeError('Calendar horizon must be within 3,661 civil dates')
@@ -89,15 +163,18 @@ export function buildWorkPeriods(range: TimeRange, week: WorkWeek): TimeRange[] 
   }
 
   const periods: TimeRange[] = []
+  const push = (start: number, end: number) => {
+    if (start < end) periods.push({ start, end })
+  }
   for (let day = firstDay; day <= lastDay; day += dayMs) {
-    const midnight = day - offsetMs
+    const midnight = toInstant(day), nextMidnight = toInstant(day + dayMs)
     for (const shift of shiftsOn(day)) {
-      periods.push({ start: midnight + shift.startMinute * minuteMs, end: midnight + Math.min(1440, shift.endMinute) * minuteMs })
+      push(toInstant(day + shift.startMinute * minuteMs), shift.endMinute >= 1440 ? nextMidnight : toInstant(day + shift.endMinute * minuteMs))
     }
     // An override owns its whole civil date, including any carry-in from a night shift.
     if (exceptions.has(new Date(day).toISOString().slice(0, 10))) continue
     for (const shift of shiftsOn(day - dayMs)) {
-      if (shift.endMinute > 1440) periods.push({ start: midnight, end: midnight + (shift.endMinute - 1440) * minuteMs })
+      if (shift.endMinute > 1440) push(midnight, toInstant(day + (shift.endMinute - 1440) * minuteMs))
     }
   }
   return normalizeWorkPeriods(periods, range)
