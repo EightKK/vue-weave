@@ -74,6 +74,18 @@ Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale 
 
 GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
 
+### Built-in dark theme
+
+Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+
+`--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels. In the dark theme the solid tones are light and `--vft-on-solid` is dark.
+
+### Media queries
+
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, link hit targets and previews, and the Gantt toolbar are hidden. Backgrounds are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
 ## Persistence
