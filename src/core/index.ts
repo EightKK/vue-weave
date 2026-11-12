@@ -14,3 +14,4 @@ export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
 export * from './graphView.js'
+export * from './leveling.js'
