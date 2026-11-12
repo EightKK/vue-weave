@@ -27,7 +27,7 @@ NetworkNode has id, label, optional detail, tone (teal/blue/amber/violet), shape
 
 A custom layout returns GraphLayout containing boxes, paths and edgeLabels Maps plus positive finite width and height. Each node box has x, y, width, height and rank. Each edge needs an SVG path. Labels are optional map entries. Coordinates are chart-local pixels. Keep paths and boxes within the supplied bounds for accurate fit-to-view.
 
-Events are select(id), update:selectedId(id), and viewport-change({x,y,scale}). The last event reports pan/zoom/fit changes. Exposed methods are fit(), zoom(factor, optionalX, optionalY), getViewport() and setViewport({x,y,scale}), plus focusNode(id, options), exportSvg(options) and exportPng(options) (see [Export to SVG and PNG](#export-to-svg-and-png)). Viewport scale is clamped by zoom, and setViewport requires 0.1–3. Slots are node({node,box,selected}), edge({edge,path,selected}) and empty. SVG slots must contain SVG elements.
+Events are select(id), update:selectedId(id), and viewport-change({x,y,scale}). The last event reports pan/zoom/fit changes. Exposed methods are fit(), zoom(factor, optionalX, optionalY), getViewport() and setViewport({x,y,scale}), plus focusNode(id, options), exportSvg(options) and exportPng(options) (see [Export to SVG and PNG](#export-to-svg-and-png)). Viewport scale is clamped by zoom, and setViewport requires 0.1–3. Slots are node({node,box,selected,dimmed}), edge({edge,path,selected,dimmed}) and empty. SVG slots must contain SVG elements.
 
 A narrow viewport initially focuses around the selected node at a readable scale. Fit-to-view explicitly shows the full graph. Pointer dragging pans the background. Ctrl+wheel zooms around the cursor. Arrow keys pan a focused SVG. Enter/Space select a focused node. Optional node movement and connection proposals are described in [Graph editing and minimap](#graph-editing-and-minimap).
 
@@ -290,6 +290,19 @@ All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs a
 | shortestGraphPath(nodes, edges, fromId, toId, { directed = true, weight }) | `{ nodeIds, edgeIds, distance }` or `null` when unreachable. Breadth-first without `weight`, Dijkstra with it (weights must be finite and nonnegative, otherwise `RangeError`). Unknown IDs throw `Error`. |
 | searchGraphNodes(nodes, query, { fields }) | Case-insensitive substring match on `id` and `label` (both by default). An empty query matches every node. |
 | filterGraph(nodes, edges, match, { neighborhood = 0, fields }) | `match` is a predicate or a text query. Returns `{ nodes, edges }`: matching nodes plus everything within `neighborhood` hops (via `graphNeighborhood`) and the edges with both endpoints kept. |
+
+### Viewport helpers
+
+The helpers behind `cullOffscreen` are exported for custom renderers and workers. Rectangles are `GraphRect` values (`x`, `y`, `width`, `height`) in chart coordinates.
+
+| Export | Purpose |
+| --- | --- |
+| graphViewportRect(camera, size, overscan = 0) | World rectangle a `GraphViewport` camera shows for a screen size, grown by `overscan` screen pixels. Throws `RangeError` for a nonpositive scale or negative size |
+| graphRectsIntersect(a, b) | Whether two rectangles overlap or touch |
+| graphPathBounds(path) | Bounding rectangle of an SVG path string (curves use control points), or `undefined` without coordinates |
+| graphLayoutBounds(layout, labelReach = 80) | `GraphBounds` with one rectangle per node and per edge, edge labels included |
+| cullGraphElements(bounds, view, keep?) | `GraphVisibleIds` of the nodes and edges that intersect `view`, plus any IDs in `keep` (`GraphCullKeep`) |
+| graphCameraAt(point, size, scale) | Camera that centers a world point at a scale; `focusNode` uses the same rule |
 
 ### Row trees and summaries
 
