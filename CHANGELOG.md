@@ -4,8 +4,6 @@
 
 ### Added
 
-- `NetworkGraph` accepts `RL` and `BT` directions and the opt-in `crossingReduction` and `crossingSweeps` layout options; the demo can switch direction, crossing reduction and layout.
-- Opt-in `vft-theme-dark` and `vft-theme-auto` (follows `prefers-color-scheme`) stylesheet classes, a new `--vft-marker-ink` variable, and `forced-colors`, `prefers-reduced-motion` and print styles for both components.
 - `NetworkGraph` with LR/TB layouts, branches, merges, disconnected nodes, directed cycles, self-loops, edge labels and custom layout/rendering.
 - Controlled graph editing with named ports, drag and keyboard connections, endpoint reconnection, box selection, disjoint visual groups, batch movement and a navigable minimap.
 - `GanttChart` with controlled pointer and keyboard editing, validation, cancellation on source changes, lanes, milestones, progress and FS/SS/FF/SF dependencies.
@@ -18,20 +16,21 @@
 - Framework-independent TypeScript core, ESM entry points, Bundler/NodeNext declarations, namespaced themes, localization, typed slots and navigation methods.
 - Manufacturing, project delivery, large-resource and scheduling demos; public-entry, SSR, browser and isolated tarball-consumer checks.
 - Verified local release preparation with matching source/demo archives, file inventories, offline smoke checks and SHA-256 records.
+
+#### Graph
+
+- `NetworkGraph` accepts `RL` and `BT` directions and the opt-in `crossingReduction` and `crossingSweeps` layout options; the demo can switch direction, crossing reduction and layout.
+- Opt-in `crossingReduction` (`barycenter` or `median`, with `crossingSweeps`) for `layoutLayeredGraph` through the new `GraphLayeredLayoutOptions`, plus `countGraphCrossings`. The default output is unchanged.
+- `RL` and `BT` layout directions, exposed as the `GraphLayoutDirection` type and accepted by `graphEdgeEndpoint`, `routeGraphPorts` and `applyGraphPositions`.
+- `layoutTreeGraph` and `layoutRadialGraph`, drop-in `GraphLayout` producers for the `layout` prop.
+- Graph helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
 - `NetworkGraph` opt-in `cullOffscreen` (with `cullOverscan`) viewport culling, backed by the Vue-free `graphViewportRect`, `graphRectsIntersect`, `graphPathBounds`, `graphLayoutBounds`, `cullGraphElements` and `graphCameraAt` helpers. A large-graph demo preset is included.
 - `NetworkGraph` two-finger pinch zoom and pan for touch input, clamped to the existing zoom range and reported through `viewport-change`.
 - `NetworkGraph` nested groups through `NetworkGroup.parentId`, with descendant movement as one proposal, validation errors and the `groupWithin` label.
 - `NetworkGraph` `matchIds` and `dimmedIds` search/highlight hooks, `--vft-dimmed-opacity`, `dimmed` slot props and the `focusNode(id, options)` method.
 
-- Opt-in `crossingReduction` (`barycenter` or `median`, with `crossingSweeps`) for `layoutLayeredGraph` through the new `GraphLayeredLayoutOptions`, plus `countGraphCrossings`. The default output is unchanged.
-- `RL` and `BT` layout directions, exposed as the `GraphLayoutDirection` type and accepted by `graphEdgeEndpoint`, `routeGraphPorts` and `applyGraphPositions`.
-- `layoutTreeGraph` and `layoutRadialGraph`, drop-in `GraphLayout` producers for the `layout` prop.
-- Graph helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
-- Scheduling failure diagnostics: `cycle` results list `cycles` (task and dependency IDs of each strongly connected group), and `infeasible` results add the binding `constraints` and `dependencyIds`. Code that compares whole failure objects, for example with `deepEqual`, sees the new fields.
-- `ScheduleTask.mode: 'alap'` places a task as late as its free float allows without moving other tasks or the project finish. ALAP results add `earliestStart` and `earliestEnd`.
-- `ScheduleTask.pauses` interrupts a task's work for caller-specified intervals.
-- `levelResources` delays tasks with a deterministic priority-based serial heuristic so that assigned load stays within capacity, using `ScheduleTask.priority` and `splittable`, and reports delays, added pauses, remaining overloads and unresolved tasks. `calculateResourceLoad` is unchanged.
-- `WorkWeek.timeZone` builds work periods in an IANA time zone with daylight-saving gaps and overlaps resolved deterministically, using only `Intl.DateTimeFormat`.
+#### Timeline
+
 - Opt-in Gantt dependency editing: `connectable` link handles with pointer and keyboard connection, `reconnectable` endpoint handles, synchronous `validateConnection`, `connect`, `reconnect` and `connect-rejected` proposals with FS/SS/FF/SF derived from the joined bar ends, plus dependency selection (`selectedDependencyId`, `dependency-select`) and `dependency-delete`.
 - Opt-in Gantt multiple selection (`multiSelect` with `update:selectedIds`) and batch moves emitted once as `edits`, validated by `validateEdits` and reported by `edits-rejected`.
 - Opt-in Gantt row moves (`rowDraggable`) by pointer drag or Up/Down arrows; `TimelineEdit.row` carries the proposed row.
@@ -39,6 +38,18 @@
 - Gantt resource load histogram rows (`loadRows`, `loadSegments`, `loadRowHeight`, `load-row` and `load-segment` slots) with accessible segment labels and `--vft-load`, `--vft-load-overload`, `--vft-load-capacity` and `--vft-now` theme variables.
 - Core helpers `dependencyTypeForEnds`, `dependencyEndsForType`, `moveTimeRanges`, `calendarBands` and `resourceLoadHistogram`.
 - Timeline editing demo covering dependency, batch, row, preset, histogram and pinch interactions.
+
+#### Scheduling
+
+- **Behavior note, scheduling failures:** `cycle` results list `cycles` (task and dependency IDs of each strongly connected group), and `infeasible` results add the binding `constraints` and `dependencyIds`. Code that compares whole failure objects, for example with `deepEqual`, sees the new fields.
+- `ScheduleTask.mode: 'alap'` places a task as late as its free float allows without moving other tasks or the project finish. ALAP results add `earliestStart` and `earliestEnd`.
+- `ScheduleTask.pauses` interrupts a task's work for caller-specified intervals.
+- `levelResources` delays tasks with a deterministic priority-based serial heuristic so that assigned load stays within capacity, using `ScheduleTask.priority` and `splittable`, and reports delays, added pauses, remaining overloads and unresolved tasks. `calculateResourceLoad` is unchanged.
+- `WorkWeek.timeZone` builds work periods in an IANA time zone with daylight-saving gaps and overlaps resolved deterministically, using only `Intl.DateTimeFormat`.
+
+#### Styling, accessibility and export
+
+- Opt-in `vft-theme-dark` and `vft-theme-auto` (follows `prefers-color-scheme`) stylesheet classes, a new `--vft-marker-ink` variable, and `forced-colors`, `prefers-reduced-motion` and print styles for both components.
 - SVG and PNG export without dependencies: `exportSvg(options)` and `exportPng(options)` methods on `NetworkGraph` and `GanttChart` export the whole chart (all nodes and groups regardless of camera or culling; all displayed rows, columns, header bands, ticks, bars, milestones, baselines, summaries, dependencies, markers, the now line and load rows, with optional `timeRange` and `rowRange`) using the current `--vft-*` theme. PNG export takes a `scale` and rejects canvases larger than 16,384 px per side or 268,435,456 px in total with a `RangeError`. The Vue-free core builders `renderGraphSvg`, `renderTimelineSvg`, `escapeXml`, `defaultSvgExportTheme` and `mirrorTimeScale` work in Node and workers. Exports use the default rendering; slot content is not reproduced. The demos gain export buttons.
 - Opt-in right-to-left support through a `dir` prop (`ltr` default, `rtl` or `auto`, type `ChartDirection`) on both components. `GanttChart` places row headings on the right, runs time from right to left and mirrors header bands, ticks, grid, bars, handles, dependencies, markers and load rows, with scrolling, autoscroll, zoom anchoring, pinch, pointer drags and `scrollToTime` working on negative `scrollLeft`; ArrowLeft/ArrowRight follow the visual direction. `NetworkGraph` moves its zoom tools and minimap and right-aligns labels without changing geometry. The timeline editing demo gains a right-to-left toggle.
 

@@ -21,6 +21,7 @@ const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.v
   ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
   : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e) : undefined)
 const dark = ref(false)
+const builtInTheme = ref<'' | 'vft-theme-dark' | 'vft-theme-auto'>('')
 const custom = ref(false)
 const locked = ref(false)
 const graphEditing = ref(false)
@@ -152,8 +153,8 @@ function commit(change: TimelineEdit) {
 </script>
 
 <template>
-  <div class="demo" :class="{ dark }">
-    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label></header>
+  <div class="demo" :class="[{ dark }, builtInTheme]">
+    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vft-theme-dark">Dark</option><option value="vft-theme-auto">Auto (system)</option></select></label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">

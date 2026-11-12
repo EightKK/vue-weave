@@ -37,6 +37,7 @@ footer { padding-block: 6px; }
 @media (max-width: 650px) {
   main { padding: 18px 12px; }
   header { padding: 15px 12px; }
+  .theme-switch { display: none; }
   .section-head { align-items: flex-start; flex-direction: column; }
   .options { flex-wrap: wrap; gap: 10px; }
   section { padding: 10px; }

@@ -122,6 +122,24 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
   expect(errors).toEqual([])
 })
 
+test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const demo = page.locator('.demo')
+  const surface = () => page.locator('.vft-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vft-surface').trim())
+  expect(await surface()).toBe('')
+  await page.getByLabel('Built-in theme').selectOption('vft-theme-dark')
+  await expect(demo).toHaveClass(/vft-theme-dark/)
+  expect(await surface()).toBe('#182a37')
+  await page.getByLabel('Built-in theme').selectOption('vft-theme-auto')
+  await expect(demo).toHaveClass(/vft-theme-auto/)
+  expect(await surface()).toBe('')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect(await surface()).toBe('#182a37')
+  expect(errors).toEqual([])
+})
+
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Direction').selectOption('TB')
