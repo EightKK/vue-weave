@@ -846,3 +846,54 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   }
   expect(errors).toEqual([])
 })
+
+test('export controls download a whole-chart SVG and a scaled PNG for both components', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const pngSize = (bytes: Buffer) => {
+    expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG')
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  }
+  const save = async (name: string) => {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    const file = await pending
+    return { name: file.suggestedFilename(), bytes: await readFile((await file.path())!) }
+  }
+  const { errors, chart, status } = await openTimelineEditing(page)
+  // Scroll away first: the export still covers the whole range and every row.
+  await chart.evaluate(element => { element.scrollLeft = 400 })
+  const svg = await save('Export SVG')
+  expect(svg.name).toBe('timeline.svg')
+  const text = svg.bytes.toString('utf8')
+  // 138 px heading column + 10 h at 115 px; 66 px header, 4 rows of 66 px and 2 load rows of 44 px.
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="1288" height="418"/)
+  for (const label of ['Wireframes', 'Billing API', 'Checkout UI', 'Acceptance tests', 'Quality', 'Engineering pool', 'Day 2026-11-09', 'Now', 'Team']) {
+    expect(text).toContain('>' + label + '<')
+  }
+  expect(text).not.toContain('<script')
+  await expect(status('Exported SVG (')).toBeVisible()
+  const png = await save('Export PNG')
+  expect(png.name).toBe('timeline.png')
+  expect(pngSize(png.bytes)).toEqual({ width: 2576, height: 836 })
+  await expect(status('Exported PNG 2576 × 836 px.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  const graphSvg = await save('Export graph SVG')
+  const graphText = graphSvg.bytes.toString('utf8')
+  expect(graphSvg.name).toBe('network.svg')
+  const nodeCount = await page.locator('.vft-network-node').count()
+  expect(graphText.match(/<g transform="translate\(/g)?.length).toBe(nodeCount + 1)
+  const [, width, height] = /^<svg [^>]*width="([\d.]+)" height="([\d.]+)"/.exec(graphText)!
+  const graphPng = await save('Export graph PNG')
+  expect(graphPng.name).toBe('network.png')
+  expect(pngSize(graphPng.bytes)).toEqual({ width: Math.ceil(Number(width) * 2), height: Math.ceil(Number(height) * 2) })
+
+  // Culling and the camera do not limit the export, and oversized PNGs are refused with a RangeError message.
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(page.getByText('3750 nodes')).toBeVisible()
+  const large = (await save('Export graph SVG')).bytes.toString('utf8')
+  expect(large.match(/<g transform="translate\(/g)?.length).toBe(3751)
+  await page.getByRole('button', { name: 'Export graph PNG', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'exceeds the maximum canvas size' })).toBeVisible()
+  expect(errors).toEqual([])
+})

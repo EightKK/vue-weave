@@ -38,6 +38,7 @@
 - Gantt resource load histogram rows (`loadRows`, `loadSegments`, `loadRowHeight`, `load-row` and `load-segment` slots) with accessible segment labels and `--vft-load`, `--vft-load-overload`, `--vft-load-capacity` and `--vft-now` theme variables.
 - Core helpers `dependencyTypeForEnds`, `dependencyEndsForType`, `moveTimeRanges`, `calendarBands` and `resourceLoadHistogram`.
 - Timeline editing demo covering dependency, batch, row, preset, histogram and pinch interactions.
+- SVG and PNG export without dependencies: `exportSvg(options)` and `exportPng(options)` methods on `NetworkGraph` and `GanttChart` export the whole chart (all nodes and groups regardless of camera or culling; all displayed rows, columns, header bands, ticks, bars, milestones, baselines, summaries, dependencies, markers, the now line and load rows, with optional `timeRange` and `rowRange`) using the current `--vft-*` theme. PNG export takes a `scale` and rejects canvases larger than 16,384 px per side or 268,435,456 px in total with a `RangeError`. The Vue-free core builders `renderGraphSvg`, `renderTimelineSvg`, `escapeXml`, `defaultSvgExportTheme` and `mirrorTimeScale` work in Node and workers. Exports use the default rendering; slot content is not reproduced. The demos gain export buttons.
 
 ### Fixed
 

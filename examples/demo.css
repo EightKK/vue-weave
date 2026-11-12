@@ -55,3 +55,6 @@ footer { padding-block: 6px; }
   .planning-panel .vft-gantt { --vft-row-label-width: 108px; }
   .load-table th, .load-table td { padding: 4px 3px; }
 }
+
+.export-actions { display: flex; gap: 6px; margin-inline: auto 16px; }
+.export-actions button { padding: 2px 8px; font-size: 11px; line-height: 1.4; }

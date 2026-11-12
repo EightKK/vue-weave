@@ -6,6 +6,7 @@ import {
   type TimelineZoomPreset, type TimelineZoomState,
 } from '../src'
 import { formatTime, hour, origin } from './data'
+import { download, imageSize } from './download'
 
 const range = { start: origin, end: origin + 10 * hour }
 const rows = [
@@ -93,6 +94,23 @@ function apply(changes: readonly TimelineEdit[]) {
     : first?.row ? `Moved ${labels.value.get(first.id)} to ${rows.find(row => row.id === first.row!.after)?.label}.`
       : `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}.`
 }
+const chart = ref<InstanceType<typeof GanttChart>>()
+function exportSvg() {
+  const svg = chart.value?.exportSvg({ title: 'Timeline editing', rowHeading: 'Team' })
+  if (!svg) return
+  download(svg, 'timeline.svg')
+  status.value = 'Exported SVG (' + svg.length + ' characters).'
+}
+async function exportPng() {
+  try {
+    const blob = await chart.value?.exportPng({ scale: 2, rowHeading: 'Team' })
+    if (!blob) return
+    download(blob, 'timeline.png')
+    status.value = 'Exported PNG ' + await imageSize(blob) + '.'
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : String(error)
+  }
+}
 function onZoom(state: TimelineZoomState) {
   zoomState.value = Math.round(state.zoom * 100) + '% · ' + (state.preset ?? 'custom')
 }
@@ -102,9 +120,9 @@ function onZoom(state: TimelineZoomState) {
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
       <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, batch moves, row moves, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
-    <GanttChart :rows="rows" :bars="model.bars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
+    <GanttChart ref="chart" :rows="rows" :bars="model.bars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"

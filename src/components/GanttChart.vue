@@ -10,6 +10,9 @@ import {
   summarizeTimelineRows, timeTicks, visibleRows, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
+import type { GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
+import { renderTimelineSvg } from '../core/exportSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   rows: readonly TimelineRow[]
@@ -189,6 +192,7 @@ const marker = useId()
 const scroller = ref<HTMLElement>()
 const canvas = ref<HTMLElement>()
 const viewport = ref({ width: 1150, height: 321, left: 0, top: 0, labels: 154 })
+const root = ref<HTMLElement>()
 const bandHeight = 26
 const headerHeight = computed(() => 40 + bandHeight * (activeBands.value?.length ?? 0))
 const localCollapsed = ref(new Set<string>())
@@ -988,7 +992,50 @@ function scrollToRow(id: string) {
   if (index !== undefined && scroller.value) scroller.value.scrollTop = index * props.rowHeight
   syncViewport()
 }
-defineExpose({ scrollToTime, scrollToRow, cancelEdit })
+/** Width of the row heading column, read from `--vft-row-label-width`. */
+function rowLabelWidth() {
+  const value = root.value ? parseFloat(getComputedStyle(root.value).getPropertyValue('--vft-row-label-width')) : NaN
+  return Number.isFinite(value) && value >= 0 ? value : 154
+}
+/**
+ * A standalone SVG document of the chart with the default rendering: every displayed row (respecting collapsed rows),
+ * the whole range at the current zoom, header bands, ticks, markers, the now line and load rows. Slots are not used.
+ */
+function exportSvg(options: GanttExportOptions = {}) {
+  if (validationError.value) throw validationError.value
+  const { includeLoad = true, theme, ...rest } = options
+  const time = props.now ?? clientNow.value
+  return renderTimelineSvg(props.rows, props.bars, props.dependencies, axis.value, {
+    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    ...rest,
+    collapsedIds: collapsed.value,
+    rowHeight: props.rowHeight,
+    laneCount: props.laneCount,
+    labelWidth: rowLabelWidth(),
+    columns: props.columns,
+    showSummaries: props.showSummaries,
+    headerBands: activeBands.value,
+    markers: props.markers,
+    now: props.showNow && time !== undefined && time >= props.range.start && time <= props.range.end ? time : undefined,
+    nowLabel: messages.value.now,
+    tickStep: tickStep.value,
+    tickAnchor: props.range.start,
+    formatTime: props.formatTime,
+    rowHeading: rest.rowHeading ?? messages.value.rows,
+    loadRows: includeLoad && loadHistogram.value ? props.loadRows : undefined,
+    loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
+    loadRowHeight: props.loadRowHeight,
+    highlightedDependencyIds: props.highlightedDependencyIds,
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: GanttPngExportOptions = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng })
 
 onMounted(() => {
   mounted = true
@@ -1009,7 +1056,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="vft-gantt">
+  <div ref="root" class="vft-gantt">
     <div class="vft-gantt-toolbar">
       <slot name="legend" />
       <div v-if="zoomPresets?.length" class="vft-gantt-presets" role="group" :aria-label="messages.zoomPresets">

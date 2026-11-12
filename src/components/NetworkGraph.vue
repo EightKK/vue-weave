@@ -3,6 +3,9 @@ import { computed, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
 import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphViewportRect } from '../core/graphView.js'
+import type { GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
+import { renderGraphSvg } from '../core/exportSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   nodes: readonly NetworkNode[]
@@ -66,6 +69,7 @@ function select(id: string, event: MouseEvent | KeyboardEvent) {
   emit('update:selectedId', id)
 }
 const svg = ref<SVGSVGElement>()
+const root = ref<HTMLElement>()
 const marker = useId()
 const viewport = ref({ width: 1150, height: 270 })
 const options = computed<GraphLayeredLayoutOptions>((previous) => {
@@ -692,7 +696,25 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
   fitMode.value = 'manual'
   camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)
 }
-defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode })
+/** A standalone SVG document of the whole graph with the default rendering and the current theme colours. */
+function exportSvg(options: GraphExportOptions = {}) {
+  const { includeSelection = true, theme, ...rest } = options
+  const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
+  return renderGraphSvg(layout.value, props.nodes, props.edges, {
+    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    ...rest,
+    groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
+    selectedIds: selection,
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: GraphPngExportOptions = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng })
 
 watch(savedLayout, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value], cancelInteraction)
@@ -719,7 +741,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
 </script>
 
 <template>
-  <div class="vft-network">
+  <div ref="root" class="vft-network">
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"

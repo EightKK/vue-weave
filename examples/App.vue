@@ -4,6 +4,7 @@ import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadial
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
+import { download, imageSize } from './download'
 
 const preset = ref('manufacturing')
 const history = useEditHistory({ data: makeExample(preset.value), positions: new Map<string, GraphPoint>() })
@@ -35,6 +36,22 @@ const matchIds = computed(() => {
   return text ? new Set(data.value.nodes.filter(node => (node.label + ' ' + (node.detail ?? '')).toLowerCase().includes(text)).map(node => node.id)) : undefined
 })
 const graph = ref<InstanceType<typeof NetworkGraph>>()
+function exportGraphSvg() {
+  const svg = graph.value?.exportSvg({ title: 'Network' })
+  if (!svg) return
+  download(svg, 'network.svg')
+  status.value = 'Exported network SVG (' + svg.length + ' characters).'
+}
+async function exportGraphPng() {
+  try {
+    const blob = await graph.value?.exportPng({ scale: 2 })
+    if (!blob) return
+    download(blob, 'network.png')
+    status.value = 'Exported network PNG ' + await imageSize(blob) + '.'
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : String(error)
+  }
+}
 function findFirstMatch() {
   const first = matchIds.value?.values().next().value
   if (first !== undefined) graph.value?.focusNode(first, { scale: 1 })
@@ -136,7 +153,7 @@ function commit(change: TimelineEdit) {
 
 <template>
   <div class="demo" :class="{ dark }">
-    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><label><input v-model="dark" type="checkbox"> Dark theme</label></header>
+    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
