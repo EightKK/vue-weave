@@ -73,11 +73,12 @@ test('task calendars override the project calendar and milestones can fall in a 
 
 test('cycles, impossible fixed starts and violated deadlines return no partial plan', () => {
   assert.deepEqual(scheduleTasks({ range, tasks: [task('a', 2), task('b', 2)],
-    dependencies: [link('a', 'b'), link('b', 'a')] }), { ok: false, code: 'cycle' })
+    dependencies: [link('a', 'b'), link('b', 'a')] }),
+  { ok: false, code: 'cycle', cycles: [{ taskIds: ['a', 'b'], dependencyIds: ['a-b', 'b-a'] }] })
   assert.deepEqual(scheduleTasks({ range, ...calendar, tasks: [task('a', 2, { fixedStart: 4 })] }),
-    { ok: false, code: 'infeasible', taskId: 'a' })
+    { ok: false, code: 'infeasible', taskId: 'a', constraints: ['fixedStart', 'calendar'], dependencyIds: [] })
   assert.deepEqual(scheduleTasks({ range, ...calendar, deadline: 4, tasks: [task('a', 5)] }),
-    { ok: false, code: 'infeasible', taskId: 'a' })
+    { ok: false, code: 'infeasible', taskId: 'a', constraints: ['range', 'deadline'], dependencyIds: [] })
   assert.throws(() => scheduleTasks({ range, quantum: 2, tasks: [task('a', 3)] }), /duration/)
 })
 
@@ -112,4 +113,89 @@ test('workFloat measures milestone float in working time while totalFloat stays 
   assert.equal(m.totalFloat, 48)
   assert.equal(m.workFloat, 16)
   assert.equal(m.workFloat, a.workFloat)
+})
+
+test('cycle failures name every strongly connected group, self-loops included', () => {
+  const result = scheduleTasks({ range, tasks: ['s', 'a', 'b', 'c', 'd', 'e', 'f', 'loop'].map(id => task(id, 1)), dependencies: [
+    link('s', 'a'), link('a', 'b'), link('b', 'c'), link('c', 'a'), link('b', 'd'),
+    link('e', 'f'), link('f', 'e'), link('loop', 'loop'), link('c', 'b'),
+  ] })
+  assert.deepEqual(result, { ok: false, code: 'cycle', cycles: [
+    { taskIds: ['a', 'b', 'c'], dependencyIds: ['a-b', 'b-c', 'c-a', 'c-b'] },
+    { taskIds: ['e', 'f'], dependencyIds: ['e-f', 'f-e'] },
+    { taskIds: ['loop'], dependencyIds: ['loop-loop'] },
+  ] })
+})
+
+test('cycle detection is iterative for long cycles', () => {
+  const count = 20_000
+  const tasks = Array.from({ length: count }, (_, i) => task('t' + i, 1))
+  const dependencies = tasks.map((_, i) => link('t' + i, 't' + ((i + 1) % count)))
+  const result = scheduleTasks({ range: { start: 0, end: 40_000 }, tasks, dependencies })
+  assert.equal(result.code, 'cycle')
+  assert.equal(result.cycles.length, 1)
+  assert.equal(result.cycles[0].taskIds.length, count)
+  assert.equal(result.cycles[0].dependencyIds.length, count)
+})
+
+test('infeasible failures name the conflicting bounds and dependencies', () => {
+  assert.deepEqual(scheduleTasks({ range, tasks: [task('a', 10), task('b', 2, { finishNoLaterThan: 8 })],
+    dependencies: [link('a', 'b')] }),
+  { ok: false, code: 'infeasible', taskId: 'b', constraints: ['finishNoLaterThan'], dependencyIds: ['a-b'] })
+  assert.deepEqual(scheduleTasks({ range, tasks: [task('m', 0, { finishNoEarlierThan: 5, startNoLaterThan: 3 })] }),
+    { ok: false, code: 'infeasible', taskId: 'm', constraints: ['startNoLaterThan', 'finishNoEarlierThan'], dependencyIds: [] })
+  assert.deepEqual(scheduleTasks({ range, tasks: [task('a', 4), task('b', 2, { startNoLaterThan: 3 })], dependencies: [
+    { id: 'ss', from: 'a', to: 'b', type: 'SS', lag: 2 }, link('a', 'b'), { id: 'late', from: 'a', to: 'b', type: 'SS', lag: 4 },
+  ] }),
+  { ok: false, code: 'infeasible', taskId: 'b', constraints: ['startNoLaterThan'], dependencyIds: ['a-b', 'late'] })
+})
+
+test('ALAP tasks consume free float without moving any other task', () => {
+  const plan = mode => scheduleTasks({ range, tasks: [task('a', 2, { mode }), task('b', 4), task('c', 1), task('x', 10)],
+    dependencies: [link('a', 'c'), link('b', 'c')] })
+  const asap = plan(undefined), alap = plan('alap')
+  assert.deepEqual(plan('asap'), asap)
+  assert.equal('earliestStart' in asap.tasks[0], false)
+  assert.deepEqual(alap.tasks.map(t => [t.id, t.start, t.end]), [['a', 2, 4], ['b', 0, 4], ['c', 4, 5], ['x', 0, 10]])
+  assert.deepEqual([alap.tasks[0].earliestStart, alap.tasks[0].earliestEnd, alap.tasks[0].totalFloat], [0, 2, 7])
+  assert.deepEqual(alap.tasks.slice(1), asap.tasks.slice(1))
+  assert.deepEqual([alap.finish, alap.criticalDependencyIds], [asap.finish, asap.criticalDependencyIds])
+  assert.deepEqual(alap.tasks[0].work, [{ start: 2, end: 4 }])
+  const held = scheduleTasks({ range, tasks: [task('a', 2, { mode: 'alap' }), task('b', 2), task('x', 10)],
+    dependencies: [link('a', 'b')] })
+  assert.deepEqual(held.tasks.map(t => [t.start, t.end, t.latestStart]), [[0, 2, 6], [2, 4, 8], [0, 10, 0]])
+})
+
+test('ALAP chains, bounds and calendars place tasks at their latest permitted dates', () => {
+  const chain = scheduleTasks({ range, tasks: [task('a', 2, { mode: 'alap' }), task('b', 2, { mode: 'alap' }), task('x', 10)],
+    dependencies: [link('a', 'b')] })
+  assert.deepEqual(chain.tasks.map(t => [t.start, t.end]), [[6, 8], [8, 10], [0, 10]])
+  const bounded = scheduleTasks({ range, tasks: [
+    task('f', 2, { mode: 'alap', finishNoLaterThan: 6 }), task('s', 2, { mode: 'alap', startNoLaterThan: 3 }),
+    task('fixed', 2, { mode: 'alap', fixedStart: 1 }), task('m', 0, { mode: 'alap' }), task('x', 10),
+  ] })
+  assert.deepEqual(bounded.tasks.map(t => [t.id, t.start, t.end]), [['f', 4, 6], ['s', 3, 5], ['fixed', 1, 3], ['m', 10, 10], ['x', 0, 10]])
+  const shifted = scheduleTasks({ range, ...calendar, tasks: [task('x', 9), task('a', 2, { mode: 'alap' })] })
+  assert.equal(shifted.finish, 25)
+  assert.deepEqual([shifted.tasks[1].start, shifted.tasks[1].end], [8, 25])
+  assert.deepEqual(shifted.tasks[1].work, [{ start: 8, end: 9 }, { start: 24, end: 25 }])
+  const deadline = scheduleTasks({ range, deadline: 12, tasks: [task('a', 2, { mode: 'alap' })] })
+  assert.deepEqual([deadline.tasks[0].start, deadline.tasks[0].end], [0, 2])
+  assert.throws(() => scheduleTasks({ range, tasks: [task('a', 2, { mode: 'late' })] }), /mode/)
+})
+
+test('pauses interrupt work and successors follow the interrupted finish', () => {
+  const input = { range, tasks: [task('a', 4, { pauses: [{ start: 2, end: 3 }, { start: 30, end: 40 }] }), task('b', 1)],
+    dependencies: [link('a', 'b')] }
+  const result = scheduleTasks(input)
+  assert.deepEqual([result.tasks[0].start, result.tasks[0].end], [0, 5])
+  assert.deepEqual(result.tasks[0].work, [{ start: 0, end: 2 }, { start: 3, end: 5 }])
+  assert.deepEqual([result.tasks[1].start, result.tasks[1].end], [5, 6])
+  assert.equal(input.tasks[0].pauses.length, 2)
+  const breakOnly = scheduleTasks({ range, ...calendar, tasks: [task('a', 6, { pauses: [{ start: 4, end: 5 }] })] })
+  assert.deepEqual(breakOnly.tasks[0].work, [{ start: 0, end: 4 }, { start: 5, end: 7 }])
+  assert.deepEqual(scheduleTasks({ range, tasks: [task('a', 2, { fixedStart: 3, pauses: [{ start: 3, end: 4 }] })] }),
+    { ok: false, code: 'infeasible', taskId: 'a', constraints: ['fixedStart', 'calendar'], dependencyIds: [] })
+  assert.throws(() => scheduleTasks({ range, quantum: 2, tasks: [task('a', 2, { pauses: [{ start: 1, end: 2 }] })] }), RangeError)
+  assert.throws(() => scheduleTasks({ range, tasks: [task('a', 2, { pauses: [{ start: 2, end: 2 }] })] }), RangeError)
 })

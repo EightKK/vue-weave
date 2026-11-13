@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
+import GanttEditingDemo from './GanttEditingDemo.vue'
+import { download, imageSize } from './download'
 
 const preset = ref('manufacturing')
 const history = useEditHistory({ data: makeExample(preset.value), positions: new Map<string, GraphPoint>() })
@@ -12,15 +14,49 @@ const canUndo = history.canUndo
 const canRedo = history.canRedo
 const initialBars = ref(data.value.bars)
 const selected = ref('split')
-const direction = ref<'LR' | 'TB'>('LR')
+const direction = ref<GraphLayoutDirection>('LR')
+const crossingReduction = ref<GraphCrossingReduction>('none')
+const layoutKind = ref<'layered' | 'tree' | 'radial'>('layered')
+const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
+  ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
+  : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e) : undefined)
 const dark = ref(false)
+const builtInTheme = ref<'' | 'vft-theme-dark' | 'vft-theme-auto'>('')
 const custom = ref(false)
 const locked = ref(false)
 const graphEditing = ref(false)
 const advancedTimeline = ref(false)
 const group = { id: 'lots', label: 'Intermediate lots', nodeIds: ['lot1', 'lot2'] }
 const groups = [group]
-const graphGroups = computed(() => graphEditing.value && preset.value === 'manufacturing' ? groups : undefined)
+const nestedGroups = ref(false)
+const nestedGroupList = [{ id: 'process', label: 'Process', nodeIds: ['raw', 'split'] }, { ...group, parentId: 'process' }]
+const graphGroups = computed(() => graphEditing.value && preset.value === 'manufacturing' ? nestedGroups.value ? nestedGroupList : groups : undefined)
+const query = ref('')
+const matchIds = computed(() => {
+  const text = query.value.trim().toLowerCase()
+  return text ? new Set(data.value.nodes.filter(node => (node.label + ' ' + (node.detail ?? '')).toLowerCase().includes(text)).map(node => node.id)) : undefined
+})
+const graph = ref<InstanceType<typeof NetworkGraph>>()
+function exportGraphSvg() {
+  const svg = graph.value?.exportSvg({ title: 'Network' })
+  if (!svg) return
+  download(svg, 'network.svg')
+  status.value = 'Exported network SVG (' + svg.length + ' characters).'
+}
+async function exportGraphPng() {
+  try {
+    const blob = await graph.value?.exportPng({ scale: 2 })
+    if (!blob) return
+    download(blob, 'network.png')
+    status.value = 'Exported network PNG ' + await imageSize(blob) + '.'
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : String(error)
+  }
+}
+function findFirstMatch() {
+  const first = matchIds.value?.values().next().value
+  if (first !== undefined) graph.value?.focusNode(first, { scale: 1 })
+}
 const columns: TimelineColumn[] = [
   { id: 'note', label: 'Resource note', width: 110, value: row => row.detail ?? '', editable: row => row.id !== 'group' },
   { id: 'count', label: 'Intervals', width: 62, value: (_row, summary) => summary?.count ?? 0 },
@@ -117,26 +153,28 @@ function commit(change: TimelineEdit) {
 </script>
 
 <template>
-  <div class="demo" :class="{ dark }">
-    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><label><input v-model="dark" type="checkbox"> Dark theme</label></header>
+  <div class="demo" :class="[{ dark }, builtInTheme]">
+    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vft-theme-dark">Dark</option><option value="vft-theme-auto">Auto (system)</option></select></label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
-        <button v-for="item in [{ id: 'manufacturing', label: 'Manufacturing' }, { id: 'project', label: 'Project delivery' }, { id: 'scale', label: '1,000 resources' }]"
+        <button v-for="item in [{ id: 'manufacturing', label: 'Manufacturing' }, { id: 'project', label: 'Project delivery' }, { id: 'scale', label: '1,000 resources' }, { id: 'large', label: 'Large graph' }]"
           :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
         <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
+        <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
         <button v-if="preset !== 'scheduling'" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="preset !== 'scheduling'" type="button" :disabled="!canRedo" @click="redo">Redo</button>
       </nav>
       <SchedulingDemo v-if="preset === 'scheduling'" />
+      <GanttEditingDemo v-else-if="preset === 'editing'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
-        <NetworkGraph v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction }" :height="direction === 'TB' ? 470 : graphEditing ? 345 : 245"
+        <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
           :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
-          :groups="graphGroups" :show-minimap="graphEditing"
+          :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
           :positions="positions" :selected-ids="graphEditing ? graphSelection : undefined"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
@@ -152,7 +190,7 @@ function commit(change: TimelineEdit) {
           <div class="options"><label><input v-model="locked" type="checkbox"> Reject edits</label><label><input v-model="advancedTimeline" type="checkbox"> Planning overlays</label><button v-if="preset === 'scale'" @click="timeline?.scrollToRow('r999')">Last resource</button><button @click="reset">Reset</button></div>
         </div>
         <GanttChart ref="timeline" :key="preset" :rows="timelineRows" :bars="timelineBars" :dependencies="data.dependencies"
-          :range="range" :pixels-per-unit="115 / hour" :lane-count="preset === 'manufacturing' ? 2 : 1" :height="advancedTimeline ? 420 : preset === 'scale' ? 330 : 290"
+          :range="range" :pixels-per-unit="115 / hour" :lane-count="preset === 'manufacturing' || preset === 'large' ? 2 : 1" :height="advancedTimeline ? 420 : preset === 'scale' ? 330 : 290"
           v-model:collapsed-ids="collapsedRows" :header-bands="advancedTimeline ? headerBands : undefined"
           :markers="advancedTimeline ? markers : undefined" :columns="advancedTimeline ? columns : undefined"
           :show-summaries="advancedTimeline" :validate-cell-edit="validateCell"

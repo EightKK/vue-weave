@@ -122,6 +122,24 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
   expect(errors).toEqual([])
 })
 
+test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const demo = page.locator('.demo')
+  const surface = () => page.locator('.vft-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vft-surface').trim())
+  expect(await surface()).toBe('')
+  await page.getByLabel('Built-in theme').selectOption('vft-theme-dark')
+  await expect(demo).toHaveClass(/vft-theme-dark/)
+  expect(await surface()).toBe('#182a37')
+  await page.getByLabel('Built-in theme').selectOption('vft-theme-auto')
+  await expect(demo).toHaveClass(/vft-theme-auto/)
+  expect(await surface()).toBe('')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect(await surface()).toBe('#182a37')
+  expect(errors).toEqual([])
+})
+
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Direction').selectOption('TB')
@@ -378,5 +396,920 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
   await page.mouse.up()
   await expect(page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
+  expect(errors).toEqual([])
+})
+
+async function openNetworkFixture(page: Page, search: string) {
+  await page.route('**/network-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/network-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/network.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/network-test/' + search)
+  await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
+}
+
+type Camera = { x: number; y: number; scale: number }
+const readCamera = (page: Page) => page.evaluate(() => (window as any).__vw.graph().getViewport() as Camera)
+const chainNode = (page: Page, name?: string) => name
+  ? page.getByRole('button', { name, exact: true }) : page.getByRole('button', { name: /^N\d{4}$/ })
+
+test('viewport culling renders the visible window, keeps selected and focused nodes and follows focusNode', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&minimap=1')
+  const rendered = await chainNode(page).count()
+  expect(rendered).toBeGreaterThan(0)
+  expect(rendered).toBeLessThan(600)
+  await expect(chainNode(page, 'N0000')).toBeVisible()
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  // The minimap still shows every node, plus its viewport window.
+  await expect(page.getByRole('button', { name: 'Navigate graph overview' }).locator('rect')).toHaveCount(601)
+
+  await chainNode(page, 'N0000').focus()
+  await page.keyboard.press('Enter')
+  await expect(chainNode(page, 'N0000')).toHaveAttribute('aria-pressed', 'true')
+  const before = await readCamera(page)
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0450'))
+  const after = await readCamera(page)
+  expect(after.scale).toBe(before.scale)
+  const target = chainNode(page, 'N0450')
+  await expect(target).toHaveCount(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await target.boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(25)
+  expect(Math.abs(box.y + box.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(25)
+  // N0000 is far away but selected, so it stays in the DOM. Distant unrelated nodes do not.
+  await expect(chainNode(page, 'N0000')).toHaveCount(1)
+  await expect(chainNode(page, 'N0300')).toHaveCount(0)
+
+  // Selecting another node (which also moves focus) releases N0000.
+  await target.click()
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  // A focused, unselected node survives a jump of the camera.
+  const neighbor = chainNode(page, 'N0452')
+  await neighbor.focus()
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 1 }))
+  await expect(chainNode(page, 'N0000')).toHaveCount(1)
+  await expect(neighbor).toHaveCount(1)
+  await expect(neighbor).toBeFocused()
+  await expect(chainNode(page, 'N0200')).toHaveCount(0)
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  await expect(chainNode(page, 'N0452')).toHaveCount(1)
+  expect(await chainNode(page).count()).toBeLessThan(600)
+  expect(await page.evaluate(() => {
+    try { (window as any).__vw.graph().focusNode('missing') } catch (error) { return (error as Error).message }
+  })).toBe('Unknown node: missing')
+  expect(errors).toEqual([])
+})
+
+test('without cullOffscreen every node stays in the DOM', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=0')
+  await expect(chainNode(page)).toHaveCount(600)
+  expect(errors).toEqual([])
+})
+
+test('dragging a node under culling emits one proposal and keeps the node rendered', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30, { steps: 6 })
+  await expect(node).toHaveCount(1)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Last move', exact: true })).toHaveText('N0001')
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('1')
+  await expect(node).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+type TouchPoint = { x: number; y: number; id: number }
+async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>, type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) {
+  await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
+}
+
+test('two-finger pinch zooms around the midpoint, clamps, pans and leaves one-finger gestures alone', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=3&draggable=1')
+  const cdp = await page.context().newCDPSession(page)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const cx = stage.x + stage.width / 2, cy = stage.y + stage.height / 2
+  const events = page.getByRole('status', { name: 'Viewport events', exact: true })
+
+  // One finger on the background still pans.
+  const start = await readCamera(page)
+  const eventsBefore = Number(await events.textContent())
+  await touch(cdp, 'touchStart', [{ x: stage.x + 8, y: stage.y + 8, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: stage.x + 38, y: stage.y + 28, id: 1 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => (await readCamera(page)).x - start.x).toBeCloseTo(30, 0)
+  const panned = await readCamera(page)
+  expect(panned.y - start.y).toBeCloseTo(20, 0)
+  expect(panned.scale).toBe(start.scale)
+
+  // Spreading two fingers to twice the distance doubles the scale and keeps the midpoint anchored.
+  const a = { x: cx - 50, y: cy, id: 1 }, b = { x: cx + 50, y: cy, id: 2 }
+  const rect = { left: stage.x, top: stage.y }
+  const worldAt = (camera: Camera, x: number, y: number) => ({ x: (x - rect.left - camera.x) / camera.scale, y: (y - rect.top - camera.y) / camera.scale })
+  const beforePinch = await readCamera(page)
+  const anchor = worldAt(beforePinch, cx, cy)
+  await touch(cdp, 'touchStart', [a, b])
+  await touch(cdp, 'touchMove', [{ ...a, x: cx - 100 }, { ...b, x: cx + 100 }])
+  await expect.poll(async () => (await readCamera(page)).scale / beforePinch.scale).toBeCloseTo(2, 1)
+  const zoomed = await readCamera(page)
+  const anchored = worldAt(zoomed, cx, cy)
+  expect(anchored.x).toBeCloseTo(anchor.x, 0)
+  expect(anchored.y).toBeCloseTo(anchor.y, 0)
+  expect(Number(await events.textContent())).toBeGreaterThan(eventsBefore)
+  // Moving both fingers together pans without changing the scale.
+  await touch(cdp, 'touchMove', [{ ...a, x: cx - 60, y: cy + 20 }, { ...b, x: cx + 140, y: cy + 20 }])
+  await expect.poll(async () => (await readCamera(page)).x - zoomed.x).toBeCloseTo(40, 0)
+  const dragged = await readCamera(page)
+  expect(dragged.scale).toBeCloseTo(zoomed.scale, 5)
+  expect(dragged.y - zoomed.y).toBeCloseTo(20, 0)
+  // Extreme spreading and squeezing respects the zoom clamp.
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2 }, { ...b, x: stage.x + stage.width - 2 }])
+  await touch(cdp, 'touchMove', [{ ...a, x: cx, y: cy }, { ...b, x: cx + 1, y: cy }])
+  await expect.poll(async () => (await readCamera(page)).scale).toBe(0.1)
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2, y: cy }, { ...b, x: stage.x + stage.width - 2, y: cy }])
+  await touch(cdp, 'touchMove', [{ ...a, x: stage.x + 2, y: stage.y + 2 }, { ...b, x: stage.x + stage.width - 2, y: stage.y + stage.height - 2 }])
+  await expect.poll(async () => (await readCamera(page)).scale).toBe(3)
+  await touch(cdp, 'touchEnd', [])
+
+  // A node drag in progress is cancelled by the second finger and never proposes a move.
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  const node = (await chainNode(page, 'N0001').boundingBox())!
+  const nx = node.x + node.width / 2, ny = node.y + node.height / 2
+  await touch(cdp, 'touchStart', [{ x: nx, y: ny, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: nx + 25, y: ny + 15, id: 1 }])
+  const fitScale = (await readCamera(page)).scale
+  await touch(cdp, 'touchStart', [{ x: nx + 25, y: ny + 15, id: 1 }, { x: nx + 125, y: ny + 15, id: 2 }])
+  await touch(cdp, 'touchMove', [{ x: nx + 25, y: ny + 15, id: 1 }, { x: nx + 225, y: ny + 15, id: 2 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => (await readCamera(page)).scale).toBeGreaterThan(fitScale)
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('0')
+
+  // Plain wheel input does not move the camera.
+  const wheelStart = await readCamera(page)
+  await page.mouse.move(cx, cy)
+  await page.mouse.wheel(0, 120)
+  expect(await readCamera(page)).toEqual(wheelStart)
+  expect(errors).toEqual([])
+})
+
+test('moving a parent group proposes one batch with every descendant; a child moves only its own members', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&draggable=1')
+  const outer = page.getByRole('button', { name: 'Move group Outer', exact: true })
+  const inner = page.getByRole('button', { name: 'Move group Inner within Outer', exact: true })
+  await expect(outer).toBeVisible()
+  await expect(inner).toBeVisible()
+  const last = page.getByRole('status', { name: 'Last move', exact: true })
+  const events = page.getByRole('status', { name: 'Move events', exact: true })
+
+  const o = (await outer.boundingBox())!
+  await page.mouse.move(o.x + o.width / 2, o.y + o.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(o.x + o.width / 2 + 30, o.y + o.height / 2 + 20, { steps: 5 })
+  await page.mouse.up()
+  await expect(last).toHaveText('B,C,D')
+  await expect(events).toHaveText('1')
+
+  const i = (await inner.boundingBox())!
+  await page.mouse.move(i.x + i.width / 2, i.y + i.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(i.x + i.width / 2 + 30, i.y + i.height / 2 + 20, { steps: 5 })
+  await page.mouse.up()
+  await expect(last).toHaveText('C,D')
+  await expect(events).toHaveText('2')
+
+  await outer.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(last).toHaveText('B,C,D')
+  await expect(events).toHaveText('3')
+  expect(errors).toEqual([])
+})
+
+test('matchIds dims non-matching nodes and focusNode accepts a scale', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=5&match=N0001,N0002')
+  await expect(chainNode(page, 'N0000')).toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0001')).not.toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0002')).not.toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0004')).toHaveClass(/vft-dimmed/)
+  // Dimming is presentational: the node still reports its name and can be selected.
+  await chainNode(page, 'N0000').click()
+  await expect(chainNode(page, 'N0000')).toHaveAttribute('aria-pressed', 'true')
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0004', { scale: 1 }))
+  expect((await readCamera(page)).scale).toBe(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await chainNode(page, 'N0004').boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(25)
+  expect(errors).toEqual([])
+})
+
+test('nested group rectangles stay inside the fitted view, the minimap and the exported SVG', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&minimap=1')
+  const stage = page.getByLabel('Network graph', { exact: true })
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  const rects = page.locator('.vft-network-group rect')
+  await expect(rects).toHaveCount(2)
+  const frame = (await stage.boundingBox())!
+  const boxes = await rects.evaluateAll(list => list.map(el => {
+    const r = el.getBoundingClientRect()
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }
+  }))
+  const top = Math.min(...boxes.map(box => box.top)), bottom = Math.max(...boxes.map(box => box.bottom))
+  const left = Math.min(...boxes.map(box => box.left)), right = Math.max(...boxes.map(box => box.right))
+  // Every group, including the parent that reaches above the first node row, is inside the stage and centred.
+  expect(top).toBeGreaterThanOrEqual(frame.y - 0.5)
+  expect(bottom).toBeLessThanOrEqual(frame.y + frame.height + 0.5)
+  expect(Math.abs((top - frame.y) - (frame.y + frame.height - bottom))).toBeLessThan(1.5)
+  expect(left).toBeGreaterThanOrEqual(frame.x - 0.5)
+  expect(right).toBeLessThanOrEqual(frame.x + frame.width + 0.5)
+  // The minimap frames the groups too.
+  const viewTop = await page.getByRole('button', { name: 'Navigate graph overview' }).locator('svg').evaluate(el => el.viewBox.baseVal.y)
+  expect(viewTop).toBeLessThan(0)
+  // The export frames them as well: no content coordinate is negative after the export translation.
+  const svg = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+  expect(svg).toMatch(/<svg[^>]* width="[\d.]+" height="[\d.]+"/)
+  expect(errors).toEqual([])
+})
+
+test('culled drag previews keep the edges of dragged nodes rendered', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
+  const edges = page.locator('.vft-network-edge')
+  const node = chainNode(page, 'N0002')
+  const box = (await node.boundingBox())!
+  const before = await edges.count()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 6 })
+  await expect(node).toHaveCount(1)
+  expect(await edges.count()).toBeGreaterThanOrEqual(before)
+  // The edges attached to the dragged node follow it.
+  const [incoming, outgoing] = await edges.evaluateAll(list => list.slice(1, 3).map(el => el.getAttribute('d')))
+  expect(incoming).toMatch(/^M /)
+  expect(outgoing).not.toBe(incoming)
+  await page.mouse.up()
+  expect(errors).toEqual([])
+})
+
+test('the large graph demo preset renders a viewport slice of thousands of nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(page.getByText('3750 nodes')).toBeVisible()
+  const nodes = page.getByRole('button', { name: /^Node \d+ Rank \d+$/ })
+  await expect(nodes.first()).toBeVisible()
+  const rendered = await nodes.count()
+  expect(rendered).toBeGreaterThan(0)
+  expect(rendered).toBeLessThan(3000)
+  await page.getByRole('searchbox', { name: 'Search nodes' }).fill('Node 3750')
+  await page.getByRole('searchbox', { name: 'Search nodes' }).press('Enter')
+  await expect(page.getByRole('button', { name: 'Node 3750 Rank 150', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+async function openTimelineEditing(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Timeline editing', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Editable timeline', exact: true })
+  await expect(chart).toBeVisible()
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  return { errors, chart, status }
+}
+
+test('gantt dependencies connect by keyboard and pointer, reject duplicates, reconnect, delete and cancel', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const links = chart.getByRole('button', { name: /^Select dependency / })
+  await expect(links).toHaveCount(1)
+
+  await chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('Added FS dependency from Billing API to Acceptance tests.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+  await chart.getByRole('button', { name: 'Start dependency from finish of Billing API', exact: true }).press('Space')
+  await chart.getByRole('button', { name: 'Connect dependency to finish of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('These bars are already linked.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+
+  // Escape discards an armed handle.
+  await chart.getByRole('button', { name: 'Start dependency from start of Checkout UI', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Connect dependency to finish of Wireframes', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Wireframes', exact: true })).toBeVisible()
+
+  // Pointer drag between handles derives the type from the joined ends.
+  const source = (await chart.getByRole('button', { name: 'Start dependency from finish of Wireframes', exact: true }).boundingBox())!
+  const target = (await chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true }).boundingBox())!
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
+  await expect(chart.locator('.vft-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
+  await page.mouse.up()
+  await expect(status('Added FF dependency from Wireframes to Checkout UI.')).toBeVisible()
+  await expect(links).toHaveCount(3)
+  await expect(chart.locator('.vft-gantt-link-preview')).toHaveCount(0)
+
+  // Select a dependency, move its target end with the keyboard, then delete it.
+  await chart.getByRole('button', { name: 'Select dependency Wireframes → Billing API FS', exact: true }).press('Enter')
+  await expect(status('Selected dependency wireframes-api.')).toBeVisible()
+  await chart.getByRole('button', { name: 'Reconnect target of Wireframes → Billing API FS', exact: true }).press('Enter')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Acceptance tests', exact: true }).press('Enter')
+  await expect(status('Reconnected wireframes-api as FS to Acceptance tests.')).toBeVisible()
+  const moved = chart.getByRole('button', { name: 'Select dependency Wireframes → Acceptance tests FS', exact: true })
+  await moved.press('Enter')
+  await moved.press('Delete')
+  await expect(status('Deleted dependency wireframes-api.')).toBeVisible()
+  await expect(links).toHaveCount(2)
+
+  // A source-data change cancels an armed connection.
+  await chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Connect dependency to start of Billing API', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Reset timeline', exact: true }).dispatchEvent('click')
+  await expect(chart.getByRole('button', { name: 'Start dependency from start of Billing API', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(links).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('gantt multi-selection moves bars as one batch and bars move between rows with validation', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
+  const ui = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
+  await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Shift'] })
+  await expect(api).toHaveAttribute('aria-pressed', 'true')
+  await expect(ui).toHaveAttribute('aria-pressed', 'true')
+  await ui.press('ArrowRight')
+  await expect(status('Moved 2 bars.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:15–13:15')
+  await expect(ui).toHaveAttribute('aria-label', 'Checkout UI 10:15–14:15')
+
+  // A pointer drag moves the whole selection and keeps it selected.
+  await page.getByRole('button', { name: 'Reset timeline', exact: true }).click()
+  await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
+  await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Control'] })
+  const box = (await api.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+  await expect(ui).toHaveAttribute('aria-label', 'Checkout UI 10:30–14:30')
+  await expect(api).toHaveAttribute('aria-pressed', 'true')
+  await expect(ui).toHaveAttribute('aria-pressed', 'true')
+
+  // A batch row move that the application rejects changes nothing.
+  await api.press('ArrowDown')
+  await expect(status('Only acceptance work can move to Quality.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+
+  // Keyboard row move keeps focus on the moved bar.
+  const wireframes = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
+  await wireframes.click()
+  await expect(api).toHaveAttribute('aria-pressed', 'false')
+  await wireframes.press('ArrowDown')
+  await expect(status('Moved Wireframes to Platform team.')).toBeVisible()
+  await expect(chart.locator('.vft-gantt-bar:focus')).toHaveAttribute('aria-label', 'Wireframes 08:00–10:00')
+  await page.keyboard.press('ArrowUp')
+  await expect(status('Moved Wireframes to Product team.')).toBeVisible()
+
+  // Pointer row drags propose the row under the pointer; Escape cancels a drag.
+  const tests = chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })
+  const start = (await tests.boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
+  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveAttribute('style', /translateY\(-66px\)/)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveCount(0)
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Moved Acceptance tests to Web team.')).toBeVisible()
+  const checkout = (await ui.boundingBox())!
+  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2 + 66, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Only acceptance work can move to Quality.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt zoom presets, now marker and resource load histogram share the time axis', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const presets = page.getByRole('group', { name: 'Zoom level', exact: true })
+  await expect(presets.getByRole('button', { name: 'Hours', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart.getByText('Day 2026-11-09', { exact: true })).toBeVisible()
+  await expect(chart.locator('.vft-gantt-now')).toHaveText('Now')
+  await expect(chart.locator('.vft-gantt-now')).toHaveAttribute('title', 'Now 11:30')
+  await expect(chart.getByRole('group', { name: 'Resource load Engineering pool', exact: true })).toBeVisible()
+  const overload = chart.getByRole('img', { name: 'Engineering pool 10:00–13:00: load 2 / capacity 1, overloaded by 1', exact: true })
+  await expect(overload).toBeVisible()
+  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  const bar = (await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).boundingBox())!
+  const segment = (await overload.boundingBox())!
+  expect(Math.abs(segment.x - bar.x)).toBeLessThanOrEqual(1)
+
+  // Moving work updates the histogram.
+  const checkout = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  await checkout.click()
+  for (let i = 0; i < 12; i++) await checkout.press('ArrowRight')
+  await expect(checkout).toHaveAttribute('aria-label', 'Checkout UI 13:00–17:00')
+  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  await expect(chart.getByRole('img', { name: 'Engineering pool 14:00–16:00: load 2 / capacity 1, overloaded by 1', exact: true })).toBeAttached()
+
+  await presets.getByRole('button', { name: 'Shifts', exact: true }).click()
+  await expect(presets.getByRole('button', { name: 'Shifts', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart.getByText('Shift from 08:00', { exact: true })).toBeVisible()
+  await expect(status('100% · shifts')).toBeVisible()
+  const zoomIn = page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.click()
+  await expect(status('135% · shifts')).toBeVisible()
+  await presets.getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(status('100% · hours')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt two-pointer touch pinch zooms the time axis', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  await expect(output).toHaveText('100%')
+  await chart.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const x = rect.left + rect.width / 2, y = rect.top + 200
+    const fire = (type: string, pointerId: number, clientX: number) => element.dispatchEvent(new PointerEvent(type, {
+      pointerId, pointerType: 'touch', isPrimary: pointerId === 11, clientX, clientY: y, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', 11, x - 50)
+    fire('pointerdown', 12, x + 50)
+    for (let step = 1; step <= 5; step++) {
+      fire('pointermove', 11, x - 50 - step * 10)
+      fire('pointermove', 12, x + 50 + step * 10)
+    }
+    fire('pointerup', 11, x - 100)
+    fire('pointerup', 12, x + 100)
+  })
+  await expect(output).toHaveText('200%')
+  await expect(status('200% · hours')).toBeVisible()
+  // A single touch pointer does not zoom.
+  await chart.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const fire = (type: string, clientX: number) => element.dispatchEvent(new PointerEvent(type, {
+      pointerId: 21, pointerType: 'touch', isPrimary: true, clientX, clientY: rect.top + 200, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', rect.left + 300)
+    fire('pointermove', rect.left + 500)
+    fire('pointerup', rect.left + 500)
+  })
+  await expect(output).toHaveText('200%')
+  expect(errors).toEqual([])
+})
+
+async function openGanttFixture(page: Page, search: string) {
+  await page.route('**/gantt-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/gantt-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/gantt.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/gantt-test/' + search)
+  const chart = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect(chart).toBeVisible()
+  const out = (name: string) => page.getByRole('status', { name, exact: true })
+  return { chart, out }
+}
+
+test('gantt keyboard row moves emit plain time ranges like pointer moves', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '?rowDraggable=1')
+  await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).press('ArrowDown')
+  await expect(out('Last edit')).not.toHaveText('')
+  expect(JSON.parse((await out('Last edit').textContent())!)).toEqual({
+    id: 'a', before: { start: 0, end: 2 }, after: { start: 0, end: 2 }, mode: 'move', source: 'keyboard', row: { before: 'r1', after: 'r2' },
+  })
+  expect(errors).toEqual([])
+})
+
+test('gantt readonly keeps dependency selection but proposes no delete', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '?readonly=1')
+  const link = chart.getByRole('button', { name: 'Select dependency Task A → Task B FS', exact: true })
+  await link.press('Delete')
+  await link.press('Backspace')
+  await link.press('Enter')
+  await expect(out('Dependency selects')).toHaveText('1')
+  await expect(out('Dependency deletes')).toHaveText('0')
+  await expect(chart.getByRole('button', { name: /^Start dependency / })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('gantt zoom presets ignore the active preset and a controlled parent that declines a change', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['', '?controlled=1']) {
+    const { chart } = await openGanttFixture(page, search)
+    const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+    const presets = page.getByRole('group', { name: 'Zoom level', exact: true })
+    if (!search) await presets.getByRole('button', { name: 'Wide', exact: true }).click()
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await expect(zoom).toHaveText('135%')
+    const scroller = chart
+    await scroller.evaluate(el => { el.scrollLeft = 1500 })
+    // The active preset is a no-op: zoom and scroll stay.
+    await presets.getByRole('button', { name: 'Wide', exact: true }).click()
+    await expect(zoom).toHaveText('135%')
+    expect(await scroller.evaluate(el => el.scrollLeft)).toBe(1500)
+    if (search) {
+      // A parent that ignores the update keeps the zoom, and its stale centre is not applied to a later change.
+      await presets.getByRole('button', { name: 'Narrow', exact: true }).click()
+      await expect(zoom).toHaveText('135%')
+      await expect(presets.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      await scroller.evaluate(el => { el.scrollLeft = 1500 })
+      await page.getByRole('button', { name: 'Parent switches to Narrow', exact: true }).click()
+      await expect(presets.getByRole('button', { name: 'Narrow', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      expect(await scroller.evaluate(el => el.scrollLeft)).toBe(1500)
+      await expect(zoom).toHaveText('135%')
+    } else {
+      // A real change resets the zoom and keeps the centre.
+      const centreAt = (el: HTMLElement, scale: number) =>
+        (el.scrollLeft + (el.clientWidth - el.querySelector('.vft-gantt-corner')!.getBoundingClientRect().width) / 2) / scale
+      const centre = await scroller.evaluate(centreAt, 1.35 * 50)
+      await presets.getByRole('button', { name: 'Narrow', exact: true }).click()
+      await expect(zoom).toHaveText('100%')
+      await expect.poll(() => scroller.evaluate(centreAt, 25)).toBeCloseTo(centre, -1)
+    }
+  }
+  expect(errors).toEqual([])
+})
+
+test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page }) => {
+  const { errors, chart } = await openTimelineEditing(page)
+  const cdp = await page.context().newCDPSession(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  // Zoom in first so the scroller can pan, then pinch on empty row background where touch-action is pan-x pan-y.
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await expect(output).toHaveText('182%')
+  const spot = await chart.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    for (const y of [150, 200, 250, 300]) for (let x = 400; x < r.width - 200; x += 10) {
+      const free = [x - 100, x + 100].every(px => /^vft-gantt-(row|grid)/.test(String(document.elementFromPoint(r.left + px, r.top + y)?.className ?? '')))
+      if (free) return { x: r.left + x, y: r.top + y }
+    }
+    return undefined
+  })
+  expect(spot).toBeDefined()
+  await chart.evaluate(el => {
+    const log = { cancels: 0, twoFingerMoves: 0, prevented: 0, singleMoves: 0, singlePrevented: 0 }
+    el.addEventListener('pointercancel', () => { log.cancels++ })
+    // Registered after the component's own listener, so it sees the final defaultPrevented state.
+    el.addEventListener('touchmove', event => {
+      if (event.touches.length >= 2) { log.twoFingerMoves++; if (event.defaultPrevented) log.prevented++ }
+      else { log.singleMoves++; if (event.defaultPrevented) log.singlePrevented++ }
+    }, { passive: true })
+    ;(window as any).__pinchLog = log
+  })
+  const { x: cx, y: cy } = spot!
+  await touch(cdp, 'touchStart', [{ x: cx - 40, y: cy, id: 1 }, { x: cx + 40, y: cy, id: 2 }])
+  // The midpoint drifts down and sideways while the fingers spread, as a real pinch does.
+  for (let step = 1; step <= 12; step++) {
+    await touch(cdp, 'touchMove', [{ x: cx - 40 + step * 4, y: cy + step * 5, id: 1 }, { x: cx + 40 + step * 16, y: cy + step * 5, id: 2 }])
+  }
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => Number.parseInt((await output.textContent())!, 10)).toBeGreaterThan(182)
+  const log = await page.evaluate(() => (window as any).__pinchLog)
+  expect(log.cancels).toBe(0)
+  expect(log.twoFingerMoves).toBeGreaterThan(0)
+  expect(log.prevented).toBe(log.twoFingerMoves)
+  // One finger still scrolls natively.
+  const scrollBefore = await chart.evaluate(el => el.scrollLeft)
+  await touch(cdp, 'touchStart', [{ x: cx, y: cy, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: cx - 80, y: cy, id: 1 }])
+  await touch(cdp, 'touchMove', [{ x: cx - 160, y: cy, id: 1 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(() => chart.evaluate(el => el.scrollLeft)).not.toBe(scrollBefore)
+  expect((await page.evaluate(() => (window as any).__pinchLog)).singlePrevented).toBe(0)
+  expect(errors).toEqual([])
+})
+
+test('network direction, crossing reduction and layout controls', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const split = page.getByRole('button', { name: /^Split/ }).first()
+  await expect(split).toBeVisible()
+  for (const direction of ['RL', 'BT', 'LR']) {
+    await page.getByLabel('Direction').selectOption(direction)
+    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  }
+  await page.getByLabel('Crossing reduction').selectOption('barycenter')
+  for (const layout of ['tree', 'radial', 'layered']) {
+    await page.getByLabel('Graph layout').selectOption(layout)
+    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  }
+  expect(errors).toEqual([])
+})
+
+test('opt-in dark theme classes apply built-in variables; auto follows the colour scheme', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  const gantt = page.locator('.vft-gantt').first()
+  const graph = page.locator('.vft-network').first()
+  const read = (locator: typeof gantt) => locator.evaluate(el => ({
+    surface: getComputedStyle(el).getPropertyValue('--vft-surface').trim(),
+    now: getComputedStyle(el).getPropertyValue('--vft-now').trim(),
+    color: getComputedStyle(el).color,
+  }))
+  const light = await read(gantt)
+  expect(light.surface).toBe('')
+  await gantt.evaluate(el => el.classList.add('vft-theme-dark'))
+  await graph.evaluate(el => el.classList.add('vft-theme-dark'))
+  expect(await read(gantt)).toEqual({ surface: '#182a37', now: '#ff8f7a', color: 'rgb(229, 237, 243)' })
+  expect((await read(graph)).surface).toBe('#182a37')
+  await expect(gantt).toHaveCSS('background-color', 'rgb(24, 42, 55)')
+  await gantt.evaluate(el => el.classList.replace('vft-theme-dark', 'vft-theme-auto'))
+  expect((await read(gantt)).surface).toBe('')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect((await read(gantt)).surface).toBe('#182a37')
+  await page.emulateMedia({ colorScheme: 'light' })
+  expect((await read(gantt)).surface).toBe('')
+  expect(errors).toEqual([])
+})
+
+test('forced colors use system colours for bars and selection', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ forcedColors: 'active' })
+  await openComponentFixture(page)
+  const bar = page.locator('.vft-gantt-bar').first()
+  await expect(bar).toBeVisible()
+  expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
+  const styles = await bar.evaluate(el => {
+    const probe = document.createElement('span')
+    probe.style.color = 'CanvasText'
+    document.body.append(probe)
+    const canvasText = getComputedStyle(probe).color
+    probe.remove()
+    const cs = getComputedStyle(el)
+    return { adjust: cs.forcedColorAdjust, border: cs.borderTopColor, canvasText }
+  })
+  expect(styles.adjust).toBe('none')
+  expect(styles.border).toBe(styles.canvasText)
+  await bar.focus()
+  await expect(bar).toHaveCSS('outline-style', 'solid')
+  expect(errors).toEqual([])
+})
+
+test('forced colors emphasise the now line and markers in both directions', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ forcedColors: 'active' })
+  for (const [search, side] of [['', 'left'], ['?rtl=1', 'right']] as const) {
+    const { chart } = await openGanttFixture(page, search)
+    await expect(chart.getByText('Review', { exact: true })).toBeVisible()
+    const edges = (selector: string) => chart.locator(selector).first().evaluate(el => {
+      const cs = getComputedStyle(el)
+      return { left: cs.borderLeftWidth, right: cs.borderRightWidth, style: cs.borderInlineStartStyle }
+    })
+    const marker = { left: '0px', right: '0px', style: 'dashed', [side]: '2px' }
+    const now = { left: '0px', right: '0px', style: 'solid', [side]: '3px' }
+    expect(await edges('.vft-gantt-marker')).toEqual(marker)
+    expect(await edges('.vft-gantt-now')).toEqual(now)
+  }
+  expect(errors).toEqual([])
+})
+
+test('reduced motion removes stylesheet transitions and animations', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await openComponentFixture(page)
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
+  const offenders = await page.evaluate(() => [...document.querySelectorAll('.vft-gantt, .vft-gantt *, .vft-network, .vft-network *')]
+    .filter(el => { const cs = getComputedStyle(el); return cs.transitionDuration.split(', ').some(d => d !== '0s') || cs.animationName !== 'none' })
+    .map(el => el.className.toString()))
+  expect(offenders).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('print media hides interactive chrome and expands the Gantt scroller', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  await page.locator('.vft-gantt-bar').first().click()
+  const display = (selector: string) => page.evaluate(sel => [...document.querySelectorAll(sel)].map(el => getComputedStyle(el).display), selector)
+  const zoomTools = await display('.vft-zoom-tools')
+  expect(zoomTools.length).toBeGreaterThan(0)
+  expect(zoomTools.every(value => value !== 'none')).toBe(true)
+  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
+  await page.emulateMedia({ media: 'print' })
+  expect((await display('.vft-zoom-tools, .vft-minimap, .vft-bar-handle, .vft-gantt-toolbar')).every(value => value === 'none')).toBe(true)
+  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
+  await expect(page.locator('.vft-network').first()).toHaveCSS('print-color-adjust', 'exact')
+  expect(errors).toEqual([])
+})
+
+test('export controls download a whole-chart SVG and a scaled PNG for both components', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const pngSize = (bytes: Buffer) => {
+    expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG')
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  }
+  const save = async (name: string) => {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    const file = await pending
+    return { name: file.suggestedFilename(), bytes: await readFile((await file.path())!) }
+  }
+  const { errors, chart, status } = await openTimelineEditing(page)
+  // Scroll away first: the export still covers the whole range and every row.
+  await chart.evaluate(element => { element.scrollLeft = 400 })
+  const svg = await save('Export SVG')
+  expect(svg.name).toBe('timeline.svg')
+  const text = svg.bytes.toString('utf8')
+  // 138 px heading column + 10 h at 115 px; 66 px header, 4 rows of 66 px and 2 load rows of 44 px.
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="1288" height="418"/)
+  for (const label of ['Wireframes', 'Billing API', 'Checkout UI', 'Acceptance tests', 'Quality', 'Engineering pool', 'Day 2026-11-09', 'Now', 'Team']) {
+    expect(text).toContain('>' + label + '<')
+  }
+  expect(text).not.toContain('<script')
+  await expect(status('Exported SVG (')).toBeVisible()
+  const png = await save('Export PNG')
+  expect(png.name).toBe('timeline.png')
+  expect(pngSize(png.bytes)).toEqual({ width: 2576, height: 836 })
+  await expect(status('Exported PNG 2576 × 836 px.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  const graphSvg = await save('Export graph SVG')
+  const graphText = graphSvg.bytes.toString('utf8')
+  expect(graphSvg.name).toBe('network.svg')
+  const nodeCount = await page.locator('.vft-network-node').count()
+  expect(graphText.match(/<g transform="translate\(/g)?.length).toBe(nodeCount + 1)
+  const [, width, height] = /^<svg [^>]*width="([\d.]+)" height="([\d.]+)"/.exec(graphText)!
+  const graphPng = await save('Export graph PNG')
+  expect(graphPng.name).toBe('network.png')
+  expect(pngSize(graphPng.bytes)).toEqual({ width: Math.ceil(Number(width) * 2), height: Math.ceil(Number(height) * 2) })
+
+  // Culling and the camera do not limit the export, and oversized PNGs are refused with a RangeError message.
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(page.getByText('3750 nodes')).toBeVisible()
+  const large = (await save('Export graph SVG')).bytes.toString('utf8')
+  expect(large.match(/<g transform="translate\(/g)?.length).toBe(3751)
+  await page.getByRole('button', { name: 'Export graph PNG', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'exceeds the maximum canvas size' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves and scrollToTime', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  await expect(chart.locator('xpath=ancestor::div[contains(@class, "vft-gantt")][1]')).toHaveAttribute('dir', 'rtl')
+  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
+  const corner = chart.locator('.vft-gantt-corner')
+  const box = async (locator: typeof api) => (await locator.boundingBox())!
+  // The heading column is on the right and time runs from right to left: 08:00 touches the headings,
+  // and Billing API (from 10:00) starts where Wireframes (until 10:00) ends.
+  const heading = await box(corner)
+  const wireframes = await box(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true }))
+  let bar = await box(api)
+  expect(heading.x).toBeGreaterThan(bar.x)
+  expect(Math.abs(wireframes.x + wireframes.width - heading.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(bar.x + bar.width - wireframes.x)).toBeLessThanOrEqual(1)
+  expect(await chart.evaluate(element => element.scrollLeft)).toBeLessThanOrEqual(0)
+
+  // Dragging to the left proposes a later interval: 58 px at 115 px per hour snaps to 30 minutes.
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + bar.width / 2 - 58, bar.y + bar.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Billing API → 10:30–13:30.')).toBeVisible()
+  await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
+
+  // The start handle sits on the right edge; dragging it 29 px to the left moves the start 15 minutes later.
+  const startHandle = await box(api.locator('.vft-bar-handle.first'))
+  bar = await box(api)
+  expect(startHandle.x + startHandle.width).toBeGreaterThan(bar.x + bar.width - 2)
+  await page.mouse.move(startHandle.x + startHandle.width / 2, startHandle.y + startHandle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(startHandle.x + startHandle.width / 2 - 29, startHandle.y + startHandle.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
+
+  // Arrow keys follow the visual direction: Left is later, Right is earlier; Shift still resizes the end.
+  await api.focus()
+  await api.press('ArrowLeft')
+  await expect(status('Billing API → 11:00–13:45.')).toBeVisible()
+  await expect(api).toBeFocused()
+  await api.press('ArrowRight')
+  await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
+  await api.press('Shift+ArrowLeft')
+  await expect(status('Billing API → 10:45–13:45.')).toBeVisible()
+
+  // scrollToTime puts 12:00 at the inline-start (right) edge of the time area, using a negative scrollLeft.
+  const zoomIn = page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.click()
+  await zoomIn.click()
+  await expect(status('182% · hours')).toBeVisible()
+  await page.getByRole('button', { name: 'Scroll to 12:00', exact: true }).click()
+  await expect.poll(() => chart.evaluate(element => element.scrollLeft)).toBeLessThan(-800)
+  const tests = chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })
+  const pixelsPerHour = 115 * 1.35 * 1.35
+  await expect.poll(async () => {
+    const [edge, target] = [await box(corner), await box(tests)]
+    return Math.abs(target.x + target.width - (edge.x - 2 * pixelsPerHour))
+  }).toBeLessThanOrEqual(1.5)
+
+  // Back to left-to-right: the headings return to the left and 12:00 stays at the inline-start edge.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).uncheck()
+  await expect.poll(async () => {
+    const [edge, target] = [await box(corner), await box(tests)]
+    return Math.abs(target.x - (edge.x + edge.width + 2 * pixelsPerHour))
+  }).toBeLessThanOrEqual(1.5)
+  expect(await chart.evaluate(element => element.scrollLeft)).toBeGreaterThan(800)
+  expect(errors).toEqual([])
+})
+
+test('right-to-left network graph mirrors the chrome and label alignment but not the geometry', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const measure = async () => {
+    const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+    const minimap = (await page.getByRole('button', { name: 'Navigate graph overview', exact: true }).boundingBox())!
+    const tools = (await page.getByRole('group', { name: 'Graph zoom', exact: true }).boundingBox())!
+    const node = page.getByRole('button', { name: 'A', exact: true })
+    const box = (await node.locator('rect').first().boundingBox())!
+    const text = (await node.locator('text.vft-node-title').boundingBox())!
+    return { stage, minimap, tools, box, text }
+  }
+  await openNetworkFixture(page, '?preset=groups&minimap=1')
+  const ltr = await measure()
+  await openNetworkFixture(page, '?preset=groups&minimap=1&dir=rtl')
+  await expect(page.locator('.vft-network')).toHaveAttribute('dir', 'rtl')
+  const rtl = await measure()
+  // Geometry is unchanged; the minimap and zoom tools move to the left; labels align to the right.
+  expect(rtl.box).toEqual(ltr.box)
+  expect(ltr.minimap.x).toBeGreaterThan(ltr.stage.x + ltr.stage.width / 2)
+  expect(rtl.minimap.x + rtl.minimap.width).toBeLessThan(rtl.stage.x + rtl.stage.width / 2)
+  expect(rtl.tools.x + rtl.tools.width).toBeLessThan(rtl.stage.x + rtl.stage.width / 2)
+  expect(ltr.text.x - ltr.box.x).toBeLessThan(ltr.box.x + ltr.box.width - (ltr.text.x + ltr.text.width))
+  expect(rtl.box.x + rtl.box.width - (rtl.text.x + rtl.text.width)).toBeLessThan(rtl.text.x - rtl.box.x)
+  await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
+
+  // dir="auto" follows an inherited right-to-left direction after mounting.
+  // The attribute is set once parsing ends, before the deferred module script mounts the app.
+  await page.addInitScript(() => document.addEventListener('readystatechange', () => {
+    if (document.readyState === 'interactive') document.documentElement.setAttribute('dir', 'rtl')
+  }))
+  await openNetworkFixture(page, '?preset=groups&minimap=1&dir=auto')
+  await expect(page.locator('.vft-network')).toHaveClass(/vft-rtl/)
+  await expect(page.locator('.vft-network')).not.toHaveAttribute('dir', /./)
   expect(errors).toEqual([])
 })

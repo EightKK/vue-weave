@@ -1,4 +1,7 @@
-import type { TimelineBar, TimelineDependency, TimelineRow, TimelineSummary } from './types.js'
+import type {
+  CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
+  TimelineLoadSegment, TimelineRow, TimelineSummary,
+} from './types.js'
 
 export interface TimeRange {
   start: number
@@ -30,6 +33,22 @@ export function createTimeScale(range: TimeRange, pixelsPerUnit: number): TimeSc
     width,
     toX: time => (time - range.start) * pixelsPerUnit,
     toTime: x => range.start + x / pixelsPerUnit,
+  }
+}
+
+/**
+ * Mirror a scale for a right-to-left axis: the range start maps to `width` and the range end to 0. Both mappings
+ * stay inverse; round trips are exact whenever they are exact for `scale` and `width - x` is exactly representable
+ * (for example integer pixel positions). GanttChart does not need it, because it positions elements from the inline
+ * start edge; it is used to export right-to-left SVG and is available for custom renderers.
+ */
+export function mirrorTimeScale(scale: TimeScale): TimeScale {
+  const width = scale.width
+  if (!Number.isFinite(width) || width <= 0) throw new RangeError('A time scale needs a positive finite width')
+  return {
+    width,
+    toX: time => width - scale.toX(time),
+    toTime: x => scale.toTime(width - x),
   }
 }
 
@@ -197,4 +216,147 @@ export function summarizeTimelineRows(tree: ReturnType<typeof createTimelineRowT
     start: value.start, end: value.end, count: value.count,
     progress: value.knownDuration ? value.completed / value.knownDuration : undefined,
   }]))
+}
+
+/** Derive the dependency type joining a source bar end to a target bar end. */
+export function dependencyTypeForEnds(from: TimelineBarEnd, to: TimelineBarEnd): TimelineDependencyType {
+  const letter = (end: TimelineBarEnd) => {
+    if (end !== 'start' && end !== 'finish') throw new RangeError('A bar end must be start or finish')
+    return end === 'start' ? 'S' : 'F'
+  }
+  return (letter(from) + letter(to)) as TimelineDependencyType
+}
+
+/** The bar ends a dependency type joins. FS joins the source finish to the target start. */
+export function dependencyEndsForType(type: TimelineDependency['type'] = 'FS'): { from: TimelineBarEnd; to: TimelineBarEnd } {
+  if (!['FS', 'SS', 'FF', 'SF'].includes(type)) throw new Error('Invalid dependency type')
+  return { from: type[0] === 'S' ? 'start' : 'finish', to: type[1] === 'S' ? 'start' : 'finish' }
+}
+
+/**
+ * Move several intervals by one snapped displacement. The displacement is clamped so every interval stays inside
+ * bounds, which preserves the relative offsets of the group.
+ */
+export function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step: number, bounds: TimeRange): TimeRange[] {
+  checkRange(bounds)
+  if (!Number.isFinite(delta) || !Number.isFinite(step) || step <= 0) {
+    throw new RangeError('Moving requires a finite displacement and a positive snap')
+  }
+  let min = -Infinity, max = Infinity
+  for (const range of ranges) {
+    checkRange(range, true)
+    if (range.start < bounds.start || range.end > bounds.end) throw new RangeError('Editable intervals must fit inside editBounds')
+    min = Math.max(min, bounds.start - range.start)
+    max = Math.min(max, bounds.end - range.end)
+  }
+  const snapped = Math.sign(delta) * Math.round(Math.abs(delta) / step) * step
+  const shift = ranges.length ? Math.max(min, Math.min(max, snapped)) : 0
+  return ranges.map(range => ({ start: range.start + shift, end: range.end + shift }))
+}
+
+const minuteMs = 60_000
+const dayMs = 86_400_000
+
+function pad(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+/**
+ * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset,
+ * clipped to the range and labelled from their unclipped boundaries.
+ */
+export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options: CalendarBandOptions = {}): TimelineBand[] {
+  checkRange(range)
+  const { utcOffsetMinutes = 0, step = 1, weekStartsOn = 1, label } = options
+  if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
+  if (!Number.isInteger(utcOffsetMinutes) || Math.abs(utcOffsetMinutes) > 18 * 60) {
+    throw new RangeError('utcOffsetMinutes must be an integer between -1080 and 1080')
+  }
+  if (!Number.isSafeInteger(step) || step <= 0 || (unit === 'hour' && 24 % step !== 0)) {
+    throw new RangeError('step must be a positive integer (a divisor of 24 for hours)')
+  }
+  if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
+  const offset = utcOffsetMinutes * minuteMs
+  // Civil fields are read with UTC getters from shifted instants.
+  const civil = (time: number) => new Date(time + offset)
+  const fromCivil = (year: number, month: number, day = 1, hour = 0) => Date.UTC(year, month, day, hour) - offset
+  function first(): number {
+    const date = civil(range.start)
+    const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
+    if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() - date.getUTCHours() % step)
+    if (unit === 'day') {
+      const midnight = fromCivil(year, month, day)
+      const index = Math.floor((midnight + offset) / dayMs)
+      return midnight - (((index % step) + step) % step) * dayMs
+    }
+    if (unit === 'week') return fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
+    if (unit === 'month') return fromCivil(year, month - month % step)
+    return fromCivil(year - ((year % step) + step) % step, 0)
+  }
+  function next(time: number): number {
+    const date = civil(time)
+    const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
+    if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() + step)
+    if (unit === 'day') return fromCivil(year, month, day + step)
+    if (unit === 'week') return fromCivil(year, month, day + 7 * step)
+    if (unit === 'month') return fromCivil(year, month + step)
+    return fromCivil(year + step, 0)
+  }
+  function defaultLabel(start: number) {
+    const date = civil(start)
+    const ymd = String(date.getUTCFullYear()).padStart(4, '0') + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate())
+    if (unit === 'hour') return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes())
+    if (unit === 'month') return ymd.slice(0, 7)
+    if (unit === 'year') return ymd.slice(0, 4)
+    return ymd
+  }
+  const bands: TimelineBand[] = []
+  for (let start = first(); start < range.end;) {
+    const end = next(start)
+    if (!Number.isFinite(end) || end <= start) throw new RangeError('Calendar bands exceed the supported date range')
+    if (end > range.start) {
+      if (bands.length >= 10000) throw new RangeError('Too many calendar bands; increase the unit or step')
+      bands.push({ start: Math.max(start, range.start), end: Math.min(end, range.end), label: label ? label(start, end) : defaultLabel(start) })
+    }
+    start = end
+  }
+  return bands
+}
+
+export interface ResourceLoadHistogram {
+  segments: TimelineLoadSegment[]
+  /** Largest load or capacity among the resource's segments; zero when every segment is empty. */
+  peak: number
+}
+
+/**
+ * Group load segments by resource for a histogram band. Segments are sorted by start and must not overlap within a
+ * resource. When `resourceIds` is supplied, every segment must reference one of them and each ID gets an entry.
+ */
+export function resourceLoadHistogram(
+  segments: readonly TimelineLoadSegment[], resourceIds?: Iterable<string>,
+): Map<string, ResourceLoadHistogram> {
+  const known = resourceIds ? new Set(resourceIds) : undefined
+  const groups = new Map<string, ResourceLoadHistogram>()
+  for (const id of known ?? []) groups.set(id, { segments: [], peak: 0 })
+  for (const segment of segments) {
+    checkRange(segment)
+    if (!segment.resourceId || (known && !known.has(segment.resourceId))) {
+      throw new Error('Unknown resource for load segment: ' + segment.resourceId)
+    }
+    if (!Number.isFinite(segment.load) || !Number.isFinite(segment.capacity) || segment.load < 0 || segment.capacity < 0) {
+      throw new RangeError('Load and capacity must be finite and nonnegative: ' + segment.resourceId)
+    }
+    let group = groups.get(segment.resourceId)
+    if (!group) groups.set(segment.resourceId, group = { segments: [], peak: 0 })
+    group.segments.push(segment)
+    group.peak = Math.max(group.peak, segment.load, segment.capacity)
+  }
+  for (const [id, group] of groups) {
+    group.segments.sort((a, b) => a.start - b.start)
+    for (let i = 1; i < group.segments.length; i++) {
+      if (group.segments[i]!.start < group.segments[i - 1]!.end) throw new Error('Overlapping load segments for resource: ' + id)
+    }
+  }
+  return groups
 }

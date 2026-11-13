@@ -14,6 +14,21 @@ export interface ExampleData {
 }
 
 export function makeExample(name: string): ExampleData {
+  if (name === 'large') {
+    // 150 ranks of 25 nodes: 3,750 nodes and about 7,400 edges, far wider than one viewport.
+    const ranks = 150, perRank = 25
+    const nodes: NetworkNode[] = [], edges: GraphEdge[] = []
+    for (let rank = 0; rank < ranks; rank++) {
+      for (let row = 0; row < perRank; row++) {
+        const id = `n-${rank}-${row}`
+        nodes.push({ id, label: 'Node ' + (rank * perRank + row + 1), detail: 'Rank ' + (rank + 1), tone: (['blue', 'teal', 'amber', 'violet'] as const)[(rank + row) % 4] })
+        if (rank === ranks - 1) continue
+        edges.push({ id: id + '>a', from: id, to: `n-${rank + 1}-${row}` })
+        edges.push({ id: id + '>b', from: id, to: `n-${rank + 1}-${(row + 7) % perRank}` })
+      }
+    }
+    return { ...makeExample('manufacturing'), nodes, edges }
+  }
   if (name === 'scale') {
     const rows = Array.from({ length: 1000 }, (_, i) => ({ id: 'r' + i, label: 'Resource ' + (i + 1), detail: 'Virtualized row' }))
     return {

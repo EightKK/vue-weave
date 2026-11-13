@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkNodeSlot } from '../core/types.js'
-import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphGroup } from '../core/graph.js'
+import { computed, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
+import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
+import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphViewportRect } from '../core/graphView.js'
+import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
+import { renderGraphSvg } from '../core/exportSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   nodes: readonly NetworkNode[]
@@ -13,16 +17,21 @@ const props = withDefaults(defineProps<{
   connectable?: boolean
   reconnectable?: boolean
   boxSelect?: boolean
-  groups?: readonly GraphGroup[]
+  groups?: readonly NetworkGroup[]
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
   showMinimap?: boolean
   relatedIds?: ReadonlySet<string>
-  options?: GraphLayoutOptions
+  options?: GraphLayeredLayoutOptions
   layout?: GraphLayoutFunction
   labels?: Partial<GraphLabels>
   height?: number | string
   showControls?: boolean
-}>(), { showControls: true })
+  cullOffscreen?: boolean
+  cullOverscan?: number
+  matchIds?: ReadonlySet<string>
+  dimmedIds?: ReadonlySet<string>
+  dir?: ChartDirection
+}>(), { showControls: true, cullOverscan: 200, dir: 'ltr' })
 const emit = defineEmits<{
   select: [id: string]
   'update:selectedId': [id: string]
@@ -36,7 +45,7 @@ const emit = defineEmits<{
 }>()
 defineSlots<{
   node(props: NetworkNodeSlot): unknown
-  edge(props: { edge: GraphEdge; path: string; selected: boolean }): unknown
+  edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean }): unknown
   empty(): unknown
 }>()
 const messages = computed<GraphLabels>(() => ({
@@ -44,7 +53,7 @@ const messages = computed<GraphLabels>(() => ({
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit to view',
   minimap: 'Navigate graph overview', connectFrom: 'Start connection from', connectTo: 'Connect to',
   reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of', moveGroup: 'Move group',
-  rejected: 'This connection was rejected.', selectEdge: 'Select edge', ...props.labels,
+  rejected: 'This connection was rejected.', selectEdge: 'Select edge', groupWithin: 'within', ...props.labels,
 }))
 function isSelected(id: string) {
   return props.selectedIds ? props.selectedIds.has(id) : props.selectedId === id
@@ -61,15 +70,25 @@ function select(id: string, event: MouseEvent | KeyboardEvent) {
   emit('update:selectedId', id)
 }
 const svg = ref<SVGSVGElement>()
+const root = ref<HTMLElement>()
 const marker = useId()
+// Right-to-left only affects chrome and label alignment; graph geometry stays as laid out.
+const inheritedRtl = ref(false)
+const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
+function detectDirection() {
+  const element = root.value
+  inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+}
+watch(() => props.dir, detectDirection, { flush: 'post' })
 const viewport = ref({ width: 1150, height: 270 })
-const options = computed<GraphLayoutOptions>((previous) => {
+const options = computed<GraphLayeredLayoutOptions>((previous) => {
   const next = props.options
   const value = {
     direction: next?.direction, nodeWidth: next?.nodeWidth, nodeHeight: next?.nodeHeight,
     columnGap: next?.columnGap, rowGap: next?.rowGap, padding: next?.padding,
+    crossingReduction: next?.crossingReduction, crossingSweeps: next?.crossingSweeps,
   }
-  return previous && (Object.keys(value) as (keyof GraphLayoutOptions)[]).every(key => previous[key] === value[key])
+  return previous && (Object.keys(value) as (keyof GraphLayeredLayoutOptions)[]).every(key => previous[key] === value[key])
     ? previous : value
 })
 const baseLayout = computed(() => {
@@ -96,42 +115,112 @@ const dragPreview = ref<ReadonlyMap<string, GraphPoint>>()
 const savedLayout = computed(() => props.positions?.size
   ? applyGraphPositions(baseLayout.value, props.edges, props.positions, direction.value)
   : baseLayout.value)
+const savedRouted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, props.edges, direction.value))
 const layout = computed(() => {
-  const positions = dragPreview.value ? new Map([...props.positions ?? [], ...dragPreview.value]) : undefined
-  const geometry = positions ? applyGraphPositions(baseLayout.value, props.edges, positions, direction.value) : savedLayout.value
-  return routeGraphPorts(geometry, nodesById.value, props.edges, direction.value)
+  if (!dragPreview.value) return savedRouted.value
+  const positions = new Map([...props.positions ?? [], ...dragPreview.value])
+  return routeGraphPorts(applyGraphPositions(baseLayout.value, props.edges, positions, direction.value), nodesById.value, props.edges, direction.value)
 })
 const positioned = computed(() => props.nodes.map(node => ({ ...node, box: layout.value.boxes.get(node.id)! })))
 
-const groupMembership = computed(() => {
-  const groups = new Set<string>(), members = new Set<string>()
-  for (const group of props.groups ?? []) {
-    if (!group.id || groups.has(group.id) || !group.nodeIds.length) throw new Error('Invalid graph group: ' + group.id)
-    groups.add(group.id)
+type GroupShape = NetworkGroup & { members: string[]; depth: number; parentLabel?: string }
+const groupMembership = computed<GroupShape[]>(() => {
+  const list = props.groups ?? []
+  const byId = new Map<string, NetworkGroup>(), members = new Set<string>()
+  for (const group of list) {
+    if (!group.id || byId.has(group.id)) throw new Error('Invalid graph group: ' + group.id)
+    byId.set(group.id, group)
     for (const id of group.nodeIds) {
       if (!nodesById.value.has(id) || members.has(id)) throw new Error('Invalid or repeated group member: ' + id)
       members.add(id)
     }
   }
-  return props.groups ?? []
-})
-const shownGroups = computed(() => groupMembership.value.map(group => {
-  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-  for (const id of group.nodeIds) {
-    const box = layout.value.boxes.get(id)!
-    left = Math.min(left, box.x)
-    top = Math.min(top, box.y)
-    right = Math.max(right, box.x + box.width)
-    bottom = Math.max(bottom, box.y + box.height)
+  const children = new Map<string, NetworkGroup[]>()
+  const roots: NetworkGroup[] = []
+  for (const group of list) {
+    if (group.parentId === undefined) {
+      roots.push(group)
+      continue
+    }
+    if (!byId.has(group.parentId)) throw new Error('Unknown parent group: ' + group.parentId + ' (group ' + group.id + ')')
+    let siblings = children.get(group.parentId)
+    if (!siblings) children.set(group.parentId, siblings = [])
+    siblings.push(group)
   }
-  const x = Math.max(0, left - 10), y = Math.max(0, top - 23)
-  return { ...group, x, y, width: Math.min(layout.value.width, right + 10) - x, height: Math.min(layout.value.height, bottom + 10) - y }
-}))
+  for (const group of list) {
+    let current = group, steps = 0
+    while (current.parentId !== undefined) {
+      current = byId.get(current.parentId)!
+      if (current === group || ++steps > list.length) throw new Error('Graph group hierarchy contains a cycle at group: ' + group.id)
+    }
+  }
+  // Preorder with input-order siblings paints parents before their children.
+  const order: { group: NetworkGroup; depth: number }[] = []
+  const stack = roots.map(group => ({ group, depth: 0 })).reverse()
+  while (stack.length) {
+    const item = stack.pop()!
+    order.push(item)
+    const nested = children.get(item.group.id) ?? []
+    for (let i = nested.length - 1; i >= 0; i--) stack.push({ group: nested[i]!, depth: item.depth + 1 })
+  }
+  const effective = new Map<string, string[]>()
+  for (let i = order.length - 1; i >= 0; i--) {
+    const group = order[i]!.group
+    const all = [...group.nodeIds]
+    for (const child of children.get(group.id) ?? []) all.push(...effective.get(child.id)!)
+    if (!all.length) throw new Error('Invalid graph group: ' + group.id)
+    effective.set(group.id, all)
+  }
+  return order.map(({ group, depth }) => ({
+    ...group, members: effective.get(group.id)!, depth,
+    parentLabel: group.parentId === undefined ? undefined : byId.get(group.parentId)!.label,
+  }))
+})
+const shownGroups = computed(() => {
+  const rects = new Map<string, { x: number; y: number; width: number; height: number }>()
+  const nested = new Set(groupMembership.value.flatMap(group => group.parentId === undefined ? [] : [group.parentId]))
+  const direct = (group: GroupShape) => {
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+    for (const id of nested.has(group.id) ? group.nodeIds : group.members) {
+      const box = layout.value.boxes.get(id)!
+      left = Math.min(left, box.x)
+      top = Math.min(top, box.y)
+      right = Math.max(right, box.x + box.width)
+      bottom = Math.max(bottom, box.y + box.height)
+    }
+    return { left, top, right, bottom }
+  }
+  // Children come after their parent in the list, so walking backwards sizes children first.
+  const reversed = [...groupMembership.value].reverse()
+  for (const group of reversed) {
+    const { left, top, right, bottom } = direct(group)
+    const x = Math.max(0, left - 10), y = Math.max(0, top - 23)
+    let x1 = Math.min(layout.value.width, right + 10), y1 = Math.min(layout.value.height, bottom + 10)
+    let x0 = x, y0 = y
+    if (nested.has(group.id)) {
+      // A parent encloses its children, the label strip of each child and the padding around them.
+      if (left === Infinity) { x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity }
+      for (const child of groupMembership.value) {
+        if (child.parentId !== group.id) continue
+        const rect = rects.get(child.id)!
+        x0 = Math.min(x0, rect.x - 10)
+        y0 = Math.min(y0, rect.y - 23)
+        x1 = Math.max(x1, rect.x + rect.width + 10)
+        y1 = Math.max(y1, rect.y + rect.height + 10)
+      }
+    }
+    rects.set(group.id, { x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
+  }
+  return groupMembership.value.map(group => ({ ...group, ...rects.get(group.id)! }))
+})
+function groupName(group: GroupShape) {
+  return messages.value.moveGroup + ' ' + group.label + (group.parentLabel === undefined ? '' : ' ' + messages.value.groupWithin + ' ' + group.parentLabel)
+}
 
 type PortRef = { node: string; port?: string }
 type PortHandle = PortRef & GraphPoint & { label: string; direction: NonNullable<GraphPort['direction']> }
 const handles = computed(() => positioned.value.flatMap<PortHandle>(node => {
-  if (!node.ports) return [{ node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: node.box.x + node.box.width - 10, y: node.box.y + 11 }]
+  if (!node.ports) return [{ node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: direction.value === 'RL' ? node.box.x + 10 : node.box.x + node.box.width - 10, y: node.box.y + 11 }]
   return node.ports.map(port => ({
     node: node.id, port: port.id, label: node.label + ' · ' + (port.label ?? port.id),
     direction: port.direction ?? 'both', ...graphPortAnchor(node.box, port),
@@ -142,19 +231,34 @@ function portKey(ref: PortRef) {
   return JSON.stringify([ref.node, ref.port])
 }
 
+// The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
+// the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
+const contentBounds = computed(() => {
+  let left = 0, top = 0, right = layout.value.width, bottom = layout.value.height
+  for (const group of shownGroups.value) {
+    left = Math.min(left, group.x)
+    top = Math.min(top, group.y)
+    right = Math.max(right, group.x + group.width)
+    bottom = Math.max(bottom, group.y + group.height)
+  }
+  return { left, top, right, bottom, width: right - left, height: bottom - top }
+})
+
 function fitCamera(overview = false) {
   const { width, height } = viewport.value
   const geometry = layout.value
-  const overviewScale = Math.max(0.1, Math.min(1.15, width / geometry.width, height / geometry.height))
+  const content = contentBounds.value
+  const overviewScale = Math.max(0.1, Math.min(1.15, width / content.width, height / content.height))
   const scale = overview || width >= 650 ? overviewScale
-    : Math.max(overviewScale, Math.min(0.72, height / geometry.height))
-  const canvasWidth = geometry.width * scale
+    : Math.max(overviewScale, Math.min(0.72, height / content.height))
+  const canvasWidth = content.width * scale
   const selected = props.selectedId ? geometry.boxes.get(props.selectedId) : undefined
   const focusX = selected ? (selected.x + selected.width / 2) * scale : 0
+  const originX = -content.left * scale
   return {
-    x: canvasWidth <= width ? (width - canvasWidth) / 2
-      : Math.max(width - canvasWidth, Math.min(0, width / 2 - focusX)),
-    y: (height - geometry.height * scale) / 2,
+    x: canvasWidth <= width ? (width - canvasWidth) / 2 + originX
+      : Math.max(width - canvasWidth + originX, Math.min(originX, width / 2 - focusX)),
+    y: (height - content.height * scale) / 2 - content.top * scale,
     scale,
   }
 }
@@ -205,6 +309,8 @@ function startPan(event: PointerEvent) {
 
 let nodeDrag: { pointerId: number; start: GraphPoint; before: Map<string, GraphPoint>; target: SVGElement; node?: string } | undefined
 let suppressClick: string | undefined
+const noIds: ReadonlySet<string> = new Set()
+const gestureIds = shallowRef(noIds)
 const notice = ref('')
 
 function movablePositions(ids: Iterable<string>) {
@@ -241,6 +347,7 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
   if (!before.size) return
   const target = event.currentTarget as SVGElement
   nodeDrag = { pointerId: event.pointerId, target, before, node, start: { x: event.clientX, y: event.clientY } }
+  gestureIds.value = new Set(before.keys())
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
 }
@@ -255,6 +362,7 @@ function moveNode(event: PointerEvent) {
 function cancelNodeDrag() {
   const drag = nodeDrag
   nodeDrag = undefined
+  gestureIds.value = noIds
   if (dragPreview.value && drag) suppressClick = drag.node
   dragPreview.value = undefined
   if (drag?.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId)
@@ -418,6 +526,7 @@ function portPressed(handle: PortRef) {
 }
 function cancelInteraction() {
   cancelNodeDrag()
+  endPinch()
   if (connectionDrag) skipHandleClick = true
   clearConnectionCapture()
   draft.value = undefined
@@ -434,15 +543,16 @@ function navigateMinimap(event: MouseEvent) {
   const point = map.createSVGPoint()
   point.x = event.clientX
   point.y = event.clientY
+  const content = contentBounds.value
   const world = event.detail ? point.matrixTransform(transform.inverse()) : {
-    x: layout.value.width / 2, y: layout.value.height / 2,
+    x: (content.left + content.right) / 2, y: (content.top + content.bottom) / 2,
   }
   cancelInteraction()
   fitMode.value = 'manual'
   camera.value = {
     scale: camera.value.scale,
-    x: viewport.value.width / 2 - Math.min(layout.value.width, Math.max(0, world.x)) * camera.value.scale,
-    y: viewport.value.height / 2 - Math.min(layout.value.height, Math.max(0, world.y)) * camera.value.scale,
+    x: viewport.value.width / 2 - Math.min(content.right, Math.max(content.left, world.x)) * camera.value.scale,
+    y: viewport.value.height / 2 - Math.min(content.bottom, Math.max(content.top, world.y)) * camera.value.scale,
   }
 }
 
@@ -489,6 +599,123 @@ function panWithKeys(event: KeyboardEvent) {
   camera.value = { ...camera.value, x: camera.value.x + step[0], y: camera.value.y + step[1] }
 }
 
+function isDimmed(id: string) {
+  return Boolean(props.dimmedIds?.has(id) || (props.matchIds && !props.matchIds.has(id)))
+}
+function edgeIsDimmed(edge: GraphEdge) {
+  return isDimmed(edge.from) || isDimmed(edge.to)
+}
+
+// Viewport culling. Before mount the viewport is the 1150 x 270 default with the initial fit camera, so the
+// server and the first client render agree; the measured size replaces it after mount.
+const focused = ref<{ node?: string; edge?: string; group?: string }>()
+function trackFocus(event: FocusEvent) {
+  if (!props.cullOffscreen || !(event.target instanceof Element)) return
+  const element = event.target.closest('[data-vft-node],[data-vft-edge],[data-vft-group]')
+  focused.value = element ? {
+    node: element.getAttribute('data-vft-node') ?? undefined,
+    edge: element.getAttribute('data-vft-edge') ?? undefined,
+    group: element.getAttribute('data-vft-group') ?? undefined,
+  } : undefined
+}
+function releaseFocus(event: FocusEvent) {
+  if (!(event.relatedTarget instanceof Node) || !svg.value?.contains(event.relatedTarget)) focused.value = undefined
+}
+// Bounds come from the saved layout, so a drag preview does not re-parse every edge path. Dragged nodes and
+// the edges attached to them are kept rendered separately instead (see `visible`).
+const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedRouted.value) : undefined)
+const incidentEdges = computed(() => {
+  const index = new Map<string, string[]>()
+  for (const edge of props.edges) {
+    for (const id of edge.from === edge.to ? [edge.from] : [edge.from, edge.to]) {
+      const list = index.get(id)
+      if (list) list.push(edge.id)
+      else index.set(id, [edge.id])
+    }
+  }
+  return index
+})
+const visible = computed(() => {
+  const bounds = layoutBounds.value
+  if (!bounds) return undefined
+  const view = graphViewportRect(camera.value, viewport.value, Math.max(0, props.cullOverscan ?? 0))
+  const nodes = new Set<string>(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
+  for (const id of gestureIds.value) nodes.add(id)
+  const edges = new Set<string>()
+  for (const id of dragPreview.value?.keys() ?? []) {
+    nodes.add(id)
+    for (const edgeId of incidentEdges.value.get(id) ?? []) edges.add(edgeId)
+  }
+  if (draft.value) nodes.add(draft.value.fixed.node)
+  if (focused.value?.node) nodes.add(focused.value.node)
+  for (const id of [activeEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
+  const result = cullGraphElements(bounds, view, { nodes, edges })
+  const groups = new Set<string>()
+  for (const group of shownGroups.value) {
+    const near = group.x <= view.x + view.width && group.x + group.width >= view.x
+      && group.y <= view.y + view.height && group.y + group.height >= view.y
+    if (near || focused.value?.group === group.id || group.members.some(id => gestureIds.value.has(id) || dragPreview.value?.has(id))) groups.add(group.id)
+  }
+  return { ...result, groups }
+})
+const shownNodes = computed(() => visible.value ? positioned.value.filter(node => visible.value!.nodes.has(node.id)) : positioned.value)
+const shownEdges = computed(() => visible.value ? props.edges.filter(edge => visible.value!.edges.has(edge.id)) : props.edges)
+const renderedGroups = computed(() => visible.value ? shownGroups.value.filter(group => visible.value!.groups.has(group.id)) : shownGroups.value)
+const renderedHandles = computed(() => visible.value ? handles.value.filter(handle => visible.value!.nodes.has(handle.node)) : handles.value)
+
+// Two-finger pinch zoom and pan. Only touch pointers take part; mouse and pen input is unchanged.
+const touches = new Map<number, GraphPoint>()
+let pinch: { ids: number[]; distance: number; midpoint: GraphPoint; camera: GraphViewport } | undefined
+function releaseCapture(id: number) {
+  try { if (svg.value?.hasPointerCapture(id)) svg.value.releasePointerCapture(id) } catch { /* the pointer is already gone */ }
+}
+function endPinch() {
+  const previous = pinch
+  pinch = undefined
+  for (const id of previous?.ids ?? []) releaseCapture(id)
+}
+function startTouch(event: PointerEvent) {
+  if (event.pointerType !== 'touch' || !svg.value) return
+  touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  if (touches.size !== 2) return
+  // A second finger turns the gesture into a camera gesture and cancels any one-finger edit in flight.
+  cancelInteraction()
+  const ids = [...touches.keys()], [a, b] = [...touches.values()] as [GraphPoint, GraphPoint]
+  for (const id of ids) {
+    try { svg.value.setPointerCapture(id) } catch { /* synthetic pointers cannot be captured */ }
+  }
+  pinch = {
+    ids, distance: Math.hypot(a.x - b.x, a.y - b.y), midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    camera: { ...camera.value },
+  }
+}
+function moveTouch(event: PointerEvent) {
+  const point = touches.get(event.pointerId)
+  if (!point || event.pointerType !== 'touch') return
+  point.x = event.clientX
+  point.y = event.clientY
+  if (!pinch?.ids.includes(event.pointerId) || !svg.value) return
+  const [a, b] = pinch.ids.map(id => touches.get(id)!) as [GraphPoint, GraphPoint]
+  const distance = Math.hypot(a.x - b.x, a.y - b.y)
+  if (!(distance > 0) || !(pinch.distance > 0)) return
+  const rect = svg.value.getBoundingClientRect()
+  const start = pinch.camera
+  const scale = Math.max(0.1, Math.min(3, start.scale * distance / pinch.distance))
+  // The world point under the initial midpoint follows the current midpoint.
+  const worldX = (pinch.midpoint.x - rect.left - start.x) / start.scale
+  const worldY = (pinch.midpoint.y - rect.top - start.y) / start.scale
+  fitMode.value = 'manual'
+  camera.value = {
+    x: (a.x + b.x) / 2 - rect.left - worldX * scale,
+    y: (a.y + b.y) / 2 - rect.top - worldY * scale,
+    scale,
+  }
+}
+function endTouch(event: PointerEvent) {
+  if (!touches.delete(event.pointerId)) return
+  if (pinch?.ids.includes(event.pointerId)) endPinch()
+}
+
 function edgeIsRelated(edge: GraphEdge) {
   return Boolean(props.relatedIds?.has(edge.from) && props.relatedIds.has(edge.to))
 }
@@ -502,7 +729,35 @@ function setViewport(value: GraphViewport) {
   fitMode.value = 'manual'
   camera.value = { ...value }
 }
-defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport })
+function focusNode(id: string, options?: NetworkFocusOptions) {
+  const box = layout.value.boxes.get(id)
+  if (!box) throw new Error('Unknown node: ' + id)
+  const scale = options?.scale ?? camera.value.scale
+  if (!Number.isFinite(scale) || scale < 0.1 || scale > 3) throw new RangeError('Viewport scale must be between 0.1 and 3')
+  cancelInteraction()
+  fitMode.value = 'manual'
+  camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)
+}
+/** A standalone SVG document of the whole graph with the default rendering and the current theme colours. */
+function exportSvg(options: GraphExportOptions = {}) {
+  const { includeSelection = true, theme, ...rest } = options
+  const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
+  return renderGraphSvg(layout.value, props.nodes, props.edges, {
+    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    ...rest,
+    groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
+    selectedIds: selection,
+    direction: rtl.value ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: GraphPngExportOptions = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng })
 
 watch(savedLayout, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value], cancelInteraction)
@@ -515,6 +770,7 @@ watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()
 })
 onMounted(() => {
+  detectDirection()
   if (!svg.value) return
   observer = new ResizeObserver(([entry]) => {
     if (!entry) return
@@ -529,14 +785,15 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
 </script>
 
 <template>
-  <div class="vft-network">
+  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
-      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction"
-      @wheel="onWheel" @pointerdown="startPan" @pointermove="movePan($event); moveNode($event); moveConnection($event)"
-      @pointerup="stopPan($event); finishNodeDrag($event); finishConnection($event)"
-      @pointercancel="stopPan($event); finishNodeDrag($event); finishConnection($event)"
+      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction" @focusin="trackFocus" @focusout="releaseFocus"
+      @wheel="onWheel" @pointerdown.capture="startTouch" @pointerdown="startPan"
+      @pointermove="moveTouch($event); movePan($event); moveNode($event); moveConnection($event)"
+      @pointerup="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
+      @pointercancel="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
       @lostpointercapture="stopPan($event); finishNodeDrag($event); finishConnection($event)"
     >
       <defs>
@@ -545,14 +802,14 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
         </marker>
       </defs>
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
-        <g v-for="group in shownGroups" :key="group.id" class="vft-network-group">
+        <g v-for="group in renderedGroups" :key="group.id" class="vft-network-group">
           <rect :x="group.x" :y="group.y" :width="group.width" :height="group.height" rx="10" />
-          <text :x="group.x + 8" :y="group.y + 15" :role="draggable ? 'button' : undefined"
-            :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? messages.moveGroup + ' ' + group.label : undefined"
-            @pointerdown.stop="startNodeDrag($event, group.nodeIds)" @keydown="moveWithKeys($event, group.nodeIds)">{{ group.label }}</text>
+          <text :x="rtl ? group.x + group.width - 8 : group.x + 8" :y="group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="group.id"
+            :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(group) : undefined"
+            @pointerdown.stop="startNodeDrag($event, group.members)" @keydown="moveWithKeys($event, group.members)">{{ group.label }}</text>
         </g>
-        <g v-for="edge in edges" :key="edge.id">
-          <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)">
+        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge) }">
+          <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)">
             <path class="vft-network-edge" :class="{ related: edgeIsRelated(edge) }"
               :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
             <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vft-edge-label"
@@ -560,12 +817,12 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
             >{{ edge.label }}</text>
           </slot>
           <path v-if="reconnectable" class="vft-edge-hit" :class="{ active: activeEdgeId === edge.id }" :d="layout.paths.get(edge.id)"
-            role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)" :aria-pressed="activeEdgeId === edge.id"
+            role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)" :aria-pressed="activeEdgeId === edge.id" :data-vft-edge="edge.id"
             @pointerdown.stop @click="activeEdgeId = edge.id" @keydown.enter.prevent="activeEdgeId = edge.id" @keydown.space.prevent="activeEdgeId = edge.id" />
         </g>
         <g
-          v-for="node in positioned" :key="node.id" class="vft-network-node"
-          :class="[`vft-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id) }]"
+          v-for="node in shownNodes" :key="node.id" class="vft-network-node" :data-vft-node="node.id"
+          :class="[`vft-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vft-dimmed': isDimmed(node.id) }]"
           :transform="`translate(${node.box.x} ${node.box.y})`"
           role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
           @pointerdown.stop="startNodeDrag($event, movingIds(node.id), node.id)" @click="clickNode(node.id, $event)"
@@ -573,18 +830,18 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
           @keydown.enter.self.prevent="select(node.id, $event)" @keydown.space.self.prevent="select(node.id, $event)"
         >
           <title>{{ node.label }} {{ node.detail }}</title>
-          <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)">
+          <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)">
           <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
           <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
-          <text x="13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
-          <text v-if="node.detail" x="13" y="43" class="vft-node-detail">{{ node.detail }}</text>
+          <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
+          <text v-if="node.detail" :x="rtl ? node.box.width - 13 : 13" y="43" class="vft-node-detail">{{ node.detail }}</text>
           </svg>
           </slot>
         </g>
         <path v-if="connectionPath" class="vft-connection-preview" :d="connectionPath" />
         <rect v-if="boxPreview" class="vft-box-selection" v-bind="boxPreview" />
         <template v-if="connectable || draft?.edge">
-          <circle v-for="handle in handles" :key="portKey(handle)" class="vft-connect-handle"
+          <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vft-connect-handle" :data-vft-node="handle.node"
             :class="{ active: portPressed(handle) }" :data-vft-port="portKey(handle)"
             :cx="handle.x" :cy="handle.y" r="6" role="button" tabindex="0"
             :aria-label="`${draft && !portPressed(handle) ? messages.connectTo : messages.connectFrom} ${handle.label}`"
@@ -604,7 +861,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
     <div v-if="!nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
     <button v-if="showMinimap && nodes.length" type="button" class="vft-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
-      <svg :viewBox="`0 0 ${layout.width} ${layout.height}`" aria-hidden="true">
+      <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
         <rect v-for="node in positioned" :key="node.id" :class="{ selected: isSelected(node.id) }"
           :x="node.box.x" :y="node.box.y" :width="node.box.width" :height="node.box.height" rx="3" />
         <rect class="vft-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"

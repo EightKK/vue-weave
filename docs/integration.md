@@ -34,6 +34,20 @@ const edges = []
 
 The library accesses DOM measurement and ResizeObserver after mounting. Initial server rendering uses deterministic fallback viewport dimensions, then measures the actual container. Vue useId supplies instance-specific SVG marker IDs. Keep server/client data and formatTime output consistent. For timezone-specific labels, use Intl.DateTimeFormat with an explicit timeZone and locale.
 
+## Large graphs, touch and search
+
+For graphs with thousands of nodes, set `cullOffscreen` so only the visible region is in the DOM. Keep `showMinimap` on to orient users, because the minimap still draws every node. A search box can pass the IDs found by your own code as `matchIds` and call `focusNode(id)` on the component ref to bring a result into view.
+
+```vue
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" cull-offscreen show-minimap :match-ids="matches" />
+```
+
+```ts
+graph.value?.focusNode(matches.value.values().next().value, { scale: 1 })
+```
+
+The graph needs no setup for touch: pinch to zoom and drag with two fingers to pan. Nested groups take an optional `parentId` on each group; see the API reference. Culled nodes are absent from the DOM and keyboard order, so offer a search or list for keyboard users who need to reach a distant node.
+
 ## Custom content
 
 The graph node slot receives its node and measured layout box. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
@@ -56,7 +70,21 @@ Gantt row/bar/tick slots accept ordinary HTML. The bar slot is already inside a 
 
 Styles use the vft- class prefix. Set CSS variables on an ancestor to change themes. Examples include --vft-surface, --vft-surface-muted, --vft-surface-hover, --vft-text, --vft-muted, --vft-border, --vft-grid, --vft-edge, --vft-accent and --vft-on-solid.
 
-Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo contains a dark theme using this contract.
+Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo's own `.dark` class uses this contract too. `--vft-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
+
+GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
+
+### Built-in dark theme
+
+Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+
+`--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vft-on-solid` is dark.
+
+### Media queries
+
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, link hit targets and previews, and the Gantt toolbar are hidden. Backgrounds are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
@@ -66,14 +94,44 @@ The edit event carries the previous interval so your parent can detect a stale p
 
 For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize pending updates per bar or reject another edit while a save is pending. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
 
+Treat a Gantt `edits` batch as one transaction: apply every change or none, and commit it as one history entry. Row moves arrive as `change.row.after`. Dependency `connect`, `reconnect` and `dependency-delete` events are proposals as well; assign dependency IDs in the application or on the server, and check for cycles there if your scheduling rules forbid them.
+
 ## Alternative time scales
 
 A TimeScale exposes width, toX(time) and toTime(x). It must map range.start to 0 and range.end to width, be finite and strictly increasing, and provide mutually inverse mappings over the range. It should also extrapolate beyond the range when tick or interval calculations require it. The Gantt component applies zoom to that mapping and uses its inverse for pointer displacement.
 
-For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset; the application must supply explicit work periods for timezone/DST transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
+For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
 
 ## Reusing calculations
 
 Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph currently takes a synchronous layout callback. For an asynchronously computed layout, store the returned result in application state and supply a synchronous callback that returns the current result. Update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
+
+## Export to SVG and PNG
+
+Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
+
+```ts
+const svg = timeline.value!.exportSvg({ title: 'Production plan' })
+const png = await timeline.value!.exportPng({ scale: window.devicePixelRatio })
+const url = URL.createObjectURL(png)
+Object.assign(document.createElement('a'), { href: url, download: 'plan.png' }).click()
+URL.revokeObjectURL(url)
+```
+
+The export reads the `--vft-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
+
+To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
+
+## Right-to-left languages
+
+Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to follow the direction inherited from the page (for example `<html dir="rtl">`). The default `ltr` leaves rendering unchanged; in a right-to-left page it keeps the inherited direction, which the timeline does not support, so pass `rtl` or `auto` there.
+
+```vue
+<GanttChart dir="rtl" :rows="rows" :bars="bars" :range="range" :format-time="formatTime" @edit="apply" />
+```
+
+The timeline then runs from right to left and its row headings sit on the right. Edit proposals keep the same times and units, so validation and persistence code needs no change. Arrow keys follow the screen: ArrowLeft makes a bar later. Translate the edit hint through `labels.editHint` to describe this to screen reader users. `auto` is resolved after mounting, so server-rendered markup is left-to-right until hydration; use an explicit `rtl` for server rendering.
+
+The new right-to-left rules are scoped to the `vft-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.

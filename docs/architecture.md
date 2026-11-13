@@ -12,7 +12,7 @@ The ESM root exports Vue components and core functions. The separate core export
 
 An iterative Kosaraju traversal finds strongly connected components. The condensed graph supplies ranks; nodes in a component occupy the same rank. Input order determines the order within a column. Curves connect adjacent columns, bypass lanes route long edges, and same-rank edges use a side route. TB transposes the geometry while preserving node sizes.
 
-This is a deterministic layout baseline. Dense edge sets and cycles can produce overlapping routes or labels. Crossings are not optimized. All supplied nodes and edges are rendered; applications can use graphNeighborhood to narrow the input. Pan/zoom transforms one SVG group without rerunning layout.
+This is a deterministic layout baseline. Dense edge sets and cycles can produce overlapping routes or labels. By default crossings are not optimized; set crossingReduction to barycenter or median for opt-in sweeps that reorder nodes within each rank (long edges and same-rank edges are not part of the objective). RL and BT mirror the LR and TB geometry. layoutTreeGraph and layoutRadialGraph use a breadth-first spanning forest and route the remaining edges separately. By default all supplied nodes and edges are rendered; applications can use graphNeighborhood to narrow the input, or opt in to viewport culling with cullOffscreen, which renders only the elements that intersect the visible region plus an overscan margin (layout and the minimap still cover every node). Pan/zoom transforms one SVG group without rerunning layout.
 
 ## Timeline rendering and editing
 
@@ -30,4 +30,12 @@ Graph movement applies an overlay of absolute coordinates over the base layout. 
 
 The default renderer handles text, SVG and HTML. Slot authors own content dimensions and accessibility of custom content. Keyboard selection and interval editing are included; assistive-technology testing with dedicated screen readers is still needed before claiming broad accessibility conformance.
 
-Scheduling and resource-load analysis are explicit core operations called by the application. The chart renders accepted results. Capacity conflicts are diagnostic; automatic resource leveling, setup sequencing and optimization policies belong to the application. Calendar generation uses a fixed UTC offset; supply explicit work periods for daylight-saving transitions. See [Scheduling and resource load](scheduling.md).
+Scheduling and resource-load analysis are explicit core operations called by the application. The chart renders accepted results. Capacity conflicts are diagnostic. `levelResources` provides a baseline priority-based leveling heuristic; setup sequencing and optimization policies remain the application's concern. Calendar generation uses a fixed UTC offset or an IANA time zone with daylight-saving rules from `Intl`. See [Scheduling and resource load](scheduling.md).
+
+## Export
+
+SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` build a standalone document string from data, a layout or time scale and an explicit theme, so they run in Node, workers and tests. The components only gather their current props, collapsed rows, zoom and the computed `--vft-*` colours and call those builders. PNG export is the one browser-only step: the SVG is loaded into an image, drawn on a canvas and encoded with `toBlob`, after a size check. Export uses the default rendering because slots render arbitrary DOM that a string builder cannot reproduce.
+
+## Right-to-left layout
+
+GanttChart measures every horizontal position from the inline-start edge of the time axis. In right-to-left mode the same offsets are written as `right` instead of `left`, the scroll offset is read as the distance from the inline start (`-scrollLeft` in a right-to-left scroll container), and pointer deltas are negated. The time scale itself is not mirrored, so `toX`/`toTime` round trips, snapping and edit proposals are identical in both directions. SVG layers (dependency paths and their hit areas) are flipped with a CSS transform. The SVG exporter has no CSS, so it mirrors the axis with `mirrorTimeScale` instead. NetworkGraph geometry is direction-independent; only the controls and label alignment change.

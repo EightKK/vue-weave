@@ -46,7 +46,20 @@ const edges: GraphEdge[] = [
 </template>
 ```
 
-The built-in layout supports branches, merges, disconnected nodes, directed cycles and self-loops. Choose `LR` or `TB`. Supply a `layout` function to own placement and edge routing. Customize the SVG through the `node` and `edge` slots. Opt in to node moves, connections, multiple selection and the minimap through component props.
+The built-in layout supports branches, merges, disconnected nodes, directed cycles and self-loops. Choose `LR`, `TB`, `RL` or `BT`, and opt in to `crossingReduction: 'barycenter'` to reduce edge crossings. Supply a `layout` function to own placement and edge routing. Customize the SVG through the `node` and `edge` slots. Opt in to node moves, connections, multiple selection and the minimap through component props.
+
+For other shapes, `layoutTreeGraph` and `layoutRadialGraph` from `vue-weave/core` are drop-in `layout` functions. Opt in to nested groups (`parentId`), viewport culling for large graphs (`cullOffscreen`), pinch zoom on touch screens, and search highlighting with `matchIds`, `dimmedIds` and the `focusNode(id)` method. Core helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph` analyze the same node and edge data.
+
+```vue
+<NetworkGraph
+  ref="graph"
+  :nodes="nodes"
+  :edges="edges"
+  :options="{ direction: 'RL', crossingReduction: 'barycenter' }"
+  :match-ids="matches"
+  cull-offscreen
+/>
+```
 
 ## A controlled Gantt chart
 
@@ -84,7 +97,23 @@ The component previews pointer edits, then emits a proposal. The parent commits 
 
 Intervals support multiple lanes, progress, milestones and FS/SS/FF/SF dependencies. Row groups, baselines, header bands and date markers support planning views. Row and time-window virtualization limit rendered elements. `formatTime`, `labels`, slots and CSS variables control presentation.
 
-Use `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad` from `vue-weave/core` for working calendars, dependency scheduling, critical tasks and resource overload diagnostics. The application calls these functions and passes accepted results to the chart. See the [scheduling guide](docs/scheduling.md).
+Further opt-in features, all emitted as proposals for the parent to accept:
+
+- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
+- Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
+- A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
+- Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
+
+Use `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad` from `vue-weave/core` for working calendars, dependency scheduling, critical tasks and resource overload diagnostics. The application calls these functions and passes accepted results to the chart. Scheduling also reports cycle and infeasibility diagnostics, supports as-late-as-possible tasks (`mode: 'alap'`), pauses and IANA time-zone calendars (`WorkWeek.timeZone`), and `levelResources` delays tasks so that assigned load stays within capacity. See the [scheduling guide](docs/scheduling.md).
+
+## Export, direction and themes
+
+Both components expose `exportSvg(options)` and `exportPng(options)` on their template ref to save the whole chart, and `renderGraphSvg` and `renderTimelineSvg` in `vue-weave/core` build the same SVG on a server. Set `dir="rtl"` (or `auto`) for right-to-left layouts. Add the `vft-theme-dark` class to a component or an ancestor for the built-in dark theme, or `vft-theme-auto` to follow `prefers-color-scheme`. The stylesheet also covers forced colors, reduced motion and print. See [integration](docs/integration.md).
+
+```ts
+const svg = chart.value!.exportSvg({ title: 'Plan' })
+const png = await chart.value!.exportPng({ scale: 2 })
+```
 
 ## Run the demo
 
@@ -96,7 +125,7 @@ npm run build:demo
 npm start
 ```
 
-The demo includes manufacturing, project delivery, a 1,000-row timeline and scheduling. Enable **Edit graph** for connections, reconnection, box selection and group movement. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar. Edits remain in the demo's local state.
+The demo includes manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons and a theme switch. Enable **Edit graph** for connections, reconnection, box selection and group movement. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar. Edits remain in the demo's local state.
 
 If you have a prebuilt demo archive containing `preview/`, extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
 

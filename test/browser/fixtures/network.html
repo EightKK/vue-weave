@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Network graph regression fixture</title>
+    <link rel="stylesheet" href="/network-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/network-test/vue.js", "vue-weave": "/network-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { NetworkGraph } from 'vue-weave'
+
+      // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir.
+      const query = new URLSearchParams(location.search)
+      const ids = query.get('preset') === 'groups'
+        ? ['A', 'B', 'C', 'D']
+        : Array.from({ length: Number(query.get('nodes') ?? 600) }, (_, i) => 'N' + String(i).padStart(4, '0'))
+      const nodes = ids.map(id => ({ id, label: id }))
+      const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+      const groups = query.get('preset') === 'groups' ? [
+        { id: 'inner', label: 'Inner', nodeIds: ['C', 'D'], parentId: 'outer' },
+        { id: 'outer', label: 'Outer', nodeIds: ['B'] },
+      ] : undefined
+      const matchIds = query.has('match') ? new Set(query.get('match').split(',')) : undefined
+
+      const graph = ref()
+      const selectedId = ref('')
+      const positions = shallowRef(new Map())
+      const lastMove = ref('')
+      const moveEvents = ref(0)
+      const viewportEvents = ref(0)
+      function applyMoves(changes) {
+        const next = new Map(positions.value)
+        for (const change of changes) next.set(change.id, change.after)
+        positions.value = next
+        lastMove.value = changes.map(change => change.id).sort().join(',')
+        moveEvents.value++
+      }
+      window.__vw = { graph: () => graph.value }
+
+      createApp({
+        render: () => h('main', [
+          h('output', { role: 'status', 'aria-label': 'Last move' }, lastMove.value),
+          h('output', { role: 'status', 'aria-label': 'Move events' }, String(moveEvents.value)),
+          h('output', { role: 'status', 'aria-label': 'Viewport events' }, String(viewportEvents.value)),
+          h(NetworkGraph, {
+            ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
+            cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
+            draggable: query.get('draggable') === '1', positions: positions.value,
+            selectedId: selectedId.value,
+            'onUpdate:selectedId': id => { selectedId.value = id },
+            onNodeMove: change => applyMoves([change]),
+            onNodesMove: applyMoves,
+            onViewportChange: () => { viewportEvents.value++ },
+          }),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>
