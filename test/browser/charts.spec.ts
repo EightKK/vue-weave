@@ -466,12 +466,43 @@ test('viewport culling renders the visible window, keeps selected and focused no
   await expect(neighbor).toHaveCount(1)
   await expect(neighbor).toBeFocused()
   await expect(chainNode(page, 'N0200')).toHaveCount(0)
+  // Fit to view shows the whole chain, so culling keeps every node.
   await page.evaluate(() => (window as any).__vw.graph().fit())
   await expect(chainNode(page, 'N0452')).toHaveCount(1)
-  expect(await chainNode(page).count()).toBeLessThan(600)
+  await expect(chainNode(page)).toHaveCount(600)
   expect(await page.evaluate(() => {
     try { (window as any).__vw.graph().focusNode('missing') } catch (error) { return (error as Error).message }
   })).toBe('Unknown node: missing')
+  expect(errors).toEqual([])
+})
+
+test('fit to view shows a long chain below 10% and the fitted viewport can be restored', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=100&cull=1')
+  // The automatic initial view stays readable instead of shrinking the chain to dots.
+  expect((await readCamera(page)).scale).toBeGreaterThanOrEqual(0.1)
+  await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
+  const fitted = await readCamera(page)
+  expect(fitted.scale).toBeLessThan(0.1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  await expect(chainNode(page)).toHaveCount(100)
+  for (const name of ['N0000', 'N0050', 'N0099']) {
+    const box = (await chainNode(page, name).boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(stage.x - 0.5)
+    expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width + 0.5)
+    expect(box.y).toBeGreaterThanOrEqual(stage.y - 0.5)
+    expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height + 0.5)
+  }
+  // Zooming out stops at the fit scale; a saved fitted viewport is accepted again.
+  await page.evaluate(() => (window as any).__vw.graph().zoom(0.5))
+  expect((await readCamera(page)).scale).toBeCloseTo(fitted.scale, 6)
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 1 }))
+  await page.evaluate(viewport => (window as any).__vw.graph().setViewport(viewport), fitted)
+  expect(await readCamera(page)).toEqual(fitted)
+  expect(await page.evaluate(() => {
+    try { (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 0.001 }) } catch (error) { return (error as Error).message }
+  })).toMatch(/^Viewport scale must be between the fit scale /)
   expect(errors).toEqual([])
 })
 
