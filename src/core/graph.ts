@@ -1,5 +1,6 @@
 import { flipGraphLayout } from './graphOrient.js'
 import { reduceCrossings } from './graphCrossings.js'
+import { graphPathEndpoints } from './graphView.js'
 
 export interface GraphPort {
   id: string
@@ -415,13 +416,34 @@ export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
   return { x: box.x + box.width * offset, y: box.y + (port.side === 'bottom' ? box.height : 0) }
 }
 
+/**
+ * Where an edge meets its node. A named port gives its anchor. Otherwise, when the edge has an `id` and the layout
+ * has a path for it, the drawn start or end point of that path is used, with the box side closest to it. Without a
+ * path the side follows `direction`. Rendering and editing handles therefore agree after nodes are moved or when a
+ * custom layout chooses its own sides.
+ */
 export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: GraphLayoutDirection) {
   const box = layout.boxes.get(edge[end])!
   const port = nodes.get(edge[end])?.ports?.find(port => port.id === (end === 'from' ? edge.fromPort : edge.toPort))
-  const side = port?.side ?? (direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
+  if (port) return { ...graphPortAnchor(box, port), side: port.side }
+  const side: GraphPort['side'] = direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
     : direction === 'BT' ? (end === 'from' ? 'top' : 'bottom')
-    : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left'))
-  return { ...graphPortAnchor(box, port ?? { id: '', side }), side }
+    : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left')
+  const id = (edge as Partial<GraphEdge>).id
+  const path = typeof id === 'string' ? layout.paths.get(id) : undefined
+  const drawn = path === undefined ? undefined : graphPathEndpoints(path)
+  if (!drawn) return { ...graphPortAnchor(box, { id: '', side }), side }
+  const point = end === 'from' ? drawn.start : drawn.end
+  // The closest side wins; the direction's default side wins ties, such as at a corner.
+  const distances: Record<GraphPort['side'], number> = {
+    left: Math.abs(point.x - box.x), right: Math.abs(point.x - box.x - box.width),
+    top: Math.abs(point.y - box.y), bottom: Math.abs(point.y - box.y - box.height),
+  }
+  let nearest = side
+  for (const candidate of ['left', 'right', 'top', 'bottom'] as const) {
+    if (distances[candidate] < distances[nearest]) nearest = candidate
+  }
+  return { x: point.x, y: point.y, side: nearest }
 }
 
 /** Route named endpoints after the node layout and any saved positions are applied. */

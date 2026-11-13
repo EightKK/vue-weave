@@ -1,4 +1,4 @@
-import type { GraphLayout } from './graph.js'
+import type { GraphLayout, GraphPoint } from './graph.js'
 import type { GraphViewport } from './types.js'
 
 /** An axis-aligned rectangle in graph (world) coordinates. */
@@ -70,6 +70,20 @@ function isAsciiLetter(char: string): boolean {
  * no coordinates. Throws when the path data is malformed or uses an unsupported command.
  */
 export function graphPathBounds(path: string): GraphRect | undefined {
+  return scanPath(path).bounds
+}
+
+/**
+ * First and last point of an SVG path string: the point of its first moveto, and the current point after its last
+ * segment (the subpath start after a closing Z). Returns undefined when the path has no coordinates. Throws like
+ * `graphPathBounds` for malformed data.
+ */
+export function graphPathEndpoints(path: string): { start: GraphPoint; end: GraphPoint } | undefined {
+  const { start, end } = scanPath(path)
+  return start && end ? { start, end } : undefined
+}
+
+function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?: GraphPoint } {
   const invalid = () => new Error('Invalid SVG path data: ' + path)
   let cursor = 0
   const skipSeparators = () => {
@@ -104,6 +118,7 @@ export function graphPathBounds(path: string): GraphRect | undefined {
     bottom = Math.max(bottom, py)
   }
   let x = 0, y = 0, startX = 0, startY = 0
+  let firstPoint: GraphPoint | undefined
   // Last control point of the previous segment, used to reflect the implicit control point of S and T.
   let controlKind: 'C' | 'Q' | undefined
   let controlX = 0, controlY = 0
@@ -172,12 +187,14 @@ export function graphPathBounds(path: string): GraphRect | undefined {
       if (command === 'M' && first) {
         startX = x
         startY = y
+        firstPoint ??= { x, y }
       }
       first = false
       include(x, y)
     }
   }
-  return left === Infinity ? undefined : { x: left, y: top, width: right - left, height: bottom - top }
+  if (left === Infinity) return {}
+  return { bounds: { x: left, y: top, width: right - left, height: bottom - top }, start: firstPoint, end: { x, y } }
 }
 
 /**

@@ -232,7 +232,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | graphNeighborhood(index, id, maxHops = Infinity) | Union of independent ancestor/descendant traversals |
 | layoutLayeredGraph(nodes, edges, options) | Deterministic graph layout |
 | graphPortAnchor(box, port) | World-coordinate point on a node box for a port |
-| graphEdgeEndpoint(layout, nodes, edge, end, direction) | Endpoint point and side for a named port or direction-based default |
+| graphEdgeEndpoint(layout, nodes, edge, end, direction) | Endpoint point and side for a named port, the drawn path end, or a direction-based default |
 | routeGraphPorts(layout, nodes, edges, direction) | Reroute edges with named ports after layout and saved positions |
 | applyGraphPositions(layout, edges, positions, direction = LR) | Apply saved coordinates and reroute incident edges |
 | createTimeScale(range, pixelsPerUnit) | Invertible linear scale |
@@ -257,7 +257,9 @@ All exported interfaces and component props are included in the declaration file
 
 `graphPortAnchor(box, port)` returns a `GraphPoint` on the named side of a `GraphBox`. Coordinates are world-coordinate pixels. `port.offset` defaults to 0.5 and measures down a vertical side or across a horizontal side. Supply finite box geometry and a port offset in [0, 1]. The helper does not validate these inputs.
 
-`graphEdgeEndpoint(layout, nodes, edge, end, direction)` returns `{ x, y, side }`. `nodes` is a node-ID-keyed map, `end` is `from` or `to`, and `direction` is `LR` or `TB`. Named ports take precedence. Without a named port, LR uses right/left and TB uses bottom/top for source/target endpoints. Validate nodes and edges with `indexGraph` and supply matching layout boxes before calling this helper; missing boxes are not handled as a recoverable result.
+`graphEdgeEndpoint(layout, nodes, edge, end, direction)` returns `{ x, y, side }`. `nodes` is a node-ID-keyed map, `end` is `from` or `to`, and `direction` is a `GraphLayoutDirection`. Named ports take precedence. Otherwise, when `edge` has an `id` with a path in `layout.paths`, the result is the drawn first or last point of that path, and `side` is the box side closest to it. This matches the rendered edge after saved positions reverse two nodes and for custom layouts that choose their own sides. Without a path, LR uses right/left and TB uses bottom/top for source/target endpoints. Validate nodes and edges with `indexGraph` and supply matching layout boxes before calling this helper; missing boxes are not handled as a recoverable result.
+
+`graphPathEndpoints(path)` returns `{ start, end }`: the first moveto point and the current point after the last segment (the subpath start after `Z`), or `undefined` for a path without coordinates. It throws like `graphPathBounds` for malformed path data.
 
 `applyGraphPositions` overlays finite, nonnegative coordinates, expands the layout bounds when needed and reroutes incident edges while preserving other paths. Position entries for unknown node IDs are ignored. `routeGraphPorts` then replaces paths and label positions for edges with named ports, leaving unnamed-edge routes intact. These operations do not mutate the supplied layout and may return it unchanged when there is nothing to update.
 
@@ -299,7 +301,8 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | --- | --- |
 | graphViewportRect(camera, size, overscan = 0) | World rectangle a `GraphViewport` camera shows for a screen size, grown by `overscan` screen pixels. Throws `RangeError` for a nonpositive scale or negative size |
 | graphRectsIntersect(a, b) | Whether two rectangles overlap or touch |
-| graphPathBounds(path) | Bounding rectangle of an SVG path string (curves use control points), or `undefined` without coordinates |
+| graphPathBounds(path) | Bounding rectangle of an SVG path string, or `undefined` without coordinates. Bézier curves use their control points, including the reflected control point of S and T; arcs are bounded exactly after SVG radius correction and rotation. Numbers may use `e`/`E` exponents. Throws for malformed data or unsupported commands |
+| graphPathEndpoints(path) | First moveto point and final current point of an SVG path string, or `undefined` without coordinates |
 | graphLayoutBounds(layout, labelReach = 80) | `GraphBounds` with one rectangle per node and per edge, edge labels included |
 | cullGraphElements(bounds, view, keep?) | `GraphVisibleIds` of the nodes and edges that intersect `view`, plus any IDs in `keep` (`GraphCullKeep`) |
 | graphCameraAt(point, size, scale) | Camera that centers a world point at a scale; `focusNode` uses the same rule |
