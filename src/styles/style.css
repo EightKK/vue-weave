@@ -38,10 +38,12 @@
 .vft-gantt-head { position: sticky; top: 0; z-index: 5; height: 40px; background: var(--vft-surface-muted, #eff4f7); border-bottom: 1px solid var(--vft-border, #d8e2e9); }
 .vft-gantt-corner, .vft-gantt-row-label { position: sticky; left: 0; width: var(--vft-label-area-width); display: flex; flex-direction: column; justify-content: center; padding: 0 11px; border-right: 1px solid var(--vft-border, #d8e2e9); }
 .vft-gantt-corner { background: var(--vft-surface-muted, #e8f0f4); height: 100%; z-index: 1; color: var(--vft-text, #365469); font-weight: 700; font-size: 11px; }
-.vft-gantt-time-head { position: absolute; inset: 0 auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; background: repeating-linear-gradient(to right, var(--vft-grid, #d9e4eb) 0 1px, transparent 1px var(--vft-grid-step)); }
+.vft-gantt-time-head { position: absolute; inset: 0 auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; }
+.vft-gantt-tick-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vft-grid, #d9e4eb); pointer-events: none; }
 .vft-gantt-tick { position: absolute; top: 12px; padding-left: 7px; color: var(--vft-text, #375468); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700; }
 .vft-gantt-tick.end { transform: translateX(-100%); padding: 0 7px 0 0; }
-.vft-gantt-grid { position: absolute; inset: 40px auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); background: repeating-linear-gradient(to right, var(--vft-grid, #e2e9ef) 0 1px, transparent 1px var(--vft-grid-step)); pointer-events: none; }
+.vft-gantt-grid { position: absolute; inset: 40px auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; pointer-events: none; }
+.vft-gantt-grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vft-grid, #e2e9ef); }
 .vft-gantt-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vft-border, #e5edf1); }
 .vft-gantt-row-label { height: 100%; gap: 2px; background: var(--vft-surface-muted, #f3f7fa); z-index: 4; font-size: 12px; }
 .vft-gantt-row-label strong, .vft-gantt-row-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -147,8 +149,6 @@
    mirror the sticky label column, header, grid, handles and dependency layers. */
 .vft-gantt.vft-rtl .vft-gantt-corner, .vft-gantt.vft-rtl .vft-gantt-row-label { left: auto; right: 0; border-right: 0; border-inline-start: 0; border-inline-end: 1px solid var(--vft-border, #d8e2e9); }
 .vft-gantt.vft-rtl .vft-gantt-time-head, .vft-gantt.vft-rtl .vft-gantt-grid { left: auto; inset-inline-start: var(--vft-label-area-width); }
-.vft-gantt.vft-rtl .vft-gantt-time-head { background: repeating-linear-gradient(to left, var(--vft-grid, #d9e4eb) 0 1px, transparent 1px var(--vft-grid-step)); }
-.vft-gantt.vft-rtl .vft-gantt-grid { background: repeating-linear-gradient(to left, var(--vft-grid, #e2e9ef) 0 1px, transparent 1px var(--vft-grid-step)); }
 .vft-gantt.vft-rtl .vft-gantt-tick { padding-left: 0; padding-inline-start: 7px; }
 .vft-gantt.vft-rtl .vft-gantt-tick.end { transform: translateX(100%); padding-inline: 0 7px; }
 .vft-gantt.vft-rtl .vft-gantt-band-level { left: auto; inset-inline-start: var(--vft-label-area-width); }
@@ -241,7 +241,7 @@
   .vft-gantt.vft-rtl .vft-gantt-marker { border-left: 0; border-inline-start: 2px dashed CanvasText; }
   .vft-gantt.vft-rtl .vft-gantt-now { border-left: 0; border-inline-start: 3px solid Highlight; }
   .vft-gantt-now span { background: Highlight; color: HighlightText; border-color: Highlight; }
-  .vft-gantt-grid, .vft-gantt-time-head { background: repeating-linear-gradient(to right, GrayText 0 1px, transparent 1px var(--vft-grid-step)); }
+  .vft-gantt-grid-line, .vft-gantt-tick-line { forced-color-adjust: none; background: GrayText; }
   .vft-gantt-load-segment { forced-color-adjust: none; }
   .vft-load-fill { background: GrayText; }
   .vft-load-over { background: repeating-linear-gradient(45deg, CanvasText 0 2px, Highlight 2px 5px); }

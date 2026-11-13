@@ -966,6 +966,35 @@ test('gantt keyboard row moves emit plain time ranges like pointer moves', async
   expect(errors).toEqual([])
 })
 
+test('gantt grid lines follow every tick of a piecewise scale in both directions and through zoom', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['?piecewise=1', '?piecewise=1&rtl=1']) {
+    const rtl = search.includes('rtl')
+    const { chart } = await openGanttFixture(page, search)
+    // The inline-start edge of each element: left in left-to-right charts, right in right-to-left ones.
+    const edges = (selector: string) => chart.locator(selector).evaluateAll((elements, mirrored) => elements
+      .map(element => element.getBoundingClientRect())
+      .map(rect => Math.round(mirrored ? rect.right : rect.left)), rtl)
+    for (const zoom of ['100%', '135%']) {
+      if (zoom !== '100%') await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+      await expect(page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByText(zoom, { exact: true })).toBeVisible()
+      // Labels 0..90 start at their tick; the closing tick label at 100 is aligned to the other side.
+      const labels = (await edges('.vft-gantt-tick:not(.end)'))
+      const grid = await edges('.vft-gantt-grid-line')
+      const head = await edges('.vft-gantt-tick-line')
+      expect(labels).toHaveLength(10)
+      expect(grid).toHaveLength(11)
+      expect(grid.slice(0, 10)).toEqual(labels)
+      expect(head).toEqual(grid)
+      // The compressed half keeps a line for every tick: 50..90 are 10 units apart but only 1 px per unit.
+      const gaps = grid.slice(6).map((x, i) => Math.abs(x - grid[i + 5]!))
+      expect(gaps.every(gap => gap > 0 && gap < 20)).toBe(true)
+    }
+  }
+  expect(errors).toEqual([])
+})
+
 test('gantt readonly keeps dependency selection but proposes no delete', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

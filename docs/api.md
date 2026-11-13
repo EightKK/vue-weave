@@ -94,7 +94,7 @@ The dimming hooks are presentation only. Dimmed nodes and the edges that touch t
 | selectedIds | ReadonlySet<string> / undefined | Controlled highlighted bars |
 | pixelsPerUnit | number / 80 per hour in milliseconds | Base linear time scale |
 | scale | TimeScale / undefined | Custom mapping before component zoom |
-| tickSteps | readonly number[] / 30m, 1h, 2h, 4h, 24h | Positive ascending intervals in the same units as data |
+| tickSteps | readonly number[] / 30m, 1h, 2h, 4h, 24h | Positive ascending intervals in the same units as data. The chart uses the first step whose narrowest visible tick spacing is at least 76 px, and draws one grid line at each tick's scale position, as the SVG export does |
 | snap | number / 900000 | Edit displacement step; 15 minutes in milliseconds |
 | minDuration | number / snap | Minimum duration for resizing |
 | editBounds | TimeRange / range | Bounds for edit proposals |
