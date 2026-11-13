@@ -100,7 +100,7 @@ Work on a calendar is already split at non-working time. The result's `work` arr
 
 The result has the fields of a successful `scheduleTasks` result for the leveled plan, plus:
 
-- `leveledTasks`: the input tasks with a raised `startNoEarlierThan` for delayed tasks and added `pauses` for split tasks. `scheduleTasks` reproduces the same dates from them. Persist these when you accept the plan.
+- `leveledTasks`: the input tasks with a `startNoEarlierThan` at the leveled start for delayed and split tasks, and added `pauses` for split tasks. Split tasks are pinned even when they start at their earliest date, so an end bound cannot pull their work away from the reserved capacity. `scheduleTasks` reproduces the same dates from them. Persist these when you accept the plan.
 - `delays`: each task whose dates or work changed, in input order, with `before` and `after` intervals, `delay` (`after.start - before.start`, in elapsed units), the added `pauses`, and `cause`. The cause is `capacity` when leveling constrained the task itself, and `predecessor` when only a dependency moved it.
 - `overloads`: the overloaded segments of `calculateResourceLoad` for the leveled plan. The list is empty when every task was resolved.
 - `unresolvedTaskIds`: tasks that kept an overload, in input order.

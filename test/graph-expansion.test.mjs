@@ -223,3 +223,62 @@ test('searchGraphNodes and filterGraph match text or predicates without mutating
   assert.throws(() => filterGraph(n, edges(['web', 'zz']), 'x'), Error)
   assert.throws(() => filterGraph(n, e, 'x', { neighborhood: -1 }), RangeError)
 })
+
+test('unnamed edge endpoints follow the drawn path after moves, in every direction and for custom layouts', async () => {
+  const { applyGraphPositions, graphPathEndpoints, routeGraphPorts } = await import('vue-weave/core')
+  const assertMatchesPath = (layout, nodeMap, edgeList, direction) => {
+    for (const edge of edgeList) {
+      const drawn = graphPathEndpoints(layout.paths.get(edge.id))
+      for (const [end, point] of [['from', drawn.start], ['to', drawn.end]]) {
+        const endpoint = graphEdgeEndpoint(layout, nodeMap, edge, end, direction)
+        assert.deepEqual([endpoint.x, endpoint.y], [point.x, point.y], `${direction} ${edge.id} ${end}`)
+      }
+    }
+  }
+  // The review case: LR A→B with A moved to the right of B leaves A's left side and enters B's right side.
+  const ab = [nodes('a', 'b'), edges(['a', 'b'])]
+  const base = layoutLayeredGraph(...ab)
+  const moved = applyGraphPositions(base, ab[1], new Map([['a', { x: 300, y: 20 }], ['b', { x: 0, y: 20 }]]))
+  const box = moved.boxes.get('a')
+  const from = graphEdgeEndpoint(moved, new Map(), ab[1][0], 'from', 'LR')
+  const to = graphEdgeEndpoint(moved, new Map(), ab[1][0], 'to', 'LR')
+  assert.deepEqual(from, { x: 300, y: 20 + box.height / 2, side: 'left' })
+  assert.deepEqual(to, { x: moved.boxes.get('b').width, y: 20 + box.height / 2, side: 'right' })
+
+  const graph = [nodes('a', 'b', 'c'), [...edges(['a', 'b'], ['b', 'c'], ['a', 'c']), { id: 'loop', from: 'b', to: 'b' }]]
+  for (const direction of ['LR', 'RL', 'TB', 'BT']) {
+    const layout = layoutLayeredGraph(...graph, { direction })
+    assertMatchesPath(layout, new Map(), graph[1], direction)
+    const reversed = applyGraphPositions(layout, graph[1], new Map([['a', { x: 600, y: 600 }], ['c', { x: 0, y: 0 }]]), direction)
+    assertMatchesPath(reversed, new Map(), graph[1], direction)
+  }
+  for (const layout of [layoutTreeGraph(...graph), layoutRadialGraph(...graph)]) assertMatchesPath(layout, new Map(), graph[1], 'LR')
+
+  // A custom layout that connects top to bottom while declaring LR.
+  const custom = {
+    boxes: new Map([['a', { x: 0, y: 0, width: 100, height: 40 }], ['b', { x: 0, y: 200, width: 100, height: 40 }]]),
+    paths: new Map([['e0', 'M 50 40 C 50 120, 50 120, 50 200']]), edgeLabels: new Map(), width: 200, height: 300,
+  }
+  assert.deepEqual(graphEdgeEndpoint(custom, new Map(), ab[1][0], 'from', 'LR'), { x: 50, y: 40, side: 'bottom' })
+  assert.deepEqual(graphEdgeEndpoint(custom, new Map(), ab[1][0], 'to', 'LR'), { x: 50, y: 200, side: 'top' })
+
+  // Named ports still take precedence, and the unnamed end of a half-ported edge stays on the drawn side.
+  const ported = nodes('a', 'b').map(node => ({ ...node, ports: [{ id: 'p', side: 'bottom' }] }))
+  const nodeMap = new Map(ported.map(node => [node.id, node]))
+  const portEdges = [{ id: 'e0', from: 'a', to: 'b', fromPort: 'p' }]
+  const routed = routeGraphPorts(moved, nodeMap, portEdges, 'LR')
+  assert.equal(graphEdgeEndpoint(routed, nodeMap, portEdges[0], 'from', 'LR').side, 'bottom')
+  assert.equal(graphEdgeEndpoint(routed, nodeMap, portEdges[0], 'to', 'LR').side, 'right')
+  assertMatchesPath(routed, nodeMap, portEdges, 'LR')
+  // Without an edge ID there is no drawn path, so the direction decides.
+  assert.equal(graphEdgeEndpoint(moved, new Map(), { from: 'a', to: 'b' }, 'from', 'LR').side, 'right')
+})
+
+test('graphPathEndpoints returns the first moveto and the final current point', async () => {
+  const { graphPathEndpoints } = await import('vue-weave/core')
+  assert.deepEqual(graphPathEndpoints('M 1 2 C 3 4, 5 6, 7 8'), { start: { x: 1, y: 2 }, end: { x: 7, y: 8 } })
+  assert.deepEqual(graphPathEndpoints('m 1 2 l 3 4 h 1e1 v -2'), { start: { x: 1, y: 2 }, end: { x: 14, y: 4 } })
+  assert.deepEqual(graphPathEndpoints('M 1 2 L 5 5 Z'), { start: { x: 1, y: 2 }, end: { x: 1, y: 2 } })
+  assert.equal(graphPathEndpoints(''), undefined)
+  assert.throws(() => graphPathEndpoints('M 1 x'), /Invalid SVG path data/)
+})

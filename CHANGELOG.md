@@ -69,6 +69,11 @@
 - Keep a focused Gantt bar rendered outside the visible window and reveal it after an accepted keyboard edit.
 - Reuse long-edge routing lanes so graph headroom depends on overlapping edges.
 - Expose zoom-control group names and localize graph rejection and edge-selection labels.
+- `levelResources` keeps a split task at the start it reserved. Before, an end bound (`finishNoEarlierThan`, FF or SF) could pull the start earlier during the final recalculation, placing work in resource downtime or on capacity taken by another task while `unresolvedTaskIds` stayed empty. Split tasks now always get a `startNoEarlierThan` in `leveledTasks`, and a task whose final work differs from its reserved slices is reported in `unresolvedTaskIds`.
+- `graphPathBounds` reads numbers with `e`/`E` exponents (`1e-7` was treated as a command and threw), tracks the reflected control point of S and T, and bounds arcs exactly after SVG radius correction and rotation. Culling and SVG/PNG export no longer drop or clip such edges. Malformed path data, including stray characters and a command without arguments, now throws `Invalid SVG path data`.
+- Reconnect handles sit at the drawn edge ends after saved positions swap two nodes or a custom layout picks its own sides. `graphEdgeEndpoint` now takes unnamed endpoints from the drawn path of an edge with an `id`; new `graphPathEndpoints(path)` returns a path's first and last points.
+- Fit to view shows the whole graph even when that needs a scale below 0.1. Zoom, pinch, `setViewport` and `focusNode` accept scales down to that fit scale, so a fitted viewport can be restored. The automatic initial view keeps its 0.1 floor.
+- Gantt grid lines are drawn at every tick position (new `vft-gantt-grid-line` and `vft-gantt-tick-line` elements) instead of a repeating CSS background, so they match the tick labels and the SVG export on non-linear `scale`s and in right-to-left charts. The tick step is chosen from the narrowest visible tick gap instead of the first interval; linear scales choose the same step as before.
 
 ### Editing behavior
 

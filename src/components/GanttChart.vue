@@ -289,7 +289,25 @@ const axis = computed<TimeScale>(() => {
   if (!Number.isFinite(base.width) || base.width <= 0) throw new RangeError('Invalid time scale width')
   return { width: base.width * zoom.value, toX: time => base.toX(time) * zoom.value, toTime: x => base.toTime(x / zoom.value) }
 })
-const tickStep = computed(() => activeTickSteps.value.find(step => axis.value.toX(props.range.start + step) >= 76)
+// Smallest on-screen distance between neighbouring ticks of `step` inside the visible window.
+// A custom scale can be piecewise, so the first interval does not represent the rest.
+function minTickGap(step: number) {
+  const { start, end } = timeWindow.value
+  const anchor = props.range.start
+  const first = Math.ceil((start - anchor) / step)
+  const last = Math.floor((end - anchor) / step)
+  if (last - first + 1 > 10000) return 0
+  if (last <= first) return axis.value.toX(anchor + step) - axis.value.toX(anchor)
+  let gap = Infinity
+  let previous = axis.value.toX(anchor + first * step)
+  for (let index = first + 1; index <= last; index++) {
+    const x = axis.value.toX(anchor + index * step)
+    gap = Math.min(gap, x - previous)
+    previous = x
+  }
+  return gap
+}
+const tickStep = computed(() => activeTickSteps.value.find(step => minTickGap(step) >= 76)
   ?? activeTickSteps.value.at(-1) ?? activeSnap.value)
 const rowOrder = computed(() => new Map(displayedRows.value.map(({ row }, index) => [row.id, index])))
 const barById = computed(() => new Map((validationError.value ? [] : props.bars).map(bar => [bar.id, bar])))
@@ -359,7 +377,10 @@ const nowTime = computed(() => {
     && time >= timeWindow.value.start && time <= timeWindow.value.end ? time : undefined
 })
 const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, props.range.start))
-const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value))
+// Grid lines are drawn at each tick's own x (as exportSvg does), so non-linear scales stay aligned with the labels.
+const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
+// Kept for custom stylesheets that read --vft-grid-step; the built-in styles no longer use it.
+const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value) - axis.value.toX(props.range.start))
 type BarPreview = { range: TimeRange; rowShift: number }
 const previews = shallowRef<ReadonlyMap<string, BarPreview>>()
 const focusedBarId = ref<string>()
@@ -1152,7 +1173,8 @@ onUnmounted(() => {
             <div v-for="column in columns" :key="column.id" class="vft-extra-column" :style="{ width: column.width + 'px' }">{{ column.label }}</div>
           </div>
           <div class="vft-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
-            <span v-for="tick in ticks" :key="tick" class="vft-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${axis.toX(tick)}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+            <span v-for="line in tickXs" :key="'line-' + line.tick" class="vft-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
+            <span v-for="{ tick, x } in tickXs" :key="tick" class="vft-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vft-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
@@ -1160,7 +1182,9 @@ onUnmounted(() => {
               :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
           </div>
         </div>
-        <div class="vft-gantt-grid" aria-hidden="true"></div>
+        <div class="vft-gantt-grid" aria-hidden="true">
+          <span v-for="line in tickXs" :key="line.tick" class="vft-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
+        </div>
         <div v-for="item in shownMarkers" :key="item.id" class="vft-gantt-marker"
           :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(item.time)}px)` }">
           <span>{{ item.label }}</span>

@@ -27,7 +27,7 @@ NetworkNode has id, label, optional detail, tone (teal/blue/amber/violet), shape
 
 A custom layout returns GraphLayout containing boxes, paths and edgeLabels Maps plus positive finite width and height. Each node box has x, y, width, height and rank. Each edge needs an SVG path. Labels are optional map entries. Coordinates are chart-local pixels. Keep paths and boxes within the supplied bounds for accurate fit-to-view.
 
-Events are select(id), update:selectedId(id), and viewport-change({x,y,scale}). The last event reports pan/zoom/fit changes. Exposed methods are fit(), zoom(factor, optionalX, optionalY), getViewport() and setViewport({x,y,scale}), plus focusNode(id, options), exportSvg(options) and exportPng(options) (see [Export to SVG and PNG](#export-to-svg-and-png)). Viewport scale is clamped by zoom, and setViewport requires 0.1–3. Slots are node({node,box,selected,dimmed}), edge({edge,path,selected,dimmed}) and empty. SVG slots must contain SVG elements.
+Events are select(id), update:selectedId(id), and viewport-change({x,y,scale}). The last event reports pan/zoom/fit changes. Exposed methods are fit(), zoom(factor, optionalX, optionalY), getViewport() and setViewport({x,y,scale}), plus focusNode(id, options), exportSvg(options) and exportPng(options) (see [Export to SVG and PNG](#export-to-svg-and-png)). Viewport scale is clamped by zoom to 0.1–3, and setViewport requires the same range. When the whole graph only fits below 0.1, the lower limit becomes the fit scale for the current viewport size, so Fit to view always shows every node and a fitted viewport from getViewport() can be restored. Slots are node({node,box,selected,dimmed}), edge({edge,path,selected,dimmed}) and empty. SVG slots must contain SVG elements.
 
 A narrow viewport initially focuses around the selected node at a readable scale. Fit-to-view explicitly shows the full graph. Pointer dragging pans the background. Ctrl+wheel zooms around the cursor. Arrow keys pan a focused SVG. Enter/Space select a focused node. Optional node movement and connection proposals are described in [Graph editing and minimap](#graph-editing-and-minimap).
 
@@ -71,12 +71,12 @@ The application accepts reconnection by replacing the corresponding edge. Preser
 | cullOverscan | number / 200. Margin in screen pixels around the viewport that stays rendered, so a short pan does not reveal blank space. |
 | matchIds | ReadonlySet<string> / undefined. When supplied, nodes outside the set are dimmed. An empty set dims every node. |
 | dimmedIds | ReadonlySet<string> / undefined. Nodes to dim explicitly. Combines with matchIds. |
-| focusNode(id, options?) | Exposed method. Centers the camera on the node and keeps the current scale, or applies options.scale (0.1 to 3). Throws Error for an unknown ID and RangeError for a bad scale. Emits viewport-change. It works with culling because culling follows the camera. |
+| focusNode(id, options?) | Exposed method. Centers the camera on the node and keeps the current scale, or applies options.scale (0.1 to 3, or down to the fit scale for a graph that only fits below 0.1). Throws Error for an unknown ID and RangeError for a bad scale. Emits viewport-change. It works with culling because culling follows the camera. |
 | NetworkGroup.parentId | Optional ID of another group. The group is painted inside its parent and the parent bounds enclose it. |
 
 Culling keeps these elements rendered even when they are off screen: selected nodes, the node or edge that has keyboard focus (and the node that owns a focused connection handle), nodes involved in a pointer drag or group drag, the source of a pending connection, the edge being reconnected and the groups that contain moved nodes. Elements that are culled are not in the DOM, so Tab skips them and they cannot be found by accessible name. Call focusNode(id) to bring one into view. Before mount there is no measured viewport. Server rendering and the first client render use the 1150 x 270 default viewport with the initial fit camera, so the output is deterministic and hydrates cleanly. The measured size replaces it after mount. Culling is based on bounding boxes: a path is bounded by its control points, and edge labels are included with a fixed reach, so culling errs on the side of rendering. Custom node and edge slots are not rendered for culled elements.
 
-Two-finger gestures use Pointer Events with pointerType touch. When a second finger lands, any in-flight one-finger drag, connection, box selection or pan is cancelled without emitting a proposal. Pinching then scales around the midpoint, the scale is clamped to 0.1 to 3 like the zoom buttons, and moving both fingers together pans. Each change emits viewport-change. One-finger background pan, node drag, connecting and box selection behave as before, and plain wheel scrolling still passes through (Ctrl + wheel zooms). Lifting one finger ends the pinch; the remaining finger does nothing until it is lifted.
+Two-finger gestures use Pointer Events with pointerType touch. When a second finger lands, any in-flight one-finger drag, connection, box selection or pan is cancelled without emitting a proposal. Pinching then scales around the midpoint, the scale is clamped like the zoom buttons, and moving both fingers together pans. Each change emits viewport-change. One-finger background pan, node drag, connecting and box selection behave as before, and plain wheel scrolling still passes through (Ctrl + wheel zooms). Lifting one finger ends the pinch; the remaining finger does nothing until it is lifted.
 
 Nested groups are opt-in. Give a group parentId to place it in another group. nodeIds lists only the direct members, and a group that has child groups may have an empty nodeIds. A node can still belong to one group directly. Parents are painted first, in input order among siblings. The parent bounds enclose the child bounds, its label strip and a margin, and nested bounds can extend past the layout padding, so leave extra options.padding for deep nesting. Dragging a parent label (or using arrow keys on it) moves every descendant member as one node-move or nodes-move proposal. Dragging a child moves only its own members. A nested group is announced as "Move group Inner within Outer"; the within word is the optional GraphLabels.groupWithin label. The component throws Error for a duplicate ID, an unknown parentId, a parent cycle, an unknown or repeated member, or a group with no members after expansion. Groups without parentId behave as before.
 
@@ -94,7 +94,7 @@ The dimming hooks are presentation only. Dimmed nodes and the edges that touch t
 | selectedIds | ReadonlySet<string> / undefined | Controlled highlighted bars |
 | pixelsPerUnit | number / 80 per hour in milliseconds | Base linear time scale |
 | scale | TimeScale / undefined | Custom mapping before component zoom |
-| tickSteps | readonly number[] / 30m, 1h, 2h, 4h, 24h | Positive ascending intervals in the same units as data |
+| tickSteps | readonly number[] / 30m, 1h, 2h, 4h, 24h | Positive ascending intervals in the same units as data. The chart uses the first step whose narrowest visible tick spacing is at least 76 px, and draws one grid line at each tick's scale position, as the SVG export does |
 | snap | number / 900000 | Edit displacement step; 15 minutes in milliseconds |
 | minDuration | number / snap | Minimum duration for resizing |
 | editBounds | TimeRange / range | Bounds for edit proposals |
@@ -232,7 +232,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | graphNeighborhood(index, id, maxHops = Infinity) | Union of independent ancestor/descendant traversals |
 | layoutLayeredGraph(nodes, edges, options) | Deterministic graph layout |
 | graphPortAnchor(box, port) | World-coordinate point on a node box for a port |
-| graphEdgeEndpoint(layout, nodes, edge, end, direction) | Endpoint point and side for a named port or direction-based default |
+| graphEdgeEndpoint(layout, nodes, edge, end, direction) | Endpoint point and side for a named port, the drawn path end, or a direction-based default |
 | routeGraphPorts(layout, nodes, edges, direction) | Reroute edges with named ports after layout and saved positions |
 | applyGraphPositions(layout, edges, positions, direction = LR) | Apply saved coordinates and reroute incident edges |
 | createTimeScale(range, pixelsPerUnit) | Invertible linear scale |
@@ -257,7 +257,9 @@ All exported interfaces and component props are included in the declaration file
 
 `graphPortAnchor(box, port)` returns a `GraphPoint` on the named side of a `GraphBox`. Coordinates are world-coordinate pixels. `port.offset` defaults to 0.5 and measures down a vertical side or across a horizontal side. Supply finite box geometry and a port offset in [0, 1]. The helper does not validate these inputs.
 
-`graphEdgeEndpoint(layout, nodes, edge, end, direction)` returns `{ x, y, side }`. `nodes` is a node-ID-keyed map, `end` is `from` or `to`, and `direction` is `LR` or `TB`. Named ports take precedence. Without a named port, LR uses right/left and TB uses bottom/top for source/target endpoints. Validate nodes and edges with `indexGraph` and supply matching layout boxes before calling this helper; missing boxes are not handled as a recoverable result.
+`graphEdgeEndpoint(layout, nodes, edge, end, direction)` returns `{ x, y, side }`. `nodes` is a node-ID-keyed map, `end` is `from` or `to`, and `direction` is a `GraphLayoutDirection`. Named ports take precedence. Otherwise, when `edge` has an `id` with a path in `layout.paths`, the result is the drawn first or last point of that path, and `side` is the box side closest to it. This matches the rendered edge after saved positions reverse two nodes and for custom layouts that choose their own sides. Without a path, LR uses right/left and TB uses bottom/top for source/target endpoints. Validate nodes and edges with `indexGraph` and supply matching layout boxes before calling this helper; missing boxes are not handled as a recoverable result.
+
+`graphPathEndpoints(path)` returns `{ start, end }`: the first moveto point and the current point after the last segment (the subpath start after `Z`), or `undefined` for a path without coordinates. It throws like `graphPathBounds` for malformed path data.
 
 `applyGraphPositions` overlays finite, nonnegative coordinates, expands the layout bounds when needed and reroutes incident edges while preserving other paths. Position entries for unknown node IDs are ignored. `routeGraphPorts` then replaces paths and label positions for edges with named ports, leaving unnamed-edge routes intact. These operations do not mutate the supplied layout and may return it unchanged when there is nothing to update.
 
@@ -299,7 +301,8 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | --- | --- |
 | graphViewportRect(camera, size, overscan = 0) | World rectangle a `GraphViewport` camera shows for a screen size, grown by `overscan` screen pixels. Throws `RangeError` for a nonpositive scale or negative size |
 | graphRectsIntersect(a, b) | Whether two rectangles overlap or touch |
-| graphPathBounds(path) | Bounding rectangle of an SVG path string (curves use control points), or `undefined` without coordinates |
+| graphPathBounds(path) | Bounding rectangle of an SVG path string, or `undefined` without coordinates. Bézier curves use their control points, including the reflected control point of S and T; arcs are bounded exactly after SVG radius correction and rotation. Numbers may use `e`/`E` exponents. Throws for malformed data or unsupported commands |
+| graphPathEndpoints(path) | First moveto point and final current point of an SVG path string, or `undefined` without coordinates |
 | graphLayoutBounds(layout, labelReach = 80) | `GraphBounds` with one rectangle per node and per edge, edge labels included |
 | cullGraphElements(bounds, view, keep?) | `GraphVisibleIds` of the nodes and edges that intersect `view`, plus any IDs in `keep` (`GraphCullKeep`) |
 | graphCameraAt(point, size, scale) | Camera that centers a world point at a scale; `focusNode` uses the same rule |

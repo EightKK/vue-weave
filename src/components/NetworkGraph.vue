@@ -244,11 +244,32 @@ const contentBounds = computed(() => {
   return { left, top, right, bottom, width: right - left, height: bottom - top }
 })
 
+// Scale at which the whole graph fits the viewport.
+const wholeScale = computed(() => {
+  const { width, height } = viewport.value
+  const content = contentBounds.value
+  const scale = Math.min(width / content.width, height / content.height)
+  return Number.isFinite(scale) && scale > 0 ? scale : 1
+})
+// The smallest scale is 0.1, or less when that is needed to show the whole graph.
+const minScale = computed(() => Math.min(0.1, wholeScale.value))
+function clampScale(scale: number) {
+  return Math.max(minScale.value, Math.min(3, scale))
+}
+function validScale(scale: number) {
+  // A small tolerance keeps a fitted viewport restorable after floating-point round trips.
+  return Number.isFinite(scale) && scale >= minScale.value * (1 - 1e-9) && scale <= 3
+}
+function scaleError() {
+  return new RangeError(`Viewport scale must be between ${minScale.value === 0.1 ? '0.1' : 'the fit scale ' + minScale.value} and 3`)
+}
+
 function fitCamera(overview = false) {
   const { width, height } = viewport.value
   const geometry = layout.value
   const content = contentBounds.value
-  const overviewScale = Math.max(0.1, Math.min(1.15, width / content.width, height / content.height))
+  // Fit to view shows the whole graph at any scale. The automatic initial view keeps at least 0.1 to stay readable.
+  const overviewScale = Math.min(1.15, overview ? wholeScale.value : Math.max(0.1, wholeScale.value))
   const scale = overview || width >= 650 ? overviewScale
     : Math.max(overviewScale, Math.min(0.72, height / content.height))
   const canvasWidth = content.width * scale
@@ -280,7 +301,7 @@ function zoom(factor: number, x = viewport.value.width / 2, y = viewport.value.h
   cancelInteraction()
   if (![factor, x, y].every(Number.isFinite) || factor <= 0) throw new RangeError('Zoom requires a positive finite factor and finite coordinates')
   const current = camera.value
-  const scale = Math.max(0.1, Math.min(3, current.scale * factor))
+  const scale = clampScale(current.scale * factor)
   const ratio = scale / current.scale
   fitMode.value = 'manual'
   camera.value = { x: x - (x - current.x) * ratio, y: y - (y - current.y) * ratio, scale }
@@ -700,7 +721,7 @@ function moveTouch(event: PointerEvent) {
   if (!(distance > 0) || !(pinch.distance > 0)) return
   const rect = svg.value.getBoundingClientRect()
   const start = pinch.camera
-  const scale = Math.max(0.1, Math.min(3, start.scale * distance / pinch.distance))
+  const scale = clampScale(start.scale * distance / pinch.distance)
   // The world point under the initial midpoint follows the current midpoint.
   const worldX = (pinch.midpoint.x - rect.left - start.x) / start.scale
   const worldY = (pinch.midpoint.y - rect.top - start.y) / start.scale
@@ -723,9 +744,7 @@ function edgeIsRelated(edge: GraphEdge) {
 watch(camera, value => emit('viewport-change', { ...value }))
 function setViewport(value: GraphViewport) {
   cancelInteraction()
-  if (![value.x, value.y, value.scale].every(Number.isFinite) || value.scale < 0.1 || value.scale > 3) {
-    throw new RangeError('Viewport scale must be between 0.1 and 3')
-  }
+  if (![value.x, value.y].every(Number.isFinite) || !validScale(value.scale)) throw scaleError()
   fitMode.value = 'manual'
   camera.value = { ...value }
 }
@@ -733,7 +752,7 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
   const box = layout.value.boxes.get(id)
   if (!box) throw new Error('Unknown node: ' + id)
   const scale = options?.scale ?? camera.value.scale
-  if (!Number.isFinite(scale) || scale < 0.1 || scale > 3) throw new RangeError('Viewport scale must be between 0.1 and 3')
+  if (!validScale(scale)) throw scaleError()
   cancelInteraction()
   fitMode.value = 'manual'
   camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)

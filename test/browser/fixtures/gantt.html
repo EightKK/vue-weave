@@ -15,7 +15,8 @@
       import { createApp, h, ref } from 'vue'
       import { GanttChart } from 'vue-weave'
 
-      // Query parameters pick the scenario: readonly, rowDraggable, rtl, controlled (the parent ignores zoom preset updates).
+      // Query parameters pick the scenario: readonly, rowDraggable, rtl, piecewise (custom non-linear scale),
+      // controlled (the parent ignores zoom preset updates).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
       const bars = [
@@ -52,6 +53,11 @@
             markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : undefined,
             readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'),
             ...(controlled ? { zoomPreset: preset.value } : {}),
+            // A piecewise scale: 0..50 at 10 px per unit, 50..100 at 1 px per unit.
+            ...(query.has('piecewise') ? {
+              range: { start: 0, end: 100 }, tickSteps: [10], zoomPresets: undefined,
+              scale: { width: 550, toX: t => t <= 50 ? t * 10 : 500 + (t - 50), toTime: x => x <= 500 ? x / 10 : 50 + (x - 500) },
+            } : {}),
             onEdit: change => { lastEdit.value = JSON.stringify(change) },
             onDependencyDelete: () => { deletes.value++ },
             onDependencySelect: () => { selects.value++ },

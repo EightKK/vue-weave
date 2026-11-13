@@ -130,3 +130,72 @@ test('leveled plans never exceed capacity when every task can be delayed', () =>
   assert.deepEqual(calculateResourceLoad(input.range, result.tasks, resources, assignments).filter(s => s.overload), [])
   assertReproducible(input, result)
 })
+
+/** Checks a leveled plan against capacity, availability and work amount without using the scheduler. */
+function assertWithinCapacity(input, result) {
+  const durations = new Map(input.tasks.map(t => [t.id, t.duration]))
+  for (const t of result.tasks) {
+    assert.equal(t.work.reduce((sum, w) => sum + w.end - w.start, 0), durations.get(t.id), 'work amount of ' + t.id)
+  }
+  for (const resource of input.resources) {
+    const periods = resource.periods ?? [input.range]
+    const users = input.assignments.filter(a => a.resourceId === resource.id)
+    const edges = new Set([input.range.start, input.range.end, ...periods.flatMap(p => [p.start, p.end])])
+    for (const t of result.tasks) for (const w of t.work) edges.add(w.start).add(w.end)
+    const times = [...edges].sort((a, b) => a - b)
+    for (let i = 0; i + 1 < times.length; i++) {
+      const at = times[i]
+      const capacity = periods.some(p => p.start <= at && at < p.end) ? resource.capacity : 0
+      let load = 0
+      for (const { taskId, units = 1 } of users) {
+        const t = result.tasks.find(x => x.id === taskId)
+        if (t.work.some(w => w.start <= at && at < w.end)) load += units
+      }
+      assert.ok(load <= capacity, `${resource.id} at ${at}: load ${load} > capacity ${capacity}`)
+    }
+  }
+  assert.deepEqual([result.overloads, result.unresolvedTaskIds], [[], []])
+}
+
+test('a split task keeps its reserved start when an end bound applies', () => {
+  const resources = [{ id: 'm', capacity: 1, periods: [{ start: 4, end: 5 }, { start: 6, end: 10 }] }]
+  const input = { range: { start: 0, end: 10 }, tasks: [task('a', 4, { splittable: true, finishNoEarlierThan: 8 })], resources, assignments: on('a') }
+  const result = levelResources(input)
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.tasks[0].work, [{ start: 4, end: 5 }, { start: 6, end: 9 }])
+  assert.deepEqual(result.delays, [{ taskId: 'a', before: { start: 4, end: 8 }, after: { start: 4, end: 9 }, delay: 0, cause: 'capacity', pauses: [{ start: 5, end: 6 }] }])
+  assertWithinCapacity(input, result)
+  assertReproducible(input, result)
+})
+
+test('split tasks under FF and SF end bounds stay within capacity', () => {
+  const resources = [{ id: 'm', capacity: 1, periods: [{ start: 0, end: 3 }, { start: 4, end: 5 }, { start: 6, end: 20 }] }]
+  for (const type of ['FF', 'SF']) {
+    const input = {
+      range: { start: 0, end: 20 },
+      tasks: [task('gate', 2, { startNoEarlierThan: 6 }), task('a', 4, { splittable: true }), task('b', 2, { splittable: true })],
+      dependencies: [link('gate', 'a', type)], resources, assignments: on('a', 'b'),
+    }
+    const result = levelResources(input)
+    assert.equal(result.ok, true, type)
+    assertWithinCapacity(input, result)
+    assertReproducible(input, result)
+  }
+})
+
+test('split tasks with calendars, existing pauses, fixed starts and quantum stay within capacity', () => {
+  const resources = [{ id: 'm', capacity: 1, periods: [{ start: 0, end: 6 }, { start: 8, end: 14 }, { start: 16, end: 40 }] }]
+  const input = {
+    range, quantum: 2, calendars: [{ id: 'shift', periods: [{ start: 0, end: 10 }, { start: 12, end: 40 }] }], defaultCalendarId: 'shift',
+    tasks: [
+      task('a', 6, { splittable: true, finishNoEarlierThan: 18 }),
+      task('b', 4, { splittable: true, pauses: [{ start: 2, end: 4 }] }),
+      task('c', 4, { startNoEarlierThan: 4 }),
+    ],
+    resources, assignments: on('a', 'b', 'c'),
+  }
+  const result = levelResources(input)
+  assert.equal(result.ok, true)
+  assertWithinCapacity(input, result)
+  assertReproducible(input, result)
+})

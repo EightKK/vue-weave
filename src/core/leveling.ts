@@ -172,6 +172,17 @@ class Heap<T> {
   }
 }
 
+/** Sorted ranges with touching neighbours joined. */
+function mergeRanges(ranges: readonly TimeRange[]): TimeRange[] {
+  const result: TimeRange[] = []
+  for (const range of ranges) {
+    const previous = result.at(-1)
+    if (previous?.end === range.start) previous.end = range.end
+    else result.push({ start: range.start, end: range.end })
+  }
+  return result
+}
+
 function withoutMode(task: ScheduleTask): ScheduleTask {
   if (task.mode === undefined) return task
   const copy = { ...task }
@@ -253,6 +264,7 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
 
   const placed = new Map<string, Slot>()
   const raised = new Set<string>(), unresolved = new Set<string>(), added = new Map<string, TimeRange[]>()
+  const reserved = new Map<string, TimeRange[]>()
   while (queue.size) {
     const { task } = queue.pop()
     const { clock, duration } = task
@@ -285,11 +297,14 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
       })))
     }
     if (duration) {
+      const slices: TimeRange[] = []
       for (const chunk of chunks) {
         for (const slice of clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) })) {
           for (const need of needs) need.profile.reserve(slice, need.units, range.end)
+          slices.push(slice)
         }
       }
+      if (needs.length) reserved.set(task.id, mergeRanges(slices))
     }
     placed.set(task.id, slot)
     for (const link of task.outgoing) {
@@ -299,16 +314,26 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
     }
   }
 
+  // `raised` explains a delay; the pinned start keeps the reserved placement. A split task is pinned even when it
+  // starts at its earliest date, because its added pauses alone would let an end bound (finishNoEarlierThan, FF, SF)
+  // pull the start earlier than the reserved work.
   const leveledTasks = plain.tasks.map(task => {
     const pauses = added.get(task.id)
     if (!raised.has(task.id) && !pauses) return task
-    const next: ScheduleTask = { ...task }
-    if (raised.has(task.id)) next.startNoEarlierThan = placed.get(task.id)!.start
+    const next: ScheduleTask = { ...task, startNoEarlierThan: placed.get(task.id)!.start }
     if (pauses) next.pauses = [...(task.pauses ?? []), ...pauses]
     return next
   })
   const leveled = scheduleTasks({ ...plain, tasks: leveledTasks })
   if (!leveled.ok) return leveled
+  // The recomputed plan must do its work exactly where capacity was reserved. Report any task where it does not.
+  for (const after of leveled.tasks) {
+    const expected = reserved.get(after.id)
+    if (!expected) continue
+    const actual = mergeRanges(after.work)
+    if (expected.length !== actual.length
+      || expected.some((slice, i) => slice.start !== actual[i]!.start || slice.end !== actual[i]!.end)) unresolved.add(after.id)
+  }
   const delays: ResourceDelay[] = []
   leveled.tasks.forEach((after, i) => {
     const before = base.tasks[i]!, pauses = added.get(after.id) ?? []
