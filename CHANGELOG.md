@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `scheduleTasks` failure results carry new fields: `cycle` results add `cycles`, and `infeasible` results add `constraints` and `dependencyIds`. Code that compares a whole failure object, for example with `deepEqual`, must compare `ok`, `code` and `taskId` instead. Successful results are unchanged.
+- The graph layout direction type widens from `'LR' | 'TB'` to `GraphLayoutDirection` (`'LR' | 'TB' | 'RL' | 'BT'`) in `GraphLayoutOptions` and in the `direction` parameter of `graphEdgeEndpoint`, `routeGraphPorts` and `applyGraphPositions`. TypeScript code that switches exhaustively over the direction must handle `RL` and `BT`.
+
 ### Added
 
 - `NetworkGraph` with LR/TB layouts, branches, merges, disconnected nodes, directed cycles, self-loops, edge labels and custom layout/rendering.
@@ -41,7 +46,7 @@
 
 #### Scheduling
 
-- **Behavior note, scheduling failures:** `cycle` results list `cycles` (task and dependency IDs of each strongly connected group), and `infeasible` results add the binding `constraints` and `dependencyIds`. Code that compares whole failure objects, for example with `deepEqual`, sees the new fields.
+- Scheduling failure diagnostics (see Breaking changes): `cycle` results list `cycles` (task and dependency IDs of each strongly connected group), and `infeasible` results add the binding `constraints` and `dependencyIds`. Code that compares whole failure objects, for example with `deepEqual`, sees the new fields.
 - `ScheduleTask.mode: 'alap'` places a task as late as its free float allows without moving other tasks or the project finish. ALAP results add `earliestStart` and `earliestEnd`.
 - `ScheduleTask.pauses` interrupts a task's work for caller-specified intervals.
 - `levelResources` delays tasks with a deterministic priority-based serial heuristic so that assigned load stays within capacity, using `ScheduleTask.priority` and `splittable`, and reports delays, added pauses, remaining overloads and unresolved tasks. `calculateResourceLoad` is unchanged.
