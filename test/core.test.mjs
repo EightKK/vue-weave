@@ -302,7 +302,7 @@ test('path bounds cover absolute and relative commands, curves, arcs and malform
   assert.deepEqual(graphPathBounds('M 5 5 H 25 V 45 H 15'), { x: 5, y: 5, width: 20, height: 40 })
   assert.deepEqual(graphPathBounds('m 10 10 l 5 5 h -20 v 10'), { x: -5, y: 10, width: 20, height: 15 })
   assert.deepEqual(graphPathBounds('M 0 0 L 4 4 8 0'), { x: 0, y: 0, width: 8, height: 4 })
-  assert.deepEqual(graphPathBounds('M 10 10 A 5 5 0 0 1 20 10'), { x: 5, y: 5, width: 20, height: 10 })
+  assert.deepEqual(graphPathBounds('M 10 10 A 5 5 0 0 1 20 10'), { x: 10, y: 5, width: 10, height: 5 })
   assert.equal(graphPathBounds(''), undefined)
   assert.throws(() => graphPathBounds('M 1'), /Invalid SVG path/)
   assert.throws(() => graphPathBounds('M 0 0 X 3 3'), /Unsupported/)
