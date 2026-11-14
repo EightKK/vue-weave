@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import {
-  GanttChart, calculateResourceLoad, calendarBands, removeTimelineBars, useEditHistory,
-  type TimelineBar, type TimelineConnection, type TimelineContextMenu, type TimelineDependency, type TimelineEdit,
+  GanttChart, assignLanes, calculateResourceLoad, calendarBands, removeTimelineBars, useEditHistory,
+  type TimelineBar, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency, type TimelineEdit,
   type TimelineProgressEdit, type TimelineReconnect, type TimelineZoomPreset, type TimelineZoomState,
 } from '../src'
 import { formatTime, hour, origin } from './data'
@@ -126,14 +126,36 @@ function deleteBars(ids: readonly string[]) {
   selection.value = new Set([...selection.value].filter(id => !ids.includes(id)))
   status.value = ids.length > 1 ? `Deleted ${ids.length} bars.` : `Deleted ${names[0]}.`
 }
-function addTask(rowId: string, time: number) {
+/** Add a new task with a fresh ID and label as one undoable step. */
+function addBar(rowId: string, start: number, end: number, lane?: number) {
   let number = 1
   while (model.value.bars.some(bar => bar.id === 'task-' + number)) number++
-  const start = Math.min(range.end - hour, Math.max(range.start, Math.round(time / quarter) * quarter))
-  const bar: TimelineBar = { id: 'task-' + number, rowId, label: 'New task ' + number, start, end: start + hour, editable: true, tone: 'amber', progress: 0 }
+  const bar: TimelineBar = { id: 'task-' + number, rowId, label: 'New task ' + number, start, end, editable: true, tone: 'amber', progress: 0 }
+  if (lane) bar.lane = lane
   commit([...model.value.bars, bar])
   status.value = `Added ${bar.label} at ${formatTime(bar.start)}–${formatTime(bar.end)} to ${rows.find(row => row.id === rowId)?.label}.`
 }
+function addTask(rowId: string, time: number) {
+  const start = Math.min(range.end - hour, Math.max(range.start, Math.round(time / quarter) * quarter))
+  addBar(rowId, start, start + hour)
+}
+// Drag across an empty part of a row (or use its + button) to propose a new task. The chosen lane is kept only while
+// lanes are arranged, because a single-lane chart has lane 0 alone.
+function validateCreate(proposal: TimelineCreate) {
+  if (proposal.rowId === 'quality') return 'New tasks cannot be added to Quality.'
+}
+function create(proposal: TimelineCreate) {
+  addBar(proposal.rowId, proposal.start, proposal.end, arrange.value ? proposal.lane : undefined)
+}
+// "Auto-arrange lanes" stacks overlapping bars of a row. keepLanes keeps every bar that fits in its lane, so only a
+// new or moved bar that overlaps another one changes lane.
+const arrange = ref(false)
+const arranged = computed(() => arrange.value ? assignLanes(model.value.bars, { keepLanes: true }) : undefined)
+const shownBars = computed(() => arranged.value?.bars
+  ?? (model.value.bars.some(bar => bar.lane) ? model.value.bars.map(bar => ({ ...bar, lane: 0 })) : model.value.bars))
+const laneCount = computed(() => arranged.value?.laneCount ?? 1)
+// GanttChart needs rowHeight >= 8 + laneCount × 14; 26 px per lane keeps the bar labels readable.
+const rowHeight = computed(() => Math.max(66, 8 + laneCount.value * 26))
 const chart = ref<InstanceType<typeof GanttChart>>()
 const rtl = ref(false)
 function exportSvg() {
@@ -241,8 +263,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 <template>
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
-      <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
+      <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
     <div class="options editing-actions" role="group" aria-label="History and fit">
       <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
@@ -250,9 +272,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       <button type="button" @click="fit()">Fit all bars</button>
       <button type="button" :disabled="!selection.size" @click="fit([...selection])">Fit selection</button>
     </div>
-    <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="model.bars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
-      :height="430" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
-      progress-editable deletable context-menu
+    <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
+      :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
+      progress-editable deletable context-menu creatable :validate-create="validateCreate"
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"
       :validate-bars-delete="validateBarsDelete"
@@ -262,9 +284,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       @dependency-delete="removeDependency" @edit="apply([$event])" @edits="apply" @zoom-change="onZoom"
       @edit-rejected="(_change, reason) => status = reason" @edits-rejected="(_changes, reason) => status = reason"
       @progress-edit="applyProgress" @bars-delete="deleteBars" @bars-delete-rejected="(_ids, reason) => status = reason"
-      @context-menu="openMenu">
+      @create="create" @create-rejected="(_proposal, reason) => status = reason" @context-menu="openMenu">
       <template #row-heading>Team</template>
-      <template #legend><span class="hint">Ctrl/Shift-click selects several bars · Up/Down moves rows · Delete removes · Right-click or Shift+F10 for actions · Pinch to zoom on touch</span></template>
+      <template #legend><span class="hint">Drag across an empty row or press + to add a task · Ctrl/Shift-click selects several bars · Up/Down moves rows · Delete removes · Right-click or Shift+F10 for actions · Pinch to zoom on touch</span></template>
       <template #tooltip="{ bar, range: shown }">
         <strong>{{ bar.label }}</strong><br>{{ formatTime(shown.start) }}–{{ formatTime(shown.end) }} · {{ Math.round((bar.progress ?? 0) * 100) }}% complete
       </template>

@@ -1449,6 +1449,231 @@ test('gantt fit all bars and fit selection zoom to the bars and scroll them into
   expect(errors).toEqual([])
 })
 
+/** Pixel positions in the timeline editing demo, measured from Checkout UI (10:00–14:00 in the Web team row, 115 px per hour). */
+async function editingGeometry(chart: ReturnType<Page['getByRole']>, rtl = false) {
+  const ui = (await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).boundingBox())!
+  return {
+    ui,
+    /** Client x of a time of day in hours, for example 14.5 for 14:30. */
+    at: (hours: number) => rtl ? ui.x + ui.width - (hours - 10) * 115 : ui.x + (hours - 10) * 115,
+    /** Client y at the middle of a task row: 0 Product team, 1 Platform team, 2 Web team, 3 Quality. */
+    row: (index: number) => ui.y + ui.height / 2 + (index - 2) * 66,
+  }
+}
+
+test('gantt drag to create previews and proposes new bars, rejects through validateCreate, cancels with Escape and has a keyboard path', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const { at, row } = await editingGeometry(chart)
+  const preview = chart.locator('.vft-gantt-create-preview')
+  const bars = chart.locator('.vft-gantt-bar')
+  await expect(bars).toHaveCount(4)
+
+  // A drag over the empty part of the Web team row previews the snapped interval and proposes it on release.
+  await page.mouse.move(at(14.5), row(2))
+  await page.mouse.down()
+  await page.mouse.move(at(16) + 4, row(2), { steps: 6 })
+  await expect(preview).toHaveCount(1)
+  const shown = (await preview.boundingBox())!
+  expect(Math.abs(shown.x - at(14.5))).toBeLessThanOrEqual(1)
+  expect(Math.abs(shown.width - 1.5 * 115)).toBeLessThanOrEqual(1)
+  await expect(preview).toHaveAttribute('aria-hidden', 'true')
+  await page.mouse.up()
+  await expect(status('Added New task 1 at 14:30–16:00 to Web team.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'New task 1 14:30–16:00', exact: true })).toBeVisible()
+  await expect(preview).toHaveCount(0)
+
+  // A click without movement proposes createDuration (four snaps: one hour) from the snapped press time.
+  await page.mouse.click(at(13) + 3, row(0))
+  await expect(status('Added New task 2 at 13:00–14:00 to Product team.')).toBeVisible()
+  await expect(bars).toHaveCount(6)
+
+  // validateCreate rejects new work in the Quality row; the reason is announced and nothing is added.
+  await page.mouse.move(at(10), row(3))
+  await page.mouse.down()
+  await page.mouse.move(at(12), row(3), { steps: 5 })
+  await expect(preview).toHaveCount(1)
+  await page.mouse.up()
+  await expect(status('New tasks cannot be added to Quality.')).toBeVisible()
+  await expect(page.locator('.vft-gantt [aria-live="polite"]').filter({ hasText: 'New tasks cannot be added to Quality.' })).toHaveCount(1)
+  await expect(bars).toHaveCount(6)
+
+  // Escape discards an in-flight create drag.
+  await page.mouse.move(at(14), row(1))
+  await page.mouse.down()
+  await page.mouse.move(at(15.5), row(1), { steps: 5 })
+  await expect(preview).toHaveCount(1)
+  await expect(chart).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(preview).toHaveCount(0)
+  await page.mouse.up()
+  await expect(bars).toHaveCount(6)
+  await expect(status('New tasks cannot be added to Quality.')).toBeVisible()
+
+  // Pressing a bar, its handles or the row heading starts no create gesture.
+  await page.mouse.click(at(11), row(1))
+  await chart.getByText('Platform team', { exact: true }).click()
+  await expect(bars).toHaveCount(6)
+
+  // Keyboard path: each creatable row has an add button that proposes createDuration at the first time in view.
+  const add = chart.getByRole('button', { name: 'Add bar to Platform team', exact: true })
+  await add.focus()
+  await page.keyboard.press('Enter')
+  await expect(status('Added New task 3 at 08:00–09:00 to Platform team.')).toBeVisible()
+  await expect(add).toBeFocused()
+  await page.getByRole('button', { name: 'Undo timeline change', exact: true }).click()
+  await expect(chart.getByRole('button', { name: /^New task 3 / })).toHaveCount(0)
+  await expect(bars).toHaveCount(6)
+  expect(errors).toEqual([])
+})
+
+test('gantt auto-arranged lanes stack an overlapping new task and keep the lane under the pointer', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const { at, row } = await editingGeometry(chart)
+  const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
+  // Drag backwards from 13:30 to 11:00 so the new task overlaps Billing API in the same lane.
+  await page.mouse.move(at(13.5), row(1))
+  await page.mouse.down()
+  await page.mouse.move(at(11), row(1), { steps: 6 })
+  await page.mouse.up()
+  await expect(status('Added New task 1 at 11:00–13:30 to Platform team.')).toBeVisible()
+  const created = chart.getByRole('button', { name: 'New task 1 11:00–13:30', exact: true })
+  const sameLane = [(await api.boundingBox())!, (await created.boundingBox())!]
+  expect(Math.abs(sameLane[0]!.y - sameLane[1]!.y)).toBeLessThanOrEqual(0.5)
+
+  const arrange = page.getByRole('checkbox', { name: 'Auto-arrange lanes', exact: true })
+  await arrange.check()
+  await expect.poll(async () => (await created.boundingBox())!.y - (await api.boundingBox())!.y).toBeGreaterThan(20)
+  const [first, second] = [(await api.boundingBox())!, (await created.boundingBox())!]
+  expect(second.y).toBeGreaterThanOrEqual(first.y + first.height)
+
+  // With two lanes, a drag in the lower half of the Web team row creates the task in lane 1.
+  const ui = (await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).boundingBox())!
+  const rowTop = ui.y - 7
+  await page.mouse.move(at(14.5), rowTop + 50)
+  await page.mouse.down()
+  await page.mouse.move(at(16), rowTop + 50, { steps: 5 })
+  await page.mouse.up()
+  await expect(status('Added New task 2 at 14:30–16:00 to Web team.')).toBeVisible()
+  const lower = (await chart.getByRole('button', { name: 'New task 2 14:30–16:00', exact: true }).boundingBox())!
+  expect(lower.y).toBeGreaterThanOrEqual(ui.y + ui.height)
+
+  await arrange.uncheck()
+  await expect.poll(async () => Math.abs((await created.boundingBox())!.y - (await api.boundingBox())!.y)).toBeLessThanOrEqual(0.5)
+  expect(errors).toEqual([])
+})
+
+test('gantt create drag follows the visual direction in right-to-left charts and scrolls near the edge', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  const { at, row } = await editingGeometry(chart, true)
+  // In RTL later times are further left: dragging left from 14:30 reaches 16:00.
+  await page.mouse.move(at(14.5), row(2))
+  await page.mouse.down()
+  await page.mouse.move(at(16) - 4, row(2), { steps: 6 })
+  const shown = (await chart.locator('.vft-gantt-create-preview').boundingBox())!
+  expect(Math.abs(shown.x - at(16))).toBeLessThanOrEqual(1)
+  expect(Math.abs(shown.x + shown.width - at(14.5))).toBeLessThanOrEqual(1)
+  await page.mouse.up()
+  await expect(status('Added New task 1 at 14:30–16:00 to Web team.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'New task 1 14:30–16:00', exact: true })).toBeVisible()
+
+  // Back to LTR in a narrow viewport: dragging towards the right edge scrolls and extends the new interval.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).uncheck()
+  await page.setViewportSize({ width: 640, height: 900 })
+  const corner = (await chart.locator('.vft-gantt-corner').boundingBox())!
+  const area = (await chart.boundingBox())!
+  const y = (await editingGeometry(chart)).row(2)
+  await page.mouse.move(corner.x + corner.width + 115, y)
+  await page.mouse.down()
+  await page.mouse.move(area.x + area.width - 10, y, { steps: 8 })
+  await expect.poll(() => chart.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
+  await page.mouse.up()
+  await expect(page.getByRole('status').filter({ hasText: /^Added New task 2 at 09:00–1[3-8]:\d\d to Web team\.$/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt create by touch: a tap proposes a bar and the second touch of a pinch cancels the gesture', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const { at, row } = await editingGeometry(chart)
+  const cdp = await page.context().newCDPSession(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  const bars = chart.locator('.vft-gantt-bar')
+  await touch(cdp, 'touchStart', [{ x: at(15) + 3, y: row(2), id: 1 }])
+  await touch(cdp, 'touchEnd', [])
+  await expect(status('Added New task 1 at 15:00–16:00 to Web team.')).toBeVisible()
+  await expect(bars).toHaveCount(5)
+
+  // The first finger lands on empty row background and would create a bar; the second one turns it into a pinch.
+  const y = row(2)
+  await touch(cdp, 'touchStart', [{ x: at(16.5), y, id: 1 }])
+  await touch(cdp, 'touchStart', [{ x: at(16.5), y, id: 1 }, { x: at(17.5), y, id: 2 }])
+  for (let step = 1; step <= 8; step++) {
+    await touch(cdp, 'touchMove', [{ x: at(16.5) - step * 8, y, id: 1 }, { x: at(17.5) + step * 8, y, id: 2 }])
+  }
+  await touch(cdp, 'touchEnd', [])
+  await expect.poll(async () => Number.parseInt((await output.textContent())!, 10)).toBeGreaterThan(100)
+  await expect(chart.locator('.vft-gantt-create-preview')).toHaveCount(0)
+  // Bars outside the zoomed time window are virtualized, so the status shows that nothing was added.
+  await expect(status('Added New task 1 at 15:00–16:00 to Web team.')).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'New task 2' })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo previews cascaded operations during a drag and applies them as one batch', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
+  const inspection = plan.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
+  const packing = plan.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
+  const ghosts = plan.locator('.vft-gantt-cascade-preview')
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 08:00–09 Nov 11:00')
+  const box = (await cutting.boundingBox())!
+  const inspect = (await inspection.boundingBox())!
+  const y = box.y + box.height / 2
+  const drag = async () => {
+    await page.mouse.move(box.x + box.width / 2, y)
+    await page.mouse.down()
+    // 36 px is two hours: the requested start becomes 10:00.
+    await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
+  }
+
+  // Inspection (14:00–16:00) and packing follow the dragged order while it is held; Escape discards the preview.
+  await drag()
+  await expect(ghosts).toHaveCount(2)
+  const ghost = (await ghosts.first().boundingBox())!
+  expect(ghost.x - inspect.x).toBeCloseTo(54, 0)
+  expect(ghost.width).toBeCloseTo(36, 0)
+  expect(ghost.y).toBeCloseTo(inspect.y, 0)
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await page.keyboard.press('Escape')
+  await expect(ghosts).toHaveCount(0)
+  await page.mouse.up()
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 08:00–09 Nov 11:00')
+
+  // Release proposes the move and the cascaded operations as one batch; the demo recalculates the plan from it.
+  await drag()
+  await expect(ghosts).toHaveCount(2)
+  await page.mouse.up()
+  await expect(page.getByRole('status').filter({ hasText: 'Plan recalculated. 2 other operations changed.' })).toBeVisible()
+  await expect(ghosts).toHaveCount(0)
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 14:00–09 Nov 16:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 16:00–11 Nov 09:00')
+
+  // A resize is not cascaded and is still rejected by validateEdit through the single edit path.
+  const resized = (await cutting.boundingBox())!
+  await page.mouse.move(resized.x + resized.width - 3, y)
+  await page.mouse.down()
+  await page.mouse.move(resized.x + resized.width + 18, y, { steps: 4 })
+  await expect(ghosts).toHaveCount(0)
+  await page.mouse.up()
+  await expect(page.getByRole('status').filter({ hasText: 'Move the bar to change the requested start.' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('gantt context-menu, progress and delete proposals carry exact targets, times and rows in both directions', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  GanttChart, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, scheduleTasks, scheduledBarFields,
-  type ResourceAssignment, type ScheduleLink, type ScheduleResult, type ScheduleTask,
+  GanttChart, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, propagateEdit, scheduleTasks, scheduledBarFields,
+  type ResourceAssignment, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleTask,
   type TimelineBar, type TimelineColumn, type TimelineEdit,
 } from '../src'
 import { download } from './download'
@@ -64,8 +64,11 @@ const headerBands = [
   shifts.map(period => ({ ...period, label: 'Shift' })),
 ]
 
+function scheduleInput(tasks: readonly ScheduleTask[]): ScheduleInput {
+  return { range, calendars, defaultCalendarId: 'plant', quantum: 60_000, tasks, dependencies }
+}
 function propose(tasks: readonly ScheduleTask[]): ScheduleResult {
-  return scheduleTasks({ range, calendars, defaultCalendarId: 'plant', quantum: 60_000, tasks, dependencies })
+  return scheduleTasks(scheduleInput(tasks))
 }
 const original = propose(originalTasks)
 if (!original.ok) throw new Error('The demo schedule must be feasible')
@@ -105,6 +108,28 @@ const criticalCount = computed(() => model.value.plan.tasks.filter(task => task.
 
 function validateEdit(change: TimelineEdit) {
   if (change.mode !== 'move') return 'Move the bar to change the requested start. Working duration is fixed in this example.'
+}
+/** A requested start inside a break or a closed day begins at the next working time, as the scheduler places it. */
+function nextWorkingTime(time: number) {
+  const period = shifts.find(item => item.end > time)
+  return period ? Math.max(time, period.start) : time
+}
+// Auto-scheduling preview. While a cutting order is dragged (or moved with the arrow keys), propagateEdit pins it at
+// the new start and reports every operation whose dates change; the chart draws those as dashed outlines and proposes
+// them with the move as one batch. The order is first pinned where it is now, so the changes are measured against the
+// plan on screen. An infeasible move previews nothing and is reported when the edit is applied.
+function cascade(change: TimelineEdit): TimelineEdit[] {
+  const current = byTask.value.get(change.id)
+  if (change.mode !== 'move' || !current) return []
+  const tasks = model.value.tasks.map(task => task.id === change.id ? { ...task, startNoEarlierThan: undefined, fixedStart: current.start } : task)
+  const result = propagateEdit(scheduleInput(tasks), { id: change.id, start: nextWorkingTime(change.after.start) })
+  if (!result.ok) return []
+  return result.changes.filter(item => item.id !== change.id)
+    .map(item => ({ id: item.id, before: item.before, after: item.after, mode: 'move', source: change.source }))
+}
+// The batch lists the moved order first. Recalculating from its new requested start reproduces the cascaded dates.
+function applyEdits(changes: TimelineEdit[]) {
+  applyEdit(changes[0]!)
 }
 function applyEdit(change: TimelineEdit) {
   const tasks = model.value.tasks.map(task => task.id === change.id ? { ...task, startNoEarlierThan: change.after.start } : task)
@@ -152,10 +177,11 @@ function reset() {
     <GanttChart ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="dependencies" :highlighted-dependency-ids="criticalLinks"
       :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
-      :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" @select="selected = new Set([$event])" @edit="applyEdit" @edit-rejected="(_change, reason) => notice = reason">
+      :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
+      @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vft-bar-text">{{ workHours.get(bar.id) }} h</span></template>
-      <template #legend><span class="hint">Drag a cutting order or use its arrow keys. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
+      <template #legend><span class="hint">Drag a cutting order or use its arrow keys; dashed outlines preview the operations that move with it. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
     </GanttChart>
     <p class="status" role="status">{{ notice }}</p>
   </section>
