@@ -396,6 +396,12 @@ function commitCollapse(ids: Set<string>) {
   const label = (id: string) => graphGroups.value?.find(item => item.id === id)?.label ?? id
   status.value = closed.length ? 'Collapsed ' + label(closed[0]!) + '.' : opened.length ? 'Expanded ' + label(opened[0]!) + '.' : status.value
 }
+function validateReshape(change: GraphEdgeReshape) {
+  if (change.after.length > 4) return 'Use at most 4 waypoints per edge.'
+}
+function validateResize(change: GraphNodeResize) {
+  if (change.after.width > 360 || change.after.height > 200) return 'Keep nodes within 360 × 200.'
+}
 function commitReshape(change: GraphEdgeReshape) {
   const edges = data.value.edges.map(edge => {
     if (edge.id !== change.id) return edge
@@ -500,7 +506,9 @@ function commit(change: TimelineEdit) {
           :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
           :collapsible-groups="collapseOn" :collapsed-group-ids="collapseOn ? collapsed : undefined" @update:collapsed-group-ids="commitCollapse"
           :edge-style="graphEditing ? edgeStyle : 'curve'" :editable-edges="graphEditing && editableEdges" @edge-reshape="commitReshape"
-          :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize" :lod-threshold="graphEditing ? 0.5 : undefined"
+          :validate-edge-reshape="validateReshape" @edge-reshape-rejected="(_change, reason) => status = reason"
+          :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize"
+          :validate-node-resize="validateResize" @node-resize-rejected="(_change, reason) => status = reason" :lod-threshold="graphEditing ? 0.5 : undefined"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
