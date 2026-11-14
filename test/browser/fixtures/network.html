@@ -49,6 +49,7 @@
       const lastCopy = ref('')
       const lastPaste = ref('')
       const lastDuplicate = ref('')
+      const nativeEvents = ref('')
       const selection = payload => JSON.stringify({ ...payload, positions: Object.fromEntries(payload.positions) })
       const selectedEdgeIds = shallowRef(new Set())
       const lastMenu = ref('')
@@ -70,6 +71,7 @@
           h('output', { role: 'status', 'aria-label': 'Last copy' }, lastCopy.value),
           h('output', { role: 'status', 'aria-label': 'Last paste' }, lastPaste.value),
           h('output', { role: 'status', 'aria-label': 'Last duplicate' }, lastDuplicate.value),
+          h('output', { role: 'status', 'aria-label': 'Native events' }, nativeEvents.value),
           h(NetworkGraph, {
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
@@ -89,13 +91,19 @@
             autoPan: query.get('autopan') === '1',
             background: query.get('background') ?? undefined,
             droppable: query.get('drop') === '1',
-            onDrop: drop => {
+            onNodeDrop: drop => {
               lastDrop.value = JSON.stringify({ point: drop.point, clientX: drop.clientX, clientY: drop.clientY, text: drop.dataTransfer?.getData('text/plain') })
             },
             clipboard: query.get('clipboard') === '1',
-            onCopy: payload => { lastCopy.value = selection(payload) },
-            onPaste: payload => { lastPaste.value = JSON.stringify(payload) },
-            onDuplicate: payload => { lastDuplicate.value = selection(payload) },
+            onCopySelection: payload => { lastCopy.value = selection(payload) },
+            onPasteRequest: payload => { lastPaste.value = JSON.stringify(payload) },
+            onDuplicateSelection: payload => { lastDuplicate.value = selection(payload) },
+            // Native listeners fall through to the root element because no component event shadows them.
+            ...query.get('native') === '1' ? {
+              onCopy: event => { nativeEvents.value += event.type + ' ' },
+              onPaste: event => { nativeEvents.value += event.type + ' ' },
+              onDrop: event => { nativeEvents.value += event.type + ' ' },
+            } : {},
             contextMenu: query.get('menu') === '1',
             onContextMenu: request => {
               lastMenu.value = JSON.stringify(request)

@@ -2391,6 +2391,26 @@ test('clipboard shortcuts propose copy, paste and duplicate with the focused or 
   expect(errors).toEqual([])
 })
 
+test('native copy, paste and drop listeners on the component still reach its root element', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const dispatch = () => page.locator('.vft-network').evaluate(root => {
+    const stage = root.querySelector('.vft-network-stage')!
+    stage.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }))
+    stage.dispatchEvent(new ClipboardEvent('paste', { bubbles: true }))
+    stage.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }))
+  })
+  // With the new props off, and with them on, the parent's native listeners receive the events.
+  for (const search of ['?nodes=3&native=1', '?nodes=3&native=1&clipboard=1&drop=1']) {
+    await openNetworkFixture(page, search)
+    await dispatch()
+    await expect(fixtureStatus(page, 'Native events')).toHaveText('copy paste drop')
+  }
+  // The component's own proposals use other names and still arrive.
+  await expect(fixtureStatus(page, 'Last drop')).not.toHaveText('')
+  expect(errors).toEqual([])
+})
+
 test('the demo palette adds nodes by drag and drop and by keyboard on the grid, and undo removes them', async ({ page }) => {
   const { errors, button, status, nodes } = await openGraphEditor(page)
   await page.getByLabel('Snap to grid').check()

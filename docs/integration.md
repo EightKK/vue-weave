@@ -75,20 +75,20 @@ The `context-menu` event only reports the request with its target, chart point a
 
 Turn on `snapGrid` (with `background="dots"` to show the grid), `alignmentGuides` and `autoPan` for a diagram editor feel. Node moves still arrive as `node-move` and `nodes-move` proposals, already snapped.
 
-A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
+A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `node-drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
 
 ```vue
 <button type="button" draggable="true" @dragstart="$event.dataTransfer?.setData('application/x-node', 'task')"
   @click="addTask(graph!.getViewportCenter())">Add task</button>
 <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :positions="positions" draggable droppable clipboard
   :snap-grid="20" background="dots" alignment-guides auto-pan
-  @drop="drop => drop.dataTransfer?.getData('application/x-node') === 'task' && addTask(drop.point)"
-  @copy="copied = $event" @paste="paste" @duplicate="duplicate" />
+  @node-drop="drop => drop.dataTransfer?.getData('application/x-node') === 'task' && addTask(drop.point)"
+  @copy-selection="copied = $event" @paste-request="paste" @duplicate-selection="duplicate" />
 ```
 
 `drop.point` is the drop position in chart coordinates, rounded to the grid. To centre a new node on the pointer instead of placing its corner there, convert `drop.clientX` and `drop.clientY` with `toGraphPoint` and round the corner once with `snapGraphPoint`. Saved positions must stay nonnegative.
 
-The clipboard events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs and moved positions:
+The `copy-selection`, `paste-request` and `duplicate-selection` events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs and moved positions:
 
 ```ts
 function duplicate(selection: GraphClipboardSelection) {
@@ -104,7 +104,7 @@ function duplicate(selection: GraphClipboardSelection) {
 }
 ```
 
-For `paste`, store the copied nodes, edges and `positions` from the `copy` event, then clone them with an `offset` that moves their top-left corner to `event.point`. Committing each operation as one `useEditHistory` entry makes Undo remove the copies together.
+For `paste-request`, store the copied nodes, edges and `positions` from the `copy-selection` event, then clone them with an `offset` that moves their top-left corner to `event.point`. Committing each operation as one `useEditHistory` entry makes Undo remove the copies together.
 
 ## Custom content
 

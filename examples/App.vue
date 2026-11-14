@@ -437,8 +437,8 @@ function commit(change: TimelineEdit) {
           :deletable="graphEditing" :validate-delete="validateDelete" @delete="commitDeletion" @delete-rejected="(_deletion, reason) => status = reason"
           :context-menu="graphEditing" @context-menu="openMenu"
           :snap-grid="graphEditing && snapToGrid ? gridSize : undefined" :background="graphEditing && snapToGrid ? 'dots' : 'none'"
-          :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @drop="dropNode"
-          :clipboard="graphEditing" @copy="copySelection" @paste="pasteClipboard" @duplicate="duplicateSelection"
+          :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @node-drop="dropNode"
+          :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">

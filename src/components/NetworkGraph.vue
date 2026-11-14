@@ -66,10 +66,10 @@ const emit = defineEmits<{
   delete: [deletion: GraphDeletion]
   'delete-rejected': [deletion: GraphDeletion, reason: string]
   'context-menu': [event: GraphContextMenu]
-  drop: [event: GraphDrop]
-  copy: [selection: GraphClipboardSelection]
-  paste: [event: GraphPaste]
-  duplicate: [selection: GraphClipboardSelection]
+  'node-drop': [event: GraphDrop]
+  'copy-selection': [selection: GraphClipboardSelection]
+  'paste-request': [event: GraphPaste]
+  'duplicate-selection': [selection: GraphClipboardSelection]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot): unknown
@@ -1124,7 +1124,7 @@ function dropOnStage(event: DragEvent) {
   if (!props.droppable) return
   event.preventDefault()
   const { clientX, clientY, dataTransfer } = event
-  emit('drop', { point: snapPoint(toGraphPoint(clientX, clientY)), clientX, clientY, dataTransfer })
+  emit('node-drop', { point: snapPoint(toGraphPoint(clientX, clientY)), clientX, clientY, dataTransfer })
 }
 
 // Clipboard proposals. The application copies, pastes and duplicates its own data; the graph only reports the keys.
@@ -1167,15 +1167,15 @@ function clipboardWithKeys(event: KeyboardEvent) {
   const key = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : ({ KeyC: 'c', KeyV: 'v', KeyD: 'd' } as Record<string, string>)[event.code]
   if (key === 'v') {
     event.preventDefault()
-    emit('paste', { point: pastePoint() })
+    emit('paste-request', { point: pastePoint() })
     return
   }
   if (key !== 'c' && key !== 'd') return
   const selection = clipboardSelection(event.target)
   if (!selection) return
   event.preventDefault()
-  if (key === 'c') emit('copy', selection)
-  else emit('duplicate', selection)
+  if (key === 'c') emit('copy-selection', selection)
+  else emit('duplicate-selection', selection)
 }
 
 // Background pattern, drawn in chart coordinates inside the camera transform so it follows pan and zoom. At small

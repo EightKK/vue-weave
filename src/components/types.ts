@@ -1,7 +1,7 @@
 import type { GraphPoint } from '../core/graph.js'
 
 /**
- * Payload of the NetworkGraph `drop` event (`droppable`). It refers to the DOM `DataTransfer`, so it is exported from
+ * Payload of the NetworkGraph `node-drop` event (`droppable`). It refers to the DOM `DataTransfer`, so it is exported from
  * the Vue entry only; the core entry stays free of browser types.
  */
 export interface GraphDrop {
