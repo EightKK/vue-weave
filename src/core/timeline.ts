@@ -273,6 +273,25 @@ export function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step
   return ranges.map(range => ({ start: range.start + shift, end: range.end + shift }))
 }
 
+/**
+ * Remove bars and every dependency that starts or ends at one of them, for example to accept a GanttChart
+ * `bars-delete` proposal. Returns new arrays and leaves the inputs unchanged. Every ID must name a bar in `bars`.
+ */
+export function removeTimelineBars<B extends TimelineBar, D extends TimelineDependency>(
+  bars: readonly B[], dependencies: readonly D[], ids: Iterable<string>,
+): { bars: B[]; dependencies: D[] } {
+  const known = new Set(bars.map(bar => bar.id))
+  const removed = new Set<string>()
+  for (const id of ids) {
+    if (!known.has(id)) throw new Error('Unknown bar: ' + id)
+    removed.add(id)
+  }
+  return {
+    bars: bars.filter(bar => !removed.has(bar.id)),
+    dependencies: dependencies.filter(dependency => !removed.has(dependency.from) && !removed.has(dependency.to)),
+  }
+}
+
 const minuteMs = 60_000
 const dayMs = 86_400_000
 

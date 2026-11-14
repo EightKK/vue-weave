@@ -22,6 +22,8 @@ Row virtualization bounds DOM size. Input validation, row indexing and dependenc
 
 A pointer edit records the accepted interval and the initial pointer coordinate. Subsequent movement produces a local preview. Capture keeps the gesture attached to the bar; cancellation clears the preview. Source-data or coordinate changes cancel in-flight edits. On commit, validateEdit runs and an accepted proposal is emitted. The parent owns the resulting state.
 
+Progress drags, bar deletion and the context menu use the same contract. A progress drag previews the fill locally and proposes the snapped value on release; Delete proposes bar IDs; a context menu event only describes its target. The parent applies or ignores each proposal. Tooltips are transient view state that exists only after mounting, so server output never contains them.
+
 Calendar-derived overlays are display data, not scheduling logic. Non-working shading, critical outlines, float lines, deadline indicators and bar segments are drawn from `nonWorkingPeriods` and optional bar fields that the application computes, typically with `invertWorkPeriods` and `scheduledBarFields`. Shading, float lines and deadline indicators are filtered against the visible time window like bars. A move preview shifts a bar's segments by the previewed displacement; a resize preview drops them, since only the scheduler knows the new work pattern.
 
 ## Supported scope

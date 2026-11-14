@@ -11,8 +11,11 @@ import {
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
 import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
+import type {
+  BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
+} from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
-import { checkNonWorkingPeriods, segmentPieces } from '../core/barSegments.js'
+import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -60,8 +63,17 @@ const props = withDefaults(defineProps<{
   pinchZoom?: boolean
   dir?: ChartDirection
   nonWorkingPeriods?: readonly TimeRange[]
+  progressEditable?: boolean
+  progressStep?: number
+  validateProgressEdit?: ProgressEditValidator
+  deletable?: boolean
+  validateBarsDelete?: BarsDeleteValidator
+  tooltipDelay?: number
+  contextMenu?: boolean
 }>(), {
   dir: 'ltr',
+  progressStep: 0.05,
+  tooltipDelay: 400,
   showControls: true,
   autoScroll: true,
   dependencies: () => [],
@@ -92,9 +104,14 @@ const emit = defineEmits<{
   'dependency-delete': [id: string]
   'update:zoomPreset': [id: string]
   'zoom-change': [state: TimelineZoomState]
+  'progress-edit': [change: TimelineProgressEdit]
+  'progress-edit-rejected': [change: TimelineProgressEdit, reason: string]
+  'bars-delete': [ids: string[]]
+  'bars-delete-rejected': [ids: string[], reason: string]
+  'context-menu': [event: TimelineContextMenu]
 }>()
 
-defineSlots<{
+const slots = defineSlots<{
   legend(): unknown
   'row-heading'(): unknown
   row(props: { row: TimelineRow; index: number; depth: number; expanded: boolean }): unknown
@@ -104,6 +121,7 @@ defineSlots<{
   empty(): unknown
   'load-row'(props: { row: TimelineLoadRow; peak: number }): unknown
   'load-segment'(props: { segment: TimelineLoadSegment; row: TimelineLoadRow; peak: number; overload: number }): unknown
+  tooltip(props: { bar: TimelineBar; range: TimeRange; selected: boolean }): unknown
 }>()
 const messages = computed<GanttLabels>(() => ({
   region: 'Gantt chart', rows: 'Rows', empty: 'No rows to display',
@@ -116,7 +134,8 @@ const messages = computed<GanttLabels>(() => ({
   connectionRejected: 'This dependency was rejected.', zoomPresets: 'Zoom level', now: 'Now',
   loadRegion: 'Resource load', load: 'load', capacity: 'capacity', overload: 'overloaded by',
   moveRowHint: 'Up and Down arrows move the bar to another row.',
-  critical: 'Critical', float: 'Float until', deadline: 'Deadline', late: 'Late', ...props.labels,
+  critical: 'Critical', float: 'Float until', deadline: 'Deadline', late: 'Late',
+  progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.', ...props.labels,
 }))
 const notice = ref('')
 const bounds = computed(() => props.editBounds ?? props.range)
@@ -170,6 +189,10 @@ function validateProps() {
   if (props.scale && (!Number.isFinite(props.scale.width) || props.scale.width <= 0)) throw new RangeError('Invalid time scale width')
   if (props.now !== undefined && !Number.isFinite(props.now)) throw new RangeError('now must be finite')
   checkNonWorkingPeriods(props.nonWorkingPeriods)
+  if (!Number.isFinite(props.progressStep) || props.progressStep <= 0 || props.progressStep > 1) {
+    throw new RangeError('progressStep must be greater than 0 and at most 1')
+  }
+  if (!Number.isFinite(props.tooltipDelay) || props.tooltipDelay < 0) throw new RangeError('tooltipDelay must be finite and nonnegative')
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
@@ -178,7 +201,7 @@ watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
   () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
-  () => props.now, () => props.nonWorkingPeriods,
+  () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay,
 ], () => {
   try {
     const result = validateProps()
@@ -459,11 +482,9 @@ function barOverlay(bar: TimelineBar): BarOverlay | undefined {
  * unsegmented, because the parent reschedules the work and supplies new segments.
  */
 function segmentGeometry(bar: TimelineBar, range: TimeRange): BarOverlay['segments'] {
-  const preview = previews.value?.get(bar.id)
-  if (!bar.segments || (preview && preview.mode !== 'move')) return undefined
-  const delta = range.start - bar.start
-  const shifted = delta ? bar.segments.map(segment => ({ start: segment.start + delta, end: segment.end + delta })) : bar.segments
-  const { pieces, gaps } = segmentPieces(range, shifted, bar.progress)
+  const shifted = workSegments(bar, range)
+  if (!shifted) return undefined
+  const { pieces, gaps } = segmentPieces(range, shifted, shownProgress(bar))
   const origin = axis.value.toX(range.start)
   // Children are positioned inside the 1px bar border.
   const place = (part: TimeRange) => {
@@ -475,13 +496,30 @@ function segmentGeometry(bar: TimelineBar, range: TimeRange): BarOverlay['segmen
     gaps: gaps.map(gap => ({ key: gap.start, style: place(gap) })),
   }
 }
+/** The drawn work pieces: shifted with a move preview, and none during a resize preview or without segments. */
+function workSegments(bar: TimelineBar, range: TimeRange) {
+  const preview = previews.value?.get(bar.id)
+  if (!bar.segments || (preview && preview.mode !== 'move')) return undefined
+  const delta = range.start - bar.start
+  return delta ? bar.segments.map(segment => ({ start: segment.start + delta, end: segment.end + delta })) : bar.segments
+}
+/** Progress as drawn: the pointer preview of a progress drag, otherwise the bar's own value. */
+function shownProgress(bar: TimelineBar) {
+  const preview = progressPreview.value
+  return preview?.id === bar.id ? preview.value : bar.progress
+}
 function barDescriptionId(bar: TimelineBar) {
   return `${marker}-bar-${barIndex.value.get(bar.id)}`
 }
+/** Description IDs in a fixed order: overlay text, edit hints, the delete hint, then a tooltip while it is shown. */
 function barDescribedBy(bar: TimelineBar, overlay: BarOverlay | undefined) {
-  const hint = editable(bar) ? (props.rowDraggable ? `${marker}-hint ${marker}-row-hint` : marker + '-hint') : undefined
-  if (!overlay?.description) return hint
-  return hint ? `${barDescriptionId(bar)} ${hint}` : barDescriptionId(bar)
+  const ids: string[] = []
+  if (overlay?.description) ids.push(barDescriptionId(bar))
+  if (editable(bar)) ids.push(marker + '-hint')
+  if (editable(bar) && props.rowDraggable) ids.push(marker + '-row-hint')
+  if (canDelete(bar)) ids.push(marker + '-delete-hint')
+  if (tooltipBar.value?.id === bar.id) ids.push(tooltipId)
+  return ids.length ? ids.join(' ') : undefined
 }
 function barTitle(bar: TimelineBar, overlay: BarOverlay | undefined) {
   const range = rangeOf(bar)
@@ -653,7 +691,13 @@ function cancelEdit() {
   stopAutoScroll()
   if (previous?.target.hasPointerCapture(previous.pointerId)) previous.target.releasePointerCapture(previous.pointerId)
   cancelLink()
+  cancelProgress()
   pinch = undefined
+}
+
+/** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection or a pinch. */
+function gestureActive() {
+  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch)
 }
 
 function rejection(result: boolean | string | void) {
@@ -826,6 +870,8 @@ function clickBar(bar: TimelineBar, event: MouseEvent) {
 
 function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
   if (event.key === 'Escape') return cancelEdit()
+  if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
+  if (props.deletable && (event.key === 'Delete' || event.key === 'Backspace')) return deleteFrom(event, bar)
   if (!editable(bar) || drag) return
   if (props.rowDraggable && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.altKey && !event.shiftKey) {
     const group = movingGroup(bar)
@@ -855,9 +901,36 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
   })
 }
 
+function onBarFocus(event: FocusEvent, bar: TimelineBar) {
+  focusedBarId.value = bar.id
+  focusTooltip(event, bar)
+}
 function onBarBlur(id: string) {
   if (focusedBarId.value === id) focusedBarId.value = undefined
   if (pendingReveal === id) pendingReveal = undefined
+  blurTooltip(id)
+}
+
+// Bar deletion. Delete or Backspace proposes the focused bar, or the whole selection when the bar is part of it.
+let pendingDelete = false
+function canDelete(bar: TimelineBar) {
+  return Boolean(props.deletable) && !props.readonly && Boolean(bar.deletable ?? bar.editable)
+}
+function deleteFrom(event: KeyboardEvent, bar: TimelineBar) {
+  if (!canDelete(bar)) return
+  event.preventDefault()
+  if (gestureActive()) return
+  const selected = props.multiSelect && props.selectedIds?.has(bar.id) ? props.selectedIds : undefined
+  const ids = selected ? props.bars.filter(other => selected.has(other.id) && canDelete(other)).map(other => other.id) : [bar.id]
+  const reason = rejection(props.validateBarsDelete?.(ids))
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('bars-delete-rejected', ids, reason)
+  } else {
+    notice.value = ''
+    pendingDelete = true
+    emit('bars-delete', ids)
+  }
 }
 
 /** Scroll horizontally only when the bar lies outside the visible timeline area. */
@@ -883,8 +956,18 @@ function focusBar(id: string) {
 watch(() => props.bars, async () => {
   const id = pendingReveal
   const moved = pendingFocus
+  const deleted = pendingDelete
   pendingReveal = undefined
   pendingFocus = undefined
+  pendingDelete = false
+  if (focusedBarId.value !== undefined && !barById.value.has(focusedBarId.value)) focusedBarId.value = undefined
+  if (deleted) {
+    // A removed bar takes keyboard focus with it; keep focus in the chart region.
+    await nextTick()
+    const el = scroller.value
+    const active = document.activeElement
+    if (el && (!active || active === document.body || !active.isConnected)) el.focus({ preventScroll: true })
+  }
   if (id === undefined && moved === undefined) return
   await nextTick()
   // A bar that changed rows is a new element; restore keyboard focus to it.
@@ -1037,7 +1120,9 @@ function selectDependency(id: string) {
   emit('dependency-select', id)
 }
 function dependencyKeys(event: KeyboardEvent, id: string) {
-  if (event.key === 'Enter' || event.key === ' ') {
+  if (props.contextMenu && isMenuKey(event)) {
+    keyboardContextMenu(event, { kind: 'dependency', id })
+  } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     selectDependency(id)
   } else if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -1088,6 +1173,7 @@ function trackTouch(event: PointerEvent) {
   const el = scroller.value
   if (touches.size !== 2 || !el) return
   cancelEdit()
+  hideTooltip()
   const span = touchSpan()
   pinch = { distance: Math.max(1, span.distance), zoom: zoom.value, anchor: Math.max(0, timeAreaOffset(span.x, el.getBoundingClientRect())) }
 }
@@ -1120,7 +1206,382 @@ watch([
   () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => props.editBounds, () => props.minDuration,
   () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
+  () => props.progressEditable, () => props.progressStep,
 ], cancelEdit)
+
+// Progress editing (`progressEditable`). A slider at the progress boundary previews pointer drags and proposes
+// keyboard steps; the parent accepts `progress-edit` by setting the bar's progress.
+const progressPreview = ref<{ id: string; value: number }>()
+let progressDrag: { id: string; pointerId: number; target: HTMLElement; x: number } | undefined
+function canEditProgress(bar: TimelineBar) {
+  return Boolean(props.progressEditable) && !props.readonly && Boolean(bar.editable) && bar.start !== bar.end
+}
+const progressHandlesVisible = computed(() => Boolean(props.progressEditable) && !props.readonly && !validationError.value)
+const linkEnds = ['start', 'finish'] as const
+type BarHandle = TimelineBarEnd | 'progress'
+/**
+ * The handles drawn beside a bar: its link handles, then its progress slider (a button with the slider role). They
+ * share one template loop so that a chart without progress editing renders exactly the markup it did before.
+ */
+function barHandles(bar: TimelineBar): readonly BarHandle[] {
+  const ends = linkHandlesVisible.value ? linkEnds : []
+  return progressHandlesVisible.value && canEditProgress(bar) ? [...ends, 'progress'] : ends
+}
+function handleAttrs(bar: TimelineBar, handle: BarHandle) {
+  if (handle !== 'progress') {
+    return {
+      class: ['vft-gantt-link-handle', handle, { active: linkPressed(bar, handle) }],
+      style: linkHandleStyle(bar, handle),
+      'data-vft-link': linkKey({ bar: bar.id, end: handle }),
+      'aria-label': linkHandleName(bar, handle),
+      'aria-pressed': linkPressed(bar, handle),
+    }
+  }
+  const value = shownProgress(bar) ?? 0
+  return {
+    class: ['vft-gantt-progress-handle', { dragging: progressPreview.value?.id === bar.id }],
+    style: progressHandleStyle(bar),
+    'data-vft-progress': bar.id,
+    role: 'slider',
+    'aria-label': `${messages.value.progressOf} ${bar.label}`,
+    'aria-valuemin': 0,
+    'aria-valuemax': 100,
+    'aria-valuenow': Math.round(value * 10000) / 100,
+    'aria-valuetext': percent(value),
+  }
+}
+function pressHandle(event: PointerEvent, bar: TimelineBar, handle: BarHandle) {
+  if (handle === 'progress') startProgress(event, bar)
+  else startLink(event, bar, handle)
+}
+function clickHandle(event: MouseEvent, bar: TimelineBar, handle: BarHandle) {
+  event.stopPropagation()
+  if (handle !== 'progress') activateLink(bar, handle, event)
+}
+function handleKeys(event: KeyboardEvent, bar: TimelineBar, handle: BarHandle) {
+  if (handle === 'progress') return progressKeys(event, bar)
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.stopPropagation()
+  event.preventDefault()
+  activateLink(bar, handle, event)
+}
+function percent(value: number) {
+  return Math.round(value * 100) + '%'
+}
+function progressHandleStyle(bar: TimelineBar) {
+  const range = rangeOf(bar)
+  const x = axis.value.toX(progressTime(range, workSegments(bar, range), shownProgress(bar) ?? 0))
+  return {
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${x - 6}px)`,
+    top: `${laneTop(bar) + barHeight.value - 6}px`,
+    ...rowShiftStyle(bar),
+  }
+}
+function cancelProgress() {
+  const previous = progressDrag
+  progressDrag = undefined
+  progressPreview.value = undefined
+  if (previous?.target.hasPointerCapture(previous.pointerId)) previous.target.releasePointerCapture(previous.pointerId)
+}
+function proposeProgress(change: TimelineProgressEdit) {
+  if (change.after === (change.before ?? 0)) return
+  const reason = rejection(props.validateProgressEdit?.(change))
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('progress-edit-rejected', change, reason)
+  } else {
+    notice.value = ''
+    emit('progress-edit', change)
+  }
+}
+function startProgress(event: PointerEvent, bar: TimelineBar) {
+  if (!canEditProgress(bar) || gestureActive() || !event.isPrimary || event.button !== 0) return
+  const target = event.currentTarget as HTMLElement
+  hideTooltip()
+  target.focus({ preventScroll: true })
+  progressDrag = { id: bar.id, pointerId: event.pointerId, target, x: event.clientX }
+  target.setPointerCapture(event.pointerId)
+}
+/** Map the pointer to progress over the bar, or over its working time when it has segments, as the fill is drawn. */
+function moveProgress(event: PointerEvent) {
+  const active = progressDrag
+  if (!active || active.pointerId !== event.pointerId || !canvas.value) return
+  if (!progressPreview.value && Math.abs(event.clientX - active.x) < 2) return
+  const bar = barById.value.get(active.id)
+  if (!bar) return cancelProgress()
+  const time = axis.value.toTime(timeAreaOffset(event.clientX, canvas.value.getBoundingClientRect()))
+  progressPreview.value = { id: bar.id, value: snapProgress(progressAt(bar, workSegments(bar, bar), time), props.progressStep) }
+}
+function finishProgress(event: PointerEvent) {
+  const active = progressDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelProgress()
+  moveProgress(event)
+  const preview = progressPreview.value
+  const bar = barById.value.get(active.id)
+  cancelProgress()
+  if (preview && bar) proposeProgress({ id: bar.id, before: bar.progress, after: preview.value, source: 'pointer' })
+}
+function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
+  if (event.key === 'Escape') return cancelEdit()
+  if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
+  if (!canEditProgress(bar) || gestureActive()) return
+  const current = bar.progress ?? 0
+  const step = props.progressStep
+  // Left and Right follow the visual direction: in RTL progress grows towards the left.
+  const forward = (event.key === 'ArrowRight') !== rtl.value
+  const next = event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? snapProgress(current + (forward ? step : -step), step)
+    : event.key === 'ArrowUp' ? snapProgress(current + step, step)
+      : event.key === 'ArrowDown' ? snapProgress(current - step, step)
+        : event.key === 'PageUp' ? snapProgress(current + 0.25, step)
+          : event.key === 'PageDown' ? snapProgress(current - 0.25, step)
+            : event.key === 'Home' ? 0 : event.key === 'End' ? 1 : undefined
+  if (next === undefined) return
+  event.preventDefault()
+  proposeProgress({ id: bar.id, before: bar.progress, after: next, source: 'keyboard' })
+}
+
+// Context menu (`contextMenu`). The component reports what was targeted and where; the parent renders the menu.
+let keyboardMenu: { at: number; element: Element } | undefined
+function isMenuKey(event: KeyboardEvent) {
+  return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)
+}
+function keyboardContextMenu(event: KeyboardEvent, target: TimelineContextTarget, rowId?: string) {
+  event.preventDefault()
+  const element = event.currentTarget as Element
+  // Some browsers still follow the key with a `contextmenu` event on the focused element; it is ignored for a moment,
+  // unless a pointer press shows that the next one comes from a real right-click.
+  keyboardMenu = { at: event.timeStamp, element }
+  hideTooltip()
+  const rect = element.getBoundingClientRect()
+  const menu: TimelineContextMenu = { target, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, source: 'keyboard' }
+  if (rowId !== undefined) menu.rowId = rowId
+  emit('context-menu', menu)
+}
+function pressScroller(event: PointerEvent) {
+  keyboardMenu = undefined
+  trackTouch(event)
+}
+function onContextMenu(event: MouseEvent) {
+  const el = scroller.value, area = canvas.value
+  if (!props.contextMenu || !el || !area) return
+  const element = event.target instanceof Element ? event.target : undefined
+  const recent = keyboardMenu
+  keyboardMenu = undefined
+  if (recent && element && recent.element.contains(element) && event.timeStamp - recent.at < 1000) {
+    event.preventDefault()
+    return
+  }
+  // Text inputs in columns keep the browser menu for copy and paste.
+  if (element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
+  event.preventDefault()
+  hideTooltip()
+  const rect = area.getBoundingClientRect()
+  const x = timeAreaOffset(event.clientX, rect)
+  const y = event.clientY - rect.top - headerHeight.value
+  // The sticky header and row heading column cover the scrolled content; neither is part of the body or time area.
+  const inHeader = event.clientY < rect.top + el.scrollTop + headerHeight.value
+  const inTime = x >= scrollStart(el) && x >= 0 && x <= axis.value.width
+  const row = !inHeader && y >= 0 ? displayedRows.value[Math.floor(y / props.rowHeight)]?.row : undefined
+  const menu: TimelineContextMenu = {
+    target: contextTarget(element) ?? (row ? { kind: 'row', id: row.id } : { kind: 'chart' }),
+    clientX: event.clientX, clientY: event.clientY, source: 'pointer',
+  }
+  if (inTime) menu.time = axis.value.toTime(x)
+  if (row) menu.rowId = row.id
+  emit('context-menu', menu)
+}
+function contextTarget(element: Element | undefined): TimelineContextTarget | undefined {
+  const owner = element?.closest<HTMLElement | SVGElement>('[data-vft-bar], [data-vft-progress], [data-vft-link], [data-vft-dependency]')
+  if (!owner || !scroller.value?.contains(owner)) return undefined
+  const { vftBar, vftProgress, vftLink, vftDependency } = owner.dataset
+  if (vftDependency !== undefined) return { kind: 'dependency', id: vftDependency }
+  const id = vftBar ?? vftProgress ?? (vftLink ? (JSON.parse(vftLink) as [string, TimelineBarEnd])[0] : undefined)
+  return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
+}
+
+// Tooltip slot. Shown next to a hovered bar after `tooltipDelay`, or at once next to a keyboard-focused bar, and never
+// during a gesture. It stays while the pointer moves onto it, Escape dismisses it, and it is kept inside the viewport.
+const tooltipId = marker + '-tooltip'
+const tooltipTarget = ref<string>()
+const tooltipEl = ref<HTMLElement>()
+const tooltipPlace = ref<{ left: string; top: string }>()
+const tooltipBar = computed(() => tooltipTarget.value === undefined ? undefined : barById.value.get(tooltipTarget.value))
+let tooltipShowTimer: ReturnType<typeof setTimeout> | undefined
+let tooltipHideTimer: ReturnType<typeof setTimeout> | undefined
+let hoveredBar: string | undefined
+let pressedBar: string | undefined
+let dismissedBar: string | undefined
+let keyboardFocusedBar: string | undefined
+function tooltipAllowed() {
+  return mounted && Boolean(slots.tooltip) && !validationError.value && !gestureActive()
+}
+function clearTooltipTimers() {
+  if (tooltipShowTimer !== undefined) clearTimeout(tooltipShowTimer)
+  if (tooltipHideTimer !== undefined) clearTimeout(tooltipHideTimer)
+  tooltipShowTimer = tooltipHideTimer = undefined
+}
+function showTooltip(id: string) {
+  clearTooltipTimers()
+  if (!tooltipAllowed() || dismissedBar === id || !barById.value.has(id)) return
+  if (tooltipTarget.value !== id) tooltipPlace.value = undefined
+  tooltipTarget.value = id
+  document.addEventListener('keydown', dismissTooltip)
+}
+function hideTooltip() {
+  clearTooltipTimers()
+  tooltipTarget.value = undefined
+  tooltipPlace.value = undefined
+  if (typeof document !== 'undefined') document.removeEventListener('keydown', dismissTooltip)
+}
+function dismissTooltip(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || tooltipTarget.value === undefined) return
+  dismissedBar = tooltipTarget.value
+  hideTooltip()
+}
+/** Hide after a short grace period so the pointer can travel from the bar onto the tooltip. */
+function scheduleTooltipHide() {
+  if (tooltipHideTimer !== undefined) clearTimeout(tooltipHideTimer)
+  tooltipHideTimer = setTimeout(() => {
+    tooltipHideTimer = undefined
+    const held = keyboardFocusedBar !== undefined && focusedBarId.value === keyboardFocusedBar ? keyboardFocusedBar : undefined
+    if (tooltipTarget.value !== undefined && tooltipTarget.value !== held) hideTooltip()
+  }, 120)
+}
+function hoverBar(bar: TimelineBar) {
+  if (!slots.tooltip) return
+  hoveredBar = bar.id
+  // Entering the bar again is a new trigger after an Escape dismissal.
+  if (dismissedBar === bar.id) dismissedBar = undefined
+  if (tooltipTarget.value === bar.id) {
+    if (tooltipHideTimer !== undefined) clearTimeout(tooltipHideTimer)
+    tooltipHideTimer = undefined
+    return
+  }
+  if (pressedBar === bar.id || !tooltipAllowed()) return
+  if (tooltipShowTimer !== undefined) clearTimeout(tooltipShowTimer)
+  tooltipShowTimer = setTimeout(() => {
+    tooltipShowTimer = undefined
+    if (hoveredBar === bar.id && pressedBar !== bar.id) showTooltip(bar.id)
+  }, props.tooltipDelay)
+}
+function leaveBar(bar: TimelineBar) {
+  if (hoveredBar === bar.id) hoveredBar = undefined
+  if (pressedBar === bar.id) pressedBar = undefined
+  if (tooltipShowTimer !== undefined) clearTimeout(tooltipShowTimer)
+  tooltipShowTimer = undefined
+  if (tooltipTarget.value === bar.id) scheduleTooltipHide()
+}
+/** A press starts a click or a gesture: hide the tooltip until the pointer leaves the bar. */
+function pressBar(bar: TimelineBar) {
+  if (!slots.tooltip) return
+  pressedBar = bar.id
+  hideTooltip()
+}
+function focusTooltip(event: FocusEvent, bar: TimelineBar) {
+  if (!slots.tooltip) return
+  keyboardFocusedBar = undefined
+  dismissedBar = undefined
+  let keyboard = true
+  try {
+    keyboard = (event.currentTarget as Element).matches(':focus-visible')
+  } catch {
+    // Without :focus-visible support every focus counts as keyboard focus.
+  }
+  if (!keyboard) return
+  keyboardFocusedBar = bar.id
+  showTooltip(bar.id)
+}
+function blurTooltip(id: string) {
+  if (keyboardFocusedBar === id) keyboardFocusedBar = undefined
+  if (dismissedBar === id && hoveredBar !== id) dismissedBar = undefined
+  if (tooltipTarget.value === id && hoveredBar !== id) hideTooltip()
+}
+function enterTooltip() {
+  if (tooltipHideTimer !== undefined) clearTimeout(tooltipHideTimer)
+  tooltipHideTimer = undefined
+}
+function leaveTooltip() {
+  if (tooltipTarget.value !== undefined && hoveredBar !== tooltipTarget.value) scheduleTooltipHide()
+}
+/** Place the tooltip above the visible part of its bar, or below it, inside the scroll viewport. */
+function placeTooltip() {
+  const tip = tooltipEl.value, el = scroller.value, id = tooltipTarget.value
+  if (!tip || !el || id === undefined) return
+  const anchor = [...el.querySelectorAll<HTMLElement>('[data-vft-bar]')].find(element => element.dataset.vftBar === id)
+  if (!anchor) return hideTooltip()
+  const box = anchor.getBoundingClientRect()
+  const outer = el.getBoundingClientRect()
+  const area = {
+    left: outer.left + el.clientLeft, top: outer.top + el.clientTop,
+    right: outer.left + el.clientLeft + el.clientWidth, bottom: outer.top + el.clientTop + el.clientHeight,
+  }
+  // Only the part of the bar inside the time area counts; the sticky heading column and header cover the rest.
+  const labels = viewport.value.labels
+  const left = Math.max(box.left, rtl.value ? area.left : area.left + labels)
+  const right = Math.min(box.right, rtl.value ? area.right - labels : area.right)
+  if (right < left || box.bottom < area.top + headerHeight.value || box.top > area.bottom) return hideTooltip()
+  const width = tip.offsetWidth, height = tip.offsetHeight, gap = 6
+  let top = box.top - gap - height
+  if (top < area.top) top = box.bottom + gap
+  if (top + height > area.bottom) top = Math.max(area.top, area.bottom - height)
+  const x = Math.max(area.left, Math.min(area.right - width, (left + right) / 2 - width / 2))
+  // Convert from viewport coordinates to the tooltip's containing block, whichever element that is.
+  const current = tip.getBoundingClientRect()
+  const originX = current.left - (parseFloat(tip.style.left) || 0)
+  const originY = current.top - (parseFloat(tip.style.top) || 0)
+  tooltipPlace.value = { left: `${x - originX}px`, top: `${top - originY}px` }
+}
+watch(tooltipBar, bar => {
+  if (!bar && tooltipTarget.value !== undefined) hideTooltip()
+})
+watch(linkDraft, draft => {
+  if (draft) hideTooltip()
+})
+watch([tooltipTarget, viewport, axis, () => props.bars, displayedRows, rtl, headerHeight], () => {
+  if (tooltipTarget.value !== undefined) placeTooltip()
+}, { flush: 'post' })
+
+/**
+ * Zoom so the union interval of the bars fits the visible time area minus `padding` on each side, within the zoom
+ * limits, then scroll it into view (centred when it fits). Without IDs, every bar in the displayed rows is used.
+ * Validation errors are thrown at once; the returned promise resolves after the scroll position is applied.
+ */
+function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Promise<void> {
+  const padding = options.padding ?? 24
+  if (typeof padding !== 'number' || !Number.isFinite(padding) || padding < 0) throw new RangeError('padding must be finite and nonnegative')
+  const chosen: TimelineBar[] = []
+  if (ids === undefined) {
+    for (const { row } of displayedRows.value) chosen.push(...barsByRow.value.get(row.id) ?? [])
+  } else {
+    for (const id of ids) {
+      const bar = barById.value.get(id)
+      if (!bar) throw new Error('Unknown bar: ' + id)
+      chosen.push(bar)
+    }
+  }
+  if (!chosen.length) return Promise.resolve()
+  let start = Infinity, end = -Infinity
+  for (const bar of chosen) {
+    start = Math.min(start, bar.start)
+    end = Math.max(end, bar.end)
+  }
+  const el = scroller.value
+  const visible = Math.max(0, (el ? el.clientWidth : viewport.value.width) - viewport.value.labels)
+  const available = Math.max(1, visible - 2 * padding)
+  // The zoom factor scales the base scale linearly, so this also holds for a custom, non-linear scale.
+  const span = (axis.value.toX(end) - axis.value.toX(start)) / zoom.value
+  // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
+  if (drag || progressDrag || linkDrag || pinch) cancelEdit()
+  hideTooltip()
+  if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
+  return nextTick().then(() => {
+    if (!el) return
+    const left = axis.value.toX(start), right = axis.value.toX(end)
+    setScrollStart(el, Math.max(0, right - left <= available ? (left + right) / 2 - visible / 2 : left - padding))
+    syncViewport()
+  })
+}
 
 // Load histogram rows follow the task rows on the same scroll surface.
 const loadHeight = computed(() => loadHistogram.value ? (props.loadRows?.length ?? 0) * props.loadRowHeight : 0)
@@ -1209,7 +1670,7 @@ async function exportPng(options: GanttPngExportOptions = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }
-defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng })
+defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng, fitToBars })
 
 // Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
 watch(() => props.dir, detectDirection, { flush: 'post' })
@@ -1237,6 +1698,7 @@ onBeforeUnmount(() => scroller.value?.removeEventListener('touchmove', holdPinch
 onUnmounted(() => {
   mounted = false
   cancelEdit()
+  hideTooltip()
   observer?.disconnect()
   if (nowTimer !== undefined) clearInterval(nowTimer)
 })
@@ -1258,11 +1720,11 @@ onUnmounted(() => {
     </div>
     <div
       ref="scroller" class="vft-gantt-scroll" :class="{ 'vft-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
-      @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="trackTouch"
-      @pointermove="moveTouch($event); moveEdit($event); moveLink($event)"
-      @pointerup="endTouch($event); finishEdit($event); finishLink($event)"
-      @pointercancel="endTouch($event); finishEdit($event); finishLink($event)"
-      @lostpointercapture="finishEdit($event); finishLink($event)"
+      @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
+      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event)"
+      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
+      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
+      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event)"
     >
       <div v-if="!validationError" ref="canvas" class="vft-gantt-canvas" :style="{
         width: `calc(var(--vft-label-area-width) + ${axis.width}px)`,
@@ -1348,17 +1810,18 @@ onUnmounted(() => {
             :title="barTitle(bar, row.overlays.get(bar.id))"
             :aria-label="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
             :aria-pressed="Boolean(selectedIds?.has(bar.id))"
-            @keydown="editWithKeys($event, bar)" @focus="focusedBarId = bar.id" @blur="onBarBlur(bar.id)"
+            @keydown="editWithKeys($event, bar)" @focus="onBarFocus($event, bar)" @blur="onBarBlur(bar.id)"
             :aria-describedby="barDescribedBy(bar, row.overlays.get(bar.id))"
-            @pointerdown="startEdit($event, bar)" @click="clickBar(bar, $event)"
+            @pointerdown="pressBar(bar); startEdit($event, bar)" @click="clickBar(bar, $event)"
+            @pointerenter="hoverBar(bar)" @pointerleave="leaveBar(bar)"
           >
             <template v-if="row.overlays.get(bar.id)?.segments">
               <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vft-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
               <span v-for="piece in row.overlays.get(bar.id)!.segments!.pieces" :key="piece.key" class="vft-gantt-segment" :style="piece.style" aria-hidden="true">
-                <span v-if="bar.progress !== undefined" class="vft-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
+                <span v-if="shownProgress(bar) !== undefined" class="vft-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
               </span>
             </template>
-            <span v-else-if="bar.progress !== undefined" class="vft-bar-progress" :style="{ width: (bar.progress * 100) + '%' }" aria-hidden="true"></span>
+            <span v-else-if="shownProgress(bar) !== undefined" class="vft-bar-progress" :style="{ width: (shownProgress(bar)! * 100) + '%' }" aria-hidden="true"></span>
             <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
               <span class="vft-bar-text">{{ bar.label }}</span>
             </slot>
@@ -1368,14 +1831,10 @@ onUnmounted(() => {
           </button>
           <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vft-gantt-deadline" :class="{ 'vft-late': item.late }"
             :style="item.style" aria-hidden="true"></div>
-          <template v-if="linkHandlesVisible">
+          <template v-if="linkHandlesVisible || progressHandlesVisible">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
-              <button v-for="end in (['start', 'finish'] as const)" :key="end" type="button" class="vft-gantt-link-handle"
-                :class="[end, { active: linkPressed(bar, end) }]" :style="linkHandleStyle(bar, end)"
-                :data-vft-link="linkKey({ bar: bar.id, end })" :aria-label="linkHandleName(bar, end)"
-                :aria-pressed="linkPressed(bar, end)"
-                @pointerdown="startLink($event, bar, end)" @click.stop="activateLink(bar, end, $event)"
-                @keydown.enter.stop.prevent="activateLink(bar, end, $event)" @keydown.space.stop.prevent="activateLink(bar, end, $event)"></button>
+              <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
+                @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
             </template>
           </template>
         </div>
@@ -1406,13 +1865,15 @@ onUnmounted(() => {
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
         >
           <path v-for="line in shownLines" :key="line.id" class="vft-dependency-hit" :class="{ active: activeDependencyId === line.id }"
-            :d="line.path" role="button" tabindex="0" :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
+            :d="line.path" role="button" tabindex="0" :data-vft-dependency="contextMenu ? line.id : undefined"
+            :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
             :aria-pressed="activeDependencyId === line.id"
             @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
         </svg>
         <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vft-gantt-reconnect-handle"
           :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
           :aria-label="item.label" :aria-pressed="Boolean(linkDraft?.dependency && linkDraft.role === item.end)"
+          :data-vft-dependency="contextMenu ? item.dependency.id : undefined"
           @pointerdown="reconnectDependency(item.dependency, item.end, $event)"
           @click.stop="clickReconnect(item.dependency, item.end)"
           @keydown.enter.stop.prevent="reconnectDependency(item.dependency, item.end)"
@@ -1446,6 +1907,14 @@ onUnmounted(() => {
       </div>
     </div>
     <div v-if="validationError || !rows.length" class="vft-gantt-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <template v-else-if="deletable || tooltipBar">
+      <span v-if="deletable" :id="marker + '-delete-hint'" class="vft-sr-only">{{ messages.deleteHint }}</span>
+      <div v-if="tooltipBar" :id="tooltipId" ref="tooltipEl" class="vft-gantt-tooltip" role="tooltip"
+        :style="tooltipPlace ?? { left: '0px', top: '0px', visibility: 'hidden' }"
+        @pointerenter="enterTooltip" @pointerleave="leaveTooltip">
+        <slot name="tooltip" :bar="tooltipBar" :range="rangeOf(tooltipBar)" :selected="Boolean(selectedIds?.has(tooltipBar.id))" />
+      </div>
+    </template>
     <span :id="marker + '-hint'" class="vft-sr-only">{{ messages.editHint }}</span>
     <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
     <span class="vft-sr-only" aria-live="polite">{{ notice }}</span>

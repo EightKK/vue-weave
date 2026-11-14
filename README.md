@@ -104,6 +104,7 @@ Further opt-in features, all emitted as proposals for the parent to accept:
 - A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
 - Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
 - Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
+- Progress sliders (`progressEditable`, `progress-edit`), bar deletion with Delete or Backspace (`deletable`, `bars-delete`, accepted with `removeTimelineBars`), a hoverable `tooltip` slot, a `context-menu` event for your own menu (`contextMenu`) and a `fitToBars()` method.
 
 Use `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad` from `vue-weave/core` for working calendars, dependency scheduling, critical tasks and resource overload diagnostics. The application calls these functions and passes accepted results to the chart; `scheduledBarFields` turns a scheduled task into those bar fields and `invertWorkPeriods` turns a calendar into the time to shade. Scheduling also reports cycle and infeasibility diagnostics, supports as-late-as-possible tasks (`mode: 'alap'`), pauses and IANA time-zone calendars (`WorkWeek.timeZone`), and `levelResources` delays tasks so that assigned load stays within capacity. See the [scheduling guide](docs/scheduling.md).
 

@@ -16,7 +16,8 @@
       import { GanttChart } from 'vue-weave'
 
       // Query parameters pick the scenario: readonly, rowDraggable, rtl, piecewise (custom non-linear scale),
-      // controlled (the parent ignores zoom preset updates).
+      // controlled (the parent ignores zoom preset updates), interactions (progress editing, bar deletion, context menu
+      // and a tooltip; the parent applies nothing).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
       const bars = [
@@ -36,6 +37,13 @@
       const selects = ref(0)
       const connects = ref(0)
       const zoomEvents = ref([])
+      const lastProgress = ref('')
+      const lastDelete = ref('')
+      const lastMenu = ref('')
+      const chart = ref()
+      const interactions = query.has('interactions')
+      // Lets tests call exposed methods such as fitToBars directly.
+      if (interactions) window.ganttChart = chart
       const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value))
       const controlled = query.has('controlled')
 
@@ -47,7 +55,12 @@
           output('Dependency selects', selects.value),
           output('Connections', connects.value),
           output('Zoom events', zoomEvents.value.join(';')),
+          output('Last progress edit', lastProgress.value),
+          output('Last delete', lastDelete.value),
+          output('Last context menu', lastMenu.value),
+          h('button', { type: 'button', onClick: () => chart.value.fitToBars(['b'], { padding: 0 }) }, 'Fit Task B'),
           h(GanttChart, {
+            ref: chart,
             rows, bars, dependencies, range, tickSteps, zoomPresets, pixelsPerUnit: 50, snap: 1, formatTime: String,
             height: 240, autoScroll: false, connectable: true, reconnectable: true,
             markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : undefined,
@@ -63,7 +76,13 @@
             onDependencySelect: () => { selects.value++ },
             onConnect: () => { connects.value++ },
             onZoomChange: change => { zoomEvents.value.push(change.zoom + '/' + (change.preset ?? '')) },
-          }),
+            ...(interactions ? {
+              progressEditable: true, deletable: true, contextMenu: true,
+              onProgressEdit: change => { lastProgress.value = JSON.stringify(change) },
+              onBarsDelete: ids => { lastDelete.value = JSON.stringify(ids) },
+              onContextMenu: event => { lastMenu.value = JSON.stringify(event) },
+            } : {}),
+          }, interactions ? { tooltip: ({ bar, range }) => `${bar.label} from ${range.start} to ${range.end}` } : undefined),
         ]),
       }).mount('#app')
     </script>

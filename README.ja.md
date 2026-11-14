@@ -104,6 +104,7 @@ function commit(change: TimelineEdit) {
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます
 - ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）
 - 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます
+- 進捗率のスライダー（`progressEditable`、`progress-edit`）、DeleteキーやBackspaceキーによるバーの削除（`deletable`、`bars-delete`。`removeTimelineBars` で反映できます）、ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド
 
 稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。`scheduledBarFields` は計算済みの工程を上記のバーのフィールドに変換し、`invertWorkPeriods` は稼働カレンダーから網掛けする非稼働時間を求めます。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応し、`levelResources` は割り当て負荷が容量内に収まるよう工程を後ろへずらします。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
 

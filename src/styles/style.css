@@ -169,6 +169,12 @@
 .vft-gantt-segment-gap { position: absolute; top: calc(50% - 1px); height: 2px; background: var(--vft-item-line); pointer-events: none; }
 .vft-gantt-bar.solid .vft-gantt-segment-gap { background: var(--vft-item-solid); }
 .vft-gantt-bar.solid.vft-segmented .vft-bar-text { text-shadow: 0 0 2px var(--vft-item-solid), 0 0 3px var(--vft-item-solid); }
+/* Opt-in progress slider (progressEditable) and tooltip slot. */
+.vft-gantt .vft-gantt-progress-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border: 0; border-radius: 2px; background: transparent; cursor: ew-resize; touch-action: none; }
+.vft-gantt-progress-handle::before { content: ""; position: absolute; left: 0; top: 2px; border-inline: 6px solid transparent; border-bottom: 9px solid var(--vft-accent, #245e96); filter: drop-shadow(0 0 1px var(--vft-surface, #fff)); }
+.vft-gantt-progress-handle::after { content: ""; position: absolute; inset: -3px; }
+.vft-gantt .vft-gantt-progress-handle:focus-visible { outline-offset: 1px; }
+.vft-gantt-tooltip { position: absolute; z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); color: var(--vft-text, #172c3b); box-shadow: 0 4px 14px rgb(0 0 0 / .16); font-size: 12px; line-height: 1.4; }
 
 /* Right-to-left (opt-in through the dir prop). Positions come from the component as `right` offsets; these rules
    mirror the sticky label column, header, grid, handles and dependency layers. */
@@ -298,13 +304,16 @@
   .vft-gantt-bar.vft-critical .vft-gantt-segment { border: 3px double CanvasText; box-shadow: none; }
   .vft-gantt-segment-gap, .vft-gantt-bar.solid .vft-gantt-segment-gap { background: CanvasText; }
   .vft-network button:focus-visible, .vft-gantt button:focus-visible, .vft-gantt-scroll:focus-visible, .vft-cell-input:focus-visible { outline-color: Highlight; }
+  .vft-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
+  .vft-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
+  .vft-gantt-tooltip { border-color: CanvasText; }
 }
 
 @media print {
   .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
   .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
-  .vft-network-tooltip { display: none !important; }
+  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }

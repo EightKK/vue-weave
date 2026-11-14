@@ -57,6 +57,11 @@ export interface TimelineBar extends TimeRange {
    * drawn as a thin connector. Not allowed on milestones.
    */
   segments?: readonly TimeRange[]
+  /**
+   * Whether Delete or Backspace may propose removing the bar when the chart's `deletable` prop is set.
+   * Defaults to `editable`.
+   */
+  deletable?: boolean
 }
 
 export interface TimelineSummary extends TimeRange {
@@ -163,6 +168,10 @@ export interface GanttLabels {
   deadline?: string
   /** Bar description for a bar that ends after its deadline. Default "Late". */
   late?: string
+  /** Accessible name prefix of the progress slider, followed by the bar label. Default "Progress of". */
+  progressOf?: string
+  /** Description of a deletable bar. Default "Delete or Backspace removes the bar." */
+  deleteHint?: string
 }
 
 export interface NetworkNodeSlot {
@@ -237,6 +246,47 @@ export type TimelineConnectionValidator = (
 ) => boolean | string | void
 
 export type BatchEditValidator = (changes: readonly TimelineEdit[]) => boolean | string | void
+
+/** A progress proposal from GanttChart (`progressEditable`). The parent sets the bar's `progress` to `after`. */
+export interface TimelineProgressEdit {
+  id: string
+  /** The bar's progress before the edit, or undefined when the bar had none (drawn as 0). */
+  before: number | undefined
+  /** Proposed progress from 0 to 1, snapped to `progressStep`; Home and End propose exactly 0 and 1. */
+  after: number
+  source: 'pointer' | 'keyboard'
+}
+
+export type ProgressEditValidator = (change: TimelineProgressEdit) => boolean | string | void
+
+/** Synchronous check of a `bars-delete` proposal. Accept with true or undefined; reject with false or a reason. */
+export type BarsDeleteValidator = (ids: readonly string[]) => boolean | string | void
+
+/** What a GanttChart `context-menu` event was opened on. */
+export type TimelineContextTarget =
+  | { kind: 'bar'; id: string }
+  | { kind: 'dependency'; id: string }
+  | { kind: 'row'; id: string }
+  | { kind: 'chart' }
+
+/** Payload of the GanttChart `context-menu` event. The component renders no menu itself. */
+export interface TimelineContextMenu {
+  target: TimelineContextTarget
+  /** Time under the pointer when it is over the time area. Absent for the keyboard. */
+  time?: number
+  /** Displayed task row under the pointer, or the row of a bar opened from the keyboard. */
+  rowId?: string
+  /** Viewport coordinates of the pointer, or of the focused element's centre for the keyboard. */
+  clientX: number
+  clientY: number
+  source: 'pointer' | 'keyboard'
+}
+
+/** Options of the GanttChart `fitToBars` method. */
+export interface TimelineFitOptions {
+  /** Space in screen pixels kept on each side of the fitted bars. Default 24. */
+  padding?: number
+}
 
 export interface TimelineZoomPreset {
   id: string
