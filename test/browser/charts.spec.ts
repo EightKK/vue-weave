@@ -3216,3 +3216,114 @@ test('the scheduling demo shows the plan as a network diagram with critical task
   await expect(diagram).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('gantt columns resize by pointer and keyboard with validation, Escape, undo and right-to-left keys', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await expect(chart.getByRole('separator')).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Resize columns', exact: true }).check()
+  const team = chart.getByRole('separator', { name: 'Resize column Team', exact: true })
+  const wbs = chart.getByRole('separator', { name: 'Resize column WBS', exact: true })
+  const cell = chart.locator('.vft-gantt-row .vft-extra-column').first()
+  const bar = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
+  // The demo theme sets --vft-row-label-width to 138px; the separator reports the rendered width.
+  await expect(team).toHaveAttribute('aria-valuenow', '138')
+  await expect(team).toHaveAttribute('aria-valuemin', '48')
+  await expect(wbs).toHaveAttribute('aria-valuenow', '52')
+  await expect(wbs).toHaveAttribute('aria-orientation', 'vertical')
+
+  // Arrow keys propose 10 px steps and Shift 40 px; widths never go below the minimum.
+  await wbs.press('ArrowRight')
+  await expect(status('Resized the WBS column to 62 px.')).toBeVisible()
+  await expect(wbs).toHaveAttribute('aria-valuenow', '62')
+  expect(Math.round((await cell.boundingBox())!.width)).toBe(62)
+  await wbs.press('Shift+ArrowLeft')
+  await expect(status('Resized the WBS column to 48 px.')).toBeVisible()
+
+  // A pointer drag previews the width and proposes it on release; the timeline moves with the label area.
+  const barStart = (await bar.boundingBox())!.x
+  const box = (await team.boundingBox())!
+  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 60, y, { steps: 6 })
+  await expect(team).toHaveAttribute('aria-valuenow', '198')
+  await expect(team).toHaveClass(/active/)
+  expect(Math.round((await bar.boundingBox())!.x - barStart)).toBe(60)
+  await page.mouse.up()
+  await expect(status('Resized the Team column to 198 px.')).toBeVisible()
+  await expect(team).toBeFocused()
+
+  // Escape cancels a drag: the preview is dropped and releasing proposes nothing.
+  await page.mouse.move(x + 60, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 100, y, { steps: 4 })
+  await expect(team).toHaveAttribute('aria-valuenow', '238')
+  await page.keyboard.press('Escape')
+  await expect(team).toHaveAttribute('aria-valuenow', '198')
+  await page.mouse.up()
+  await expect(status('Resized the Team column to 198 px.')).toBeVisible()
+
+  // The application rejects a narrow team column; the reason is announced.
+  await team.press('Home')
+  await expect(status('The team column needs at least 110 px.')).toBeVisible()
+  await expect(chart.locator('xpath=..').locator('[aria-live="polite"]')).toHaveText('The team column needs at least 110 px.')
+  await expect(team).toHaveAttribute('aria-valuenow', '198')
+
+  // Undo and Redo restore widths with the rest of the timeline history.
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await undo.click()
+  await expect(team).toHaveAttribute('aria-valuenow', '138')
+  await undo.click()
+  await expect(wbs).toHaveAttribute('aria-valuenow', '62')
+  await page.getByRole('button', { name: 'Redo timeline change', exact: true }).click()
+  await expect(wbs).toHaveAttribute('aria-valuenow', '48')
+
+  // Right to left: the column edge is on the left, so ArrowLeft and dragging left widen the column.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  await wbs.press('ArrowLeft')
+  await expect(status('Resized the WBS column to 58 px.')).toBeVisible()
+  await wbs.press('ArrowRight')
+  await expect(status('Resized the WBS column to 48 px.')).toBeVisible()
+  const rtlBox = (await team.boundingBox())!
+  await page.mouse.move(rtlBox.x + rtlBox.width / 2, rtlBox.y + rtlBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(rtlBox.x + rtlBox.width / 2 - 30, rtlBox.y + rtlBox.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(status('Resized the Team column to 168 px.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the timeline editing demo imports a CSV file as one undoable step and reports invalid files', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const input = page.getByLabel('Import CSV', { exact: true })
+  await input.focus()
+  await expect(input).toBeFocused()
+  const csv = '﻿Row,WBS,Bar,Start,End,Progress\r\nAssembly,1,"Frame, welded",09:00,11:00,0.5\r\nPaint,1.1,Primer,11:00,12:30,\r\n'
+  await input.setInputFiles({ name: 'plan.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
+  await expect(status('Imported 2 bars in 2 rows from plan.csv.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Frame, welded 09:00–11:00', exact: true })).toBeVisible()
+  const primer = chart.getByRole('button', { name: 'Primer 11:00–12:30', exact: true })
+  await expect(primer).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Wireframes / })).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: 'Collapse Assembly', exact: true })).toBeVisible()
+
+  // Imported bars are editable like the others.
+  await primer.press('ArrowRight')
+  await expect(chart.getByRole('button', { name: 'Primer 11:15–12:45', exact: true })).toBeVisible()
+
+  // An invalid file names the line and leaves the timeline unchanged.
+  await input.setInputFiles({ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('Row,Bar,Start,End\nA,X,soon,10:00\n') })
+  await expect(status('Import failed: Invalid start time on CSV line 2: soon')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Primer 11:15–12:45', exact: true })).toBeVisible()
+  await input.setInputFiles({ name: 'open.csv', mimeType: 'text/csv', buffer: Buffer.from('Row,Bar,Start,End\nA,"X,09:00,10:00\n') })
+  await expect(status('Import failed: Unterminated quoted CSV field starting at line 2, column 3')).toBeVisible()
+
+  // Undo restores the edit and then the previous plan.
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await undo.click()
+  await expect(primer).toBeVisible()
+  await undo.click()
+  await expect(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })).toBeVisible()
+  await expect(primer).toHaveCount(0)
+  expect(errors).toEqual([])
+})

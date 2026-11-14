@@ -189,6 +189,8 @@ Row hierarchy moves (`rowsReorderable`) draw the move handles (`vft-row-move-han
 | --- | --- | --- |
 | `--vft-status` | `#1f7a4d` | The `statusDate` line and its label (`vft-gantt-status-date`) and the progress line of `showProgressLine` (`vft-gantt-progress-line`); the `status` export theme colour |
 
+Column resizing (`columnsResizable`) draws its separators (`vft-column-resize`) with `--vft-border`, and with `--vft-accent` while hovered, dragged or focused; it adds no new variable. The width of the row label column is the existing `--vft-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
+
 ### Built-in dark theme
 
 Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, `--vft-cascade`, `--vft-background-pattern`, `--vft-guide`, `--vft-status`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
@@ -197,9 +199,9 @@ Add `vft-theme-dark` to a component root or any ancestor to apply a dark value t
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the graph background pattern (`GrayText`), alignment guides (`Highlight`) (`Highlight`), the status-date line (a thick `CanvasText` line) and the progress line (dashed `CanvasText`), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`) (`Highlight`), the status-date line (a thick `CanvasText` line) and the progress line (dashed `CanvasText`), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
-- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines are printed, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines are printed, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
@@ -224,6 +226,10 @@ Accept a `create` proposal by adding a bar with an ID and label of your choice a
 
 Accept a `row-move` proposal with `moveTimelineRow(rows, change.id, change.after)` and commit the new rows with the bars and dependencies as one history entry, so that undo restores the previous hierarchy. `timelineWbsCodes(rows)` numbers the rows for a WBS column.
 
+Accept a `column-resize` proposal by setting the column's `width`, or `labelWidth` when `change.id` is `timelineLabelColumnId`. Widths are view settings: keep them in the same history as the data when Undo should restore them, as the timeline editing demo does, or store them per user.
+
+To import a plan from CSV, read the file in the browser (`await file.text()`) or on a server, then call `timelineFromCsvTable(parseCsv(text), { parseTime })` and commit the returned rows and bars as one history entry. The importer assigns its own row and bar IDs, so map them to your records or keep a lookup by label when you merge an import into existing data. Catch its errors and show the message, which names the CSV line.
+
 The `context-menu` event only reports what was targeted, the time and row under the pointer and the client coordinates. Render your own menu there (for example `role="menu"` with `role="menuitem"` entries), move focus into it, close it on Escape and return focus to the element that had it. Menu actions can reuse the same accept functions as the keyboard proposals.
 
 ## Alternative time scales
@@ -237,6 +243,109 @@ For example, a piecewise scale can give working hours more visual space while re
 Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph currently takes a synchronous layout callback. For an asynchronously computed layout, store the returned result in application state and supply a synchronous callback that returns the current result. Update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
+
+## Use ELK.js for layout
+
+The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes. Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
+
+ELK lays out asynchronously, and NetworkGraph's `layout` prop is synchronous. Compute the layout in the application (in a worker, with ELK's `workerUrl`, for large graphs), then pass the nodes, the edges and a `layout` function that returns the cached result together, so that the chart never sees data without matching geometry.
+
+```ts
+import ELK from 'elkjs/lib/elk.bundled.js'
+import type { ElkExtendedEdge, ElkNode, ElkPoint } from 'elkjs/lib/elk-api'
+import { shallowRef, watch, type Ref } from 'vue'
+import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutFunction, type NetworkNode } from 'vue-weave'
+
+const elk = new ELK()
+const nodeWidth = 144, nodeHeight = 58
+const elkSide = { left: 'WEST', right: 'EAST', top: 'NORTH', bottom: 'SOUTH' } as const
+const elkPortId = (nodeId: string, portId: string) => nodeId + '\u0000' + portId
+
+function toElkGraph(nodes: readonly NetworkNode[], edges: readonly GraphEdge[]): ElkNode {
+  return {
+    id: 'root',
+    layoutOptions: {
+      'org.eclipse.elk.algorithm': 'layered',
+      'org.eclipse.elk.direction': 'RIGHT',
+      'org.eclipse.elk.edgeRouting': 'ORTHOGONAL',
+      'org.eclipse.elk.spacing.nodeNode': '24',
+      'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '50',
+      'org.eclipse.elk.padding': '[top=20,left=20,bottom=20,right=20]',
+    },
+    children: nodes.map(node => ({
+      id: node.id,
+      width: nodeWidth,
+      height: nodeHeight,
+      // Fixed ports at the anchors NetworkGraph draws (side and offset), so ELK places the nodes for them.
+      layoutOptions: node.ports?.length ? { 'org.eclipse.elk.portConstraints': 'FIXED_POS' } : undefined,
+      ports: node.ports?.map(port => {
+        const anchor = graphPortAnchor({ x: 0, y: 0, width: nodeWidth, height: nodeHeight, rank: 0 }, port)
+        return {
+          id: elkPortId(node.id, port.id), x: anchor.x, y: anchor.y, width: 0, height: 0,
+          layoutOptions: { 'org.eclipse.elk.port.side': elkSide[port.side] },
+        }
+      }),
+    })),
+    edges: edges.map(edge => ({
+      id: edge.id,
+      sources: [edge.fromPort === undefined ? edge.from : elkPortId(edge.from, edge.fromPort)],
+      targets: [edge.toPort === undefined ? edge.to : elkPortId(edge.to, edge.toPort)],
+      labels: edge.label ? [{ text: edge.label, width: edge.label.length * 7, height: 14 }] : undefined,
+    })),
+  }
+}
+
+/** An SVG path through the start, bend and end points of each orthogonal edge section. */
+function sectionPath(edge: ElkExtendedEdge) {
+  return (edge.sections ?? []).map(section => [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
+    .map((point: ElkPoint, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')).join(' ')
+}
+
+function fromElkGraph(graph: ElkNode): GraphLayout {
+  const children = graph.children ?? []
+  // ELK reports no layer index; number the distinct x positions of the left-to-right layers instead.
+  const layers = [...new Set(children.map(child => child.x ?? 0))].sort((a, b) => a - b)
+  const boxes = new Map<string, GraphBox>(children.map(child => [child.id, {
+    x: child.x ?? 0, y: child.y ?? 0, width: child.width ?? nodeWidth, height: child.height ?? nodeHeight,
+    rank: layers.indexOf(child.x ?? 0),
+  }]))
+  const paths = new Map<string, string>()
+  const edgeLabels = new Map<string, { x: number; y: number }>()
+  for (const edge of graph.edges ?? []) {
+    paths.set(edge.id, sectionPath(edge))
+    const label = edge.labels?.[0]
+    if (label?.x !== undefined && label.y !== undefined) {
+      edgeLabels.set(edge.id, { x: label.x + (label.width ?? 0) / 2, y: label.y + (label.height ?? 0) / 2 })
+    }
+  }
+  return { boxes, paths, edgeLabels, width: Math.max(1, graph.width ?? 1), height: Math.max(1, graph.height ?? 1) }
+}
+
+/** Nodes, edges and a synchronous layout that always belong together; undefined until the first layout finishes. */
+export function useElkLayout(nodes: Ref<readonly NetworkNode[]>, edges: Ref<readonly GraphEdge[]>) {
+  const view = shallowRef<{ nodes: readonly NetworkNode[]; edges: readonly GraphEdge[]; layout: GraphLayoutFunction }>()
+  watch([nodes, edges], async ([currentNodes, currentEdges], _previous, onCleanup) => {
+    let stale = false
+    onCleanup(() => { stale = true })
+    const result = fromElkGraph(await elk.layout(toElkGraph(currentNodes, currentEdges)))
+    // A newer change may have started another layout while this one ran.
+    if (!stale) view.value = { nodes: currentNodes, edges: currentEdges, layout: () => result }
+  }, { immediate: true })
+  return view
+}
+```
+
+```vue
+<NetworkGraph v-if="view" :nodes="view.nodes" :edges="view.edges" :layout="view.layout" />
+```
+
+Notes:
+
+- The edge coordinates above are those of the root graph, which holds every node and edge of a flat graph. For compound graphs (`children` inside children), ELK reports positions relative to each parent; add the parent offsets, or set `org.eclipse.elk.json.edgeCoords` to `ROOT` and `org.eclipse.elk.json.shapeCoords` to `ROOT`.
+- NetworkGraph checks the result: every node needs a box with a positive size and every edge a path, and `width` and `height` must be positive. Give ELK the sizes you render, for example from the `sizes` prop.
+- Keep the default `edgeStyle` (`curve`) to draw ELK's routes. `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are always redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Saved `positions` move nodes after the layout and reroute their edges in the same way.
+- With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
+- `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
 
 ## Export to SVG and PNG
 

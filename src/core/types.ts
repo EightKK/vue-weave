@@ -210,6 +210,10 @@ export interface GanttLabels {
   rowMoveRejected?: string
   /** Label of the status-date line (`statusDate`). Default "Status date". */
   statusDate?: string
+  /** Accessible name prefix of a column resize handle (`columnsResizable`), followed by the column label. Default "Resize column". */
+  resizeColumn?: string
+  /** Announced when `validateColumnResize` returns false. Default "This column resize was rejected." */
+  columnResizeRejected?: string
 }
 
 export interface NetworkNodeSlot {
@@ -369,6 +373,21 @@ export interface TimelineRowMove {
 
 /** Synchronous check of a `row-move` proposal. Accept with true or undefined; reject with false or a reason. */
 export type RowMoveValidator = (change: TimelineRowMove) => boolean | string | void
+
+/**
+ * A column width proposal from GanttChart (`columnsResizable`). `id` is the `TimelineColumn.id`, or
+ * `timelineLabelColumnId` for the row label column; set that column's `width` (or the `labelWidth` prop) to `after`
+ * to accept it. Widths are in CSS pixels.
+ */
+export interface TimelineColumnResize {
+  id: string
+  before: number
+  after: number
+  source: 'pointer' | 'keyboard'
+}
+
+/** Synchronous check of a `column-resize` proposal. Accept with true or undefined; reject with false or a reason. */
+export type ColumnResizeValidator = (change: TimelineColumnResize) => boolean | string | void
 
 /** Synchronous check of a `create` proposal. Accept with true or undefined; reject with false or a reason. */
 export type CreateValidator = (proposal: TimelineCreate) => boolean | string | void

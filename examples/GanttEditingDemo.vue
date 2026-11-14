@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import {
-  GanttChart, assignLanes, calculateResourceLoad, calendarBands, moveTimelineRow, removeTimelineBars, timelineWbsCodes, useEditHistory,
-  type TimelineBar, type TimelineColumn, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency,
+  GanttChart, assignLanes, calculateResourceLoad, calendarBands, moveTimelineRow, parseCsv, removeTimelineBars, timelineFromCsvTable,
+  timelineLabelColumnId, timelineWbsCodes, useEditHistory, type TimelineBar, type TimelineColumn, type TimelineColumnResize, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency,
   type TimelineEdit, type TimelineProgressEdit, type TimelineReconnect, type TimelineRow, type TimelineRowMove, type TimelineZoomPreset,
   type TimelineZoomState,
 } from '../src'
@@ -37,8 +37,9 @@ const zoomPresets: TimelineZoomPreset[] = [
   { id: 'shifts', label: 'Shifts', pixelsPerUnit: 45 / hour, tickSteps: [4 * hour], headerBands: [calendarBands(range, 'hour', { step: 4, label: start => 'Shift from ' + formatTime(start) })] },
 ]
 
-// Accepted changes are committed as immutable snapshots, so Undo restores deleted bars and their dependencies.
-const history = useEditHistory({ rows: initialRows, bars: initialBars, dependencies: initialDependencies })
+// Accepted changes are committed as immutable snapshots, so Undo restores deleted bars and their dependencies. Column
+// widths accepted from `column-resize` are part of the same history.
+const history = useEditHistory({ rows: initialRows, bars: initialBars, dependencies: initialDependencies, widths: {} as Readonly<Record<string, number>> })
 const { state: model, canUndo, canRedo } = history
 const selection = ref(new Set<string>())
 const selectedDependency = ref<string>()
@@ -51,8 +52,11 @@ const rowLabel = (id: string) => model.value.rows.find(row => row.id === id)?.la
 // "Reorder rows" adds a WBS column numbered from the current hierarchy and a move handle on each row.
 const reorder = ref(false)
 const wbs = computed(() => timelineWbsCodes(model.value.rows))
-const columns = computed<TimelineColumn[] | undefined>(() => reorder.value
-  ? [{ id: 'wbs', label: 'WBS', width: 52, value: row => wbs.value.get(row.id) ?? '' }] : undefined)
+// "Resize columns" shows the WBS column too and adds a resize separator to each column header.
+const resizable = ref(false)
+const columns = computed<TimelineColumn[] | undefined>(() => reorder.value || resizable.value
+  ? [{ id: 'wbs', label: 'WBS', width: model.value.widths.wbs ?? 52, value: row => wbs.value.get(row.id) ?? '' }] : undefined)
+const labelWidth = computed(() => model.value.widths[timelineLabelColumnId])
 const load = computed(() => calculateResourceLoad(range,
   model.value.bars.map(bar => ({ id: bar.id, work: [{ start: bar.start, end: bar.end }] })), resources,
   model.value.bars.flatMap(bar => {
@@ -61,10 +65,10 @@ const load = computed(() => calculateResourceLoad(range,
   })))
 
 function commit(bars: TimelineBar[], dependencies = model.value.dependencies) {
-  history.commit({ rows: model.value.rows, bars, dependencies })
+  history.commit({ ...model.value, bars, dependencies })
 }
 function reset() {
-  history.reset({ rows: [...initialRows], bars: [...initialBars], dependencies: [...initialDependencies] })
+  history.reset({ rows: [...initialRows], bars: [...initialBars], dependencies: [...initialDependencies], widths: {} })
   selection.value = new Set()
   selectedDependency.value = undefined
   status.value = 'Timeline editing example reset.'
@@ -166,6 +170,41 @@ function validateCreate(proposal: TimelineCreate) {
 }
 function create(proposal: TimelineCreate) {
   addBar(proposal.rowId, proposal.start, proposal.end, arrange.value ? proposal.lane : undefined)
+}
+const columnName = (id: string) => id === timelineLabelColumnId ? 'Team' : columns.value?.find(column => column.id === id)?.label ?? id
+function validateColumnResize(change: TimelineColumnResize) {
+  if (change.id === timelineLabelColumnId && change.after < 110) return 'The team column needs at least 110 px.'
+}
+function resizeColumn(change: TimelineColumnResize) {
+  history.commit({ ...model.value, widths: { ...model.value.widths, [change.id]: change.after } })
+  status.value = `Resized the ${columnName(change.id)} column to ${change.after} px.`
+}
+// "Import CSV" reads a file in the layout of `timelineCsvTable` (Row, WBS, Bar, Start, End, Progress, with times as
+// ISO 8601 or as HH:MM on the demo day) and replaces the rows and bars as one undoable step.
+function parseDemoTime(text: string) {
+  const clock = /^(\d{1,2}):(\d{2})$/.exec(text.trim())
+  return clock ? origin - 8 * hour + Number(clock[1]) * hour + Number(clock[2]) * 60_000 : Date.parse(text)
+}
+async function importCsv(event: Event) {
+  const input = event.currentTarget as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const imported = timelineFromCsvTable(parseCsv(await file.text()), { parseTime: parseDemoTime })
+    if (!imported.bars.length) throw new Error('The file has no bars.')
+    history.commit({
+      ...model.value,
+      rows: imported.rows,
+      bars: imported.bars.map(bar => ({ ...bar, editable: true })),
+      dependencies: [],
+    })
+    selection.value = new Set()
+    selectedDependency.value = undefined
+    status.value = `Imported ${imported.bars.length} bars in ${imported.rows.length} rows from ${file.name}.`
+  } catch (error) {
+    status.value = 'Import failed: ' + (error instanceof Error ? error.message : String(error))
+  }
 }
 // "Auto-arrange lanes" stacks overlapping bars of a row. keepLanes keeps every bar that fits in its lane, so only a
 // new or moved bar that overlaps another one changes lane.
@@ -284,22 +323,25 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
       <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
     <div class="options editing-actions" role="group" aria-label="History and fit">
       <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
       <button type="button" :disabled="!canRedo" @click="redo">Redo timeline change</button>
       <button type="button" @click="fit()">Fit all bars</button>
       <button type="button" :disabled="!selection.size" @click="fit([...selection])">Fit selection</button>
+      <label class="import-csv">Import CSV <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
     </div>
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
       progress-editable deletable context-menu creatable :validate-create="validateCreate" :columns="columns"
+      :columns-resizable="resizable" :label-width="labelWidth" :validate-column-resize="validateColumnResize"
+      @column-resize="resizeColumn" @column-resize-rejected="(_change, reason) => status = reason"
       :rows-reorderable="reorder" :validate-row-move="validateRowMove" @row-move="moveRow" @row-move-rejected="(_change, reason) => status = reason"
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"
       :validate-bars-delete="validateBarsDelete"
-      :load-rows="resources" :load-segments="load" :labels="{ region: 'Editable timeline' }"
+      :load-rows="resources" :load-segments="load" :labels="{ region: 'Editable timeline', rows: 'Team' }"
       @connect="connect" @reconnect="reconnect" @connect-rejected="(_connection, reason) => status = reason"
       @dependency-select="id => status = 'Selected dependency ' + id + '. Press Delete to remove it.'"
       @dependency-delete="removeDependency" @edit="apply([$event])" @edits="apply" @zoom-change="onZoom"
@@ -322,6 +364,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 
 <style scoped>
 .editing-actions { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.import-csv { display: inline-flex; align-items: center; gap: 6px; }
+.import-csv input { max-width: 220px; }
 .context-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 4px; border: 1px solid var(--vft-border, #c6d7e2); border-radius: 7px; background: var(--vft-surface, #fff); box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
 .context-menu button { border: 0; border-radius: 4px; background: transparent; color: var(--vft-text, #24465b); text-align: start; padding: 6px 10px; }
 .context-menu button:hover, .context-menu button:focus-visible { background: var(--vft-surface-hover, #edf5fa); outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }

@@ -46,7 +46,7 @@ const edges: GraphEdge[] = [
 </template>
 ```
 
-標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。`layout` 関数で配置と経路を指定でき、`node`・`edge` スロットでSVG描画を変更できます。ノード移動、接続、複数選択、ミニマップはpropsで有効にします。
+標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。`layout` 関数で配置と経路を指定でき（アプリケーションで導入したELK.jsの結果も使えます。[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）、`node`・`edge` スロットでSVG描画を変更できます。ノード移動、接続、複数選択、ミニマップはpropsで有効にします。
 
 別の形状には、`vue-weave/core` の `layoutTreeGraph`、`layoutRadialGraph`、決定的な力学モデル配置の `layoutForceGraph` を `layout` としてそのまま渡せます。入れ子のグループ（`parentId`）、大規模グラフ向けの表示範囲外の描画省略（`cullOffscreen`）、タッチ操作のピンチズーム、`matchIds`・`dimmedIds` と `focusNode(id)` メソッドによる検索結果の強調も、必要に応じて有効にできます。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）、`tooltip` スロット、選択したノードに合わせて表示する `fit({ ids })` も同様に有効にできます。グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、端に近づけたときの自動パン（`autoPan`）、パレットからのドロップ（`droppable` と `node-drop` イベント。`toGraphPoint(x, y)` と `getViewportCenter()` を併用）、コピー・貼り付け・複製の提案（`clipboard`。`copy-selection`・`paste-request`・`duplicate-selection` イベントを `cloneGraphElements` で適用）も選択できます。グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、辺の直角・直線表示（`edgeStyle`）と経由点（`GraphEdge.points`。`editableEdges` で編集）、縮小時に詳細を隠す表示（`lodThreshold`）、ノードのサイズ変更（`sizes`・`resizable`）も有効にできます。同じ形状はコアの `collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` で計算できます。コアの `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph` で、同じノード・辺のデータを解析できます。
 
@@ -108,8 +108,9 @@ function commit(change: TimelineEdit) {
 - 行の空いている部分のドラッグや行ごとの追加ボタンによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）
 - 行ごとの移動ハンドルによる階層の編集。ポインターのドラッグや、Altキーと矢印キーによる移動・インデント・アウトデントに対応します（`rowsReorderable`、`row-move`。`moveTimelineRow` で反映できます）。`timelineWbsCodes` はWBS列に使う行番号を求めます
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）
+- 行見出し列と追加列の端にある区切り線をドラッグするか、矢印キーで操作して列幅を変更する機能（`columnsResizable`、`column-resize`、`labelWidth`）
 
-稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。`scheduledBarFields` は計算済みの工程を上記のバーのフィールドに変換し、`invertWorkPeriods` は稼働カレンダーから網掛けする非稼働時間を求めます。`propagateEdit` は一つの工程を新しい開始日時に固定して再計算し、日程が変わる工程をすべて返します。結果はそのまま `cascade` の戻り値に使えます。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応し、`levelResources` は割り当て負荷が容量内に収まるよう工程を後ろへずらします。`rescheduleFromStatusDate` は基準日時点の進捗報告から計画を引き直し、`scheduleToGraph` は日程を `NetworkGraph` 用のPERT図に変換します。`toMsProjectXml`、`toICalendar`、`toCsv` は計画をMicrosoft Project XML、iCalendar、CSVとして書き出します。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
+稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。`scheduledBarFields` は計算済みの工程を上記のバーのフィールドに変換し、`invertWorkPeriods` は稼働カレンダーから網掛けする非稼働時間を求めます。`propagateEdit` は一つの工程を新しい開始日時に固定して再計算し、日程が変わる工程をすべて返します。結果はそのまま `cascade` の戻り値に使えます。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応し、`levelResources` は割り当て負荷が容量内に収まるよう工程を後ろへずらします。`rescheduleFromStatusDate` は基準日時点の進捗報告から計画を引き直し、`scheduleToGraph` は日程を `NetworkGraph` 用のPERT図に変換します。`toMsProjectXml`、`toICalendar`、`toCsv` は計画をMicrosoft Project XML、iCalendar、CSVとして書き出し、`parseCsv` と `timelineFromCsvTable` はそのCSVファイルを行とバーとして読み込みます。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
 
 ## 書き出し・表示方向・テーマ
 
