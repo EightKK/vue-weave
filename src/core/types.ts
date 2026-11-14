@@ -44,6 +44,17 @@ export interface TimelineBar extends TimeRange {
   progress?: number
   baseline?: TimeRange
   data?: unknown
+  /** Draws the bar with the critical outline (`--vft-critical`) and adds `GanttLabels.critical` to its description. */
+  critical?: boolean
+  /** Latest finish that keeps the plan; a float line is drawn from `end` to it. Finite and not before `end`. */
+  latestEnd?: number
+  /** A due time, drawn as an indicator in the bar's lane. A bar whose `end` is after it is marked late. */
+  deadline?: number
+  /**
+   * Worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. The gaps are
+   * drawn as a thin connector. Not allowed on milestones.
+   */
+  segments?: readonly TimeRange[]
 }
 
 export interface TimelineSummary extends TimeRange {
@@ -140,6 +151,14 @@ export interface GanttLabels {
   capacity?: string
   overload?: string
   moveRowHint?: string
+  /** Bar description for `TimelineBar.critical`. Default "Critical". */
+  critical?: string
+  /** Bar description prefix before the formatted `latestEnd`. Default "Float until". */
+  float?: string
+  /** Bar description prefix before the formatted `deadline`. Default "Deadline". */
+  deadline?: string
+  /** Bar description for a bar that ends after its deadline. Default "Late". */
+  late?: string
 }
 
 export interface NetworkNodeSlot {

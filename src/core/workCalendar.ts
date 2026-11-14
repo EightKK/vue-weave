@@ -54,6 +54,21 @@ export function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeR
   return merged
 }
 
+/**
+ * The sorted half-open gaps between working periods inside `range`, for example the non-working time to shade on a
+ * chart. The periods are normalized first, so they may be unsorted, overlapping or touching.
+ */
+export function invertWorkPeriods(periods: readonly TimeRange[], range: TimeRange): TimeRange[] {
+  const gaps: TimeRange[] = []
+  let cursor = range.start
+  for (const period of normalizeWorkPeriods(periods, range)) {
+    if (period.start > cursor) gaps.push({ start: cursor, end: period.start })
+    cursor = period.end
+  }
+  if (cursor < range.end) gaps.push({ start: cursor, end: range.end })
+  return gaps
+}
+
 function checkShift(shift: WorkShift) {
   const { startMinute, endMinute } = shift
   if (![startMinute, endMinute].every(Number.isInteger) || startMinute < 0 || startMinute >= 1440

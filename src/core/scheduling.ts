@@ -161,3 +161,25 @@ export function scheduleTasks(input: ScheduleInput): ScheduleResult {
   }).map(link => link.id)
   return { ok: true, finish, tasks: result, criticalDependencyIds }
 }
+
+/** The `TimelineBar` fields that `scheduledBarFields` derives from a scheduled task. */
+export interface ScheduledBarFields extends TimeRange {
+  critical: boolean
+  latestEnd: number
+  /** Present only when the task works in more than one segment. */
+  segments?: TimeRange[]
+}
+
+/**
+ * Derive the GanttChart bar fields of a `scheduleTasks` result task: its dates, critical flag, latest finish for the
+ * float line and, for work split by breaks or pauses, its work segments. Spread the result into a `TimelineBar`.
+ */
+export function scheduledBarFields(task: ScheduledTask): ScheduledBarFields {
+  const { start, end, latestEnd } = task
+  if (![start, end, latestEnd].every(Number.isFinite) || end < start || latestEnd < end) {
+    throw new RangeError('A scheduled task needs finite ordered dates and a latest finish at or after its finish: ' + task.id)
+  }
+  const fields: ScheduledBarFields = { start, end, critical: Boolean(task.critical), latestEnd }
+  if (task.work.length > 1) fields.segments = task.work.map(segment => ({ start: segment.start, end: segment.end }))
+  return fields
+}

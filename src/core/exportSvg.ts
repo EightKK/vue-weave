@@ -8,6 +8,7 @@ import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineRow,
 } from './types.js'
+import { checkNonWorkingPeriods, segmentPieces } from './barSegments.js'
 
 /** Colours of one tone, matching the `--vft-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -37,6 +38,14 @@ export interface SvgExportTheme {
   loadOverload: string
   loadCapacity: string
   dependencyHighlight: string
+  /** Non-working time shading (`--vft-non-working`). Optional for compatibility; defaults to `defaultSvgExportTheme.nonWorking`. */
+  nonWorking?: string
+  /** Outline of critical bars (`--vft-critical`). Defaults to `defaultSvgExportTheme.critical`. */
+  critical?: string
+  /** Float lines (`--vft-float`). Defaults to `defaultSvgExportTheme.float`. */
+  float?: string
+  /** Deadline indicators and the late outline (`--vft-deadline`). Defaults to `defaultSvgExportTheme.deadline`. */
+  deadline?: string
   tones: Record<ChartTone, SvgToneColors>
 }
 
@@ -46,10 +55,11 @@ export type SvgExportThemeInput = Partial<Omit<SvgExportTheme, 'tones'>> & {
 }
 
 /** The stylesheet's fallback colours. */
-export const defaultSvgExportTheme: Readonly<SvgExportTheme> = Object.freeze({
+export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.freeze({
   surface: '#ffffff', surfaceMuted: '#f6f9fb', text: '#172c3b', muted: '#4c6371', border: '#d8e2e9', grid: '#d9e4eb',
   edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', markerInk: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
+  nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -104,9 +114,9 @@ function tag(name: string, attributes: Attributes, content?: string) {
   return content === undefined ? out + '/>' : out + '>' + content + '</' + name + '>'
 }
 
-function resolveTheme(input: SvgExportThemeInput = {}): SvgExportTheme {
+function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme> {
   const { tones: toneInput, ...rest } = input
-  const theme: SvgExportTheme = { ...defaultSvgExportTheme, tones: { ...defaultSvgExportTheme.tones } }
+  const theme: Required<SvgExportTheme> = { ...defaultSvgExportTheme, tones: { ...defaultSvgExportTheme.tones } }
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined) continue
     if (typeof value !== 'string' || !(key in defaultSvgExportTheme)) throw new Error('Invalid export theme colour: ' + key)
@@ -150,7 +160,7 @@ function svgDocument(width: number, height: number, options: SvgExportOptions, f
 /** A text run clipped to a box. `inset` is measured from the inline start edge of the box. */
 function clippedText(
   box: { x: number; y: number; width: number; height: number }, rtl: boolean,
-  lines: readonly { text: string; y: number; size: number; fill: string; weight?: number; inset?: number }[],
+  lines: readonly { text: string; y: number; size: number; fill: string; weight?: number; inset?: number; halo?: string }[],
 ) {
   if (box.width <= 0 || box.height <= 0) return ''
   const content = lines.filter(line => line.text !== '').map(line => {
@@ -158,6 +168,8 @@ function clippedText(
     return tag('text', {
       x: rtl ? box.width - inset : inset, y: line.y, 'font-size': line.size, 'font-weight': line.weight, fill: line.fill,
       direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+      stroke: line.halo, 'stroke-width': line.halo ? 3 : undefined, 'stroke-linejoin': line.halo ? 'round' : undefined,
+      'paint-order': line.halo ? 'stroke' : undefined,
     }, escapeXml(line.text))
   }).join('')
   if (!content) return ''
@@ -329,6 +341,8 @@ export interface TimelineSvgOptions extends SvgExportOptions {
   /** Default 44. At least 16. */
   loadRowHeight?: number
   highlightedDependencyIds?: Iterable<string>
+  /** Half-open intervals shaded as non-working time behind the grid, over the task and load rows. May overlap. */
+  nonWorkingPeriods?: readonly TimeRange[]
   /** Bar label text. Defaults to `bar.label`. */
   barLabel?: (bar: TimelineBar) => string
   /** Row heading text. Defaults to `row.label`. */
@@ -424,6 +438,7 @@ export function renderTimelineSvg(
     markerIds.add(item.id)
   }
   if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')
+  checkNonWorkingPeriods(options.nonWorkingPeriods)
 
   const anchor = options.tickAnchor ?? full.start
   if (!Number.isFinite(anchor)) throw new RangeError('tickAnchor must be finite')
@@ -479,6 +494,11 @@ export function renderTimelineSvg(
 
   // Time area: everything here is clipped to the exported window.
   const area: string[] = []
+  for (const period of options.nonWorkingPeriods ?? []) {
+    const start = Math.max(period.start, window.start), end = Math.min(period.end, window.end)
+    if (end <= start) continue
+    area.push(tag('rect', { ...span(start, end), y: headerHeight, height: totalHeight - headerHeight, fill: theme.nonWorking }))
+  }
   bands.forEach((level, index) => {
     for (const band of level) {
       const start = Math.max(band.start, window.start), end = Math.min(band.end, window.end)
@@ -531,34 +551,90 @@ export function renderTimelineSvg(
       }))
     }
     for (const bar of own) {
+      if (bar.latestEnd === undefined || bar.latestEnd <= bar.end || !intersectsWindow({ start: bar.end, end: bar.latestEnd }, window)) continue
+      const box = span(bar.end, bar.latestEnd)
+      const y = top + laneTop(bar) + barHeight / 2
+      const tickX = rtl ? box.x + 1 : box.x + box.width - 1
+      area.push(tag('g', { class: 'vft-gantt-float' },
+        tag('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, stroke: theme.float, 'stroke-width': 2 })
+        + tag('line', { x1: tickX, y1: y - 4, x2: tickX, y2: y + 4, stroke: theme.float, 'stroke-width': 2 })))
+    }
+    for (const bar of own) {
       if (!intersectsWindow(bar, window)) continue
       const colors = theme.tones[bar.tone ?? 'blue'] ?? theme.tones.blue
       const solid = bar.appearance !== 'outline'
       const fill = solid ? colors.solid : colors.pale
-      const stroke = solid ? colors.solid : colors.line
+      const stroke = bar.critical ? theme.critical : solid ? colors.solid : colors.line
+      const strokeWidth = bar.critical ? 2 : undefined
       const ink = solid ? theme.onSolid : colors.ink
       const y = top + laneTop(bar)
       const label = barLabel(bar)
       const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
+      const late = bar.deadline !== undefined && bar.end > bar.deadline
+      const marks = { class: [bar.critical ? 'vft-critical' : '', late ? 'vft-late' : ''].filter(Boolean).join(' ') || undefined }
       if (bar.start === bar.end) {
         const x = X(bar.start)
-        area.push(tag('g', {}, title + tag('polygon', {
+        area.push(tag('g', marks, title + tag('polygon', {
           points: [[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]
             .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
-          fill, stroke,
+          fill, stroke, 'stroke-width': strokeWidth,
         })))
         continue
       }
       const box = { ...span(bar.start, bar.end), y, height: barHeight }
-      let shape = tag('rect', { ...box, rx: 5, fill, stroke })
-      if (bar.progress !== undefined && bar.progress > 0) {
-        const filled = box.width * bar.progress
+      let shape = ''
+      if (bar.segments) {
+        // Work pieces with a connector across the gaps; progress fills the first part of the working time.
+        const { pieces, gaps } = segmentPieces(bar, bar.segments, bar.progress)
+        for (const gap of gaps) {
+          const part = span(gap.start, gap.end)
+          shape += tag('line', {
+            class: 'vft-gantt-segment-gap', x1: part.x, y1: y + barHeight / 2, x2: part.x + part.width, y2: y + barHeight / 2,
+            stroke: solid ? colors.solid : colors.line, 'stroke-width': 2,
+          })
+        }
+        for (const piece of pieces) {
+          const part = { ...span(piece.start, piece.end), y, height: barHeight }
+          shape += tag('rect', { ...part, class: 'vft-gantt-segment', rx: 4, fill, stroke, 'stroke-width': strokeWidth })
+          if (piece.filled > 0) {
+            const filled = part.width * piece.filled
+            shape += tag('rect', {
+              x: rtl ? part.x + part.width - filled : part.x, y, width: filled, height: barHeight, rx: 4, fill: ink, 'fill-opacity': 0.18,
+            })
+          }
+        }
+      } else {
+        shape += tag('rect', { ...box, rx: 5, fill, stroke, 'stroke-width': strokeWidth })
+        if (bar.progress !== undefined && bar.progress > 0) {
+          const filled = box.width * bar.progress
+          shape += tag('rect', {
+            x: rtl ? box.x + box.width - filled : box.x, y, width: filled, height: barHeight, rx: 5, fill: ink, 'fill-opacity': 0.18,
+          })
+        }
+      }
+      if (late) {
         shape += tag('rect', {
-          x: rtl ? box.x + box.width - filled : box.x, y, width: filled, height: barHeight, rx: 5, fill: ink, 'fill-opacity': 0.18,
+          x: box.x - 2, y: y - 2, width: box.width + 4, height: barHeight + 4, rx: 6, fill: 'none',
+          stroke: theme.deadline, 'stroke-width': 2, 'stroke-dasharray': '4 3',
         })
       }
-      shape += clippedText(box, rtl, [{ text: label, y: barHeight / 2 + 4, size: 11, weight: 650, fill: ink, inset: 7 }])
-      area.push(tag('g', {}, title + shape))
+      // Segmented solid bars keep a halo so their text stays readable over the gaps.
+      const halo = bar.segments && solid ? colors.solid : undefined
+      shape += clippedText(box, rtl, [{ text: label, y: barHeight / 2 + 4, size: 11, weight: 650, fill: ink, inset: 7, halo }])
+      area.push(tag('g', marks, title + shape))
+    }
+    for (const bar of own) {
+      if (bar.deadline === undefined || bar.deadline < window.start || bar.deadline >= window.end) continue
+      const x = X(bar.deadline)
+      const y = top + laneTop(bar)
+      const late = bar.end > bar.deadline
+      area.push(tag('g', { class: late ? 'vft-gantt-deadline vft-late' : 'vft-gantt-deadline' },
+        tag('title', {}, escapeXml(`${barLabel(bar)} ${format(bar.deadline)}`))
+        + tag('line', { x1: x, y1: y - 3, x2: x, y2: y + barHeight + 3, stroke: theme.deadline, 'stroke-width': 2 })
+        + tag('polygon', {
+          points: [[x - 5, y - 3], [x + 5, y - 3], [x, y + 3]].map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
+          fill: theme.deadline,
+        })))
     }
   })
   // Dependency paths are computed from the window start and mirrored as a whole for right-to-left output.

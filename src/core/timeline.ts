@@ -118,6 +118,20 @@ export function dependencyTimes(source: TimeRange, target: TimeRange, type: Time
   }
 }
 
+function checkSegments(bar: TimelineBar) {
+  const segments = bar.segments!
+  if (bar.start === bar.end) throw new RangeError('A milestone cannot have segments: ' + bar.id)
+  if (!Array.isArray(segments) || !segments.length) throw new RangeError('segments must contain at least one interval: ' + bar.id)
+  let previousEnd = bar.start
+  for (const segment of segments) {
+    if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.end <= segment.start
+      || segment.start < previousEnd || segment.end > bar.end) {
+      throw new RangeError('Segments must be sorted, nonoverlapping, positive-length intervals within the bar: ' + bar.id)
+    }
+    previousEnd = segment.end
+  }
+}
+
 /** Validate once per input change. IDs are unique across the entire chart. */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
@@ -144,6 +158,11 @@ export function validateTimelineData(
     if (bar.progress !== undefined && (!Number.isFinite(bar.progress) || bar.progress < 0 || bar.progress > 1)) {
       throw new RangeError('Progress must be between zero and one: ' + bar.id)
     }
+    if (bar.latestEnd !== undefined && (!Number.isFinite(bar.latestEnd) || bar.latestEnd < bar.end)) {
+      throw new RangeError('latestEnd must be finite and not before the end: ' + bar.id)
+    }
+    if (bar.deadline !== undefined && !Number.isFinite(bar.deadline)) throw new RangeError('deadline must be finite: ' + bar.id)
+    if (bar.segments !== undefined) checkSegments(bar)
   }
   for (const dependency of dependencies) {
     if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
