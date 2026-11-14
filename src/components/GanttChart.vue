@@ -14,6 +14,7 @@ import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '
 import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
 } from '../core/types.js'
+import type { CreateValidator, TimelineCascade, TimelineCreate } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
@@ -70,6 +71,10 @@ const props = withDefaults(defineProps<{
   validateBarsDelete?: BarsDeleteValidator
   tooltipDelay?: number
   contextMenu?: boolean
+  creatable?: boolean | ((row: TimelineRow) => boolean)
+  createDuration?: number
+  validateCreate?: CreateValidator
+  cascade?: TimelineCascade
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -109,6 +114,8 @@ const emit = defineEmits<{
   'bars-delete': [ids: string[]]
   'bars-delete-rejected': [ids: string[], reason: string]
   'context-menu': [event: TimelineContextMenu]
+  create: [proposal: TimelineCreate]
+  'create-rejected': [proposal: TimelineCreate, reason: string]
 }>()
 
 const slots = defineSlots<{
@@ -135,7 +142,8 @@ const messages = computed<GanttLabels>(() => ({
   loadRegion: 'Resource load', load: 'load', capacity: 'capacity', overload: 'overloaded by',
   moveRowHint: 'Up and Down arrows move the bar to another row.',
   critical: 'Critical', float: 'Float until', deadline: 'Deadline', late: 'Late',
-  progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.', ...props.labels,
+  progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.',
+  createIn: 'Add bar to', createRejected: 'This new bar was rejected.', ...props.labels,
 }))
 const notice = ref('')
 const bounds = computed(() => props.editBounds ?? props.range)
@@ -193,6 +201,9 @@ function validateProps() {
     throw new RangeError('progressStep must be greater than 0 and at most 1')
   }
   if (!Number.isFinite(props.tooltipDelay) || props.tooltipDelay < 0) throw new RangeError('tooltipDelay must be finite and nonnegative')
+  if (props.createDuration !== undefined && (!Number.isFinite(props.createDuration) || props.createDuration <= 0)) {
+    throw new RangeError('createDuration must be finite and positive')
+  }
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
@@ -201,7 +212,7 @@ watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
   () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
-  () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay,
+  () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
 ], () => {
   try {
     const result = validateProps()
@@ -428,7 +439,10 @@ function rangeOf(bar: TimelineBar) {
 }
 
 function laneTop(bar: TimelineBar) {
-  return 7 + (bar.lane ?? 0) * laneHeight.value
+  return laneOffset(bar.lane ?? 0)
+}
+function laneOffset(lane: number) {
+  return 7 + lane * laneHeight.value
 }
 
 const shownRows = computed(() => {
@@ -446,6 +460,7 @@ const shownRows = computed(() => {
       index: first + i,
       bars: shown,
       overlays,
+      creatable: canCreateIn(item.row),
       summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
       baselines: bars.filter(bar => bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)),
       floats: bars.flatMap(bar => {
@@ -588,10 +603,23 @@ const shownLines = computed(() => {
 })
 
 function barBox(bar: TimelineBar) {
-  const range = rangeOf(bar)
+  return intervalBox(rangeOf(bar))
+}
+/** Inline-start offset and width of an interval on the time axis; a milestone is 10 px wide around its time. */
+function intervalBox(range: TimeRange) {
   const left = axis.value.toX(range.start)
   const width = axis.value.toX(range.end) - left
   return { left: left - (width === 0 ? 5 : 0), width: width === 0 ? 10 : width }
+}
+/** Canvas position of a preview interval in a displayed row and lane. */
+function previewStyle(range: TimeRange, rowIndex: number, lane: number) {
+  const box = intervalBox(range)
+  return {
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${box.left}px)`,
+    width: `${box.width}px`,
+    top: `${headerHeight.value + rowIndex * props.rowHeight + laneOffset(lane)}px`,
+    height: `${barHeight.value}px`,
+  }
 }
 
 function barStyle(bar: TimelineBar) {
@@ -646,7 +674,7 @@ async function applyZoom(next: number, anchor?: number) {
 }
 
 async function setZoom(factor: number) {
-  if (!scroller.value || drag) return
+  if (!scroller.value || drag || createDrag) return
   await applyZoom(zoom.value * factor)
 }
 
@@ -655,7 +683,7 @@ async function setZoom(factor: number) {
 let pendingPreset: { id: string; time: number } | undefined
 function choosePreset(id: string) {
   const el = scroller.value
-  if (drag || id === activePreset.value?.id) return
+  if (drag || createDrag || id === activePreset.value?.id) return
   pendingPreset = el
     ? { id, time: axis.value.toTime(scrollStart(el) + Math.max(0, (el.clientWidth - viewport.value.labels) / 2)) }
     : undefined
@@ -692,12 +720,14 @@ function cancelEdit() {
   if (previous?.target.hasPointerCapture(previous.pointerId)) previous.target.releasePointerCapture(previous.pointerId)
   cancelLink()
   cancelProgress()
+  cancelCreate()
+  clearCascade()
   pinch = undefined
 }
 
-/** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection or a pinch. */
+/** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection, a create drag or a pinch. */
 function gestureActive() {
-  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch)
+  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch || createDrag)
 }
 
 function rejection(result: boolean | string | void) {
@@ -732,6 +762,79 @@ function proposeAll(changes: TimelineEdit[]) {
     notice.value = ''
     emit('edits', changes)
   }
+}
+
+// Cascade (`cascade`): follow-on changes of other bars, drawn as ghosts during a drag and proposed with the edit.
+type CascadeResult = { changes: TimelineEdit[] } | { error: string }
+const cascadeGhosts = shallowRef<readonly TimelineEdit[]>()
+let cascadeKey: string | undefined
+let cascadeResult: CascadeResult | undefined
+
+/**
+ * Ask `cascade` for the follow-on changes of each primary change. Changes for unknown bars and for the primary bars
+ * are ignored, the last change returned for a bar wins, and a change that keeps a bar's interval and row is dropped.
+ * A throwing callback or an invalid interval becomes a rejection reason.
+ */
+function cascadeFor(changes: readonly TimelineEdit[]): CascadeResult {
+  const primary = new Set(changes.map(change => change.id))
+  const merged = new Map<string, TimelineEdit>()
+  try {
+    for (const change of changes) {
+      for (const next of props.cascade!(change)) {
+        if (!barById.value.has(next.id) || primary.has(next.id)) continue
+        const { start, end } = next.after
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) throw new RangeError('Invalid cascaded change for bar: ' + next.id)
+        merged.set(next.id, next)
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { error: message || messages.value.rejected }
+  }
+  return {
+    changes: [...merged.values()].filter(change => {
+      const bar = barById.value.get(change.id)!
+      return change.after.start !== bar.start || change.after.end !== bar.end || (change.row !== undefined && change.row.after !== bar.rowId)
+    }),
+  }
+}
+/** Call `cascade` again only when the snapped primary changes differ from the previous call. */
+function updateCascade(changes: readonly TimelineEdit[]) {
+  const key = JSON.stringify(changes.map(change => [change.id, change.after.start, change.after.end, change.row?.after]))
+  if (key === cascadeKey) return
+  cascadeKey = key
+  cascadeResult = changes.length ? cascadeFor(changes) : { changes: [] }
+  cascadeGhosts.value = 'changes' in cascadeResult && cascadeResult.changes.length ? cascadeResult.changes : undefined
+}
+function clearCascade() {
+  cascadeKey = undefined
+  cascadeResult = undefined
+  cascadeGhosts.value = undefined
+}
+const cascadeBoxes = computed(() => (cascadeGhosts.value ?? []).flatMap(change => {
+  const bar = barById.value.get(change.id)
+  const index = bar && rowOrder.value.get(change.row?.after ?? bar.rowId)
+  const { first, afterLast } = rowWindow.value
+  if (!bar || index === undefined || index < first || index >= afterLast || !intersectsWindow(change.after, timeWindow.value)) return []
+  return [{ id: change.id, style: previewStyle(change.after, index, bar.lane ?? 0) }]
+}))
+
+/**
+ * Propose move and resize changes. With `cascade`, the follow-on changes join the primary ones (which come first) in
+ * one `edits` batch; when there are none, a single change keeps the `edit` contract.
+ */
+function proposeEdits(changes: readonly TimelineEdit[], cascaded?: CascadeResult) {
+  const primary = changes.filter(change => change.row || change.before.start !== change.after.start || change.before.end !== change.after.end)
+  if (!primary.length) return
+  if (!props.cascade) return proposeAll(primary)
+  const result = cascaded ?? cascadeFor(primary)
+  if ('error' in result) {
+    notice.value = result.error
+    if (primary.length === 1) emit('edit-rejected', primary[0]!, result.error)
+    else emit('edits-rejected', primary, result.error)
+    return
+  }
+  proposeAll([...primary, ...result.changes])
 }
 
 /** Bars that move together: the selected editable bars when multiSelect includes this bar, otherwise the bar itself. */
@@ -808,6 +911,7 @@ function updatePreview() {
     : [editTimeRange(drag.initial, drag.mode, deltaTime, activeSnap.value, bounds.value, minimum.value)]
   const mode = drag.mode
   previews.value = new Map(drag.group.map((bar, i) => [bar.id, { range: ranges[i]!, rowShift: shift, mode }]))
+  if (props.cascade) updateCascade(buildChanges(drag.group, ranges, mode, 'pointer', shift))
 }
 
 const scrollEdge = 40
@@ -815,8 +919,8 @@ const scrollSpeed = 24
 function autoScrollStep() {
   scrollFrame = 0
   const el = scroller.value
-  if (!drag || !el) return
-  if (previews.value) {
+  if (!(drag || createDrag) || !el) return
+  if (drag ? previews.value : createPreview.value) {
     const rect = el.getBoundingClientRect()
     // The time area excludes the sticky label column, which sits on the inline-start side.
     const left = rect.left + (rtl.value ? 0 : viewport.value.labels) + scrollEdge
@@ -827,7 +931,10 @@ function autoScrollStep() {
       // Moving towards the visual left scrolls to earlier times in LTR and to later times in RTL.
       const towardsStart = (lastClientX < left) !== rtl.value
       setScrollStart(el, scrollStart(el) + (towardsStart ? -1 : 1) * Math.ceil(Math.min(1, depth) * scrollSpeed))
-      if (el.scrollLeft !== before) updatePreview()
+      if (el.scrollLeft !== before) {
+        if (drag) updatePreview()
+        else updateCreatePreview()
+      }
     }
   }
   scrollFrame = requestAnimationFrame(autoScrollStep)
@@ -850,9 +957,11 @@ function finishEdit(event: PointerEvent) {
   const preview = previews.value
   const shift = preview?.get(id)?.rowShift ?? 0
   const changes = preview ? buildChanges(group, group.map(bar => preview.get(bar.id)!.range), mode, 'pointer', shift) : []
+  // The last preview step already asked `cascade` about exactly these changes.
+  const cascaded = cascadeResult
   if (preview) suppressSelection = id
   cancelEdit()
-  proposeAll(changes)
+  proposeEdits(changes, cascaded)
 }
 
 function clickBar(bar: TimelineBar, event: MouseEvent) {
@@ -879,7 +988,7 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
     event.preventDefault()
     if (!shift) return
     pendingFocus = bar.id
-    proposeAll(buildChanges(group, group, 'move', 'keyboard', shift))
+    proposeEdits(buildChanges(group, group, 'move', 'keyboard', shift))
     return
   }
   if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
@@ -892,13 +1001,13 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
   pendingReveal = bar.id
   const group = mode === 'move' ? movingGroup(bar) : [bar]
   if (group.length > 1) {
-    proposeAll(buildChanges(group, moveTimeRanges(group, delta, activeSnap.value, bounds.value), mode, 'keyboard', 0))
+    proposeEdits(buildChanges(group, moveTimeRanges(group, delta, activeSnap.value, bounds.value), mode, 'keyboard', 0))
     return
   }
-  propose({
+  proposeEdits([{
     id: bar.id, before, mode, source: 'keyboard',
     after: editTimeRange(before, mode, delta, activeSnap.value, bounds.value, minimum.value),
-  })
+  }])
 }
 
 function onBarFocus(event: FocusEvent, bar: TimelineBar) {
@@ -1206,7 +1315,7 @@ watch([
   () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => props.editBounds, () => props.minDuration,
   () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
-  () => props.progressEditable, () => props.progressStep,
+  () => props.progressEditable, () => props.progressStep, () => props.createDuration,
 ], cancelEdit)
 
 // Progress editing (`progressEditable`). A slider at the progress boundary previews pointer drags and proposes
@@ -1341,6 +1450,129 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
   proposeProgress({ id: bar.id, before: bar.progress, after: next, source: 'keyboard' })
 }
 
+// Drag to create (`creatable`). A press on the empty timeline area of a row previews a new bar while the pointer
+// moves; release (or a click) proposes it, and the parent adds the bar to accept it. The template adds the row's add
+// button in a `v-else-if` branch of the expand toggle, and the create and cascade previews in branches of the link
+// preview, so a chart without these props renders exactly the markup it did before.
+const createPreview = shallowRef<{ rowId: string; lane: number; range: TimeRange }>()
+let createDrag: { pointerId: number; rowId: string; time: number; x: number; moved: boolean } | undefined
+const createLength = computed(() => props.createDuration ?? 4 * activeSnap.value)
+function canCreateIn(row: TimelineRow) {
+  if (!props.creatable || props.readonly || validationError.value) return false
+  return typeof props.creatable === 'function' ? Boolean(props.creatable(row)) : true
+}
+/** The nearest multiple of `snap` from the range start. */
+function snapTime(time: number) {
+  const step = activeSnap.value
+  return props.range.start + Math.round((time - props.range.start) / step) * step
+}
+/** [start, start + length) moved inside editBounds, and shortened only when the bounds are shorter. */
+function placeInBounds(start: number, length: number): TimeRange {
+  const { start: low, end: high } = bounds.value
+  const size = Math.min(length, high - low)
+  const from = Math.max(low, Math.min(high - size, start))
+  return { start: from, end: from + size }
+}
+/** The snapped interval between the press and the pointer, at least minDuration long and inside editBounds. */
+function createInterval(from: number, to: number): TimeRange {
+  const a = snapTime(from), b = snapTime(to)
+  const start = Math.max(bounds.value.start, Math.min(a, b)), end = Math.min(bounds.value.end, Math.max(a, b))
+  if (end - start >= minimum.value) return { start, end }
+  // Too short: grow away from the press point.
+  return b >= a ? placeInBounds(start, minimum.value) : placeInBounds(end - minimum.value, minimum.value)
+}
+/** Time under a client x coordinate, clamped to the axis. */
+function timeAt(clientX: number) {
+  const x = canvas.value ? timeAreaOffset(clientX, canvas.value.getBoundingClientRect()) : 0
+  return axis.value.toTime(Math.max(0, Math.min(axis.value.width, x)))
+}
+/** Lane of a displayed row under a client y coordinate, clamped to the lanes. */
+function laneAt(rowId: string, clientY: number) {
+  const index = rowOrder.value.get(rowId)
+  if (index === undefined || !canvas.value) return 0
+  const offset = clientY - canvas.value.getBoundingClientRect().top - headerHeight.value - index * props.rowHeight - laneOffset(0)
+  return Math.max(0, Math.min(props.laneCount - 1, Math.floor(offset / laneHeight.value)))
+}
+function pressRow(event: PointerEvent, row: TimelineRow) {
+  // Bars, handles, cells and the heading column are descendants; only the row's own background is empty.
+  const el = scroller.value, area = canvas.value
+  if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !event.isPrimary || event.button !== 0 || gestureActive()) return
+  const x = timeAreaOffset(event.clientX, area.getBoundingClientRect())
+  if (x < 0 || x > axis.value.width) return
+  // Keep a mouse drag from selecting text; focus goes to the region so that Escape cancels.
+  if (event.pointerType !== 'touch') event.preventDefault()
+  el.focus({ preventScroll: true })
+  hideTooltip()
+  createDrag = { pointerId: event.pointerId, rowId: row.id, time: axis.value.toTime(x), x: event.clientX, moved: false }
+  el.setPointerCapture(event.pointerId)
+  lastClientX = event.clientX
+  lastClientY = event.clientY
+  startAutoScroll()
+}
+function moveCreate(event: PointerEvent) {
+  const active = createDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  lastClientX = event.clientX
+  lastClientY = event.clientY
+  if (!active.moved && Math.abs(event.clientX - active.x) < 3) return
+  active.moved = true
+  updateCreatePreview()
+}
+function updateCreatePreview() {
+  const active = createDrag
+  if (!active?.moved) return
+  createPreview.value = { rowId: active.rowId, lane: laneAt(active.rowId, lastClientY), range: createInterval(active.time, timeAt(lastClientX)) }
+}
+function cancelCreate() {
+  const active = createDrag
+  createDrag = undefined
+  createPreview.value = undefined
+  if (!active) return
+  stopAutoScroll()
+  if (scroller.value?.hasPointerCapture(active.pointerId)) scroller.value.releasePointerCapture(active.pointerId)
+}
+function finishCreate(event: PointerEvent) {
+  const active = createDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelCreate()
+  moveCreate(event)
+  const row = displayedRows.value[rowOrder.value.get(active.rowId) ?? -1]?.row
+  const lane = laneAt(active.rowId, event.clientY)
+  // A click without movement proposes `createDuration` from the snapped press time.
+  const range = active.moved ? createInterval(active.time, timeAt(event.clientX)) : placeInBounds(snapTime(active.time), createLength.value)
+  cancelCreate()
+  if (row && canCreateIn(row)) proposeCreate({ rowId: row.id, lane, start: range.start, end: range.end, source: 'pointer' })
+}
+/** The add button of a row proposes `createDuration` from the first snapped time in view, in the lowest free lane. */
+function createFromButton(event: MouseEvent, row: TimelineRow) {
+  if (!canCreateIn(row) || gestureActive()) return
+  const el = scroller.value
+  const step = activeSnap.value
+  const visible = el ? axis.value.toTime(Math.min(axis.value.width, scrollStart(el))) : props.range.start
+  const range = placeInBounds(props.range.start + Math.ceil((visible - props.range.start) / step) * step, createLength.value)
+  const busy = (barsByRow.value.get(row.id) ?? []).filter(bar => bar.start === bar.end
+    ? bar.start >= range.start && bar.start < range.end : bar.start < range.end && range.start < bar.end)
+  let lane = 0
+  while (lane < props.laneCount && busy.some(bar => (bar.lane ?? 0) === lane)) lane++
+  proposeCreate({ rowId: row.id, lane: lane < props.laneCount ? lane : 0, start: range.start, end: range.end, source: event.detail === 0 ? 'keyboard' : 'pointer' })
+}
+function proposeCreate(proposal: TimelineCreate) {
+  const result = props.validateCreate?.(proposal)
+  const reason = result === false ? messages.value.createRejected! : typeof result === 'string' ? result : undefined
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('create-rejected', proposal, reason)
+  } else {
+    notice.value = ''
+    emit('create', proposal)
+  }
+}
+const createBox = computed(() => {
+  const preview = createPreview.value
+  const index = preview && rowOrder.value.get(preview.rowId)
+  return preview && index !== undefined ? previewStyle(preview.range, index, preview.lane) : undefined
+})
+
 // Context menu (`contextMenu`). The component reports what was targeted and where; the parent renders the menu.
 let keyboardMenu: { at: number; element: Element } | undefined
 function isMenuKey(event: KeyboardEvent) {
@@ -1363,6 +1595,8 @@ function pressScroller(event: PointerEvent) {
   trackTouch(event)
 }
 function onContextMenu(event: MouseEvent) {
+  // A menu opened during a create drag (for example Control-click on macOS) ends the drag without a proposal.
+  if (createDrag) cancelCreate()
   const el = scroller.value, area = canvas.value
   if (!props.contextMenu || !el || !area) return
   const element = event.target instanceof Element ? event.target : undefined
@@ -1572,7 +1806,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   // The zoom factor scales the base scale linearly, so this also holds for a custom, non-linear scale.
   const span = (axis.value.toX(end) - axis.value.toX(start)) / zoom.value
   // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
-  if (drag || progressDrag || linkDrag || pinch) cancelEdit()
+  if (drag || progressDrag || linkDrag || pinch || createDrag) cancelEdit()
   hideTooltip()
   if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
   return nextTick().then(() => {
@@ -1721,10 +1955,10 @@ onUnmounted(() => {
     <div
       ref="scroller" class="vft-gantt-scroll" :class="{ 'vft-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
-      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event)"
-      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
-      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
-      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event)"
+      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event)"
+      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
+      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
+      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
     >
       <div v-if="!validationError" ref="canvas" class="vft-gantt-canvas" :style="{
         width: `calc(var(--vft-label-area-width) + ${axis.width}px)`,
@@ -1766,15 +2000,24 @@ onUnmounted(() => {
         </div>
         <div v-for="row in shownRows" :key="row.row.id" class="vft-gantt-row"
           :style="{ top: `${headerHeight + row.index * rowHeight}px`, height: `${rowHeight}px` }"
+          @pointerdown="pressRow($event, row.row)"
         >
           <div class="vft-gantt-row-label" :class="{ 'vft-column-group': columns?.length }"
           >
-            <div class="vft-name-column" :class="{ 'vft-tree-row': row.hasChildren || row.depth > 0 }"
+            <div class="vft-name-column" :class="{ 'vft-tree-row': row.hasChildren || row.depth > 0, 'vft-creatable': row.creatable }"
               :style="{ '--vft-row-depth': Math.min(row.depth, 5) }">
-            <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
+            <button v-if="row.hasChildren && !row.creatable" type="button" class="vft-row-toggle"
               :aria-expanded="!collapsed.has(row.row.id)"
               :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
               @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
+            <template v-else-if="row.creatable">
+              <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
+                :aria-expanded="!collapsed.has(row.row.id)"
+                :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
+                @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
+              <button type="button" class="vft-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
+                @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
+            </template>
             <div class="vft-row-content">
               <slot name="row" :row="row.row" :index="row.index" :depth="row.depth" :expanded="!collapsed.has(row.row.id)">
                 <strong>{{ row.row.label }}</strong>
@@ -1882,6 +2125,10 @@ onUnmounted(() => {
           :style="{ top: `${headerHeight}px` }">
           <path :d="linkPreviewPath" />
         </svg>
+        <div v-else-if="createBox" class="vft-gantt-create-preview" :style="createBox" aria-hidden="true"></div>
+        <template v-else-if="cascadeBoxes.length">
+          <div v-for="item in cascadeBoxes" :key="item.id" class="vft-gantt-cascade-preview" :style="item.style" aria-hidden="true"></div>
+        </template>
         <div v-for="item in shownLoadRows" :key="item.row.id" class="vft-gantt-load-row" role="group"
           :aria-label="`${messages.loadRegion} ${item.row.label}`"
           :style="{ top: `${headerHeight + bodyHeight + item.index * loadRowHeight}px`, height: `${loadRowHeight}px` }">

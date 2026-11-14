@@ -202,6 +202,15 @@
 .vft-network.vft-rtl .vft-zoom-tools .vft-fit-button { border-left: 0; border-inline-start: 1px solid var(--vft-border, #e0e9ef); }
 .vft-network.vft-rtl .vft-network-node text, .vft-network.vft-rtl .vft-network-group text, .vft-network.vft-rtl .vft-edge-label { direction: rtl; unicode-bidi: embed; }
 
+/* Opt-in drag to create (creatable) and cascade previews (cascade). Placed after the right-to-left rules so the
+   heading padding that makes room for the add button also applies there. */
+.vft-gantt .vft-gantt-row-label .vft-name-column.vft-creatable { position: relative; padding-inline-end: 26px; }
+.vft-gantt-create-button { position: absolute; inset-inline-end: 3px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; padding: 0; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 4px; background: var(--vft-surface, #fff); color: var(--vft-accent, #245e96); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+.vft-gantt-create-button:hover { background: var(--vft-surface-hover, #edf5fa); }
+.vft-gantt-create-preview, .vft-gantt-cascade-preview { position: absolute; z-index: 3; box-sizing: border-box; border-radius: 5px; pointer-events: none; box-shadow: 0 0 0 1px var(--vft-surface, #fff), inset 0 0 0 1px var(--vft-surface, #fff); }
+.vft-gantt-create-preview { border: 2px dashed var(--vft-accent, #245e96); background: color-mix(in srgb, var(--vft-accent, #245e96) 16%, transparent); }
+.vft-gantt-cascade-preview { border: 2px dashed var(--vft-cascade, #6d4bb3); background: color-mix(in srgb, var(--vft-cascade, #6d4bb3) 14%, transparent); }
+
 /* Built-in dark theme. Opt in with `vft-theme-dark`, or follow the OS with `vft-theme-auto`; place the class on a component root or any ancestor. */
 .vft-theme-dark {
   color-scheme: dark;
@@ -214,7 +223,7 @@
   --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
   --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
   --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
-  --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060;
+  --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060; --vft-cascade: #c4a8f0;
   --vft-dimmed-opacity: .4;
 }
 .vft-theme-dark.vft-gantt { background: var(--vft-surface); }
@@ -230,7 +239,7 @@
     --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
     --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
     --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
-    --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060;
+    --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060; --vft-cascade: #c4a8f0;
     --vft-dimmed-opacity: .4;
   }
   .vft-theme-auto.vft-gantt { background: var(--vft-surface); }
@@ -307,13 +316,14 @@
   .vft-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
   .vft-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
   .vft-gantt-tooltip { border-color: CanvasText; }
+  .vft-gantt-create-preview, .vft-gantt-cascade-preview { forced-color-adjust: none; border-color: Highlight; background: transparent; box-shadow: none; }
 }
 
 @media print {
   .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
   .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
-  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip { display: none !important; }
+  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-gantt-create-button, .vft-gantt-create-preview, .vft-gantt-cascade-preview { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
