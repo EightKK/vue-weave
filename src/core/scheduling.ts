@@ -162,6 +162,65 @@ export function scheduleTasks(input: ScheduleInput): ScheduleResult {
   return { ok: true, finish, tasks: result, criticalDependencyIds }
 }
 
+/** A proposed new start, and optionally a new end, of one task for `propagateEdit`. */
+export interface ScheduleEdit {
+  id: string
+  start: number
+  /** When supplied, the task's working duration becomes the working time in [start, end) on its calendar. */
+  end?: number
+}
+
+/** A task whose dates differ between two schedules. */
+export interface ScheduleChange {
+  id: string
+  before: TimeRange
+  after: TimeRange
+}
+
+export interface PropagateEditSuccess {
+  ok: true
+  /** The full schedule with the edited task pinned. */
+  schedule: ScheduleSuccess
+  /** Every task whose start or end differs from `scheduleTasks(input)`, in input order. */
+  changes: ScheduleChange[]
+}
+
+export type PropagateEditResult = PropagateEditSuccess | ScheduleFailure
+
+/**
+ * Reschedule a plan after one task is moved or resized, for example to preview or apply a GanttChart edit together
+ * with its downstream effects. The edited task gets `fixedStart` at the new start (replacing any fixed start it had)
+ * and, with `end`, the working duration of [start, end) on its calendar; every other bound and dependency still
+ * applies. Returns the new schedule and the tasks whose dates changed, or the failure of the edited plan (or of the
+ * unedited plan when only that fails). The input is not modified.
+ */
+export function propagateEdit(input: ScheduleInput, edit: ScheduleEdit): PropagateEditResult {
+  const model = buildScheduleModel(input)
+  const task = model.tasks.get(edit.id)
+  if (!task) throw new Error('Unknown task: ' + edit.id)
+  if (typeof edit.start !== 'number') throw new RangeError('An edited task needs a numeric start: ' + edit.id)
+  model.validateTime(edit.start)
+  let duration = task.source.duration
+  if (edit.end !== undefined) {
+    model.validateTime(edit.end)
+    if (edit.end < edit.start) throw new RangeError('An edited task cannot end before it starts: ' + edit.id)
+    duration = (task.clock.workAt(edit.end) - task.clock.workAt(edit.start)) * model.quantum
+  }
+  const tasks = input.tasks.map(item => item.id === edit.id ? { ...item, fixedStart: edit.start, duration } : item)
+  const schedule = scheduleTasks({ ...input, tasks })
+  if (!schedule.ok) return schedule
+  const base = scheduleTasks(input)
+  if (!base.ok) return base
+  const changes: ScheduleChange[] = []
+  schedule.tasks.forEach((after, index) => {
+    const before = base.tasks[index]!
+    if (before.start !== after.start || before.end !== after.end) {
+      changes.push({ id: after.id, before: { start: before.start, end: before.end }, after: { start: after.start, end: after.end } })
+    }
+  })
+  return { ok: true, schedule, changes }
+}
+
 /** The `TimelineBar` fields that `scheduledBarFields` derives from a scheduled task. */
 export interface ScheduledBarFields extends TimeRange {
   critical: boolean

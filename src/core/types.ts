@@ -172,6 +172,10 @@ export interface GanttLabels {
   progressOf?: string
   /** Description of a deletable bar. Default "Delete or Backspace removes the bar." */
   deleteHint?: string
+  /** Accessible name prefix of the add-bar button of a creatable row, followed by the row label. Default "Add bar to". */
+  createIn?: string
+  /** Announced when `validateCreate` returns false. Default "This new bar was rejected." */
+  createRejected?: string
 }
 
 export interface NetworkNodeSlot {
@@ -261,6 +265,29 @@ export type ProgressEditValidator = (change: TimelineProgressEdit) => boolean | 
 
 /** Synchronous check of a `bars-delete` proposal. Accept with true or undefined; reject with false or a reason. */
 export type BarsDeleteValidator = (ids: readonly string[]) => boolean | string | void
+
+/**
+ * A new bar proposed by GanttChart (`creatable`): a drag or click on an empty part of a row, or the row's add button.
+ * The parent assigns an ID and a label and adds the bar to accept it.
+ */
+export interface TimelineCreate {
+  rowId: string
+  /** Zero-based lane: the lane under the pointer, or the lowest free lane for the add button. */
+  lane: number
+  start: number
+  end: number
+  /** `keyboard` when the add button was activated with Enter or Space. */
+  source: 'pointer' | 'keyboard'
+}
+
+/** Synchronous check of a `create` proposal. Accept with true or undefined; reject with false or a reason. */
+export type CreateValidator = (proposal: TimelineCreate) => boolean | string | void
+
+/**
+ * Auto-scheduling hook of GanttChart (`cascade`): the follow-on changes of other bars for one proposed move or resize.
+ * It must be synchronous and free of side effects, because it also runs for every snapped step of a drag preview.
+ */
+export type TimelineCascade = (change: TimelineEdit) => readonly TimelineEdit[]
 
 /** What a GanttChart `context-menu` event was opened on. */
 export type TimelineContextTarget =

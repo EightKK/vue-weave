@@ -292,6 +292,106 @@ export function removeTimelineBars<B extends TimelineBar, D extends TimelineDepe
   }
 }
 
+export interface AssignLanesOptions {
+  /**
+   * Keep each bar's current `lane` (default 0) unless it conflicts with a bar placed before it in input order; only
+   * conflicting bars move, to the lowest free lane. Without it, lanes are assigned first-fit in start order.
+   */
+  keepLanes?: boolean
+}
+
+export interface AssignLanesResult<B extends TimelineBar = TimelineBar> {
+  /** New bar objects in input order, each with `lane` set. */
+  bars: B[]
+  /** The largest lane count of any row, at least 1. Pass it as GanttChart `laneCount`. */
+  laneCount: number
+  /** Lanes used by each row that has bars: the highest lane plus one. */
+  rowLaneCounts: Map<string, number>
+}
+
+/**
+ * Whether two intervals of one row may not share a lane. Bars are half-open, so touching bars fit in one lane; a
+ * milestone conflicts with every bar that contains its time and with milestones at the same time.
+ */
+function lanesConflict(a: TimeRange, b: TimeRange) {
+  const pointA = a.start === a.end, pointB = b.start === b.end
+  if (pointA && pointB) return a.start === b.start
+  if (pointA) return b.start <= a.start && a.start < b.end
+  if (pointB) return a.start <= b.start && b.start < a.end
+  return a.start < b.end && b.start < a.end
+}
+
+/** Index of the first interval in a start-sorted lane that starts after `time`. */
+function startsAfter(lane: readonly TimeRange[], time: number) {
+  let low = 0, high = lane.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (lane[middle]!.start > time) high = middle
+    else low = middle + 1
+  }
+  return low
+}
+
+/**
+ * Assign lanes so that the bars of one row never overlap within a lane. The default first-fit pass in start order
+ * (ties keep input order) uses the fewest lanes possible. `keepLanes` keeps stable lanes for interactive edits.
+ * Returns new bar objects and leaves the input unchanged.
+ */
+export function assignLanes<B extends TimelineBar>(bars: readonly B[], options: AssignLanesOptions = {}): AssignLanesResult<B> {
+  const rows = new Map<string, number[]>()
+  bars.forEach((bar, index) => {
+    checkRange(bar, true)
+    if (bar.lane !== undefined && (!Number.isInteger(bar.lane) || bar.lane < 0)) throw new RangeError('Invalid lane for bar: ' + bar.id)
+    let indexes = rows.get(bar.rowId)
+    if (!indexes) rows.set(bar.rowId, indexes = [])
+    indexes.push(index)
+  })
+  const lanes: number[] = new Array(bars.length)
+  const rowLaneCounts = new Map<string, number>()
+  for (const [rowId, indexes] of rows) {
+    let count = 0
+    if (options.keepLanes) {
+      // Each lane holds its placed intervals sorted by start; they never conflict, so only the neighbours of a new
+      // interval can conflict with it.
+      const placed: TimeRange[][] = []
+      const fits = (lane: number, bar: TimeRange) => {
+        const items = placed[lane]
+        if (!items) return true
+        const next = startsAfter(items, bar.start)
+        return !(next > 0 && lanesConflict(items[next - 1]!, bar)) && !(next < items.length && lanesConflict(items[next]!, bar))
+      }
+      for (const index of indexes) {
+        const bar = bars[index]!
+        let lane = bar.lane ?? 0
+        if (!fits(lane, bar)) {
+          lane = 0
+          while (!fits(lane, bar)) lane++
+        }
+        const items = placed[lane] ??= []
+        items.splice(startsAfter(items, bar.start), 0, bar)
+        lanes[index] = lane
+        count = Math.max(count, lane + 1)
+      }
+    } else {
+      // Placed in start order, a lane is free when its last interval does not conflict with the next one.
+      const order = indexes.slice().sort((a, b) => bars[a]!.start - bars[b]!.start || a - b)
+      const last: TimeRange[] = []
+      for (const index of order) {
+        const bar = bars[index]!
+        let lane = 0
+        while (lane < last.length && lanesConflict(last[lane]!, bar)) lane++
+        last[lane] = bar
+        lanes[index] = lane
+      }
+      count = last.length
+    }
+    rowLaneCounts.set(rowId, count)
+  }
+  let laneCount = 1
+  for (const count of rowLaneCounts.values()) laneCount = Math.max(laneCount, count)
+  return { bars: bars.map((bar, index) => ({ ...bar, lane: lanes[index]! })), laneCount, rowLaneCounts }
+}
+
 const minuteMs = 60_000
 const dayMs = 86_400_000
 
