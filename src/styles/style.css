@@ -128,6 +128,20 @@
 .vft-network-pattern { fill: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); stroke: none; }
 path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); }
 .vft-guide { stroke: var(--vft-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* Opt-in NetworkGraph group collapse toggles, waypoint and resize handles, and level of detail. */
+.vft-group-toggle { cursor: pointer; }
+.vft-group-toggle rect { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 1.5px; }
+.vft-group-toggle path { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 1.6px; stroke-linecap: round; pointer-events: none; }
+.vft-group-toggle:focus-visible { outline: none; }
+.vft-group-toggle:focus-visible rect { fill: var(--vft-accent, #245e96); }
+.vft-group-toggle:focus-visible path { stroke: var(--vft-surface, #fff); }
+.vft-waypoint-handle { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 2px; cursor: move; touch-action: none; }
+.vft-waypoint-add { fill: var(--vft-accent, #245e96); fill-opacity: .35; stroke: var(--vft-accent, #245e96); stroke-width: 1px; cursor: copy; touch-action: none; }
+.vft-resize-handle { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 1.5px; touch-action: none; }
+.vft-resize-topLeft, .vft-resize-bottomRight { cursor: nwse-resize; }
+.vft-resize-topRight, .vft-resize-bottomLeft { cursor: nesw-resize; }
+.vft-waypoint-handle:focus-visible, .vft-waypoint-add:focus-visible, .vft-resize-handle:focus-visible { fill: var(--vft-accent, #245e96); fill-opacity: 1; stroke: var(--vft-surface, #fff); outline: none; }
+.vft-network.vft-lod-low .vft-node-detail, .vft-network.vft-lod-low .vft-edge-label { display: none; }
 /* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
 .vft-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vft-surface, #fff); }
 .vft-gantt-presets button { border: none; border-left: 1px solid var(--vft-border, #e0e9ef); background: var(--vft-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
@@ -329,13 +343,17 @@ path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var
   .vft-network-pattern { forced-color-adjust: none; fill: GrayText; }
   path.vft-network-pattern { fill: none; stroke: GrayText; }
   .vft-guide { forced-color-adjust: none; stroke: Highlight; stroke-width: 2px; }
+  .vft-group-toggle rect, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vft-group-toggle path { forced-color-adjust: none; stroke: CanvasText; }
+  .vft-group-toggle:focus-visible rect, .vft-waypoint-handle:focus-visible, .vft-waypoint-add:focus-visible, .vft-resize-handle:focus-visible { fill: Highlight; stroke: CanvasText; }
 }
 
 @media print {
   .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
   .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
-  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-gantt-create-button, .vft-gantt-create-preview, .vft-gantt-cascade-preview, .vft-guides { display: none !important; }
+  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-gantt-create-button, .vft-gantt-create-preview, .vft-gantt-cascade-preview, .vft-guides,
+  .vft-group-toggle, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
