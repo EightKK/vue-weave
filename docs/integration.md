@@ -23,9 +23,9 @@ Import components explicitly in a page or component.
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph } from 'vue-weave'
-const nodes = [{ id: 'root', label: 'Root' }]
-const edges = []
+import { NetworkGraph, type GraphEdge, type NetworkNode } from 'vue-weave'
+const nodes: NetworkNode[] = [{ id: 'root', label: 'Root' }]
+const edges: GraphEdge[] = []
 </script>
 <template>
   <NetworkGraph :nodes="nodes" :edges="edges" />
@@ -127,7 +127,7 @@ function resize({ id, before, after }: GraphNodeResize) {
 }
 ```
 
-A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no new theme variables are needed.
+A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no further theme variables are needed.
 
 ## Custom content
 
@@ -175,7 +175,7 @@ Scheduling overlays add four variables, used only when the matching input is set
 
 Segmented bars draw their work pieces and gap connectors with the bar's tone variables.
 
-The opt-in progress slider (`progressEditable`) is drawn in `--vw-accent`, and the tooltip slot container (`vw-gantt-tooltip`) uses `--vw-surface`, `--vw-text` and `--vw-border`; they add no new variables. Restyle the tooltip through its class or your slot content.
+The opt-in progress slider (`progressEditable`) is drawn in `--vw-accent`, and the tooltip slot container (`vw-gantt-tooltip`) uses `--vw-surface`, `--vw-text` and `--vw-border`; they add no variables. Restyle the tooltip through its class or your slot content.
 
 Drag to create (`creatable`) draws its preview (`vw-gantt-create-preview`) with `--vw-accent` and the row add button (`vw-gantt-create-button`) with `--vw-surface`, `--vw-border` and `--vw-accent`. The cascade preview of the `cascade` prop adds one variable:
 
@@ -189,17 +189,29 @@ Row hierarchy moves (`rowsReorderable`) draw the move handles (`vw-row-move-hand
 | --- | --- | --- |
 | `--vw-status` | `#1f7a4d` | The `statusDate` line and its label (`vw-gantt-status-date`) and the progress line of `showProgressLine` (`vw-gantt-progress-line`); the `status` export theme colour |
 
-Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) with `--vw-border`, and with `--vw-accent` while hovered, dragged or focused; it adds no new variable. The width of the row label column is the existing `--vw-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
+Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) with `--vw-border`, and with `--vw-accent` while hovered, dragged or focused; it adds no variable. The width of the row label column is the existing `--vw-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
+
+`GanttChart` also sets layout variables on its canvas element (`vw-gantt-canvas`) for its own stylesheet. A host stylesheet can read them, for example to place an overlay on the timeline, but setting them on an ancestor has no effect because the component sets them itself:
+
+| Variable | Value | Meaning |
+| --- | --- | --- |
+| `--vw-label-area-width` | length | Width of the row label area: `--vw-row-label-width` plus the width of any extra `columns`, including a column resize in progress. Time-axis content starts this far from the inline start edge |
+| `--vw-axis-width` | pixels | Width of the time axis |
+| `--vw-header-height` | pixels | Height of the header, including `headerBands` |
+| `--vw-row-depth` | number | Set on each row label: its hierarchy depth, capped at 5. The stylesheet uses it for indentation |
+| `--vw-grid-step` | pixels | Width of one tick step. Kept for custom stylesheets; the built-in styles no longer use it |
+
+`--vw-item-ink`, `--vw-item-line`, `--vw-item-pale` and `--vw-item-solid` are internal. The `vw-tone-*` classes set them from the tone families above, and nodes, bars and segments read them. They are not a theming API: change the tone variables (for example `--vw-blue-solid`) instead.
 
 ### Built-in dark theme
 
-Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, the tone families and the new `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`) (`Highlight`), the status-date line (a thick `CanvasText` line) and the progress line (dashed `CanvasText`), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), the status-date line (a thick `CanvasText` line) and the progress line (dashed `CanvasText`), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
 - `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines are printed, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
@@ -373,4 +385,6 @@ Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to
 
 The timeline then runs from right to left and its row headings sit on the right. Edit proposals keep the same times and units, so validation and persistence code needs no change. Arrow keys follow the screen: ArrowLeft makes a bar later. Translate the edit hint through `labels.editHint` to describe this to screen reader users. `auto` is resolved after mounting, so server-rendered markup is left-to-right until hydration; use an explicit `rtl` for server rendering.
 
-The new right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+`auto` reads the inherited direction at mount and when the `dir` prop changes, not afterwards. If an ancestor's direction changes later, for example when the user switches language at runtime, the component keeps the direction it resolved earlier. Pass an explicit `dir` bound to your language state, or re-key the component (`:key="locale"`) so that it resolves the direction again.
+
+The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
