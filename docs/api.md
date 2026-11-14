@@ -207,6 +207,8 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | contextMenu | boolean / false | Emits context-menu instead of opening the browser menu; see the same section |
 | creatable, createDuration, validateCreate | boolean or (row) => boolean / false, number / 4 × snap, CreateValidator / undefined | A drag or click on an empty part of a row, or its add button, proposes a new bar; see [Drag to create and cascade previews](#drag-to-create-and-cascade-previews) |
 | cascade | TimelineCascade / undefined | Follow-on changes of other bars for a move or resize, previewed during a drag and proposed with it as one batch; see the same section |
+| rowsReorderable, validateRowMove | boolean / false, RowMoveValidator / undefined | A move handle on each row heading proposes row hierarchy moves by pointer drag or Alt+arrow keys; see [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line) |
+| statusDate, showProgressLine | number / undefined, boolean / false | Draws a labelled status-date line and, with showProgressLine, a progress line; see the same section |
 
 TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
@@ -216,7 +218,7 @@ Dependencies connect explicit endpoints. FS means source finish to target start;
 
 ### Editing contract
 
-select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep, tooltipDelay or createDuration are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
+select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep, tooltipDelay, createDuration or statusDate are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
 
 ```ts
 interface TimelineEdit {
@@ -399,6 +401,33 @@ function cascade(change: TimelineEdit): TimelineEdit[] {
 
 Use `assignLanes(bars, { keepLanes: true })` (below) to stack new bars that overlap others in one row, and pass its `laneCount` with a `rowHeight` of at least 8 + laneCount × 14.
 
+### Row hierarchy moves, status date and progress line
+
+All of these are opt-in. Without `rowsReorderable` and `statusDate`, the chart renders the same markup as before (server output is byte-identical), and pointer, keyboard, events, names and descriptions are unchanged. `showProgressLine` has no effect without `statusDate`.
+
+| API | Behavior |
+| --- | --- |
+| rowsReorderable | `boolean`, default false. Each displayed row heading gets a move handle (`vft-row-move-handle`, a button before the expand toggle and the add button) named `GanttLabels.moveRow` (default "Move row") followed by the row label, for example "Move row Web team", and described by `GanttLabels.moveRowKeysHint`. No handles are drawn when `readonly` is set. |
+| row-move(change) | `TimelineRowMove`: `id`, `before` and `after` (`TimelineRowPosition`: optional `parentId`, absent for a root row, and the zero-based `index` among that parent's children) and `source` (`pointer` or `keyboard`). `after.index` counts the new siblings without the moved row. Accept it with `moveTimelineRow(rows, change.id, change.after)`. A move to the current position is not proposed. |
+| validateRowMove / row-move-rejected(change, reason) | Synchronous `RowMoveValidator`. Accepts with true or undefined, rejects with false (default `GanttLabels.rowMoveRejected`, "This row move was rejected.") or a reason string. The reason is announced in the live region. |
+| statusDate | `number`, in the units of `range`. Draws a vertical line (`vft-gantt-marker vft-gantt-status-date`, colour `--vft-status`) labelled `GanttLabels.statusDate` (default "Status date"). The line has `role="img"` and the accessible name and title "Status date" followed by `formatTime(statusDate)`. It is drawn only inside `range` and the visible time window. A non-finite value is reported through validation-error. |
+| showProgressLine | `boolean`, default false. With `statusDate`, draws a progress line (`vft-gantt-progress-line`, `--vft-status`) down the rendered rows. It runs along the status date and kinks to the progress point of each bar that is behind or ahead: a bar that started before the status date and is not complete, or that ends after it and has progress. The progress point is `start + progress × duration`, or the time at which that share of the work is done for a segmented bar. Milestones, complete bars before the status date and unstarted bars without progress keep the line straight. The line is decorative (`aria-hidden`) and follows previews of moves and progress drags. |
+
+**Keyboard.** On a focused move handle, Alt+ArrowUp and Alt+ArrowDown move the row one place among its siblings (nothing is proposed at either end). Alt+Shift+ArrowRight indents the row: it becomes the last child of its previous sibling. Alt+Shift+ArrowLeft outdents it: it becomes the next sibling after its parent. In right-to-left charts the two directions are swapped, so the arrow towards the row text indents, and the default hint says so. A first sibling cannot be indented and a root row cannot be outdented. After the parent applies the move, the chart scrolls the row into view and returns focus to its handle.
+
+**Pointer.** Press the primary button (or touch) on a move handle and drag vertically. A drop indicator (`vft-gantt-row-drop`, `--vft-accent`, `aria-hidden`) shows the position: the upper half of a displayed row places the moved row before it, the lower half after it, which is its first child when the row's children are shown. Positions inside the moved row's subtree are not offered. Release proposes the indicated position with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a source change (rows, collapsed rows, `rowsReorderable` and the other props listed in the editing contract) and a second pinch touch cancel the drag without a proposal.
+
+```ts
+import { moveTimelineRow, timelineWbsCodes, type TimelineRowMove } from 'vue-weave/core'
+
+function onRowMove(change: TimelineRowMove) {
+  rows.value = moveTimelineRow(rows.value, change.id, change.after)
+}
+const wbs = computed(() => timelineWbsCodes(rows.value)) // for a WBS column
+```
+
+`exportSvg` includes the status-date line and, with `showProgressLine`, the progress line; pass `includeStatusDate: false` in `GanttExportOptions` to leave both out.
+
 ### Timeline editing helpers
 
 | Export | Purpose |
@@ -410,6 +439,11 @@ Use `assignLanes(bars, { keepLanes: true })` (below) to stack new bars that over
 | moveTimeRanges(ranges, delta, snap, bounds) | Move intervals by one snapped displacement, clamped so every interval stays in bounds |
 | calendarBands(range, unit, options) | One header band level of hours, days, weeks, months or years in epoch milliseconds, aligned to a fixed UTC offset and clipped to the range |
 | resourceLoadHistogram(segments, resourceIds?) | Validate load segments, group them by resource, sort them and report each resource's peak |
+| timelineWbsCodes(rows) | Map from row ID to its outline (WBS) code in tree preorder: roots "1", "2", children "1.1", "1.2.1". Sibling order is array order. Invalid rows throw like `createTimelineRowTree` |
+| timelineRowPosition(rows, id) | The row's `TimelineRowPosition`: its `parentId` (absent for a root) and index among its siblings. An unknown ID throws an Error |
+| moveTimelineRow(rows, id, target) | New rows array in tree preorder with the row and its subtree moved under `target.parentId` (a root without it) at sibling `target.index`, counted without the moved row. The moved row is a new object; the others keep their identity. Unknown rows or parents and moves into the own subtree throw an Error; an index that is not an integer from 0 to the sibling count throws a RangeError |
+| indentTimelineRow(rows, id) / outdentTimelineRow(rows, id) | `moveTimelineRow` to the last child of the previous sibling, or to the next sibling after the parent. A first sibling cannot be indented and a root row cannot be outdented (Error) |
+| timelineCsvTable(rows, bars, options?) | A header and one record per bar for `toCsv`; see [Interchange exports](#interchange-exports) |
 
 `assignLanes(bars, options: AssignLanesOptions = {})` treats bars as half-open intervals, so touching bars share a lane; a milestone at `t` conflicts with every bar of its row that contains `t` (`start <= t < end`) and with milestones at `t`. By default lanes are assigned first-fit in start order, ties in input order, which uses the fewest lanes possible; input lanes are ignored. With `keepLanes: true` the bars are placed in input order: each keeps its `lane` (default 0) when no bar placed before it conflicts with it in that lane, and only a conflicting bar moves to the lowest free lane. This keeps lanes stable while an application adds or moves bars. `laneCount` is the largest number of lanes of any row and at least 1, and `rowLaneCounts` is a `Map` from each row ID that has bars to its highest lane plus one. Non-finite or inverted intervals and lanes that are not nonnegative integers throw a RangeError; the input is not modified.
 
@@ -444,6 +478,9 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | scheduleTasks(input) | Calculate calendar-aware earliest/latest dates, float and critical links |
 | scheduledBarFields(task) | `ScheduledBarFields` for a TimelineBar from a scheduled task: start, end, critical, latestEnd and, only for work in more than one segment, segments. Returns new objects |
 | propagateEdit(input, edit) | Reschedule with one task pinned at a new start (and optionally a new end) and list every task whose dates change: a `PropagateEditResult`; see [Propagate an edit](scheduling.md#propagate-an-edit) |
+| rescheduleFromStatusDate(input, statusDate, progress) | Reschedule a plan at a status date from reported progress: done tasks keep their dates, partly done tasks keep their done work and continue at or after the status date, and unstarted tasks start no earlier than it. Returns a `ScheduleResult`; see [Reschedule from a status date](scheduling.md#reschedule-from-a-status-date) |
+| scheduleToGraph(result, dependencies, options?) | A PERT network diagram for NetworkGraph from a successful schedule; see [Network diagram from a schedule](#network-diagram-from-a-schedule) |
+| toMsProjectXml(project, options?), toICalendar(events, options?), toCsv(table) | Interchange documents as strings; see [Interchange exports](#interchange-exports) |
 | calculateResourceLoad(range, tasks, resources, assignments) | Compare scheduled work with capacity over half-open intervals |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
 | graphDeletion(nodes, edges, nodeIds, edgeIds = []) | Normalized GraphDeletion: validates the graph, throws Error for unknown IDs, adds every edge incident to a deleted node and returns both lists deduplicated in input order |
@@ -575,11 +612,11 @@ Both components expose two export methods on their template ref. They need no de
 | exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
 | exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
 
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vft-*` custom properties in effect on the component, and the font from its computed `font-family`.
+The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vft-*` custom properties in effect on the component, and the font from its computed `font-family`.
 
 The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
 
-`GanttExportOptions`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`.
+`GanttExportOptions`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `includeStatusDate` (default true: the `statusDate` line and, with `showProgressLine`, the progress line), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`.
 
 `GraphExportOptions`: `padding` (default 16), `background` (default true), `title`, `idPrefix`, `theme`, `includeSelection` (default true), `nodeLabel(node)`, `nodeDetail(node)` and `edgeLabel(edge)`.
 
@@ -595,12 +632,49 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | Export | Purpose |
 | --- | --- |
 | renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
+| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
 
-Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline` and per-tone `ink`, `line`, `pale`, `solid`; the four newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline`, `status` and per-tone `ink`, `line`, `pale`, `solid`; the five newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+
+### Interchange exports
+
+The core entry builds three interchange formats as strings, without a DOM or dependencies. Save them with a `Blob` (`application/xml`, `text/calendar` or `text/csv`) or send them from a server.
+
+| Export | Behavior |
+| --- | --- |
+| toMsProjectXml(project, options?) | Microsoft Project XML (MSPDI) for `MsProjectInput`: `name`, `tasks` (`MsProjectTask`: `id`, `name`, `start`, `end` in epoch milliseconds, optional `outlineLevel` from 1, `percentComplete` from 0 to 100 and `milestone`) and optional `dependencies` (`MsProjectDependency`: `from`, `to`, `type` FS/SS/FF/SF, default FS, and elapsed `lag` in milliseconds). `MsProjectXmlOptions.utcOffsetMinutes` (default 0) sets the wall-clock offset of the written dates |
+| toICalendar(events, options?) | RFC 5545 text with one VEVENT per `ICalendarEvent` (`id`, `summary`, `start`, `end`, optional `description`). `ICalendarOptions`: `productId` (default `-//vue-weave//Timeline export//EN`), `calendarName` (NAME and X-WR-CALNAME) and `timestamp`, the DTSTAMP of every event (default `Date.now()`; pass it for reproducible output) |
+| toCsv(table) | RFC 4180 text from rows of `CsvCell` (`string`, finite `number` or `undefined` for an empty field) |
+| timelineCsvTable(rows, bars, options?) | `CsvCell[][]`: a header and one record per bar, ordered by row in tree preorder and then by bar order. `TimelineCsvOptions`: `formatTime` (default ISO 8601 UTC), `columns` (`TimelineCsvColumn[]`, any of `row`, `wbs`, `bar`, `start`, `end`, `progress`; default all, in that order) and `headers` (defaults Row, WBS, Bar, Start, End, Progress). Progress is written from 0 to 1 and is empty without progress |
+
+**MSPDI.** Tasks get `UID` and `ID` from 1 in input order and are written as manually scheduled tasks (`Manual` 1, with `ManualStart`, `ManualFinish` and `ManualDuration`), so Microsoft Project keeps their dates instead of rescheduling them on its default calendar. Each task has `Name`, `Start`, `Finish`, `Duration` (the elapsed span as `PT#H#M#S`; 0 for milestones), `OutlineLevel`, `OutlineNumber` and `WBS` (both derived from the outline levels), `Milestone` (set for `milestone: true` and for `start === end`), `Summary` (set when the next task is one level deeper) and `PercentComplete` (rounded). Dependencies become `PredecessorLink` elements on the successor with `PredecessorUID`, `Type` (FF 0, FS 1, SF 2, SS 3), `LinkLag` in tenths of a minute and `LagFormat` 4 (elapsed minutes). The project carries `Name`, `Title`, `ScheduleFromStart` and the earliest start and latest finish as `StartDate` and `FinishDate`. Dates are local times without an offset suffix, as MSPDI expects. Not exported: calendars, resources, assignments, baselines, constraints, notes, custom fields and the input task IDs. Text is escaped with `escapeXml`. Empty or duplicate task IDs, unknown dependency ends and unknown types throw an Error; non-finite or inverted dates, an outline level that is not an integer from 1 or that grows by more than one from the previous task, a percent complete outside 0 to 100 and a non-finite lag throw a RangeError.
+
+**iCalendar.** Lines end with CRLF and are folded at 75 octets, never inside a UTF-8 character; continuation lines start with a space. Times are UTC (`20261109T080000Z`). An event with `end === start` is written without `DTEND`. TEXT values escape backslashes, semicolons, commas and line breaks and drop other control characters. Use globally unique IDs, for example `task-1@example.com`. Empty or duplicate IDs throw an Error; non-finite or inverted times throw a RangeError.
+
+**CSV.** Fields that contain a comma, a double quote, CR or LF are quoted, with inner quotes doubled; every record ends with CRLF. A non-finite number throws a RangeError. Formulas are not neutralized: when untrusted text is opened in a spreadsheet, prefix cells that start with `=`, `+`, `-` or `@` yourself.
+
+```ts
+import { timelineCsvTable, toCsv, toICalendar, toMsProjectXml } from 'vue-weave/core'
+
+const csv = toCsv(timelineCsvTable(rows, bars, { formatTime }))
+const ics = toICalendar(bars.map(bar => ({ id: bar.id + '@example.com', summary: bar.label, start: bar.start, end: bar.end })))
+const xml = toMsProjectXml({ name: 'Plan', tasks: bars.map(bar => ({ id: bar.id, name: bar.label, start: bar.start, end: bar.end })) })
+```
+
+### Network diagram from a schedule
+
+`scheduleToGraph(result, dependencies, options?)` turns a successful `scheduleTasks` (or `propagateEdit`, `rescheduleFromStatusDate`) result into an activity-on-node diagram for NetworkGraph. It returns a `ScheduleGraph`: `nodes` (one `NetworkNode` per task in result order, with ID, label, a detail with the early start, early finish and total float, and `data` of type `ScheduleGraphNodeData`), `edges` (one `GraphEdge` per dependency with the dependency's ID, labelled with its type when it is not FS, and `data` of type `ScheduleGraphEdgeData`), `criticalNodeIds` and `criticalEdgeIds` (the result's `criticalDependencyIds`). Critical tasks get the `criticalTone` (default amber) and the others the `tone` (default blue). For an ALAP task the early dates are `earliestStart` and `earliestEnd`.
+
+`ScheduleGraphOptions`: `label(taskId)` (default the ID), `formatTime` (default UTC `YYYY-MM-DD HH:mm`), `formatDuration` for the float (default hours of a millisecond duration, for example `1.5 h`), `labels` (`earlyStart`, `earlyFinish` and `float` prefixes; defaults ES, EF and Float), `criticalTone` and `tone`. A failed result or a dependency whose ends are not tasks of the result throws an Error.
+
+```vue
+<NetworkGraph :nodes="graph.nodes" :edges="graph.edges" :related-ids="graph.criticalNodeIds" :options="{ nodeWidth: 280 }" />
+```
+
+`relatedIds` highlights the critical tasks and the edges between them; use `criticalEdgeIds` with an `edge` slot to style exactly the controlling links.
 
 ### Right-to-left layout
 
@@ -612,7 +686,7 @@ Both components take an opt-in `dir` prop of type `ChartDirection`.
 | `rtl` | Writes `dir="rtl"` on the component root and adds the `vft-rtl` class. Server rendering already produces right-to-left markup. |
 | `auto` | Writes no attribute and follows the CSS `direction` inherited by the component root, read after mounting and whenever `dir` changes. Server rendering and the first client render are left-to-right. |
 
-In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
+In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, the status-date and progress lines, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
 
 Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused editable bar one `snap` later and ArrowRight one `snap` earlier. Shift with an arrow moves the end and Alt with an arrow moves the start, in the same visual direction (Shift+ArrowLeft makes the bar end later). Up and Down (with `rowDraggable`) are unchanged. Pointer drags follow the pointer: dragging left moves later. The start resize handle is on the right edge of a bar and the end handle on the left. When a dependency is dropped on a bar body, the right half picks the start and the left half the finish. The collapsed-row toggle shows ◂ instead of ▸.
 

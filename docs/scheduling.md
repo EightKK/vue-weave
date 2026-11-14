@@ -109,6 +109,30 @@ function cascade(change: TimelineEdit): TimelineEdit[] {
 
 `changes` are measured against `scheduleTasks(input)`. When the plan on screen came from different constraints, for example a requested `startNoEarlierThan` that the drag replaces, build `input` so that it reproduces the plan on screen: the demo pins the dragged task with `fixedStart` at its current start and removes its `startNoEarlierThan` before calling `propagateEdit`. The chart ignores changes for the dragged bar itself and for unknown bars. Persist the accepted batch the same way as a single edit, for example by turning the primary change (the first entry) into a new constraint and scheduling again.
 
+## Reschedule from a status date
+
+`rescheduleFromStatusDate(input, statusDate, progress)` updates a plan after progress has been reported at a status date. `progress` is a `ReadonlyMap` from task ID to the completed share of its working duration, from 0 to 1; a task without an entry has progress 0. The current dates are those of `scheduleTasks(input)`; when that fails, its failure is returned.
+
+- **Progress 1.** The task keeps its current dates, even when they lie after the status date.
+- **Progress between 0 and 1.** The done work is `progress × duration` rounded down to whole quanta (a value just below 1 still leaves one quantum). It stays where it is, from the current start. When that would carry it past the status date (the task is ahead of plan or started early), it is placed so that it ends at the status date instead. The remaining work is scheduled at or after the status date on the task's calendar. When time is left between the two parts, the task is split: its `work` lists both parts, and `scheduledBarFields` turns them into `segments`. Internally the gap becomes a pause of the task. A task whose done work rounds down to zero, and a milestone, is treated as not started.
+- **Progress 0.** The task starts no earlier than the status date, in addition to its own bounds and dependencies.
+
+A started or finished task is pinned at its start with `fixedStart`: its incoming dependencies, `startNoEarlierThan`, `startNoLaterThan`, previous `fixedStart` and `mode` no longer apply, because its start has happened. Its finish bounds (`finishNoEarlierThan`, `finishNoLaterThan`, the deadline) and its outgoing dependencies still apply, so successors follow the new finish. Unstarted tasks keep every bound and dependency; an unstarted task with a `fixedStart` before the status date makes the plan infeasible, which is returned as an `infeasible` failure. The result is the `ScheduleResult` of the adjusted plan. Dependencies into started tasks are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
+
+```ts
+import { rescheduleFromStatusDate } from 'vue-weave/core'
+
+// Continuous time: a (10 units) → b (10 units); status date 15.
+const result = rescheduleFromStatusDate(input, 15, new Map([['a', 1], ['b', 0.3]]))
+// a keeps [0, 10). b keeps 3 units at [10, 13) and does the other 7 at [15, 22): work [[10, 13], [15, 22]].
+```
+
+The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
+
+## Network diagram
+
+`scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).
+
 ## Compare demand with capacity
 
 Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available. Each assignment requests positive integer units and applies to every work segment of the task. Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
@@ -169,6 +193,8 @@ Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task
 ## Try the demo
 
 Open **Scheduling** and focus **Cut order A**. Press Right Arrow once to move its requested start from 08:00 to 09:00. Inspection moves to 13:00, projected finish moves from 16:00 to 17:00, and the CNC overlap grows from one to two resource-hours. Press Right Arrow again to see packing finish on 11 November after the 10 November closure. Further moves beyond the horizon leave the accepted plan on screen. **Reset schedule** restores the original dates.
+
+The status date slider (09 Nov 12:00 by default) draws the status-date line, and **Show progress line** draws the progress line from the reported progress: cutting order A is done, B is half done and inspection a quarter done. **Reschedule from status date** applies `rescheduleFromStatusDate`: B keeps its first hour and finishes after lunch, inspection keeps its first half hour and continues at 13:00, and packing moves to 14:30–16:30. The next edit recalculates the plan from the requested starts. **Export MS Project XML**, **Export iCalendar** and **Export CSV** save the current plan with `toMsProjectXml`, `toICalendar` and `toCsv`, and **Network diagram** shows it as a NetworkGraph built with `scheduleToGraph`.
 
 Drag **Cut order A** two hours to the right with the pointer: while it is held, dashed outlines show inspection and packing at the dates `propagateEdit` computes for the new start, and the bars stay where they are. Release to accept the move and the cascaded operations as one batch; Escape discards the preview. A requested start inside the lunch break or on the closed day is previewed from the next working time, as the scheduler places it.
 

@@ -202,6 +202,14 @@ export interface GanttLabels {
   createIn?: string
   /** Announced when `validateCreate` returns false. Default "This new bar was rejected." */
   createRejected?: string
+  /** Accessible name prefix of a row's move handle (`rowsReorderable`), followed by the row label. Default "Move row". */
+  moveRow?: string
+  /** Description of the row move handles. Default lists the Alt key shortcuts. */
+  moveRowKeysHint?: string
+  /** Announced when `validateRowMove` returns false. Default "This row move was rejected." */
+  rowMoveRejected?: string
+  /** Label of the status-date line (`statusDate`). Default "Status date". */
+  statusDate?: string
 }
 
 export interface NetworkNodeSlot {
@@ -342,6 +350,26 @@ export interface TimelineCreate {
   source: 'pointer' | 'keyboard'
 }
 
+/** A place in a row hierarchy: the parent row (absent for a root row) and the zero-based index among its children. */
+export interface TimelineRowPosition {
+  parentId?: string
+  index: number
+}
+
+/**
+ * A row hierarchy proposal from GanttChart (`rowsReorderable`). Apply it with
+ * `moveTimelineRow(rows, change.id, change.after)`. `after.index` counts the new siblings without the moved row.
+ */
+export interface TimelineRowMove {
+  id: string
+  before: TimelineRowPosition
+  after: TimelineRowPosition
+  source: 'pointer' | 'keyboard'
+}
+
+/** Synchronous check of a `row-move` proposal. Accept with true or undefined; reject with false or a reason. */
+export type RowMoveValidator = (change: TimelineRowMove) => boolean | string | void
+
 /** Synchronous check of a `create` proposal. Accept with true or undefined; reject with false or a reason. */
 export type CreateValidator = (proposal: TimelineCreate) => boolean | string | void
 
@@ -441,6 +469,8 @@ export interface GanttExportOptions {
   theme?: SvgExportThemeInput
   barLabel?: (bar: TimelineBar) => string
   rowLabel?: (row: TimelineRow) => string
+  /** Include the `statusDate` line and, with `showProgressLine`, the progress line. Default true. */
+  includeStatusDate?: boolean
 }
 
 /** Options of the `exportSvg` method on NetworkGraph. */

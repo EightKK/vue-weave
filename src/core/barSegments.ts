@@ -79,3 +79,30 @@ export function checkNonWorkingPeriods(periods: readonly TimeRange[] | undefined
     }
   }
 }
+
+/**
+ * Time of the progress point at which a bar kinks the progress line, or undefined when it does not: a milestone, a
+ * bar that is complete by the status date, and a bar that has not started by it and has no progress keep the line
+ * straight. Other bars kink it at their progress point (`progressTime`), behind or ahead of the status date.
+ */
+export function progressLineTime(
+  bar: TimeRange & { progress?: number; segments?: readonly TimeRange[] }, statusDate: number,
+): number | undefined {
+  if (bar.start === bar.end) return undefined
+  const progress = bar.progress ?? 0
+  if (!(bar.start < statusDate && progress < 1) && !(progress > 0 && bar.end > statusDate)) return undefined
+  return progressTime(bar, bar.segments, progress)
+}
+
+/**
+ * Points of a progress line: a vertical line at `x` from `top` to `bottom` that turns to each kink's x at its y,
+ * leaving and rejoining the vertical `reach` pixels above and below. Kinks are visited from top to bottom.
+ */
+export function progressLinePoints(x: number, top: number, bottom: number, kinks: readonly { x: number; y: number; reach: number }[]) {
+  const points: [number, number][] = [[x, top]]
+  for (const kink of [...kinks].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    points.push([x, kink.y - kink.reach], [kink.x, kink.y], [x, kink.y + kink.reach])
+  }
+  points.push([x, bottom])
+  return points
+}

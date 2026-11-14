@@ -2913,3 +2913,227 @@ test('demo level of detail hides node details and edge labels when zoomed out', 
   await expect(detail).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('gantt rows indent, outdent and move by keyboard with validation, focus return and undo', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await expect(chart.getByRole('button', { name: /^Move row / })).toHaveCount(0)
+  await expect(chart.locator('.vft-extra-column')).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
+  const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
+  const wbs = (label: string) => chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vft-extra-column')
+  const quality = handle('Quality')
+  await expect(quality).toHaveAccessibleDescription(/^Alt\+Up and Alt\+Down move the row among its siblings\. Alt\+Shift\+Right indents/)
+  await expect(wbs('Web team')).toHaveText('2.1')
+  await expect(wbs('Quality')).toHaveText('3')
+
+  // Indent makes Quality the last child of the platform team; focus returns to its handle.
+  await quality.press('Alt+Shift+ArrowRight')
+  await expect(status('Moved Quality to Platform team as WBS 2.2.')).toBeVisible()
+  await expect(wbs('Quality')).toHaveText('2.2')
+  await expect(handle('Quality')).toBeFocused()
+  await page.keyboard.press('Alt+Shift+ArrowLeft')
+  await expect(status('Moved Quality to the top level as WBS 3.')).toBeVisible()
+  await expect(handle('Quality')).toBeFocused()
+  await page.keyboard.press('Alt+ArrowUp')
+  await expect(status('Moved Quality to the top level as WBS 2.')).toBeVisible()
+  await expect(wbs('Platform team')).toHaveText('3')
+  await expect(wbs('Web team')).toHaveText('3.1')
+  await expect(handle('Quality')).toBeFocused()
+  // The first sibling cannot move up or be indented; nothing is proposed.
+  await handle('Product team').press('Alt+ArrowUp')
+  await handle('Product team').press('Alt+Shift+ArrowRight')
+  await expect(status('Moved Quality to the top level as WBS 2.')).toBeVisible()
+
+  // The application rejects rows under Quality; the reason is announced.
+  await handle('Platform team').press('Alt+Shift+ArrowRight')
+  await expect(status('Quality cannot contain other teams.')).toBeVisible()
+  await expect(chart.locator('xpath=..').locator('[aria-live="polite"]')).toHaveText('Quality cannot contain other teams.')
+  await expect(wbs('Platform team')).toHaveText('3')
+
+  // Undo and Redo restore the hierarchy with the rest of the timeline history.
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await undo.click()
+  await expect(wbs('Quality')).toHaveText('3')
+  await undo.click()
+  await expect(wbs('Quality')).toHaveText('2.2')
+  await page.getByRole('button', { name: 'Redo timeline change', exact: true }).click()
+  await expect(wbs('Quality')).toHaveText('3')
+
+  // Bars keep following their rows.
+  await expect(chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Quality', exact: true }) }).getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })).toBeVisible()
+
+  // In a right-to-left chart, Alt+Shift+Left indents towards the row text.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  await expect(handle('Quality')).toHaveAccessibleDescription(/Alt\+Shift\+Left indents it/)
+  await handle('Quality').press('Alt+Shift+ArrowLeft')
+  await expect(status('Moved Quality to Platform team as WBS 2.2.')).toBeVisible()
+  await page.keyboard.press('Alt+Shift+ArrowRight')
+  await expect(status('Moved Quality to the top level as WBS 3.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt row handles drag rows between rows with a drop indicator and cancel with Escape', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
+  const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
+  const wbs = (label: string) => chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vft-extra-column')
+  const indicator = chart.locator('.vft-gantt-row-drop')
+  const product = (await handle('Product team').boundingBox())!
+  const web = (await chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  const x = product.x + product.width / 2
+
+  // Escape cancels a drag: the indicator disappears and releasing proposes nothing.
+  await page.mouse.move(x, product.y + product.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, web.y + web.height * 0.75, { steps: 8 })
+  await expect(indicator).toBeVisible()
+  const line = (await indicator.boundingBox())!
+  expect(Math.abs(line.y - (web.y + web.height - 1))).toBeLessThan(3)
+  await page.keyboard.press('Escape')
+  await expect(indicator).toHaveCount(0)
+  await page.mouse.up()
+  await expect(wbs('Product team')).toHaveText('1')
+
+  // The lower half of the web team's row drops the product team after it, inside the platform team.
+  await page.mouse.move(x, product.y + product.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, web.y + web.height * 0.75, { steps: 8 })
+  await page.mouse.up()
+  await expect(status('Moved Product team to Platform team as WBS 1.2.')).toBeVisible()
+  await expect(wbs('Product team')).toHaveText('1.2')
+  await expect(wbs('Platform team')).toHaveText('1')
+  await expect(indicator).toHaveCount(0)
+  await expect(handle('Product team')).toBeFocused()
+
+  // A row cannot be dropped inside its own subtree.
+  const platform = (await handle('Platform team').boundingBox())!
+  const child = (await chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  await page.mouse.move(platform.x + platform.width / 2, platform.y + platform.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(platform.x + platform.width / 2, child.y + child.height * 0.3, { steps: 8 })
+  await expect(indicator).toHaveCount(0)
+  await page.mouse.up()
+  await expect(wbs('Platform team')).toHaveText('1')
+  await page.getByRole('button', { name: 'Undo timeline change', exact: true }).click()
+  await expect(wbs('Product team')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo draws the status date and progress line and reschedules from the status date', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const line = plan.getByRole('img', { name: 'Status date 09 Nov 12:00', exact: true })
+  await expect(line).toBeVisible()
+  await expect(line).toHaveClass(/vft-gantt-status-date/)
+  const progress = plan.locator('.vft-gantt-progress-line')
+  await expect(progress).toHaveCount(4)
+  await expect(progress.first()).toHaveAttribute('aria-hidden', 'true')
+  // Cutting order B (half done) and inspection (a quarter done) are behind the status date and kink the line.
+  for (const [index, points] of [[0, 2], [1, 5], [2, 5], [3, 2]] as const) {
+    expect((await progress.nth(index).locator('polyline').getAttribute('points'))!.split(' ').length).toBe(points)
+  }
+  const toggle = page.getByRole('checkbox', { name: 'Show progress line', exact: true })
+  await toggle.uncheck()
+  await expect(progress).toHaveCount(0)
+  await toggle.check()
+  await expect(progress.first()).toBeVisible()
+
+  const slider = page.getByRole('slider', { name: 'Status date', exact: true })
+  await slider.fill(String(Date.parse('2026-11-09T13:00:00+09:00')))
+  await expect(plan.getByRole('img', { name: 'Status date 09 Nov 13:00', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Status date and exports' }).locator('output')).toHaveText('09 Nov 13:00')
+  await slider.fill(String(Date.parse('2026-11-09T12:00:00+09:00')))
+
+  // Done work stays, partly done work is split at the status date and the rest moves after it.
+  await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Rescheduled from status date 09 Nov 12:00. 3 operations moved.' })).toBeVisible()
+  await expect(plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })).toBeVisible()
+  await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 10:00–09 Nov 14:00', exact: true }).locator('.vft-gantt-segment')).toHaveCount(2)
+  const inspection = plan.getByRole('button', { name: 'Inspect order A 09 Nov 11:00–09 Nov 14:30', exact: true })
+  await expect(inspection.locator('.vft-gantt-segment')).toHaveCount(2)
+  await expect(plan.getByRole('button', { name: 'Pack order A 09 Nov 14:30–09 Nov 16:30', exact: true })).toBeVisible()
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:30')
+
+  // The SVG export includes the status date and the progress line.
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export schedule SVG', exact: true }).click()
+  const { readFile } = await import('node:fs/promises')
+  const svg = (await readFile((await (await pending).path())!)).toString('utf8')
+  expect(svg).toContain('<g class="vft-gantt-status-date"><title>Status date 09 Nov 12:00</title>')
+  expect(svg).toContain('class="vft-gantt-progress-line"')
+  await page.getByRole('button', { name: 'Reset schedule' }).click()
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo exports Microsoft Project XML, iCalendar and CSV files', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  // Record the media type of every blob that is turned into a download URL.
+  await page.addInitScript(() => {
+    const create = URL.createObjectURL.bind(URL)
+    const types: string[] = []
+    Object.assign(window, { blobTypes: types })
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      if (object instanceof Blob) types.push(object.type)
+      return create(object)
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const { readFile } = await import('node:fs/promises')
+  async function save(name: string) {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    const file = await pending
+    return { filename: file.suggestedFilename(), text: (await readFile((await file.path())!)).toString('utf8') }
+  }
+  const xml = await save('Export MS Project XML')
+  expect(xml.filename).toBe('schedule.xml')
+  expect(xml.text).toMatch(/^<\?xml version="1.0" encoding="UTF-8" standalone="yes"\?>\n<Project xmlns="http:\/\/schemas.microsoft.com\/project">/)
+  expect(xml.text).toContain('<Name>Cut order A</Name>')
+  expect(xml.text).toContain('<Start>2026-11-09T08:00:00</Start><Finish>2026-11-09T11:00:00</Finish>')
+  expect(xml.text).toContain('<PercentComplete>100</PercentComplete>')
+  expect(xml.text.match(/<PredecessorLink>/g)).toHaveLength(2)
+
+  const ics = await save('Export iCalendar')
+  expect(ics.filename).toBe('schedule.ics')
+  expect(ics.text.startsWith('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n')).toBe(true)
+  expect(ics.text).toContain('SUMMARY:Cut order A\r\n')
+  expect(ics.text).toContain('DTSTART:20261108T230000Z\r\nDTEND:20261109T020000Z\r\n')
+  expect(ics.text.endsWith('END:VCALENDAR\r\n')).toBe(true)
+
+  const csv = await save('Export CSV')
+  expect(csv.filename).toBe('schedule.csv')
+  expect(csv.text.split('\r\n').slice(0, 2)).toEqual(['Operation,WBS,Task,Start,End,Progress', 'Cut order A,1,Cut order A,09 Nov 08:00,09 Nov 11:00,1'])
+  expect(await page.evaluate(() => (window as unknown as { blobTypes: string[] }).blobTypes)).toEqual(['application/xml', 'text/calendar', 'text/csv'])
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo shows the plan as a network diagram with critical tasks and links highlighted', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const toggle = page.getByRole('checkbox', { name: 'Network diagram', exact: true })
+  await expect(page.getByLabel('Schedule network diagram', { exact: true })).toHaveCount(0)
+  await toggle.check()
+  const diagram = page.getByLabel('Schedule network diagram', { exact: true })
+  await expect(diagram).toBeVisible()
+  const nodes = diagram.locator('.vft-network-node')
+  await expect(nodes).toHaveCount(4)
+  const cutting = diagram.getByRole('button', { name: 'Cut order A ES 09 Nov 08:00 · EF 09 Nov 11:00 · Float 0 h', exact: true })
+  await expect(cutting).toHaveClass(/vft-tone-amber/)
+  await expect(cutting).toHaveClass(/related/)
+  await expect(diagram.getByRole('button', { name: /^Cut order B ES 09 Nov 10:00 · EF 09 Nov 12:00 · Float [1-9]\d* h$/ })).not.toHaveClass(/related/)
+  await expect(diagram.locator('.vft-network-edge.related')).toHaveCount(2)
+  // The diagram follows plan changes.
+  await page.getByRole('region', { name: 'Gantt chart', exact: true }).first().getByRole('button', { name: /^Cut order A \d\d Nov.*–/ }).press('ArrowRight')
+  await expect(diagram.getByRole('button', { name: /^Cut order A ES 09 Nov 09:00 · EF 09 Nov 12:00/ })).toBeVisible()
+  await toggle.uncheck()
+  await expect(diagram).toHaveCount(0)
+  expect(errors).toEqual([])
+})
