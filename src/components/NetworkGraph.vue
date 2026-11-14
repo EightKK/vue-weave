@@ -2,9 +2,12 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
 import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, NetworkTooltipSlot } from '../core/types.js'
+import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
-import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect } from '../core/graphView.js'
+import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect, type GraphRect } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
+import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '../core/graphSnapping.js'
+import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
@@ -39,7 +42,15 @@ const props = withDefaults(defineProps<{
   validateDelete?: (deletion: GraphDeletion) => boolean | string | void
   contextMenu?: boolean
   tooltipDelay?: number
-}>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400 })
+  snapGrid?: number
+  background?: 'none' | 'dots' | 'lines'
+  backgroundGap?: number
+  alignmentGuides?: boolean
+  guideThreshold?: number
+  autoPan?: boolean
+  droppable?: boolean
+  clipboard?: boolean
+}>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6 })
 const emit = defineEmits<{
   select: [id: string]
   'update:selectedId': [id: string]
@@ -55,6 +66,10 @@ const emit = defineEmits<{
   delete: [deletion: GraphDeletion]
   'delete-rejected': [deletion: GraphDeletion, reason: string]
   'context-menu': [event: GraphContextMenu]
+  drop: [event: GraphDrop]
+  copy: [selection: GraphClipboardSelection]
+  paste: [event: GraphPaste]
+  duplicate: [selection: GraphClipboardSelection]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot): unknown
@@ -378,9 +393,13 @@ function startPan(event: PointerEvent) {
   }
   isPanning.value = !pan.box
   svg.value.setPointerCapture(event.pointerId)
+  if (pan.box) startAutoPan(event)
 }
 
-let nodeDrag: { pointerId: number; start: GraphPoint; before: Map<string, GraphPoint>; target: SVGElement; node?: string } | undefined
+// `camera` is the camera when the drag started; auto-pan moves the camera during the drag.
+let nodeDrag: {
+  pointerId: number; start: GraphPoint; before: Map<string, GraphPoint>; target: SVGElement; node?: string; camera: GraphPoint
+} | undefined
 let suppressClick: string | undefined
 const noIds: ReadonlySet<string> = new Set()
 const gestureIds = shallowRef(noIds)
@@ -412,6 +431,86 @@ function emitMoves(before: ReadonlyMap<string, GraphPoint>, after: ReadonlyMap<s
   else if (changes.length > 1) emit('nodes-move', changes)
 }
 
+// Snapping. The reference point of a move is the top-left corner of the dragged or focused node, or of the bounding
+// box of the moved nodes for a group. It lands on the grid; the other moved nodes keep their offsets from it.
+function movedBounds(before: ReadonlyMap<string, GraphPoint>): GraphRect {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+  for (const [id, point] of before) {
+    const box = savedLayout.value.boxes.get(id)!
+    left = Math.min(left, point.x)
+    top = Math.min(top, point.y)
+    right = Math.max(right, point.x + box.width)
+    bottom = Math.max(bottom, point.y + box.height)
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+function referencePoint(before: ReadonlyMap<string, GraphPoint>, node?: string): GraphPoint {
+  return (node === undefined ? undefined : before.get(node)) ?? movedBounds(before)
+}
+function snapValue(value: number, grid: number) {
+  return Math.round(value / grid) * grid + 0
+}
+// The lowest reference coordinate that keeps every moved node at a nonnegative position, on the grid when given.
+function clampTarget(start: number, target: number, low: number, grid?: number) {
+  if (target - start >= low) return target
+  return grid === undefined ? start + low : Math.ceil((start + low) / grid - 1e-9) * grid + 0
+}
+function placeMoved(
+  before: ReadonlyMap<string, GraphPoint>, reference: GraphPoint, target: GraphPoint, node?: string, gridX?: number, gridY?: number,
+) {
+  let lowX = -Infinity, lowY = -Infinity
+  for (const point of before.values()) {
+    lowX = Math.max(lowX, -point.x)
+    lowY = Math.max(lowY, -point.y)
+  }
+  const x = clampTarget(reference.x, target.x, lowX, gridX), y = clampTarget(reference.y, target.y, lowY, gridY)
+  const dx = x - reference.x, dy = y - reference.y
+  return new Map([...before].map(([id, point]) => [id, id === node
+    ? { x, y } : { x: Math.max(0, point.x + dx), y: Math.max(0, point.y + dy) }]))
+}
+// Non-moving node boxes that guides align with: every node, or only the rendered ones when culling is on.
+function guideCandidates(moving: ReadonlyMap<string, GraphPoint>) {
+  const rendered = visible.value?.nodes
+  const rects: GraphRect[] = []
+  for (const [id, box] of savedLayout.value.boxes) {
+    if (!moving.has(id) && (!rendered || rendered.has(id))) rects.push({ x: box.x, y: box.y, width: box.width, height: box.height })
+  }
+  return rects
+}
+const guideLines = shallowRef<GraphAlignmentGuide[]>()
+function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: number) {
+  const grid = props.snapGrid
+  if (grid === undefined && !props.alignmentGuides) return movePositions(drag.before, dx, dy)
+  const node = drag.node !== undefined && drag.before.has(drag.node) ? drag.node : undefined
+  const reference = referencePoint(drag.before, node)
+  const bounds = movedBounds(drag.before)
+  let gridX = grid, gridY = grid, others: GraphRect[] = []
+  if (props.alignmentGuides) {
+    others = guideCandidates(drag.before)
+    // Guides win over the grid on the axis they align.
+    const match = graphAlignmentGuides({ ...bounds, x: bounds.x + dx, y: bounds.y + dy }, others, props.guideThreshold / camera.value.scale)
+    if (match.guides.some(guide => guide.axis === 'x')) {
+      dx += match.dx
+      gridX = undefined
+    }
+    if (match.guides.some(guide => guide.axis === 'y')) {
+      dy += match.dy
+      gridY = undefined
+    }
+  }
+  const target = {
+    x: gridX === undefined ? reference.x + dx : snapValue(reference.x + dx, gridX),
+    y: gridY === undefined ? reference.y + dy : snapValue(reference.y + dy, gridY),
+  }
+  const positions = placeMoved(drag.before, reference, target, node, gridX, gridY)
+  if (props.alignmentGuides) {
+    // Guides for the final position, which may also be aligned by the grid or the nonnegative clamp.
+    const moved = movedBounds(positions)
+    guideLines.value = graphAlignmentGuides(moved, others, 1e-6).guides
+  }
+  return positions
+}
+
 function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string) {
   suppressClick = undefined
   if (!props.draggable || !event.isPrimary || event.button !== 0 || nodeDrag || pan || connectionDrag) return
@@ -419,23 +518,34 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
   const before = movablePositions(ids)
   if (!before.size) return
   const target = event.currentTarget as SVGElement
-  nodeDrag = { pointerId: event.pointerId, target, before, node, start: { x: event.clientX, y: event.clientY } }
+  nodeDrag = {
+    pointerId: event.pointerId, target, before, node, start: { x: event.clientX, y: event.clientY },
+    camera: { x: camera.value.x, y: camera.value.y },
+  }
   gestureIds.value = new Set(before.keys())
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
+  startAutoPan(event)
 }
 
+function updateNodePreview(clientX: number, clientY: number) {
+  if (!nodeDrag) return
+  const dx = clientX - nodeDrag.start.x, dy = clientY - nodeDrag.start.y
+  if (!dragPreview.value && Math.hypot(dx, dy) < 4) return
+  const { x, y, scale } = camera.value
+  // Camera movement during the drag (auto-pan) moves the chart under a still pointer.
+  dragPreview.value = dragPositions(nodeDrag, (dx - (x - nodeDrag.camera.x)) / scale, (dy - (y - nodeDrag.camera.y)) / scale)
+}
 function moveNode(event: PointerEvent) {
   if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) return
-  const dx = event.clientX - nodeDrag.start.x, dy = event.clientY - nodeDrag.start.y
-  if (!dragPreview.value && Math.hypot(dx, dy) < 4) return
-  const scale = camera.value.scale
-  dragPreview.value = movePositions(nodeDrag.before, dx / scale, dy / scale)
+  gesturePointer = { x: event.clientX, y: event.clientY }
+  updateNodePreview(event.clientX, event.clientY)
 }
 function cancelNodeDrag() {
   const drag = nodeDrag
   nodeDrag = undefined
   gestureIds.value = noIds
+  guideLines.value = undefined
   if (dragPreview.value && drag) suppressClick = drag.node
   dragPreview.value = undefined
   if (drag?.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId)
@@ -459,7 +569,7 @@ function clickNode(id: string, event: MouseEvent) {
 function movingIds(id: string) {
   return props.selectedIds?.has(id) ? props.selectedIds : [id]
 }
-function moveWithKeys(event: KeyboardEvent, ids: Iterable<string>) {
+function moveWithKeys(event: KeyboardEvent, ids: Iterable<string>, node?: string) {
   if (!props.draggable || nodeDrag) return
   const offsets: Record<string, [number, number]> = {
     ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
@@ -469,8 +579,20 @@ function moveWithKeys(event: KeyboardEvent, ids: Iterable<string>) {
   const before = movablePositions(ids)
   if (!before.size) return
   event.preventDefault()
-  const step = event.shiftKey ? 40 : 10
-  emitMoves(before, movePositions(before, offset[0] * step, offset[1] * step))
+  const grid = props.snapGrid
+  if (grid === undefined) {
+    const step = event.shiftKey ? 40 : 10
+    emitMoves(before, movePositions(before, offset[0] * step, offset[1] * step))
+    return
+  }
+  // With a grid, the reference point steps to the next grid line (four with Shift) in the arrow direction.
+  const cells = event.shiftKey ? 4 : 1
+  const anchor = node !== undefined && before.has(node) ? node : undefined
+  const reference = referencePoint(before, anchor)
+  const step = (start: number, direction: number) => direction > 0 ? (Math.floor(start / grid + 1e-9) + cells) * grid
+    : direction < 0 ? (Math.ceil(start / grid - 1e-9) - cells) * grid + 0 : start
+  const target = { x: step(reference.x, offset[0]), y: step(reference.y, offset[1]) }
+  emitMoves(before, placeMoved(before, reference, target, anchor, grid, grid))
 }
 
 type ConnectionDraft = { fixed: PortRef; end: 'from' | 'to'; edge?: GraphEdge }
@@ -553,6 +675,7 @@ function captureConnection(event: PointerEvent) {
   connectionDrag = { pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
+  startAutoPan(event)
 }
 function startPort(event: PointerEvent, handle: PortHandle) {
   skipHandleClick = false
@@ -569,6 +692,7 @@ function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent
 }
 function moveConnection(event: PointerEvent) {
   if (connectionDrag?.pointerId !== event.pointerId) return
+  gesturePointer = { x: event.clientX, y: event.clientY }
   if (connectionPoint.value || Math.hypot(event.clientX - connectionDrag.start.x, event.clientY - connectionDrag.start.y) >= 4) {
     connectionPoint.value = worldPoint(event.clientX, event.clientY)
   }
@@ -638,6 +762,7 @@ function portPressed(handle: PortRef) {
   return draft.value && portKey(draft.value.fixed) === portKey(handle)
 }
 function cancelInteraction() {
+  stopAutoPan()
   cancelNodeDrag()
   endPinch()
   if (connectionDrag) skipHandleClick = true
@@ -669,11 +794,17 @@ function navigateMinimap(event: MouseEvent) {
   }
 }
 
+function updateBox(clientX: number, clientY: number) {
+  if (!pan) return
+  // The start corner keeps its chart position when auto-pan moves the camera.
+  const a = worldPoint(pan.x + camera.value.x - pan.cameraX, pan.y + camera.value.y - pan.cameraY), b = worldPoint(clientX, clientY)
+  boxPreview.value = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) }
+}
 function movePan(event: PointerEvent) {
   if (!pan || pan.pointerId !== event.pointerId) return
   if (pan.box) {
-    const a = worldPoint(pan.x, pan.y), b = worldPoint(event.clientX, event.clientY)
-    boxPreview.value = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) }
+    gesturePointer = { x: event.clientX, y: event.clientY }
+    updateBox(event.clientX, event.clientY)
     return
   }
   fitMode.value = 'manual'
@@ -711,6 +842,50 @@ function panWithKeys(event: KeyboardEvent) {
   event.preventDefault()
   fitMode.value = 'manual'
   camera.value = { ...camera.value, x: camera.value.x + step[0], y: camera.value.y + step[1] }
+}
+
+// Auto-pan. While a node drag, connection or box selection is held near the stage edge, the camera pans every frame,
+// faster the closer the pointer is to the edge, and the preview follows the pointer.
+const autoPanEdge = 40
+const autoPanSpeed = 20
+let autoPanFrame = 0
+let gesturePointer: GraphPoint | undefined
+function startAutoPan(event: PointerEvent) {
+  gesturePointer = { x: event.clientX, y: event.clientY }
+  if (props.autoPan && !autoPanFrame && typeof requestAnimationFrame === 'function') autoPanFrame = requestAnimationFrame(autoPanStep)
+}
+function stopAutoPan() {
+  if (autoPanFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(autoPanFrame)
+  autoPanFrame = 0
+}
+function autoPanStep() {
+  autoPanFrame = 0
+  const point = gesturePointer
+  // A gesture that has not moved yet waits; a finished or cancelled one ends the loop.
+  const moving = nodeDrag ? Boolean(dragPreview.value) : connectionDrag ? Boolean(connectionPoint.value)
+    : pan?.box ? Boolean(boxPreview.value) : undefined
+  if (moving === undefined || pinch || !props.autoPan || !svg.value || !point) return
+  if (moving) {
+    const rect = svg.value.getBoundingClientRect()
+    const speed = (distance: number) => distance < autoPanEdge
+      ? Math.ceil(Math.min(1, (autoPanEdge - distance) / autoPanEdge) * autoPanSpeed) : 0
+    const { x, y, scale } = camera.value
+    const content = contentBounds.value
+    // Towards the start, panning stops a margin beyond the chart origin or the content, whichever is further out.
+    const limitX = autoPanEdge - Math.min(0, content.left) * scale, limitY = autoPanEdge - Math.min(0, content.top) * scale
+    let stepX = speed(point.x - rect.left) - speed(rect.right - point.x)
+    let stepY = speed(point.y - rect.top) - speed(rect.bottom - point.y)
+    if (stepX > 0) stepX = Math.max(0, Math.min(stepX, limitX - x))
+    if (stepY > 0) stepY = Math.max(0, Math.min(stepY, limitY - y))
+    if (stepX || stepY) {
+      fitMode.value = 'manual'
+      camera.value = { x: x + stepX, y: y + stepY, scale }
+      if (nodeDrag) updateNodePreview(point.x, point.y)
+      else if (connectionDrag) connectionPoint.value = worldPoint(point.x, point.y)
+      else updateBox(point.x, point.y)
+    }
+  }
+  autoPanFrame = requestAnimationFrame(autoPanStep)
 }
 
 function isDimmed(id: string) {
@@ -922,7 +1097,115 @@ function contextMenuWithKeys(event: KeyboardEvent) {
 function onStageKeydown(event: KeyboardEvent) {
   if (event.key === 'Delete' || event.key === 'Backspace') deleteWithKeys(event)
   else if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) contextMenuWithKeys(event)
+  else if (props.clipboard && (event.ctrlKey || event.metaKey)) clipboardWithKeys(event)
 }
+
+// Coordinates. The chart point under a viewport position, and the chart point at the centre of the stage.
+function toGraphPoint(clientX: number, clientY: number): GraphPoint {
+  if (!mounted.value || !svg.value) throw new Error('NetworkGraph is not mounted')
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) throw new RangeError('toGraphPoint requires finite client coordinates')
+  if (svg.value.getScreenCTM()) return worldPoint(clientX, clientY)
+  const rect = svg.value.getBoundingClientRect(), { x, y, scale } = camera.value
+  return { x: (clientX - rect.left - x) / scale, y: (clientY - rect.top - y) / scale }
+}
+function getViewportCenter(): GraphPoint {
+  const { x, y, scale } = camera.value
+  return { x: (viewport.value.width / 2 - x) / scale, y: (viewport.value.height / 2 - y) / scale }
+}
+function snapPoint(point: GraphPoint) {
+  return props.snapGrid === undefined ? point : snapGraphPoint(point, props.snapGrid)
+}
+
+// External drops. Only a droppable graph accepts an HTML drag, so other drags keep the browser's default handling.
+function acceptDrag(event: DragEvent) {
+  if (props.droppable) event.preventDefault()
+}
+function dropOnStage(event: DragEvent) {
+  if (!props.droppable) return
+  event.preventDefault()
+  const { clientX, clientY, dataTransfer } = event
+  emit('drop', { point: snapPoint(toGraphPoint(clientX, clientY)), clientX, clientY, dataTransfer })
+}
+
+// Clipboard proposals. The application copies, pastes and duplicates its own data; the graph only reports the keys.
+let hoverPointer: GraphPoint | undefined
+function trackPointer(event: PointerEvent) {
+  hoverPointer = { x: event.clientX, y: event.clientY }
+}
+function forgetPointer() {
+  hoverPointer = undefined
+}
+function clipboardSelection(element: Element): GraphClipboardSelection | undefined {
+  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vft-edge')
+  let nodes: Set<string>, edges: Set<string>
+  // Like deletion, a focused node or edge outside the selection stands alone.
+  if (nodeId !== null && !isSelected(nodeId)) [nodes, edges] = [new Set([nodeId]), new Set()]
+  else if (edgeId !== null && !(props.edgesSelectable && edgeSelected(edgeId))) [nodes, edges] = [new Set(), new Set([edgeId])]
+  else {
+    nodes = new Set(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
+    edges = new Set(selectedEdgeList())
+  }
+  const nodeIds = props.nodes.filter(node => nodes.has(node.id)).map(node => node.id)
+  const copied = new Set(nodeIds)
+  const edgeIds = props.edges.filter(edge => edges.has(edge.id) || (copied.has(edge.from) && copied.has(edge.to))).map(edge => edge.id)
+  if (!nodeIds.length && !edgeIds.length) return undefined
+  const positions = new Map(nodeIds.map(id => {
+    const box = savedLayout.value.boxes.get(id)!
+    return [id, { x: box.x, y: box.y }]
+  }))
+  return { nodeIds, edgeIds, positions }
+}
+// The pointer position while it is over the stage, otherwise the centre of the viewport.
+function pastePoint() {
+  const rect = svg.value?.getBoundingClientRect(), pointer = hoverPointer
+  const over = rect && pointer && pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom
+  return snapPoint(over ? toGraphPoint(pointer.x, pointer.y) : getViewportCenter())
+}
+function clipboardWithKeys(event: KeyboardEvent) {
+  if (event.altKey || event.shiftKey || event.repeat || gestureInFlight() || !stageControl(event.target)) return
+  // Letters follow the layout; other layouts (for example Cyrillic) fall back to the physical key.
+  const key = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : ({ KeyC: 'c', KeyV: 'v', KeyD: 'd' } as Record<string, string>)[event.code]
+  if (key === 'v') {
+    event.preventDefault()
+    emit('paste', { point: pastePoint() })
+    return
+  }
+  if (key !== 'c' && key !== 'd') return
+  const selection = clipboardSelection(event.target)
+  if (!selection) return
+  event.preventDefault()
+  if (key === 'c') emit('copy', selection)
+  else emit('duplicate', selection)
+}
+
+// Background pattern, drawn in chart coordinates inside the camera transform so it follows pan and zoom. At small
+// scales only every second, fourth (and so on) grid line is drawn, so cells stay at least 8 screen pixels apart.
+const editingOptions = computed(() => {
+  const grid = props.snapGrid
+  if (grid !== undefined && (!Number.isFinite(grid) || grid <= 0)) throw new RangeError('snapGrid must be a positive finite number of chart units')
+  const gap = props.backgroundGap ?? grid ?? 20
+  if (!Number.isFinite(gap) || gap <= 0) throw new RangeError('backgroundGap must be a positive finite number of chart units')
+  const threshold = props.guideThreshold
+  if (!Number.isFinite(threshold) || threshold < 0) throw new RangeError('guideThreshold must be a nonnegative finite number of screen pixels')
+  if (!['none', 'dots', 'lines'].includes(props.background)) throw new Error('Unknown NetworkGraph background: ' + props.background)
+  return { gap }
+})
+const patternId = marker + '-background'
+const pattern = computed(() => {
+  if (props.background === 'none') return undefined
+  const { scale } = camera.value
+  let cell = editingOptions.value.gap
+  while (cell * scale < 8) cell *= 2
+  // The rectangle covers the viewport plus one cell on every side.
+  const view = graphViewportRect(camera.value, viewport.value)
+  const area = { x: view.x - cell, y: view.y - cell, width: view.width + 2 * cell, height: view.height + 2 * cell }
+  return { cell, dot: 1 / scale, area }
+})
+type GroupLayer = { key: string; group?: (typeof renderedGroups.value)[number] }
+const layers = computed(() => {
+  const groups = renderedGroups.value.map<GroupLayer>(group => ({ key: 'group:' + group.id, group }))
+  return pattern.value ? [{ key: 'background' }, ...groups] : groups
+})
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
 // in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
@@ -1100,7 +1383,9 @@ async function exportPng(options: GraphPngExportOptions = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }
-defineExpose({ fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng })
+defineExpose({
+  fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng, toGraphPoint, getViewportCenter,
+})
 
 watch(savedLayout, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value], cancelInteraction)
@@ -1134,17 +1419,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl, 'vft-network-patterned': pattern }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
       @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
-      @wheel="onWheel" @pointerdown.capture="pressStage" @pointerdown="startPan"
-      @pointermove="moveTouch($event); movePan($event); moveNode($event); moveConnection($event)"
+      @wheel="onWheel" @pointerdown.capture="pressStage($event); trackPointer($event)" @pointerdown="startPan"
+      @pointermove="trackPointer($event); moveTouch($event); movePan($event); moveNode($event); moveConnection($event)"
+      @pointerleave="forgetPointer"
       @pointerup="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
       @pointercancel="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
       @lostpointercapture="stopPan($event); finishNodeDrag($event); finishConnection($event)"
+      @dragenter="acceptDrag" @dragover="acceptDrag" @drop="dropOnStage"
     >
       <defs>
         <marker :id="marker" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
@@ -1152,11 +1439,21 @@ onUnmounted(() => {
         </marker>
       </defs>
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
-        <g v-for="group in renderedGroups" :key="group.id" class="vft-network-group">
-          <rect :x="group.x" :y="group.y" :width="group.width" :height="group.height" rx="10" />
-          <text :x="rtl ? group.x + group.width - 8 : group.x + 8" :y="group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="group.id"
-            :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(group) : undefined"
-            @pointerdown.stop="startNodeDrag($event, group.members)" @keydown="moveWithKeys($event, group.members)">{{ group.label }}</text>
+        <!-- The optional background is the first item of the group list and each group element takes the first branch
+          of its conditional, so the markup without a background is unchanged. -->
+        <g v-for="layer in layers" :key="layer.key" :class="layer.group ? 'vft-network-group' : 'vft-network-backdrop'"
+          :aria-hidden="layer.group ? undefined : 'true'">
+          <rect v-if="layer.group" :x="layer.group.x" :y="layer.group.y" :width="layer.group.width" :height="layer.group.height" rx="10" />
+          <pattern v-else-if="pattern" :id="patternId" patternUnits="userSpaceOnUse" :x="-pattern.cell / 2" :y="-pattern.cell / 2"
+            :width="pattern.cell" :height="pattern.cell">
+            <circle v-if="background === 'dots'" class="vft-network-pattern" :cx="pattern.cell / 2" :cy="pattern.cell / 2" :r="pattern.dot" />
+            <path v-else class="vft-network-pattern" :stroke-width="pattern.dot"
+              :d="`M ${pattern.cell / 2} 0 V ${pattern.cell} M 0 ${pattern.cell / 2} H ${pattern.cell}`" />
+          </pattern>
+          <text v-if="layer.group" :x="rtl ? layer.group.x + layer.group.width - 8 : layer.group.x + 8" :y="layer.group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="layer.group.id"
+            :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(layer.group) : undefined"
+            @pointerdown.stop="startNodeDrag($event, layer.group!.members)" @keydown="moveWithKeys($event, layer.group!.members)">{{ layer.group.label }}</text>
+          <rect v-else-if="pattern" class="vft-network-background" v-bind="pattern.area" :fill="`url(#${patternId})`" />
         </g>
         <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge), 'vft-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
           :data-vft-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
@@ -1179,7 +1476,7 @@ onUnmounted(() => {
           role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
           :aria-describedby="describedBy('node', node.id)" @pointerenter="hoverTooltip('node', node.id)" @pointerleave="leaveTooltip"
           @pointerdown.stop="startNodeDrag($event, movingIds(node.id), node.id)" @click="clickNode(node.id, $event)"
-          @keydown.self="node.draggable !== false && moveWithKeys($event, movingIds(node.id))"
+          @keydown.self="node.draggable !== false && moveWithKeys($event, movingIds(node.id), node.id)"
           @keydown.enter.self.prevent="select(node.id, $event)" @keydown.space.self.prevent="select(node.id, $event)"
         >
           <title v-if="!$slots.tooltip">{{ node.label }} {{ node.detail }}</title>
@@ -1192,6 +1489,12 @@ onUnmounted(() => {
           </slot>
         </g>
         <path v-if="connectionPath" class="vft-connection-preview" :d="connectionPath" />
+        <!-- Guides only appear during a node drag, never with a connection preview, so they share its conditional. -->
+        <g v-else-if="guideLines?.length" class="vft-guides" aria-hidden="true">
+          <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vft-guide"
+            :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
+            :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
+        </g>
         <rect v-if="boxPreview" class="vft-box-selection" v-bind="boxPreview" />
         <template v-if="connectable || draft?.edge">
           <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vft-connect-handle" :data-vft-node="handle.node"
@@ -1213,7 +1516,7 @@ onUnmounted(() => {
     </svg>
     <!-- The tooltip shares the empty state's conditional (an empty graph has nothing to describe), so the markup
       without a tooltip is unchanged. -->
-    <div v-if="tooltipDelayValid && !nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <div v-if="tooltipDelayValid && editingOptions && !nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
     <div v-else-if="$slots.tooltip && tooltipView" :id="tooltipId" role="tooltip" class="vft-network-tooltip"
       :style="tooltipView.style" @pointerenter="keepTooltip" @pointerleave="leaveTooltip">
       <slot name="tooltip" :target="tooltipView.target" />

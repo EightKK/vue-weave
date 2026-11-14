@@ -217,6 +217,21 @@ export interface GraphContextMenu {
   source: 'pointer' | 'keyboard'
 }
 
+/**
+ * Payload of the NetworkGraph `copy` and `duplicate` events: node and edge IDs in input order, including every edge
+ * between two listed nodes, and the current top-left position of each listed node in chart coordinates.
+ */
+export interface GraphClipboardSelection {
+  nodeIds: string[]
+  edgeIds: string[]
+  positions: Map<string, GraphPoint>
+}
+
+/** Payload of the NetworkGraph `paste` event: where to place the pasted content, in chart coordinates. */
+export interface GraphPaste {
+  point: GraphPoint
+}
+
 /** Props of the NetworkGraph `tooltip` slot. */
 export interface NetworkTooltipSlot {
   target: { kind: 'node'; node: NetworkNode } | { kind: 'edge'; edge: GraphEdge }

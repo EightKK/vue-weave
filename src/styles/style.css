@@ -122,6 +122,12 @@
 .vft-edge-hit.selected { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
 .vft-edge-selected .vft-network-edge { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 2.6; }
 .vft-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); color: var(--vft-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+/* Opt-in NetworkGraph background pattern and alignment guides. The pattern replaces the fixed dotted backdrop. */
+.vft-network.vft-network-patterned { background: var(--vft-surface-muted, #f6f9fb); }
+.vft-network-background { pointer-events: none; }
+.vft-network-pattern { fill: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); stroke: none; }
+path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); }
+.vft-guide { stroke: var(--vft-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
 .vft-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vft-surface, #fff); }
 .vft-gantt-presets button { border: none; border-left: 1px solid var(--vft-border, #e0e9ef); background: var(--vft-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
@@ -216,6 +222,7 @@
   --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
   --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060;
   --vft-dimmed-opacity: .4;
+  --vft-background-pattern: #3d5a6f; --vft-guide: #ff7aa8;
 }
 .vft-theme-dark.vft-gantt { background: var(--vft-surface); }
 @media (prefers-color-scheme: dark) {
@@ -232,6 +239,7 @@
     --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
     --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060;
     --vft-dimmed-opacity: .4;
+    --vft-background-pattern: #3d5a6f; --vft-guide: #ff7aa8;
   }
   .vft-theme-auto.vft-gantt { background: var(--vft-surface); }
 }
@@ -307,13 +315,17 @@
   .vft-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
   .vft-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
   .vft-gantt-tooltip { border-color: CanvasText; }
+  .vft-network.vft-network-patterned { background: Canvas; }
+  .vft-network-pattern { forced-color-adjust: none; fill: GrayText; }
+  path.vft-network-pattern { fill: none; stroke: GrayText; }
+  .vft-guide { forced-color-adjust: none; stroke: Highlight; stroke-width: 2px; }
 }
 
 @media print {
   .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
   .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
-  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip { display: none !important; }
+  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-guides { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }

@@ -16,7 +16,8 @@
       import { NetworkGraph } from 'vue-weave'
 
       // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir,
-      // edgeselect (controlled edge selection), delete, menu (context menu events) and tooltip.
+      // edgeselect (controlled edge selection), delete, menu (context menu events), tooltip, snap (grid size),
+      // guides, autopan, drop, clipboard and background (dots or lines).
       const query = new URLSearchParams(location.search)
       const ids = query.get('preset') === 'groups'
         ? ['A', 'B', 'C', 'D']
@@ -40,8 +41,15 @@
         for (const change of changes) next.set(change.id, change.after)
         positions.value = next
         lastMove.value = changes.map(change => change.id).sort().join(',')
+        lastAfter.value = JSON.stringify(Object.fromEntries(changes.map(change => [change.id, change.after])))
         moveEvents.value++
       }
+      const lastAfter = ref('')
+      const lastDrop = ref('')
+      const lastCopy = ref('')
+      const lastPaste = ref('')
+      const lastDuplicate = ref('')
+      const selection = payload => JSON.stringify({ ...payload, positions: Object.fromEntries(payload.positions) })
       const selectedEdgeIds = shallowRef(new Set())
       const lastMenu = ref('')
       const menuEvents = ref(0)
@@ -57,6 +65,11 @@
           h('output', { role: 'status', 'aria-label': 'Last menu' }, lastMenu.value),
           h('output', { role: 'status', 'aria-label': 'Menu events' }, String(menuEvents.value)),
           h('output', { role: 'status', 'aria-label': 'Last deletion' }, lastDeletion.value),
+          h('output', { role: 'status', 'aria-label': 'Last after' }, lastAfter.value),
+          h('output', { role: 'status', 'aria-label': 'Last drop' }, lastDrop.value),
+          h('output', { role: 'status', 'aria-label': 'Last copy' }, lastCopy.value),
+          h('output', { role: 'status', 'aria-label': 'Last paste' }, lastPaste.value),
+          h('output', { role: 'status', 'aria-label': 'Last duplicate' }, lastDuplicate.value),
           h(NetworkGraph, {
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
@@ -71,6 +84,18 @@
             'onUpdate:selectedEdgeIds': ids => { selectedEdgeIds.value = ids },
             deletable: query.get('delete') === '1',
             onDelete: deletion => { lastDeletion.value = JSON.stringify(deletion) },
+            snapGrid: query.has('snap') ? Number(query.get('snap')) : undefined,
+            alignmentGuides: query.get('guides') === '1',
+            autoPan: query.get('autopan') === '1',
+            background: query.get('background') ?? undefined,
+            droppable: query.get('drop') === '1',
+            onDrop: drop => {
+              lastDrop.value = JSON.stringify({ point: drop.point, clientX: drop.clientX, clientY: drop.clientY, text: drop.dataTransfer?.getData('text/plain') })
+            },
+            clipboard: query.get('clipboard') === '1',
+            onCopy: payload => { lastCopy.value = selection(payload) },
+            onPaste: payload => { lastPaste.value = JSON.stringify(payload) },
+            onDuplicate: payload => { lastDuplicate.value = selection(payload) },
             contextMenu: query.get('menu') === '1',
             onContextMenu: request => {
               lastMenu.value = JSON.stringify(request)
