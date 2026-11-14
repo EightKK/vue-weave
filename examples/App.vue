@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect } from '../src'
+import { computed, nextTick, ref, watch } from 'vue'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
@@ -30,7 +30,21 @@ const group = { id: 'lots', label: 'Intermediate lots', nodeIds: ['lot1', 'lot2'
 const groups = [group]
 const nestedGroups = ref(false)
 const nestedGroupList = [{ id: 'process', label: 'Process', nodeIds: ['raw', 'split'] }, { ...group, parentId: 'process' }]
-const graphGroups = computed(() => graphEditing.value && preset.value === 'manufacturing' ? nestedGroups.value ? nestedGroupList : groups : undefined)
+const graphNodes = computed(() => data.value.nodes)
+// Deleted nodes leave their groups; a group without members or child groups is dropped.
+function presentGroups(list: NetworkGroup[]) {
+  const present = new Set(graphNodes.value.map(node => node.id))
+  if (list.every(item => item.nodeIds.every(id => present.has(id)))) return list
+  let result = list.map(item => ({ ...item, nodeIds: item.nodeIds.filter(id => present.has(id)) }))
+  while (true) {
+    const parents = new Set(result.flatMap(item => item.parentId === undefined ? [] : [item.parentId]))
+    const kept = result.filter(item => item.nodeIds.length || parents.has(item.id))
+    if (kept.length === result.length) break
+    result = kept
+  }
+  return result.length ? result : undefined
+}
+const graphGroups = computed(() => graphEditing.value && preset.value === 'manufacturing' ? presentGroups(nestedGroups.value ? nestedGroupList : groups) : undefined)
 const query = ref('')
 const matchIds = computed(() => {
   const text = query.value.trim().toLowerCase()
@@ -62,6 +76,7 @@ const columns: TimelineColumn[] = [
   { id: 'count', label: 'Intervals', width: 62, value: (_row, summary) => summary?.count ?? 0 },
 ]
 const graphSelection = ref(new Set<string>())
+const edgeSelection = ref(new Set<string>())
 const collapsedRows = ref(new Set<string>())
 const timelineRows = computed(() => advancedTimeline.value ? [
   { id: 'group', label: 'Production schedule' },
@@ -88,6 +103,8 @@ function reset() {
   history.reset({ data: example, positions: new Map() })
   initialBars.value = example.bars
   graphSelection.value = new Set()
+  edgeSelection.value = new Set()
+  closeMenu(false)
   collapsedRows.value = new Set()
   selected.value = data.value.nodes[0]?.id ?? ''
   status.value = 'Example reset.'
@@ -115,6 +132,142 @@ function commitReconnect(change: GraphReconnect) {
   history.commit({ data: { ...data.value, edges }, positions: positions.value })
   status.value = 'Reconnected edge ' + change.id + '.'
 }
+function validateDelete(deletion: GraphDeletion) {
+  if (deletion.nodeIds.length >= data.value.nodes.length) return 'Keep at least one node in the graph.'
+}
+function commitDeletion(deletion: GraphDeletion) {
+  const { nodes, edges } = removeGraphElements(data.value.nodes, data.value.edges, deletion)
+  const removed = new Set(deletion.nodeIds), removedEdges = new Set(deletion.edgeIds)
+  const nextPositions = new Map([...positions.value].filter(([id]) => !removed.has(id)))
+  history.commit({ data: { ...data.value, nodes, edges }, positions: nextPositions })
+  graphSelection.value = new Set([...graphSelection.value].filter(id => !removed.has(id)))
+  edgeSelection.value = new Set([...edgeSelection.value].filter(id => !removedEdges.has(id)))
+  const count = (value: number, noun: string) => value + ' ' + noun + (value === 1 ? '' : 's')
+  status.value = 'Deleted ' + [deletion.nodeIds.length ? count(deletion.nodeIds.length, 'node') : '',
+    deletion.edgeIds.length ? count(deletion.edgeIds.length, 'edge') : ''].filter(Boolean).join(' and ') + '.'
+}
+function proposeDeletion(deletion: GraphDeletion) {
+  const reason = validateDelete(deletion)
+  if (reason) status.value = reason
+  else commitDeletion(deletion)
+}
+// The selected nodes plus both ends of every selected edge.
+function selectionNodeIds() {
+  const present = new Set(data.value.nodes.map(node => node.id))
+  const ids = new Set([...graphSelection.value].filter(id => present.has(id)))
+  for (const edge of data.value.edges) {
+    if (edgeSelection.value.has(edge.id)) ids.add(edge.from).add(edge.to)
+  }
+  return [...ids]
+}
+const canFitSelection = computed(() => selectionNodeIds().length > 0)
+function fitSelection(target?: GraphContextMenuTarget) {
+  let ids = selectionNodeIds()
+  if (!ids.length && target?.kind === 'node') ids = [target.id]
+  const edge = target?.kind === 'edge' ? data.value.edges.find(item => item.id === target.id) : undefined
+  if (!ids.length && edge) ids = [edge.from, edge.to]
+  if (!ids.length && target?.kind === 'group') ids = graphGroups.value?.find(item => item.id === target.id)?.nodeIds.slice() ?? []
+  if (ids.length) {
+    graph.value?.fit({ ids, padding: 24 })
+    status.value = 'Fitted ' + ids.length + (ids.length === 1 ? ' node.' : ' nodes.')
+  } else {
+    graph.value?.fit()
+    status.value = 'Fitted the whole graph.'
+  }
+}
+
+// A small demo context menu. The graph only reports the request; this menu is application code.
+type MenuItem = { label: string; run: () => void }
+const menu = ref<{ label: string; x: number; y: number; items: MenuItem[] }>()
+const menuElement = ref<HTMLElement>()
+let menuReturnFocus: Element | null = null
+function nodeLabel(id: string) {
+  return data.value.nodes.find(node => node.id === id)?.label ?? id
+}
+function edgeName(edge: GraphEdge) {
+  return edge.label ?? edge.id
+}
+function deletionForTarget(target: GraphContextMenuTarget) {
+  const { nodes, edges } = data.value
+  const selected = target.kind === 'node' ? graphSelection.value.has(target.id) : target.kind === 'edge' && edgeSelection.value.has(target.id)
+  if (selected) {
+    const present = new Set(nodes.map(node => node.id)), presentEdges = new Set(edges.map(edge => edge.id))
+    return graphDeletion(nodes, edges, [...graphSelection.value].filter(id => present.has(id)), [...edgeSelection.value].filter(id => presentEdges.has(id)))
+  }
+  return target.kind === 'node' ? graphDeletion(nodes, edges, [target.id]) : graphDeletion(nodes, edges, [], target.kind === 'edge' ? [target.id] : [])
+}
+function openMenu(request: GraphContextMenu) {
+  const { target } = request
+  const items: MenuItem[] = []
+  let label = 'Graph actions'
+  if (target.kind === 'node') {
+    label = 'Actions for ' + nodeLabel(target.id)
+    items.push({ label: 'Delete', run: () => proposeDeletion(deletionForTarget(target)) })
+    items.push({ label: 'Focus node', run: () => graph.value?.focusNode(target.id, { scale: 1 }) })
+  } else if (target.kind === 'edge') {
+    const edge = data.value.edges.find(item => item.id === target.id)
+    label = 'Actions for edge ' + (edge ? edgeName(edge) : target.id)
+    items.push({ label: 'Delete', run: () => proposeDeletion(deletionForTarget(target)) })
+  } else if (target.kind === 'group') {
+    const group = graphGroups.value?.find(item => item.id === target.id)
+    label = 'Actions for group ' + (group?.label ?? target.id)
+    items.push({ label: 'Select group', run: () => {
+      graphSelection.value = new Set(group?.nodeIds ?? [])
+      edgeSelection.value = new Set()
+    } })
+  }
+  items.push({ label: 'Fit selection', run: () => fitSelection(target) })
+  menuReturnFocus = document.activeElement
+  menu.value = {
+    label, items,
+    x: Math.max(4, Math.min(request.clientX, window.innerWidth - 184)),
+    y: Math.max(4, Math.min(request.clientY, window.innerHeight - items.length * 32 - 16)),
+  }
+  void nextTick(() => menuElement.value?.querySelector<HTMLElement>('[role="menuitem"]')?.focus())
+}
+function closeMenu(restoreFocus = true) {
+  if (!menu.value) return
+  menu.value = undefined
+  if (!restoreFocus) return
+  const previous = menuReturnFocus
+  void nextTick(() => {
+    // A deleted element cannot take focus back, so the graph stage does.
+    const target = previous instanceof HTMLElement || previous instanceof SVGElement
+      ? previous.isConnected ? previous : graph.value?.$el.querySelector('.vft-network-stage') : undefined
+    target?.focus({ preventScroll: true })
+  })
+}
+function runMenuItem(item: MenuItem) {
+  closeMenu()
+  item.run()
+}
+function menuKeydown(event: KeyboardEvent) {
+  const items = [...(menuElement.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
+  const index = items.indexOf(document.activeElement as HTMLElement)
+  const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: items.length - 1 }[event.key]
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMenu()
+  } else if (event.key === 'Tab') {
+    closeMenu(false)
+  } else if (next !== undefined && items.length) {
+    event.preventDefault()
+    items[(next + items.length) % items.length]!.focus()
+  }
+}
+function closeMenuOutside(event: PointerEvent) {
+  if (!(event.target instanceof Node) || !menuElement.value?.contains(event.target)) closeMenu(false)
+}
+watch(menu, (value, previous) => {
+  if (value && !previous) document.addEventListener('pointerdown', closeMenuOutside, true)
+  else if (!value && previous) document.removeEventListener('pointerdown', closeMenuOutside, true)
+})
+watch(graphEditing, () => closeMenu(false))
+function degree(id: string) {
+  const edges = data.value.edges
+  return edges.filter(edge => edge.to === id).length + ' in · ' + edges.filter(edge => edge.from === id).length + ' out'
+}
+
 function validateCell(change: TimelineCellEdit) {
   if (locked.value) return 'This example is locked. Uncheck “Reject edits” to apply changes.'
   if (!change.after.trim()) return 'A resource note cannot be empty.'
@@ -170,20 +323,31 @@ function commit(change: TimelineEdit) {
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
         <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
           :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
           :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
           :positions="positions" :selected-ids="graphEditing ? graphSelection : undefined"
+          :edges-selectable="graphEditing" :selected-edge-ids="graphEditing ? edgeSelection : undefined" @update:selected-edge-ids="edgeSelection = $event"
+          :deletable="graphEditing" :validate-delete="validateDelete" @delete="commitDeletion" @delete-rejected="(_deletion, reason) => status = reason"
+          :context-menu="graphEditing" @context-menu="openMenu"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
             <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vft-surface, #fff)' }" />
             <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
           </template>
+          <template v-if="graphEditing" #tooltip="{ target }">
+            <template v-if="target.kind === 'node'"><strong>{{ target.node.label }}</strong><br>{{ target.node.detail ?? 'No detail' }} · {{ degree(target.node.id) }}</template>
+            <template v-else>{{ nodeLabel(target.edge.from) }} → {{ nodeLabel(target.edge.to) }}<template v-if="target.edge.label"> · {{ target.edge.label }}</template></template>
+          </template>
         </NetworkGraph>
-        <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region.</p>
+        <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions.</p>
+        <div v-if="menu" ref="menuElement" class="graph-menu" role="menu" :aria-label="menu.label"
+          :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeydown" @contextmenu.prevent>
+          <button v-for="item in menu.items" :key="item.label" type="button" role="menuitem" tabindex="-1" @click="runMenuItem(item)">{{ item.label }}</button>
+        </div>
       </section>
       <section>
         <div class="section-head"><div><h2>Timeline</h2><p>{{ data.rows.length.toLocaleString('en-US') }} rows · {{ data.bars.length.toLocaleString('en-US') }} intervals · UTC</p></div>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
+import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, NetworkTooltipSlot } from '../core/types.js'
 import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
-import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphViewportRect } from '../core/graphView.js'
+import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect } from '../core/graphView.js'
+import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
@@ -31,7 +33,13 @@ const props = withDefaults(defineProps<{
   matchIds?: ReadonlySet<string>
   dimmedIds?: ReadonlySet<string>
   dir?: ChartDirection
-}>(), { showControls: true, cullOverscan: 200, dir: 'ltr' })
+  edgesSelectable?: boolean
+  selectedEdgeIds?: ReadonlySet<string>
+  deletable?: boolean
+  validateDelete?: (deletion: GraphDeletion) => boolean | string | void
+  contextMenu?: boolean
+  tooltipDelay?: number
+}>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400 })
 const emit = defineEmits<{
   select: [id: string]
   'update:selectedId': [id: string]
@@ -42,36 +50,47 @@ const emit = defineEmits<{
   connect: [connection: GraphConnection]
   'connect-rejected': [connection: GraphConnection, reason: string]
   'viewport-change': [viewport: GraphViewport]
+  'update:selectedEdgeIds': [ids: Set<string>]
+  'edge-select': [id: string]
+  delete: [deletion: GraphDeletion]
+  'delete-rejected': [deletion: GraphDeletion, reason: string]
+  'context-menu': [event: GraphContextMenu]
 }>()
-defineSlots<{
+const slots = defineSlots<{
   node(props: NetworkNodeSlot): unknown
   edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean }): unknown
   empty(): unknown
+  tooltip?(props: NetworkTooltipSlot): unknown
 }>()
 const messages = computed<GraphLabels>(() => ({
   region: 'Network graph', empty: 'No nodes to display', zoom: 'Graph zoom',
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit to view',
   minimap: 'Navigate graph overview', connectFrom: 'Start connection from', connectTo: 'Connect to',
   reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of', moveGroup: 'Move group',
-  rejected: 'This connection was rejected.', selectEdge: 'Select edge', groupWithin: 'within', ...props.labels,
+  rejected: 'This connection was rejected.', selectEdge: 'Select edge', groupWithin: 'within',
+  deleteRejected: 'This deletion was rejected.', ...props.labels,
 }))
 function isSelected(id: string) {
   return props.selectedIds ? props.selectedIds.has(id) : props.selectedId === id
 }
 function select(id: string, event: MouseEvent | KeyboardEvent) {
+  const toggle = event.ctrlKey || event.metaKey || event.shiftKey
   if (props.selectedIds) {
-    const toggle = event.ctrlKey || event.metaKey || event.shiftKey
     const ids = new Set(toggle ? props.selectedIds : [])
     if (toggle && ids.has(id)) ids.delete(id)
     else ids.add(id)
     emit('update:selectedIds', ids)
   }
+  // With edge selection, a plain node selection replaces the edge selection as well.
+  if (props.edgesSelectable && !toggle) clearEdgeSelection()
   emit('select', id)
   emit('update:selectedId', id)
 }
 const svg = ref<SVGSVGElement>()
 const root = ref<HTMLElement>()
 const marker = useId()
+// Derived from the marker ID so a second useId call does not shift the IDs of components rendered after this one.
+const tooltipId = marker + '-tooltip'
 // Right-to-left only affects chrome and label alignment; graph geometry stays as laid out.
 const inheritedRtl = ref(false)
 const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
@@ -264,12 +283,17 @@ function scaleError() {
   return new RangeError(`Viewport scale must be between ${minScale.value === 0.1 ? '0.1' : 'the fit scale ' + minScale.value} and 3`)
 }
 
+// Screen margin requested by the last fit({ padding }) of the whole graph; plain fit() resets it to 0.
+let fitPadding = 0
 function fitCamera(overview = false) {
   const { width, height } = viewport.value
   const geometry = layout.value
   const content = contentBounds.value
+  const padded = overview && fitPadding > 0 ? Math.max(minScale.value, Math.min(
+    Math.max(1, width - 2 * fitPadding) / content.width, Math.max(1, height - 2 * fitPadding) / content.height,
+  )) : wholeScale.value
   // Fit to view shows the whole graph at any scale. The automatic initial view keeps at least 0.1 to stay readable.
-  const overviewScale = Math.min(1.15, overview ? wholeScale.value : Math.max(0.1, wholeScale.value))
+  const overviewScale = Math.min(1.15, overview ? padded : Math.max(0.1, wholeScale.value))
   const scale = overview || width >= 650 ? overviewScale
     : Math.max(overviewScale, Math.min(0.72, height / content.height))
   const canvasWidth = content.width * scale
@@ -291,10 +315,38 @@ let pan: { pointerId: number; x: number; y: number; cameraX: number; cameraY: nu
 const boxPreview = ref<{ x: number; y: number; width: number; height: number }>()
 let observer: ResizeObserver | undefined
 
-function fit() {
+/**
+ * Without options, shows the whole graph. With `ids`, fits the combined boxes of those nodes at a scale between the
+ * zoom minimum and 1.15, the largest scale Fit to view uses. `padding` keeps a screen margin around the content.
+ */
+function fit(options?: GraphFitOptions) {
+  const padding = options?.padding ?? 0
+  if (!Number.isFinite(padding) || padding < 0) throw new RangeError('Fit padding must be a nonnegative finite number of pixels')
+  if (options?.ids === undefined) {
+    cancelInteraction()
+    fitMode.value = 'overview'
+    fitPadding = padding
+    camera.value = fitCamera(true)
+    return
+  }
+  const ids = [...options.ids]
+  for (const id of ids) if (!nodesById.value.has(id)) throw new Error('Unknown node: ' + id)
+  if (!ids.length) return
   cancelInteraction()
-  fitMode.value = 'overview'
-  camera.value = fitCamera(true)
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+  for (const id of ids) {
+    const box = layout.value.boxes.get(id)!
+    left = Math.min(left, box.x)
+    top = Math.min(top, box.y)
+    right = Math.max(right, box.x + box.width)
+    bottom = Math.max(bottom, box.y + box.height)
+  }
+  const { width, height } = viewport.value
+  const scale = clampScale(Math.min(
+    1.15, Math.max(1, width - 2 * padding) / (right - left), Math.max(1, height - 2 * padding) / (bottom - top),
+  ))
+  fitMode.value = 'manual'
+  camera.value = graphCameraAt({ x: (left + right) / 2, y: (top + bottom) / 2 }, viewport.value, scale)
 }
 
 function zoom(factor: number, x = viewport.value.width / 2, y = viewport.value.height / 2) {
@@ -427,8 +479,48 @@ const activeEdgeId = ref<string>()
 const connectionPoint = ref<GraphPoint>()
 let connectionDrag: { pointerId: number; target: SVGElement; start: GraphPoint } | undefined
 let skipHandleClick = false
+// The edge whose reconnect handles are shown. A controlled edge selection hides them once the edge leaves it.
+const currentEdgeId = computed(() => {
+  const id = activeEdgeId.value
+  return id !== undefined && props.edgesSelectable && props.selectedEdgeIds && !props.selectedEdgeIds.has(id) ? undefined : id
+})
+function edgeSelected(id: string) {
+  return props.selectedEdgeIds ? props.selectedEdgeIds.has(id) : activeEdgeId.value === id
+}
+function edgePressed(id: string) {
+  return props.edgesSelectable ? edgeSelected(id) : activeEdgeId.value === id
+}
+function selectedEdgeList() {
+  if (!props.edgesSelectable) return []
+  const ids = props.selectedEdgeIds ? [...props.selectedEdgeIds] : activeEdgeId.value === undefined ? [] : [activeEdgeId.value]
+  return ids.filter(id => edgesById.value.has(id))
+}
+function clearEdgeSelection() {
+  const selected = props.selectedEdgeIds ? props.selectedEdgeIds.size > 0 : activeEdgeId.value !== undefined
+  activeEdgeId.value = undefined
+  if (selected) emit('update:selectedEdgeIds', new Set())
+}
+function selectEdge(id: string, event: MouseEvent | KeyboardEvent) {
+  if (!props.edgesSelectable) {
+    activeEdgeId.value = id
+    return
+  }
+  const toggle = event.ctrlKey || event.metaKey || event.shiftKey
+  const ids = new Set(toggle ? selectedEdgeList() : [])
+  if (toggle && ids.has(id)) {
+    ids.delete(id)
+    if (activeEdgeId.value === id) activeEdgeId.value = undefined
+  } else {
+    ids.add(id)
+    activeEdgeId.value = id
+  }
+  // A plain edge selection replaces a controlled node selection, mirroring node selection.
+  if (!toggle && props.selectedIds?.size) emit('update:selectedIds', new Set())
+  emit('update:selectedEdgeIds', ids)
+  emit('edge-select', id)
+}
 const reconnectHandles = computed(() => {
-  const edge = props.reconnectable && activeEdgeId.value ? edgesById.value.get(activeEdgeId.value) : undefined
+  const edge = props.reconnectable && currentEdgeId.value ? edgesById.value.get(currentEdgeId.value) : undefined
   if (!edge) return []
   return (['from', 'to'] as const).map(end => {
     const { x, y, side } = graphEdgeEndpoint(layout.value, nodesById.value, edge, end, direction.value)
@@ -602,6 +694,7 @@ function stopPan(event: PointerEvent) {
       if (box.x < area.x + area.width && box.x + box.width > area.x && box.y < area.y + area.height && box.y + box.height > area.y) selection.add(id)
     }
     emit('update:selectedIds', selection)
+    if (props.edgesSelectable && !event.ctrlKey && !event.metaKey) clearEdgeSelection()
   }
   boxPreview.value = undefined
   pan = undefined
@@ -669,7 +762,8 @@ const visible = computed(() => {
   }
   if (draft.value) nodes.add(draft.value.fixed.node)
   if (focused.value?.node) nodes.add(focused.value.node)
-  for (const id of [activeEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
+  for (const id of [currentEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
+  if (props.edgesSelectable) for (const id of props.selectedEdgeIds ?? []) edges.add(id)
   const result = cullGraphElements(bounds, view, { nodes, edges })
   const groups = new Set<string>()
   for (const group of shownGroups.value) {
@@ -687,12 +781,14 @@ const renderedHandles = computed(() => visible.value ? handles.value.filter(hand
 // Two-finger pinch zoom and pan. Only touch pointers take part; mouse and pen input is unchanged.
 const touches = new Map<number, GraphPoint>()
 let pinch: { ids: number[]; distance: number; midpoint: GraphPoint; camera: GraphViewport } | undefined
+const pinching = ref(false)
 function releaseCapture(id: number) {
   try { if (svg.value?.hasPointerCapture(id)) svg.value.releasePointerCapture(id) } catch { /* the pointer is already gone */ }
 }
 function endPinch() {
   const previous = pinch
   pinch = undefined
+  pinching.value = false
   for (const id of previous?.ids ?? []) releaseCapture(id)
 }
 function startTouch(event: PointerEvent) {
@@ -709,6 +805,7 @@ function startTouch(event: PointerEvent) {
     ids, distance: Math.hypot(a.x - b.x, a.y - b.y), midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
     camera: { ...camera.value },
   }
+  pinching.value = true
 }
 function moveTouch(event: PointerEvent) {
   const point = touches.get(event.pointerId)
@@ -739,6 +836,233 @@ function endTouch(event: PointerEvent) {
 
 function edgeIsRelated(edge: GraphEdge) {
   return Boolean(props.relatedIds?.has(edge.from) && props.relatedIds.has(edge.to))
+}
+
+// The node or edge an element in the stage stands for. Connection handles carry their node ID but are not nodes.
+function elementNode(element: Element) {
+  return element.hasAttribute('data-vft-port') ? null : element.getAttribute('data-vft-node')
+}
+function gestureInFlight() {
+  return Boolean(nodeDrag || connectionDrag || pinch || pan || draft.value)
+}
+// The stage itself or one of its own nodes, edges, group labels and handles. Keys pressed in focusable slot content,
+// such as an input in a custom node, keep their usual meaning.
+function stageControl(element: EventTarget | null): element is Element {
+  return element instanceof Element && (element === svg.value || element.matches('[data-vft-node],[data-vft-edge],[data-vft-group]'))
+}
+function editable(element: EventTarget | null) {
+  return element instanceof Element && element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !== null
+}
+
+// Delete proposals. A focused node or edge outside the selection is deleted alone; otherwise the selection is.
+function deletionFor(element: Element): GraphDeletion | undefined {
+  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vft-edge')
+  let nodeIds: string[], edgeIds: string[]
+  if (nodeId !== null && !isSelected(nodeId)) [nodeIds, edgeIds] = [[nodeId], []]
+  else if (edgeId !== null && !(props.edgesSelectable && edgeSelected(edgeId))) [nodeIds, edgeIds] = [[], [edgeId]]
+  else {
+    nodeIds = props.selectedIds ? [...props.selectedIds] : props.selectedId === undefined ? [] : [props.selectedId]
+    edgeIds = selectedEdgeList()
+  }
+  nodeIds = nodeIds.filter(id => nodesById.value.has(id) && nodesById.value.get(id)!.deletable !== false)
+  edgeIds = edgeIds.filter(id => edgesById.value.has(id))
+  return nodeIds.length || edgeIds.length ? graphDeletion(props.nodes, props.edges, nodeIds, edgeIds) : undefined
+}
+function deleteWithKeys(event: KeyboardEvent) {
+  if (!props.deletable || event.repeat || gestureInFlight() || !stageControl(event.target)) return
+  const element = event.target
+  const deletion = deletionFor(element)
+  if (!deletion) return
+  event.preventDefault()
+  notice.value = ''
+  const result = props.validateDelete?.(deletion)
+  if (result === false || typeof result === 'string') {
+    notice.value = typeof result === 'string' ? result : messages.value.deleteRejected!
+    emit('delete-rejected', deletion, notice.value)
+    return
+  }
+  emit('delete', deletion)
+  // Keep keyboard focus in the graph when the parent removes the focused element.
+  void nextTick(() => {
+    if (!element.isConnected && svg.value?.isConnected) svg.value.focus({ preventScroll: true })
+  })
+}
+
+// Context menu requests. The component only reports them; the application renders its own menu.
+let keyboardMenuAt = -Infinity
+function menuTarget(element: Element | null): GraphContextMenuTarget {
+  const owner = element?.closest('[data-vft-node],[data-vft-edge],[data-vft-group]')
+  if (!owner || !svg.value?.contains(owner)) return { kind: 'canvas' }
+  const node = owner.getAttribute('data-vft-node')
+  if (node !== null) return { kind: 'node', id: node }
+  const edge = owner.getAttribute('data-vft-edge')
+  if (edge !== null) return { kind: 'edge', id: edge }
+  return { kind: 'group', id: owner.getAttribute('data-vft-group')! }
+}
+function requestContextMenu(target: GraphContextMenuTarget, clientX: number, clientY: number, source: GraphContextMenu['source']) {
+  cancelInteraction()
+  hideTooltip()
+  emit('context-menu', { target, point: worldPoint(clientX, clientY), clientX, clientY, source })
+}
+function openContextMenu(event: MouseEvent) {
+  if (!props.contextMenu || editable(event.target)) return
+  event.preventDefault()
+  // The browser may follow a handled ContextMenu key or Shift+F10 with its own event; it was already reported.
+  if (event.button !== 2 && event.timeStamp - keyboardMenuAt < 1000) return
+  if (dragPreview.value || connectionPoint.value || boxPreview.value || pinch) return
+  requestContextMenu(menuTarget(event.target instanceof Element ? event.target : null), event.clientX, event.clientY, 'pointer')
+}
+function contextMenuWithKeys(event: KeyboardEvent) {
+  if (!props.contextMenu || !stageControl(event.target)) return
+  event.preventDefault()
+  keyboardMenuAt = event.timeStamp
+  const rect = event.target.getBoundingClientRect()
+  requestContextMenu(menuTarget(event.target), rect.left + rect.width / 2, rect.top + rect.height / 2, 'keyboard')
+}
+function onStageKeydown(event: KeyboardEvent) {
+  if (event.key === 'Delete' || event.key === 'Backspace') deleteWithKeys(event)
+  else if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) contextMenuWithKeys(event)
+}
+
+// Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
+// in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
+type TooltipState = { kind: 'node' | 'edge'; id: string; source: 'pointer' | 'focus' }
+const tooltip = shallowRef<TooltipState>()
+const mounted = ref(false)
+let showTimer: ReturnType<typeof setTimeout> | undefined
+let hideTimer: ReturnType<typeof setTimeout> | undefined
+const tooltipDelayValid = computed(() => {
+  const delay = props.tooltipDelay
+  if (!Number.isFinite(delay) || delay < 0) throw new RangeError('tooltipDelay must be a nonnegative finite number of milliseconds')
+  return true
+})
+const tooltipBlocked = computed(() => Boolean(
+  dragPreview.value || connectionPoint.value || boxPreview.value || isPanning.value || pinching.value || draft.value,
+))
+function clearTooltipTimers() {
+  clearTimeout(showTimer)
+  clearTimeout(hideTimer)
+  showTimer = hideTimer = undefined
+}
+function hideTooltip() {
+  clearTooltipTimers()
+  tooltip.value = undefined
+}
+function hoverTooltip(kind: TooltipState['kind'], id: string) {
+  if (!slots.tooltip || tooltipBlocked.value || nodeDrag || pan || connectionDrag) return
+  clearTimeout(hideTimer)
+  hideTimer = undefined
+  if (tooltip.value?.kind === kind && tooltip.value.id === id) return
+  clearTimeout(showTimer)
+  const show = () => {
+    showTimer = undefined
+    tooltip.value = { kind, id, source: 'pointer' }
+  }
+  // Moving from one element to the next switches a visible tooltip at once.
+  if (tooltip.value || props.tooltipDelay === 0) show()
+  else showTimer = setTimeout(show, props.tooltipDelay)
+}
+function leaveTooltip() {
+  clearTimeout(showTimer)
+  showTimer = undefined
+  if (tooltip.value?.source !== 'pointer') return
+  clearTimeout(hideTimer)
+  // A short grace period lets the pointer move onto the tooltip itself.
+  hideTimer = setTimeout(() => {
+    hideTimer = undefined
+    tooltip.value = undefined
+  }, 150)
+}
+function keepTooltip() {
+  clearTimeout(hideTimer)
+  hideTimer = undefined
+}
+function focusVisible(element: Element) {
+  try {
+    return element.matches(':focus-visible')
+  } catch {
+    return true
+  }
+}
+// True while a press is being dispatched. Focus moved by the press (also with Shift held, which makes Chrome report
+// :focus-visible) is pointer focus, not keyboard focus.
+let pressing = false
+function pressStage(event: PointerEvent) {
+  startTouch(event)
+  hideTooltip()
+  pressing = true
+  setTimeout(() => { pressing = false })
+}
+function focusTooltip(event: FocusEvent) {
+  if (!slots.tooltip || !(event.target instanceof Element) || tooltipBlocked.value || pressing) return
+  const node = elementNode(event.target), edge = event.target.getAttribute('data-vft-edge')
+  // Keyboard focus shows the tooltip at once; a pointer press is covered by hover.
+  if ((node === null && edge === null) || !focusVisible(event.target)) return
+  clearTooltipTimers()
+  tooltip.value = node !== null ? { kind: 'node', id: node, source: 'focus' } : { kind: 'edge', id: edge!, source: 'focus' }
+}
+function blurTooltip() {
+  if (tooltip.value?.source === 'focus') hideTooltip()
+}
+function dismissTooltip(event: KeyboardEvent) {
+  if (event.key === 'Escape') hideTooltip()
+}
+watch(tooltipBlocked, blocked => {
+  if (blocked) hideTooltip()
+})
+watch(tooltip, (value, previous) => {
+  if (value && !previous) document.addEventListener('keydown', dismissTooltip)
+  else if (!value && previous) document.removeEventListener('keydown', dismissTooltip)
+})
+watch([nodesById, edgesById], () => {
+  const current = tooltip.value
+  if (current && !(current.kind === 'node' ? nodesById.value : edgesById.value).has(current.id)) hideTooltip()
+})
+const tooltipView = computed(() => {
+  const current = tooltip.value
+  if (!current || !mounted.value || tooltipBlocked.value) return undefined
+  const { x, y, scale } = camera.value
+  let target: NetworkTooltipSlot['target'], left: number, right: number, top: number, bottom: number
+  if (current.kind === 'node') {
+    const node = nodesById.value.get(current.id), box = layout.value.boxes.get(current.id)
+    if (!node || !box || (visible.value && !visible.value.nodes.has(node.id))) return undefined
+    target = { kind: 'node', node }
+    left = x + box.x * scale
+    right = x + (box.x + box.width) * scale
+    top = y + box.y * scale
+    bottom = y + (box.y + box.height) * scale
+  } else {
+    const edge = edgesById.value.get(current.id), path = layout.value.paths.get(current.id)
+    if (!edge || path === undefined || (visible.value && !visible.value.edges.has(edge.id))) return undefined
+    let point = layout.value.edgeLabels.get(edge.id)
+    if (!point) {
+      try {
+        const ends = graphPathEndpoints(path)
+        if (ends) point = { x: (ends.start.x + ends.end.x) / 2, y: (ends.start.y + ends.end.y) / 2 }
+      } catch { /* a custom path that cannot be read has no anchor */ }
+    }
+    if (!point) return undefined
+    target = { kind: 'edge', edge }
+    left = right = x + point.x * scale
+    top = bottom = y + point.y * scale + 6
+  }
+  const { width, height } = viewport.value
+  if (right < 0 || left > width || bottom < 0 || top > height) return undefined
+  // Place the tooltip after the element (before it in right-to-left), or on the other side when that has more room.
+  const gap = 8, room = 180
+  const before = left - gap, after = width - right - gap
+  const placeBefore = rtl.value ? before >= room || before >= after : after < room && before > after
+  return {
+    target,
+    style: {
+      left: (placeBefore ? before : right + gap) + 'px',
+      top: Math.max(4, Math.min(top, height - 28)) + 'px',
+      transform: placeBefore ? 'translateX(-100%)' : undefined,
+    },
+  }
+})
+function describedBy(kind: TooltipState['kind'], id: string) {
+  return slots.tooltip && tooltipView.value && tooltip.value?.kind === kind && tooltip.value.id === id ? tooltipId : undefined
 }
 
 watch(camera, value => emit('viewport-change', { ...value }))
@@ -789,6 +1113,7 @@ watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()
 })
 onMounted(() => {
+  mounted.value = true
   detectDirection()
   if (!svg.value) return
   observer = new ResizeObserver(([entry]) => {
@@ -800,7 +1125,12 @@ onMounted(() => {
   })
   observer.observe(svg.value)
 })
-onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
+onUnmounted(() => {
+  cancelInteraction()
+  observer?.disconnect()
+  hideTooltip()
+  document.removeEventListener('keydown', dismissTooltip)
+})
 </script>
 
 <template>
@@ -808,8 +1138,9 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
-      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction" @focusin="trackFocus" @focusout="releaseFocus"
-      @wheel="onWheel" @pointerdown.capture="startTouch" @pointerdown="startPan"
+      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
+      @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
+      @wheel="onWheel" @pointerdown.capture="pressStage" @pointerdown="startPan"
       @pointermove="moveTouch($event); movePan($event); moveNode($event); moveConnection($event)"
       @pointerup="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
       @pointercancel="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
@@ -827,7 +1158,8 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
             :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(group) : undefined"
             @pointerdown.stop="startNodeDrag($event, group.members)" @keydown="moveWithKeys($event, group.members)">{{ group.label }}</text>
         </g>
-        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge) }">
+        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge), 'vft-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
+          :data-vft-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
           <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)">
             <path class="vft-network-edge" :class="{ related: edgeIsRelated(edge) }"
               :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
@@ -835,20 +1167,22 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
               :x="layout.edgeLabels.get(edge.id)!.x" :y="layout.edgeLabels.get(edge.id)!.y"
             >{{ edge.label }}</text>
           </slot>
-          <path v-if="reconnectable" class="vft-edge-hit" :class="{ active: activeEdgeId === edge.id }" :d="layout.paths.get(edge.id)"
-            role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)" :aria-pressed="activeEdgeId === edge.id" :data-vft-edge="edge.id"
-            @pointerdown.stop @click="activeEdgeId = edge.id" @keydown.enter.prevent="activeEdgeId = edge.id" @keydown.space.prevent="activeEdgeId = edge.id" />
+          <path v-if="reconnectable || edgesSelectable" class="vft-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
+            :d="layout.paths.get(edge.id)" role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)"
+            :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vft-edge="edge.id"
+            @pointerdown.stop @click="selectEdge(edge.id, $event)" @keydown.enter.prevent="selectEdge(edge.id, $event)" @keydown.space.prevent="selectEdge(edge.id, $event)" />
         </g>
         <g
           v-for="node in shownNodes" :key="node.id" class="vft-network-node" :data-vft-node="node.id"
           :class="[`vft-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vft-dimmed': isDimmed(node.id) }]"
           :transform="`translate(${node.box.x} ${node.box.y})`"
           role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
+          :aria-describedby="describedBy('node', node.id)" @pointerenter="hoverTooltip('node', node.id)" @pointerleave="leaveTooltip"
           @pointerdown.stop="startNodeDrag($event, movingIds(node.id), node.id)" @click="clickNode(node.id, $event)"
           @keydown.self="node.draggable !== false && moveWithKeys($event, movingIds(node.id))"
           @keydown.enter.self.prevent="select(node.id, $event)" @keydown.space.self.prevent="select(node.id, $event)"
         >
-          <title>{{ node.label }} {{ node.detail }}</title>
+          <title v-if="!$slots.tooltip">{{ node.label }} {{ node.detail }}</title>
           <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)">
           <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
           <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
@@ -877,7 +1211,13 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
           @keydown.space.stop.prevent="reconnectEdge(item.edge, item.end)" />
       </g>
     </svg>
-    <div v-if="!nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <!-- The tooltip shares the empty state's conditional (an empty graph has nothing to describe), so the markup
+      without a tooltip is unchanged. -->
+    <div v-if="tooltipDelayValid && !nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <div v-else-if="$slots.tooltip && tooltipView" :id="tooltipId" role="tooltip" class="vft-network-tooltip"
+      :style="tooltipView.style" @pointerenter="keepTooltip" @pointerleave="leaveTooltip">
+      <slot name="tooltip" :target="tooltipView.target" />
+    </div>
     <button v-if="showMinimap && nodes.length" type="button" class="vft-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
       <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
@@ -892,7 +1232,7 @@ onUnmounted(() => { cancelInteraction(); observer?.disconnect() })
       <button type="button" :aria-label="messages.zoomOut" @click="zoom(1 / 1.25)">−</button>
       <output>{{ Math.round(camera.scale * 100) }}%</output>
       <button type="button" :aria-label="messages.zoomIn" @click="zoom(1.25)">＋</button>
-      <button type="button" class="vft-fit-button" @click="fit">{{ messages.fit }}</button>
+      <button type="button" class="vft-fit-button" @click="fit()">{{ messages.fit }}</button>
     </div>
   </div>
 </template>

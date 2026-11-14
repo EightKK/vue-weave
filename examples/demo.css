@@ -60,3 +60,8 @@ footer { padding-block: 6px; }
 
 .export-actions { display: flex; gap: 6px; margin-inline: auto 16px; }
 .export-actions button { padding: 2px 8px; font-size: 11px; line-height: 1.4; }
+
+.graph-menu { position: fixed; z-index: 20; min-width: 168px; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--vft-border, #c6d7e2); border-radius: 8px; background: var(--vft-surface, #fff); color: var(--vft-text, #162e40); box-shadow: 0 8px 24px rgb(15 35 50 / 18%); }
+.graph-menu button { border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; padding: 7px 10px; }
+.graph-menu button:hover, .graph-menu button:focus-visible { background: var(--vft-surface-hover, #edf5fa); outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }
+.options button:disabled { opacity: .5; cursor: default; }

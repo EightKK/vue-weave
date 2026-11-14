@@ -14,5 +14,7 @@ export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
 export * from './graphView.js'
+export { graphDeletion, removeGraphElements } from './graphEditing.js'
+export type { GraphDeletion } from './graphEditing.js'
 export * from './leveling.js'
 export * from './exportSvg.js'

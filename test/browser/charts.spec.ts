@@ -1485,3 +1485,376 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
   await expect(page.locator('.vft-network')).not.toHaveAttribute('dir', /./)
   expect(errors).toEqual([])
 })
+
+async function openGraphEditor(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  return { errors, button, status, edges: page.locator('.vft-network-edge'), nodes: page.locator('.vft-network-node') }
+}
+
+// Clicks the middle of an SVG path. A straight horizontal edge has an empty bounding box, so locator.click cannot target it.
+async function clickPath(page: Page, path: ReturnType<Page['locator']>, modifiers: string[] = []) {
+  const point = await path.evaluate(el => {
+    const shape = el as SVGPathElement
+    const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
+    const screen = new DOMPoint(middle.x, middle.y).matrixTransform(shape.getScreenCTM()!)
+    return { x: screen.x, y: screen.y }
+  })
+  for (const key of modifiers) await page.keyboard.down(key)
+  await page.mouse.click(point.x, point.y)
+  for (const key of modifiers) await page.keyboard.up(key)
+}
+
+test('graph edges select by click and keyboard, toggle with modifiers and show reconnect handles', async ({ page }) => {
+  const { errors, button } = await openGraphEditor(page)
+  const rs = button('Select edge rs'), fp = button('Select edge fp'), s1 = button('Select edge 72')
+  const lot = button('Lot A123-01 72 units')
+  await lot.click()
+  await expect(lot).toHaveAttribute('aria-pressed', 'true')
+  // A plain edge click selects it, replaces the node selection and activates its reconnect handles.
+  await clickPath(page, rs)
+  await expect(rs).toHaveAttribute('aria-pressed', 'true')
+  await expect(rs).toHaveClass(/selected/)
+  await expect(lot).toHaveAttribute('aria-pressed', 'false')
+  await expect(button('Reconnect target of rs')).toBeVisible()
+  await clickPath(page, fp, ['Shift'])
+  await expect(rs).toHaveAttribute('aria-pressed', 'true')
+  await expect(fp).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.vft-edge-selected')).toHaveCount(2)
+  // Ctrl+Enter toggles an edge out of the selection; a plain Enter replaces it.
+  await fp.focus()
+  await page.keyboard.press('Control+Enter')
+  await expect(fp).toHaveAttribute('aria-pressed', 'false')
+  await expect(rs).toHaveAttribute('aria-pressed', 'true')
+  await s1.press('Enter')
+  await expect(s1).toHaveAttribute('aria-pressed', 'true')
+  await expect(rs).toHaveAttribute('aria-pressed', 'false')
+  await expect(button('Reconnect source of 72')).toBeVisible()
+  await expect(button('Reconnect target of rs')).toHaveCount(0)
+  // A plain node click clears the edge selection and its handles.
+  await lot.click()
+  await expect(s1).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.vft-edge-selected')).toHaveCount(0)
+  await expect(button('Reconnect source of 72')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('graph deletion by keyboard removes nodes, edges and incident edges, validates and undoes', async ({ page }) => {
+  const { errors, button, status, edges, nodes } = await openGraphEditor(page)
+  const stage = page.getByLabel('Network graph', { exact: true })
+  await expect(edges).toHaveCount(6)
+  const fp = button('Select edge fp')
+  await fp.press('Enter')
+  await fp.press('Delete')
+  await expect(edges).toHaveCount(5)
+  await expect(status('Deleted 1 edge.')).toBeVisible()
+  await expect(stage).toBeFocused()
+  await button('Undo').click()
+  await expect(edges).toHaveCount(6)
+
+  // A focused node outside the selection is deleted alone, with its incident edges; its group keeps the other lot.
+  const lot1 = button('Lot A123-01 72 units'), lot2 = button('Lot A123-02 48 units')
+  await lot1.focus()
+  await page.keyboard.press('Backspace')
+  await expect(lot1).toHaveCount(0)
+  await expect(edges).toHaveCount(4)
+  await expect(status('Deleted 1 node and 2 edges.')).toBeVisible()
+  await expect(button('Move group Intermediate lots')).toBeVisible()
+  await button('Undo').click()
+  await expect(lot1).toBeVisible()
+  await expect(edges).toHaveCount(6)
+
+  // Nothing is proposed while a drag is in flight.
+  const box = (await lot2.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 40, { steps: 5 })
+  await page.keyboard.press('Delete')
+  await page.mouse.up()
+  await expect(status('Moved node lot2.')).toBeVisible()
+  await expect(nodes).toHaveCount(6)
+
+  // A focused node inside the selection deletes the whole selection as one proposal.
+  const split = button('Split Operation 101'), finish = button('Finish Operation 102')
+  await split.click()
+  await finish.click({ modifiers: ['Shift'] })
+  await finish.press('Delete')
+  await expect(nodes).toHaveCount(4)
+  await expect(edges).toHaveCount(0)
+  await expect(status('Deleted 2 nodes and 6 edges.')).toBeVisible()
+  await button('Undo').click()
+  await expect(nodes).toHaveCount(6)
+  await expect(edges).toHaveCount(6)
+
+  // The demo rejects deleting every node; the graph reports the reason and keeps the data.
+  await split.click()
+  for (const name of ['Material A1 120 units', 'Lot A123-01 72 units', 'Lot A123-02 48 units', 'Finish Operation 102', 'Product B 120 units']) {
+    await button(name).click({ modifiers: ['Shift'] })
+  }
+  await split.press('Delete')
+  await expect(status('Keep at least one node in the graph.')).toBeVisible()
+  await expect(page.locator('.vft-network .vft-sr-only[aria-live]')).toHaveText('Keep at least one node in the graph.')
+  await expect(nodes).toHaveCount(6)
+  expect(errors).toEqual([])
+})
+
+test('graph context menu opens by right-click and Shift+F10 and returns focus on Escape', async ({ page }) => {
+  const { errors, button, status, edges } = await openGraphEditor(page)
+  const finish = button('Finish Operation 102')
+  await finish.click({ button: 'right' })
+  const nodeMenu = page.getByRole('menu', { name: 'Actions for Finish', exact: true })
+  await expect(nodeMenu).toBeVisible()
+  await expect(nodeMenu.getByRole('menuitem', { name: 'Delete', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(nodeMenu.getByRole('menuitem', { name: 'Focus node', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(nodeMenu).toHaveCount(0)
+  await expect(finish).toBeFocused()
+
+  // The keyboard opens the menu for the focused edge; Delete goes through the same proposal path.
+  const fp = button('Select edge fp')
+  await fp.focus()
+  await page.keyboard.press('Shift+F10')
+  const edgeMenu = page.getByRole('menu', { name: 'Actions for edge fp', exact: true })
+  await expect(edgeMenu.getByRole('menuitem', { name: 'Delete', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(edgeMenu).toHaveCount(0)
+  await expect(edges).toHaveCount(5)
+  await expect(status('Deleted 1 edge.')).toBeVisible()
+  await expect(page.getByLabel('Network graph', { exact: true })).toBeFocused()
+
+  // The empty canvas and a group label have their own targets; a click outside closes the menu.
+  await page.getByLabel('Network graph', { exact: true }).click({ button: 'right', position: { x: 12, y: 12 } })
+  const canvasMenu = page.getByRole('menu', { name: 'Graph actions', exact: true })
+  await expect(canvasMenu.getByRole('menuitem', { name: 'Fit selection', exact: true })).toBeVisible()
+  await page.getByRole('heading', { name: 'Network', exact: true }).click()
+  await expect(canvasMenu).toHaveCount(0)
+  await button('Move group Intermediate lots').click({ button: 'right' })
+  await page.getByRole('menu', { name: 'Actions for group Intermediate lots', exact: true }).getByRole('menuitem', { name: 'Select group' }).click()
+  await expect(button('Lot A123-01 72 units')).toHaveAttribute('aria-pressed', 'true')
+  await expect(button('Lot A123-02 48 units')).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('graph tooltip shows on hover after a delay and on keyboard focus, stays hoverable and hides with Escape or a drag', async ({ page }) => {
+  const { errors, button } = await openGraphEditor(page)
+  const tooltip = page.getByRole('tooltip')
+  const split = button('Split Operation 101')
+  await expect(split).not.toHaveAttribute('aria-describedby', /./)
+  await split.hover()
+  await expect(tooltip).toContainText('Operation 101')
+  const id = (await tooltip.getAttribute('id'))!
+  expect(id).toBeTruthy()
+  await expect(split).toHaveAttribute('aria-describedby', id)
+  // The pointer can move onto the tooltip without hiding it.
+  const tip = (await tooltip.boundingBox())!
+  await page.mouse.move(tip.x + tip.width / 2, tip.y + tip.height / 2)
+  await page.waitForTimeout(400)
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  await expect(split).not.toHaveAttribute('aria-describedby', /./)
+
+  // Keyboard focus shows the tooltip of the focused node at once.
+  await split.focus()
+  await page.keyboard.press('Tab')
+  const lot1 = button('Lot A123-01 72 units')
+  await expect(lot1).toBeFocused()
+  await expect(tooltip).toContainText('72 units')
+  await expect(lot1).toHaveAttribute('aria-describedby', id)
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+
+  // Edges show a tooltip too, and a drag hides any tooltip.
+  await button('Select edge fp').focus()
+  await expect(tooltip).toContainText('Finish → Product B')
+  const lot2 = button('Lot A123-02 48 units')
+  await lot2.hover()
+  await expect(tooltip).toContainText('48 units')
+  const box = (await lot2.boundingBox())!
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 30, { steps: 5 })
+  await expect(tooltip).toHaveCount(0)
+  await page.mouse.up()
+  expect(errors).toEqual([])
+})
+
+test('fit selection centres the selected nodes in the demo', async ({ page }) => {
+  const { errors, button, status } = await openGraphEditor(page)
+  const fit = button('Fit selection')
+  await expect(fit).toBeDisabled()
+  const lot1 = button('Lot A123-01 72 units'), lot2 = button('Lot A123-02 48 units')
+  await lot1.click()
+  await lot2.click({ modifiers: ['Shift'] })
+  await fit.click()
+  await expect(status('Fitted 2 nodes.')).toBeVisible()
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const a = (await lot1.boundingBox())!, b = (await lot2.boundingBox())!
+  const left = Math.min(a.x, b.x), right = Math.max(a.x + a.width, b.x + b.width)
+  const top = Math.min(a.y, b.y), bottom = Math.max(a.y + a.height, b.y + b.height)
+  expect(Math.abs((left + right) / 2 - (stage.x + stage.width / 2))).toBeLessThan(2)
+  expect(Math.abs((top + bottom) / 2 - (stage.y + stage.height / 2))).toBeLessThan(2)
+  expect(top).toBeGreaterThanOrEqual(stage.y + 23)
+  expect(bottom).toBeLessThanOrEqual(stage.y + stage.height - 23)
+  expect(errors).toEqual([])
+})
+
+test('fit with ids and padding fits the union under culling and validates its input', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1')
+  const events = page.getByRole('status', { name: 'Viewport events', exact: true })
+  const before = Number(await events.textContent())
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: new Set(['N0450', 'N0452']), padding: 40 }))
+  await expect(events).toHaveText(String(before + 1))
+  const camera = await readCamera(page)
+  expect(camera.scale).toBeCloseTo(1.15, 6)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const first = (await chainNode(page, 'N0450').boundingBox())!, last = (await chainNode(page, 'N0452').boundingBox())!
+  expect(Math.abs((first.x + last.x + last.width) / 2 - (stage.x + stage.width / 2))).toBeLessThan(1)
+  expect(first.x).toBeGreaterThanOrEqual(stage.x + 40)
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  // A tight padding on a wide union scales down; the scale never drops below the zoom minimum.
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: ['N0000', 'N0599'], padding: 10 }))
+  expect((await readCamera(page)).scale).toBeLessThan(0.1)
+  // An empty list changes nothing and emits nothing.
+  const fitted = await readCamera(page)
+  const count = await events.textContent()
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: [] }))
+  expect(await readCamera(page)).toEqual(fitted)
+  await expect(events).toHaveText(count!)
+  const failure = (options: unknown) => page.evaluate(value => {
+    try { (window as any).__vw.graph().fit(value) } catch (error) { return (error as Error).name + ': ' + (error as Error).message }
+  }, options)
+  expect(await failure({ ids: ['missing'] })).toBe('Error: Unknown node: missing')
+  expect(await failure({ ids: ['N0001'], padding: -1 })).toMatch(/^RangeError: /)
+  expect(await failure({ padding: Number.NaN })).toMatch(/^RangeError: /)
+  expect(await readCamera(page)).toEqual(fitted)
+  // fit() without options still shows the whole chain.
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  await expect(chainNode(page)).toHaveCount(600)
+  expect(errors).toEqual([])
+})
+
+test('culling keeps selected edges rendered; Delete proposes the edge selection', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&edgeselect=1&delete=1')
+  const e0 = page.getByRole('button', { name: 'Select edge e0', exact: true })
+  await e0.press('Enter')
+  await expect(e0).toHaveAttribute('aria-pressed', 'true')
+  await page.getByLabel('Network graph', { exact: true }).focus()
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0450'))
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  await expect(e0).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Select edge e300', exact: true })).toHaveCount(0)
+  // With focus on the canvas, Delete proposes the selection; the selected node joins with its incident edges.
+  await page.getByLabel('Network graph', { exact: true }).press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":[],"edgeIds":["e0"]}')
+  await chainNode(page, 'N0450').click()
+  await chainNode(page, 'N0450').press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":["N0450"],"edgeIds":["e449","e450"]}')
+  expect(errors).toEqual([])
+})
+
+test('context-menu events report the target, chart point and source and suppress the native menu', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=5&menu=1')
+  await page.evaluate(() => document.addEventListener('contextmenu', event => {
+    (window as any).__menuPrevented = event.defaultPrevented
+  }))
+  const last = async () => JSON.parse((await page.getByRole('status', { name: 'Last menu', exact: true }).textContent())!)
+  const events = page.getByRole('status', { name: 'Menu events', exact: true })
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  await page.mouse.click(box.x + 20, box.y + 15, { button: 'right' })
+  await expect(events).toHaveText('1')
+  const pointer = await last()
+  expect(pointer.target).toEqual({ kind: 'node', id: 'N0001' })
+  expect(pointer.source).toBe('pointer')
+  // Mouse event coordinates are whole pixels.
+  expect(Math.abs(pointer.clientX - (box.x + 20))).toBeLessThanOrEqual(1)
+  expect(Math.abs(pointer.clientY - (box.y + 15))).toBeLessThanOrEqual(1)
+  expect(await page.evaluate(() => (window as any).__menuPrevented)).toBe(true)
+  // The chart point inverts the camera: it maps back to the clicked screen point.
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const camera = await readCamera(page)
+  expect(stage.x + camera.x + pointer.point.x * camera.scale).toBeCloseTo(pointer.clientX, 3)
+  expect(stage.y + camera.y + pointer.point.y * camera.scale).toBeCloseTo(pointer.clientY, 3)
+
+  // Edges and the empty canvas are targets too.
+  const edge = page.locator('.vft-network-edge').first()
+  const path = await edge.evaluate(el => {
+    const shape = el as SVGPathElement
+    const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
+    const point = new DOMPoint(middle.x, middle.y).matrixTransform(shape.getScreenCTM()!)
+    return { x: point.x, y: point.y }
+  })
+  // The drawn path is thin; without edgesSelectable there is no wider hit area.
+  await page.mouse.click(path.x, path.y, { button: 'right' })
+  await expect(events).toHaveText('2')
+  expect((await last()).target).toEqual({ kind: 'edge', id: 'e0' })
+  await page.mouse.click(stage.x + 6, stage.y + 6, { button: 'right' })
+  await expect(events).toHaveText('3')
+  expect((await last()).target).toEqual({ kind: 'canvas' })
+
+  // The ContextMenu key reports the centre of the focused node once, even if the browser follows with its own event.
+  await node.focus()
+  await page.keyboard.press('ContextMenu')
+  await expect(events).toHaveText('4')
+  const keyboard = await last()
+  expect(keyboard.source).toBe('keyboard')
+  expect(keyboard.target).toEqual({ kind: 'node', id: 'N0001' })
+  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
+  expect(keyboard.clientX).toBeCloseTo(rect.x + rect.width / 2, 3)
+  expect(keyboard.clientY).toBeCloseTo(rect.y + rect.height / 2, 3)
+  // Shift+F10 on the focused stage reports the canvas at the stage centre.
+  await page.getByLabel('Network graph', { exact: true }).focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(events).toHaveText('5')
+  const canvas = await last()
+  expect(canvas).toMatchObject({ target: { kind: 'canvas' }, source: 'keyboard' })
+  expect(canvas.clientX).toBeCloseTo(stage.x + stage.width / 2, 3)
+  await page.waitForTimeout(300)
+  await expect(events).toHaveText('5')
+  // Without the prop nothing is reported and the browser keeps its own menu.
+  await openNetworkFixture(page, '?nodes=5')
+  await page.evaluate(() => document.addEventListener('contextmenu', event => {
+    (window as any).__menuPrevented = event.defaultPrevented
+    event.preventDefault()
+  }))
+  await chainNode(page, 'N0001').click({ button: 'right' })
+  expect(await page.evaluate(() => (window as any).__menuPrevented)).toBe(false)
+  await expect(page.getByRole('status', { name: 'Menu events', exact: true })).toHaveText('0')
+  expect(errors).toEqual([])
+})
+
+test('the tooltip slot follows the camera and is placed before the node in right-to-left graphs', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=3&tooltip=1&dir=rtl')
+  const node = chainNode(page, 'N0001')
+  const tooltip = page.getByRole('tooltip')
+  await node.hover()
+  await expect(tooltip).toHaveText('Tip N0001')
+  const place = async () => {
+    const [tip, box] = [(await tooltip.boundingBox())!, (await node.boundingBox())!]
+    return { gap: box.x - (tip.x + tip.width), top: tip.y - box.y }
+  }
+  const before = await place()
+  expect(Math.abs(before.gap - 8)).toBeLessThan(2)
+  // Zooming moves the node; the tooltip stays attached to it.
+  await page.evaluate(() => (window as any).__vw.graph().zoom(1.3))
+  const after = await place()
+  expect(Math.abs(after.gap - 8)).toBeLessThan(2)
+  expect(Math.abs(after.top - before.top)).toBeLessThan(1)
+  // Leaving the node and the tooltip hides it after the grace period.
+  await page.mouse.move(2, 2)
+  await expect(tooltip).toHaveCount(0)
+  expect(errors).toEqual([])
+})

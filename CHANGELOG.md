@@ -33,6 +33,12 @@
 - `NetworkGraph` two-finger pinch zoom and pan for touch input, clamped to the existing zoom range and reported through `viewport-change`.
 - `NetworkGraph` nested groups through `NetworkGroup.parentId`, with descendant movement as one proposal, validation errors and the `groupWithin` label.
 - `NetworkGraph` `matchIds` and `dimmedIds` search/highlight hooks, `--vft-dimmed-opacity`, `dimmed` slot props and the `focusNode(id, options)` method.
+- `NetworkGraph` opt-in edge selection: `edgesSelectable`, controlled `selectedEdgeIds` with `update:selectedEdgeIds`, and `edge-select`. Ctrl, Meta or Shift toggles membership, selecting an edge shows its reconnect handles when `reconnectable` is set, culling keeps selected edges, and selected edges use the `vft-edge-selected` class and the new `--vft-edge-selected` variable.
+- `NetworkGraph` opt-in deletion proposals: `deletable` and `NetworkNode.deletable`, Delete or Backspace on the focused element or the selection, synchronous `validateDelete`, the `delete` and `delete-rejected` events and the `deleteRejected` label. The Vue-free `graphDeletion` and `removeGraphElements` helpers and the `GraphDeletion` type normalize and apply a deletion, including incident edges.
+- `NetworkGraph` opt-in `contextMenu`: right-click, the ContextMenu key and Shift+F10 emit `context-menu` with a `GraphContextMenu` (node, edge, group or canvas target, chart point, client coordinates and pointer or keyboard source). The component renders no menu.
+- `NetworkGraph` `tooltip` slot (`NetworkTooltipSlot`) for the hovered or keyboard-focused node or edge, with `tooltipDelay` (default 400 ms), `role="tooltip"` and `aria-describedby`, hoverable and dismissed with Escape. It is not rendered on the server, and the default node `title` is omitted while the slot is provided.
+- `NetworkGraph` `fit(options)` takes `GraphFitOptions` (`ids` and `padding`) to fit selected nodes; `fit()` is unchanged.
+- The demo's Edit graph mode adds edge selection, deletion with Undo, an accessible context menu, node and edge tooltips and a Fit selection button.
 
 #### Timeline
 
