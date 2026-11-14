@@ -300,6 +300,30 @@ function validatePresets() {
   }
   if (props.zoomPreset !== undefined && !ids.has(props.zoomPreset)) throw new Error('Unknown zoom preset: ' + props.zoomPreset)
 }
+// Extra columns, header bands (including those of the active zoom preset) and markers.
+function validateDisplay() {
+  const columnIds = new Set<string>()
+  for (const column of props.columns ?? []) {
+    if (!column.id || columnIds.has(column.id) || !Number.isFinite(column.width) || column.width <= 0) {
+      throw new Error('Invalid timeline column: ' + column.id)
+    }
+    columnIds.add(column.id)
+  }
+  for (const level of activeBands.value ?? []) {
+    let previousEnd = -Infinity
+    for (const band of level) {
+      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
+        throw new Error('Timeline bands must be finite, ordered and nonoverlapping')
+      }
+      previousEnd = band.end
+    }
+  }
+  const markerIds = new Set<string>()
+  for (const item of props.markers ?? []) {
+    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
+    markerIds.add(item.id)
+  }
+}
 function validateProps() {
   validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount)
   validatePresets()
@@ -334,6 +358,7 @@ function validateProps() {
   if (props.columnsResizable && props.columns?.some(column => column.id === timelineLabelColumnId)) {
     throw new Error('The column ID is reserved for the row label column: ' + timelineLabelColumnId)
   }
+  validateDisplay()
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
@@ -344,6 +369,7 @@ watch([
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
+  () => props.columns, () => props.headerBands, () => props.markers,
 ], () => {
   try {
     const result = validateProps()
@@ -395,15 +421,8 @@ const collapsed = computed(() => props.collapsedIds ?? localCollapsed.value)
 const summaries = computed(() => validationError.value ? undefined : props.showSummaries || props.columns?.length
   ? summarizeTimelineRows(tree.value, props.bars) : undefined)
 const columnWidth = computed(() => {
-  const ids = new Set<string>()
   let width = 0
-  for (const column of props.columns ?? []) {
-    if (!column.id || ids.has(column.id) || !Number.isFinite(column.width) || column.width <= 0) {
-      throw new Error('Invalid timeline column: ' + column.id)
-    }
-    ids.add(column.id)
-    width += column.width
-  }
+  for (const column of props.columns ?? []) width += column.width
   return width
 })
 function canEditCell(row: TimelineRow, column: TimelineColumn) {
@@ -505,27 +524,14 @@ const rowWindow = computed(() => visibleRows(
   props.rowHeight,
   displayedRows.value.length,
 ))
-const shownBands = computed(() => (activeBands.value ?? []).map(level => {
-  let previousEnd = -Infinity
-  return level.flatMap(band => {
-    if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-      throw new Error('Timeline bands must be finite, ordered and nonoverlapping')
-    }
-    previousEnd = band.end
-    const start = Math.max(band.start, props.range.start, timeWindow.value.start)
-    const end = Math.min(band.end, props.range.end, timeWindow.value.end)
-    if (end <= start) return []
-    return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
-  })
-}))
-const shownMarkers = computed(() => {
-  const ids = new Set<string>()
-  return (props.markers ?? []).filter(item => {
-    if (!item.id || ids.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
-    ids.add(item.id)
-    return item.time >= timeWindow.value.start && item.time < timeWindow.value.end
-  })
-})
+const shownBands = computed(() => (activeBands.value ?? []).map(level => level.flatMap(band => {
+  const start = Math.max(band.start, props.range.start, timeWindow.value.start)
+  const end = Math.min(band.end, props.range.end, timeWindow.value.end)
+  if (end <= start) return []
+  return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
+})))
+const shownMarkers = computed(() => (props.markers ?? [])
+  .filter(item => item.time >= timeWindow.value.start && item.time < timeWindow.value.end))
 // Markers, then the status date (`statusDate`), share one template element so a chart without a status date renders
 // exactly the markup it did before.
 const markerEntries = computed(() => {
@@ -2063,8 +2069,9 @@ function pressScroller(event: PointerEvent) {
   trackTouch(event)
 }
 function onContextMenu(event: MouseEvent) {
-  // A menu opened during a create drag (for example Control-click on macOS) ends the drag without a proposal.
-  if (createDrag) cancelCreate()
+  // A menu opened during a pointer gesture (for example Control-click on macOS) can swallow pointerup, so every
+  // gesture ends here without a proposal. An armed keyboard connection is kept.
+  if (drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag) cancelEdit()
   const el = scroller.value, area = canvas.value
   if (!props.contextMenu || !el || !area) return
   const element = event.target instanceof Element ? event.target : undefined

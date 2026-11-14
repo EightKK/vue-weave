@@ -1528,11 +1528,14 @@ function requestContextMenu(target: GraphContextMenuTarget, clientX: number, cli
   emit('context-menu', { target, point: worldPoint(clientX, clientY), clientX, clientY, source })
 }
 function openContextMenu(event: MouseEvent) {
+  // A menu opened mid-gesture (macOS Control-click) can swallow pointerup, so the gesture ends here without a proposal.
+  const dragging = Boolean(dragPreview.value || connectionPoint.value || boxPreview.value || pinch)
+  if (nodeDrag || connectionDrag || handleDrag || pinch || pan) cancelInteraction()
   if (!props.contextMenu || editable(event.target)) return
   event.preventDefault()
   // The browser may follow a handled ContextMenu key or Shift+F10 with its own event; it was already reported.
   if (event.button !== 2 && event.timeStamp - keyboardMenuAt < 1000) return
-  if (dragPreview.value || connectionPoint.value || boxPreview.value || pinch) return
+  if (dragging) return
   requestContextMenu(menuTarget(event.target instanceof Element ? event.target : null), event.clientX, event.clientY, 'pointer')
 }
 function contextMenuWithKeys(event: KeyboardEvent) {
@@ -1844,10 +1847,24 @@ defineExpose({
 
 watch(savedRouted, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value, props.editableEdges, props.resizable], cancelInteraction)
-watch(baseLayout, () => {
+// A structural change (connect, delete, paste, collapse) keeps a camera the user or the API placed. The view re-fits
+// while the camera is still fitted automatically, when the layout function or options change, and when the graph is
+// replaced: it was or becomes empty, or none of its previous nodes remain.
+watch([baseLayout, () => props.layout, options, () => props.nodes], ([, layoutFn, layoutOptions, nodes], [, previousFn, previousOptions, previousNodes]) => {
   if (activeEdgeId.value && !edgesById.value.has(activeEdgeId.value)) activeEdgeId.value = undefined
-  fitMode.value = 'auto'
-  camera.value = fitCamera()
+  const remaining = new Set(nodes.map(node => node.id))
+  const replaced = layoutFn !== previousFn || layoutOptions !== previousOptions || !previousNodes.some(node => remaining.has(node.id))
+  if (fitMode.value !== 'manual' || replaced) {
+    fitMode.value = 'auto'
+    camera.value = fitCamera()
+    return
+  }
+  // A smaller graph can raise the lower zoom limit; keep the kept camera restorable by clamping around the centre.
+  const current = camera.value
+  const scale = clampScale(current.scale)
+  if (scale === current.scale) return
+  const { width, height } = viewport.value, ratio = scale / current.scale
+  camera.value = { x: width / 2 - (width / 2 - current.x) * ratio, y: height / 2 - (height / 2 - current.y) * ratio, scale }
 })
 watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()

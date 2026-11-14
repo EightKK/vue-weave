@@ -3331,3 +3331,142 @@ test('the timeline editing demo imports a CSV file as one undoable step and repo
   await expect(primer).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('invalid markers, columns and header bands report validation-error and render the empty state', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openComponentFixture(page)
+  const timeline = page.getByRole('region', { name: 'Timeline fixture', exact: true })
+  const bar = timeline.getByRole('button', { name: 'Editable bar 1–3', exact: true })
+  const reports = timeline.getByRole('status', { name: 'Validation reports' })
+  const empty = timeline.getByText('No rows to display', { exact: true })
+  await expect(bar).toBeVisible()
+  const expected: string[] = []
+  for (const [control, message] of [
+    ['Duplicate markers', 'Invalid timeline marker: m'],
+    ['Invalid column width', 'Invalid timeline column: c'],
+    ['Overlapping header bands', 'Timeline bands must be finite, ordered and nonoverlapping'],
+  ] as const) {
+    await timeline.getByRole('button', { name: control, exact: true }).click()
+    expected.push(message)
+    await expect(reports).toHaveText(expected.join('; '))
+    await expect(empty).toBeVisible()
+    await expect(bar).toHaveCount(0)
+    await timeline.getByRole('button', { name: 'Restore display', exact: true }).click()
+    await expect(bar).toBeVisible()
+    await expect(empty).toHaveCount(0)
+  }
+  expect(errors).toEqual([])
+})
+
+test('a manual graph camera survives accepted connections, deletions and group toggles; a layout change re-fits', async ({ page }) => {
+  const { errors, button, status, edges } = await openGraphEditor(page)
+  const world = page.locator('.vw-network-stage > g')
+  const tools = page.getByRole('group', { name: 'Graph zoom', exact: true })
+  const level = tools.getByRole('status'), zoomIn = tools.getByRole('button', { name: 'Zoom in', exact: true })
+  await expect(edges).toHaveCount(6)
+  const fitted = (await level.textContent())!
+  await zoomIn.click()
+  await expect(level).not.toHaveText(fitted)
+  const zoomed = (await world.getAttribute('transform'))!
+  const zoomedLevel = (await level.textContent())!
+
+  await button('Start connection from Material A1').press('Enter')
+  await button('Connect to Finish').press('Enter')
+  await expect(status('Connected')).toBeVisible()
+  await expect(edges).toHaveCount(7)
+  await expect(world).toHaveAttribute('transform', zoomed)
+  await expect(level).toHaveText(zoomedLevel)
+
+  const fp = button('Select edge fp')
+  await fp.press('Enter')
+  await fp.press('Delete')
+  await expect(edges).toHaveCount(6)
+  await expect(world).toHaveAttribute('transform', zoomed)
+
+  await page.getByLabel('Collapsible groups').check()
+  await button('Collapse group Intermediate lots').click()
+  await expect(button('Intermediate lots 2 nodes')).toBeVisible()
+  await expect(world).toHaveAttribute('transform', zoomed)
+  await button('Expand group Intermediate lots').click()
+  await expect(button('Lot A123-01 72 units')).toBeVisible()
+  await expect(world).toHaveAttribute('transform', zoomed)
+
+  // Fit to view returns to automatic fitting; zooming makes the camera manual again.
+  await button('Fit to view').click()
+  await expect(level).toHaveText(fitted)
+  await zoomIn.click()
+  await expect(level).toHaveText(zoomedLevel)
+  // A layout change moves every node, so it re-fits even a manual camera.
+  await page.getByLabel('Direction').selectOption('RL')
+  await expect(world).not.toHaveAttribute('transform', zoomed)
+  await expect(level).toHaveText(fitted)
+  expect(errors).toEqual([])
+})
+
+test('a context menu during a graph node drag cancels the drag without a proposal', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const menu of [false, true]) {
+    await openNetworkFixture(page, '?nodes=5&draggable=1' + (menu ? '&menu=1' : ''))
+    const out = (name: string) => page.getByRole('status', { name, exact: true })
+    const node = chainNode(page, 'N0001')
+    const box = (await node.boundingBox())!
+    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    // macOS Control-click: a primary press followed by contextmenu; the native menu then swallows pointerup.
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 40, y + 30, { steps: 6 })
+    await node.dispatchEvent('contextmenu', { button: 0, clientX: x + 40, clientY: y + 30 })
+    await page.mouse.up()
+    await expect(out('Move events')).toHaveText('0')
+    await expect(out('Last move')).toHaveText('')
+    await expect(out('Menu events')).toHaveText('0')
+    // Without a gesture the menu request and a later drag behave as before.
+    if (menu) {
+      await node.click({ button: 'right' })
+      await expect(out('Menu events')).toHaveText('1')
+      expect(JSON.parse((await out('Last menu').textContent())!)).toMatchObject({ target: { kind: 'node', id: 'N0001' }, source: 'pointer' })
+    }
+    const after = (await node.boundingBox())!
+    await page.mouse.move(after.x + after.width / 2, after.y + after.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(after.x + after.width / 2 + 40, after.y + after.height / 2 + 30, { steps: 6 })
+    await page.mouse.up()
+    await expect(out('Move events')).toHaveText('1')
+    await expect(out('Last move')).toHaveText('N0001')
+  }
+  expect(errors).toEqual([])
+})
+
+test('a context menu during a gantt bar drag cancels the drag without an edit proposal', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['', '?interactions=1']) {
+    const { chart, out } = await openGanttFixture(page, search)
+    const bar = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+    // The accessible name follows the drag preview, so keep the element itself.
+    const element = (await bar.elementHandle())!
+    const box = (await bar.boundingBox())!
+    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    // macOS Control-click: a primary press followed by contextmenu; the native menu then swallows pointerup.
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 100, y, { steps: 6 })
+    await element.dispatchEvent('contextmenu', { button: 0, clientX: x + 100, clientY: y })
+    await page.mouse.up()
+    await expect(out('Last edit')).toHaveText('')
+    if (search) {
+      // The menu request is still reported for the bar.
+      expect(JSON.parse((await out('Last context menu').textContent())!)).toMatchObject({ target: { kind: 'bar', id: 'a' }, source: 'pointer' })
+    }
+    // Without a gesture a drag still proposes an edit.
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 100, y, { steps: 6 })
+    await page.mouse.up()
+    await expect(out('Last edit')).not.toHaveText('')
+    expect(JSON.parse((await out('Last edit').textContent())!)).toMatchObject({ id: 'a', mode: 'move', source: 'pointer' })
+  }
+  expect(errors).toEqual([])
+})

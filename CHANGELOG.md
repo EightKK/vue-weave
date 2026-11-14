@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- **Behaviour change:** NetworkGraph keeps a camera the user or the API placed (pan, zoom, minimap, keyboard pan, auto-pan, pinch, `setViewport`, `focusNode`, `fit({ ids })`) when the parent applies a structural change such as `connect`, `delete`, paste, duplicate or a group collapse or expand. It still re-fits while the camera is in automatic fit mode, when the `layout` function or layout `options` change, and when the graph is replaced (it was or becomes empty, or none of the previous node IDs remain). If a smaller graph raises the minimum zoom, a kept camera is clamped to it.
+
 ### Fixed
+
+- A `contextmenu` event during a pointer gesture, such as a macOS Control-click, now cancels the gesture without a proposal in NetworkGraph and GanttChart, with or without `contextMenu`. Previously the native menu could swallow `pointerup` and the next click committed an unintended edit.
+- GanttChart reports invalid `columns`, `headerBands` (including a zoom preset's bands) and `markers` through `validation-error` and renders the empty state, instead of throwing during render.
 
 - `calendarBands` week and month bands with `step` > 1 follow a fixed grid counted from 1970-01-01 (respecting `utcOffsetMinutes` and `weekStartsOn`), so overlapping ranges share band boundaries and any month step is stable. Years 0 to 99 are no longer shifted to 1900 to 1999.
 - `intersectsWindow` counts a zero-duration range (milestone) at `window.end` as visible, so GanttChart now renders milestones at the end of the time axis and `renderTimelineSvg` exports milestones at the end of `timeRange`. Non-empty intervals stay half-open.

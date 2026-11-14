@@ -146,3 +146,22 @@ test('GanttChart reports invalid progressStep and tooltipDelay through validatio
   // A step of exactly 1 and a zero delay are valid.
   assert.match(await render({ progressEditable: true, progressStep: 1, tooltipDelay: 0 }), /role="slider"/)
 })
+
+test('GanttChart reports invalid markers, columns and header bands through validation-error', async () => {
+  for (const [props, expected] of [
+    [{ markers: [{ id: 'm', time: hour, label: 'M' }, { id: 'm', time: 2 * hour, label: 'M' }] }, 'Invalid timeline marker: m'],
+    [{ markers: [{ id: 'n', time: Number.NaN, label: 'N' }] }, 'Invalid timeline marker: n'],
+    [{ columns: [{ id: 'c', label: 'C', width: 0, value: () => '' }] }, 'Invalid timeline column: c'],
+    [{ columns: [{ id: 'c', label: 'C', width: 40, value: () => '' }, { id: 'c', label: 'D', width: 40, value: () => '' }] }, 'Invalid timeline column: c'],
+    [{ headerBands: [[{ start: 0, end: 4 * hour, label: 'X' }, { start: 2 * hour, end: 6 * hour, label: 'Y' }]] }, 'Timeline bands must be finite, ordered and nonoverlapping'],
+  ]) {
+    const reported = []
+    const app = createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props, onValidationError: error => reported.push(error) }) })
+    app.config.errorHandler = () => {}
+    const html = await renderToString(app)
+    assert.equal(reported.length, 1)
+    assert.equal(reported[0].constructor, Error)
+    assert.equal(reported[0].message, expected)
+    assert.match(html, /No rows to display/)
+  }
+})
