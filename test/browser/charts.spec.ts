@@ -1373,3 +1373,159 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
   await expect(page.locator('.vft-network')).not.toHaveAttribute('dir', /./)
   expect(errors).toEqual([])
 })
+
+test('fit with ids and padding fits the union under culling and validates its input', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1')
+  const events = page.getByRole('status', { name: 'Viewport events', exact: true })
+  const before = Number(await events.textContent())
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: new Set(['N0450', 'N0452']), padding: 40 }))
+  await expect(events).toHaveText(String(before + 1))
+  const camera = await readCamera(page)
+  expect(camera.scale).toBeCloseTo(1.15, 6)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const first = (await chainNode(page, 'N0450').boundingBox())!, last = (await chainNode(page, 'N0452').boundingBox())!
+  expect(Math.abs((first.x + last.x + last.width) / 2 - (stage.x + stage.width / 2))).toBeLessThan(1)
+  expect(first.x).toBeGreaterThanOrEqual(stage.x + 40)
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  // A tight padding on a wide union scales down; the scale never drops below the zoom minimum.
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: ['N0000', 'N0599'], padding: 10 }))
+  expect((await readCamera(page)).scale).toBeLessThan(0.1)
+  // An empty list changes nothing and emits nothing.
+  const fitted = await readCamera(page)
+  const count = await events.textContent()
+  await page.evaluate(() => (window as any).__vw.graph().fit({ ids: [] }))
+  expect(await readCamera(page)).toEqual(fitted)
+  await expect(events).toHaveText(count!)
+  const failure = (options: unknown) => page.evaluate(value => {
+    try { (window as any).__vw.graph().fit(value) } catch (error) { return (error as Error).name + ': ' + (error as Error).message }
+  }, options)
+  expect(await failure({ ids: ['missing'] })).toBe('Error: Unknown node: missing')
+  expect(await failure({ ids: ['N0001'], padding: -1 })).toMatch(/^RangeError: /)
+  expect(await failure({ padding: Number.NaN })).toMatch(/^RangeError: /)
+  expect(await readCamera(page)).toEqual(fitted)
+  // fit() without options still shows the whole chain.
+  await page.evaluate(() => (window as any).__vw.graph().fit())
+  await expect(chainNode(page)).toHaveCount(600)
+  expect(errors).toEqual([])
+})
+
+test('culling keeps selected edges rendered; Delete proposes the edge selection', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1&edgeselect=1&delete=1')
+  const e0 = page.getByRole('button', { name: 'Select edge e0', exact: true })
+  await e0.press('Enter')
+  await expect(e0).toHaveAttribute('aria-pressed', 'true')
+  await page.getByLabel('Network graph', { exact: true }).focus()
+  await page.evaluate(() => (window as any).__vw.graph().focusNode('N0450'))
+  await expect(chainNode(page, 'N0000')).toHaveCount(0)
+  await expect(e0).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Select edge e300', exact: true })).toHaveCount(0)
+  // With focus on the canvas, Delete proposes the selection; the selected node joins with its incident edges.
+  await page.getByLabel('Network graph', { exact: true }).press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":[],"edgeIds":["e0"]}')
+  await chainNode(page, 'N0450').click()
+  await chainNode(page, 'N0450').press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":["N0450"],"edgeIds":["e449","e450"]}')
+  expect(errors).toEqual([])
+})
+
+test('context-menu events report the target, chart point and source and suppress the native menu', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=5&menu=1')
+  await page.evaluate(() => document.addEventListener('contextmenu', event => {
+    (window as any).__menuPrevented = event.defaultPrevented
+  }))
+  const last = async () => JSON.parse((await page.getByRole('status', { name: 'Last menu', exact: true }).textContent())!)
+  const events = page.getByRole('status', { name: 'Menu events', exact: true })
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  await page.mouse.click(box.x + 20, box.y + 15, { button: 'right' })
+  await expect(events).toHaveText('1')
+  const pointer = await last()
+  expect(pointer.target).toEqual({ kind: 'node', id: 'N0001' })
+  expect(pointer.source).toBe('pointer')
+  // Mouse event coordinates are whole pixels.
+  expect(Math.abs(pointer.clientX - (box.x + 20))).toBeLessThanOrEqual(1)
+  expect(Math.abs(pointer.clientY - (box.y + 15))).toBeLessThanOrEqual(1)
+  expect(await page.evaluate(() => (window as any).__menuPrevented)).toBe(true)
+  // The chart point inverts the camera: it maps back to the clicked screen point.
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const camera = await readCamera(page)
+  expect(stage.x + camera.x + pointer.point.x * camera.scale).toBeCloseTo(pointer.clientX, 3)
+  expect(stage.y + camera.y + pointer.point.y * camera.scale).toBeCloseTo(pointer.clientY, 3)
+
+  // Edges and the empty canvas are targets too.
+  const edge = page.locator('.vft-network-edge').first()
+  const path = await edge.evaluate(el => {
+    const shape = el as SVGPathElement
+    const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
+    const point = new DOMPoint(middle.x, middle.y).matrixTransform(shape.getScreenCTM()!)
+    return { x: point.x, y: point.y }
+  })
+  // The drawn path is thin; without edgesSelectable there is no wider hit area.
+  await page.mouse.click(path.x, path.y, { button: 'right' })
+  await expect(events).toHaveText('2')
+  expect((await last()).target).toEqual({ kind: 'edge', id: 'e0' })
+  await page.mouse.click(stage.x + 6, stage.y + 6, { button: 'right' })
+  await expect(events).toHaveText('3')
+  expect((await last()).target).toEqual({ kind: 'canvas' })
+
+  // The ContextMenu key reports the centre of the focused node once, even if the browser follows with its own event.
+  await node.focus()
+  await page.keyboard.press('ContextMenu')
+  await expect(events).toHaveText('4')
+  const keyboard = await last()
+  expect(keyboard.source).toBe('keyboard')
+  expect(keyboard.target).toEqual({ kind: 'node', id: 'N0001' })
+  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
+  expect(keyboard.clientX).toBeCloseTo(rect.x + rect.width / 2, 3)
+  expect(keyboard.clientY).toBeCloseTo(rect.y + rect.height / 2, 3)
+  // Shift+F10 on the focused stage reports the canvas at the stage centre.
+  await page.getByLabel('Network graph', { exact: true }).focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(events).toHaveText('5')
+  const canvas = await last()
+  expect(canvas).toMatchObject({ target: { kind: 'canvas' }, source: 'keyboard' })
+  expect(canvas.clientX).toBeCloseTo(stage.x + stage.width / 2, 3)
+  await page.waitForTimeout(300)
+  await expect(events).toHaveText('5')
+  // Without the prop nothing is reported and the browser keeps its own menu.
+  await openNetworkFixture(page, '?nodes=5')
+  await page.evaluate(() => document.addEventListener('contextmenu', event => {
+    (window as any).__menuPrevented = event.defaultPrevented
+    event.preventDefault()
+  }))
+  await chainNode(page, 'N0001').click({ button: 'right' })
+  expect(await page.evaluate(() => (window as any).__menuPrevented)).toBe(false)
+  await expect(page.getByRole('status', { name: 'Menu events', exact: true })).toHaveText('0')
+  expect(errors).toEqual([])
+})
+
+test('the tooltip slot follows the camera and is placed before the node in right-to-left graphs', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=3&tooltip=1&dir=rtl')
+  const node = chainNode(page, 'N0001')
+  const tooltip = page.getByRole('tooltip')
+  await node.hover()
+  await expect(tooltip).toHaveText('Tip N0001')
+  const place = async () => {
+    const [tip, box] = [(await tooltip.boundingBox())!, (await node.boundingBox())!]
+    return { gap: box.x - (tip.x + tip.width), top: tip.y - box.y }
+  }
+  const before = await place()
+  expect(Math.abs(before.gap - 8)).toBeLessThan(2)
+  // Zooming moves the node; the tooltip stays attached to it.
+  await page.evaluate(() => (window as any).__vw.graph().zoom(1.3))
+  const after = await place()
+  expect(Math.abs(after.gap - 8)).toBeLessThan(2)
+  expect(Math.abs(after.top - before.top)).toBeLessThan(1)
+  // Leaving the node and the tooltip hides it after the grace period.
+  await page.mouse.move(2, 2)
+  await expect(tooltip).toHaveCount(0)
+  expect(errors).toEqual([])
+})

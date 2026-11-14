@@ -15,7 +15,8 @@
       import { createApp, h, ref, shallowRef } from 'vue'
       import { NetworkGraph } from 'vue-weave'
 
-      // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir.
+      // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir,
+      // edgeselect (controlled edge selection), delete, menu (context menu events) and tooltip.
       const query = new URLSearchParams(location.search)
       const ids = query.get('preset') === 'groups'
         ? ['A', 'B', 'C', 'D']
@@ -41,6 +42,11 @@
         lastMove.value = changes.map(change => change.id).sort().join(',')
         moveEvents.value++
       }
+      const selectedEdgeIds = shallowRef(new Set())
+      const lastMenu = ref('')
+      const menuEvents = ref(0)
+      const lastDeletion = ref('')
+      const tooltip = ({ target }) => h('span', 'Tip ' + (target.kind === 'node' ? target.node.label : target.edge.id))
       window.__vw = { graph: () => graph.value }
 
       createApp({
@@ -48,6 +54,9 @@
           h('output', { role: 'status', 'aria-label': 'Last move' }, lastMove.value),
           h('output', { role: 'status', 'aria-label': 'Move events' }, String(moveEvents.value)),
           h('output', { role: 'status', 'aria-label': 'Viewport events' }, String(viewportEvents.value)),
+          h('output', { role: 'status', 'aria-label': 'Last menu' }, lastMenu.value),
+          h('output', { role: 'status', 'aria-label': 'Menu events' }, String(menuEvents.value)),
+          h('output', { role: 'status', 'aria-label': 'Last deletion' }, lastDeletion.value),
           h(NetworkGraph, {
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
@@ -57,7 +66,17 @@
             onNodeMove: change => applyMoves([change]),
             onNodesMove: applyMoves,
             onViewportChange: () => { viewportEvents.value++ },
-          }),
+            edgesSelectable: query.get('edgeselect') === '1',
+            selectedEdgeIds: query.get('edgeselect') === '1' ? selectedEdgeIds.value : undefined,
+            'onUpdate:selectedEdgeIds': ids => { selectedEdgeIds.value = ids },
+            deletable: query.get('delete') === '1',
+            onDelete: deletion => { lastDeletion.value = JSON.stringify(deletion) },
+            contextMenu: query.get('menu') === '1',
+            onContextMenu: request => {
+              lastMenu.value = JSON.stringify(request)
+              menuEvents.value++
+            },
+          }, query.get('tooltip') === '1' ? { tooltip } : undefined),
         ]),
       }).mount('#app')
     </script>

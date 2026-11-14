@@ -1,4 +1,4 @@
-import type { GraphBox, GraphEdge, GraphLayout, IdentifiedNode } from './graph.js'
+import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
@@ -10,6 +10,8 @@ export interface NetworkNode extends IdentifiedNode {
   detail?: string
   tone?: ChartTone
   draggable?: boolean
+  /** False keeps the node out of NetworkGraph deletion proposals (`deletable`). */
+  deletable?: boolean
   shape?: 'box' | 'rounded'
   data?: unknown
 }
@@ -111,6 +113,8 @@ export interface GraphLabels {
   rejected?: string
   selectEdge?: string
   groupWithin?: string
+  /** Announced when `validateDelete` returns false. */
+  deleteRejected?: string
 }
 
 export interface GanttLabels {
@@ -157,6 +161,37 @@ export interface NetworkGroup extends GraphGroup {
 export interface NetworkFocusOptions {
   /** Camera scale after centering, between 0.1 and 3. Defaults to the current scale. */
   scale?: number
+}
+
+/** Options of the NetworkGraph `fit` method. Without options, `fit()` shows the whole graph. */
+export interface GraphFitOptions {
+  /** Node IDs whose combined boxes are fitted. An empty list leaves the camera unchanged. */
+  ids?: Iterable<string>
+  /** Nonnegative margin in screen pixels kept around the fitted content. Default 0. */
+  padding?: number
+}
+
+/** The element a NetworkGraph `context-menu` event refers to. */
+export type GraphContextMenuTarget =
+  | { kind: 'node'; id: string }
+  | { kind: 'edge'; id: string }
+  | { kind: 'group'; id: string }
+  | { kind: 'canvas' }
+
+/** Payload of the NetworkGraph `context-menu` event. The component renders no menu itself. */
+export interface GraphContextMenu {
+  target: GraphContextMenuTarget
+  /** The pointer position, or the centre of the focused element, in chart (world) coordinates. */
+  point: GraphPoint
+  /** Viewport coordinates for positioning a menu, for example with `position: fixed`. */
+  clientX: number
+  clientY: number
+  source: 'pointer' | 'keyboard'
+}
+
+/** Props of the NetworkGraph `tooltip` slot. */
+export interface NetworkTooltipSlot {
+  target: { kind: 'node'; node: NetworkNode } | { kind: 'edge'; edge: GraphEdge }
 }
 
 /** The bar end a dependency handle belongs to. `start` maps to S and `finish` to F in a dependency type. */

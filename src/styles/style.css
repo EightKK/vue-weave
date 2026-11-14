@@ -118,6 +118,10 @@
 .vft-gantt-summary span { display: block; height: 100%; background: var(--vft-accent, #245e96); opacity: .75; }
 
 .vft-network .vft-dimmed { opacity: var(--vft-dimmed-opacity, .28); }
+/* Opt-in edge selection and the tooltip slot of NetworkGraph. */
+.vft-edge-hit.selected { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
+.vft-edge-selected .vft-network-edge { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 2.6; }
+.vft-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); color: var(--vft-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 /* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
 .vft-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vft-surface, #fff); }
 .vft-gantt-presets button { border: none; border-left: 1px solid var(--vft-border, #e0e9ef); background: var(--vft-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
@@ -249,6 +253,9 @@
   .vft-gantt-link-handle, .vft-gantt-reconnect-handle, .vft-connect-handle, .vft-reconnect-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
   .vft-gantt-link-handle.active, .vft-gantt-link-handle:focus-visible, .vft-gantt-reconnect-handle, .vft-connect-handle.active, .vft-connect-handle:focus-visible, .vft-reconnect-handle { fill: Highlight; stroke: CanvasText; background: Highlight; border-color: CanvasText; outline: 2px solid Highlight; outline-offset: 2px; }
   .vft-edge-hit.active, .vft-edge-hit:focus-visible, .vft-dependency-hit.active, .vft-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
+  .vft-edge-hit.selected { stroke: Highlight; stroke-opacity: .6; }
+  .vft-edge-selected .vft-network-edge { stroke: Highlight; stroke-width: 3.5px; }
+  .vft-network-tooltip { border-color: CanvasText; box-shadow: none; }
   .vft-connection-preview, .vft-gantt-link-preview path { stroke: Highlight; }
   .vft-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
   .vft-minimap rect { fill: CanvasText; }
@@ -261,7 +268,8 @@
 @media print {
   .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
-  .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit { display: none !important; }
+  .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
+  .vft-network-tooltip { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
