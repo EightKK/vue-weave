@@ -71,6 +71,41 @@ function applyDeletion(deletion: GraphDeletion) {
 
 The `context-menu` event only reports the request with its target, chart point and viewport coordinates. Render your own menu, for example with `position: fixed` at `clientX` and `clientY`; give it `role="menu"` and `role="menuitem"` entries, focus the first entry, close it with Escape and return focus to the graph element. The tooltip slot renders HTML in an overlay that the component positions; keep it short and non-interactive, because a tooltip cannot be focused.
 
+## Snapping, palettes and the clipboard
+
+Turn on `snapGrid` (with `background="dots"` to show the grid), `alignmentGuides` and `autoPan` for a diagram editor feel. Node moves still arrive as `node-move` and `nodes-move` proposals, already snapped.
+
+A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
+
+```vue
+<button type="button" draggable="true" @dragstart="$event.dataTransfer?.setData('application/x-node', 'task')"
+  @click="addTask(graph!.getViewportCenter())">Add task</button>
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :positions="positions" draggable droppable clipboard
+  :snap-grid="20" background="dots" alignment-guides auto-pan
+  @drop="drop => drop.dataTransfer?.getData('application/x-node') === 'task' && addTask(drop.point)"
+  @copy="copied = $event" @paste="paste" @duplicate="duplicate" />
+```
+
+`drop.point` is the drop position in chart coordinates, rounded to the grid. To centre a new node on the pointer instead of placing its corner there, convert `drop.clientX` and `drop.clientY` with `toGraphPoint` and round the corner once with `snapGraphPoint`. Saved positions must stay nonnegative.
+
+The clipboard events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs and moved positions:
+
+```ts
+function duplicate(selection: GraphClipboardSelection) {
+  const copies = cloneGraphElements(nodes.value, edges.value, selection.nodeIds, {
+    createId: (id, kind) => id + '-copy-' + nextNumber(kind),
+    positions: selection.positions,
+    offset: { x: 40, y: 40 },
+  })
+  history.commit({
+    nodes: [...nodes.value, ...copies.nodes], edges: [...edges.value, ...copies.edges],
+    positions: new Map([...positions.value, ...copies.positions]),
+  })
+}
+```
+
+For `paste`, store the copied nodes, edges and `positions` from the `copy` event, then clone them with an `offset` that moves their top-left corner to `event.point`. Committing each operation as one `useEditHistory` entry makes Undo remove the copies together.
+
 ## Custom content
 
 The graph node slot receives its node and measured layout box. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
@@ -97,6 +132,13 @@ Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale 
 
 `--vft-edge-selected` (default `--vft-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vft-surface`, `--vft-border` and `--vft-text`.
 
+NetworkGraph editing aids add two variables, used only when the matching prop is set:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vft-background-pattern` | `--vft-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
+| `--vft-guide` | `#c2255c` | Dashed alignment guides (`vft-guide`) drawn with `alignmentGuides` |
+
 GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
 
 Scheduling overlays add four variables, used only when the matching input is set:
@@ -114,15 +156,15 @@ The opt-in progress slider (`progressEditable`) is drawn in `--vft-accent`, and 
 
 ### Built-in dark theme
 
-Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, `--vft-background-pattern`, `--vft-guide`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vft-on-solid` is dark.
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the graph background pattern (`GrayText`), alignment guides (`Highlight`), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
-- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, and the Gantt toolbar are hidden. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, alignment guides and the Gantt toolbar are hidden; the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 

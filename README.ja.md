@@ -48,7 +48,7 @@ const edges: GraphEdge[] = [
 
 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。`layout` 関数で配置と経路を指定でき、`node`・`edge` スロットでSVG描画を変更できます。ノード移動、接続、複数選択、ミニマップはpropsで有効にします。
 
-別の形状には、`vue-weave/core` の `layoutTreeGraph` と `layoutRadialGraph` を `layout` としてそのまま渡せます。入れ子のグループ（`parentId`）、大規模グラフ向けの表示範囲外の描画省略（`cullOffscreen`）、タッチ操作のピンチズーム、`matchIds`・`dimmedIds` と `focusNode(id)` メソッドによる検索結果の強調も、必要に応じて有効にできます。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）、`tooltip` スロット、選択したノードに合わせて表示する `fit({ ids })` も同様に有効にできます。コアの `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph` で、同じノード・辺のデータを解析できます。
+別の形状には、`vue-weave/core` の `layoutTreeGraph` と `layoutRadialGraph` を `layout` としてそのまま渡せます。入れ子のグループ（`parentId`）、大規模グラフ向けの表示範囲外の描画省略（`cullOffscreen`）、タッチ操作のピンチズーム、`matchIds`・`dimmedIds` と `focusNode(id)` メソッドによる検索結果の強調も、必要に応じて有効にできます。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）、`tooltip` スロット、選択したノードに合わせて表示する `fit({ ids })` も同様に有効にできます。グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、端に近づけたときの自動パン（`autoPan`）、パレットからのドロップ（`droppable`。`toGraphPoint(x, y)` と `getViewportCenter()` を併用）、コピー・貼り付け・複製の提案（`clipboard`。`cloneGraphElements` で適用）も選択できます。コアの `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph` で、同じノード・辺のデータを解析できます。
 
 ```vue
 <NetworkGraph
@@ -127,7 +127,7 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタンとテーマ切り替えも用意しています。**Edit graph** で接続・再接続・範囲選択・一括移動・辺の選択・削除・コンテキストメニュー・ツールチップ・**Fit selection**（選択範囲に合わせる）、**Planning overlays** で編集列と親行サマリーを試せます。**Undo**／**Redo** で採用済みの変更を戻せます。**Scheduling** では工程を移動すると、分割シフトの稼働カレンダーに従って後続工程と設備負荷を再計算し、非稼働時間の網掛け、クリティカルパス、余裕、分割された作業、期限をバー上に表示します。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタンとテーマ切り替えも用意しています。**Edit graph** で接続・再接続・範囲選択・一括移動・辺の選択・削除・コンテキストメニュー・ツールチップ・**Fit selection**（選択範囲に合わせる）・**Snap to grid**（グリッドに吸着）・**Alignment guides**（整列ガイド）・自動パン・ノードパレット（**Add operation**／**Add lot** をグラフへドラッグするか、ボタンとして実行）・Ctrl+C／Ctrl+V／Ctrl+D によるコピー・貼り付け・複製、**Planning overlays** で編集列と親行サマリーを試せます。**Undo**／**Redo** で採用済みの変更を戻せます。**Scheduling** では工程を移動すると、分割シフトの稼働カレンダーに従って後続工程と設備負荷を再計算し、非稼働時間の網掛け、クリティカルパス、余裕、分割された作業、期限をバー上に表示します。編集結果はデモ画面内の状態として保持します。
 
 `preview/` を含むビルド済みデモのアーカイブを使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
 
