@@ -1210,6 +1210,343 @@ test('gantt real two-finger touch pinch survives a drifting midpoint without nat
   expect(errors).toEqual([])
 })
 
+test('gantt progress slider edits by pointer and keyboard, cancels with Escape and follows the visual direction', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
+  const slider = chart.getByRole('slider', { name: 'Progress of Billing API', exact: true })
+  await expect(slider).toHaveAttribute('aria-valuetext', '30%')
+  await expect(slider).toHaveAttribute('aria-valuenow', '30')
+  const centre = async () => {
+    const box = (await slider.boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  // The slider sits on the progress boundary: 30% of the three-hour bar.
+  let bar = (await api.boundingBox())!
+  let handle = await centre()
+  expect(Math.abs(handle.x - (bar.x + bar.width * 0.3))).toBeLessThanOrEqual(1)
+
+  // A drag previews the fill and proposes the snapped value on release: 69 px of 345 px is 20%.
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 69, handle.y, { steps: 6 })
+  await expect(slider).toHaveAttribute('aria-valuetext', '50%')
+  await expect(api.locator('.vft-bar-progress')).toHaveAttribute('style', /width: 50%/)
+  await page.mouse.up()
+  await expect(status('Billing API progress 50%.')).toBeVisible()
+  await expect(slider).toBeFocused()
+
+  // Escape discards a drag preview without a proposal.
+  handle = await centre()
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 69, handle.y, { steps: 6 })
+  await expect(slider).toHaveAttribute('aria-valuetext', '70%')
+  await page.keyboard.press('Escape')
+  await expect(slider).toHaveAttribute('aria-valuetext', '50%')
+  await page.mouse.up()
+  await expect(status('Billing API progress 50%.')).toBeVisible()
+
+  // Each key press proposes one step: arrows by 5%, Page keys by 25%, Home and End to the limits.
+  for (const [key, text] of [['ArrowRight', '55%'], ['ArrowDown', '50%'], ['ArrowUp', '55%'], ['PageDown', '30%'], ['End', '100%'], ['Home', '0%']]) {
+    await slider.press(key)
+    await expect(status(`Billing API progress ${text}.`)).toBeVisible()
+    await expect(slider).toHaveAttribute('aria-valuetext', text)
+  }
+
+  // Right to left: progress grows towards the left, and ArrowLeft increases it.
+  await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
+  await slider.press('ArrowLeft')
+  await expect(status('Billing API progress 5%.')).toBeVisible()
+  await slider.press('PageUp')
+  await expect(status('Billing API progress 30%.')).toBeVisible()
+  bar = (await api.boundingBox())!
+  handle = await centre()
+  expect(Math.abs(handle.x - (bar.x + bar.width * 0.7))).toBeLessThanOrEqual(1)
+  await slider.press('ArrowRight')
+  await expect(status('Billing API progress 25%.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt bars delete by keyboard with their dependencies and undo restores them', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const links = chart.getByRole('button', { name: /^Select dependency / })
+  const wireframes = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
+  const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
+  const ui = chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true })
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await expect(wireframes).toHaveAccessibleDescription(/Delete or Backspace removes the bar\./)
+
+  // Delete removes the focused bar and the dependency that touches it; focus stays in the chart.
+  await wireframes.press('Delete')
+  await expect(status('Deleted Wireframes.')).toBeVisible()
+  await expect(wireframes).toHaveCount(0)
+  await expect(links).toHaveCount(0)
+  await expect(chart).toBeFocused()
+  await undo.click()
+  await expect(wireframes).toBeVisible()
+  await expect(links).toHaveCount(1)
+  await page.getByRole('button', { name: 'Redo timeline change', exact: true }).click()
+  await expect(wireframes).toHaveCount(0)
+  await undo.click()
+  await expect(links).toHaveCount(1)
+
+  // A bar in the selection deletes every selected bar in one proposal; Backspace works too.
+  await api.click()
+  await ui.click({ modifiers: ['Shift'] })
+  await ui.press('Backspace')
+  await expect(status('Deleted 2 bars.')).toBeVisible()
+  await expect(api).toHaveCount(0)
+  await expect(ui).toHaveCount(0)
+  await expect(links).toHaveCount(0)
+  await undo.click()
+  await expect(api).toBeVisible()
+  await expect(ui).toBeVisible()
+  await expect(links).toHaveCount(1)
+
+  // The application can reject a deletion through validateBarsDelete.
+  await wireframes.click()
+  for (const bar of [api, ui, chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })]) await bar.click({ modifiers: ['Shift'] })
+  await api.press('Delete')
+  await expect(status('Keep at least one task in the plan.')).toBeVisible()
+  await expect(chart.locator('.vft-gantt-bar')).toHaveCount(4)
+  expect(errors).toEqual([])
+})
+
+test('gantt context menu opens by right-click and Shift+F10, adds a task at the clicked time and returns focus', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  // 15:00 is one hour (115 px) after Checkout UI ends, in the empty part of the Web team row.
+  const ui = (await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).boundingBox())!
+  await page.mouse.click(ui.x + ui.width + 115, ui.y + ui.height / 2, { button: 'right' })
+  const rowMenu = page.getByRole('menu', { name: 'Actions for Web team', exact: true })
+  await expect(rowMenu.getByRole('menuitem', { name: 'Add task here', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(status('Added New task 1 at 15:00–16:00 to Web team.')).toBeVisible()
+  await expect(rowMenu).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: 'New task 1 15:00–16:00', exact: true })).toBeVisible()
+
+  // Shift+F10 opens the menu for the focused bar; Escape closes it and returns focus to the bar.
+  const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
+  await api.press('Shift+F10')
+  const barMenu = page.getByRole('menu', { name: 'Actions for Billing API', exact: true })
+  await expect(barMenu.getByRole('menuitem', { name: 'Delete', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(barMenu.getByRole('menuitem', { name: 'Set progress to 100%', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(barMenu).toHaveCount(0)
+  await expect(api).toBeFocused()
+  await api.press('Shift+F10')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(status('Billing API progress 100%.')).toBeVisible()
+  await expect(chart.getByRole('slider', { name: 'Progress of Billing API', exact: true })).toHaveAttribute('aria-valuetext', '100%')
+  await expect(api).toBeFocused()
+
+  // Right-clicking a bar targets it; Delete removes it together with its dependency.
+  const box = (await api.boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
+  await barMenu.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+  await expect(status('Deleted Billing API.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Select dependency / })).toHaveCount(0)
+  await expect(chart).toBeFocused()
+  await page.getByRole('button', { name: 'Undo timeline change', exact: true }).click()
+
+  // A focused dependency opens its own menu; a pointer press outside closes a menu.
+  await chart.getByRole('button', { name: 'Select dependency Wireframes → Billing API FS', exact: true }).press('Shift+F10')
+  await page.getByRole('menu', { name: 'Actions for dependency wireframes-api', exact: true }).getByRole('menuitem', { name: 'Delete dependency', exact: true }).click()
+  await expect(status('Deleted dependency wireframes-api.')).toBeVisible()
+  const header = (await chart.locator('.vft-gantt-time-head').boundingBox())!
+  await page.mouse.click(header.x + 300, header.y + header.height / 2, { button: 'right' })
+  const chartMenu = page.getByRole('menu', { name: 'Timeline actions', exact: true })
+  await expect(chartMenu.getByRole('menuitem')).toHaveText(['Fit all bars'])
+  await page.getByRole('heading', { name: 'Timeline editing', exact: true }).click()
+  await expect(chartMenu).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('gantt tooltip appears after the hover delay or at once on keyboard focus, stays hoverable and hides on Escape', async ({ page }) => {
+  const { errors, chart } = await openTimelineEditing(page)
+  const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
+  const tooltip = page.getByRole('tooltip')
+  const region = (await chart.boundingBox())!
+  const away = () => page.mouse.move(region.x + 4, region.y + region.height - 4)
+  await expect(tooltip).toHaveCount(0)
+  await api.hover()
+  await expect(tooltip).toHaveText('Billing API10:00–13:00 · 30% complete')
+  const id = (await tooltip.getAttribute('id'))!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // The tooltip is described after the existing hints and stays inside the chart viewport.
+  await expect(api).toHaveAttribute('aria-describedby', new RegExp(`-hint \\S+-row-hint \\S+-delete-hint ${id}$`))
+  const tip = (await tooltip.boundingBox())!
+  expect(tip.x).toBeGreaterThanOrEqual(region.x)
+  expect(tip.y).toBeGreaterThanOrEqual(region.y)
+  expect(tip.x + tip.width).toBeLessThanOrEqual(region.x + region.width)
+
+  // The pointer can move onto the tooltip without hiding it; Escape dismisses it.
+  await page.mouse.move(tip.x + tip.width / 2, tip.y + tip.height / 2, { steps: 4 })
+  await page.waitForTimeout(300)
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  await expect(api).not.toHaveAttribute('aria-describedby', /tooltip/)
+
+  // Pressing a bar hides the tooltip, and none appears during the drag.
+  await away()
+  await api.hover()
+  await expect(tooltip).toBeVisible()
+  const box = (await api.boundingBox())!
+  await page.mouse.down()
+  await expect(tooltip).toHaveCount(0)
+  await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
+  await page.waitForTimeout(500)
+  await expect(tooltip).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+
+  // Keyboard focus shows the tooltip without the delay; Escape hides it and keeps focus.
+  await away()
+  await chart.getByRole('button', { name: 'Start dependency from start of Billing API', exact: true }).focus()
+  await page.keyboard.press('Shift+Tab')
+  await expect(api).toBeFocused()
+  await expect(tooltip).toBeVisible({ timeout: 250 })
+  await expect(tooltip).toContainText('Billing API')
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  await expect(api).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('gantt fit all bars and fit selection zoom to the bars and scroll them into view', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  const fitSelection = page.getByRole('button', { name: 'Fit selection', exact: true })
+  await expect(output).toHaveText('100%')
+  await expect(fitSelection).toBeDisabled()
+  const area = await chart.evaluate(el => {
+    const corner = el.querySelector('.vft-gantt-corner')!.getBoundingClientRect()
+    const rect = el.getBoundingClientRect()
+    return { left: corner.right, right: rect.left + el.clientLeft + el.clientWidth }
+  })
+  const width = area.right - area.left
+
+  // All bars span 08:00–16:00 (920 px at 100%); the zoom leaves 24 px on each side.
+  await page.getByRole('button', { name: 'Fit all bars', exact: true }).click()
+  const all = Math.round(Math.min(3, Math.max(0.65, (width - 48) / 920)) * 100) + '%'
+  await expect(output).toHaveText(all)
+  await expect(status(all + ' · hours')).toBeVisible()
+  // Wireframes starts at the start of the range, so scrolling stops there and the spare 48 px end up on the right.
+  const first = (await chart.getByRole('button', { name: /^Wireframes / }).boundingBox())!
+  const last = (await chart.getByRole('button', { name: /^Acceptance tests / }).boundingBox())!
+  expect(Math.abs(first.x - area.left)).toBeLessThanOrEqual(1)
+  expect(Math.abs(area.right - (last.x + last.width) - 48)).toBeLessThanOrEqual(1.5)
+
+  // Three hours need more than the 300% limit, so the selection is centred at the maximum zoom.
+  const api = chart.getByRole('button', { name: /^Billing API / })
+  await api.click()
+  await fitSelection.click()
+  await expect(output).toHaveText('300%')
+  await expect(status('Fitted Billing API into view.')).toBeVisible()
+  const box = (await api.boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (area.left + area.right) / 2)).toBeLessThanOrEqual(1.5)
+  expect(errors).toEqual([])
+})
+
+test('gantt context-menu, progress and delete proposals carry exact targets, times and rows in both directions', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const rtl of [false, true]) {
+    const { chart, out } = await openGanttFixture(page, '?interactions=1' + (rtl ? '&rtl=1' : ''))
+    const json = async (name: string) => JSON.parse((await out(name).textContent()) || 'null')
+    const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+    const a = (await barA.boundingBox())!
+    // Positions along the time axis: 50 px per unit from the inline-start edge of Task A (time 0).
+    const origin = rtl ? a.x + a.width : a.x
+    const at = (time: number) => Math.round(origin + (rtl ? -time : time) * 50)
+    const timeOf = (x: number) => (rtl ? origin - x : x - origin) / 50
+    const y = Math.round(a.y + a.height / 2)
+
+    await page.mouse.click(at(0.5), y, { button: 'right' })
+    const onBar = await json('Last context menu')
+    expect(onBar).toMatchObject({ target: { kind: 'bar', id: 'a' }, rowId: 'r1', clientX: at(0.5), clientY: y, source: 'pointer' })
+    expect(onBar.time).toBeCloseTo(timeOf(at(0.5)), 3)
+    // Empty time area of a row, the row heading and the header.
+    await page.mouse.click(at(10), y + 66, { button: 'right' })
+    const onRow = await json('Last context menu')
+    expect(onRow).toMatchObject({ target: { kind: 'row', id: 'r2' }, rowId: 'r2' })
+    expect(onRow.time).toBeCloseTo(timeOf(at(10)), 3)
+    await chart.getByText('Row 1', { exact: true }).click({ button: 'right' })
+    const heading = await json('Last context menu')
+    expect(heading).toMatchObject({ target: { kind: 'row', id: 'r1' }, rowId: 'r1', source: 'pointer' })
+    expect(heading).not.toHaveProperty('time')
+    await page.mouse.click(at(3), Math.round(a.y - 20), { button: 'right' })
+    const header = await json('Last context menu')
+    expect(header).toMatchObject({ target: { kind: 'chart' } })
+    expect(header.time).toBeCloseTo(timeOf(at(3)), 3)
+    expect(header).not.toHaveProperty('rowId')
+
+    // The keyboard reports the focused element's centre and no time.
+    await barA.press('Shift+F10')
+    const keyboard = await json('Last context menu')
+    expect(keyboard).toMatchObject({ target: { kind: 'bar', id: 'a' }, rowId: 'r1', source: 'keyboard' })
+    expect(keyboard).not.toHaveProperty('time')
+    expect(keyboard.clientX).toBeCloseTo(a.x + a.width / 2, 1)
+    expect(keyboard.clientY).toBeCloseTo(a.y + a.height / 2, 1)
+    const link = chart.getByRole('button', { name: 'Select dependency Task A → Task B FS', exact: true })
+    await link.press('ContextMenu')
+    expect(await json('Last context menu')).toMatchObject({ target: { kind: 'dependency', id: 'ab' }, source: 'keyboard' })
+
+    // Progress: a pointer drag over half the bar, then keys. The parent applies nothing, so each key starts at 0.
+    const slider = chart.getByRole('slider', { name: 'Progress of Task A', exact: true })
+    const handle = (await slider.boundingBox())!
+    expect(Math.abs(handle.x + handle.width / 2 - origin)).toBeLessThanOrEqual(0.5)
+    await page.mouse.move(origin, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(at(1), handle.y + handle.height / 2, { steps: 5 })
+    await page.mouse.up()
+    expect(await json('Last progress edit')).toEqual({ id: 'a', after: 0.5, source: 'pointer' })
+    await slider.press(rtl ? 'ArrowLeft' : 'ArrowRight')
+    expect(await json('Last progress edit')).toEqual({ id: 'a', after: 0.05, source: 'keyboard' })
+    await slider.press('End')
+    expect(await json('Last progress edit')).toEqual({ id: 'a', after: 1, source: 'keyboard' })
+    // Lowering progress that is already 0 proposes nothing.
+    await slider.press(rtl ? 'ArrowRight' : 'ArrowLeft')
+    expect(await json('Last progress edit')).toEqual({ id: 'a', after: 1, source: 'keyboard' })
+
+    // Delete proposes the focused bar, but not while a connection is armed.
+    await chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true }).press('Enter')
+    await barA.press('Delete')
+    await expect(out('Last delete')).toHaveText('')
+    await page.keyboard.press('Escape')
+    await barA.press('Backspace')
+    await expect(out('Last delete')).toHaveText('["a"]')
+
+    // fitToBars validates synchronously, ignores an empty set, clamps to the maximum zoom and centres the bar.
+    const attempts = await page.evaluate(() => {
+      const chart = (window as any).ganttChart.value
+      const attempt = (run: () => unknown) => {
+        try {
+          run()
+          return 'ok'
+        } catch (error) {
+          return `${(error as Error).name}: ${(error as Error).message}`
+        }
+      }
+      return [attempt(() => chart.fitToBars(['nope'])), attempt(() => chart.fitToBars(['a'], { padding: -1 })), attempt(() => chart.fitToBars([]))]
+    })
+    expect(attempts).toEqual(['Error: Unknown bar: nope', 'RangeError: padding must be finite and nonnegative', 'ok'])
+    await expect(out('Zoom events')).toHaveText('')
+    await page.getByRole('button', { name: 'Fit Task B', exact: true }).click()
+    await expect(out('Zoom events')).toHaveText('3/')
+    const area = await chart.evaluate(el => {
+      const corner = el.querySelector('.vft-gantt-corner')!.getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
+      return el.closest('[dir="rtl"]') ? { left: rect.left + el.clientLeft, right: corner.left } : { left: corner.right, right: rect.left + el.clientLeft + el.clientWidth }
+    })
+    const b = (await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox())!
+    expect(b.width).toBeCloseTo(300, 0)
+    expect(Math.abs(b.x + b.width / 2 - (area.left + area.right) / 2)).toBeLessThanOrEqual(1.5)
+  }
+  expect(errors).toEqual([])
+})
+
 test('network direction, crossing reduction and layout controls', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
