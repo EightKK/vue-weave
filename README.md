@@ -48,7 +48,7 @@ const edges: GraphEdge[] = [
 
 The built-in layout supports branches, merges, disconnected nodes, directed cycles and self-loops. Choose `LR`, `TB`, `RL` or `BT`, and opt in to `crossingReduction: 'barycenter'` to reduce edge crossings. Supply a `layout` function to own placement and edge routing. Customize the SVG through the `node` and `edge` slots. Opt in to node moves, connections, multiple selection and the minimap through component props.
 
-For other shapes, `layoutTreeGraph` and `layoutRadialGraph` from `vue-weave/core` are drop-in `layout` functions. Opt in to nested groups (`parentId`), viewport culling for large graphs (`cullOffscreen`), pinch zoom on touch screens, and search highlighting with `matchIds`, `dimmedIds` and the `focusNode(id)` method. Core helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph` analyze the same node and edge data.
+For other shapes, `layoutTreeGraph` and `layoutRadialGraph` from `vue-weave/core` are drop-in `layout` functions. Opt in to nested groups (`parentId`), viewport culling for large graphs (`cullOffscreen`), pinch zoom on touch screens, and search highlighting with `matchIds`, `dimmedIds` and the `focusNode(id)` method. Edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`), context-menu requests (`contextMenu`), a `tooltip` slot and `fit({ ids })` for the selection are opt-in as well. Core helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph` analyze the same node and edge data.
 
 ```vue
 <NetworkGraph
@@ -125,7 +125,7 @@ npm run build:demo
 npm start
 ```
 
-The demo includes manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons and a theme switch. Enable **Edit graph** for connections, reconnection, box selection and group movement. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar. Edits remain in the demo's local state.
+The demo includes manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons and a theme switch. Enable **Edit graph** for connections, reconnection, box selection, group movement, edge selection, deletion, a context menu, tooltips and **Fit selection**. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar. Edits remain in the demo's local state.
 
 If you have a prebuilt demo archive containing `preview/`, extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
 

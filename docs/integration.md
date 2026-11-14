@@ -48,6 +48,29 @@ graph.value?.focusNode(matches.value.values().next().value, { scale: 1 })
 
 The graph needs no setup for touch: pinch to zoom and drag with two fingers to pan. Nested groups take an optional `parentId` on each group; see the API reference. Culled nodes are absent from the DOM and keyboard order, so offer a search or list for keyboard users who need to reach a distant node.
 
+## Deleting, context menus and tooltips
+
+Deletion, like every graph edit, is a proposal. Enable `deletable` (and `edgesSelectable` so edges can be selected), then apply the `delete` event with `removeGraphElements` from the core entry. Committing the result as one `useEditHistory` entry lets Undo restore the nodes and edges together. Prune selections, saved positions and groups that mention removed IDs.
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" edges-selectable deletable context-menu
+  v-model:selected-ids="selection" v-model:selected-edge-ids="edgeSelection"
+  @delete="applyDeletion" @context-menu="openMenu">
+  <template #tooltip="{ target }">
+    {{ target.kind === 'node' ? target.node.detail : target.edge.label }}
+  </template>
+</NetworkGraph>
+```
+
+```ts
+function applyDeletion(deletion: GraphDeletion) {
+  const next = removeGraphElements(nodes.value, edges.value, deletion)
+  history.commit({ ...history.state.value, ...next })
+}
+```
+
+The `context-menu` event only reports the request with its target, chart point and viewport coordinates. Render your own menu, for example with `position: fixed` at `clientX` and `clientY`; give it `role="menu"` and `role="menuitem"` entries, focus the first entry, close it with Escape and return focus to the graph element. The tooltip slot renders HTML in an overlay that the component positions; keep it short and non-interactive, because a tooltip cannot be focused.
+
 ## Custom content
 
 The graph node slot receives its node and measured layout box. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
@@ -72,6 +95,8 @@ Styles use the vft- class prefix. Set CSS variables on an ancestor to change the
 
 Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo's own `.dark` class uses this contract too. `--vft-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
 
+`--vft-edge-selected` (default `--vft-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vft-surface`, `--vft-border` and `--vft-text`.
+
 GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
 
 ### Built-in dark theme
@@ -84,7 +109,7 @@ Add `vft-theme-dark` to a component root or any ancestor to apply a dark value t
 
 - `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
-- `@media print`: zoom and preset controls, the minimap, bar and connection handles, link hit targets and previews, and the Gantt toolbar are hidden. Backgrounds are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, link hit targets and previews, the graph tooltip and the Gantt toolbar are hidden. Backgrounds are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
