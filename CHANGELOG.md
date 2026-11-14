@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+- The state and variant classes that `NetworkGraph` and `GanttChart` put on their elements now use the `vw-is-` prefix, so every class the components emit starts with `vw-` and host utility classes (for example Tailwind's `outline` or Bootstrap's `active`) no longer restyle chart elements. Rename them in custom stylesheets, test selectors and DOM queries:
+  `selected` → `vw-is-selected`, `related` → `vw-is-related`, `highlighted` → `vw-is-highlighted`, `active` → `vw-is-active`, `panning` → `vw-is-panning`, `draggable` → `vw-is-draggable`, `collapsed` → `vw-is-collapsed`, `solid` → `vw-is-solid`, `outline` → `vw-is-outline`, `editable` → `vw-is-editable`, `dragging` → `vw-is-dragging`, `milestone` → `vw-is-milestone`, `first` → `vw-is-first`, `last` → `vw-is-last`, `start` → `vw-is-start`, `finish` → `vw-is-finish`, `end` → `vw-is-end`, `overloaded` → `vw-is-overloaded`, `idle` → `vw-is-idle`. Tone (`vw-tone-*`), theme (`vw-theme-*`) and other `vw-` classes are unchanged. See "Class names" in docs/integration.md.
 - `rescheduleFromStatusDate` now drops only FS and SS dependencies into started tasks. FF and SF dependencies into a partly done task still apply, with their lag: when the remaining work would finish before a dependency allows, it resumes later and the task is split. A dependency that cannot be met returns an `infeasible` failure naming it. Completed tasks still ignore every incoming dependency.
 - `validateTimelineData` now throws an `Error` for a dependency from a bar to itself, naming the dependency and the bar. GanttChart reports such data through `validation-error` and renders its empty state, and `renderTimelineSvg` throws. `scheduleTasks` still reports a self-link as a `cycle` failure.
 

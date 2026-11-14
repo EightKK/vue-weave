@@ -203,6 +203,32 @@ Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) w
 
 `--vw-item-ink`, `--vw-item-line`, `--vw-item-pale` and `--vw-item-solid` are internal. The `vw-tone-*` classes set them from the tone families above, and nodes, bars and segments read them. They are not a theming API: change the tone variables (for example `--vw-blue-solid`) instead.
 
+### Class names
+
+Every class that the components emit and the stylesheet targets starts with `vw-`, so generic utility classes in the host page (for example Tailwind's `outline` or Bootstrap's `active`) cannot restyle chart elements. Element classes are named after the element (`vw-gantt-bar`, `vw-network-node`). State and variant modifiers use the `vw-is-*` form and are always combined with an element class, for example `.vw-gantt-bar.vw-is-selected` or `.vw-network-edge.vw-is-related`. Classes you add yourself, such as a `class` attribute on the component or the content of a slot, are passed through unchanged.
+
+In 0.1.0 these modifiers had no prefix. When you upgrade, rename them in custom stylesheets, test selectors and DOM queries:
+
+| Old class | New class | Applied to |
+| --- | --- | --- |
+| `selected` | `vw-is-selected` | Selected graph nodes, minimap nodes, selected edge hit areas, Gantt bars and the active dependency path |
+| `related` | `vw-is-related` | Graph nodes and edges next to the selection, and Gantt dependency paths that touch a selected bar |
+| `highlighted` | `vw-is-highlighted` | Gantt dependency paths in `highlightedDependencyIds` |
+| `active` | `vw-is-active` | Pressed connection handles, the active graph edge and Gantt dependency hit areas, pressed Gantt link handles and the column resize separator being dragged |
+| `panning` | `vw-is-panning` | The graph stage while it is panned |
+| `draggable` | `vw-is-draggable` | Graph nodes that can be dragged |
+| `collapsed` | `vw-is-collapsed` | Group toggles of collapsed graph groups |
+| `solid`, `outline` | `vw-is-solid`, `vw-is-outline` | Gantt bars, from `TimelineBar.appearance` |
+| `editable` | `vw-is-editable` | Editable Gantt bars |
+| `dragging` | `vw-is-dragging` | Gantt bars with a pending preview and the progress slider being dragged |
+| `milestone` | `vw-is-milestone` | Zero-duration Gantt bars |
+| `first`, `last` | `vw-is-first`, `vw-is-last` | The start and end resize handles of a Gantt bar (`vw-bar-handle`) |
+| `start`, `finish` | `vw-is-start`, `vw-is-finish` | The start and finish link handles of a Gantt bar (`vw-gantt-link-handle`) |
+| `end` | `vw-is-end` | The tick label at the end of the Gantt range |
+| `overloaded`, `idle` | `vw-is-overloaded`, `vw-is-idle` | Gantt load segments above capacity or without load |
+
+The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-auto`) and the other `vw-` classes, such as `vw-critical`, `vw-dimmed` and `vw-rtl`, keep their names.
+
 ### Built-in dark theme
 
 Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).

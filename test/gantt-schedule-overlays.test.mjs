@@ -191,7 +191,7 @@ test('GanttChart renders shading, critical, float, deadline and segments on the 
   }) }))
   // Overlapping intervals are drawn as given; intervals outside the window are not rendered.
   assert.match(html, /<div class="vw-gantt-non-working-layer" aria-hidden="true"><!--\[--><span class="vw-gantt-non-working" style="left:30px;width:10px;"><\/span><span class="vw-gantt-non-working" style="left:35px;width:10px;"><\/span><!--\]--><\/div><div class="vw-gantt-grid"/)
-  assert.match(html, /class="vw-gantt-bar vw-tone-blue solid editable vw-critical vw-late vw-segmented"/)
+  assert.match(html, /class="vw-gantt-bar vw-tone-blue vw-is-solid vw-is-editable vw-critical vw-late vw-segmented"/)
   assert.match(html, /<span class="vw-gantt-segment" style="left:-1px;width:10px;" aria-hidden="true"><span class="vw-bar-progress" style="width:100%;"><\/span><\/span>/)
   assert.match(html, /<span class="vw-gantt-segment" style="left:19px;width:20px;" aria-hidden="true"><span class="vw-bar-progress" style="width:25%;"><\/span><\/span>/)
   assert.match(html, /<span class="vw-gantt-segment-gap" style="left:9px;width:10px;" aria-hidden="true">/)

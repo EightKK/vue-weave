@@ -1918,7 +1918,7 @@ onUnmounted(() => {
 <template>
   <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
-      ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
+      ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ 'vw-is-panning': isPanning }"
       :aria-label="messages.region" tabindex="0"
       @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
@@ -1955,20 +1955,20 @@ onUnmounted(() => {
         <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vw-dimmed': edgeIsDimmed(edge), 'vw-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
           :data-vw-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
           <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)" :scale="camera.scale">
-            <path class="vw-network-edge" :class="{ related: edgeIsRelated(edge) }"
+            <path class="vw-network-edge" :class="{ 'vw-is-related': edgeIsRelated(edge) }"
               :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
             <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vw-edge-label"
               :x="layout.edgeLabels.get(edge.id)!.x" :y="layout.edgeLabels.get(edge.id)!.y"
             >{{ edge.label }}</text>
           </slot>
-          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vw-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
+          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vw-edge-hit" :class="{ 'vw-is-active': currentEdgeId === edge.id, 'vw-is-selected': edgesSelectable && edgeSelected(edge.id) }"
             :d="layout.paths.get(edge.id)" role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)"
             :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vw-edge="edge.id"
             @pointerdown.stop @click="selectEdge(edge.id, $event)" @keydown.enter.prevent="selectEdge(edge.id, $event)" @keydown.space.prevent="selectEdge(edge.id, $event)" />
         </g>
         <g
           v-for="node in shownNodes" :key="node.id" class="vw-network-node" :data-vw-node="node.id"
-          :class="[`vw-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vw-dimmed': isDimmed(node.id) }]"
+          :class="[`vw-tone-${node.tone ?? 'blue'}`, { 'vw-is-selected': isSelected(node.id), 'vw-is-draggable': draggable && node.draggable !== false, 'vw-is-related': relatedIds?.has(node.id), 'vw-dimmed': isDimmed(node.id) }]"
           :transform="`translate(${node.box.x} ${node.box.y})`"
           role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
           :aria-describedby="describedBy('node', node.id)" @pointerenter="hoverTooltip('node', node.id)" @pointerleave="leaveTooltip"
@@ -2001,7 +2001,7 @@ onUnmounted(() => {
               :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
               :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
           </g>
-          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ collapsed: !toggle.expanded }"
+          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ 'vw-is-collapsed': !toggle.expanded }"
             :transform="`translate(${toggle.x} ${toggle.y})`" role="button" tabindex="0" :aria-label="toggle.label"
             :aria-expanded="toggle.expanded" :data-vw-toggle="toggle.id"
             @pointerdown.stop @click.stop="toggleGroup(toggle)" @keydown.enter.stop.prevent="toggleGroup(toggle)" @keydown.space.stop.prevent="toggleGroup(toggle)">
@@ -2018,7 +2018,7 @@ onUnmounted(() => {
         <rect v-if="boxPreview" class="vw-box-selection" v-bind="boxPreview" />
         <template v-if="connectable || draft?.edge">
           <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vw-connect-handle" :data-vw-node="handle.node"
-            :class="{ active: portPressed(handle) }" :data-vw-port="portKey(handle)"
+            :class="{ 'vw-is-active': portPressed(handle) }" :data-vw-port="portKey(handle)"
             :cx="handle.x" :cy="handle.y" r="6" role="button" tabindex="0"
             :aria-label="`${draft && !portPressed(handle) ? messages.connectTo : messages.connectFrom} ${handle.label}`"
             :aria-pressed="Boolean(portPressed(handle))"
@@ -2044,7 +2044,7 @@ onUnmounted(() => {
     <button v-if="showMinimap && nodes.length" type="button" class="vw-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
       <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
-        <rect v-for="node in positioned" :key="node.id" :class="{ selected: isSelected(node.id) }"
+        <rect v-for="node in positioned" :key="node.id" :class="{ 'vw-is-selected': isSelected(node.id) }"
           :x="node.box.x" :y="node.box.y" :width="node.box.width" :height="node.box.height" rx="3" />
         <rect class="vw-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"
           :width="viewport.width / camera.scale" :height="viewport.height / camera.scale" />

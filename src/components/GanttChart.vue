@@ -1726,7 +1726,7 @@ function handleCell(handle: ResizeHandle): HeaderCell {
   const pointer = (event: Event) => event as PointerEvent
   return {
     key: '\u0000resize:' + handle.id,
-    className: columnResize.value?.id === handle.id ? 'vw-column-resize active' : 'vw-column-resize',
+    className: columnResize.value?.id === handle.id ? 'vw-column-resize vw-is-active' : 'vw-column-resize',
     style: { [inlineSide.value]: `calc(var(--vw-row-label-width) + ${handle.offset - 8}px)` },
     attrs: {
       role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': `${messages.value.resizeColumn} ${handle.label}`,
@@ -1836,7 +1836,7 @@ function barHandles(bar: TimelineBar): readonly BarHandle[] {
 function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   if (handle !== 'progress') {
     return {
-      class: ['vw-gantt-link-handle', handle, { active: linkPressed(bar, handle) }],
+      class: ['vw-gantt-link-handle', `vw-is-${handle}`, { 'vw-is-active': linkPressed(bar, handle) }],
       style: linkHandleStyle(bar, handle),
       'data-vw-link': linkKey({ bar: bar.id, end: handle }),
       'aria-label': linkHandleName(bar, handle),
@@ -1845,7 +1845,7 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   }
   const value = shownProgress(bar) ?? 0
   return {
-    class: ['vw-gantt-progress-handle', { dragging: progressPreview.value?.id === bar.id }],
+    class: ['vw-gantt-progress-handle', { 'vw-is-dragging': progressPreview.value?.id === bar.id }],
     style: progressHandleStyle(bar),
     'data-vw-progress': bar.id,
     role: 'slider',
@@ -2490,7 +2490,7 @@ onUnmounted(() => {
           </div>
           <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
             <span v-for="line in tickXs" :key="'line-' + line.tick" class="vw-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
-            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ 'vw-is-end': tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
@@ -2572,8 +2572,8 @@ onUnmounted(() => {
           <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vw-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
             v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
-            :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'outline' : 'solid', {
-              selected: selectedIds?.has(bar.id), editable: editable(bar), dragging: previews?.has(bar.id), milestone: bar.start === bar.end,
+            :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'vw-is-outline' : 'vw-is-solid', {
+              'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': editable(bar), 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
               'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
             }]"
             :style="barStyle(bar)" :data-vw-bar="bar.id"
@@ -2595,8 +2595,8 @@ onUnmounted(() => {
             <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
               <span class="vw-bar-text">{{ bar.label }}</span>
             </slot>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle first" data-edit-mode="start" aria-hidden="true"></span>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle last" data-edit-mode="end" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-first" data-edit-mode="start" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-last" data-edit-mode="end" aria-hidden="true"></span>
             <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
           </button>
           <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vw-gantt-deadline" :class="{ 'vw-late': item.late }"
@@ -2633,7 +2633,7 @@ onUnmounted(() => {
             </marker>
           </defs>
           <path v-for="line in shownLines" :key="line.id"
-            :class="{ related: selectedIds?.has(line.from) || selectedIds?.has(line.to), highlighted: highlightedDependencyIds?.has(line.id), selected: dependencyTargets && activeDependencyId === line.id }"
+            :class="{ 'vw-is-related': selectedIds?.has(line.from) || selectedIds?.has(line.to), 'vw-is-highlighted': highlightedDependencyIds?.has(line.id), 'vw-is-selected': dependencyTargets && activeDependencyId === line.id }"
             :d="line.path" :marker-end="`url(#${marker})`"
           />
         </svg>
@@ -2645,7 +2645,7 @@ onUnmounted(() => {
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
         >
-          <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ active: activeDependencyId === line.id }"
+          <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ 'vw-is-active': activeDependencyId === line.id }"
             :d="line.path" role="button" tabindex="0" :data-vw-dependency="contextMenu ? line.id : undefined"
             :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
             :aria-pressed="activeDependencyId === line.id"
@@ -2680,7 +2680,7 @@ onUnmounted(() => {
             </slot>
           </div>
           <div v-for="segment in item.segments" :key="segment.key" class="vw-gantt-load-segment"
-            :class="{ overloaded: segment.overload > 0, idle: segment.segment.load === 0 }" role="img"
+            :class="{ 'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0 }" role="img"
             :aria-label="segment.label" :title="segment.label"
             :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
             <slot name="load-segment" :segment="segment.segment" :row="item.row" :peak="item.peak" :overload="segment.overload">

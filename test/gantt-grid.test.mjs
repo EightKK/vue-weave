@@ -19,7 +19,7 @@ const render = props => renderToString(createSSRApp({ render: () => h(GanttChart
   rows, bars: [], range, scale, snap: 1, formatTime: String, ...props,
 }) }))
 const offsets = (html, className, side) => [...html.matchAll(
-  new RegExp(`class="${className}(?: end)?"[^>]*style="${side}:([\\d.]+)px;?"`, 'g'),
+  new RegExp(`class="${className}(?: vw-is-end)?"[^>]*style="${side}:([\\d.]+)px;?"`, 'g'),
 )].map(match => Number(match[1]))
 
 test('Gantt grid lines follow every tick of a piecewise time scale', async () => {
