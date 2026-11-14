@@ -8,7 +8,7 @@ import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineRow,
 } from './types.js'
-import { checkNonWorkingPeriods, segmentPieces } from './barSegments.js'
+import { checkNonWorkingPeriods, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 
 /** Colours of one tone, matching the `--vft-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -46,6 +46,8 @@ export interface SvgExportTheme {
   float?: string
   /** Deadline indicators and the late outline (`--vft-deadline`). Defaults to `defaultSvgExportTheme.deadline`. */
   deadline?: string
+  /** Status-date line and progress line (`--vft-status`). Defaults to `defaultSvgExportTheme.status`. */
+  status?: string
   tones: Record<ChartTone, SvgToneColors>
 }
 
@@ -59,7 +61,7 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
   surface: '#ffffff', surfaceMuted: '#f6f9fb', text: '#172c3b', muted: '#4c6371', border: '#d8e2e9', grid: '#d9e4eb',
   edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', markerInk: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
-  nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08',
+  nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08', status: '#1f7a4d',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -343,6 +345,12 @@ export interface TimelineSvgOptions extends SvgExportOptions {
   highlightedDependencyIds?: Iterable<string>
   /** Half-open intervals shaded as non-working time behind the grid, over the task and load rows. May overlap. */
   nonWorkingPeriods?: readonly TimeRange[]
+  /** Time of a status-date line. */
+  statusDate?: number
+  /** Label of the status-date line. Default "Status date". */
+  statusDateLabel?: string
+  /** With `statusDate`, draw a progress line that kinks to the progress point of each bar that is behind or ahead. */
+  showProgressLine?: boolean
   /** Bar label text. Defaults to `bar.label`. */
   barLabel?: (bar: TimelineBar) => string
   /** Row heading text. Defaults to `row.label`. */
@@ -438,6 +446,7 @@ export function renderTimelineSvg(
     markerIds.add(item.id)
   }
   if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')
+  if (options.statusDate !== undefined && !Number.isFinite(options.statusDate)) throw new RangeError('statusDate must be finite')
   checkNonWorkingPeriods(options.nonWorkingPeriods)
 
   const anchor = options.tickAnchor ?? full.start
@@ -675,6 +684,24 @@ export function renderTimelineSvg(
   if (options.now !== undefined && options.now >= window.start && options.now <= window.end) {
     const label = options.nowLabel ?? 'Now'
     area.push(tag('g', {}, tag('title', {}, escapeXml(`${label} ${format(options.now)}`)) + flag(X(options.now), label, theme.now, 2, false)))
+  }
+  const status = options.statusDate
+  if (status !== undefined && status >= window.start && status <= window.end) {
+    const x = X(status)
+    if (options.showProgressLine) {
+      const kinks = shown.flatMap((item, index) => (barsByRow.get(item.row.id) ?? []).flatMap(bar => {
+        const time = progressLineTime(bar, status)
+        return time === undefined ? []
+          : [{ x: X(time), y: headerHeight + index * rowHeight + laneTop(bar) + barHeight / 2, reach: barHeight / 2 }]
+      }))
+      area.push(tag('polyline', {
+        class: 'vft-gantt-progress-line', fill: 'none', stroke: theme.status, 'stroke-width': 2, 'stroke-linejoin': 'round',
+        points: progressLinePoints(x, headerHeight, headerHeight + bodyHeight, kinks).map(([px, py]) => num(px) + ',' + num(py)).join(' '),
+      }))
+    }
+    const label = options.statusDateLabel ?? 'Status date'
+    area.push(tag('g', { class: 'vft-gantt-status-date' },
+      tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
   }
   if (histogram) {
     loadRows.forEach((row, index) => {
