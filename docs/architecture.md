@@ -40,7 +40,7 @@ Scheduling and resource-load analysis are explicit core operations called by the
 
 ## Export
 
-SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` build a standalone document string from data, a layout or time scale and an explicit theme, so they run in Node, workers and tests. The components only gather their current props, collapsed rows, zoom and the computed `--vft-*` colours and call those builders. PNG export is the one browser-only step: the SVG is loaded into an image, drawn on a canvas and encoded with `toBlob`, after a size check. Export uses the default rendering because slots render arbitrary DOM that a string builder cannot reproduce.
+SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` build a standalone document string from data, a layout or time scale and an explicit theme, so they run in Node, workers and tests. The components only gather their current props, collapsed rows, zoom and the computed `--vw-*` colours and call those builders. PNG export is the one browser-only step: the SVG is loaded into an image, drawn on a canvas and encoded with `toBlob`, after a size check. Export uses the default rendering because slots render arbitrary DOM that a string builder cannot reproduce.
 
 ## Right-to-left layout
 
