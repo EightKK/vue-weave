@@ -1,5 +1,16 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
+
+// Vue catches errors thrown in event handlers and render functions and reports them with console.error, so they never
+// reach pageerror. Every test therefore also fails when the page logs a console error.
+const test = base.extend<{ consoleErrors: string[] }>({
+  consoleErrors: [async ({ page }, use) => {
+    const errors: string[] = []
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+    await use(errors)
+    expect(errors, 'console errors').toEqual([])
+  }, { auto: true }],
+})
 
 async function openComponentFixture(page: Page) {
   // Serve built public entries and Vue without adding diagnostic pages to the distributed demo.
@@ -499,8 +510,11 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await page.goto('/')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
-  const area = (await region.boundingBox())!
   const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+  // In a narrow viewport the bar can start below the fold (font metrics differ by platform); mouse input outside the
+  // viewport reaches no element, so bring it into view before measuring.
+  await bar.scrollIntoViewIfNeeded()
+  const area = (await region.boundingBox())!
   const box = (await bar.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
@@ -2733,6 +2747,37 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
   expect(errors).toEqual([])
 })
 
+test('the demo offers the force layout up to 1,000 nodes and falls back to layered for the large graph', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const layout = page.getByLabel('Graph layout')
+  const force = layout.locator('option', { hasText: 'force' })
+  await layout.selectOption('force')
+  await expect(force).toBeEnabled()
+  await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+  await expect(layout).toHaveValue('layered')
+  await expect(force).toBeDisabled()
+  await expect(page.getByRole('status').filter({ hasText: 'The force layout is offered for up to 1,000 nodes; switched to the layered layout.' })).toBeVisible()
+  await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await expect(force).toBeEnabled()
+  expect(errors).toEqual([])
+})
+
+test('the graph Undo and Redo buttons are hidden in the scheduling and timeline editing demos', async ({ page }) => {
+  await page.goto('/')
+  const undo = page.getByRole('button', { name: 'Undo', exact: true }), redo = page.getByRole('button', { name: 'Redo', exact: true })
+  await expect(undo).toBeVisible()
+  for (const name of ['Scheduling', 'Timeline editing']) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await expect(undo).toHaveCount(0)
+    await expect(redo).toHaveCount(0)
+  }
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await expect(undo).toBeVisible()
+})
+
 test('demo groups collapse and expand by click and keyboard, through the edit history', async ({ page }) => {
   const { errors, button, status, edges } = await openGraphEditor(page)
   await page.getByLabel('Collapsible groups').check()
@@ -2767,6 +2812,27 @@ test('demo groups collapse and expand by click and keyboard, through the edit hi
   await expect(collapse).toBeVisible()
   await button('Redo').click()
   await expect(proxy).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a pointer click on a proxy expand toggle expands the group and does not start a connection', async ({ page }) => {
+  const { errors, button, status } = await openGraphEditor(page)
+  await page.getByLabel('Collapsible groups').check()
+  for (const direction of ['LR', 'TB', 'RL', 'BT']) {
+    await page.getByLabel('Direction').selectOption(direction)
+    await button('Collapse group Intermediate lots').click()
+    await expect(status('Collapsed Intermediate lots.')).toBeVisible()
+    const expand = button('Expand group Intermediate lots')
+    // The toggle and the proxy's connection handle do not overlap, so a real click reaches the toggle.
+    const toggle = (await expand.boundingBox())!
+    const handle = (await button('Start connection from Intermediate lots').boundingBox())!
+    expect(toggle.x + toggle.width <= handle.x || handle.x + handle.width <= toggle.x
+      || toggle.y + toggle.height <= handle.y || handle.y + handle.height <= toggle.y).toBe(true)
+    await page.mouse.click(toggle.x + toggle.width / 2, toggle.y + toggle.height / 2)
+    await expect(status('Expanded Intermediate lots.')).toBeVisible()
+    await expect(expand).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Connect to / })).toHaveCount(0)
+  }
   expect(errors).toEqual([])
 })
 
@@ -3065,6 +3131,19 @@ test('the scheduling demo draws the status date and progress line and reschedule
   expect(svg).toContain('<g class="vft-gantt-status-date"><title>Status date 09 Nov 12:00</title>')
   expect(svg).toContain('class="vft-gantt-progress-line"')
   await page.getByRole('button', { name: 'Reset schedule' }).click()
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo reports a status date that leaves no room for the done work', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  // At the start of the range the done hour of cutting order B cannot lie before the status date.
+  await page.getByRole('slider', { name: 'Status date', exact: true }).fill(String(Date.parse('2026-11-09T08:00:00+09:00')))
+  await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'The reported progress does not fit before status date 09 Nov 08:00. Choose a later status date.' })).toBeVisible()
   await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
   expect(errors).toEqual([])
 })
