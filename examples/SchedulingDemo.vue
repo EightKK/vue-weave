@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  GanttChart, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, propagateEdit, scheduleTasks, scheduledBarFields,
+  GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate, scheduleTasks,
+  scheduleToGraph, scheduledBarFields, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
   type ResourceAssignment, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleTask,
   type TimelineBar, type TimelineColumn, type TimelineEdit,
 } from '../src'
@@ -88,10 +89,14 @@ const resourceColumns: TimelineColumn[] = [
 const criticalLinks = computed(() => new Set(model.value.plan.criticalDependencyIds))
 const workHours = new Map(originalTasks.map(task => [task.id, task.duration / hour]))
 // scheduledBarFields supplies the dates, split work segments, critical flag and latest finish of each task.
+// Reported progress at the status date: cutting order A is done, B is half done and inspection has started.
+const reported = new Map([['cut-a', 1], ['cut-b', 0.5], ['inspect', 0.25]])
+const statusDate = ref(local('2026-11-09T12:00:00'))
+const showProgressLine = ref(true)
 const taskBars = computed<TimelineBar[]>(() => model.value.plan.tasks.map(task => {
   const { critical, latestEnd, ...dates } = scheduledBarFields(task)
   return {
-    id: task.id, rowId: task.id, label: labels.get(task.id)!, ...dates, baseline: originalDates.get(task.id),
+    id: task.id, rowId: task.id, label: labels.get(task.id)!, ...dates, baseline: originalDates.get(task.id), progress: reported.get(task.id),
     editable: task.id.startsWith('cut-'), tone: task.critical ? 'amber' : 'blue',
     ...(showCritical.value ? { critical, latestEnd, deadline: deadlines.get(task.id) } : {}),
   }
@@ -156,6 +161,47 @@ function reset() {
   selected.value = new Set()
   notice.value = 'Original plan restored.'
 }
+// Done work stays where it is, partly done work is split at the status date and unstarted work moves after it. The
+// next edit recalculates the plan from the requested starts again.
+function rescheduleFromStatus() {
+  const plan = rescheduleFromStatusDate(scheduleInput(model.value.tasks), statusDate.value, reported)
+  if (!plan.ok) {
+    notice.value = plan.code === 'cycle' ? 'A dependency cycle prevents scheduling.' : 'The status date leaves no room for ' + labels.get(plan.taskId) + '.'
+    return
+  }
+  const previous = byTask.value
+  const moved = plan.tasks.filter(task => task.start !== previous.get(task.id)!.start || task.end !== previous.get(task.id)!.end).length
+  model.value = { tasks: model.value.tasks, plan }
+  notice.value = `Rescheduled from status date ${format(statusDate.value)}. ${moved} operation${moved === 1 ? '' : 's'} moved.`
+}
+// Interchange exports of the current plan. The times are written in JST for Microsoft Project and in UTC for iCalendar.
+function exportMsProject() {
+  const xml = toMsProjectXml({
+    name: 'Calendar-aware schedule',
+    tasks: model.value.plan.tasks.map(task => ({
+      id: task.id, name: labels.get(task.id)!, start: task.start, end: task.end, percentComplete: (reported.get(task.id) ?? 0) * 100,
+    })),
+    dependencies: dependencies.map(link => ({ from: link.from, to: link.to, type: link.type, lag: link.lag })),
+  }, { utcOffsetMinutes: 540 })
+  download(new Blob([xml], { type: 'application/xml' }), 'schedule.xml')
+  notice.value = 'Exported Microsoft Project XML with ' + model.value.plan.tasks.length + ' tasks.'
+}
+function exportICalendar() {
+  const text = toICalendar(model.value.plan.tasks.map(task => ({
+    id: task.id + '@vue-weave.example', summary: labels.get(task.id)!, start: task.start, end: task.end,
+    description: rows.find(row => row.id === task.id)!.detail,
+  })), { calendarName: 'Calendar-aware schedule' })
+  download(new Blob([text], { type: 'text/calendar' }), 'schedule.ics')
+  notice.value = 'Exported iCalendar with ' + model.value.plan.tasks.length + ' events.'
+}
+function exportCsv() {
+  const text = toCsv(timelineCsvTable(rows, taskBars.value, { formatTime: format, headers: { row: 'Operation', bar: 'Task' } }))
+  download(new Blob([text], { type: 'text/csv' }), 'schedule.csv')
+  notice.value = 'Exported CSV with ' + taskBars.value.length + ' tasks.'
+}
+// The network diagram shows the same plan as a PERT chart; critical tasks and the links between them are highlighted.
+const showNetwork = ref(false)
+const network = computed(() => scheduleToGraph(model.value.plan, dependencies, { label: id => labels.get(id)!, formatTime: format }))
 </script>
 
 <template>
@@ -165,9 +211,20 @@ function reset() {
       <div class="options">
         <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
         <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
+        <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
         <button type="button" @click="exportSchedule">Export schedule SVG</button>
         <button type="button" @click="reset">Reset schedule</button>
       </div>
+    </div>
+    <div class="options status-options" role="group" aria-label="Status date and exports">
+      <label>Status date <input v-model.number="statusDate" type="range" :min="range.start" :max="range.end" :step="hour"
+        :aria-valuetext="format(statusDate)"></label>
+      <output aria-label="Status date value">{{ format(statusDate) }}</output>
+      <label><input v-model="showProgressLine" type="checkbox"> Show progress line</label>
+      <button type="button" @click="rescheduleFromStatus">Reschedule from status date</button>
+      <button type="button" @click="exportMsProject">Export MS Project XML</button>
+      <button type="button" @click="exportICalendar">Export iCalendar</button>
+      <button type="button" @click="exportCsv">Export CSV</button>
     </div>
     <dl class="schedule-metrics">
       <div><dt>Projected finish</dt><dd data-testid="schedule-finish">{{ format(model.plan.finish) }}</dd></div>
@@ -178,12 +235,15 @@ function reset() {
       :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
+      :status-date="statusDate" :show-progress-line="showProgressLine"
       @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vft-bar-text">{{ workHours.get(bar.id) }} h</span></template>
       <template #legend><span class="hint">Drag a cutting order or use its arrow keys; dashed outlines preview the operations that move with it. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
     </GanttChart>
     <p class="status" role="status">{{ notice }}</p>
+    <NetworkGraph v-if="showNetwork" :nodes="network.nodes" :edges="network.edges" :related-ids="network.criticalNodeIds"
+      :options="{ nodeWidth: 300, nodeHeight: 58 }" :height="300" :labels="{ region: 'Schedule network diagram' }" />
   </section>
   <section class="planning-panel" aria-labelledby="load-title">
     <div class="section-head"><div><h2 id="load-title">Resource demand and capacity</h2><p>Demand uses work segments. Breaks and closed dates consume zero work.</p></div></div>
@@ -206,3 +266,8 @@ function reset() {
     <p v-else class="status">No capacity conflicts in the current plan.</p>
   </section>
 </template>
+
+<style scoped>
+.status-options { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.status-options input[type="range"] { vertical-align: middle; width: 180px; }
+</style>

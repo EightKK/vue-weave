@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import {
-  GanttChart, assignLanes, calculateResourceLoad, calendarBands, removeTimelineBars, useEditHistory,
-  type TimelineBar, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency, type TimelineEdit,
-  type TimelineProgressEdit, type TimelineReconnect, type TimelineZoomPreset, type TimelineZoomState,
+  GanttChart, assignLanes, calculateResourceLoad, calendarBands, moveTimelineRow, removeTimelineBars, timelineWbsCodes, useEditHistory,
+  type TimelineBar, type TimelineColumn, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency,
+  type TimelineEdit, type TimelineProgressEdit, type TimelineReconnect, type TimelineRow, type TimelineRowMove, type TimelineZoomPreset,
+  type TimelineZoomState,
 } from '../src'
 import { formatTime, hour, origin } from './data'
 import { download, imageSize } from './download'
 
 const range = { start: origin, end: origin + 10 * hour }
 const quarter = hour / 4
-const rows = [
+// The web team reports to the platform team, so indenting and outdenting rows changes the WBS codes.
+const initialRows: TimelineRow[] = [
   { id: 'product', label: 'Product team', detail: 'Design pool' },
   { id: 'platform', label: 'Platform team', detail: 'Engineering pool' },
-  { id: 'web', label: 'Web team', detail: 'Engineering pool' },
+  { id: 'web', label: 'Web team', detail: 'Engineering pool', parentId: 'platform' },
   { id: 'quality', label: 'Quality', detail: 'Acceptance only' },
 ]
 const initialBars: TimelineBar[] = [
@@ -36,7 +38,7 @@ const zoomPresets: TimelineZoomPreset[] = [
 ]
 
 // Accepted changes are committed as immutable snapshots, so Undo restores deleted bars and their dependencies.
-const history = useEditHistory({ bars: initialBars, dependencies: initialDependencies })
+const history = useEditHistory({ rows: initialRows, bars: initialBars, dependencies: initialDependencies })
 const { state: model, canUndo, canRedo } = history
 const selection = ref(new Set<string>())
 const selectedDependency = ref<string>()
@@ -44,6 +46,13 @@ const preset = ref('hours')
 const zoomState = ref('100% · hours')
 const status = ref('Select bars with Ctrl, Meta or Shift. Use link handles to add dependencies.')
 const labels = computed(() => new Map(model.value.bars.map(bar => [bar.id, bar.label])))
+const rows = computed(() => model.value.rows)
+const rowLabel = (id: string) => model.value.rows.find(row => row.id === id)?.label
+// "Reorder rows" adds a WBS column numbered from the current hierarchy and a move handle on each row.
+const reorder = ref(false)
+const wbs = computed(() => timelineWbsCodes(model.value.rows))
+const columns = computed<TimelineColumn[] | undefined>(() => reorder.value
+  ? [{ id: 'wbs', label: 'WBS', width: 52, value: row => wbs.value.get(row.id) ?? '' }] : undefined)
 const load = computed(() => calculateResourceLoad(range,
   model.value.bars.map(bar => ({ id: bar.id, work: [{ start: bar.start, end: bar.end }] })), resources,
   model.value.bars.flatMap(bar => {
@@ -52,10 +61,10 @@ const load = computed(() => calculateResourceLoad(range,
   })))
 
 function commit(bars: TimelineBar[], dependencies = model.value.dependencies) {
-  history.commit({ bars, dependencies })
+  history.commit({ rows: model.value.rows, bars, dependencies })
 }
 function reset() {
-  history.reset({ bars: [...initialBars], dependencies: [...initialDependencies] })
+  history.reset({ rows: [...initialRows], bars: [...initialBars], dependencies: [...initialDependencies] })
   selection.value = new Set()
   selectedDependency.value = undefined
   status.value = 'Timeline editing example reset.'
@@ -105,7 +114,7 @@ function apply(changes: readonly TimelineEdit[]) {
   }))
   const [first] = changes
   status.value = changes.length > 1 ? `Moved ${changes.length} bars.`
-    : first?.row ? `Moved ${labels.value.get(first.id)} to ${rows.find(row => row.id === first.row!.after)?.label}.`
+    : first?.row ? `Moved ${labels.value.get(first.id)} to ${rowLabel(first.row.after)}.`
       : `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}.`
 }
 function setProgress(id: string, progress: number) {
@@ -133,7 +142,7 @@ function addBar(rowId: string, start: number, end: number, lane?: number) {
   const bar: TimelineBar = { id: 'task-' + number, rowId, label: 'New task ' + number, start, end, editable: true, tone: 'amber', progress: 0 }
   if (lane) bar.lane = lane
   commit([...model.value.bars, bar])
-  status.value = `Added ${bar.label} at ${formatTime(bar.start)}–${formatTime(bar.end)} to ${rows.find(row => row.id === rowId)?.label}.`
+  status.value = `Added ${bar.label} at ${formatTime(bar.start)}–${formatTime(bar.end)} to ${rowLabel(rowId)}.`
 }
 function addTask(rowId: string, time: number) {
   const start = Math.min(range.end - hour, Math.max(range.start, Math.round(time / quarter) * quarter))
@@ -141,6 +150,17 @@ function addTask(rowId: string, time: number) {
 }
 // Drag across an empty part of a row (or use its + button) to propose a new task. The chosen lane is kept only while
 // lanes are arranged, because a single-lane chart has lane 0 alone.
+// "Reorder rows" shows a move handle on each team: drag it, or use Alt+Up/Down and Alt+Shift+Left/Right. Accepted
+// moves are committed to the same history as bar edits, so Undo restores the previous hierarchy.
+function validateRowMove(change: TimelineRowMove) {
+  if (change.after.parentId === 'quality') return 'Quality cannot contain other teams.'
+}
+function moveRow(change: TimelineRowMove) {
+  const next = moveTimelineRow(model.value.rows, change.id, change.after)
+  history.commit({ ...model.value, rows: next })
+  const parent = change.after.parentId === undefined ? 'the top level' : rowLabel(change.after.parentId)
+  status.value = `Moved ${rowLabel(change.id)} to ${parent} as WBS ${timelineWbsCodes(next).get(change.id)}.`
+}
 function validateCreate(proposal: TimelineCreate) {
   if (proposal.rowId === 'quality') return 'New tasks cannot be added to Quality.'
 }
@@ -204,7 +224,7 @@ function openMenu(event: TimelineContextMenu) {
   } else {
     if (event.rowId !== undefined && event.time !== undefined) {
       const { rowId, time } = event
-      title = 'Actions for ' + rows.find(row => row.id === rowId)!.label
+      title = 'Actions for ' + rowLabel(rowId)
       items.push({ label: 'Add task here', run: () => addTask(rowId, time) })
     }
     items.push({ label: 'Fit all bars', run: () => void fit() })
@@ -264,7 +284,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
       <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
     <div class="options editing-actions" role="group" aria-label="History and fit">
       <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
@@ -274,7 +294,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
     </div>
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
-      progress-editable deletable context-menu creatable :validate-create="validateCreate"
+      progress-editable deletable context-menu creatable :validate-create="validateCreate" :columns="columns"
+      :rows-reorderable="reorder" :validate-row-move="validateRowMove" @row-move="moveRow" @row-move-rejected="(_change, reason) => status = reason"
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"
       :validate-bars-delete="validateBarsDelete"
