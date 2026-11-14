@@ -15,8 +15,10 @@ import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
 } from '../core/types.js'
 import type { CreateValidator, TimelineCascade, TimelineCreate } from '../core/types.js'
+import type { RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
+import { progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -75,6 +77,10 @@ const props = withDefaults(defineProps<{
   createDuration?: number
   validateCreate?: CreateValidator
   cascade?: TimelineCascade
+  rowsReorderable?: boolean
+  validateRowMove?: RowMoveValidator
+  statusDate?: number
+  showProgressLine?: boolean
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -116,6 +122,8 @@ const emit = defineEmits<{
   'context-menu': [event: TimelineContextMenu]
   create: [proposal: TimelineCreate]
   'create-rejected': [proposal: TimelineCreate, reason: string]
+  'row-move': [change: TimelineRowMove]
+  'row-move-rejected': [change: TimelineRowMove, reason: string]
 }>()
 
 const slots = defineSlots<{
@@ -143,7 +151,12 @@ const messages = computed<GanttLabels>(() => ({
   moveRowHint: 'Up and Down arrows move the bar to another row.',
   critical: 'Critical', float: 'Float until', deadline: 'Deadline', late: 'Late',
   progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.',
-  createIn: 'Add bar to', createRejected: 'This new bar was rejected.', ...props.labels,
+  createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
+  moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
+  // Indenting follows the visual direction: towards the row text, which is on the right in right-to-left charts.
+  moveRowKeysHint: `Alt+Up and Alt+Down move the row among its siblings. Alt+Shift+${rtl.value ? 'Left' : 'Right'} indents it and `
+    + `Alt+Shift+${rtl.value ? 'Right' : 'Left'} outdents it. Drag to move it; Escape cancels.`,
+  ...props.labels,
 }))
 const notice = ref('')
 const bounds = computed(() => props.editBounds ?? props.range)
@@ -204,6 +217,9 @@ function validateProps() {
   if (props.createDuration !== undefined && (!Number.isFinite(props.createDuration) || props.createDuration <= 0)) {
     throw new RangeError('createDuration must be finite and positive')
   }
+  if (props.statusDate !== undefined && (typeof props.statusDate !== 'number' || !Number.isFinite(props.statusDate))) {
+    throw new RangeError('statusDate must be finite')
+  }
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
@@ -213,6 +229,7 @@ watch([
   () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
+  () => props.statusDate,
 ], () => {
   try {
     const result = validateProps()
@@ -395,6 +412,34 @@ const shownMarkers = computed(() => {
     return item.time >= timeWindow.value.start && item.time < timeWindow.value.end
   })
 })
+// Markers, then the status date (`statusDate`), share one template element so a chart without a status date renders
+// exactly the markup it did before.
+const markerEntries = computed(() => {
+  const entries: { key: string; time: number; label: string; className?: string; role?: string; name?: string }[] = shownMarkers.value
+    .map(item => ({ key: 'marker:' + item.id, time: item.time, label: item.label }))
+  const time = props.statusDate
+  if (time !== undefined && !validationError.value && time >= props.range.start && time <= props.range.end
+    && time >= timeWindow.value.start && time <= timeWindow.value.end) {
+    const label = messages.value.statusDate!
+    entries.push({ key: 'status', time, label, className: 'vft-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
+  }
+  return entries
+})
+/**
+ * The progress line through one displayed row, in row coordinates of the visible time window: a vertical line at the
+ * status date that kinks to the progress point of each bar that is behind or ahead (`progressLineTime`). Every bar of
+ * the row counts, also one outside the visible time window, so the line keeps its shape while scrolling.
+ */
+function progressSegment(rowId: string): { points: string } | undefined {
+  const status = props.statusDate
+  if (!props.showProgressLine || status === undefined || validationError.value) return undefined
+  const kinks = (barsByRow.value.get(rowId) ?? []).flatMap(bar => {
+    const range = rangeOf(bar)
+    const time = progressLineTime({ ...range, progress: shownProgress(bar), segments: workSegments(bar, range) }, status)
+    return time === undefined ? [] : [{ x: axis.value.toX(time), y: laneTop(bar) + barHeight.value / 2, reach: barHeight.value / 2 }]
+  })
+  return { points: progressLinePoints(axis.value.toX(status), 0, props.rowHeight, kinks).map(([x, y]) => x + ',' + y).join(' ') }
+}
 // The clock is read only after mounting so server and client render the same markup.
 const clientNow = ref<number>()
 let nowTimer: ReturnType<typeof setInterval> | undefined
@@ -461,6 +506,8 @@ const shownRows = computed(() => {
       bars: shown,
       overlays,
       creatable: canCreateIn(item.row),
+      reorderable: rowHandlesVisible.value,
+      progress: progressSegment(item.row.id),
       summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
       baselines: bars.filter(bar => bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)),
       floats: bars.flatMap(bar => {
@@ -721,13 +768,14 @@ function cancelEdit() {
   cancelLink()
   cancelProgress()
   cancelCreate()
+  cancelRowDrag()
   clearCascade()
   pinch = undefined
 }
 
 /** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection, a create drag or a pinch. */
 function gestureActive() {
-  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch || createDrag)
+  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch || createDrag || rowDrag)
 }
 
 function rejection(result: boolean | string | void) {
@@ -1097,6 +1145,162 @@ watch(() => props.bars, async () => {
   if (id !== undefined && focusedBarId.value === id) revealBar(id)
 })
 
+// Row hierarchy moves (`rowsReorderable`). Each row heading gets a move handle: Alt+Up/Down move the row among its
+// siblings, Alt+Shift+Left/Right outdent or indent it in the visual direction, and a pointer drag previews a drop
+// position between rows. Proposals are emitted as `row-move`; the parent applies them with `moveTimelineRow`.
+const rowHandlesVisible = computed(() => Boolean(props.rowsReorderable) && !props.readonly && !validationError.value)
+/** Children of each parent row (`undefined` for the roots) in tree order. */
+const rowChildren = computed(() => {
+  const children = new Map<string | undefined, TimelineRow[]>()
+  for (const { row } of tree.value) {
+    let list = children.get(row.parentId)
+    if (!list) children.set(row.parentId, list = [])
+    list.push(row)
+  }
+  return children
+})
+const rowById = computed(() => new Map(tree.value.map(item => [item.row.id, item.row])))
+function rowPlace(parentId: string | undefined, index: number): TimelineRowPosition {
+  return parentId === undefined ? { index } : { parentId, index }
+}
+function rowPosition(row: TimelineRow): TimelineRowPosition {
+  return rowPlace(row.parentId, rowChildren.value.get(row.parentId)!.indexOf(row))
+}
+let pendingRowFocus: string | undefined
+function proposeRowMove(change: TimelineRowMove) {
+  if (change.before.parentId === change.after.parentId && change.before.index === change.after.index) return
+  const reason = props.validateRowMove?.(change)
+  const message = reason === false ? messages.value.rowMoveRejected! : typeof reason === 'string' ? reason : undefined
+  if (message !== undefined) {
+    notice.value = message
+    emit('row-move-rejected', change, message)
+    return
+  }
+  notice.value = ''
+  pendingRowFocus = change.id
+  emit('row-move', change)
+}
+function rowHandleKeys(event: KeyboardEvent, row: TimelineRow) {
+  if (!event.altKey || !rowHandlesVisible.value) return
+  const before = rowPosition(row)
+  const siblings = rowChildren.value.get(row.parentId)!
+  let after: TimelineRowPosition | undefined
+  if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    // Indent towards the row text: right in left-to-right charts, left in right-to-left charts.
+    if ((event.key === 'ArrowRight') !== rtl.value) {
+      const previous = siblings[before.index - 1]
+      if (previous) after = rowPlace(previous.id, rowChildren.value.get(previous.id)?.length ?? 0)
+    } else if (row.parentId !== undefined) {
+      const parent = rowPosition(rowById.value.get(row.parentId)!)
+      after = rowPlace(parent.parentId, parent.index + 1)
+    }
+  } else if (!event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    const index = before.index + (event.key === 'ArrowUp' ? -1 : 1)
+    if (index >= 0 && index < siblings.length) after = rowPlace(row.parentId, index)
+  } else {
+    return
+  }
+  event.preventDefault()
+  if (!after || gestureActive()) return
+  proposeRowMove({ id: row.id, before, after, source: 'keyboard' })
+}
+type RowDrop = { gap: number; depth: number; target: TimelineRowPosition }
+const rowDrop = shallowRef<RowDrop>()
+let rowDrag: { id: string; pointerId: number; target: HTMLElement; y: number; moved: boolean } | undefined
+function startRowDrag(event: PointerEvent, row: TimelineRow) {
+  if (!rowHandlesVisible.value || gestureActive() || !event.isPrimary || event.button !== 0) return
+  const target = event.currentTarget as HTMLElement
+  // Keep a mouse drag from selecting text; focus the handle so that Escape cancels.
+  if (event.pointerType !== 'touch') event.preventDefault()
+  target.focus({ preventScroll: true })
+  hideTooltip()
+  rowDrag = { id: row.id, pointerId: event.pointerId, target, y: event.clientY, moved: false }
+  target.setPointerCapture(event.pointerId)
+}
+/**
+ * The drop position under a client y coordinate: before a row in the upper half of a displayed row, otherwise after
+ * it, which is its first child when its children are shown. Positions inside the dragged subtree are not offered.
+ */
+function rowDropAt(id: string, clientY: number): RowDrop | undefined {
+  const rows = displayedRows.value
+  if (!canvas.value || !rows.length) return undefined
+  const y = Math.max(0, Math.min(rows.length * props.rowHeight - 1, clientY - canvas.value.getBoundingClientRect().top - headerHeight.value))
+  const index = Math.floor(y / props.rowHeight)
+  const upper = y - index * props.rowHeight < props.rowHeight / 2
+  const item = rows[index]!
+  if (item.row.id === id) return undefined
+  let parentId: string | undefined, depth: number, position: number
+  if (upper) {
+    parentId = item.row.parentId
+    depth = item.depth
+    position = rowChildren.value.get(parentId)!.filter(row => row.id !== id).indexOf(item.row)
+  } else if (item.hasChildren && !collapsed.value.has(item.row.id)) {
+    parentId = item.row.id
+    depth = item.depth + 1
+    position = 0
+  } else {
+    parentId = item.row.parentId
+    depth = item.depth
+    position = rowChildren.value.get(parentId)!.filter(row => row.id !== id).indexOf(item.row) + 1
+  }
+  for (let ancestor = parentId; ancestor !== undefined; ancestor = rowById.value.get(ancestor)?.parentId) {
+    if (ancestor === id) return undefined
+  }
+  return { gap: upper ? index : index + 1, depth, target: rowPlace(parentId, position) }
+}
+function moveRowDrag(event: PointerEvent) {
+  const active = rowDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (!active.moved && Math.abs(event.clientY - active.y) < 4) return
+  active.moved = true
+  rowDrop.value = rowDropAt(active.id, event.clientY)
+}
+function cancelRowDrag() {
+  const active = rowDrag
+  rowDrag = undefined
+  rowDrop.value = undefined
+  if (active?.target.hasPointerCapture(active.pointerId)) active.target.releasePointerCapture(active.pointerId)
+}
+function finishRowDrag(event: PointerEvent) {
+  const active = rowDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelRowDrag()
+  moveRowDrag(event)
+  const drop = active.moved ? rowDrop.value : undefined
+  const row = rowById.value.get(active.id)
+  cancelRowDrag()
+  if (drop && row) proposeRowMove({ id: row.id, before: rowPosition(row), after: drop.target, source: 'pointer' })
+}
+const rowDropStyle = computed(() => {
+  const drop = rowDrop.value
+  if (!drop) return undefined
+  const indent = 9 + Math.min(drop.depth, 5) * 11
+  return {
+    [inlineSide.value]: `${indent}px`,
+    width: `calc(var(--vft-label-area-width) + ${axis.value.width - indent}px)`,
+    top: `${headerHeight.value + drop.gap * props.rowHeight - 1}px`,
+  }
+})
+// After the parent applies a row move, keep the row in view and return focus to its handle.
+watch(() => props.rows, async () => {
+  const id = pendingRowFocus
+  pendingRowFocus = undefined
+  if (id === undefined) return
+  await nextTick()
+  const index = rowOrder.value.get(id)
+  const el = scroller.value
+  if (!el || index === undefined) return
+  const top = index * props.rowHeight
+  const visible = Math.max(0, el.clientHeight - headerHeight.value)
+  if (top < el.scrollTop) el.scrollTop = top
+  else if (top + props.rowHeight > el.scrollTop + visible) el.scrollTop = top + props.rowHeight - visible
+  syncViewport()
+  await nextTick()
+  for (const element of el.querySelectorAll<HTMLElement>('[data-vft-row-handle]')) {
+    if (element.dataset.vftRowHandle === id) return element.focus({ preventScroll: true })
+  }
+})
+
 // Dependency creation and reconnection. A draft keeps one fixed bar end while the user picks the other one.
 type LinkEnd = { bar: string; end: TimelineBarEnd }
 type LinkDraft = { fixed: LinkEnd; role: 'from' | 'to'; dependency?: TimelineDependency }
@@ -1315,7 +1519,7 @@ watch([
   () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => props.editBounds, () => props.minDuration,
   () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
-  () => props.progressEditable, () => props.progressStep, () => props.createDuration,
+  () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
 ], cancelEdit)
 
 // Progress editing (`progressEditable`). A slider at the progress boundary previews pointer drags and proposes
@@ -1870,7 +2074,7 @@ function rowLabelWidth() {
  */
 function exportSvg(options: GanttExportOptions = {}) {
   if (validationError.value) throw validationError.value
-  const { includeLoad = true, theme, ...rest } = options
+  const { includeLoad = true, includeStatusDate = true, theme, ...rest } = options
   const time = props.now ?? clientNow.value
   return renderTimelineSvg(props.rows, props.bars, props.dependencies, axis.value, {
     idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
@@ -1894,6 +2098,9 @@ function exportSvg(options: GanttExportOptions = {}) {
     loadRowHeight: props.loadRowHeight,
     highlightedDependencyIds: props.highlightedDependencyIds,
     nonWorkingPeriods: props.nonWorkingPeriods,
+    statusDate: includeStatusDate ? props.statusDate : undefined,
+    statusDateLabel: messages.value.statusDate,
+    showProgressLine: props.showProgressLine,
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
@@ -1955,10 +2162,10 @@ onUnmounted(() => {
     <div
       ref="scroller" class="vft-gantt-scroll" :class="{ 'vft-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
-      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event)"
-      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
-      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
-      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event)"
+      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event); moveRowDrag($event)"
+      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
+      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
+      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
     >
       <div v-if="!validationError" ref="canvas" class="vft-gantt-canvas" :style="{
         width: `calc(var(--vft-label-area-width) + ${axis.width}px)`,
@@ -1990,7 +2197,8 @@ onUnmounted(() => {
         <div class="vft-gantt-grid" aria-hidden="true">
           <span v-for="line in tickXs" :key="line.tick" class="vft-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
         </div>
-        <div v-for="item in shownMarkers" :key="item.id" class="vft-gantt-marker"
+        <div v-for="item in markerEntries" :key="item.key" class="vft-gantt-marker" :class="item.className"
+          :role="item.role" :aria-label="item.name" :title="item.name"
           :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(item.time)}px)` }">
           <span>{{ item.label }}</span>
         </div>
@@ -2004,18 +2212,29 @@ onUnmounted(() => {
         >
           <div class="vft-gantt-row-label" :class="{ 'vft-column-group': columns?.length }"
           >
-            <div class="vft-name-column" :class="{ 'vft-tree-row': row.hasChildren || row.depth > 0, 'vft-creatable': row.creatable }"
+            <div class="vft-name-column" :class="{ 'vft-tree-row': row.hasChildren || row.depth > 0, 'vft-creatable': row.creatable, 'vft-reorderable': row.reorderable }"
               :style="{ '--vft-row-depth': Math.min(row.depth, 5) }">
-            <button v-if="row.hasChildren && !row.creatable" type="button" class="vft-row-toggle"
+            <button v-if="row.hasChildren && !row.creatable && !row.reorderable" type="button" class="vft-row-toggle"
               :aria-expanded="!collapsed.has(row.row.id)"
               :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
               @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
-            <template v-else-if="row.creatable">
+            <template v-else-if="row.creatable && !row.reorderable">
               <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
                 :aria-expanded="!collapsed.has(row.row.id)"
                 :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
                 @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
               <button type="button" class="vft-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
+                @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
+            </template>
+            <template v-else-if="row.reorderable">
+              <button type="button" class="vft-row-move-handle" :data-vft-row-handle="row.row.id"
+                :aria-label="`${messages.moveRow} ${row.row.label}`" :aria-describedby="marker + '-reorder-hint'"
+                @pointerdown="startRowDrag($event, row.row)" @keydown="rowHandleKeys($event, row.row)"><span aria-hidden="true">⋮⋮</span></button>
+              <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
+                :aria-expanded="!collapsed.has(row.row.id)"
+                :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
+                @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
+              <button v-if="row.creatable" type="button" class="vft-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
                 @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
             </template>
             <div class="vft-row-content">
@@ -2074,11 +2293,22 @@ onUnmounted(() => {
           </button>
           <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vft-gantt-deadline" :class="{ 'vft-late': item.late }"
             :style="item.style" aria-hidden="true"></div>
-          <template v-if="linkHandlesVisible || progressHandlesVisible">
+          <template v-if="(linkHandlesVisible || progressHandlesVisible) && !row.progress">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
               <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                 @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
             </template>
+          </template>
+          <template v-else-if="row.progress">
+            <template v-if="linkHandlesVisible || progressHandlesVisible">
+              <template v-for="bar in row.bars" :key="bar.id + ':links'">
+                <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
+                  @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
+              </template>
+            </template>
+            <svg class="vft-gantt-progress-line" aria-hidden="true" :width="xWindow.right - xWindow.left" :height="rowHeight"
+              :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)` }"
+              :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
           </template>
         </div>
         <svg v-if="shownLines.length" class="vft-gantt-links" aria-hidden="true"
@@ -2129,6 +2359,7 @@ onUnmounted(() => {
         <template v-else-if="cascadeBoxes.length">
           <div v-for="item in cascadeBoxes" :key="item.id" class="vft-gantt-cascade-preview" :style="item.style" aria-hidden="true"></div>
         </template>
+        <div v-else-if="rowDropStyle" class="vft-gantt-row-drop" :style="rowDropStyle" aria-hidden="true"></div>
         <div v-for="item in shownLoadRows" :key="item.row.id" class="vft-gantt-load-row" role="group"
           :aria-label="`${messages.loadRegion} ${item.row.label}`"
           :style="{ top: `${headerHeight + bodyHeight + item.index * loadRowHeight}px`, height: `${loadRowHeight}px` }">
@@ -2163,7 +2394,11 @@ onUnmounted(() => {
       </div>
     </template>
     <span :id="marker + '-hint'" class="vft-sr-only">{{ messages.editHint }}</span>
-    <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
+    <span v-if="rowDraggable && !rowHandlesVisible" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
+    <template v-else-if="rowHandlesVisible">
+      <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
+      <span :id="marker + '-reorder-hint'" class="vft-sr-only">{{ messages.moveRowKeysHint }}</span>
+    </template>
     <span class="vft-sr-only" aria-live="polite">{{ notice }}</span>
   </div>
 </template>
