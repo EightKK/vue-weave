@@ -43,6 +43,12 @@
 - Gantt resource load histogram rows (`loadRows`, `loadSegments`, `loadRowHeight`, `load-row` and `load-segment` slots) with accessible segment labels and `--vft-load`, `--vft-load-overload`, `--vft-load-capacity` and `--vft-now` theme variables.
 - Core helpers `dependencyTypeForEnds`, `dependencyEndsForType`, `moveTimeRanges`, `calendarBands` and `resourceLoadHistogram`.
 - Timeline editing demo covering dependency, batch, row, preset, histogram and pinch interactions.
+- Gantt `nonWorkingPeriods` prop: opt-in non-working time shading behind the grid over task and load rows, rendered only for the visible time window, mirrored in right-to-left charts and reported through `validation-error` when an interval is not finite or has `start >= end`.
+- Optional `TimelineBar` fields `critical` (critical outline), `latestEnd` (float line), `deadline` (deadline indicator, `vft-late` when the bar ends after it) and `segments` (split work pieces joined by a connector, with progress filled over working time). Move previews shift segments; resize previews draw the bar unsegmented. `validateTimelineData` rejects a `latestEnd` before `end`, non-finite values, unsorted, overlapping, empty or out-of-bar segments and segmented milestones with a `RangeError`. `TimelineEdit` is unchanged.
+- The bar information is added to the accessible description (not the name) through the new optional `GanttLabels` fields `critical`, `float`, `deadline` and `late`.
+- Theme variables `--vft-non-working`, `--vft-critical`, `--vft-float` and `--vft-deadline` with dark-theme, forced-colors and print support, and classes `vft-gantt-non-working`, `vft-critical`, `vft-gantt-float`, `vft-gantt-deadline`, `vft-late`, `vft-segmented`, `vft-gantt-segment` and `vft-gantt-segment-gap`.
+- `exportSvg`, `exportPng` and `renderTimelineSvg` (new `nonWorkingPeriods` option) draw shading, critical outlines, float lines, deadline indicators and segments. `SvgExportTheme` gains the optional colours `nonWorking`, `critical`, `float` and `deadline`, which `defaultSvgExportTheme` always provides.
+- The scheduling demo shades non-working time, shows the critical path, float, split work and a dispatch deadline, with "Shade non-working time" and "Show critical path and float" switches and an SVG export button.
 
 #### Scheduling
 
@@ -51,6 +57,8 @@
 - `ScheduleTask.pauses` interrupts a task's work for caller-specified intervals.
 - `levelResources` delays tasks with a deterministic priority-based serial heuristic so that assigned load stays within capacity, using `ScheduleTask.priority` and `splittable`, and reports delays, added pauses, remaining overloads and unresolved tasks. `calculateResourceLoad` is unchanged.
 - `WorkWeek.timeZone` builds work periods in an IANA time zone with daylight-saving gaps and overlaps resolved deterministically, using only `Intl.DateTimeFormat`.
+- `invertWorkPeriods(periods, range)` returns the sorted half-open gaps between normalized work periods, for example to shade non-working time.
+- `scheduledBarFields(task)` derives the `TimelineBar` fields `start`, `end`, `critical`, `latestEnd` and, for work in more than one segment, `segments` from a `scheduleTasks` result task (type `ScheduledBarFields`).
 
 #### Styling, accessibility and export
 

@@ -50,6 +50,29 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 - Invalid references or values throw. Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
 - The forward pass finds earliest dates. The backward pass holds the earliest project finish as its upper limit and finds latest dates. Total float is the task's own working time between those starts, or elapsed time for a milestone. workFloat is always working time on the task's calendar: it equals totalFloat for tasks and, for a milestone, the calendar's working time between its earliest and latest points. Use workFloat to compare milestones with tasks. A zero-float task is critical. A critical link binds two critical tasks after projecting the dependency endpoint onto the successor calendar. The result can contain multiple controlling chains and individually constrained critical tasks.
 
+## Show a plan in GanttChart
+
+`scheduledBarFields(task)` turns each task of a successful result into the bar fields the chart draws: `start` and `end`, `critical`, `latestEnd` for the float line and, when the work is split by breaks, closed dates or pauses, `segments` from the task's `work`. Spread it into a `TimelineBar` and add the fields the scheduler does not know, such as the row, label, tone, `editable` and an optional display `deadline`. `invertWorkPeriods(periods, range)` returns the time between the calendar's work periods, which the chart shades through `nonWorkingPeriods`.
+
+```ts
+import { buildWorkPeriods, invertWorkPeriods, scheduleTasks, scheduledBarFields, type TimelineBar } from 'vue-weave/core'
+
+const periods = buildWorkPeriods(range, { utcOffsetMinutes: 540, weekly })
+const plan = scheduleTasks({ range, quantum: 60_000, calendars: [{ id: 'plant', periods }], defaultCalendarId: 'plant', tasks, dependencies })
+const bars: TimelineBar[] = plan.ok ? plan.tasks.map(task => ({
+  id: task.id, rowId: task.id, label: labels.get(task.id)!, editable: true,
+  ...scheduledBarFields(task),
+  deadline: dueDates.get(task.id),
+})) : []
+const nonWorkingPeriods = invertWorkPeriods(periods, range)
+```
+
+```vue
+<GanttChart :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :non-working-periods="nonWorkingPeriods" @edit="reschedule" />
+```
+
+Critical bars get an outline, `latestEnd` draws a float line from the end of the bar, a `deadline` adds an indicator and marks a bar that ends after it as late, and `segments` draw the work pieces joined by a connector across each gap. The same information is added to each bar's accessible description. The chart still only proposes edits. A move preview shifts the segments with the bar, and a resize preview shows the plain interval. Turn the accepted `TimelineEdit` into a new constraint, for example `startNoEarlierThan`, call `scheduleTasks` again and pass the new bars, so segments, float and critical flags follow the recalculated plan. `scheduledBarFields` omits `segments` for a task with a single work segment and for milestones, which cannot have segments. ALAP tasks report their placed dates with the latest finish of the plan.
+
 ## Compare demand with capacity
 
 Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available. Each assignment requests positive integer units and applies to every work segment of the task. Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
@@ -110,5 +133,7 @@ Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task
 ## Try the demo
 
 Open **Scheduling** and focus **Cut order A**. Press Right Arrow once to move its requested start from 08:00 to 09:00. Inspection moves to 13:00, projected finish moves from 16:00 to 17:00, and the CNC overlap grows from one to two resource-hours. Press Right Arrow again to see packing finish on 11 November after the 10 November closure. Further moves beyond the horizon leave the accepted plan on screen. **Reset schedule** restores the original dates.
+
+The demo shades breaks, nights and the closed date with `invertWorkPeriods` and builds its bars with `scheduledBarFields`. Inspection crosses the lunch break, so it is drawn as two work pieces. Critical tasks have a red outline, **Cut order B** shows its float as a thin line, and packing has a dispatch deadline at 17:00 on 9 November. After the second move, packing is split by the closure and marked late. Clear **Shade non-working time** or **Show critical path and float** to hide these layers, and use **Export schedule SVG** to save the chart with them.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).

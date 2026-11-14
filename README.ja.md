@@ -103,8 +103,9 @@ function commit(change: TimelineEdit) {
 - 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます
 - ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）
+- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます
 
-稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応し、`levelResources` は割り当て負荷が容量内に収まるよう工程を後ろへずらします。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
+稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。`scheduledBarFields` は計算済みの工程を上記のバーのフィールドに変換し、`invertWorkPeriods` は稼働カレンダーから網掛けする非稼働時間を求めます。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応し、`levelResources` は割り当て負荷が容量内に収まるよう工程を後ろへずらします。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
 
 ## 書き出し・表示方向・テーマ
 
@@ -125,7 +126,7 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタンとテーマ切り替えも用意しています。**Edit graph** で接続・再接続・範囲選択・一括移動、**Planning overlays** で編集列と親行サマリーを試せます。**Undo**／**Redo** で採用済みの変更を戻せます。**Scheduling** では工程を移動すると、分割シフトの稼働カレンダーに従って後続工程と設備負荷を再計算します。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタンとテーマ切り替えも用意しています。**Edit graph** で接続・再接続・範囲選択・一括移動、**Planning overlays** で編集列と親行サマリーを試せます。**Undo**／**Redo** で採用済みの変更を戻せます。**Scheduling** では工程を移動すると、分割シフトの稼働カレンダーに従って後続工程と設備負荷を再計算し、非稼働時間の網掛け、クリティカルパス、余裕、分割された作業、期限をバー上に表示します。編集結果はデモ画面内の状態として保持します。
 
 `preview/` を含むビルド済みデモのアーカイブを使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
 

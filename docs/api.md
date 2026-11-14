@@ -108,8 +108,9 @@ The dimming hooks are presentation only. Dimmed nodes and the edges that touch t
 | showControls | boolean / true | Zoom buttons |
 | autoScroll | boolean / true | Scrolls the timeline horizontally while a pointer drag is held near the left or right edge of the viewport. Set false to disable |
 | dir | ChartDirection / ltr | `rtl` or `auto` places row headings on the right and runs time from right to left; see [Right-to-left layout](#right-to-left-layout) |
+| nonWorkingPeriods | readonly TimeRange[] / undefined | Shades non-working time behind the grid; see [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) |
 
-TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
+TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
 Display bars may extend beyond the axis. Editing is enabled only for intervals contained in editBounds. With custom numeric units, supply matching pixelsPerUnit, tickSteps, snap and formatTime.
 
@@ -117,7 +118,7 @@ Dependencies connect explicit endpoints. FS means source finish to target start;
 
 ### Editing contract
 
-select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount or tickSteps are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
+select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps or nonWorkingPeriods are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
 
 ```ts
 interface TimelineEdit {
@@ -210,6 +211,33 @@ Presets apply to the built-in linear scale. A custom scale prop still controls t
 
 Each segment is scaled to the row's peak load or capacity. The default rendering fills load up to capacity, highlights the overloaded part and draws a dashed capacity line. Segments carry an accessible label such as "CNC cell 09:00–10:00: load 2 / capacity 1, overloaded by 1", built from formatTime and the GanttLabels fields load, capacity and overload; the load row group is named with loadRegion. Invalid load data is reported through validation-error.
 
+### Calendar shading, critical path, float and segments
+
+All of these are opt-in. Without `nonWorkingPeriods` and the new bar fields, the chart renders no new elements, classes or attributes, and accessible names and descriptions are unchanged.
+
+| API | Behavior |
+| --- | --- |
+| nonWorkingPeriods | Half-open intervals drawn as background bands (`vft-gantt-non-working`, colour `--vft-non-working`) over the full body height, task rows and load rows, behind grid lines and bars. Only the parts inside `range` and the visible time window are rendered. Intervals may overlap and need not be sorted. A non-finite endpoint or `start >= end` is reported through validation-error. The bands are decorative (`aria-hidden`). `invertWorkPeriods` turns work periods into these intervals. |
+| TimelineBar.critical | `true` adds the `vft-critical` class and an outline in `--vft-critical`. |
+| TimelineBar.latestEnd | Latest finish that keeps the plan. A float line (`vft-gantt-float`, `--vft-float`) runs from the bar's end to latestEnd at the bar's vertical centre, ending in a short tick. Nothing is drawn when latestEnd equals end. Must be finite and not before end (RangeError). |
+| TimelineBar.deadline | A due time. A small indicator (`vft-gantt-deadline`, `--vft-deadline`) is drawn at that time in the bar's lane. When end is after the deadline, the bar gets the `vft-late` class and a dashed outline, and the indicator gets `vft-late`. Must be finite (RangeError). |
+| TimelineBar.segments | The worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. Touching pieces are allowed. The bar gets the `vft-segmented` class, each piece is drawn solid (`vft-gantt-segment`) and every gap, including one before the first or after the last piece, is drawn as a thin connector (`vft-gantt-segment-gap`). Progress fills the first part of the working time piece by piece, so a half-complete bar fills half of its work. An empty array or segments on a milestone are rejected with a RangeError. |
+| GanttLabels.critical / float / deadline / late | Text of the bar description. Defaults "Critical", "Float until", "Deadline" and "Late". |
+
+When a bar has any of these fields, the information is added to the bar's accessible description, never to its accessible name, which keeps the `formatTime` label used by tests and assistive technology. The description reads, for example, "Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00. Late." (float and deadline times use `formatTime`). It is a hidden element referenced first in `aria-describedby`, before the edit hint of an editable bar, and it is also appended to the bar's `title` tooltip.
+
+Float lines and deadline indicators are rendered whenever they intersect the visible time window, even if their bar is outside it, and follow the bar in a pointer preview: the float line starts at the previewed end and the late state uses the previewed end. Edit proposals (`TimelineEdit`) are unchanged and carry only `start` and `end`. During a pointer move preview the segments shift with the bar by the same displacement. During a resize preview the bar is drawn without segments, because the new work pattern depends on the calendar: the parent reschedules after accepting the edit and supplies new `segments`, `latestEnd` and `critical` values. Keyboard edits are proposed at once without a preview.
+
+```ts
+import { invertWorkPeriods, scheduleTasks, scheduledBarFields } from 'vue-weave/core'
+
+const plan = scheduleTasks({ range, calendars: [{ id: 'plant', periods }], defaultCalendarId: 'plant', tasks, dependencies })
+const bars = plan.ok ? plan.tasks.map(task => ({ id: task.id, rowId: task.id, label: task.id, ...scheduledBarFields(task) })) : []
+const nonWorkingPeriods = invertWorkPeriods(periods, range)
+```
+
+`exportSvg`, `exportPng` and `renderTimelineSvg` draw the same layers with the colours of `--vft-non-working`, `--vft-critical`, `--vft-float` and `--vft-deadline`. In a right-to-left chart every layer is mirrored with the time axis.
+
 ### Timeline editing helpers
 
 | Export | Purpose |
@@ -246,8 +274,10 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | createTimelineRowTree(rows) | Validate row parents and cycles; produce stable preorder entries |
 | summarizeTimelineRows(tree, bars) | Roll up leaf-row intervals and progress into a summary Map |
 | normalizeWorkPeriods(periods, range) | Clip, sort and merge overlapping or touching work periods |
+| invertWorkPeriods(periods, range) | Sorted half-open gaps between the normalized work periods inside the range, for `nonWorkingPeriods`. Validates like normalizeWorkPeriods |
 | buildWorkPeriods(range, week) | Expand weekly shifts and date overrides into epoch-millisecond work periods |
 | scheduleTasks(input) | Calculate calendar-aware earliest/latest dates, float and critical links |
+| scheduledBarFields(task) | `ScheduledBarFields` for a TimelineBar from a scheduled task: start, end, critical, latestEnd and, only for work in more than one segment, segments. Returns new objects |
 | calculateResourceLoad(range, tasks, resources, assignments) | Compare scheduled work with capacity over half-open intervals |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
 
@@ -354,7 +384,7 @@ Both components expose two export methods on their template ref. They need no de
 | exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
 | exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
 
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, bars with progress, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vft-*` custom properties in effect on the component, and the font from its computed `font-family`.
+The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vft-*` custom properties in effect on the component, and the font from its computed `font-family`.
 
 The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
 
@@ -374,12 +404,12 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | Export | Purpose |
 | --- | --- |
 | renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `barLabel` and `rowLabel` |
+| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
 
-Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight` and per-tone `ink`, `line`, `pale`, `solid`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline` and per-tone `ink`, `line`, `pale`, `solid`; the four newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
 
 ### Right-to-left layout
 
@@ -391,7 +421,7 @@ Both components take an opt-in `dir` prop of type `ChartDirection`.
 | `rtl` | Writes `dir="rtl"` on the component root and adds the `vft-rtl` class. Server rendering already produces right-to-left markup. |
 | `auto` | Writes no attribute and follows the CSS `direction` inherited by the component root, read after mounting and whenever `dir` changes. Server rendering and the first client render are left-to-right. |
 
-In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, bars, progress, baselines, summaries, markers, the now line, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
+In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
 
 Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused editable bar one `snap` later and ArrowRight one `snap` earlier. Shift with an arrow moves the end and Alt with an arrow moves the start, in the same visual direction (Shift+ArrowLeft makes the bar end later). Up and Down (with `rowDraggable`) are unchanged. Pointer drags follow the pointer: dragging left moves later. The start resize handle is on the right edge of a bar and the end handle on the left. When a dependency is dropped on a bar body, the right half picks the start and the left half the finish. The collapsed-row toggle shows ◂ instead of ▸.
 
