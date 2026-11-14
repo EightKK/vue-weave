@@ -348,6 +348,118 @@ test('calendar-aware edits propagate downstream, expose overload and preserve th
   await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
 })
 
+test('the scheduling demo shades non-working time and describes critical, float, deadline and split bars', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
+  const shading = plan.locator('.vft-gantt-non-working')
+  await expect(shading.first()).toBeVisible()
+  expect(await shading.count()).toBeGreaterThan(0)
+  expect(await equipment.locator('.vft-gantt-non-working').count()).toBeGreaterThan(0)
+  const shade = page.getByRole('checkbox', { name: 'Shade non-working time', exact: true })
+  await shade.uncheck()
+  await expect(page.locator('.vft-gantt-non-working')).toHaveCount(0)
+  await shade.check()
+  await expect(shading.first()).toBeVisible()
+
+  // Names stay as before; the critical path, float and deadline go into the description.
+  const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
+  const other = plan.getByRole('button', { name: 'Cut order B 09 Nov 10:00–09 Nov 12:00', exact: true })
+  const inspection = plan.getByRole('button', { name: 'Inspect order A 09 Nov 11:00–09 Nov 14:00', exact: true })
+  const packing = plan.getByRole('button', { name: 'Pack order A 09 Nov 14:00–09 Nov 16:00', exact: true })
+  await expect(cutting).toHaveAccessibleDescription(/^Critical\. Float until 09 Nov 11:00\. Arrow keys move/)
+  await expect(cutting).toHaveClass(/vft-critical/)
+  await expect(other).toHaveAccessibleDescription(/^Float until 09 Nov 16:00\. Arrow keys move/)
+  await expect(other).not.toHaveClass(/vft-critical/)
+  await expect(plan.locator('.vft-gantt-float')).toHaveCount(1)
+  await expect(packing).toHaveAccessibleDescription('Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00.')
+  await expect(plan.locator('.vft-gantt-deadline')).toHaveCount(1)
+
+  // Inspection crosses the lunch break, so it is drawn as two work pieces joined by a connector.
+  await expect(inspection).toHaveClass(/vft-segmented/)
+  await expect(inspection.locator('.vft-gantt-segment')).toHaveCount(2)
+  await expect(inspection.locator('.vft-gantt-segment-gap')).toHaveCount(1)
+  const [first, second] = await inspection.locator('.vft-gantt-segment').evaluateAll(elements => elements.map(element => element.getBoundingClientRect()))
+  expect(second!.x - (first!.x + first!.width)).toBeCloseTo(18, 0)
+
+  // Two moves push packing past the dispatch cut-off: it is marked late and its work is split by the plant closure.
+  await cutting.press('ArrowRight')
+  const moved = plan.getByRole('button', { name: 'Cut order A 09 Nov 09:00–09 Nov 12:00', exact: true })
+  await moved.press('ArrowRight')
+  const late = plan.getByRole('button', { name: 'Pack order A 09 Nov 16:00–11 Nov 09:00', exact: true })
+  await expect(late).toHaveAccessibleDescription('Critical. Float until 11 Nov 09:00. Deadline 09 Nov 17:00. Late.')
+  await expect(late).toHaveClass(/vft-late/)
+  await expect(late.locator('.vft-gantt-segment')).toHaveCount(2)
+  await expect(plan.locator('.vft-gantt-deadline.vft-late')).toHaveCount(1)
+
+  // The SVG export draws the same layers with the stylesheet colours.
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export schedule SVG', exact: true }).click()
+  const { readFile } = await import('node:fs/promises')
+  const svg = (await readFile((await (await pending).path())!)).toString('utf8')
+  expect(svg).toContain('fill="#eaeff3"')
+  expect(svg).toContain('stroke="#b42318"')
+  expect(svg.match(/class="vft-gantt-segment"/g)?.length).toBe(4)
+  expect(svg).toContain('class="vft-gantt-float"')
+  expect(svg).toContain('class="vft-gantt-deadline vft-late"')
+
+  // Without the critical overlay, the descriptions return to the edit hint alone.
+  await page.getByRole('checkbox', { name: 'Show critical path and float', exact: true }).uncheck()
+  await expect(plan.locator('.vft-critical, .vft-late, .vft-gantt-float, .vft-gantt-deadline')).toHaveCount(0)
+  await expect(plan.getByRole('button', { name: 'Cut order A 09 Nov 10:00–09 Nov 14:00', exact: true }))
+    .toHaveAccessibleDescription('Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.')
+  expect(errors).toEqual([])
+})
+
+test('a move preview shifts the segments of a split bar and a resize preview draws it unsegmented', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
+  // A requested start of 10:00 splits the cutting order around the lunch break.
+  await cutting.press('ArrowRight')
+  await cutting.press('ArrowRight')
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
+  const segments = cutting.locator('.vft-gantt-segment')
+  await expect(segments).toHaveCount(2)
+  const left = () => segments.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().x))
+  const before = await left()
+
+  const box = (await cutting.boundingBox())!
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 12:00–09 Nov 16:00')
+  await expect(cutting).toHaveClass(/dragging/)
+  await expect(segments).toHaveCount(2)
+  const during = await left()
+  expect(during[0]! - before[0]!).toBeCloseTo(36, 0)
+  expect(during[1]! - before[1]!).toBeCloseTo(36, 0)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
+  await expect(cutting).not.toHaveClass(/dragging/)
+  expect(await left()).toEqual(before)
+
+  // Resizing previews the plain interval; the parent would reschedule and supply new segments.
+  await page.mouse.move(box.x + box.width - 3, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width + 18, y, { steps: 4 })
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 15:00')
+  await expect(cutting).not.toHaveClass(/vft-segmented/)
+  await expect(segments).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(segments).toHaveCount(2)
+  expect(errors).toEqual([])
+})
+
 test('a bar click or drag emits select once and keyboard edits keep focus in a narrow viewport', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

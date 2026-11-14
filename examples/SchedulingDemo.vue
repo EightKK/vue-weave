@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  GanttChart, buildWorkPeriods, calculateResourceLoad, scheduleTasks,
+  GanttChart, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, scheduleTasks, scheduledBarFields,
   type ResourceAssignment, type ScheduleLink, type ScheduleResult, type ScheduleTask,
   type TimelineBar, type TimelineColumn, type TimelineEdit,
 } from '../src'
+import { download } from './download'
 
 const hour = 3_600_000
 const local = (value: string) => Date.parse(value + '+09:00')
@@ -18,6 +19,12 @@ const shifts = buildWorkPeriods(range, {
   exceptions: { '2026-11-10': [] },
 })
 const calendars = [{ id: 'plant', periods: shifts }]
+// Breaks, nights and the closed date, shaded behind both charts.
+const nonWorking = invertWorkPeriods(shifts, range)
+// A display-only due date: packing must finish before the dispatch cut-off or the bar is marked late.
+const deadlines = new Map([['pack', local('2026-11-09T17:00:00')]])
+const shade = ref(true)
+const showCritical = ref(true)
 const originalTasks: ScheduleTask[] = [
   { id: 'cut-a', duration: 3 * hour },
   { id: 'cut-b', duration: 2 * hour, startNoEarlierThan: range.start + 2 * hour },
@@ -77,11 +84,15 @@ const resourceColumns: TimelineColumn[] = [
 ]
 const criticalLinks = computed(() => new Set(model.value.plan.criticalDependencyIds))
 const workHours = new Map(originalTasks.map(task => [task.id, task.duration / hour]))
-const taskBars = computed<TimelineBar[]>(() => model.value.plan.tasks.map(task => ({
-  id: task.id, rowId: task.id, label: labels.get(task.id)!,
-  start: task.start, end: task.end, baseline: originalDates.get(task.id),
-  editable: task.id.startsWith('cut-'), tone: task.critical ? 'amber' : 'blue',
-})))
+// scheduledBarFields supplies the dates, split work segments, critical flag and latest finish of each task.
+const taskBars = computed<TimelineBar[]>(() => model.value.plan.tasks.map(task => {
+  const { critical, latestEnd, ...dates } = scheduledBarFields(task)
+  return {
+    id: task.id, rowId: task.id, label: labels.get(task.id)!, ...dates, baseline: originalDates.get(task.id),
+    editable: task.id.startsWith('cut-'), tone: task.critical ? 'amber' : 'blue',
+    ...(showCritical.value ? { critical, latestEnd, deadline: deadlines.get(task.id) } : {}),
+  }
+}))
 const load = computed(() => calculateResourceLoad(range, model.value.plan.tasks, resources, assignments))
 const overloads = computed(() => load.value.filter(segment => segment.overload > 0))
 const overloadHours = computed(() => overloads.value.reduce((hours, segment) => hours + (segment.end - segment.start) / hour, 0))
@@ -108,6 +119,13 @@ function applyEdit(change: TimelineEdit) {
   model.value = { tasks, plan }
   notice.value = 'Plan recalculated. ' + affected + ' other operation' + (affected === 1 ? '' : 's') + ' changed.'
 }
+const chart = ref<InstanceType<typeof GanttChart>>()
+function exportSchedule() {
+  const svg = chart.value?.exportSvg({ title: 'Calendar-aware schedule', rowHeading: 'Operation' })
+  if (!svg) return
+  download(svg, 'schedule.svg')
+  notice.value = 'Exported schedule SVG (' + svg.length + ' characters).'
+}
 function reset() {
   model.value = { tasks: originalTasks, plan: original as Extract<ScheduleResult, { ok: true }> }
   selected.value = new Set()
@@ -119,20 +137,25 @@ function reset() {
   <section class="planning-panel" aria-labelledby="schedule-title">
     <div class="section-head">
       <div><h2 id="schedule-title">Calendar-aware schedule</h2><p>JST · split shifts · 10 November plant closure</p></div>
-      <button type="button" @click="reset">Reset schedule</button>
+      <div class="options">
+        <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
+        <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
+        <button type="button" @click="exportSchedule">Export schedule SVG</button>
+        <button type="button" @click="reset">Reset schedule</button>
+      </div>
     </div>
     <dl class="schedule-metrics">
       <div><dt>Projected finish</dt><dd data-testid="schedule-finish">{{ format(model.plan.finish) }}</dd></div>
       <div><dt>Zero-float tasks</dt><dd>{{ criticalCount }} / {{ rows.length }}</dd></div>
       <div><dt>Resource overload</dt><dd data-testid="schedule-overload">{{ overloadHours }} resource-hour{{ overloadHours === 1 ? '' : 's' }}</dd></div>
     </dl>
-    <GanttChart :rows="rows" :bars="taskBars" :range="range" :dependencies="dependencies" :highlighted-dependency-ids="criticalLinks"
+    <GanttChart ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="dependencies" :highlighted-dependency-ids="criticalLinks"
       :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
-      :validate-edit="validateEdit" @select="selected = new Set([$event])" @edit="applyEdit" @edit-rejected="(_change, reason) => notice = reason">
+      :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" @select="selected = new Set([$event])" @edit="applyEdit" @edit-rejected="(_change, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vft-bar-text">{{ workHours.get(bar.id) }} h</span></template>
-      <template #legend><span class="hint">Drag a cutting order or use its arrow keys. Bar labels show work hours. Grey lines show the original plan.</span></template>
+      <template #legend><span class="hint">Drag a cutting order or use its arrow keys. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
     </GanttChart>
     <p class="status" role="status">{{ notice }}</p>
   </section>
@@ -140,7 +163,7 @@ function reset() {
     <div class="section-head"><div><h2 id="load-title">Resource demand and capacity</h2><p>Demand uses work segments. Breaks and closed dates consume zero work.</p></div></div>
     <GanttChart :rows="resources" :bars="loadBars" :range="range" :columns="resourceColumns" :header-bands="[headerBands[0]!]"
       :row-height="48" :height="213" :pixels-per-unit="18 / hour" :tick-steps="[4 * hour, 6 * hour, 12 * hour]"
-      :format-time="format" readonly :show-controls="false">
+      :format-time="format" :non-working-periods="shade ? nonWorking : undefined" readonly :show-controls="false">
       <template #row-heading>Equipment</template>
       <template #legend><span class="hint">Demand / available units · Amber indicates overload</span></template>
     </GanttChart>

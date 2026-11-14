@@ -31,6 +31,7 @@ footer { padding-block: 6px; }
   --vft-blue-ink: #b6d9f5; --vft-blue-pale: #243e58; --vft-blue-line: #6388ad;
   --vft-teal-ink: #adede1; --vft-teal-pale: #20453f; --vft-teal-line: #65a295;
   --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4;
+  --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060;
 }
 .dark .intro > p:last-child, .dark .eyebrow { color: #b1c7d7; }
 .dark .options button { background: #243e58; color: #e5edf3; border-color: #6388ad; }
