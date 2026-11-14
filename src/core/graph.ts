@@ -1,6 +1,7 @@
 import { flipGraphLayout } from './graphOrient.js'
 import { reduceCrossings } from './graphCrossings.js'
 import { graphPathEndpoints } from './graphView.js'
+import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
 
 export interface GraphPort {
   id: string
@@ -44,10 +45,11 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
       const indexed = new Map<string, GraphPort>()
       for (const port of ports) {
         const offset = port.offset ?? 0.5
-        if (!port.id || indexed.has(port.id) || !['left', 'right', 'top', 'bottom'].includes(port.side)
+        if (!port.id || indexed.has(port.id)
           || !['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
           throw new Error('Invalid graph port on node: ' + id)
         }
+        assertGraphPortSide(id, port)
         indexed.set(port.id, port)
       }
       portsByNode.set(id, indexed)
@@ -271,6 +273,13 @@ function assignLongEdgeLanes(edges: readonly GraphEdge[], ranks: ReadonlyMap<str
   return { lanes, count }
 }
 
+/**
+ * Deterministic layered layout. Ranks come from the condensation of the strongly connected components, so every node of
+ * a cycle shares one rank: a large cycle becomes a single column (or row for TB and BT) whose length grows with the
+ * number of nodes, and the edges inside it use same-rank side routes. A 5,000-node cycle with the default sizes is
+ * about 214 by 410,000 units. Break or filter large cycles before layout (findGraphCycles finds them), or use
+ * layoutForceGraph, when that shape is not wanted.
+ */
 export function layoutLayeredGraph(
   nodes: readonly IdentifiedNode[],
   edges: readonly GraphEdge[],
@@ -413,7 +422,9 @@ export interface GraphGroup {
   nodeIds: readonly string[]
 }
 
+/** The point of a port on a box side. Throws Error when `port.side` is not left, right, top or bottom. */
 export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
+  if (!isGraphPortSide(port.side)) throw new Error(`Invalid graph port ${port.id}: side ${String(port.side)}, expected left, right, top or bottom`)
   const offset = port.offset ?? 0.5
   if (port.side === 'left' || port.side === 'right') {
     return { x: box.x + (port.side === 'right' ? box.width : 0), y: box.y + box.height * offset }
@@ -425,12 +436,16 @@ export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
  * Where an edge meets its node. A named port gives its anchor. Otherwise, when the edge has an `id` and the layout
  * has a path for it, the drawn start or end point of that path is used, with the box side closest to it. Without a
  * path the side follows `direction`. Rendering and editing handles therefore agree after nodes are moved or when a
- * custom layout chooses its own sides. Throws an Error naming the edge and the node when the node has no layout box.
+ * custom layout chooses its own sides. Throws an Error naming the edge and the node when the node has no layout box,
+ * and an Error naming the node and the port when the port side is not left, right, top or bottom.
  */
 export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: GraphLayoutDirection) {
   const box = edgeEndBox(layout.boxes, edge, edge[end])
   const port = nodes.get(edge[end])?.ports?.find(port => port.id === (end === 'from' ? edge.fromPort : edge.toPort))
-  if (port) return { ...graphPortAnchor(box, port), side: port.side }
+  if (port) {
+    assertGraphPortSide(edge[end], port)
+    return { ...graphPortAnchor(box, port), side: port.side }
+  }
   const side: GraphPort['side'] = direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
     : direction === 'BT' ? (end === 'from' ? 'top' : 'bottom')
     : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left')

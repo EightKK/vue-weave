@@ -19,6 +19,14 @@
 - `timelineFromCsvTable` treats a blank Row cell as no label, so the row takes a later record's label or its WBS code.
 - `renderGraphSvg` and `renderTimelineSvg` fall back to the blue tone for inherited property names such as `constructor`, and reject inherited names as theme keys.
 - `toMsProjectXml` rejects inherited property names such as `toString` as dependency types. `timelineCsvTable` and `timelineFromCsvTable` reject them as columns.
+- `layoutRadialGraph` no longer overflows the call stack on very large graphs (about 130,000 nodes and more).
+- `collapseGraphGroups` now runs in near-linear time for deeply nested or very many groups, with unchanged output and cycle errors. An unknown parent further up a parent chain now throws a descriptive `Unknown parent group` Error instead of a TypeError.
+- A port `side` other than `left`, `right`, `top` or `bottom` (including inherited names such as `constructor`) now throws a descriptive Error naming the node and port in `indexGraph`, `graphEdgeEndpoint`, `routeGraphPorts` and `routeGraphEdges`, and naming the port in `graphPortAnchor`, instead of a TypeError or a wrong anchor.
+- `graphPolylinePath` and `graphSmoothPath` throw a RangeError for non-finite points instead of returning path data with `NaN`.
+- Orthogonal routes in `routeGraphEdges` keep their 16-unit detour stub for layouts at negative coordinates instead of running to 0. Output for layouts at nonnegative coordinates is unchanged.
+- `scheduleToGraph` throws an Error for duplicate dependency IDs instead of returning duplicate edge IDs that NetworkGraph rejects.
+- `graphPathBounds` and `graphPathEndpoints` reject path data that does not begin with a moveto (`M` or `m`).
+- Documented that `layoutLayeredGraph` places every node of a cycle in one rank, so a large cycle becomes one long column.
 
 ## 0.1.0 - 2026-11-14
 

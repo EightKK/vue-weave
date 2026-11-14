@@ -226,7 +226,9 @@ export function layoutRadialGraph(
   // Siblings in one ring are at least one leaf wedge apart, so this radius keeps their boxes from touching.
   const wedge = (2 * Math.PI) / totalLeaves
   const minRadius = totalLeaves > 1 ? step / (2 * Math.sin(Math.min(wedge / 2, Math.PI / 2))) : 0
-  const rings = Math.max(...forest.order.map(ringOf))
+  // A loop rather than Math.max(...array), which overflows the call stack for very large graphs.
+  let rings = 0
+  for (const id of forest.order) rings = Math.max(rings, ringOf(id))
   const radius = [0]
   for (let ring = 1; ring <= rings; ring++) radius.push(Math.max(radius[ring - 1]! + step, minRadius))
 
