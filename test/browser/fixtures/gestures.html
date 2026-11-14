@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gesture regression fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/gesture-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/gesture-test/vue.js", "vue-weave": "/gesture-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { GanttChart, NetworkGraph } from 'vue-weave'
+
+      // The parent passes fresh but equal literals (groups, labels, range, editBounds, tickSteps) on every render.
+      // "Re-render" only renders the parent again; the "Change …" buttons make a real change.
+      // Query parameters: chart=graph|gantt, collapsed (a collapsed graph group), invalid (the chart mounts with invalid
+      // rows), cascade (the chart previews follow-on changes), dark (built-in dark theme).
+      const query = new URLSearchParams(location.search)
+      const renders = ref(0)
+      const version = ref(0)
+      const proposals = ref(0)
+      const lastProposal = ref('')
+      const validationMessages = ref([])
+      const reportedErrors = new WeakSet()
+      const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
+      const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value))
+      function propose(kind, payload) {
+        proposals.value++
+        lastProposal.value = kind + ' ' + JSON.stringify(payload)
+      }
+
+      // Graph: two groups, the second collapsible.
+      const nodes = ['A', 'B', 'C', 'D'].map(id => ({ id, label: 'Node ' + id }))
+      const edges = [{ id: 'ab', from: 'A', to: 'B' }, { id: 'bc', from: 'B', to: 'C' }, { id: 'cd', from: 'C', to: 'D' }]
+      const positions = shallowRef(new Map())
+      const selectedId = ref('A')
+      const viewportEvents = ref(0)
+      const collapsed = new Set(query.has('collapsed') ? ['second'] : [])
+
+      // Gantt.
+      const validRows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
+      const rows = shallowRef(query.has('invalid') ? [{ id: 'r1', label: 'Row 1', parentId: 'missing' }] : validRows)
+      const bars = shallowRef([
+        { id: 'a', rowId: 'r1', label: 'Task A', start: 2, end: 6, editable: true },
+        { id: 'b', rowId: 'r2', label: 'Task B', start: 8, end: 12, editable: true },
+        { id: 'edge', rowId: 'r2', label: 'Edge bar', start: 54, end: 57 },
+      ])
+      const dependencies = shallowRef([{ id: 'ab', from: 'a', to: 'b' }])
+      const labelWidth = ref(undefined)
+      const cascade = change => change.id === 'a'
+        ? [{ id: 'b', before: { start: 8, end: 12 }, after: { start: 8 + change.after.start - change.before.start, end: 12 + change.after.start - change.before.start }, mode: 'move', source: change.source }]
+        : []
+
+      const graph = () => [
+        control('Re-render', () => { renders.value++ }),
+        control('Change groups', () => { version.value++ }),
+        output('Viewport events', viewportEvents.value),
+        h(NetworkGraph, {
+          nodes, edges, height: 320, draggable: true, positions: positions.value, selectedId: selectedId.value,
+          collapsedGroupIds: collapsed,
+          // Fresh literals on every render.
+          groups: [
+            { id: 'first', label: version.value ? 'First ' + version.value : 'First', nodeIds: ['A', 'B'] },
+            { id: 'second', label: 'Second', nodeIds: ['C', 'D'] },
+          ],
+          labels: { region: 'Gesture graph', collapsedNode: 'item', collapsedNodes: 'items' },
+          class: query.has('dark') ? 'vw-theme-dark' : undefined,
+          'onUpdate:selectedId': id => { selectedId.value = id },
+          onViewportChange: () => { viewportEvents.value++ },
+          onNodeMove: change => {
+            positions.value = new Map([...positions.value, [change.id, change.after]])
+            propose('move', change)
+          },
+          onNodesMove: changes => propose('moves', changes),
+        }),
+      ]
+      const gantt = () => [
+        control('Re-render', () => { renders.value++ }),
+        control('Change range', () => { version.value++ }),
+        control('Change dependencies', () => { dependencies.value = [...dependencies.value] }),
+        control('Restore rows', () => { rows.value = validRows }),
+        control('Narrow labels', () => { labelWidth.value = 20 }),
+        output('Validation reports', validationMessages.value.join('; ')),
+        h('div', { style: 'width: 600px' }, h(GanttChart, {
+          rows: rows.value, bars: bars.value, dependencies: dependencies.value,
+          // Fresh literals on every render; "Change range" makes them really different.
+          range: { start: 0, end: 200 + version.value * 10 }, editBounds: { start: 0, end: 200 + version.value * 10 }, tickSteps: [1, 5],
+          pixelsPerUnit: 10, snap: 1, formatTime: String, height: 200, showControls: false, autoScroll: false,
+          labelWidth: labelWidth.value, creatable: true, cascade: query.has('cascade') ? cascade : undefined,
+          labels: { region: 'Gesture timeline' },
+          onEdit: change => propose('edit', change),
+          onEdits: changes => propose('edits', changes),
+          onCreate: proposal => propose('create', proposal),
+          onValidationError: error => {
+            reportedErrors.add(error)
+            validationMessages.value.push(error.message)
+          },
+        })),
+      ]
+
+      const app = createApp({
+        render: () => h('main', { 'data-renders': renders.value }, [
+          output('Proposals', proposals.value),
+          output('Last proposal', lastProposal.value),
+          ...(query.get('chart') === 'gantt' ? gantt() : graph()),
+        ]),
+      })
+      // Validation failures are deliberately rethrown by the component; unrelated failures must reach Playwright.
+      app.config.errorHandler = error => {
+        if (!reportedErrors.has(error)) throw error
+      }
+      app.mount('#app')
+    </script>
+  </body>
+</html>

@@ -261,7 +261,18 @@ const messages = computed<GanttLabels>(() => ({
   ...props.labels,
 }))
 const notice = ref('')
-const bounds = computed(() => props.editBounds ?? props.range)
+// `range`, `editBounds` and `tickSteps` are compared by value, so inline literals in a parent template neither re-run
+// validation nor cancel an in-flight gesture each time the parent renders. A real change still does both.
+function sameRange(a: TimeRange | undefined, b: TimeRange | undefined) {
+  return a === b || (a !== undefined && b !== undefined && a.start === b.start && a.end === b.end)
+}
+const stableRange = computed<TimeRange>(previous => previous && sameRange(previous, props.range) ? previous : props.range)
+const stableEditBounds = computed<TimeRange | undefined>(previous => sameRange(previous, props.editBounds) ? previous : props.editBounds)
+const stableTickSteps = computed<readonly number[]>((previous) => {
+  const next = props.tickSteps
+  return previous && Array.isArray(next) && previous.length === next.length && previous.every((step, i) => step === next[i]) ? previous : next
+})
+const bounds = computed(() => stableEditBounds.value ?? stableRange.value)
 // Zoom presets replace the linear scale settings while they are active.
 const localPreset = ref<string>()
 const activePreset = computed(() => {
@@ -269,7 +280,7 @@ const activePreset = computed(() => {
   return id === undefined ? undefined : props.zoomPresets?.find(preset => preset.id === id)
 })
 const activePixelsPerUnit = computed(() => activePreset.value?.pixelsPerUnit ?? props.pixelsPerUnit)
-const activeTickSteps = computed(() => activePreset.value?.tickSteps ?? props.tickSteps)
+const activeTickSteps = computed(() => activePreset.value?.tickSteps ?? stableTickSteps.value)
 const activeBands = computed(() => activePreset.value?.headerBands ?? props.headerBands)
 const activeSnap = computed(() => activePreset.value?.snap ?? props.snap)
 const minimum = computed(() => props.minDuration ?? activeSnap.value)
@@ -327,7 +338,7 @@ function validateDisplay() {
 function validateProps() {
   validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount)
   validatePresets()
-  createTimeScale(props.range, activePixelsPerUnit.value)
+  createTimeScale(stableRange.value, activePixelsPerUnit.value)
   createTimeScale(bounds.value, 1)
   if (!Number.isFinite(props.rowHeight) || props.rowHeight < 8 + props.laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
   if (!Number.isFinite(activeSnap.value) || activeSnap.value <= 0 || !Number.isFinite(minimum.value) || minimum.value <= 0) throw new RangeError('Invalid snap or minDuration')
@@ -365,7 +376,7 @@ function validateProps() {
 // Controlled props are watched by reference. Pass new arrays and objects instead of mutating them in place.
 watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
-  () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
+  () => stableRange.value, () => stableEditBounds.value, () => props.minDuration, () => stableTickSteps.value, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
@@ -388,6 +399,9 @@ watch([
 const marker = useId()
 const scroller = ref<HTMLElement>()
 const canvas = ref<HTMLElement>()
+// The label corner sets `viewport.labels`. It only exists while the data is valid, so it is (re)observed as it comes and goes.
+const cornerEl = ref<HTMLElement | null>()
+let observedCorner: HTMLElement | undefined
 const viewport = ref({ width: 1150, height: 321, left: 0, top: 0, labels: 154 })
 // Right-to-left: the time axis starts at the right edge. Internally, horizontal positions are measured from the
 // inline-start edge (`left` in LTR, `right` in RTL), so `viewport.left` and all axis math stay direction-independent.
@@ -473,7 +487,7 @@ const zoom = ref(1)
 const minZoom = 0.65
 const maxZoom = 3
 const axis = computed<TimeScale>(() => {
-  const base = props.scale ?? createTimeScale(props.range, activePixelsPerUnit.value)
+  const base = props.scale ?? createTimeScale(stableRange.value, activePixelsPerUnit.value)
   if (!Number.isFinite(base.width) || base.width <= 0) throw new RangeError('Invalid time scale width')
   return { width: base.width * zoom.value, toX: time => base.toX(time) * zoom.value, toTime: x => base.toTime(x / zoom.value) }
 })
@@ -481,7 +495,7 @@ const axis = computed<TimeScale>(() => {
 // A custom scale can be piecewise, so the first interval does not represent the rest.
 function minTickGap(step: number) {
   const { start, end } = timeWindow.value
-  const anchor = props.range.start
+  const anchor = stableRange.value.start
   const first = Math.ceil((start - anchor) / step)
   const last = Math.floor((end - anchor) / step)
   if (last - first + 1 > 10000) return 0
@@ -525,8 +539,8 @@ const rowWindow = computed(() => visibleRows(
   displayedRows.value.length,
 ))
 const shownBands = computed(() => (activeBands.value ?? []).map(level => level.flatMap(band => {
-  const start = Math.max(band.start, props.range.start, timeWindow.value.start)
-  const end = Math.min(band.end, props.range.end, timeWindow.value.end)
+  const start = Math.max(band.start, stableRange.value.start, timeWindow.value.start)
+  const end = Math.min(band.end, stableRange.value.end, timeWindow.value.end)
   if (end <= start) return []
   return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
 })))
@@ -538,7 +552,7 @@ const markerEntries = computed(() => {
   const entries: { key: string; time: number; label: string; className?: string; role?: string; name?: string }[] = shownMarkers.value
     .map(item => ({ key: 'marker:' + item.id, time: item.time, label: item.label }))
   const time = props.statusDate
-  if (time !== undefined && !validationError.value && time >= props.range.start && time <= props.range.end
+  if (time !== undefined && !validationError.value && time >= stableRange.value.start && time <= stableRange.value.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end) {
     const label = messages.value.statusDate!
     entries.push({ key: 'status', time, label, className: 'vw-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
@@ -576,14 +590,14 @@ watch(() => [props.showNow, props.now], syncClock)
 const nowTime = computed(() => {
   if (!props.showNow) return undefined
   const time = props.now ?? clientNow.value
-  return time !== undefined && Number.isFinite(time) && time >= props.range.start && time <= props.range.end
+  return time !== undefined && Number.isFinite(time) && time >= stableRange.value.start && time <= stableRange.value.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end ? time : undefined
 })
-const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, props.range.start))
+const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, stableRange.value.start))
 // Grid lines are drawn at each tick's own x (as exportSvg does), so non-linear scales stay aligned with the labels.
 const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
 // Kept for custom stylesheets that read --vw-grid-step; the built-in styles no longer use it.
-const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value) - axis.value.toX(props.range.start))
+const gridStep = computed(() => axis.value.toX(stableRange.value.start + tickStep.value) - axis.value.toX(stableRange.value.start))
 type BarPreview = { range: TimeRange; rowShift: number; mode: EditMode }
 const previews = shallowRef<ReadonlyMap<string, BarPreview>>()
 const focusedBarId = ref<string>()
@@ -732,8 +746,8 @@ function deadlineStyle(bar: TimelineBar, deadline: number) {
 // Non-working time is drawn behind the grid over the task rows and inside each load row, clipped to the visible window.
 const shownNonWorking = computed(() => {
   if (validationError.value || !props.nonWorkingPeriods?.length) return []
-  const low = Math.max(props.range.start, timeWindow.value.start)
-  const high = Math.min(props.range.end, timeWindow.value.end)
+  const low = Math.max(stableRange.value.start, timeWindow.value.start)
+  const high = Math.min(stableRange.value.end, timeWindow.value.end)
   return props.nonWorkingPeriods.flatMap((period, index) => {
     const start = Math.max(period.start, low), end = Math.min(period.end, high)
     if (end <= start) return []
@@ -895,9 +909,16 @@ function cancelEdit() {
   pinch = undefined
 }
 
-/** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection, a create drag or a pinch. */
+/**
+ * Whether a pointer owns a gesture: an edit, progress, link, create, row or column drag, or a pinch. `isPrimary` is per
+ * pointer type, so a mouse and a pen (or touch) can both be primary; every pointer gesture start checks this.
+ */
+function pointerGestureActive() {
+  return Boolean(drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag)
+}
+/** Whether a gesture owns the pointer or keyboard: a pointer gesture or an armed connection. */
 function gestureActive() {
-  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch || createDrag || rowDrag || columnDrag)
+  return pointerGestureActive() || Boolean(linkDraft.value)
 }
 
 function rejection(result: boolean | string | void) {
@@ -1042,7 +1063,7 @@ function buildChanges(group: readonly TimelineBar[], ranges: readonly TimeRange[
 
 function startEdit(event: PointerEvent, bar: TimelineBar) {
   suppressSelection = undefined
-  if (!editable(bar) || drag || pinch || !event.isPrimary || event.button !== 0 || linkDrag) return
+  if (!editable(bar) || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   const target = event.target as HTMLElement
   const mode = (target.closest<HTMLElement>('[data-edit-mode]')?.dataset.editMode ?? 'move') as EditMode
   if (mode !== 'move' && bar.end - bar.start < minimum.value) return
@@ -1477,7 +1498,7 @@ function captureLink(event: PointerEvent) {
 }
 function startLink(event: PointerEvent, bar: TimelineBar, end: TimelineBarEnd) {
   skipLinkClick = false
-  if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || drag || pinch) return
+  if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   linkDraft.value = { fixed: { bar: bar.id, end }, role: 'to' }
   captureLink(event)
 }
@@ -1578,7 +1599,7 @@ const reconnectHandles = computed(() => {
   ]
 })
 function reconnectDependency(dependency: TimelineDependency, end: 'from' | 'to', event?: PointerEvent) {
-  if (event && (!event.isPrimary || event.button !== 0 || drag || linkDrag || pinch)) return
+  if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
   skipLinkClick = false
   const ends = dependencyEndsForType(dependency.type)
   const fixed = end === 'from' ? { bar: dependency.to, end: ends.to } : { bar: dependency.from, end: ends.from }
@@ -1590,7 +1611,9 @@ function clickReconnect(dependency: TimelineDependency, end: 'from' | 'to') {
   else reconnectDependency(dependency, end)
 }
 watch(() => props.dependencies, () => {
-  cancelLink()
+  // A cascading bar drag previews follow-on changes computed from the old dependencies; it is stale source data.
+  if (drag && props.cascade) cancelEdit()
+  else cancelLink()
   if (localDependency.value !== undefined && !props.dependencies.some(dep => dep.id === localDependency.value)) localDependency.value = undefined
 })
 watch(() => [props.connectable, props.reconnectable], cancelLink)
@@ -1637,8 +1660,8 @@ function holdPinch(event: TouchEvent) {
 
 // A new source interval or coordinate system invalidates an in-flight gesture.
 watch([
-  () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => props.range,
-  () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => props.editBounds, () => props.minDuration,
+  () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => stableRange.value,
+  () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => stableEditBounds.value, () => props.minDuration,
   () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
@@ -1938,7 +1961,7 @@ function canCreateIn(row: TimelineRow) {
 /** The nearest multiple of `snap` from the range start. */
 function snapTime(time: number) {
   const step = activeSnap.value
-  return props.range.start + Math.round((time - props.range.start) / step) * step
+  return stableRange.value.start + Math.round((time - stableRange.value.start) / step) * step
 }
 /** [start, start + length) moved inside editBounds, and shortened only when the bounds are shorter. */
 function placeInBounds(start: number, length: number): TimeRange {
@@ -2022,8 +2045,8 @@ function createFromButton(event: MouseEvent, row: TimelineRow) {
   if (!canCreateIn(row) || gestureActive()) return
   const el = scroller.value
   const step = activeSnap.value
-  const visible = el ? axis.value.toTime(Math.min(axis.value.width, scrollStart(el))) : props.range.start
-  const range = placeInBounds(props.range.start + Math.ceil((visible - props.range.start) / step) * step, createLength.value)
+  const visible = el ? axis.value.toTime(Math.min(axis.value.width, scrollStart(el))) : stableRange.value.start
+  const range = placeInBounds(stableRange.value.start + Math.ceil((visible - stableRange.value.start) / step) * step, createLength.value)
   const busy = (barsByRow.value.get(row.id) ?? []).filter(bar => bar.start === bar.end
     ? bar.start >= range.start && bar.start < range.end : bar.start < range.end && range.start < bar.end)
   let lane = 0
@@ -2071,7 +2094,7 @@ function pressScroller(event: PointerEvent) {
 function onContextMenu(event: MouseEvent) {
   // A menu opened during a pointer gesture (for example Control-click on macOS) can swallow pointerup, so every
   // gesture ends here without a proposal. An armed keyboard connection is kept.
-  if (drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag) cancelEdit()
+  if (pointerGestureActive()) cancelEdit()
   const el = scroller.value, area = canvas.value
   if (!props.contextMenu || !el || !area) return
   const element = event.target instanceof Element ? event.target : undefined
@@ -2359,10 +2382,10 @@ function exportSvg(options: GanttExportOptions = {}) {
     showSummaries: props.showSummaries,
     headerBands: activeBands.value,
     markers: props.markers,
-    now: props.showNow && time !== undefined && time >= props.range.start && time <= props.range.end ? time : undefined,
+    now: props.showNow && time !== undefined && time >= stableRange.value.start && time <= stableRange.value.end ? time : undefined,
     nowLabel: messages.value.now,
     tickStep: tickStep.value,
-    tickAnchor: props.range.start,
+    tickAnchor: stableRange.value.start,
     formatTime: props.formatTime,
     rowHeading: rest.rowHeading ?? messages.value.rows,
     loadRows: includeLoad && loadHistogram.value ? props.loadRows : undefined,
@@ -2395,6 +2418,16 @@ watch(rtl, async () => {
   syncViewport()
 })
 
+function observeCorner(element: HTMLElement | null | undefined) {
+  if (!observer || element === observedCorner) return
+  if (observedCorner) observer.unobserve(observedCorner)
+  observedCorner = element ?? undefined
+  // Observing reports the initial size, which runs syncViewport.
+  if (observedCorner) observer.observe(observedCorner)
+  else syncViewport()
+}
+watch(cornerEl, observeCorner, { flush: 'post' })
+
 onMounted(() => {
   mounted = true
   detectDirection()
@@ -2403,8 +2436,7 @@ onMounted(() => {
   syncViewport()
   observer = new ResizeObserver(syncViewport)
   observer.observe(scroller.value)
-  const corner = scroller.value.querySelector('.vw-gantt-corner')
-  if (corner) observer.observe(corner)
+  observeCorner(cornerEl.value)
   scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
 })
 onBeforeUnmount(() => scroller.value?.removeEventListener('touchmove', holdPinch))
@@ -2413,6 +2445,8 @@ onUnmounted(() => {
   cancelEdit()
   hideTooltip()
   observer?.disconnect()
+  observer = undefined
+  observedCorner = undefined
   if (nowTimer !== undefined) clearInterval(nowTimer)
 })
 </script>
@@ -2449,7 +2483,7 @@ onUnmounted(() => {
         ...labelWidthStyle,
       }">
         <div class="vw-gantt-head">
-          <div class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
+          <div ref="cornerEl" class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
             <div class="vw-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
             <!-- Column headers and, with columnsResizable, their resize separators share one list so that the default markup stays unchanged. -->
             <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>

@@ -3470,3 +3470,176 @@ test('a context menu during a gantt bar drag cancels the drag without an edit pr
   }
   expect(errors).toEqual([])
 })
+
+async function openGestureFixture(page: Page, search: string) {
+  await page.route('**/gesture-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/gesture-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/gestures.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/gesture-test/' + search)
+  const proposals = fixtureStatus(page, 'Proposals')
+  await expect(proposals).toHaveText('0')
+  return { proposals, last: fixtureStatus(page, 'Last proposal'), control: (name: string) => page.getByRole('button', { name, exact: true }) }
+}
+// A second, primary pen pointer as synthetic events: isPrimary is per pointer type, so a pen is primary next to the
+// mouse. Chromium's input emulation routes pen and mouse through one device, so the events are dispatched directly;
+// capturing a synthetic pointer throws, so capture requests for it are ignored.
+async function allowSyntheticCapture(page: Page) {
+  await page.evaluate(() => {
+    const capture = Element.prototype.setPointerCapture
+    Element.prototype.setPointerCapture = function (id) {
+      try { capture.call(this, id) } catch (error) { if ((error as Error).name !== 'NotFoundError') throw error }
+    }
+  })
+}
+async function pen(target: { dispatchEvent(type: string, init?: object): Promise<void> }, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number, clientY: number) {
+  await target.dispatchEvent(type, {
+    pointerId: 7, pointerType: 'pen', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1,
+    clientX, clientY, bubbles: true, cancelable: true, composed: true,
+  })
+}
+
+test('fresh but equal inline graph groups and labels keep a drag or pan alive; a real change still cancels', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['?chart=graph', '?chart=graph&collapsed=1']) {
+    const { proposals, last, control } = await openGestureFixture(page, search)
+    const stage = page.getByLabel('Gesture graph', { exact: true })
+    const node = page.getByRole('button', { name: 'Node A', exact: true })
+    // A drag across a parent render proposes exactly one move.
+    await dragBy(page, node, 60, 40, () => control('Re-render').dispatchEvent('click'))
+    await expect(proposals).toHaveText('1')
+    await expect(last).toHaveText(/^move \{"id":"A"/)
+    // A pan re-renders the parent on every viewport-change and still follows the pointer all the way.
+    const before = (await node.boundingBox())!
+    const area = (await stage.boundingBox())!
+    await page.mouse.move(area.x + 12, area.y + area.height - 12)
+    await page.mouse.down()
+    await page.mouse.move(area.x + 72, area.y + area.height - 32, { steps: 6 })
+    await page.mouse.up()
+    const after = (await node.boundingBox())!
+    expect(after.x - before.x).toBeCloseTo(60, 0)
+    expect(after.y - before.y).toBeCloseTo(-20, 0)
+    // A real change of the groups mid-drag cancels the drag without a proposal.
+    await dragBy(page, node, 60, 40, () => control('Change groups').dispatchEvent('click'))
+    await expect(page.getByRole('button', { name: 'Move group First 1', exact: true })).toBeVisible()
+    await expect(proposals).toHaveText('1')
+  }
+  expect(errors).toEqual([])
+})
+
+test('fresh but equal inline Gantt range, editBounds and tickSteps keep a drag alive; a real change still cancels', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { proposals, last, control } = await openGestureFixture(page, '?chart=gantt')
+  const bar = page.getByRole('button', { name: 'Task A 2–6', exact: true })
+  await dragBy(page, bar, 50, 0, () => control('Re-render').dispatchEvent('click'))
+  await expect(proposals).toHaveText('1')
+  expect(JSON.parse((await last.textContent())!.slice('edit '.length))).toMatchObject({ id: 'a', after: { start: 7, end: 11 } })
+  await dragBy(page, bar, 50, 0, () => control('Change range').dispatchEvent('click'))
+  await expect(proposals).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('a pen cannot start a second gesture while a mouse gesture is in flight', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  // Graph: a pen press on the background during a mouse pan does not take the pan over.
+  await openGestureFixture(page, '?chart=graph')
+  await allowSyntheticCapture(page)
+  const stage = page.getByLabel('Gesture graph', { exact: true })
+  const node = page.getByRole('button', { name: 'Node A', exact: true })
+  const area = (await stage.boundingBox())!
+  const before = (await node.boundingBox())!
+  const bottom = area.y + area.height - 12
+  await page.mouse.move(area.x + 12, bottom)
+  await page.mouse.down()
+  await page.mouse.move(area.x + 22, bottom, { steps: 2 })
+  await pen(stage, 'pointerdown', area.x + 300, bottom)
+  await page.mouse.move(area.x + 72, bottom, { steps: 4 })
+  await pen(stage, 'pointerup', area.x + 300, bottom)
+  await page.mouse.up()
+  expect((await node.boundingBox())!.x - before.x).toBeCloseTo(60, 0)
+
+  // Gantt: a pen drag on a bar during a mouse create drag proposes nothing.
+  const { proposals, last } = await openGestureFixture(page, '?chart=gantt')
+  await allowSyntheticCapture(page)
+  const row = (await page.locator('.vw-gantt-row').first().boundingBox())!
+  const taskB = page.getByRole('button', { name: 'Task B 8–12', exact: true })
+  const box = (await taskB.boundingBox())!
+  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  await page.mouse.move(row.x + 450, row.y + row.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(row.x + 520, row.y + row.height / 2, { steps: 4 })
+  // The accessible name would follow a drag preview, so keep the element itself.
+  const element = (await taskB.elementHandle())!
+  await pen(element, 'pointerdown', x, y)
+  await pen(element, 'pointermove', x + 50, y)
+  await pen(element, 'pointerup', x + 50, y)
+  await page.mouse.up()
+  await expect(proposals).toHaveText('1')
+  await expect(last).toHaveText(/^create /)
+  expect(errors).toEqual([])
+})
+
+test('a chart that mounts with invalid data measures its label column once the data is valid', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { control } = await openGestureFixture(page, '?chart=gantt&invalid=1')
+  await expect(fixtureStatus(page, 'Validation reports')).not.toHaveText('')
+  await control('Restore rows').click()
+  await expect(page.getByRole('button', { name: 'Task A 2–6', exact: true })).toBeVisible()
+  // A narrow label column widens the visible time area, so the bar near the inline-end edge is rendered.
+  await control('Narrow labels').click()
+  await expect(page.getByRole('button', { name: 'Edge bar 54–57', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('changed dependencies cancel a cascading bar drag without a proposal', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { proposals, last, control } = await openGestureFixture(page, '?chart=gantt&cascade=1')
+  const bar = page.getByRole('button', { name: 'Task A 2–6', exact: true })
+  await dragBy(page, bar, 50, 0, () => control('Change dependencies').dispatchEvent('click'))
+  await expect(page.locator('.vw-gantt-cascade-preview')).toHaveCount(0)
+  await expect(proposals).toHaveText('0')
+  // Without a change the cascade is proposed with the drag.
+  await dragBy(page, bar, 50, 0)
+  await expect(proposals).toHaveText('1')
+  expect(JSON.parse((await last.textContent())!.slice('edits '.length))).toMatchObject([{ id: 'a' }, { id: 'b', after: { start: 13, end: 17 } }])
+  expect(errors).toEqual([])
+})
+
+test('keyboard focus on a selected node is visibly distinct from selection alone', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openGestureFixture(page, '?chart=graph')
+  const node = page.getByRole('button', { name: 'Node A', exact: true })
+  await expect(node).toHaveAttribute('aria-pressed', 'true')
+  const look = () => node.evaluate(el => {
+    const style = getComputedStyle(el)
+    return { focused: el.matches(':focus-visible'), outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}` }
+  })
+  const unfocused = await look()
+  await page.getByLabel('Gesture graph', { exact: true }).focus()
+  for (let i = 0; i < 10 && !await node.evaluate(el => el === document.activeElement); i++) await page.keyboard.press('Tab')
+  const focused = await look()
+  expect(unfocused.focused).toBe(false)
+  expect(focused.focused).toBe(true)
+  expect(focused.outline).not.toBe(unfocused.outline)
+  expect(focused.outline).toMatch(/^solid 2px/)
+  expect(errors).toEqual([])
+})

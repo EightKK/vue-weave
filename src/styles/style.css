@@ -17,6 +17,8 @@
 .vw-network-node rect { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
 .vw-network-node.related rect { stroke: var(--vw-item-ink); stroke-width: 1.7px; }
 .vw-network-node:hover rect, .vw-network-node:focus-visible rect, .vw-network-node.selected rect { stroke: var(--vw-item-ink); stroke-width: 2.8px; }
+/* Keyboard focus has its own ring outside the node, so it stays visible on selected nodes and on custom node slots. */
+.vw-network-node:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 3px; }
 .vw-network-node.selected rect { fill: var(--vw-item-solid); }
 .vw-network-node text { user-select: none; pointer-events: none; fill: var(--vw-item-ink); }
 .vw-network-node.selected text { fill: var(--vw-on-solid, #fff); }
@@ -101,7 +103,7 @@
 .vw-network-group text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
 .vw-network-group text[role="button"] { cursor: grab; }
 .vw-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
-.vw-edge-hit.active, .vw-edge-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
+.vw-edge-hit.active { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
 .vw-reconnect-handle { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); stroke-width: 2px; cursor: crosshair; }
 .vw-connection-preview { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
 .vw-box-selection { fill: var(--vw-accent, #245e96); fill-opacity: .14; stroke: var(--vw-accent, #245e96); pointer-events: none; }
@@ -121,6 +123,9 @@
 /* Opt-in edge selection and the tooltip slot of NetworkGraph. */
 .vw-edge-hit.selected { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
 .vw-edge-selected .vw-network-edge { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 2.6; }
+/* Keyboard focus on an edge: an opaque dashed accent stroke (at least 3:1 against the surface), unlike the translucent
+   active and selected bands. Placed after them so it also shows on an active or selected edge. */
+.vw-edge-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 3.5; stroke-opacity: 1; stroke-dasharray: 7 4; outline: none; }
 .vw-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 /* Opt-in NetworkGraph background pattern and alignment guides. The pattern replaces the fixed dotted backdrop. */
 .vw-network.vw-network-patterned { background: var(--vw-surface-muted, #f6f9fb); }
@@ -155,7 +160,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vw-accent, #245e96); }
 .vw-gantt-link-hits { position: absolute; z-index: 2; pointer-events: none; overflow: visible; }
 .vw-dependency-hit { fill: none; stroke: transparent; stroke-width: 12px; pointer-events: stroke; cursor: pointer; outline: none; }
-.vw-dependency-hit.active, .vw-dependency-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
+.vw-dependency-hit.active { stroke: var(--vw-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
+.vw-dependency-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-opacity: 1; stroke-width: 3.5px; stroke-dasharray: 7 4; }
 .vw-gantt-links path.selected { stroke: var(--vw-accent, #245e96); stroke-width: 2.4px; }
 .vw-gantt-link-preview { position: absolute; left: var(--vw-label-area-width); z-index: 5; pointer-events: none; }
 .vw-gantt-link-preview path { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; }
@@ -303,6 +309,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-network-node.related rect { stroke: Highlight; stroke-width: 2.5px; }
   .vw-network-node:hover rect, .vw-network-node:focus-visible rect { stroke: Highlight; stroke-width: 4px; }
   .vw-network-node.selected rect { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
+  .vw-network-node:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
   .vw-network-node.selected text { fill: HighlightText; }
   .vw-gantt-bar { forced-color-adjust: none; border: 1px solid CanvasText; }
   .vw-gantt-bar.solid { background: CanvasText; color: Canvas; border-color: CanvasText; }
@@ -331,6 +338,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-link-handle.active, .vw-gantt-link-handle:focus-visible, .vw-gantt-reconnect-handle, .vw-connect-handle.active, .vw-connect-handle:focus-visible, .vw-reconnect-handle { fill: Highlight; stroke: CanvasText; background: Highlight; border-color: CanvasText; outline: 2px solid Highlight; outline-offset: 2px; }
   .vw-edge-hit.active, .vw-edge-hit:focus-visible, .vw-dependency-hit.active, .vw-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
   .vw-edge-hit.selected { stroke: Highlight; stroke-opacity: .6; }
+  .vw-edge-hit:focus-visible, .vw-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
   .vw-edge-selected .vw-network-edge { stroke: Highlight; stroke-width: 3.5px; }
   .vw-network-tooltip { border-color: CanvasText; box-shadow: none; }
   .vw-connection-preview, .vw-gantt-link-preview path { stroke: Highlight; }

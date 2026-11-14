@@ -165,6 +165,26 @@ const slots = defineSlots<{
   empty(): unknown
   tooltip?(props: NetworkTooltipSlot): unknown
 }>()
+// Plain values compared one level deep: equal primitives, or arrays with identical items.
+function sameValue(a: unknown, b: unknown) {
+  if (a === b) return true
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => item === b[i])
+}
+function sameRecord(a: object | undefined, b: object | undefined) {
+  if (a === b) return true
+  if (!a || !b) return false
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length
+    && keys.every(key => Object.hasOwn(b, key) && sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+// `labels` and `groups` are memoised by value like `options`, so inline literals in a parent template do not rebuild
+// the layout or cancel a gesture each time the parent renders.
+const labels = computed<Partial<GraphLabels> | undefined>(previous => sameRecord(previous, props.labels) ? previous : props.labels)
+const groups = computed<readonly NetworkGroup[] | undefined>((previous) => {
+  const next = props.groups
+  return previous === next || (previous && next && previous.length === next.length && previous.every((group, i) => sameRecord(group, next[i])))
+    ? previous : next
+})
 const messages = computed<GraphLabels>(() => ({
   region: 'Network graph', empty: 'No nodes to display', zoom: 'Graph zoom',
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit to view',
@@ -174,7 +194,7 @@ const messages = computed<GraphLabels>(() => ({
   deleteRejected: 'This deletion was rejected.', collapseGroup: 'Collapse group', expandGroup: 'Expand group',
   collapsedNode: 'node', collapsedNodes: 'nodes', moveWaypoint: 'Move waypoint', addWaypoint: 'Add waypoint',
   reshapeRejected: 'This edge change was rejected.', resizeNode: 'Resize', topLeft: 'top left', topRight: 'top right',
-  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...props.labels,
+  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...labels.value,
 }))
 function isSelected(id: string) {
   return props.selectedIds ? props.selectedIds.has(id) : props.selectedId === id
@@ -220,20 +240,20 @@ const options = computed<GraphLayeredLayoutOptions>((previous) => {
 const localCollapsed = shallowRef<ReadonlySet<string>>(new Set())
 const collapsedIds = computed(() => props.collapsedGroupIds ?? (props.collapsibleGroups ? localCollapsed.value : undefined))
 const collapsedView = computed(() => {
-  const ids = collapsedIds.value, groups = props.groups
-  if (!ids?.size || !groups?.length) return undefined
+  const ids = collapsedIds.value, list = groups.value
+  if (!ids?.size || !list?.length) return undefined
   // IDs of groups that no longer exist are ignored, so deleting a collapsed group's nodes does not break rendering.
-  const known = new Set(groups.map(group => group.id))
+  const known = new Set(list.map(group => group.id))
   const active = [...ids].filter(id => known.has(id))
   if (!active.length) return undefined
   const { collapsedNode, collapsedNodes } = messages.value
-  return collapseGraphGroups(props.nodes, props.edges, groups, active, {
+  return collapseGraphGroups(props.nodes, props.edges, list, active, {
     detail: group => group.nodeIds.length + ' ' + (group.nodeIds.length === 1 ? collapsedNode : collapsedNodes),
   })
 })
 const viewNodes = computed<readonly NetworkNode[]>(() => collapsedView.value?.nodes ?? props.nodes)
 const viewEdges = computed<readonly GraphEdge[]>(() => collapsedView.value?.edges ?? props.edges)
-const viewGroups = computed(() => collapsedView.value?.groups ?? props.groups)
+const viewGroups = computed(() => collapsedView.value?.groups ?? groups.value)
 const realNodesById = computed(() => collapsedView.value ? new Map(props.nodes.map(node => [node.id, node])) : nodesById.value)
 const realEdgesById = computed(() => collapsedView.value ? new Map(props.edges.map(edge => [edge.id, edge])) : edgesById.value)
 const baseLayout = computed(() => {
@@ -542,7 +562,7 @@ function onWheel(event: WheelEvent) {
 }
 
 function startPan(event: PointerEvent) {
-  if (!event.isPrimary || event.button !== 0 || !svg.value || nodeDrag || connectionDrag) return
+  if (!event.isPrimary || event.button !== 0 || !svg.value || pointerGestureActive()) return
   pan = {
     pointerId: event.pointerId,
     x: event.clientX,
@@ -690,7 +710,7 @@ function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: numbe
 
 function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string) {
   suppressClick = undefined
-  if (!props.draggable || !event.isPrimary || event.button !== 0 || nodeDrag || pan || connectionDrag) return
+  if (!props.draggable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   if (node && nodesById.value.get(node)?.draggable === false) return
   const before = movablePositions(ids)
   if (!before.size) return
@@ -856,12 +876,12 @@ function captureConnection(event: PointerEvent) {
 }
 function startPort(event: PointerEvent, handle: PortHandle) {
   skipHandleClick = false
-  if (draft.value || !event.isPrimary || event.button !== 0 || handle.direction === 'target' || nodeDrag || pan) return
+  if (draft.value || !event.isPrimary || event.button !== 0 || handle.direction === 'target' || pointerGestureActive()) return
   draft.value = { fixed: handle, end: 'to' }
   captureConnection(event)
 }
 function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent) {
-  if (event && (!event.isPrimary || event.button !== 0 || nodeDrag || pan || connectionDrag)) return
+  if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
   skipHandleClick = false
   const fixed = end === 'from' ? { node: edge.to, port: edge.toPort } : { node: edge.from, port: edge.fromPort }
   draft.value = { fixed, end, edge }
@@ -1459,8 +1479,13 @@ function edgeIsRelated(edge: GraphEdge) {
 function elementNode(element: Element) {
   return element.hasAttribute('data-vw-port') ? null : element.getAttribute('data-vw-node')
 }
+// A pointer owns a gesture. `isPrimary` is per pointer type, so a mouse and a pen (or touch) can both be primary;
+// every pointer gesture start checks this so a second pointer cannot start or overwrite a gesture.
+function pointerGestureActive() {
+  return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan)
+}
 function gestureInFlight() {
-  return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan || draft.value)
+  return pointerGestureActive() || Boolean(draft.value)
 }
 // The stage itself or one of its own nodes, edges, group labels and handles. Keys pressed in focusable slot content,
 // such as an input in a custom node, keep their usual meaning.

@@ -37,6 +37,12 @@
 - `timelineFromCsvTable` lets a custom header take precedence over another column's default header whatever the column order, and throws when two custom headers are equal. It reads progress only in plain decimal notation (`0x1` and `1e0` are now rejected) and orders WBS parts of any length exactly.
 - `toMsProjectXml` and `toICalendar` throw an Error for a missing project or task name or event summary instead of writing "undefined".
 - `rescheduleFromStatusDate` throws a descriptive Error when `progress` is not a Map.
+- NetworkGraph compares `groups` and `labels` by value, so new but equal inline literals no longer rebuild the layout or cancel a node drag or pan when the parent re-renders. A real change still cancels the gesture.
+- GanttChart compares `range`, `editBounds` and `tickSteps` by value, so new but equal inline literals no longer re-run validation or cancel an in-flight drag. This also prevents an endless render loop when a parent updates state in its `validation-error` handler.
+- A second primary pointer of another type (for example a pen next to the mouse) can no longer start or take over a gesture in NetworkGraph or GanttChart while one is in flight. Two-finger pinch is unchanged.
+- GanttChart now measures its label column after mounting with invalid data or passing through an error state, so a later `labelWidth` or column change updates which bars are rendered.
+- With `cascade`, a change of `dependencies` during a bar drag cancels the drag without a proposal instead of proposing follow-on changes computed from the old dependencies.
+- Keyboard focus on a selected NetworkGraph node, or on a node rendered through the `node` slot, now shows a distinct accent outline (Highlight in forced-colours mode). Focused edge and dependency hit areas use an opaque dashed accent stroke with at least 3:1 contrast, distinct from the translucent active and selected bands.
 
 ## 0.1.0 - 2026-11-14
 
