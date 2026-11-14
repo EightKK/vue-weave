@@ -11,6 +11,7 @@ const properties: Record<string, string> = {
   grid: '--vft-grid', edge: '--vft-edge', accent: '--vft-accent', onSolid: '--vft-on-solid', markerInk: '--vft-marker-ink', baseline: '--vft-baseline',
   marker: '--vft-marker', now: '--vft-now', load: '--vft-load', loadOverload: '--vft-load-overload',
   loadCapacity: '--vft-load-capacity', dependencyHighlight: '--vft-dependency-highlight',
+  nonWorking: '--vft-non-working', critical: '--vft-critical', float: '--vft-float', deadline: '--vft-deadline',
 }
 
 /** Read the `--vft-*` custom properties in effect on an element; unset properties keep the export defaults. */

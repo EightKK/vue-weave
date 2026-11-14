@@ -12,6 +12,7 @@ import {
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
 import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
+import { checkNonWorkingPeriods, segmentPieces } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -58,6 +59,7 @@ const props = withDefaults(defineProps<{
   loadRowHeight?: number
   pinchZoom?: boolean
   dir?: ChartDirection
+  nonWorkingPeriods?: readonly TimeRange[]
 }>(), {
   dir: 'ltr',
   showControls: true,
@@ -113,7 +115,8 @@ const messages = computed<GanttLabels>(() => ({
   selectDependency: 'Select dependency', reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of',
   connectionRejected: 'This dependency was rejected.', zoomPresets: 'Zoom level', now: 'Now',
   loadRegion: 'Resource load', load: 'load', capacity: 'capacity', overload: 'overloaded by',
-  moveRowHint: 'Up and Down arrows move the bar to another row.', ...props.labels,
+  moveRowHint: 'Up and Down arrows move the bar to another row.',
+  critical: 'Critical', float: 'Float until', deadline: 'Deadline', late: 'Late', ...props.labels,
 }))
 const notice = ref('')
 const bounds = computed(() => props.editBounds ?? props.range)
@@ -166,6 +169,7 @@ function validateProps() {
   if (!steps.length || steps.some((step, i) => !Number.isFinite(step) || step <= 0 || (i > 0 && step < steps[i - 1]!))) throw new RangeError('tickSteps must be positive and ascending')
   if (props.scale && (!Number.isFinite(props.scale.width) || props.scale.width <= 0)) throw new RangeError('Invalid time scale width')
   if (props.now !== undefined && !Number.isFinite(props.now)) throw new RangeError('now must be finite')
+  checkNonWorkingPeriods(props.nonWorkingPeriods)
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
@@ -174,7 +178,7 @@ watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
   () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
-  () => props.now,
+  () => props.now, () => props.nonWorkingPeriods,
 ], () => {
   try {
     const result = validateProps()
@@ -381,7 +385,7 @@ const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, props.r
 const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
 // Kept for custom stylesheets that read --vft-grid-step; the built-in styles no longer use it.
 const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value) - axis.value.toX(props.range.start))
-type BarPreview = { range: TimeRange; rowShift: number }
+type BarPreview = { range: TimeRange; rowShift: number; mode: EditMode }
 const previews = shallowRef<ReadonlyMap<string, BarPreview>>()
 const focusedBarId = ref<string>()
 let pendingReveal: string | undefined
@@ -408,13 +412,113 @@ const shownRows = computed(() => {
   const { first, afterLast } = rowWindow.value
   return displayedRows.value.slice(first, afterLast).map((item, i) => {
     const bars = barsByRow.value.get(item.row.id) ?? []
+    const shown = bars.filter(bar => previews.value?.has(bar.id) || focusedBarId.value === bar.id || intersectsWindow(rangeOf(bar), timeWindow.value))
+    const overlays = new Map<string, BarOverlay>()
+    for (const bar of shown) {
+      const overlay = barOverlay(bar)
+      if (overlay) overlays.set(bar.id, overlay)
+    }
     return {
       ...item,
       index: first + i,
-      bars: bars.filter(bar => previews.value?.has(bar.id) || focusedBarId.value === bar.id || intersectsWindow(rangeOf(bar), timeWindow.value)),
+      bars: shown,
+      overlays,
       summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
       baselines: bars.filter(bar => bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)),
+      floats: bars.flatMap(bar => {
+        const end = rangeOf(bar).end
+        return bar.latestEnd !== undefined && bar.latestEnd > end && intersectsWindow({ start: end, end: bar.latestEnd }, timeWindow.value)
+          ? [{ bar, style: floatStyle(bar, end, bar.latestEnd) }] : []
+      }),
+      deadlines: bars.flatMap(bar => bar.deadline !== undefined && bar.deadline >= timeWindow.value.start && bar.deadline < timeWindow.value.end
+        ? [{ bar, late: rangeOf(bar).end > bar.deadline, style: deadlineStyle(bar, bar.deadline) }] : []),
     }
+  })
+})
+
+// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as before.
+type BarOverlay = {
+  description?: string
+  late: boolean
+  segments?: { pieces: { key: number; style: Record<string, string>; filled: number }[]; gaps: { key: number; style: Record<string, string> }[] }
+}
+const barIndex = computed(() => new Map((validationError.value ? [] : props.bars).map((bar, index) => [bar.id, index])))
+function barOverlay(bar: TimelineBar): BarOverlay | undefined {
+  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments) return undefined
+  const range = rangeOf(bar)
+  const parts: string[] = []
+  if (bar.critical) parts.push(messages.value.critical!)
+  if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
+  if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)
+  const late = bar.deadline !== undefined && range.end > bar.deadline
+  if (late) parts.push(messages.value.late!)
+  return { description: parts.length ? parts.join('. ') + '.' : undefined, late, segments: segmentGeometry(bar, range) }
+}
+/**
+ * Pixel geometry of a segmented bar. A move preview shifts the segments with the bar; a resize preview draws the bar
+ * unsegmented, because the parent reschedules the work and supplies new segments.
+ */
+function segmentGeometry(bar: TimelineBar, range: TimeRange): BarOverlay['segments'] {
+  const preview = previews.value?.get(bar.id)
+  if (!bar.segments || (preview && preview.mode !== 'move')) return undefined
+  const delta = range.start - bar.start
+  const shifted = delta ? bar.segments.map(segment => ({ start: segment.start + delta, end: segment.end + delta })) : bar.segments
+  const { pieces, gaps } = segmentPieces(range, shifted, bar.progress)
+  const origin = axis.value.toX(range.start)
+  // Children are positioned inside the 1px bar border.
+  const place = (part: TimeRange) => {
+    const left = axis.value.toX(part.start) - origin
+    return { [inlineSide.value]: `${left - 1}px`, width: `${axis.value.toX(part.end) - origin - left}px` }
+  }
+  return {
+    pieces: pieces.map(piece => ({ key: piece.start, style: place(piece), filled: piece.filled })),
+    gaps: gaps.map(gap => ({ key: gap.start, style: place(gap) })),
+  }
+}
+function barDescriptionId(bar: TimelineBar) {
+  return `${marker}-bar-${barIndex.value.get(bar.id)}`
+}
+function barDescribedBy(bar: TimelineBar, overlay: BarOverlay | undefined) {
+  const hint = editable(bar) ? (props.rowDraggable ? `${marker}-hint ${marker}-row-hint` : marker + '-hint') : undefined
+  if (!overlay?.description) return hint
+  return hint ? `${barDescriptionId(bar)} ${hint}` : barDescriptionId(bar)
+}
+function barTitle(bar: TimelineBar, overlay: BarOverlay | undefined) {
+  const range = rangeOf(bar)
+  const title = `${bar.label} ${props.formatTime(range.start)}–${props.formatTime(range.end)}`
+  return overlay?.description ? `${title} · ${overlay.description}` : title
+}
+function rowShiftStyle(bar: TimelineBar) {
+  const shift = previews.value?.get(bar.id)?.rowShift
+  return shift ? { transform: `translateY(${shift * props.rowHeight}px)` } : {}
+}
+function floatStyle(bar: TimelineBar, end: number, latestEnd: number) {
+  const left = axis.value.toX(end)
+  return {
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left}px)`,
+    width: `${axis.value.toX(latestEnd) - left}px`,
+    top: `${laneTop(bar) + barHeight.value / 2 - 4}px`,
+    ...rowShiftStyle(bar),
+  }
+}
+function deadlineStyle(bar: TimelineBar, deadline: number) {
+  return {
+    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${axis.value.toX(deadline) - 5}px)`,
+    top: `${laneTop(bar) - 3}px`,
+    height: `${barHeight.value + 6}px`,
+    ...rowShiftStyle(bar),
+  }
+}
+// Non-working time is drawn behind the grid over the task rows and inside each load row, clipped to the visible window.
+const shownNonWorking = computed(() => {
+  if (validationError.value || !props.nonWorkingPeriods?.length) return []
+  const low = Math.max(props.range.start, timeWindow.value.start)
+  const high = Math.min(props.range.end, timeWindow.value.end)
+  return props.nonWorkingPeriods.flatMap((period, index) => {
+    const start = Math.max(period.start, low), end = Math.min(period.end, high)
+    if (end <= start) return []
+    const left = axis.value.toX(start)
+    return [{ key: index, left, width: axis.value.toX(end) - left }]
   })
 })
 
@@ -454,13 +558,12 @@ function barBox(bar: TimelineBar) {
 
 function barStyle(bar: TimelineBar) {
   const box = barBox(bar)
-  const shift = previews.value?.get(bar.id)?.rowShift
   return {
     [inlineSide.value]: `calc(var(--vft-label-area-width) + ${box.left}px)`,
     width: `${box.width}px`,
     height: `${barHeight.value}px`,
     top: `${laneTop(bar)}px`,
-    ...(shift ? { transform: `translateY(${shift * props.rowHeight}px)` } : {}),
+    ...rowShiftStyle(bar),
   }
 }
 
@@ -659,7 +762,8 @@ function updatePreview() {
   const ranges = drag.group.length > 1
     ? moveTimeRanges(drag.group, deltaTime, activeSnap.value, bounds.value)
     : [editTimeRange(drag.initial, drag.mode, deltaTime, activeSnap.value, bounds.value, minimum.value)]
-  previews.value = new Map(drag.group.map((bar, i) => [bar.id, { range: ranges[i]!, rowShift: shift }]))
+  const mode = drag.mode
+  previews.value = new Map(drag.group.map((bar, i) => [bar.id, { range: ranges[i]!, rowShift: shift, mode }]))
 }
 
 const scrollEdge = 40
@@ -1094,6 +1198,7 @@ function exportSvg(options: GanttExportOptions = {}) {
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
     loadRowHeight: props.loadRowHeight,
     highlightedDependencyIds: props.highlightedDependencyIds,
+    nonWorkingPeriods: props.nonWorkingPeriods,
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
@@ -1182,6 +1287,10 @@ onUnmounted(() => {
               :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
           </div>
         </div>
+        <div v-if="shownNonWorking.length" class="vft-gantt-non-working-layer" aria-hidden="true">
+          <span v-for="band in shownNonWorking" :key="band.key" class="vft-gantt-non-working"
+            :style="{ [inlineSide]: band.left + 'px', width: band.width + 'px' }"></span>
+        </div>
         <div class="vft-gantt-grid" aria-hidden="true">
           <span v-for="line in tickXs" :key="line.tick" class="vft-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
         </div>
@@ -1228,26 +1337,37 @@ onUnmounted(() => {
           </div>
           <div v-for="bar in row.baselines" :key="bar.id" class="vft-gantt-baseline"
             :style="baselineStyle(bar)" :title="`${messages.baseline} · ${bar.label} ${formatTime(bar.baseline!.start)}–${formatTime(bar.baseline!.end)}`"></div>
+          <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vft-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
             v-for="bar in row.bars" :key="bar.id" type="button" class="vft-gantt-bar"
             :class="[`vft-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'outline' : 'solid', {
               selected: selectedIds?.has(bar.id), editable: editable(bar), dragging: previews?.has(bar.id), milestone: bar.start === bar.end,
+              'vft-critical': bar.critical, 'vft-late': row.overlays.get(bar.id)?.late, 'vft-segmented': row.overlays.get(bar.id)?.segments,
             }]"
             :style="barStyle(bar)" :data-vft-bar="bar.id"
-            :title="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
+            :title="barTitle(bar, row.overlays.get(bar.id))"
             :aria-label="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
             :aria-pressed="Boolean(selectedIds?.has(bar.id))"
             @keydown="editWithKeys($event, bar)" @focus="focusedBarId = bar.id" @blur="onBarBlur(bar.id)"
-            :aria-describedby="editable(bar) ? (rowDraggable ? `${marker}-hint ${marker}-row-hint` : marker + '-hint') : undefined"
+            :aria-describedby="barDescribedBy(bar, row.overlays.get(bar.id))"
             @pointerdown="startEdit($event, bar)" @click="clickBar(bar, $event)"
           >
-            <span v-if="bar.progress !== undefined" class="vft-bar-progress" :style="{ width: (bar.progress * 100) + '%' }" aria-hidden="true"></span>
+            <template v-if="row.overlays.get(bar.id)?.segments">
+              <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vft-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
+              <span v-for="piece in row.overlays.get(bar.id)!.segments!.pieces" :key="piece.key" class="vft-gantt-segment" :style="piece.style" aria-hidden="true">
+                <span v-if="bar.progress !== undefined" class="vft-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
+              </span>
+            </template>
+            <span v-else-if="bar.progress !== undefined" class="vft-bar-progress" :style="{ width: (bar.progress * 100) + '%' }" aria-hidden="true"></span>
             <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
               <span class="vft-bar-text">{{ bar.label }}</span>
             </slot>
             <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vft-bar-handle first" data-edit-mode="start" aria-hidden="true"></span>
             <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vft-bar-handle last" data-edit-mode="end" aria-hidden="true"></span>
+            <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
           </button>
+          <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vft-gantt-deadline" :class="{ 'vft-late': item.late }"
+            :style="item.style" aria-hidden="true"></div>
           <template v-if="linkHandlesVisible">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
               <button v-for="end in (['start', 'finish'] as const)" :key="end" type="button" class="vft-gantt-link-handle"
@@ -1304,6 +1424,8 @@ onUnmounted(() => {
         <div v-for="item in shownLoadRows" :key="item.row.id" class="vft-gantt-load-row" role="group"
           :aria-label="`${messages.loadRegion} ${item.row.label}`"
           :style="{ top: `${headerHeight + bodyHeight + item.index * loadRowHeight}px`, height: `${loadRowHeight}px` }">
+          <span v-for="band in shownNonWorking" :key="band.key" class="vft-gantt-non-working" aria-hidden="true"
+            :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${band.left}px)`, width: band.width + 'px' }"></span>
           <div class="vft-gantt-row-label">
             <slot name="load-row" :row="item.row" :peak="item.peak">
               <strong>{{ item.row.label }}</strong>
