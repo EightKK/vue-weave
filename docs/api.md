@@ -140,6 +140,8 @@ fit() without options shows the whole graph exactly as before. fit({ ids }) cent
 | deletable, validateBarsDelete | boolean / false, BarsDeleteValidator / undefined | Delete or Backspace proposes removing bars; see the same section |
 | tooltipDelay | number / 400 | Hover delay in milliseconds of the opt-in tooltip slot |
 | contextMenu | boolean / false | Emits context-menu instead of opening the browser menu; see the same section |
+| creatable, createDuration, validateCreate | boolean or (row) => boolean / false, number / 4 × snap, CreateValidator / undefined | A drag or click on an empty part of a row, or its add button, proposes a new bar; see [Drag to create and cascade previews](#drag-to-create-and-cascade-previews) |
+| cascade | TimelineCascade / undefined | Follow-on changes of other bars for a move or resize, previewed during a drag and proposed with it as one batch; see the same section |
 
 TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
@@ -149,7 +151,7 @@ Dependencies connect explicit endpoints. FS means source finish to target start;
 
 ### Editing contract
 
-select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep or tooltipDelay are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
+select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep, tooltipDelay or createDuration are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
 
 ```ts
 interface TimelineEdit {
@@ -296,16 +298,55 @@ For a pointer `contextmenu`, `target` is the bar under the pointer (including it
 
 `fitToBars(ids?: Iterable<string>, options?: TimelineFitOptions)` uses every bar in the displayed rows when `ids` is omitted; explicit IDs may also name bars in collapsed rows. It chooses the zoom factor so that the union of the bars' intervals spans the visible time area minus `padding` screen pixels on each side (default 24), clamped to the zoom limits (65% to 300%), then scrolls the union to the centre when it fits, or to `padding` from the inline-start edge when it does not. Scrolling stops at the ends of the axis, so a union that touches `range.start` or `range.end` sits at that edge. Unknown IDs throw an Error and a negative or non-finite padding throws a RangeError, synchronously; an empty set does nothing. The zoom factor scales the base scale linearly, so the fit is exact for a custom `scale`, including a non-linear one. With `zoomPresets` the active preset is kept and only the zoom factor changes, so the fit is limited to 65%–300% of the preset's scale. `zoom-change` is emitted when the factor changes. A union of milestones at one time keeps the zoom and is centred. Pointer gestures in progress are cancelled.
 
+### Drag to create and cascade previews
+
+Both are opt-in. Without `creatable` and `cascade`, the chart renders the same markup as before (server output is byte-identical), and pointer, keyboard, events, names and descriptions are unchanged.
+
+| API | Behavior |
+| --- | --- |
+| creatable | `boolean` or `(row: TimelineRow) => boolean`, default false. Enables creation in every displayed row, or in the rows for which the predicate returns true. Nothing is created when `readonly` is set. |
+| createDuration | number / 4 × `snap` (one hour with the default snap). Length of a bar proposed by a click or the add button. Finite and positive, otherwise a RangeError is reported through validation-error. |
+| create(proposal) | `TimelineCreate` with `rowId`, `lane`, `start`, `end` and `source` (`pointer` or `keyboard`). The parent assigns an ID and a label and adds the bar to accept it. |
+| validateCreate / create-rejected(proposal, reason) | Synchronous `CreateValidator` with the same convention as validateEdit; false uses `GanttLabels.createRejected` (default "This new bar was rejected."). The reason is announced in the live region. |
+| cascade | `TimelineCascade`: `(change: TimelineEdit) => readonly TimelineEdit[]`, synchronous and free of side effects. Returns the follow-on changes of other bars, for example from `propagateEdit`. |
+| `vft-gantt-create-preview`, `vft-gantt-cascade-preview` | Classes of the previews. The create preview uses `--vft-accent` and cascade previews use `--vft-cascade`. Both are `aria-hidden` and ignore the pointer. |
+
+**Pointer.** Press the primary button (or touch) on the empty timeline area of a creatable row and drag. The empty area is the row background: not a bar, handle, progress slider, dependency path, baseline or summary, and not the row heading or its cells. The preview runs from the press time to the time under the pointer, both rounded to the nearest multiple of `snap` from `range.start`. It is at least `minDuration` long (growing away from the press point) and is kept inside `editBounds`. It stays in the pressed row and sits in the lane under the pointer, clamped to the row's lanes. Release proposes the previewed interval with `source: 'pointer'`. A click, or a movement of less than 3 px along the time axis, proposes `[t, t + createDuration)` from the snapped press time `t`, moved back inside `editBounds` when it would end after them, in the lane under the pointer. A drag near the left or right edge scrolls the timeline (`autoScroll`). The time follows the active scale, zoom and right-to-left layout: in RTL, dragging to the left extends the bar to later times.
+
+Escape, pointer cancellation (including a native touch pan), lost capture and changes to bars, rows, the coordinate system, `readonly`, `createDuration` or the other props that cancel edits discard the preview without a proposal, and so does the second touch of a `pinchZoom` pinch. Zoom buttons and presets are ignored during the drag. A press does not start a create gesture while another gesture is active. Pressing a row focuses the chart region, so Escape works at once. Tooltips are hidden during the drag.
+
+**Keyboard.** Every creatable row gets an add button (`vft-gantt-create-button`) in its heading, named `GanttLabels.createIn` (default "Add bar to") followed by the row label, for example "Add bar to Web team". Activating it with Enter or Space proposes `createDuration` from the first multiple of `snap` at or after the time at the inline-start edge of the visible time area, moved inside `editBounds`. The lane is the lowest lane of the row without an overlapping bar (lane 0 when every lane is taken) and `source` is `keyboard` (a mouse click on the button reports `pointer`). Focus stays on the button. The row's expand toggle keeps its place before the button.
+
+**Cascade.** During a pointer move or resize, the chart calls `cascade` with the primary `TimelineEdit` (source `pointer`) whenever the snapped previewed interval or row changes, never on every pointer movement. Each returned change is drawn as a dashed outline at its `after` interval, in the lane of its bar and in the row of `change.row?.after` (or the bar's own row). The bars, their names and the dependency paths keep their current positions until the parent applies the result. Keyboard moves, resizes and row moves call it once per key press, without a preview. When the release or key press proposes the edit, the primary change comes first and the cascaded changes follow. All of them are emitted once through `edits` and checked like a batch: by `validateEdits`, or else by `validateEdit` for each change, where the first rejection rejects the batch through `edits-rejected`. When the callback returns no change, the single `edit` path is used as before.
+
+Returned changes for unknown bar IDs and for the bar being edited (or any bar of a multiple-selection move) are ignored, and so are changes whose `after` interval and row equal the bar's current ones. For a multiple-selection move the callback is called once per moved bar and the results are merged; when several calls return a change for the same bar, the last one wins. An `after` interval with a non-finite endpoint or `end < start` is an error. When the callback throws or returns such an interval, no preview is drawn and the edit is rejected with the error message: `edit-rejected` for a single bar, `edits-rejected` for a multiple-selection move. Keep `cascade` cheap and synchronous, and return `[]` when no schedule can be computed.
+
+```ts
+import { propagateEdit, type TimelineEdit } from 'vue-weave/core'
+
+function cascade(change: TimelineEdit): TimelineEdit[] {
+  if (change.mode !== 'move') return []
+  const result = propagateEdit(scheduleInput, { id: change.id, start: change.after.start })
+  return result.ok ? result.changes.filter(item => item.id !== change.id)
+    .map(item => ({ id: item.id, before: item.before, after: item.after, mode: 'move', source: change.source })) : []
+}
+```
+
+Use `assignLanes(bars, { keepLanes: true })` (below) to stack new bars that overlap others in one row, and pass its `laneCount` with a `rowHeight` of at least 8 + laneCount × 14.
+
 ### Timeline editing helpers
 
 | Export | Purpose |
 | --- | --- |
 | removeTimelineBars(bars, dependencies, ids) | New `{ bars, dependencies }` arrays without the given bars and without every dependency whose `from` or `to` is one of them. Accepts any iterable of IDs and keeps the remaining items and their order. An unknown ID throws an Error |
+| assignLanes(bars, options?) | `AssignLanesResult`: `{ bars, laneCount, rowLaneCounts }` with new bar objects in input order, each with `lane` set so that the bars of one row never overlap within a lane. See below |
 | dependencyTypeForEnds(fromEnd, toEnd) | Dependency type for a source and target TimelineBarEnd (start or finish) |
 | dependencyEndsForType(type = FS) | The bar ends a dependency type joins |
 | moveTimeRanges(ranges, delta, snap, bounds) | Move intervals by one snapped displacement, clamped so every interval stays in bounds |
 | calendarBands(range, unit, options) | One header band level of hours, days, weeks, months or years in epoch milliseconds, aligned to a fixed UTC offset and clipped to the range |
 | resourceLoadHistogram(segments, resourceIds?) | Validate load segments, group them by resource, sort them and report each resource's peak |
+
+`assignLanes(bars, options: AssignLanesOptions = {})` treats bars as half-open intervals, so touching bars share a lane; a milestone at `t` conflicts with every bar of its row that contains `t` (`start <= t < end`) and with milestones at `t`. By default lanes are assigned first-fit in start order, ties in input order, which uses the fewest lanes possible; input lanes are ignored. With `keepLanes: true` the bars are placed in input order: each keeps its `lane` (default 0) when no bar placed before it conflicts with it in that lane, and only a conflicting bar moves to the lowest free lane. This keeps lanes stable while an application adds or moves bars. `laneCount` is the largest number of lanes of any row and at least 1, and `rowLaneCounts` is a `Map` from each row ID that has bars to its highest lane plus one. Non-finite or inverted intervals and lanes that are not nonnegative integers throw a RangeError; the input is not modified.
 
 `calendarBands` options are utcOffsetMinutes (integer, default 0), step (units per band, default 1; a divisor of 24 for hours), weekStartsOn (0 Sunday to 6 Saturday, default 1) and label(start, end), which receives the unclipped band. Default labels are HH:mm, YYYY-MM-DD (days and week starts), YYYY-MM and YYYY. Daylight-saving transitions are not applied. Results are capped at 10,000 bands.
 
@@ -337,6 +378,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | buildWorkPeriods(range, week) | Expand weekly shifts and date overrides into epoch-millisecond work periods |
 | scheduleTasks(input) | Calculate calendar-aware earliest/latest dates, float and critical links |
 | scheduledBarFields(task) | `ScheduledBarFields` for a TimelineBar from a scheduled task: start, end, critical, latestEnd and, only for work in more than one segment, segments. Returns new objects |
+| propagateEdit(input, edit) | Reschedule with one task pinned at a new start (and optionally a new end) and list every task whose dates change: a `PropagateEditResult`; see [Propagate an edit](scheduling.md#propagate-an-edit) |
 | calculateResourceLoad(range, tasks, resources, assignments) | Compare scheduled work with capacity over half-open intervals |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
 | graphDeletion(nodes, edges, nodeIds, edgeIds = []) | Normalized GraphDeletion: validates the graph, throws Error for unknown IDs, adds every edge incident to a deleted node and returns both lists deduplicated in input order |
@@ -424,7 +466,7 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | ScheduleFailure (infeasible) | Adds `constraints: ScheduleConstraintName[]` and `dependencyIds`, the binding bounds and links that conflict. |
 | levelResources(input) | `LevelResourcesInput` is a `ScheduleInput` plus `resources` and `assignments`. Returns `ScheduleFailure` or `LevelResourcesSuccess`: the leveled schedule plus `leveledTasks`, `delays` (`ResourceDelay[]`), `overloads` and `unresolvedTaskIds`. |
 
-The exported types are `ScheduleSuccess`, `ScheduleFailure`, `ScheduleCycle`, `ScheduleConstraintName`, `LevelResourcesInput`, `LevelResourcesSuccess`, `LevelResourcesResult` and `ResourceDelay`. `levelResources` ranks ready tasks by priority, then total float, then early start, then ID, and gives each the earliest start with enough capacity before its latest feasible dates. Tasks without such a start keep their earliest dates and are reported as unresolved. The [scheduling guide](scheduling.md#level-resources) defines each step. Optimization policies remain the application's concern.
+The exported types are `ScheduleSuccess`, `ScheduleFailure`, `ScheduleCycle`, `ScheduleConstraintName`, `LevelResourcesInput`, `LevelResourcesSuccess`, `LevelResourcesResult`, `ResourceDelay`, `ScheduleEdit`, `ScheduleChange`, `PropagateEditSuccess` and `PropagateEditResult`. `levelResources` ranks ready tasks by priority, then total float, then early start, then ID, and gives each the earliest start with enough capacity before its latest feasible dates. Tasks without such a start keep their earliest dates and are reported as unresolved. The [scheduling guide](scheduling.md#level-resources) defines each step. Optimization policies remain the application's concern.
 
 ## Application undo and redo
 

@@ -24,6 +24,8 @@ A pointer edit records the accepted interval and the initial pointer coordinate.
 
 Progress drags, bar deletion and the context menu use the same contract. A progress drag previews the fill locally and proposes the snapped value on release; Delete proposes bar IDs; a context menu event only describes its target. The parent applies or ignores each proposal. Tooltips are transient view state that exists only after mounting, so server output never contains them.
 
+Drag to create and cascades follow it too. A create drag captures the pointer on the scroll container, previews a local interval and proposes a `TimelineCreate` that the parent turns into a bar with its own ID. A `cascade` callback is application code that the chart calls synchronously when a dragged bar reaches a new snapped interval; its result is only drawn as ghost outlines and attached to the proposal as one batch, so the chart still never schedules or changes bars itself. The previews share one conditional with the link preview and the add buttons share one with the expand toggle, which keeps the server markup of charts without these props unchanged.
+
 Calendar-derived overlays are display data, not scheduling logic. Non-working shading, critical outlines, float lines, deadline indicators and bar segments are drawn from `nonWorkingPeriods` and optional bar fields that the application computes, typically with `invertWorkPeriods` and `scheduledBarFields`. Shading, float lines and deadline indicators are filtered against the visible time window like bars. A move preview shifts a bar's segments by the previewed displacement; a resize preview drops them, since only the scheduler knows the new work pattern.
 
 ## Supported scope

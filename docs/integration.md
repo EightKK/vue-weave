@@ -112,17 +112,23 @@ Segmented bars draw their work pieces and gap connectors with the bar's tone var
 
 The opt-in progress slider (`progressEditable`) is drawn in `--vft-accent`, and the tooltip slot container (`vft-gantt-tooltip`) uses `--vft-surface`, `--vft-text` and `--vft-border`; they add no new variables. Restyle the tooltip through its class or your slot content.
 
+Drag to create (`creatable`) draws its preview (`vft-gantt-create-preview`) with `--vft-accent` and the row add button (`vft-gantt-create-button`) with `--vft-surface`, `--vft-border` and `--vft-accent`. The cascade preview of the `cascade` prop adds one variable:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vft-cascade` | `#6d4bb3` | Dashed outline and light fill of the bars a `cascade` callback moves during a drag (`vft-gantt-cascade-preview`) |
+
 ### Built-in dark theme
 
-Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, `--vft-cascade`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vft-on-solid` is dark.
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
-- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, and the Gantt toolbar are hidden. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons and the create and cascade previews, and the Gantt toolbar are hidden. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
@@ -142,6 +148,8 @@ function deleteBars(ids: string[]) {
   history.commit(next)
 }
 ```
+
+Accept a `create` proposal by adding a bar with an ID and label of your choice at `proposal.start`–`proposal.end` in `proposal.rowId` (and `proposal.lane` when you use lanes), again as one history entry. When new bars may overlap others, pass the bars through `assignLanes(bars, { keepLanes: true })` and give the chart its `laneCount` with a `rowHeight` of at least 8 + laneCount × 14. With `cascade`, an accepted move arrives as an `edits` batch that lists the bars the user moved first and the cascaded bars after them; apply it like any batch, or recompute the plan from the moved bars when the cascaded dates come from your scheduler.
 
 The `context-menu` event only reports what was targeted, the time and row under the pointer and the client coordinates. Render your own menu there (for example `role="menu"` with `role="menuitem"` entries), move focus into it, close it on Escape and return focus to the element that had it. Menu actions can reuse the same accept functions as the keyboard proposals.
 
