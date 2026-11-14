@@ -104,13 +104,17 @@ The dimming hooks are presentation only. Dimmed nodes and the edges that touch t
 | height | number or CSS string / 316px | Scroll viewport height |
 | readonly | boolean / false | Disables editing |
 | validateEdit | EditValidator / undefined | Synchronous hook accepting or rejecting a proposal |
-| labels | Partial<GanttLabels> / English | region, rows, empty, zoom, zoomIn, zoomOut, editHint, rejected |
+| labels | Partial<GanttLabels> / English | region, rows, empty, zoom, zoomIn, zoomOut, editHint, rejected, plus the optional fields described in the sections below (for example progressOf and deleteHint) |
 | showControls | boolean / true | Zoom buttons |
 | autoScroll | boolean / true | Scrolls the timeline horizontally while a pointer drag is held near the left or right edge of the viewport. Set false to disable |
 | dir | ChartDirection / ltr | `rtl` or `auto` places row headings on the right and runs time from right to left; see [Right-to-left layout](#right-to-left-layout) |
 | nonWorkingPeriods | readonly TimeRange[] / undefined | Shades non-working time behind the grid; see [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) |
+| progressEditable, progressStep, validateProgressEdit | boolean / false, number / 0.05, ProgressEditValidator / undefined | Progress slider proposals; see [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit) |
+| deletable, validateBarsDelete | boolean / false, BarsDeleteValidator / undefined | Delete or Backspace proposes removing bars; see the same section |
+| tooltipDelay | number / 400 | Hover delay in milliseconds of the opt-in tooltip slot |
+| contextMenu | boolean / false | Emits context-menu instead of opening the browser menu; see the same section |
 
-TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
+TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
 Display bars may extend beyond the axis. Editing is enabled only for intervals contained in editBounds. With custom numeric units, supply matching pixelsPerUnit, tickSteps, snap and formatTime.
 
@@ -118,7 +122,7 @@ Dependencies connect explicit endpoints. FS means source finish to target start;
 
 ### Editing contract
 
-select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps or nonWorkingPeriods are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
+select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep or tooltipDelay are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
 
 ```ts
 interface TimelineEdit {
@@ -134,7 +138,7 @@ validateEdit returns true/undefined to accept, false for the default rejection m
 
 Pointer cancellation, loss of capture and Escape discard the preview. Changes to source bars, rows, bounds or the coordinate system cancel an active drag. These props are watched by reference, so pass new arrays and objects instead of mutating them in place. While a drag is held near the horizontal edge of the viewport, the timeline scrolls and the preview follows the pointer (autoScroll). A focused bar stays rendered even when an edit moves it outside the visible window, and after a keyboard edit is applied the chart scrolls horizontally only if the bar's new range is outside the viewport. Selection does not change the source intervals. Arrow keys move focused editable intervals by snap; Shift changes the end; Alt changes the start. Move snapping uses displacement relative to the original interval, so an off-grid start retains its offset.
 
-Slots are legend(), row-heading(), row({row,index}), bar({bar,range,selected}), tick({time,label}) and empty(). The bar slot is inside a button. Use noninteractive content inside it. Keep row and bar slot contents within the configured dimensions. Methods are scrollToTime(time), scrollToRow(rowId), cancelEdit(), exportSvg(options) and exportPng(options); see [Export to SVG and PNG](#export-to-svg-and-png).
+Slots are legend(), row-heading(), row({row,index}), bar({bar,range,selected}), tick({time,label}), empty() and the opt-in tooltip({bar,range,selected}). The bar slot is inside a button. Use noninteractive content inside it. Keep row and bar slot contents within the configured dimensions. Methods are scrollToTime(time), scrollToRow(rowId), cancelEdit(), exportSvg(options), exportPng(options) and fitToBars(ids, options); see [Export to SVG and PNG](#export-to-svg-and-png) and [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit).
 
 ### Timeline planning overlays
 
@@ -238,10 +242,38 @@ const nonWorkingPeriods = invertWorkPeriods(periods, range)
 
 `exportSvg`, `exportPng` and `renderTimelineSvg` draw the same layers with the colours of `--vft-non-working`, `--vft-critical`, `--vft-float` and `--vft-deadline`. In a right-to-left chart every layer is mirrored with the time axis.
 
+### Progress editing, deletion, tooltips, context menu and fit
+
+All of these are opt-in. Without `progressEditable`, `deletable`, `contextMenu` and the `tooltip` slot, the chart renders the same markup as before (server output is byte-identical), and keys, pointer behaviour, names and descriptions are unchanged.
+
+| API | Behavior |
+| --- | --- |
+| progressEditable | boolean / false. Draws a progress slider at the progress boundary of every editable, non-milestone bar (undefined progress counts as 0) unless `readonly` is set. Editing does not depend on `editBounds`. |
+| progressStep | number / 0.05. Every proposal is snapped to this step; exactly 0 and 1 are always reachable. Must be greater than 0 and at most 1, otherwise a RangeError is reported through validation-error. |
+| progress-edit(change) | `TimelineProgressEdit` with `id`, `before` (the bar's `progress`, possibly undefined), `after` (0 to 1) and `source` (`pointer` or `keyboard`). The parent sets the bar's `progress` to `after` to accept. A change that keeps the drawn value (`after === (before ?? 0)`) is not proposed. `TimelineEdit` is unchanged. |
+| validateProgressEdit / progress-edit-rejected(change, reason) | Synchronous `ProgressEditValidator` with the same convention as validateEdit. The reason is announced in the live region. |
+| deletable | boolean / false. Delete or Backspace on a focused deletable bar proposes removing it. A bar is deletable when the prop is set, the chart is not readonly and `TimelineBar.deletable ?? TimelineBar.editable` is true. Deletable bars are described by `GanttLabels.deleteHint`. |
+| bars-delete(ids) | Emitted once per key press. With `multiSelect`, when the focused bar is selected, `ids` lists every selected deletable bar in input order; otherwise only the focused bar. Nothing is emitted during an edit or progress drag, a pending connection (including one armed from the keyboard) or a pinch. Use `removeTimelineBars` to accept. `dependency-delete` is unchanged. |
+| validateBarsDelete / bars-delete-rejected(ids, reason) | Synchronous `BarsDeleteValidator`; true or undefined accepts, false (default message `GanttLabels.rejected`) or a string rejects. The reason is announced in the live region. |
+| tooltip slot | `{ bar, range, selected }`, where `range` is the displayed interval (the preview while one is shown). Rendered only when the slot is provided, never on the server or before mounting. |
+| tooltipDelay | number / 400. Milliseconds before a hover shows the tooltip. Finite and nonnegative, otherwise a RangeError is reported through validation-error. |
+| contextMenu | boolean / false. Handles `contextmenu` on the chart region (default prevented) and the ContextMenu key and Shift+F10 on a focused bar, progress slider or dependency path. |
+| context-menu(event) | `TimelineContextMenu`: `target` (`{ kind: 'bar', id }`, `{ kind: 'dependency', id }`, `{ kind: 'row', id }` or `{ kind: 'chart' }`), `time?`, `rowId?`, `clientX`, `clientY` and `source`. The component renders no menu. |
+| fitToBars(ids?, options?) | Exposed method. Zooms so the union interval of the bars fits, then scrolls it into view. Returns a promise that resolves once the scroll position is applied. |
+
+The progress slider is a `button` with `role="slider"`, `aria-valuemin` 0, `aria-valuemax` 100, `aria-valuenow` in percent and `aria-valuetext` such as "40%". Its accessible name is `GanttLabels.progressOf` (default "Progress of") followed by the bar label. Dragging it previews the fill and proposes the snapped value on release. On a segmented bar the pointer is mapped to progress over working time, as the fill is drawn: the slider sits where that share of the work is done, and a pointer in a gap counts the work before the gap. ArrowRight and ArrowUp add one step, ArrowLeft and ArrowDown subtract one, PageUp and PageDown change it by 0.25, Home sets 0 and End sets 1. Each key press proposes one change from the bar's current `progress`. In a right-to-left chart progress grows towards the left, so ArrowLeft adds a step and ArrowRight subtracts one. Escape, pointer cancellation, lost capture, changes to bars, rows, the coordinate system, `progressEditable`, `progressStep` or `readonly`, and the start of a `pinchZoom` pinch cancel the preview without a proposal.
+
+After an accepted deletion removes the focused bar, focus moves to the chart region. The tooltip appears next to the hovered bar after `tooltipDelay`, or at once when a bar receives keyboard focus (`:focus-visible`). It has `role="tooltip"` and an ID from `useId()`, which is appended to the bar's `aria-describedby` list after the existing description and hint IDs while it is shown. It is placed above the visible part of the bar, or below it when there is no room, and kept inside the scroll viewport. The pointer can move onto it without hiding it. Escape hides it until the pointer re-enters the bar or the bar is focused again. Pressing a bar hides it, and it does not appear during bar drags and resizes, progress drags, pending connections, pinches or drag autoscroll. Its timers are cleared when the component unmounts. Style it with the `vft-gantt-tooltip` class.
+
+For a pointer `contextmenu`, `target` is the bar under the pointer (including its link handles and progress slider), else the dependency path (dependency paths are interactive only with `connectable` or `reconnectable`), else the displayed task row under the pointer (its heading, cells or empty timeline area), else `chart` (the header, load rows or empty space). `rowId` is that task row, and `time` is the time under the pointer through the active scale, including zoom and right-to-left layout, whenever the pointer is over the time area (not the sticky heading column). Text inputs in `columns` keep the browser menu. The ContextMenu key and Shift+F10 report the focused element's on-screen centre, `source: 'keyboard'`, no `time`, and for a bar its `rowId`. Without `contextMenu` the browser menu is not affected.
+
+`fitToBars(ids?: Iterable<string>, options?: TimelineFitOptions)` uses every bar in the displayed rows when `ids` is omitted; explicit IDs may also name bars in collapsed rows. It chooses the zoom factor so that the union of the bars' intervals spans the visible time area minus `padding` screen pixels on each side (default 24), clamped to the zoom limits (65% to 300%), then scrolls the union to the centre when it fits, or to `padding` from the inline-start edge when it does not. Scrolling stops at the ends of the axis, so a union that touches `range.start` or `range.end` sits at that edge. Unknown IDs throw an Error and a negative or non-finite padding throws a RangeError, synchronously; an empty set does nothing. The zoom factor scales the base scale linearly, so the fit is exact for a custom `scale`, including a non-linear one. With `zoomPresets` the active preset is kept and only the zoom factor changes, so the fit is limited to 65%–300% of the preset's scale. `zoom-change` is emitted when the factor changes. A union of milestones at one time keeps the zoom and is centred. Pointer gestures in progress are cancelled.
+
 ### Timeline editing helpers
 
 | Export | Purpose |
 | --- | --- |
+| removeTimelineBars(bars, dependencies, ids) | New `{ bars, dependencies }` arrays without the given bars and without every dependency whose `from` or `to` is one of them. Accepts any iterable of IDs and keeps the remaining items and their order. An unknown ID throws an Error |
 | dependencyTypeForEnds(fromEnd, toEnd) | Dependency type for a source and target TimelineBarEnd (start or finish) |
 | dependencyEndsForType(type = FS) | The bar ends a dependency type joins |
 | moveTimeRanges(ranges, delta, snap, bounds) | Move intervals by one snapped displacement, clamped so every interval stays in bounds |
