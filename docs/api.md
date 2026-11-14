@@ -209,6 +209,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | cascade | TimelineCascade / undefined | Follow-on changes of other bars for a move or resize, previewed during a drag and proposed with it as one batch; see the same section |
 | rowsReorderable, validateRowMove | boolean / false, RowMoveValidator / undefined | A move handle on each row heading proposes row hierarchy moves by pointer drag or Alt+arrow keys; see [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line) |
 | statusDate, showProgressLine | number / undefined, boolean / false | Draws a labelled status-date line and, with showProgressLine, a progress line; see the same section |
+| columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vft-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
 
 TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
@@ -218,7 +219,7 @@ Dependencies connect explicit endpoints. FS means source finish to target start;
 
 ### Editing contract
 
-select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep, tooltipDelay, createDuration or statusDate are invalid. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
+select(id) reports a bar activated by click or keyboard (Enter/Space). It fires once per click, on release, including after a drag. validation-error(error) fires when rows (including missing parents and hierarchy cycles), bars, dependencies, range, scale, pixelsPerUnit, snap, minDuration, rowHeight, laneCount, tickSteps, nonWorkingPeriods, progressStep, tooltipDelay, createDuration, statusDate, labelWidth, minColumnWidth or maxColumnWidth are invalid, or when a column uses the reserved ID `timelineLabelColumnId` while `columnsResizable` is set. The chart then renders its empty state instead of the invalid data, and the error is still rethrown inside the component so development builds surface it. A later valid update clears the state. edit(change) reports a proposal with the following shape.
 
 ```ts
 interface TimelineEdit {
@@ -259,6 +260,32 @@ The row slot also receives depth and expanded. The row index refers to the expan
 | showSummaries | Draw an aggregated interval on a parent row without an explicit bar. Collapse hides descendants and preserves the parent rollup. |
 
 Enter or blur submits a default editor and Escape discards the input. The chart-level readonly prop disables editing. Keep the sticky columns narrow enough to leave room for the timeline.
+
+### Column resizing
+
+Opt-in with `columnsResizable`. Without it and without `labelWidth`, the chart renders the same markup as before (server output is byte-identical), and pointer, keyboard, events and names are unchanged. Column widths stay controlled: the chart previews a drag and proposes the result, and the parent applies it.
+
+| API | Behavior |
+| --- | --- |
+| columnsResizable | `boolean`, default false. A separator (`vft-column-resize`, `role="separator"`, `aria-orientation="vertical"`, focusable) sits on the inline-end edge of the row label column and of each `columns` header. Its accessible name is `GanttLabels.resizeColumn` (default "Resize column") followed by the column label, or by `GanttLabels.rows` for the label column, for example "Resize column Owner". `aria-valuenow` is the current width in pixels, `aria-valuemin` and `aria-valuemax` the limits. Separators are also drawn when `readonly` is set, because widths are not data. |
+| labelWidth | `number` in pixels. Sets `--vft-row-label-width` on the chart canvas; without it the label column keeps the theme width (154 px, 106 px on narrow screens). Set it to accept a proposal for the label column. A value that is not finite and positive is reported through validation-error. |
+| minColumnWidth, maxColumnWidth | Limits of every proposal in pixels, defaults 48 and 800. `maxColumnWidth` must not be below `minColumnWidth`. Existing widths outside the limits are drawn as given. |
+| column-resize(change) | `TimelineColumnResize`: `id` (the `TimelineColumn.id`, or `timelineLabelColumnId`, `'$label'`, for the row label column), `before` and `after` widths in pixels (whole numbers within the limits) and `source` (`pointer` or `keyboard`). Accept it by setting that column's `width`, or `labelWidth` for the label column. An unchanged width is not proposed. |
+| validateColumnResize / column-resize-rejected(change, reason) | Synchronous `ColumnResizeValidator`. Accepts with true or undefined, rejects with false (default `GanttLabels.columnResizeRejected`, "This column resize was rejected.") or a reason string. The reason is announced in the live region. |
+
+**Keyboard.** On a focused separator, ArrowRight and ArrowLeft move the column edge 10 px on screen (40 px with Shift): in left-to-right charts ArrowRight widens the column, in right-to-left charts, where the edge is on the left, ArrowLeft widens it. Home proposes the minimum and End the maximum width.
+
+**Pointer.** Press the primary button (or touch) on a separator and drag horizontally. The column, the cells below it and the timeline follow the preview; the label width before the drag is the rendered one. Release proposes the previewed width with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a change of `columns`, `labelWidth`, the limits, `columnsResizable`, the direction or the other source props listed in the editing contract cancel the drag without a proposal.
+
+```ts
+import { timelineLabelColumnId, type TimelineColumn, type TimelineColumnResize } from 'vue-weave/core'
+
+const labelWidth = ref<number>()
+function onColumnResize(change: TimelineColumnResize) {
+  if (change.id === timelineLabelColumnId) labelWidth.value = change.after
+  else columns.value = columns.value.map(column => column.id === change.id ? { ...column, width: change.after } : column)
+}
+```
 
 ### Dependency editing
 
@@ -444,6 +471,8 @@ const wbs = computed(() => timelineWbsCodes(rows.value)) // for a WBS column
 | moveTimelineRow(rows, id, target) | New rows array in tree preorder with the row and its subtree moved under `target.parentId` (a root without it) at sibling `target.index`, counted without the moved row. The moved row is a new object; the others keep their identity. Unknown rows or parents and moves into the own subtree throw an Error; an index that is not an integer from 0 to the sibling count throws a RangeError |
 | indentTimelineRow(rows, id) / outdentTimelineRow(rows, id) | `moveTimelineRow` to the last child of the previous sibling, or to the next sibling after the parent. A first sibling cannot be indented and a root row cannot be outdented (Error) |
 | timelineCsvTable(rows, bars, options?) | A header and one record per bar for `toCsv`; see [Interchange exports](#interchange-exports) |
+| parseCsv(text, options?), timelineFromCsvTable(table, options) | Read CSV text and turn a `timelineCsvTable` layout back into rows and bars; see [Interchange exports](#interchange-exports) |
+| timelineLabelColumnId | `'$label'`, the `TimelineColumnResize.id` of the row label column; see [Column resizing](#column-resizing) |
 
 `assignLanes(bars, options: AssignLanesOptions = {})` treats bars as half-open intervals, so touching bars share a lane; a milestone at `t` conflicts with every bar of its row that contains `t` (`start <= t < end`) and with milestones at `t`. By default lanes are assigned first-fit in start order, ties in input order, which uses the fewest lanes possible; input lanes are ignored. With `keepLanes: true` the bars are placed in input order: each keeps its `lane` (default 0) when no bar placed before it conflicts with it in that lane, and only a conflicting bar moves to the lowest free lane. This keeps lanes stable while an application adds or moves bars. `laneCount` is the largest number of lanes of any row and at least 1, and `rowLaneCounts` is a `Map` from each row ID that has bars to its highest lane plus one. Non-finite or inverted intervals and lanes that are not nonnegative integers throw a RangeError; the input is not modified.
 
@@ -481,6 +510,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | rescheduleFromStatusDate(input, statusDate, progress) | Reschedule a plan at a status date from reported progress: done tasks keep their dates, partly done tasks keep their done work and continue at or after the status date, and unstarted tasks start no earlier than it. Returns a `ScheduleResult`; see [Reschedule from a status date](scheduling.md#reschedule-from-a-status-date) |
 | scheduleToGraph(result, dependencies, options?) | A PERT network diagram for NetworkGraph from a successful schedule; see [Network diagram from a schedule](#network-diagram-from-a-schedule) |
 | toMsProjectXml(project, options?), toICalendar(events, options?), toCsv(table) | Interchange documents as strings; see [Interchange exports](#interchange-exports) |
+| parseCsv(text, options?), timelineFromCsvTable(table, options) | CSV import: records of strings, then `{ rows, bars }`; see [Interchange exports](#interchange-exports) |
 | calculateResourceLoad(range, tasks, resources, assignments) | Compare scheduled work with capacity over half-open intervals |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
 | graphDeletion(nodes, edges, nodeIds, edgeIds = []) | Normalized GraphDeletion: validates the graph, throws Error for unknown IDs, adds every edge incident to a deleted node and returns both lists deduplicated in input order |
@@ -641,7 +671,7 @@ Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, 
 
 ### Interchange exports
 
-The core entry builds three interchange formats as strings, without a DOM or dependencies. Save them with a `Blob` (`application/xml`, `text/calendar` or `text/csv`) or send them from a server.
+The core entry builds three interchange formats as strings, and reads CSV back, without a DOM or dependencies. Save them with a `Blob` (`application/xml`, `text/calendar` or `text/csv`) or send them from a server.
 
 | Export | Behavior |
 | --- | --- |
@@ -649,6 +679,8 @@ The core entry builds three interchange formats as strings, without a DOM or dep
 | toICalendar(events, options?) | RFC 5545 text with one VEVENT per `ICalendarEvent` (`id`, `summary`, `start`, `end`, optional `description`). `ICalendarOptions`: `productId` (default `-//vue-weave//Timeline export//EN`), `calendarName` (NAME and X-WR-CALNAME) and `timestamp`, the DTSTAMP of every event (default `Date.now()`; pass it for reproducible output) |
 | toCsv(table) | RFC 4180 text from rows of `CsvCell` (`string`, finite `number` or `undefined` for an empty field) |
 | timelineCsvTable(rows, bars, options?) | `CsvCell[][]`: a header and one record per bar, ordered by row in tree preorder and then by bar order. `TimelineCsvOptions`: `formatTime` (default ISO 8601 UTC), `columns` (`TimelineCsvColumn[]`, any of `row`, `wbs`, `bar`, `start`, `end`, `progress`; default all, in that order) and `headers` (defaults Row, WBS, Bar, Start, End, Progress). Progress is written from 0 to 1 and is empty without progress |
+| parseCsv(text, options?) | `string[][]` from RFC 4180 text, the inverse of `toCsv`. `CsvParseOptions.delimiter` is one character other than a double quote, CR or LF (default `,`) |
+| timelineFromCsvTable(table, options) | `TimelineCsvImport` (`{ rows, bars }`) from a table in the `timelineCsvTable` layout, for example the result of `parseCsv`. `TimelineCsvImportOptions`: `parseTime(text)` (required; return NaN for text that is not a time), `columns` (the `TimelineCsvColumn` of each field in order, `undefined` to skip one; the first record is still a header) and `headers` (the header texts to look for without `columns`; defaults as for export) |
 
 **MSPDI.** Tasks get `UID` and `ID` from 1 in input order and are written as manually scheduled tasks (`Manual` 1, with `ManualStart`, `ManualFinish` and `ManualDuration`), so Microsoft Project keeps their dates instead of rescheduling them on its default calendar. Each task has `Name`, `Start`, `Finish`, `Duration` (the elapsed span as `PT#H#M#S`; 0 for milestones), `OutlineLevel`, `OutlineNumber` and `WBS` (both derived from the outline levels), `Milestone` (set for `milestone: true` and for `start === end`), `Summary` (set when the next task is one level deeper) and `PercentComplete` (rounded). Dependencies become `PredecessorLink` elements on the successor with `PredecessorUID`, `Type` (FF 0, FS 1, SF 2, SS 3), `LinkLag` in tenths of a minute and `LagFormat` 4 (elapsed minutes). The project carries `Name`, `Title`, `ScheduleFromStart` and the earliest start and latest finish as `StartDate` and `FinishDate`. Dates are local times without an offset suffix, as MSPDI expects. Not exported: calendars, resources, assignments, baselines, constraints, notes, custom fields and the input task IDs. Text is escaped with `escapeXml`. Empty or duplicate task IDs, unknown dependency ends and unknown types throw an Error; non-finite or inverted dates, an outline level that is not an integer from 1 or that grows by more than one from the previous task, a percent complete outside 0 to 100 and a non-finite lag throw a RangeError.
 
@@ -656,12 +688,19 @@ The core entry builds three interchange formats as strings, without a DOM or dep
 
 **CSV.** Fields that contain a comma, a double quote, CR or LF are quoted, with inner quotes doubled; every record ends with CRLF. A non-finite number throws a RangeError. Formulas are not neutralized: when untrusted text is opened in a spreadsheet, prefix cells that start with `=`, `+`, `-` or `@` yourself.
 
+**CSV import.** `parseCsv` accepts CRLF, LF and lone CR line ends, an optional final line break and a leading byte order mark, which it removes. A quoted field can contain the delimiter, line breaks and doubled quotes; a quote inside an unquoted field is kept as text. Every field is a string, an empty line is a record with one empty field and empty text has no records. An unterminated quoted field and text after a closing quote throw an Error with the line and column, for example `Unterminated quoted CSV field starting at line 2, column 3`.
+
+`timelineFromCsvTable` finds its columns by header text, ignoring case and surrounding spaces, or takes them from `columns`; other columns are ignored. It needs `bar`, `start` and `end` and either `row` or `wbs`. With WBS codes, each code is a row with the ID `row-<code>` (for example `row-1.2`), its `row` cell as label and the row of the shorter code as parent; a parent code without a record of its own becomes a row labelled with its code, and rows are returned in tree preorder by code. Without WBS codes, each distinct row label is a top-level row `row-1`, `row-2`, … in order of appearance. Bars are `bar-1`, `bar-2`, … in record order with the label, the parsed `start` and `end` and, when the cell is not empty, `progress`. Rows without bars are not in a `timelineCsvTable` export, so they are not restored, and WBS codes are renumbered by `timelineWbsCodes` after such a gap. Records whose fields are all empty are skipped. Missing or repeated columns throw an Error; an invalid WBS code throws an Error and an unreadable time, an end before the start and a progress that is not a number from 0 to 1 throw a RangeError, each naming the CSV line (the one-based record number, with the header as line 1). Add application fields such as `editable` to the returned bars yourself.
+
 ```ts
-import { timelineCsvTable, toCsv, toICalendar, toMsProjectXml } from 'vue-weave/core'
+import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv, toICalendar, toMsProjectXml } from 'vue-weave/core'
 
 const csv = toCsv(timelineCsvTable(rows, bars, { formatTime }))
 const ics = toICalendar(bars.map(bar => ({ id: bar.id + '@example.com', summary: bar.label, start: bar.start, end: bar.end })))
 const xml = toMsProjectXml({ name: 'Plan', tasks: bars.map(bar => ({ id: bar.id, name: bar.label, start: bar.start, end: bar.end })) })
+
+// Import: the reverse of the CSV export above.
+const imported = timelineFromCsvTable(parseCsv(await file.text()), { parseTime: text => Date.parse(text) })
 ```
 
 ### Network diagram from a schedule
