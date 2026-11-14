@@ -294,3 +294,223 @@ export function timelineCsvTable(
   }
   return table
 }
+
+export interface CsvParseOptions {
+  /** Field separator: one character other than a double quote, CR or LF. Default `,`. */
+  delimiter?: string
+}
+
+/**
+ * Parse RFC 4180 CSV text into records of fields, the inverse of `toCsv`. Records end with CRLF, LF or a lone CR, and a
+ * final line break is optional. Fields enclosed in double quotes can contain the delimiter, line breaks and doubled
+ * quotes (`""` is one quote). A quote inside an unquoted field is kept as text. A leading byte order mark is removed.
+ * Every field is a string; an empty line is a record with one empty field, and empty text has no records.
+ *
+ * Throws an Error with the line and column for an unterminated quoted field or text after a closing quote, and an
+ * Error for an invalid delimiter.
+ */
+export function parseCsv(text: string, options: CsvParseOptions = {}): string[][] {
+  const delimiter = options.delimiter ?? ','
+  if (typeof delimiter !== 'string' || delimiter.length !== 1 || delimiter === '"' || delimiter === '\r' || delimiter === '\n') {
+    throw new Error('The CSV delimiter must be one character other than a double quote, CR or LF')
+  }
+  const source = String(text)
+  const input = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source
+  const records: string[][] = []
+  if (!input) return records
+  let record: string[] = []
+  let field = ''
+  let index = 0, line = 1, lineStart = 0
+  const length = input.length
+  while (index < length) {
+    const fieldStart = index
+    if (input[index] === '"') {
+      // A quoted field runs to the next quote that is not doubled.
+      const openLine = line, openColumn = index - lineStart + 1
+      index++
+      for (;;) {
+        if (index >= length) throw new Error(`Unterminated quoted CSV field starting at line ${openLine}, column ${openColumn}`)
+        const char = input[index]!
+        if (char === '"') {
+          if (input[index + 1] === '"') {
+            field += '"'
+            index += 2
+            continue
+          }
+          index++
+          break
+        }
+        if (char === '\r' || char === '\n') {
+          if (char === '\r' && input[index + 1] === '\n') {
+            field += '\r'
+            index++
+          }
+          field += input[index]!
+          index++
+          line++
+          lineStart = index
+          continue
+        }
+        field += char
+        index++
+      }
+      const next = input[index]
+      if (next !== undefined && next !== delimiter && next !== '\r' && next !== '\n') {
+        throw new Error(`Unexpected text after a closing quote at line ${line}, column ${index - lineStart + 1}`)
+      }
+    } else {
+      while (index < length) {
+        const char = input[index]!
+        if (char === delimiter || char === '\r' || char === '\n') break
+        index++
+      }
+      field = input.slice(fieldStart, index)
+    }
+    record.push(field)
+    field = ''
+    const char = input[index]
+    if (char === delimiter) {
+      index++
+      // A delimiter at the end of a line or of the text leaves an empty last field.
+      const after = input[index]
+      if (after === undefined || after === '\r' || after === '\n') record.push('')
+    }
+    if (input[index] === '\r' || input[index] === '\n') {
+      index += input[index] === '\r' && input[index + 1] === '\n' ? 2 : 1
+      line++
+      lineStart = index
+      records.push(record)
+      record = []
+    }
+  }
+  if (record.length) records.push(record)
+  return records
+}
+
+export interface TimelineCsvImportOptions {
+  /** Read a start or end cell as a time; return NaN for text that is not a time. */
+  parseTime: (text: string) => number
+  /**
+   * The column of each field, in order, as `timelineCsvTable` wrote them. The first record is a header and is
+   * skipped. Default: the columns are found by matching the header record against `headers`, ignoring case and
+   * surrounding white space, and fields under other headers are ignored.
+   */
+  columns?: readonly (TimelineCsvColumn | undefined)[]
+  /** Header texts to look for without `columns`. Defaults: Row, WBS, Bar, Start, End, Progress. */
+  headers?: Partial<Record<TimelineCsvColumn, string>>
+}
+
+export interface TimelineCsvImport {
+  rows: TimelineRow[]
+  bars: TimelineBar[]
+}
+
+const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
+
+/**
+ * Read a table written by `timelineCsvTable` (for example from `parseCsv`) back into rows and bars. The table needs a
+ * `bar`, `start` and `end` column and a `row` or `wbs` column; `progress` is optional.
+ *
+ * With a WBS column, each distinct code is a row with the ID `row-<code>`, the label of its `row` cell (or the code
+ * when there is none) and the row of the code without its last part as parent. A parent code that has no record of its
+ * own becomes a row labelled with its code. Without a WBS column, each distinct row label is a top-level row with the
+ * ID `row-1`, `row-2`, … in order of appearance. Rows are returned in tree preorder; sibling order follows the WBS
+ * numbers, or the order of appearance without WBS codes. Bars get the IDs `bar-1`, `bar-2`, … in record order, the
+ * label of their `bar` cell, the parsed start and end and, when the progress cell is not empty, the progress from 0
+ * to 1. Records whose fields are all empty are skipped.
+ *
+ * Throws an Error for missing or repeated columns and an Error naming the line (the one-based record number, with the
+ * header on line 1) for an invalid WBS code, a time that `parseTime` cannot read, an end before the start and a
+ * progress that is not a number from 0 to 1.
+ */
+export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], options: TimelineCsvImportOptions): TimelineCsvImport {
+  if (typeof options?.parseTime !== 'function') throw new Error('timelineFromCsvTable needs a parseTime function')
+  const [header, ...records] = table
+  if (!header) throw new Error('The CSV table has no header record')
+  const position = new Map<TimelineCsvColumn, number>()
+  if (options.columns) {
+    options.columns.forEach((column, index) => {
+      if (column === undefined) return
+      if (!(column in csvHeaders)) throw new Error('Unknown CSV column: ' + column)
+      if (position.has(column)) throw new Error('Repeated CSV column: ' + column)
+      position.set(column, index)
+    })
+  } else {
+    const wanted = new Map<string, TimelineCsvColumn>()
+    for (const column of Object.keys(csvHeaders) as TimelineCsvColumn[]) {
+      wanted.set((options.headers?.[column] ?? csvHeaders[column]).trim().toLowerCase(), column)
+    }
+    header.forEach((cell, index) => {
+      const column = wanted.get(String(cell ?? '').trim().toLowerCase())
+      if (column === undefined) return
+      if (position.has(column)) throw new Error('Repeated CSV column: ' + column)
+      position.set(column, index)
+    })
+  }
+  for (const column of ['bar', 'start', 'end'] as const) {
+    if (!position.has(column)) throw new Error('The CSV table has no ' + (options.headers?.[column] ?? csvHeaders[column]) + ' column')
+  }
+  if (!position.has('row') && !position.has('wbs')) throw new Error('The CSV table needs a Row or WBS column')
+  const text = (record: readonly CsvCell[], column: TimelineCsvColumn) => {
+    const index = position.get(column)
+    const cell = index === undefined ? undefined : record[index]
+    return cell === undefined ? '' : String(cell)
+  }
+  // Rows by WBS code (or by label without codes), in order of appearance.
+  const found = new Map<string, { id: string; label?: string; code?: string }>()
+  const bars: TimelineBar[] = []
+  records.forEach((record, offset) => {
+    const line = offset + 2
+    if (record.every(cell => cell === undefined || String(cell) === '')) return
+    const label = text(record, 'row')
+    let key: string
+    if (position.has('wbs')) {
+      const code = text(record, 'wbs').trim()
+      if (!wbsPattern.test(code)) throw new Error(`Invalid WBS code on CSV line ${line}: ${code || '(empty)'}`)
+      // Ancestors first, so a parent without records of its own still exists.
+      const parts = code.split('.')
+      for (let depth = 1; depth <= parts.length; depth++) {
+        const prefix = parts.slice(0, depth).join('.')
+        if (!found.has(prefix)) found.set(prefix, { id: 'row-' + prefix, code: prefix })
+      }
+      key = code
+      const row = found.get(code)!
+      if (position.has('row') && row.label === undefined) row.label = label
+    } else {
+      key = label
+      if (!found.has(key)) found.set(key, { id: 'row-' + (found.size + 1), label })
+    }
+    const startText = text(record, 'start'), endText = text(record, 'end')
+    const start = options.parseTime(startText), end = options.parseTime(endText)
+    if (typeof start !== 'number' || !Number.isFinite(start)) throw new RangeError(`Invalid start time on CSV line ${line}: ${startText}`)
+    if (typeof end !== 'number' || !Number.isFinite(end)) throw new RangeError(`Invalid end time on CSV line ${line}: ${endText}`)
+    if (end < start) throw new RangeError(`The bar on CSV line ${line} ends before it starts`)
+    const bar: TimelineBar = { id: 'bar-' + (bars.length + 1), rowId: found.get(key)!.id, label: text(record, 'bar'), start, end }
+    const progressText = text(record, 'progress').trim()
+    if (progressText) {
+      const progress = Number(progressText)
+      if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+        throw new RangeError(`Progress must be a number from 0 to 1 on CSV line ${line}: ${progressText}`)
+      }
+      bar.progress = progress
+    }
+    bars.push(bar)
+  })
+  const entries = [...found.values()]
+  if (position.has('wbs')) {
+    // Tree preorder: compare codes part by part as numbers.
+    const parts = (code: string) => code.split('.').map(Number)
+    entries.sort((a, b) => {
+      const x = parts(a.code!), y = parts(b.code!)
+      for (let index = 0; index < Math.min(x.length, y.length); index++) if (x[index] !== y[index]) return x[index]! - y[index]!
+      return x.length - y.length
+    })
+  }
+  const rows = entries.map(entry => {
+    const row: TimelineRow = { id: entry.id, label: entry.label ?? entry.code ?? '' }
+    const cut = entry.code?.lastIndexOf('.') ?? -1
+    if (cut > 0) row.parentId = 'row-' + entry.code!.slice(0, cut)
+    return row
+  })
+  return { rows, bars }
+}
