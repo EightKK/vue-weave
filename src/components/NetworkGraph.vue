@@ -16,77 +16,147 @@ import { renderGraphSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
+  /** Nodes to draw. Each has an ID, label, optional detail, tone, shape and opaque data. Required. */
   nodes: readonly NetworkNode[]
+  /** Edges between nodes. Each has an ID, `from` and `to` node IDs, and optional label, port names (`fromPort`, `toPort`), waypoints (`points`) and data. Required. */
   edges: readonly GraphEdge[]
+  /** Controlled selected node ID; supports `v-model:selected-id`. */
   selectedId?: string
+  /** Controlled set of selected node IDs for multiple selection. Ctrl, Meta or Shift toggles membership; a plain selection replaces the set. */
   selectedIds?: ReadonlySet<string>
+  /** Saved node positions as a map of node ID to absolute chart point, applied over the layout. Positions must be finite and nonnegative. */
   positions?: ReadonlyMap<string, GraphPoint>
+  /** Enables dragging and arrow-key movement of nodes, proposed through `node-move` and `nodes-move`. Opt-in. Default: false. */
   draggable?: boolean
+  /** Shows connection handles on nodes so a drag or two activations propose an edge through `connect`. Opt-in. Default: false. */
   connectable?: boolean
+  /** Lets a selected edge endpoint be dragged to another node or port, proposed through `reconnect`. Opt-in. Default: false. */
   reconnectable?: boolean
+  /** Enables Shift-drag box selection on the canvas; use with controlled `selectedIds`. Opt-in. Default: false. */
   boxSelect?: boolean
+  /** Groups with an ID, label, direct member `nodeIds` and optional `parentId`. Their bounds follow the member nodes. */
   groups?: readonly NetworkGroup[]
+  /** Synchronous check of a connection proposal; receives the existing edge ID when reconnecting. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
+  /** Shows an overview minimap of the graph and viewport. Opt-in. Default: false. */
   showMinimap?: boolean
+  /** IDs of nodes to emphasize, together with the edges that join two of them. */
   relatedIds?: ReadonlySet<string>
+  /** Configuration of the built-in layered layout: direction, node size, gaps, padding and crossing reduction. Defaults: direction LR, 144 x 58 nodes, column gap 50, row gap 24, padding 20. */
   options?: GraphLayeredLayoutOptions
+  /** Custom layout function that replaces the built-in layout. It must return positive finite dimensions plus a box for every node and a path for every edge. */
   layout?: GraphLayoutFunction
+  /** Overrides for the English UI strings and accessible names; fields you omit keep their defaults. */
   labels?: Partial<GraphLabels>
+  /** Height of the SVG viewport, as a number of pixels or a CSS length. Default: 220px. */
   height?: number | string
+  /** Shows the zoom and fit buttons. Default: true. */
   showControls?: boolean
+  /** Renders only elements that intersect the viewport plus `cullOverscan`, for large graphs. Opt-in. Default: false. */
   cullOffscreen?: boolean
+  /** Margin in screen pixels around the viewport that stays rendered when culling. Default: 200. */
   cullOverscan?: number
+  /** IDs of matching nodes; nodes outside the set are dimmed. An empty set dims every node. Presentation only. */
   matchIds?: ReadonlySet<string>
+  /** IDs of nodes to dim explicitly; combines with `matchIds`. Presentation only. */
   dimmedIds?: ReadonlySet<string>
+  /** Text direction: `ltr`, `rtl` or `auto`. Mirrors the zoom tools, minimap and label alignment, not the graph geometry. Default: `ltr`. */
   dir?: ChartDirection
+  /** Gives every edge a focusable hit area so it can be selected by click, Enter or Space. Opt-in. Default: false. */
   edgesSelectable?: boolean
+  /** Controlled set of selected edge IDs; supports `v-model:selected-edge-ids`. Unknown IDs are ignored. */
   selectedEdgeIds?: ReadonlySet<string>
+  /** Lets Delete or Backspace propose removing the selected or focused nodes and edges through `delete`. Opt-in. Default: false. */
   deletable?: boolean
+  /** Synchronous check of a deletion proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateDelete?: (deletion: GraphDeletion) => boolean | string | void
+  /** Reports context menu requests through `context-menu` instead of opening the browser menu. The component renders no menu. Opt-in. Default: false. */
   contextMenu?: boolean
+  /** Hover delay in milliseconds before the `tooltip` slot appears; finite and nonnegative. Default: 400. */
   tooltipDelay?: number
+  /** Grid size in chart units, positive and finite. Drags, keyboard moves, drops and pastes snap to it. */
   snapGrid?: number
+  /** Decorative background pattern that follows pan and zoom: `none`, `dots` or `lines`. Default: `none`. */
   background?: 'none' | 'dots' | 'lines'
+  /** Spacing of the background pattern in chart units; positive and finite. Default: `snapGrid`, else 20. */
   backgroundGap?: number
+  /** Snaps a dragged node to edges and centres of other nodes and draws guide lines during a pointer drag. Opt-in. Default: false. */
   alignmentGuides?: boolean
+  /** Snap distance of the alignment guides in screen pixels; finite and nonnegative. Default: 6. */
   guideThreshold?: number
+  /** Pans the camera while a drag or box selection is held within 40 screen pixels of the stage edge. Opt-in. Default: false. */
   autoPan?: boolean
+  /** Accepts HTML drag and drop on the stage and emits `node-drop`. Opt-in. Default: false. */
   droppable?: boolean
+  /** Ctrl or Cmd with C, V and D emit `copy-selection`, `paste-request` and `duplicate-selection`. Opt-in. Default: false. */
   clipboard?: boolean
+  /** Draws collapse and expand toggles on groups. Without `collapsedGroupIds`, the component keeps the collapsed set itself. Opt-in. Default: false. */
   collapsibleGroups?: boolean
+  /** Controlled set of collapsed group IDs; supports `v-model:collapsed-group-ids`. Unknown IDs are ignored. */
   collapsedGroupIds?: ReadonlySet<string>
+  /** Edge routing style: `curve`, `orthogonal` or `straight`. Default: `curve`. */
   edgeStyle?: GraphEdgeStyle
+  /** Gives edges a focusable hit area and shows waypoint handles on the selected edge, proposed through `edge-reshape`. Opt-in. Default: false. */
   editableEdges?: boolean
+  /** Synchronous check of a waypoint change proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateEdgeReshape?: (change: GraphEdgeReshape) => boolean | string | void
+  /** Camera scale below which node detail text and edge labels are hidden; greater than 0 and at most 3. */
   lodThreshold?: number
+  /** Node sizes as a map of node ID to width and height, applied over the layout boxes and keeping each top-left corner. Sizes must be finite and positive; unknown IDs are ignored. */
   sizes?: ReadonlyMap<string, GraphNodeSize>
+  /** Shows corner resize handles on the single selected node, proposed through `node-resize`. Opt-in. Default: false. */
   resizable?: boolean
+  /** Smallest width and height a resize may propose. Default: `{ width: 40, height: 24 }`. */
   minNodeSize?: GraphNodeSize
+  /** Synchronous check of a node resize proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateNodeResize?: (change: GraphNodeResize) => boolean | string | void
 }>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
+  /** A node was selected by click or Enter/Space; carries its ID. */
   select: [id: string]
+  /** The selected node ID changed; supports `v-model:selected-id`. */
   'update:selectedId': [id: string]
+  /** The set of selected node IDs changed; supports `v-model:selected-ids`. */
   'update:selectedIds': [ids: Set<string>]
+  /** Proposal to move one node; carries `id`, `before` and `after`. The parent updates `positions` to accept. */
   'node-move': [change: GraphNodeMove]
+  /** Proposal to move several nodes at once; carries one change per node. The parent updates `positions` to accept. */
   'nodes-move': [changes: GraphNodeMove[]]
+  /** Proposal to move an edge endpoint; carries the ID plus `before` and `after`. The parent replaces the edge. */
   reconnect: [change: GraphReconnect]
+  /** Proposal to add an edge; carries `from` and `to`. The parent assigns an ID and adds it. */
   connect: [connection: GraphConnection]
+  /** A connection or reconnection was rejected by `validateConnection`; carries the proposal and the reason. */
   'connect-rejected': [connection: GraphConnection, reason: string]
+  /** The camera changed through pan, zoom, fit or auto-pan; carries `{ x, y, scale }`. */
   'viewport-change': [viewport: GraphViewport]
+  /** The set of selected edge IDs changed; supports `v-model:selected-edge-ids`. */
   'update:selectedEdgeIds': [ids: Set<string>]
+  /** An edge was activated, including a toggle that deselects it; carries its ID. */
   'edge-select': [id: string]
+  /** Proposal to remove nodes and edges; carries `nodeIds` and `edgeIds`. The parent removes them to accept. */
   delete: [deletion: GraphDeletion]
+  /** A deletion was rejected by `validateDelete`; carries the proposal and the reason. */
   'delete-rejected': [deletion: GraphDeletion, reason: string]
+  /** A context menu was requested by pointer or keyboard; carries the target, position and source. Only with `contextMenu`. */
   'context-menu': [event: GraphContextMenu]
+  /** Something was dropped on the stage; carries the chart point, client position and `dataTransfer`. Only with `droppable`. */
   'node-drop': [event: GraphDrop]
+  /** Copy was requested; carries the selected node and edge IDs and node positions. The component keeps no clipboard. Only with `clipboard`. */
   'copy-selection': [selection: GraphClipboardSelection]
+  /** Paste was requested; carries the target point. The parent builds and adds the copies. Only with `clipboard`. */
   'paste-request': [event: GraphPaste]
+  /** Duplicate was requested; carries the selected node and edge IDs and node positions. Only with `clipboard`. */
   'duplicate-selection': [selection: GraphClipboardSelection]
+  /** The set of collapsed group IDs changed; supports `v-model:collapsed-group-ids`. */
   'update:collapsedGroupIds': [ids: Set<string>]
+  /** Proposal to change an edge's waypoints; carries the ID plus `before` and `after` lists. The parent sets the edge `points`. */
   'edge-reshape': [change: GraphEdgeReshape]
+  /** A waypoint change was rejected by `validateEdgeReshape`; carries the proposal and the reason. */
   'edge-reshape-rejected': [change: GraphEdgeReshape, reason: string]
+  /** Proposal to resize a node; carries `id` plus `before` and `after` boxes. The parent updates `sizes` and, if the origin moved, `positions`. */
   'node-resize': [change: GraphNodeResize]
+  /** A node resize was rejected by `validateNodeResize`; carries the proposal and the reason. */
   'node-resize-rejected': [change: GraphNodeResize, reason: string]
 }>()
 const slots = defineSlots<{
@@ -826,8 +896,8 @@ function finishConnection(event: PointerEvent) {
     return
   }
   skipHandleClick = true
-  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-vft-port]')
-  const key = element && svg.value?.contains(element) ? element.getAttribute('data-vft-port') : null
+  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-vw-port]')
+  const key = element && svg.value?.contains(element) ? element.getAttribute('data-vw-port') : null
   const index = key === null ? undefined : handleIndex.value.get(key)
   if (index !== undefined) completeConnection(handles.value[index]!)
   else draft.value = undefined
@@ -1031,7 +1101,7 @@ function toggleGroup(toggle: GroupToggle) {
   emit('update:collapsedGroupIds', next)
   // The toggle is replaced by the toggle of the proxy or of the expanded group; keep keyboard focus on it.
   void nextTick(() => {
-    const element = [...root.value?.querySelectorAll<SVGElement>('[data-vft-toggle]') ?? []].find(item => item.getAttribute('data-vft-toggle') === toggle.id)
+    const element = [...root.value?.querySelectorAll<SVGElement>('[data-vw-toggle]') ?? []].find(item => item.getAttribute('data-vw-toggle') === toggle.id)
     element?.focus({ preventScroll: true })
   })
 }
@@ -1088,7 +1158,7 @@ function proposeReshape(edge: GraphEdge, after: GraphPoint[]) {
   emit('edge-reshape', change)
 }
 function focusEdge(id: string) {
-  const hit = [...svg.value?.querySelectorAll<SVGElement>('.vft-edge-hit') ?? []].find(item => item.getAttribute('data-vft-edge') === id)
+  const hit = [...svg.value?.querySelectorAll<SVGElement>('.vw-edge-hit') ?? []].find(item => item.getAttribute('data-vw-edge') === id)
   ;(hit ?? svg.value)?.focus({ preventScroll: true })
 }
 function waypointKeys(event: KeyboardEvent, handle: WaypointHandle) {
@@ -1271,11 +1341,11 @@ function edgeIsDimmed(edge: GraphEdge) {
 const focused = ref<{ node?: string; edge?: string; group?: string }>()
 function trackFocus(event: FocusEvent) {
   if (!props.cullOffscreen || !(event.target instanceof Element)) return
-  const element = event.target.closest('[data-vft-node],[data-vft-edge],[data-vft-group]')
+  const element = event.target.closest('[data-vw-node],[data-vw-edge],[data-vw-group]')
   focused.value = element ? {
-    node: element.getAttribute('data-vft-node') ?? undefined,
-    edge: element.getAttribute('data-vft-edge') ?? undefined,
-    group: element.getAttribute('data-vft-group') ?? undefined,
+    node: element.getAttribute('data-vw-node') ?? undefined,
+    edge: element.getAttribute('data-vw-edge') ?? undefined,
+    group: element.getAttribute('data-vw-group') ?? undefined,
   } : undefined
 }
 function releaseFocus(event: FocusEvent) {
@@ -1387,7 +1457,7 @@ function edgeIsRelated(edge: GraphEdge) {
 
 // The node or edge an element in the stage stands for. Connection handles carry their node ID but are not nodes.
 function elementNode(element: Element) {
-  return element.hasAttribute('data-vft-port') ? null : element.getAttribute('data-vft-node')
+  return element.hasAttribute('data-vw-port') ? null : element.getAttribute('data-vw-node')
 }
 function gestureInFlight() {
   return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan || draft.value)
@@ -1395,7 +1465,7 @@ function gestureInFlight() {
 // The stage itself or one of its own nodes, edges, group labels and handles. Keys pressed in focusable slot content,
 // such as an input in a custom node, keep their usual meaning.
 function stageControl(element: EventTarget | null): element is Element {
-  return element instanceof Element && (element === svg.value || element.matches('[data-vft-node],[data-vft-edge],[data-vft-group]'))
+  return element instanceof Element && (element === svg.value || element.matches('[data-vw-node],[data-vw-edge],[data-vw-group]'))
 }
 function editable(element: EventTarget | null) {
   return element instanceof Element && element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !== null
@@ -1403,7 +1473,7 @@ function editable(element: EventTarget | null) {
 
 // Delete proposals. A focused node or edge outside the selection is deleted alone; otherwise the selection is.
 function deletionFor(element: Element): GraphDeletion | undefined {
-  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vft-edge')
+  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vw-edge')
   let nodeIds: string[], edgeIds: string[]
   if (nodeId !== null && !isSelected(nodeId)) [nodeIds, edgeIds] = [[nodeId], []]
   else if (edgeId !== null && !(props.edgesSelectable && edgeSelected(edgeId))) [nodeIds, edgeIds] = [[], [edgeId]]
@@ -1444,13 +1514,13 @@ function deleteWithKeys(event: KeyboardEvent) {
 // Context menu requests. The component only reports them; the application renders its own menu.
 let keyboardMenuAt = -Infinity
 function menuTarget(element: Element | null): GraphContextMenuTarget {
-  const owner = element?.closest('[data-vft-node],[data-vft-edge],[data-vft-group]')
+  const owner = element?.closest('[data-vw-node],[data-vw-edge],[data-vw-group]')
   if (!owner || !svg.value?.contains(owner)) return { kind: 'canvas' }
-  const node = owner.getAttribute('data-vft-node')
+  const node = owner.getAttribute('data-vw-node')
   if (node !== null) return { kind: 'node', id: node }
-  const edge = owner.getAttribute('data-vft-edge')
+  const edge = owner.getAttribute('data-vw-edge')
   if (edge !== null) return { kind: 'edge', id: edge }
-  return { kind: 'group', id: owner.getAttribute('data-vft-group')! }
+  return { kind: 'group', id: owner.getAttribute('data-vw-group')! }
 }
 function requestContextMenu(target: GraphContextMenuTarget, clientX: number, clientY: number, source: GraphContextMenu['source']) {
   cancelInteraction()
@@ -1514,7 +1584,7 @@ function forgetPointer() {
   hoverPointer = undefined
 }
 function clipboardSelection(element: Element): GraphClipboardSelection | undefined {
-  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vft-edge')
+  const nodeId = elementNode(element), edgeId = element.getAttribute('data-vw-edge')
   let nodes: Set<string>, edges: Set<string>
   // Like deletion, a focused node or edge outside the selection stands alone.
   if (nodeId !== null && !isSelected(nodeId)) [nodes, edges] = [new Set([nodeId]), new Set()]
@@ -1663,7 +1733,7 @@ function pressStage(event: PointerEvent) {
 }
 function focusTooltip(event: FocusEvent) {
   if (!slots.tooltip || !(event.target instanceof Element) || tooltipBlocked.value || pressing) return
-  const node = elementNode(event.target), edge = event.target.getAttribute('data-vft-edge')
+  const node = elementNode(event.target), edge = event.target.getAttribute('data-vw-edge')
   // Keyboard focus shows the tooltip at once; a pointer press is covered by hover.
   if ((node === null && edge === null) || !focusVisible(event.target)) return
   clearTooltipTimers()
@@ -1754,7 +1824,7 @@ function exportSvg(options: GraphExportOptions = {}) {
   const { includeSelection = true, theme, ...rest } = options
   const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
   return renderGraphSvg(layout.value, viewNodes.value, viewEdges.value, {
-    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    idPrefix: 'vw-export-' + marker.replace(/[^\w-]/g, ''),
     ...rest,
     groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
     selectedIds: selection,
@@ -1804,9 +1874,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl, 'vft-network-patterned': pattern, 'vft-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
-      ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
+      ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
       @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
@@ -1826,37 +1896,37 @@ onUnmounted(() => {
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
         <!-- The optional background is the first item of the group list and each group element takes the first branch
           of its conditional, so the markup without a background is unchanged. -->
-        <g v-for="layer in layers" :key="layer.key" :class="layer.group ? 'vft-network-group' : 'vft-network-backdrop'"
+        <g v-for="layer in layers" :key="layer.key" :class="layer.group ? 'vw-network-group' : 'vw-network-backdrop'"
           :aria-hidden="layer.group ? undefined : 'true'">
           <rect v-if="layer.group" :x="layer.group.x" :y="layer.group.y" :width="layer.group.width" :height="layer.group.height" rx="10" />
           <pattern v-else-if="pattern" :id="patternId" patternUnits="userSpaceOnUse" :x="-pattern.cell / 2" :y="-pattern.cell / 2"
             :width="pattern.cell" :height="pattern.cell">
-            <circle v-if="background === 'dots'" class="vft-network-pattern" :cx="pattern.cell / 2" :cy="pattern.cell / 2" :r="pattern.dot" />
-            <path v-else class="vft-network-pattern" :stroke-width="pattern.dot"
+            <circle v-if="background === 'dots'" class="vw-network-pattern" :cx="pattern.cell / 2" :cy="pattern.cell / 2" :r="pattern.dot" />
+            <path v-else class="vw-network-pattern" :stroke-width="pattern.dot"
               :d="`M ${pattern.cell / 2} 0 V ${pattern.cell} M 0 ${pattern.cell / 2} H ${pattern.cell}`" />
           </pattern>
-          <text v-if="layer.group" :x="rtl ? layer.group.x + layer.group.width - 8 : layer.group.x + 8" :y="layer.group.y + 15" :role="draggable ? 'button' : undefined" :data-vft-group="layer.group.id"
+          <text v-if="layer.group" :x="rtl ? layer.group.x + layer.group.width - 8 : layer.group.x + 8" :y="layer.group.y + 15" :role="draggable ? 'button' : undefined" :data-vw-group="layer.group.id"
             :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(layer.group) : undefined"
             @pointerdown.stop="startNodeDrag($event, layer.group!.members)" @keydown="moveWithKeys($event, layer.group!.members)">{{ layer.group.label }}</text>
-          <rect v-else-if="pattern" class="vft-network-background" v-bind="pattern.area" :fill="`url(#${patternId})`" />
+          <rect v-else-if="pattern" class="vw-network-background" v-bind="pattern.area" :fill="`url(#${patternId})`" />
         </g>
-        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge), 'vft-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
-          :data-vft-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
+        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vw-dimmed': edgeIsDimmed(edge), 'vw-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
+          :data-vw-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
           <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)" :scale="camera.scale">
-            <path class="vft-network-edge" :class="{ related: edgeIsRelated(edge) }"
+            <path class="vw-network-edge" :class="{ related: edgeIsRelated(edge) }"
               :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
-            <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vft-edge-label"
+            <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vw-edge-label"
               :x="layout.edgeLabels.get(edge.id)!.x" :y="layout.edgeLabels.get(edge.id)!.y"
             >{{ edge.label }}</text>
           </slot>
-          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vft-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
+          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vw-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
             :d="layout.paths.get(edge.id)" role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)"
-            :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vft-edge="edge.id"
+            :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vw-edge="edge.id"
             @pointerdown.stop @click="selectEdge(edge.id, $event)" @keydown.enter.prevent="selectEdge(edge.id, $event)" @keydown.space.prevent="selectEdge(edge.id, $event)" />
         </g>
         <g
-          v-for="node in shownNodes" :key="node.id" class="vft-network-node" :data-vft-node="node.id"
-          :class="[`vft-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vft-dimmed': isDimmed(node.id) }]"
+          v-for="node in shownNodes" :key="node.id" class="vw-network-node" :data-vw-node="node.id"
+          :class="[`vw-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vw-dimmed': isDimmed(node.id) }]"
           :transform="`translate(${node.box.x} ${node.box.y})`"
           role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
           :aria-describedby="describedBy('node', node.id)" @pointerenter="hoverTooltip('node', node.id)" @pointerleave="leaveTooltip"
@@ -1868,45 +1938,45 @@ onUnmounted(() => {
           <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)" :scale="camera.scale">
           <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
           <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
-          <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
-          <text v-if="node.detail" :x="rtl ? node.box.width - 13 : 13" y="43" class="vft-node-detail">{{ node.detail }}</text>
+          <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vw-node-title">{{ node.label }}</text>
+          <text v-if="node.detail" :x="rtl ? node.box.width - 13 : 13" y="43" class="vw-node-detail">{{ node.detail }}</text>
           </svg>
           </slot>
         </g>
-        <path v-if="connectionPath && !overlay" class="vft-connection-preview" :d="connectionPath" />
+        <path v-if="connectionPath && !overlay" class="vw-connection-preview" :d="connectionPath" />
         <!-- Guides only appear during a node drag, never with a connection preview, so they share its conditional. -->
-        <g v-else-if="guideLines?.length && !overlay" class="vft-guides" aria-hidden="true">
-          <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vft-guide"
+        <g v-else-if="guideLines?.length && !overlay" class="vw-guides" aria-hidden="true">
+          <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vw-guide"
             :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
             :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
         </g>
         <!-- With collapsible groups, editable edges or resizable nodes, one overlay holds the previews and the handles,
           so the markup without those inputs is unchanged. -->
-        <g v-else-if="overlay" class="vft-network-overlay">
-          <path v-if="connectionPath" class="vft-connection-preview" :d="connectionPath" />
-          <g v-if="guideLines?.length" class="vft-guides" aria-hidden="true">
-            <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vft-guide"
+        <g v-else-if="overlay" class="vw-network-overlay">
+          <path v-if="connectionPath" class="vw-connection-preview" :d="connectionPath" />
+          <g v-if="guideLines?.length" class="vw-guides" aria-hidden="true">
+            <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vw-guide"
               :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
               :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
           </g>
-          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vft-group-toggle" :class="{ collapsed: !toggle.expanded }"
+          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ collapsed: !toggle.expanded }"
             :transform="`translate(${toggle.x} ${toggle.y})`" role="button" tabindex="0" :aria-label="toggle.label"
-            :aria-expanded="toggle.expanded" :data-vft-toggle="toggle.id"
+            :aria-expanded="toggle.expanded" :data-vw-toggle="toggle.id"
             @pointerdown.stop @click.stop="toggleGroup(toggle)" @keydown.enter.stop.prevent="toggleGroup(toggle)" @keydown.space.stop.prevent="toggleGroup(toggle)">
             <rect width="14" height="14" rx="3" />
             <path :d="toggle.expanded ? 'M 4 7 H 10' : 'M 4 7 H 10 M 7 4 V 10'" />
           </g>
-          <circle v-for="handle in waypointHandles" :key="handle.key" :class="handle.kind === 'add' ? 'vft-waypoint-add' : 'vft-waypoint-handle'"
+          <circle v-for="handle in waypointHandles" :key="handle.key" :class="handle.kind === 'add' ? 'vw-waypoint-add' : 'vw-waypoint-handle'"
             :cx="handle.x" :cy="handle.y" :r="handle.kind === 'add' ? 4.5 : 6" role="button" tabindex="0" :aria-label="handle.label"
             @pointerdown.stop="startWaypointDrag($event, handle)" @keydown="waypointKeys($event, handle)" />
-          <rect v-for="handle in resizeHandles" :key="'resize:' + handle.corner" class="vft-resize-handle" :class="'vft-resize-' + handle.corner"
+          <rect v-for="handle in resizeHandles" :key="'resize:' + handle.corner" class="vw-resize-handle" :class="'vw-resize-' + handle.corner"
             :x="handle.x - 5" :y="handle.y - 5" width="10" height="10" rx="2" role="button" tabindex="0" :aria-label="handle.label"
             @pointerdown.stop="startResizeDrag($event, handle.node, handle.corner)" @keydown="resizeKeys($event, handle.node, handle.corner)" />
         </g>
-        <rect v-if="boxPreview" class="vft-box-selection" v-bind="boxPreview" />
+        <rect v-if="boxPreview" class="vw-box-selection" v-bind="boxPreview" />
         <template v-if="connectable || draft?.edge">
-          <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vft-connect-handle" :data-vft-node="handle.node"
-            :class="{ active: portPressed(handle) }" :data-vft-port="portKey(handle)"
+          <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vw-connect-handle" :data-vw-node="handle.node"
+            :class="{ active: portPressed(handle) }" :data-vw-port="portKey(handle)"
             :cx="handle.x" :cy="handle.y" r="6" role="button" tabindex="0"
             :aria-label="`${draft && !portPressed(handle) ? messages.connectTo : messages.connectFrom} ${handle.label}`"
             :aria-pressed="Boolean(portPressed(handle))"
@@ -1915,7 +1985,7 @@ onUnmounted(() => {
             @keydown.enter.stop.prevent="(connectable || draft) && activatePort(handle, $event)"
             @keydown.space.stop.prevent="(connectable || draft) && activatePort(handle, $event)" />
         </template>
-        <circle v-for="item in reconnectHandles" :key="item.end" class="vft-reconnect-handle"
+        <circle v-for="item in reconnectHandles" :key="item.end" class="vw-reconnect-handle"
           :cx="item.x" :cy="item.y" r="6" role="button" tabindex="0" :aria-label="item.label"
           @pointerdown.stop="reconnectEdge(item.edge, item.end, $event)"
           @keydown.enter.stop.prevent="reconnectEdge(item.edge, item.end)"
@@ -1924,26 +1994,26 @@ onUnmounted(() => {
     </svg>
     <!-- The tooltip shares the empty state's conditional (an empty graph has nothing to describe), so the markup
       without a tooltip is unchanged. -->
-    <div v-if="tooltipDelayValid && editingOptions && !nodes.length" class="vft-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
-    <div v-else-if="$slots.tooltip && tooltipView" :id="tooltipId" role="tooltip" class="vft-network-tooltip"
+    <div v-if="tooltipDelayValid && editingOptions && !nodes.length" class="vw-network-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <div v-else-if="$slots.tooltip && tooltipView" :id="tooltipId" role="tooltip" class="vw-network-tooltip"
       :style="tooltipView.style" @pointerenter="keepTooltip" @pointerleave="leaveTooltip">
       <slot name="tooltip" :target="tooltipView.target" />
     </div>
-    <button v-if="showMinimap && nodes.length" type="button" class="vft-minimap" :aria-label="messages.minimap"
+    <button v-if="showMinimap && nodes.length" type="button" class="vw-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
       <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
         <rect v-for="node in positioned" :key="node.id" :class="{ selected: isSelected(node.id) }"
           :x="node.box.x" :y="node.box.y" :width="node.box.width" :height="node.box.height" rx="3" />
-        <rect class="vft-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"
+        <rect class="vw-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"
           :width="viewport.width / camera.scale" :height="viewport.height / camera.scale" />
       </svg>
     </button>
-    <span class="vft-sr-only" aria-live="polite">{{ notice }}</span>
-    <div v-if="showControls !== false" class="vft-zoom-tools" role="group" :aria-label="messages.zoom">
+    <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
+    <div v-if="showControls !== false" class="vw-zoom-tools" role="group" :aria-label="messages.zoom">
       <button type="button" :aria-label="messages.zoomOut" @click="zoom(1 / 1.25)">−</button>
       <output>{{ Math.round(camera.scale * 100) }}%</output>
       <button type="button" :aria-label="messages.zoomIn" @click="zoom(1.25)">＋</button>
-      <button type="button" class="vft-fit-button" @click="fit()">{{ messages.fit }}</button>
+      <button type="button" class="vw-fit-button" @click="fit()">{{ messages.fit }}</button>
     </div>
   </div>
 </template>

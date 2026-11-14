@@ -287,7 +287,7 @@ function closeMenu(restoreFocus: boolean) {
 }
 /** Return focus to where the menu was opened, or to the chart region when that element was removed. */
 function focusAfterMenu() {
-  const target = returnFocus?.isConnected ? returnFocus : chart.value?.$el.querySelector('.vft-gantt-scroll') as HTMLElement | null
+  const target = returnFocus?.isConnected ? returnFocus : chart.value?.$el.querySelector('.vw-gantt-scroll') as HTMLElement | null
   target?.focus({ preventScroll: true })
 }
 function closeOnOutsidePointer(event: PointerEvent) {
@@ -366,7 +366,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 .editing-actions { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .import-csv { display: inline-flex; align-items: center; gap: 6px; }
 .import-csv input { max-width: 220px; }
-.context-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 4px; border: 1px solid var(--vft-border, #c6d7e2); border-radius: 7px; background: var(--vft-surface, #fff); box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
-.context-menu button { border: 0; border-radius: 4px; background: transparent; color: var(--vft-text, #24465b); text-align: start; padding: 6px 10px; }
-.context-menu button:hover, .context-menu button:focus-visible { background: var(--vft-surface-hover, #edf5fa); outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }
+.context-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 4px; border: 1px solid var(--vw-border, #c6d7e2); border-radius: 7px; background: var(--vw-surface, #fff); box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
+.context-menu button { border: 0; border-radius: 4px; background: transparent; color: var(--vw-text, #24465b); text-align: start; padding: 6px 10px; }
+.context-menu button:hover, .context-menu button:focus-visible { background: var(--vw-surface-hover, #edf5fa); outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
 </style>

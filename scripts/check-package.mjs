@@ -44,10 +44,10 @@ for (const path of [
 const tarball = resolve(artifacts, packed.filename)
 assert.equal(dirname(tarball), resolve(artifacts), 'Tarball must stay in artifacts/')
 const temporaryRoot = await realpath(tmpdir())
-const consumer = await mkdtemp(join(temporaryRoot, 'vft-consumer-'))
+const consumer = await mkdtemp(join(temporaryRoot, 'vw-consumer-'))
 const resolvedConsumer = await realpath(consumer)
 const consumerPath = relative(temporaryRoot, resolvedConsumer)
-assert.ok(!isAbsolute(consumerPath) && consumerPath.startsWith('vft-consumer-') && !consumerPath.includes(sep), 'Consumer must be a direct child of the temporary directory')
+assert.ok(!isAbsolute(consumerPath) && consumerPath.startsWith('vw-consumer-') && !consumerPath.includes(sep), 'Consumer must be a direct child of the temporary directory')
 
 try {
   await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
@@ -88,7 +88,9 @@ try {
       [NetworkGraph, { nodes: [], edges: [] }],
       [GanttChart, { rows: [], bars: [], range: { start: 0, end: 10 } }],
     ]) assert.ok((await renderToString(createSSRApp({ render: () => h(component, props) }))).length > 0)
-    assert.match(readFileSync(new URL(import.meta.resolve('${manifest.name}/style.css')), 'utf8'), /\\.vft-/)
+    assert.match(readFileSync(new URL(import.meta.resolve('${manifest.name}/style.css')), 'utf8'), /\\.vw-/)
+    const exportedManifest = JSON.parse(readFileSync(new URL(import.meta.resolve('${manifest.name}/package.json')), 'utf8'))
+    assert.equal(exportedManifest.version, '${manifest.version}')
   `
   execFileSync(process.execPath, ['--input-type=module', '--eval', ssrProbe], { cwd: consumer, stdio: 'inherit', windowsHide: true })
 

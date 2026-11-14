@@ -1,5 +1,9 @@
 import { test as base, expect, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+
+const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }
+const releaseLine = version.split('.').slice(0, 2).join('.')
 
 // Vue catches errors thrown in event handlers and render functions and reports them with console.error, so they never
 // reach pageerror. Every test therefore also fails when the page logs a console error.
@@ -89,10 +93,10 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
   await expect(page).toHaveTitle('Vue Weave — Examples')
-  await expect(page.getByRole('link', { name: 'Vue Weave 0.4', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: `Vue Weave ${releaseLine}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCount(2)
-  await page.locator('.vft-zoom-tools').getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await page.locator('.vw-zoom-tools').getByRole('button', { name: 'Zoom in', exact: true }).click()
   await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
   const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
   await expect(plan).toBeVisible()
@@ -138,13 +142,13 @@ test('demo built-in theme switch applies the stylesheet theme classes', async ({
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
   const demo = page.locator('.demo')
-  const surface = () => page.locator('.vft-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vft-surface').trim())
+  const surface = () => page.locator('.vw-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vw-surface').trim())
   expect(await surface()).toBe('')
-  await page.getByLabel('Built-in theme').selectOption('vft-theme-dark')
-  await expect(demo).toHaveClass(/vft-theme-dark/)
+  await page.getByLabel('Built-in theme').selectOption('vw-theme-dark')
+  await expect(demo).toHaveClass(/vw-theme-dark/)
   expect(await surface()).toBe('#182a37')
-  await page.getByLabel('Built-in theme').selectOption('vft-theme-auto')
-  await expect(demo).toHaveClass(/vft-theme-auto/)
+  await page.getByLabel('Built-in theme').selectOption('vw-theme-auto')
+  await expect(demo).toHaveClass(/vw-theme-auto/)
   expect(await surface()).toBe('')
   await page.emulateMedia({ colorScheme: 'dark' })
   expect(await surface()).toBe('#182a37')
@@ -154,20 +158,20 @@ test('demo built-in theme switch applies the stylesheet theme classes', async ({
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Direction').selectOption('TB')
-  await expect(page.locator('.vft-network-stage')).toHaveCSS('height', '470px')
+  await expect(page.locator('.vw-network-stage')).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
-  await expect(page.locator('.vft-network-node > rect')).toHaveCount(6)
+  await expect(page.locator('.vw-network-node > rect')).toHaveCount(6)
   await page.getByLabel('Dark theme').check()
   await expect(page.locator('.demo')).toHaveClass(/dark/)
   await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
-  await expect(page.locator('.vft-gantt-bar.milestone')).toHaveCount(1)
+  await expect(page.locator('.vw-gantt-bar.milestone')).toHaveCount(1)
   await page.getByRole('button', { name: 'Release 15:00–15:00', exact: true }).press('ArrowRight')
   await expect(page.getByRole('button', { name: 'Release 15:15–15:15', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '1,000 resources', exact: true }).click()
-  expect(await page.locator('.vft-gantt-row').count()).toBeLessThan(15)
+  expect(await page.locator('.vw-gantt-row').count()).toBeLessThan(15)
   await page.getByRole('button', { name: 'Last resource', exact: true }).click()
   await expect(page.getByText('Resource 1000', { exact: true })).toBeVisible()
-  expect(await page.locator('.vft-gantt-row').count()).toBeLessThan(15)
+  expect(await page.locator('.vw-gantt-row').count()).toBeLessThan(15)
   await page.screenshot({ path: 'test-results/large-dark.png', fullPage: true })
 })
 
@@ -175,7 +179,7 @@ test('mobile layout and horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
-  const viewport = page.locator('.vft-gantt-scroll')
+  const viewport = page.locator('.vw-gantt-scroll')
   expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true })
 })
@@ -203,9 +207,9 @@ test('graph moves are controlled and connections can be accepted or rejected', a
   const committed = await split.getAttribute('transform')
   await split.press('ArrowRight')
   await expect(split).not.toHaveAttribute('transform', committed!)
-  const beforeNavigation = await page.locator('.vft-network-stage > g').getAttribute('transform')
+  const beforeNavigation = await page.locator('.vw-network-stage > g').getAttribute('transform')
   await page.getByRole('button', { name: 'Navigate graph overview' }).click({ position: { x: 20, y: 30 } })
-  await expect(page.locator('.vft-network-stage > g')).not.toHaveAttribute('transform', beforeNavigation!)
+  await expect(page.locator('.vw-network-stage > g')).not.toHaveAttribute('transform', beforeNavigation!)
   await page.getByRole('button', { name: 'Fit to view' }).click()
 
   await page.getByRole('button', { name: 'Start connection from Material A1', exact: true }).press('Enter')
@@ -214,7 +218,7 @@ test('graph moves are controlled and connections can be accepted or rejected', a
   await page.getByRole('button', { name: 'Start connection from Material A1', exact: true }).press('Enter')
   await page.getByRole('button', { name: 'Connect to Finish', exact: true }).press('Enter')
   await expect(page.getByRole('status').filter({ hasText: 'Connected' })).toBeVisible()
-  await expect(page.locator('.vft-network-edge')).toHaveCount(7)
+  await expect(page.locator('.vw-network-edge')).toHaveCount(7)
   expect(errors).toEqual([])
 })
 
@@ -223,17 +227,17 @@ test('hierarchy, header bands, baselines and markers compose with controlled edi
   await page.getByLabel('Planning overlays').check()
   await expect(page.getByText('Operating window · UTC')).toBeVisible()
   await expect(page.getByText('Shift review', { exact: true })).toBeVisible()
-  await expect(page.locator('.vft-gantt-row')).toHaveCount(3)
-  await expect(page.locator('.vft-gantt-baseline')).toHaveCount(4)
-  const baseline = page.locator('.vft-gantt-baseline').first()
+  await expect(page.locator('.vw-gantt-row')).toHaveCount(3)
+  await expect(page.locator('.vw-gantt-baseline')).toHaveCount(4)
+  const baseline = page.locator('.vw-gantt-baseline').first()
   const original = await baseline.getAttribute('style')
   await page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true }).press('ArrowRight')
   await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
   await expect(baseline).toHaveAttribute('style', original!)
   await page.getByRole('button', { name: 'Collapse Production schedule' }).click()
-  await expect(page.locator('.vft-gantt-row')).toHaveCount(1)
-  await expect(page.locator('.vft-gantt-bar')).toHaveCount(0)
-  await expect(page.locator('.vft-gantt-links')).toHaveCount(0)
+  await expect(page.locator('.vw-gantt-row')).toHaveCount(1)
+  await expect(page.locator('.vw-gantt-bar')).toHaveCount(0)
+  await expect(page.locator('.vw-gantt-links')).toHaveCount(0)
   await page.getByRole('button', { name: 'Expand Production schedule' }).click()
   await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
 })
@@ -251,11 +255,11 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
   await page.mouse.down()
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 })
-  await expect(page.locator('.vft-connection-preview')).toHaveAttribute('d', /^M .+ L /)
+  await expect(page.locator('.vw-connection-preview')).toHaveAttribute('d', /^M .+ L /)
   await page.mouse.up()
-  await expect(page.locator('.vft-network-edge')).toHaveCount(5)
+  await expect(page.locator('.vw-network-edge')).toHaveCount(5)
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+  await expect(page.locator('.vw-network-edge')).toHaveCount(4)
 
   const edge = page.getByRole('button', { name: 'Select edge da', exact: true })
   const path = await edge.getAttribute('d')
@@ -264,7 +268,7 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
   await page.getByRole('button', { name: 'Connect to Release · Input', exact: true }).press('Enter')
   await expect(page.getByRole('status').filter({ hasText: 'Reconnected edge da' })).toBeVisible()
   await expect(edge).not.toHaveAttribute('d', path!)
-  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+  await expect(page.locator('.vw-network-edge')).toHaveCount(4)
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(edge).toHaveAttribute('d', path!)
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
@@ -279,21 +283,21 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
   await page.mouse.move(replacement.x + replacement.width / 2, replacement.y + replacement.height / 2, { steps: 10 })
   await page.mouse.up()
   await expect(page.getByRole('status').filter({ hasText: 'Reconnected edge du' })).toBeVisible()
-  await expect(page.locator('.vft-network-edge')).toHaveCount(4)
+  await expect(page.locator('.vw-network-edge')).toHaveCount(4)
   expect(errors).toEqual([])
 })
 
 test('range selection and group movement commit an atomic batch', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Edit graph').check()
-  const lots = page.locator('.vft-network-node').filter({ hasText: 'Lot A123-' })
+  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
   const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])
   const [a, b] = boxes
   await page.keyboard.down('Shift')
   await page.mouse.move(a!.x - 9, a!.y - 12)
   await page.mouse.down()
   await page.mouse.move(b!.x + b!.width + 8, b!.y + b!.height + 7, { steps: 8 })
-  await expect(page.locator('.vft-box-selection')).toBeVisible()
+  await expect(page.locator('.vw-box-selection')).toBeVisible()
   await page.mouse.up()
   await page.keyboard.up('Shift')
   await expect(lots.first()).toHaveAttribute('aria-pressed', 'true')
@@ -324,7 +328,7 @@ test('timeline columns edit through validation and keep summary bars when collap
   await input.press('Enter')
   await expect(page.getByRole('status').filter({ hasText: 'cannot be empty' })).toBeVisible()
   await expect(input).toHaveValue('Machine 01')
-  const summary = page.locator('.vft-gantt-summary')
+  const summary = page.locator('.vw-gantt-summary')
   await expect(summary).toHaveCount(1)
   const style = await summary.getAttribute('style')
   await page.getByRole('button', { name: 'Collapse Production schedule' }).click()
@@ -340,7 +344,7 @@ test('calendar-aware edits propagate downstream, expose overload and preserve th
   const inspection = page.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
   const packing = page.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
   await expect(finish).toHaveText('09 Nov 16:00')
-  await expect(page.locator('.vft-gantt-links path.highlighted')).toHaveCount(2)
+  await expect(page.locator('.vw-gantt-links path.highlighted')).toHaveCount(2)
   await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
   await expect(page.getByRole('table', { name: 'Overload intervals' })).toContainText('Cut order A, Cut order B')
   await cutting.press('ArrowRight')
@@ -366,13 +370,13 @@ test('the scheduling demo shades non-working time and describes critical, float,
   await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
-  const shading = plan.locator('.vft-gantt-non-working')
+  const shading = plan.locator('.vw-gantt-non-working')
   await expect(shading.first()).toBeVisible()
   expect(await shading.count()).toBeGreaterThan(0)
-  expect(await equipment.locator('.vft-gantt-non-working').count()).toBeGreaterThan(0)
+  expect(await equipment.locator('.vw-gantt-non-working').count()).toBeGreaterThan(0)
   const shade = page.getByRole('checkbox', { name: 'Shade non-working time', exact: true })
   await shade.uncheck()
-  await expect(page.locator('.vft-gantt-non-working')).toHaveCount(0)
+  await expect(page.locator('.vw-gantt-non-working')).toHaveCount(0)
   await shade.check()
   await expect(shading.first()).toBeVisible()
 
@@ -382,18 +386,18 @@ test('the scheduling demo shades non-working time and describes critical, float,
   const inspection = plan.getByRole('button', { name: 'Inspect order A 09 Nov 11:00–09 Nov 14:00', exact: true })
   const packing = plan.getByRole('button', { name: 'Pack order A 09 Nov 14:00–09 Nov 16:00', exact: true })
   await expect(cutting).toHaveAccessibleDescription(/^Critical\. Float until 09 Nov 11:00\. Arrow keys move/)
-  await expect(cutting).toHaveClass(/vft-critical/)
+  await expect(cutting).toHaveClass(/vw-critical/)
   await expect(other).toHaveAccessibleDescription(/^Float until 09 Nov 16:00\. Arrow keys move/)
-  await expect(other).not.toHaveClass(/vft-critical/)
-  await expect(plan.locator('.vft-gantt-float')).toHaveCount(1)
+  await expect(other).not.toHaveClass(/vw-critical/)
+  await expect(plan.locator('.vw-gantt-float')).toHaveCount(1)
   await expect(packing).toHaveAccessibleDescription('Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00.')
-  await expect(plan.locator('.vft-gantt-deadline')).toHaveCount(1)
+  await expect(plan.locator('.vw-gantt-deadline')).toHaveCount(1)
 
   // Inspection crosses the lunch break, so it is drawn as two work pieces joined by a connector.
-  await expect(inspection).toHaveClass(/vft-segmented/)
-  await expect(inspection.locator('.vft-gantt-segment')).toHaveCount(2)
-  await expect(inspection.locator('.vft-gantt-segment-gap')).toHaveCount(1)
-  const [first, second] = await inspection.locator('.vft-gantt-segment').evaluateAll(elements => elements.map(element => element.getBoundingClientRect()))
+  await expect(inspection).toHaveClass(/vw-segmented/)
+  await expect(inspection.locator('.vw-gantt-segment')).toHaveCount(2)
+  await expect(inspection.locator('.vw-gantt-segment-gap')).toHaveCount(1)
+  const [first, second] = await inspection.locator('.vw-gantt-segment').evaluateAll(elements => elements.map(element => element.getBoundingClientRect()))
   expect(second!.x - (first!.x + first!.width)).toBeCloseTo(18, 0)
 
   // Two moves push packing past the dispatch cut-off: it is marked late and its work is split by the plant closure.
@@ -402,9 +406,9 @@ test('the scheduling demo shades non-working time and describes critical, float,
   await moved.press('ArrowRight')
   const late = plan.getByRole('button', { name: 'Pack order A 09 Nov 16:00–11 Nov 09:00', exact: true })
   await expect(late).toHaveAccessibleDescription('Critical. Float until 11 Nov 09:00. Deadline 09 Nov 17:00. Late.')
-  await expect(late).toHaveClass(/vft-late/)
-  await expect(late.locator('.vft-gantt-segment')).toHaveCount(2)
-  await expect(plan.locator('.vft-gantt-deadline.vft-late')).toHaveCount(1)
+  await expect(late).toHaveClass(/vw-late/)
+  await expect(late.locator('.vw-gantt-segment')).toHaveCount(2)
+  await expect(plan.locator('.vw-gantt-deadline.vw-late')).toHaveCount(1)
 
   // The SVG export draws the same layers with the stylesheet colours.
   const pending = page.waitForEvent('download')
@@ -413,13 +417,13 @@ test('the scheduling demo shades non-working time and describes critical, float,
   const svg = (await readFile((await (await pending).path())!)).toString('utf8')
   expect(svg).toContain('fill="#eaeff3"')
   expect(svg).toContain('stroke="#b42318"')
-  expect(svg.match(/class="vft-gantt-segment"/g)?.length).toBe(4)
-  expect(svg).toContain('class="vft-gantt-float"')
-  expect(svg).toContain('class="vft-gantt-deadline vft-late"')
+  expect(svg.match(/class="vw-gantt-segment"/g)?.length).toBe(4)
+  expect(svg).toContain('class="vw-gantt-float"')
+  expect(svg).toContain('class="vw-gantt-deadline vw-late"')
 
   // Without the critical overlay, the descriptions return to the edit hint alone.
   await page.getByRole('checkbox', { name: 'Show critical path and float', exact: true }).uncheck()
-  await expect(plan.locator('.vft-critical, .vft-late, .vft-gantt-float, .vft-gantt-deadline')).toHaveCount(0)
+  await expect(plan.locator('.vw-critical, .vw-late, .vw-gantt-float, .vw-gantt-deadline')).toHaveCount(0)
   await expect(plan.getByRole('button', { name: 'Cut order A 09 Nov 10:00–09 Nov 14:00', exact: true }))
     .toHaveAccessibleDescription('Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.')
   expect(errors).toEqual([])
@@ -436,7 +440,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
   await cutting.press('ArrowRight')
   await cutting.press('ArrowRight')
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
-  const segments = cutting.locator('.vft-gantt-segment')
+  const segments = cutting.locator('.vw-gantt-segment')
   await expect(segments).toHaveCount(2)
   const left = () => segments.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().x))
   const before = await left()
@@ -463,7 +467,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
   await page.mouse.down()
   await page.mouse.move(box.x + box.width + 18, y, { steps: 4 })
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 15:00')
-  await expect(cutting).not.toHaveClass(/vft-segmented/)
+  await expect(cutting).not.toHaveClass(/vw-segmented/)
   await expect(segments).toHaveCount(0)
   await page.keyboard.press('Escape')
   await page.mouse.up()
@@ -491,13 +495,13 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
 
   // Moving a focused bar far to the right keeps focus and scrolls it into view.
-  const moving = page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')
+  const moving = page.locator('.vw-gantt-bar[aria-label^="Split · plan"]')
   await moving.focus()
   for (let i = 0; i < 24; i++) await moving.press('ArrowRight')
-  await expect(page.locator('.vft-gantt-bar:focus')).toHaveCount(1)
+  await expect(page.locator('.vw-gantt-bar:focus')).toHaveCount(1)
   const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
   await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
-  const focused = (await page.locator('.vft-gantt-bar:focus').boundingBox())!
+  const focused = (await page.locator('.vw-gantt-bar:focus').boundingBox())!
   const area = (await region.boundingBox())!
   expect(focused.x + focused.width).toBeLessThanOrEqual(area.x + area.width + 1)
   expect(errors).toEqual([])
@@ -521,7 +525,7 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await page.mouse.move(area.x + area.width - 10, box.y + box.height / 2, { steps: 8 })
   await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
   await page.mouse.up()
-  await expect(page.locator('.vft-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
+  await expect(page.locator('.vw-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
   expect(errors).toEqual([])
 })
 
@@ -770,10 +774,10 @@ test('matchIds dims non-matching nodes and focusNode accepts a scale', async ({ 
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openNetworkFixture(page, '?nodes=5&match=N0001,N0002')
-  await expect(chainNode(page, 'N0000')).toHaveClass(/vft-dimmed/)
-  await expect(chainNode(page, 'N0001')).not.toHaveClass(/vft-dimmed/)
-  await expect(chainNode(page, 'N0002')).not.toHaveClass(/vft-dimmed/)
-  await expect(chainNode(page, 'N0004')).toHaveClass(/vft-dimmed/)
+  await expect(chainNode(page, 'N0000')).toHaveClass(/vw-dimmed/)
+  await expect(chainNode(page, 'N0001')).not.toHaveClass(/vw-dimmed/)
+  await expect(chainNode(page, 'N0002')).not.toHaveClass(/vw-dimmed/)
+  await expect(chainNode(page, 'N0004')).toHaveClass(/vw-dimmed/)
   // Dimming is presentational: the node still reports its name and can be selected.
   await chainNode(page, 'N0000').click()
   await expect(chainNode(page, 'N0000')).toHaveAttribute('aria-pressed', 'true')
@@ -791,7 +795,7 @@ test('nested group rectangles stay inside the fitted view, the minimap and the e
   await openNetworkFixture(page, '?preset=groups&minimap=1')
   const stage = page.getByLabel('Network graph', { exact: true })
   await page.evaluate(() => (window as any).__vw.graph().fit())
-  const rects = page.locator('.vft-network-group rect')
+  const rects = page.locator('.vw-network-group rect')
   await expect(rects).toHaveCount(2)
   const frame = (await stage.boundingBox())!
   const boxes = await rects.evaluateAll(list => list.map(el => {
@@ -819,7 +823,7 @@ test('culled drag previews keep the edges of dragged nodes rendered', async ({ p
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
-  const edges = page.locator('.vft-network-edge')
+  const edges = page.locator('.vw-network-edge')
   const node = chainNode(page, 'N0002')
   const box = (await node.boundingBox())!
   const before = await edges.count()
@@ -891,11 +895,11 @@ test('gantt dependencies connect by keyboard and pointer, reject duplicates, rec
   await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
   await page.mouse.down()
   await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
-  await expect(chart.locator('.vft-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
+  await expect(chart.locator('.vw-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
   await page.mouse.up()
   await expect(status('Added FF dependency from Wireframes to Checkout UI.')).toBeVisible()
   await expect(links).toHaveCount(3)
-  await expect(chart.locator('.vft-gantt-link-preview')).toHaveCount(0)
+  await expect(chart.locator('.vw-gantt-link-preview')).toHaveCount(0)
 
   // Select a dependency, move its target end with the keyboard, then delete it.
   await chart.getByRole('button', { name: 'Select dependency Wireframes → Billing API FS', exact: true }).press('Enter')
@@ -921,8 +925,8 @@ test('gantt dependencies connect by keyboard and pointer, reject duplicates, rec
 
 test('gantt multi-selection moves bars as one batch and bars move between rows with validation', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
-  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
-  const ui = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  const api = chart.locator('.vw-gantt-bar[aria-label^="Billing API"]')
+  const ui = chart.locator('.vw-gantt-bar[aria-label^="Checkout UI"]')
   await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
   await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Shift'] })
   await expect(api).toHaveAttribute('aria-pressed', 'true')
@@ -957,7 +961,7 @@ test('gantt multi-selection moves bars as one batch and bars move between rows w
   await expect(api).toHaveAttribute('aria-pressed', 'false')
   await wireframes.press('ArrowDown')
   await expect(status('Moved Wireframes to Platform team.')).toBeVisible()
-  await expect(chart.locator('.vft-gantt-bar:focus')).toHaveAttribute('aria-label', 'Wireframes 08:00–10:00')
+  await expect(chart.locator('.vw-gantt-bar:focus')).toHaveAttribute('aria-label', 'Wireframes 08:00–10:00')
   await page.keyboard.press('ArrowUp')
   await expect(status('Moved Wireframes to Product team.')).toBeVisible()
 
@@ -967,10 +971,10 @@ test('gantt multi-selection moves bars as one batch and bars move between rows w
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
   await page.mouse.down()
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
-  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveAttribute('style', /translateY\(-66px\)/)
+  await expect(chart.locator('.vw-gantt-bar.dragging')).toHaveAttribute('style', /translateY\(-66px\)/)
   await page.keyboard.press('Escape')
   await page.mouse.up()
-  await expect(chart.locator('.vft-gantt-bar.dragging')).toHaveCount(0)
+  await expect(chart.locator('.vw-gantt-bar.dragging')).toHaveCount(0)
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
   await page.mouse.down()
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
@@ -990,22 +994,22 @@ test('gantt zoom presets, now marker and resource load histogram share the time 
   const presets = page.getByRole('group', { name: 'Zoom level', exact: true })
   await expect(presets.getByRole('button', { name: 'Hours', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(chart.getByText('Day 2026-11-09', { exact: true })).toBeVisible()
-  await expect(chart.locator('.vft-gantt-now')).toHaveText('Now')
-  await expect(chart.locator('.vft-gantt-now')).toHaveAttribute('title', 'Now 11:30')
+  await expect(chart.locator('.vw-gantt-now')).toHaveText('Now')
+  await expect(chart.locator('.vw-gantt-now')).toHaveAttribute('title', 'Now 11:30')
   await expect(chart.getByRole('group', { name: 'Resource load Engineering pool', exact: true })).toBeVisible()
   const overload = chart.getByRole('img', { name: 'Engineering pool 10:00–13:00: load 2 / capacity 1, overloaded by 1', exact: true })
   await expect(overload).toBeVisible()
-  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  await expect(chart.locator('.vw-gantt-load-segment.overloaded')).toHaveCount(1)
   const bar = (await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).boundingBox())!
   const segment = (await overload.boundingBox())!
   expect(Math.abs(segment.x - bar.x)).toBeLessThanOrEqual(1)
 
   // Moving work updates the histogram.
-  const checkout = chart.locator('.vft-gantt-bar[aria-label^="Checkout UI"]')
+  const checkout = chart.locator('.vw-gantt-bar[aria-label^="Checkout UI"]')
   await checkout.click()
   for (let i = 0; i < 12; i++) await checkout.press('ArrowRight')
   await expect(checkout).toHaveAttribute('aria-label', 'Checkout UI 13:00–17:00')
-  await expect(chart.locator('.vft-gantt-load-segment.overloaded')).toHaveCount(1)
+  await expect(chart.locator('.vw-gantt-load-segment.overloaded')).toHaveCount(1)
   await expect(chart.getByRole('img', { name: 'Engineering pool 14:00–16:00: load 2 / capacity 1, overloaded by 1', exact: true })).toBeAttached()
 
   await presets.getByRole('button', { name: 'Shifts', exact: true }).click()
@@ -1106,9 +1110,9 @@ test('gantt grid lines follow every tick of a piecewise scale in both directions
       if (zoom !== '100%') await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
       await expect(page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByText(zoom, { exact: true })).toBeVisible()
       // Labels 0..90 start at their tick; the closing tick label at 100 is aligned to the other side.
-      const labels = (await edges('.vft-gantt-tick:not(.end)'))
-      const grid = await edges('.vft-gantt-grid-line')
-      const head = await edges('.vft-gantt-tick-line')
+      const labels = (await edges('.vw-gantt-tick:not(.end)'))
+      const grid = await edges('.vw-gantt-grid-line')
+      const head = await edges('.vw-gantt-tick-line')
       expect(labels).toHaveLength(10)
       expect(grid).toHaveLength(11)
       expect(grid.slice(0, 10)).toEqual(labels)
@@ -1164,7 +1168,7 @@ test('gantt zoom presets ignore the active preset and a controlled parent that d
     } else {
       // A real change resets the zoom and keeps the centre.
       const centreAt = (el: HTMLElement, scale: number) =>
-        (el.scrollLeft + (el.clientWidth - el.querySelector('.vft-gantt-corner')!.getBoundingClientRect().width) / 2) / scale
+        (el.scrollLeft + (el.clientWidth - el.querySelector('.vw-gantt-corner')!.getBoundingClientRect().width) / 2) / scale
       const centre = await scroller.evaluate(centreAt, 1.35 * 50)
       await presets.getByRole('button', { name: 'Narrow', exact: true }).click()
       await expect(zoom).toHaveText('100%')
@@ -1185,7 +1189,7 @@ test('gantt real two-finger touch pinch survives a drifting midpoint without nat
   const spot = await chart.evaluate(el => {
     const r = el.getBoundingClientRect()
     for (const y of [150, 200, 250, 300]) for (let x = 400; x < r.width - 200; x += 10) {
-      const free = [x - 100, x + 100].every(px => /^vft-gantt-(row|grid)/.test(String(document.elementFromPoint(r.left + px, r.top + y)?.className ?? '')))
+      const free = [x - 100, x + 100].every(px => /^vw-gantt-(row|grid)/.test(String(document.elementFromPoint(r.left + px, r.top + y)?.className ?? '')))
       if (free) return { x: r.left + x, y: r.top + y }
     }
     return undefined
@@ -1244,7 +1248,7 @@ test('gantt progress slider edits by pointer and keyboard, cancels with Escape a
   await page.mouse.down()
   await page.mouse.move(handle.x + 69, handle.y, { steps: 6 })
   await expect(slider).toHaveAttribute('aria-valuetext', '50%')
-  await expect(api.locator('.vft-bar-progress')).toHaveAttribute('style', /width: 50%/)
+  await expect(api.locator('.vw-bar-progress')).toHaveAttribute('style', /width: 50%/)
   await page.mouse.up()
   await expect(status('Billing API progress 50%.')).toBeVisible()
   await expect(slider).toBeFocused()
@@ -1322,7 +1326,7 @@ test('gantt bars delete by keyboard with their dependencies and undo restores th
   for (const bar of [api, ui, chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })]) await bar.click({ modifiers: ['Shift'] })
   await api.press('Delete')
   await expect(status('Keep at least one task in the plan.')).toBeVisible()
-  await expect(chart.locator('.vft-gantt-bar')).toHaveCount(4)
+  await expect(chart.locator('.vw-gantt-bar')).toHaveCount(4)
   expect(errors).toEqual([])
 })
 
@@ -1368,7 +1372,7 @@ test('gantt context menu opens by right-click and Shift+F10, adds a task at the 
   await chart.getByRole('button', { name: 'Select dependency Wireframes → Billing API FS', exact: true }).press('Shift+F10')
   await page.getByRole('menu', { name: 'Actions for dependency wireframes-api', exact: true }).getByRole('menuitem', { name: 'Delete dependency', exact: true }).click()
   await expect(status('Deleted dependency wireframes-api.')).toBeVisible()
-  const header = (await chart.locator('.vft-gantt-time-head').boundingBox())!
+  const header = (await chart.locator('.vw-gantt-time-head').boundingBox())!
   await page.mouse.click(header.x + 300, header.y + header.height / 2, { button: 'right' })
   const chartMenu = page.getByRole('menu', { name: 'Timeline actions', exact: true })
   await expect(chartMenu.getByRole('menuitem')).toHaveText(['Fit all bars'])
@@ -1435,7 +1439,7 @@ test('gantt fit all bars and fit selection zoom to the bars and scroll them into
   await expect(output).toHaveText('100%')
   await expect(fitSelection).toBeDisabled()
   const area = await chart.evaluate(el => {
-    const corner = el.querySelector('.vft-gantt-corner')!.getBoundingClientRect()
+    const corner = el.querySelector('.vw-gantt-corner')!.getBoundingClientRect()
     const rect = el.getBoundingClientRect()
     return { left: corner.right, right: rect.left + el.clientLeft + el.clientWidth }
   })
@@ -1478,8 +1482,8 @@ async function editingGeometry(chart: ReturnType<Page['getByRole']>, rtl = false
 test('gantt drag to create previews and proposes new bars, rejects through validateCreate, cancels with Escape and has a keyboard path', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
   const { at, row } = await editingGeometry(chart)
-  const preview = chart.locator('.vft-gantt-create-preview')
-  const bars = chart.locator('.vft-gantt-bar')
+  const preview = chart.locator('.vw-gantt-create-preview')
+  const bars = chart.locator('.vw-gantt-bar')
   await expect(bars).toHaveCount(4)
 
   // A drag over the empty part of the Web team row previews the snapped interval and proposes it on release.
@@ -1508,7 +1512,7 @@ test('gantt drag to create previews and proposes new bars, rejects through valid
   await expect(preview).toHaveCount(1)
   await page.mouse.up()
   await expect(status('New tasks cannot be added to Quality.')).toBeVisible()
-  await expect(page.locator('.vft-gantt [aria-live="polite"]').filter({ hasText: 'New tasks cannot be added to Quality.' })).toHaveCount(1)
+  await expect(page.locator('.vw-gantt [aria-live="polite"]').filter({ hasText: 'New tasks cannot be added to Quality.' })).toHaveCount(1)
   await expect(bars).toHaveCount(6)
 
   // Escape discards an in-flight create drag.
@@ -1584,7 +1588,7 @@ test('gantt create drag follows the visual direction in right-to-left charts and
   await page.mouse.move(at(14.5), row(2))
   await page.mouse.down()
   await page.mouse.move(at(16) - 4, row(2), { steps: 6 })
-  const shown = (await chart.locator('.vft-gantt-create-preview').boundingBox())!
+  const shown = (await chart.locator('.vw-gantt-create-preview').boundingBox())!
   expect(Math.abs(shown.x - at(16))).toBeLessThanOrEqual(1)
   expect(Math.abs(shown.x + shown.width - at(14.5))).toBeLessThanOrEqual(1)
   await page.mouse.up()
@@ -1594,7 +1598,7 @@ test('gantt create drag follows the visual direction in right-to-left charts and
   // Back to LTR in a narrow viewport: dragging towards the right edge scrolls and extends the new interval.
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).uncheck()
   await page.setViewportSize({ width: 640, height: 900 })
-  const corner = (await chart.locator('.vft-gantt-corner').boundingBox())!
+  const corner = (await chart.locator('.vw-gantt-corner').boundingBox())!
   const area = (await chart.boundingBox())!
   const y = (await editingGeometry(chart)).row(2)
   await page.mouse.move(corner.x + corner.width + 115, y)
@@ -1611,7 +1615,7 @@ test('gantt create by touch: a tap proposes a bar and the second touch of a pinc
   const { at, row } = await editingGeometry(chart)
   const cdp = await page.context().newCDPSession(page)
   const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
-  const bars = chart.locator('.vft-gantt-bar')
+  const bars = chart.locator('.vw-gantt-bar')
   await touch(cdp, 'touchStart', [{ x: at(15) + 3, y: row(2), id: 1 }])
   await touch(cdp, 'touchEnd', [])
   await expect(status('Added New task 1 at 15:00–16:00 to Web team.')).toBeVisible()
@@ -1626,7 +1630,7 @@ test('gantt create by touch: a tap proposes a bar and the second touch of a pinc
   }
   await touch(cdp, 'touchEnd', [])
   await expect.poll(async () => Number.parseInt((await output.textContent())!, 10)).toBeGreaterThan(100)
-  await expect(chart.locator('.vft-gantt-create-preview')).toHaveCount(0)
+  await expect(chart.locator('.vw-gantt-create-preview')).toHaveCount(0)
   // Bars outside the zoomed time window are virtualized, so the status shows that nothing was added.
   await expect(status('Added New task 1 at 15:00–16:00 to Web team.')).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: 'New task 2' })).toHaveCount(0)
@@ -1642,7 +1646,7 @@ test('the scheduling demo previews cascaded operations during a drag and applies
   const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
   const inspection = plan.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
   const packing = plan.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
-  const ghosts = plan.locator('.vft-gantt-cascade-preview')
+  const ghosts = plan.locator('.vw-gantt-cascade-preview')
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 08:00–09 Nov 11:00')
   const box = (await cutting.boundingBox())!
   const inspect = (await inspection.boundingBox())!
@@ -1775,7 +1779,7 @@ test('gantt context-menu, progress and delete proposals carry exact targets, tim
     await page.getByRole('button', { name: 'Fit Task B', exact: true }).click()
     await expect(out('Zoom events')).toHaveText('3/')
     const area = await chart.evaluate(el => {
-      const corner = el.querySelector('.vft-gantt-corner')!.getBoundingClientRect()
+      const corner = el.querySelector('.vw-gantt-corner')!.getBoundingClientRect()
       const rect = el.getBoundingClientRect()
       return el.closest('[dir="rtl"]') ? { left: rect.left + el.clientLeft, right: corner.left } : { left: corner.right, right: rect.left + el.clientLeft + el.clientWidth }
     })
@@ -1794,12 +1798,12 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
     await page.getByLabel('Direction').selectOption(direction)
-    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+    await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
   for (const layout of ['tree', 'radial', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
-    await expect(page.locator('.vft-network-node').first()).toBeVisible()
+    await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
   expect(errors).toEqual([])
 })
@@ -1808,21 +1812,21 @@ test('opt-in dark theme classes apply built-in variables; auto follows the colou
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openComponentFixture(page)
-  const gantt = page.locator('.vft-gantt').first()
-  const graph = page.locator('.vft-network').first()
+  const gantt = page.locator('.vw-gantt').first()
+  const graph = page.locator('.vw-network').first()
   const read = (locator: typeof gantt) => locator.evaluate(el => ({
-    surface: getComputedStyle(el).getPropertyValue('--vft-surface').trim(),
-    now: getComputedStyle(el).getPropertyValue('--vft-now').trim(),
+    surface: getComputedStyle(el).getPropertyValue('--vw-surface').trim(),
+    now: getComputedStyle(el).getPropertyValue('--vw-now').trim(),
     color: getComputedStyle(el).color,
   }))
   const light = await read(gantt)
   expect(light.surface).toBe('')
-  await gantt.evaluate(el => el.classList.add('vft-theme-dark'))
-  await graph.evaluate(el => el.classList.add('vft-theme-dark'))
+  await gantt.evaluate(el => el.classList.add('vw-theme-dark'))
+  await graph.evaluate(el => el.classList.add('vw-theme-dark'))
   expect(await read(gantt)).toEqual({ surface: '#182a37', now: '#ff8f7a', color: 'rgb(229, 237, 243)' })
   expect((await read(graph)).surface).toBe('#182a37')
   await expect(gantt).toHaveCSS('background-color', 'rgb(24, 42, 55)')
-  await gantt.evaluate(el => el.classList.replace('vft-theme-dark', 'vft-theme-auto'))
+  await gantt.evaluate(el => el.classList.replace('vw-theme-dark', 'vw-theme-auto'))
   expect((await read(gantt)).surface).toBe('')
   await page.emulateMedia({ colorScheme: 'dark' })
   expect((await read(gantt)).surface).toBe('#182a37')
@@ -1836,7 +1840,7 @@ test('forced colors use system colours for bars and selection', async ({ page })
   page.on('pageerror', error => errors.push(error.message))
   await page.emulateMedia({ forcedColors: 'active' })
   await openComponentFixture(page)
-  const bar = page.locator('.vft-gantt-bar').first()
+  const bar = page.locator('.vw-gantt-bar').first()
   await expect(bar).toBeVisible()
   expect(await page.evaluate(() => matchMedia('(forced-colors: active)').matches)).toBe(true)
   const styles = await bar.evaluate(el => {
@@ -1868,8 +1872,8 @@ test('forced colors emphasise the now line and markers in both directions', asyn
     })
     const marker = { left: '0px', right: '0px', style: 'dashed', [side]: '2px' }
     const now = { left: '0px', right: '0px', style: 'solid', [side]: '3px' }
-    expect(await edges('.vft-gantt-marker')).toEqual(marker)
-    expect(await edges('.vft-gantt-now')).toEqual(now)
+    expect(await edges('.vw-gantt-marker')).toEqual(marker)
+    expect(await edges('.vw-gantt-now')).toEqual(now)
   }
   expect(errors).toEqual([])
 })
@@ -1880,7 +1884,7 @@ test('reduced motion removes stylesheet transitions and animations', async ({ pa
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openComponentFixture(page)
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
-  const offenders = await page.evaluate(() => [...document.querySelectorAll('.vft-gantt, .vft-gantt *, .vft-network, .vft-network *')]
+  const offenders = await page.evaluate(() => [...document.querySelectorAll('.vw-gantt, .vw-gantt *, .vw-network, .vw-network *')]
     .filter(el => { const cs = getComputedStyle(el); return cs.transitionDuration.split(', ').some(d => d !== '0s') || cs.animationName !== 'none' })
     .map(el => el.className.toString()))
   expect(offenders).toEqual([])
@@ -1891,16 +1895,16 @@ test('print media hides interactive chrome and expands the Gantt scroller', asyn
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openComponentFixture(page)
-  await page.locator('.vft-gantt-bar').first().click()
+  await page.locator('.vw-gantt-bar').first().click()
   const display = (selector: string) => page.evaluate(sel => [...document.querySelectorAll(sel)].map(el => getComputedStyle(el).display), selector)
-  const zoomTools = await display('.vft-zoom-tools')
+  const zoomTools = await display('.vw-zoom-tools')
   expect(zoomTools.length).toBeGreaterThan(0)
   expect(zoomTools.every(value => value !== 'none')).toBe(true)
-  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
+  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
   await page.emulateMedia({ media: 'print' })
-  expect((await display('.vft-zoom-tools, .vft-minimap, .vft-bar-handle, .vft-gantt-toolbar')).every(value => value === 'none')).toBe(true)
-  await expect(page.locator('.vft-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
-  await expect(page.locator('.vft-network').first()).toHaveCSS('print-color-adjust', 'exact')
+  expect((await display('.vw-zoom-tools, .vw-minimap, .vw-bar-handle, .vw-gantt-toolbar')).every(value => value === 'none')).toBe(true)
+  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
+  await expect(page.locator('.vw-network').first()).toHaveCSS('print-color-adjust', 'exact')
   expect(errors).toEqual([])
 })
 
@@ -1938,7 +1942,7 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
   const graphSvg = await save('Export graph SVG')
   const graphText = graphSvg.bytes.toString('utf8')
   expect(graphSvg.name).toBe('network.svg')
-  const nodeCount = await page.locator('.vft-network-node').count()
+  const nodeCount = await page.locator('.vw-network-node').count()
   expect(graphText.match(/<g transform="translate\(/g)?.length).toBe(nodeCount + 1)
   const [, width, height] = /^<svg [^>]*width="([\d.]+)" height="([\d.]+)"/.exec(graphText)!
   const graphPng = await save('Export graph PNG')
@@ -1958,9 +1962,9 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
 test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves and scrollToTime', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
-  await expect(chart.locator('xpath=ancestor::div[contains(@class, "vft-gantt")][1]')).toHaveAttribute('dir', 'rtl')
-  const api = chart.locator('.vft-gantt-bar[aria-label^="Billing API"]')
-  const corner = chart.locator('.vft-gantt-corner')
+  await expect(chart.locator('xpath=ancestor::div[contains(@class, "vw-gantt")][1]')).toHaveAttribute('dir', 'rtl')
+  const api = chart.locator('.vw-gantt-bar[aria-label^="Billing API"]')
+  const corner = chart.locator('.vw-gantt-corner')
   const box = async (locator: typeof api) => (await locator.boundingBox())!
   // The heading column is on the right and time runs from right to left: 08:00 touches the headings,
   // and Billing API (from 10:00) starts where Wireframes (until 10:00) ends.
@@ -1981,7 +1985,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
 
   // The start handle sits on the right edge; dragging it 29 px to the left moves the start 15 minutes later.
-  const startHandle = await box(api.locator('.vft-bar-handle.first'))
+  const startHandle = await box(api.locator('.vw-bar-handle.first'))
   bar = await box(api)
   expect(startHandle.x + startHandle.width).toBeGreaterThan(bar.x + bar.width - 2)
   await page.mouse.move(startHandle.x + startHandle.width / 2, startHandle.y + startHandle.height / 2)
@@ -2033,13 +2037,13 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
     const tools = (await page.getByRole('group', { name: 'Graph zoom', exact: true }).boundingBox())!
     const node = page.getByRole('button', { name: 'A', exact: true })
     const box = (await node.locator('rect').first().boundingBox())!
-    const text = (await node.locator('text.vft-node-title').boundingBox())!
+    const text = (await node.locator('text.vw-node-title').boundingBox())!
     return { stage, minimap, tools, box, text }
   }
   await openNetworkFixture(page, '?preset=groups&minimap=1')
   const ltr = await measure()
   await openNetworkFixture(page, '?preset=groups&minimap=1&dir=rtl')
-  await expect(page.locator('.vft-network')).toHaveAttribute('dir', 'rtl')
+  await expect(page.locator('.vw-network')).toHaveAttribute('dir', 'rtl')
   const rtl = await measure()
   // Geometry is unchanged; the minimap and zoom tools move to the left; labels align to the right.
   expect(rtl.box).toEqual(ltr.box)
@@ -2057,8 +2061,8 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
     if (document.readyState === 'interactive') document.documentElement.setAttribute('dir', 'rtl')
   }))
   await openNetworkFixture(page, '?preset=groups&minimap=1&dir=auto')
-  await expect(page.locator('.vft-network')).toHaveClass(/vft-rtl/)
-  await expect(page.locator('.vft-network')).not.toHaveAttribute('dir', /./)
+  await expect(page.locator('.vw-network')).toHaveClass(/vw-rtl/)
+  await expect(page.locator('.vw-network')).not.toHaveAttribute('dir', /./)
   expect(errors).toEqual([])
 })
 
@@ -2069,7 +2073,7 @@ async function openGraphEditor(page: Page) {
   await page.getByLabel('Edit graph').check()
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
-  return { errors, button, status, edges: page.locator('.vft-network-edge'), nodes: page.locator('.vft-network-node') }
+  return { errors, button, status, edges: page.locator('.vw-network-edge'), nodes: page.locator('.vw-network-node') }
 }
 
 // Clicks the middle of an SVG path. A straight horizontal edge has an empty bounding box, so locator.click cannot target it.
@@ -2100,7 +2104,7 @@ test('graph edges select by click and keyboard, toggle with modifiers and show r
   await clickPath(page, fp, ['Shift'])
   await expect(rs).toHaveAttribute('aria-pressed', 'true')
   await expect(fp).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.vft-edge-selected')).toHaveCount(2)
+  await expect(page.locator('.vw-edge-selected')).toHaveCount(2)
   // Ctrl+Enter toggles an edge out of the selection; a plain Enter replaces it.
   await fp.focus()
   await page.keyboard.press('Control+Enter')
@@ -2114,7 +2118,7 @@ test('graph edges select by click and keyboard, toggle with modifiers and show r
   // A plain node click clears the edge selection and its handles.
   await lot.click()
   await expect(s1).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.locator('.vft-edge-selected')).toHaveCount(0)
+  await expect(page.locator('.vw-edge-selected')).toHaveCount(0)
   await expect(button('Reconnect source of 72')).toHaveCount(0)
   expect(errors).toEqual([])
 })
@@ -2173,7 +2177,7 @@ test('graph deletion by keyboard removes nodes, edges and incident edges, valida
   }
   await split.press('Delete')
   await expect(status('Keep at least one node in the graph.')).toBeVisible()
-  await expect(page.locator('.vft-network .vft-sr-only[aria-live]')).toHaveText('Keep at least one node in the graph.')
+  await expect(page.locator('.vw-network .vw-sr-only[aria-live]')).toHaveText('Keep at least one node in the graph.')
   await expect(nodes).toHaveCount(6)
   expect(errors).toEqual([])
 })
@@ -2364,7 +2368,7 @@ test('context-menu events report the target, chart point and source and suppress
   expect(stage.y + camera.y + pointer.point.y * camera.scale).toBeCloseTo(pointer.clientY, 3)
 
   // Edges and the empty canvas are targets too.
-  const edge = page.locator('.vft-network-edge').first()
+  const edge = page.locator('.vw-network-edge').first()
   const path = await edge.evaluate(el => {
     const shape = el as SVGPathElement
     const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
@@ -2454,14 +2458,14 @@ test('snap to grid lands pointer and keyboard moves on the grid and the backgrou
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openNetworkFixture(page, '?nodes=4&draggable=1&snap=20&background=dots')
-  const backdrop = page.locator('.vft-network-backdrop')
+  const backdrop = page.locator('.vw-network-backdrop')
   await expect(backdrop).toHaveAttribute('aria-hidden', 'true')
   const pattern = backdrop.locator('pattern')
   await expect(pattern).toHaveAttribute('id', /-background$/)
   await expect(pattern).toHaveAttribute('width', '20')
-  const fill = page.locator('.vft-network-background')
+  const fill = page.locator('.vw-network-background')
   await expect(fill).toHaveAttribute('fill', `url(#${await pattern.getAttribute('id')})`)
-  await expect(page.locator('.vft-network')).toHaveClass(/vft-network-patterned/)
+  await expect(page.locator('.vw-network')).toHaveClass(/vw-network-patterned/)
 
   // A drag of 37 x 23 screen pixels at scale 1.15 moves N0001 from (214, 20) by about (32, 20): it lands on (240, 40).
   expect((await readCamera(page)).scale).toBeCloseTo(1.15, 6)
@@ -2496,11 +2500,11 @@ test('alignment guides snap a dragged node to its neighbours, win over the grid 
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await openNetworkFixture(page, '?nodes=4&draggable=1&guides=1&snap=50')
-  const guides = page.locator('.vft-guide')
+  const guides = page.locator('.vw-guide')
   // Four pixels down is within the 6-pixel threshold of the row, so the top, middle and bottom guides appear.
   await dragBy(page, chainNode(page, 'N0001'), 30, 4, async () => {
     await expect(guides).toHaveCount(3)
-    await expect(page.locator('.vft-guides')).toHaveAttribute('aria-hidden', 'true')
+    await expect(page.locator('.vw-guides')).toHaveAttribute('aria-hidden', 'true')
     await expect(guides.first()).toHaveAttribute('y1', '20')
     await expect(guides.first()).toHaveAttribute('y2', '20')
     await expect(guides.first()).toHaveAttribute('x1', '20')
@@ -2633,8 +2637,8 @@ test('clipboard shortcuts propose copy, paste and duplicate with the focused or 
 test('native copy, paste and drop listeners on the component still reach its root element', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  const dispatch = () => page.locator('.vft-network').evaluate(root => {
-    const stage = root.querySelector('.vft-network-stage')!
+  const dispatch = () => page.locator('.vw-network').evaluate(root => {
+    const stage = root.querySelector('.vw-network-stage')!
     stage.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }))
     stage.dispatchEvent(new ClipboardEvent('paste', { bubbles: true }))
     stage.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }))
@@ -2653,7 +2657,7 @@ test('native copy, paste and drop listeners on the component still reach its roo
 test('the demo palette adds nodes by drag and drop and by keyboard on the grid, and undo removes them', async ({ page }) => {
   const { errors, button, status, nodes } = await openGraphEditor(page)
   await page.getByLabel('Snap to grid').check()
-  await expect(page.locator('.vft-network-background')).toHaveCount(1)
+  await expect(page.locator('.vw-network-background')).toHaveCount(1)
   const stage = page.getByLabel('Network graph', { exact: true })
   await button('Add operation').dragTo(stage, { targetPosition: { x: 400, y: 150 } })
   await expect(status('Added Operation 1.')).toBeVisible()
@@ -2710,10 +2714,10 @@ test('demo copy, paste and duplicate go through the edit history, and guides app
   // The two lots share a column, so a slightly sideways drag of one aligns with the other.
   await page.getByLabel('Alignment guides').check()
   await dragBy(page, lot, 3, 50, async () => {
-    await expect(page.locator('.vft-guide').first()).toBeAttached()
+    await expect(page.locator('.vw-guide').first()).toBeAttached()
   })
   await expect(status('Moved node lot1.')).toBeVisible()
-  await expect(page.locator('.vft-guide')).toHaveCount(0)
+  await expect(page.locator('.vw-guide')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -2721,7 +2725,7 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
-  const nodes = page.locator('.vft-network-node')
+  const nodes = page.locator('.vw-network-node')
   await expect(nodes.first()).toBeVisible()
   const count = await nodes.count()
   await page.getByLabel('Graph layout').selectOption('force')
@@ -2759,7 +2763,7 @@ test('the demo offers the force layout up to 1,000 nodes and falls back to layer
   await expect(layout).toHaveValue('layered')
   await expect(force).toBeDisabled()
   await expect(page.getByRole('status').filter({ hasText: 'The force layout is offered for up to 1,000 nodes; switched to the layered layout.' })).toBeVisible()
-  await expect(page.locator('.vft-network-node').first()).toBeVisible()
+  await expect(page.locator('.vw-network-node').first()).toBeVisible()
   await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
   await expect(force).toBeEnabled()
   expect(errors).toEqual([])
@@ -2838,13 +2842,13 @@ test('a pointer click on a proxy expand toggle expands the group and does not st
 
 test('demo edge style switches between curves, orthogonal routes and straight lines', async ({ page }) => {
   const { errors } = await openGraphEditor(page)
-  const fp = page.locator('.vft-network-edge').last()
+  const fp = page.locator('.vw-network-edge').last()
   await expect(fp).toHaveAttribute('d', / C /)
   const style = page.getByLabel('Edge style')
   await style.selectOption('orthogonal')
   await expect(fp).toHaveAttribute('d', /^M [\d. ]+(?: [LQ] [\d. ]+)+$/)
   // The split to lot edge turns at right angles: every segment is horizontal or vertical.
-  const d = (await page.locator('.vft-network-edge').nth(1).getAttribute('d'))!
+  const d = (await page.locator('.vw-network-edge').nth(1).getAttribute('d'))!
   let previous: number[] = []
   for (const [, command, values] of d.matchAll(/([MLQ]) ([^MLQ]+)/g)) {
     const numbers = values!.trim().split(' ').map(Number)
@@ -2963,19 +2967,19 @@ test('demo nodes resize by pointer and keyboard with undo', async ({ page }) => 
 
 test('demo level of detail hides node details and edge labels when zoomed out', async ({ page }) => {
   const { errors, button } = await openGraphEditor(page)
-  const root = page.locator('.vft-network')
-  const detail = page.locator('.vft-node-detail').first()
+  const root = page.locator('.vw-network')
+  const detail = page.locator('.vw-node-detail').first()
   await expect(detail).toBeVisible()
-  await expect(root).not.toHaveClass(/vft-lod-low/)
+  await expect(root).not.toHaveClass(/vw-lod-low/)
   const zoom = page.getByRole('group', { name: 'Graph zoom', exact: true })
   for (let i = 0; i < 6; i++) await zoom.getByRole('button', { name: 'Zoom out', exact: true }).click()
-  await expect(root).toHaveClass(/vft-lod-low/)
+  await expect(root).toHaveClass(/vw-lod-low/)
   await expect(detail).toBeHidden()
-  await expect(page.locator('.vft-edge-label').first()).toBeHidden()
+  await expect(page.locator('.vw-edge-label').first()).toBeHidden()
   // Accessible names keep the detail.
   await expect(button('Split Operation 101')).toBeAttached()
   await zoom.getByRole('button', { name: 'Fit to view', exact: true }).click()
-  await expect(root).not.toHaveClass(/vft-lod-low/)
+  await expect(root).not.toHaveClass(/vw-lod-low/)
   await expect(detail).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -2983,10 +2987,10 @@ test('demo level of detail hides node details and edge labels when zoomed out', 
 test('gantt rows indent, outdent and move by keyboard with validation, focus return and undo', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
   await expect(chart.getByRole('button', { name: /^Move row / })).toHaveCount(0)
-  await expect(chart.locator('.vft-extra-column')).toHaveCount(0)
+  await expect(chart.locator('.vw-extra-column')).toHaveCount(0)
   await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
   const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
-  const wbs = (label: string) => chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vft-extra-column')
+  const wbs = (label: string) => chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vw-extra-column')
   const quality = handle('Quality')
   await expect(quality).toHaveAccessibleDescription(/^Alt\+Up and Alt\+Down move the row among its siblings\. Alt\+Shift\+Right indents/)
   await expect(wbs('Web team')).toHaveText('2.1')
@@ -3026,7 +3030,7 @@ test('gantt rows indent, outdent and move by keyboard with validation, focus ret
   await expect(wbs('Quality')).toHaveText('3')
 
   // Bars keep following their rows.
-  await expect(chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Quality', exact: true }) }).getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })).toBeVisible()
+  await expect(chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Quality', exact: true }) }).getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })).toBeVisible()
 
   // In a right-to-left chart, Alt+Shift+Left indents towards the row text.
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
@@ -3042,10 +3046,10 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
   const { errors, chart, status } = await openTimelineEditing(page)
   await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
   const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
-  const wbs = (label: string) => chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vft-extra-column')
-  const indicator = chart.locator('.vft-gantt-row-drop')
+  const wbs = (label: string) => chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vw-extra-column')
+  const indicator = chart.locator('.vw-gantt-row-drop')
   const product = (await handle('Product team').boundingBox())!
-  const web = (await chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  const web = (await chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
   const x = product.x + product.width / 2
 
   // Escape cancels a drag: the indicator disappears and releasing proposes nothing.
@@ -3073,7 +3077,7 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
 
   // A row cannot be dropped inside its own subtree.
   const platform = (await handle('Platform team').boundingBox())!
-  const child = (await chart.locator('.vft-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  const child = (await chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
   await page.mouse.move(platform.x + platform.width / 2, platform.y + platform.height / 2)
   await page.mouse.down()
   await page.mouse.move(platform.x + platform.width / 2, child.y + child.height * 0.3, { steps: 8 })
@@ -3093,8 +3097,8 @@ test('the scheduling demo draws the status date and progress line and reschedule
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const line = plan.getByRole('img', { name: 'Status date 09 Nov 12:00', exact: true })
   await expect(line).toBeVisible()
-  await expect(line).toHaveClass(/vft-gantt-status-date/)
-  const progress = plan.locator('.vft-gantt-progress-line')
+  await expect(line).toHaveClass(/vw-gantt-status-date/)
+  const progress = plan.locator('.vw-gantt-progress-line')
   await expect(progress).toHaveCount(4)
   await expect(progress.first()).toHaveAttribute('aria-hidden', 'true')
   // Cutting order B (half done) and inspection (a quarter done) are behind the status date and kink the line.
@@ -3117,9 +3121,9 @@ test('the scheduling demo draws the status date and progress line and reschedule
   await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Rescheduled from status date 09 Nov 12:00. 3 operations moved.' })).toBeVisible()
   await expect(plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })).toBeVisible()
-  await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 10:00–09 Nov 14:00', exact: true }).locator('.vft-gantt-segment')).toHaveCount(2)
+  await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 10:00–09 Nov 14:00', exact: true }).locator('.vw-gantt-segment')).toHaveCount(2)
   const inspection = plan.getByRole('button', { name: 'Inspect order A 09 Nov 11:00–09 Nov 14:30', exact: true })
-  await expect(inspection.locator('.vft-gantt-segment')).toHaveCount(2)
+  await expect(inspection.locator('.vw-gantt-segment')).toHaveCount(2)
   await expect(plan.getByRole('button', { name: 'Pack order A 09 Nov 14:30–09 Nov 16:30', exact: true })).toBeVisible()
   await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:30')
 
@@ -3128,8 +3132,8 @@ test('the scheduling demo draws the status date and progress line and reschedule
   await page.getByRole('button', { name: 'Export schedule SVG', exact: true }).click()
   const { readFile } = await import('node:fs/promises')
   const svg = (await readFile((await (await pending).path())!)).toString('utf8')
-  expect(svg).toContain('<g class="vft-gantt-status-date"><title>Status date 09 Nov 12:00</title>')
-  expect(svg).toContain('class="vft-gantt-progress-line"')
+  expect(svg).toContain('<g class="vw-gantt-status-date"><title>Status date 09 Nov 12:00</title>')
+  expect(svg).toContain('class="vw-gantt-progress-line"')
   await page.getByRole('button', { name: 'Reset schedule' }).click()
   await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
   expect(errors).toEqual([])
@@ -3202,13 +3206,13 @@ test('the scheduling demo shows the plan as a network diagram with critical task
   await toggle.check()
   const diagram = page.getByLabel('Schedule network diagram', { exact: true })
   await expect(diagram).toBeVisible()
-  const nodes = diagram.locator('.vft-network-node')
+  const nodes = diagram.locator('.vw-network-node')
   await expect(nodes).toHaveCount(4)
   const cutting = diagram.getByRole('button', { name: 'Cut order A ES 09 Nov 08:00 · EF 09 Nov 11:00 · Float 0 h', exact: true })
-  await expect(cutting).toHaveClass(/vft-tone-amber/)
+  await expect(cutting).toHaveClass(/vw-tone-amber/)
   await expect(cutting).toHaveClass(/related/)
   await expect(diagram.getByRole('button', { name: /^Cut order B ES 09 Nov 10:00 · EF 09 Nov 12:00 · Float [1-9]\d* h$/ })).not.toHaveClass(/related/)
-  await expect(diagram.locator('.vft-network-edge.related')).toHaveCount(2)
+  await expect(diagram.locator('.vw-network-edge.related')).toHaveCount(2)
   // The diagram follows plan changes.
   await page.getByRole('region', { name: 'Gantt chart', exact: true }).first().getByRole('button', { name: /^Cut order A \d\d Nov.*–/ }).press('ArrowRight')
   await expect(diagram.getByRole('button', { name: /^Cut order A ES 09 Nov 09:00 · EF 09 Nov 12:00/ })).toBeVisible()
@@ -3223,9 +3227,9 @@ test('gantt columns resize by pointer and keyboard with validation, Escape, undo
   await page.getByRole('checkbox', { name: 'Resize columns', exact: true }).check()
   const team = chart.getByRole('separator', { name: 'Resize column Team', exact: true })
   const wbs = chart.getByRole('separator', { name: 'Resize column WBS', exact: true })
-  const cell = chart.locator('.vft-gantt-row .vft-extra-column').first()
+  const cell = chart.locator('.vw-gantt-row .vw-extra-column').first()
   const bar = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
-  // The demo theme sets --vft-row-label-width to 138px; the separator reports the rendered width.
+  // The demo theme sets --vw-row-label-width to 138px; the separator reports the rendered width.
   await expect(team).toHaveAttribute('aria-valuenow', '138')
   await expect(team).toHaveAttribute('aria-valuemin', '48')
   await expect(wbs).toHaveAttribute('aria-valuenow', '52')

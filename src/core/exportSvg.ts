@@ -10,7 +10,7 @@ import type {
 } from './types.js'
 import { checkNonWorkingPeriods, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 
-/** Colours of one tone, matching the `--vft-<tone>-*` custom properties. */
+/** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
   ink: string
   line: string
@@ -18,7 +18,7 @@ export interface SvgToneColors {
   solid: string
 }
 
-/** Colours used by the SVG exporters. Each field mirrors a `--vft-*` custom property. */
+/** Colours used by the SVG exporters. Each field mirrors a `--vw-*` custom property. */
 export interface SvgExportTheme {
   surface: string
   surfaceMuted: string
@@ -38,15 +38,15 @@ export interface SvgExportTheme {
   loadOverload: string
   loadCapacity: string
   dependencyHighlight: string
-  /** Non-working time shading (`--vft-non-working`). Optional for compatibility; defaults to `defaultSvgExportTheme.nonWorking`. */
+  /** Non-working time shading (`--vw-non-working`). Optional for compatibility; defaults to `defaultSvgExportTheme.nonWorking`. */
   nonWorking?: string
-  /** Outline of critical bars (`--vft-critical`). Defaults to `defaultSvgExportTheme.critical`. */
+  /** Outline of critical bars (`--vw-critical`). Defaults to `defaultSvgExportTheme.critical`. */
   critical?: string
-  /** Float lines (`--vft-float`). Defaults to `defaultSvgExportTheme.float`. */
+  /** Float lines (`--vw-float`). Defaults to `defaultSvgExportTheme.float`. */
   float?: string
-  /** Deadline indicators and the late outline (`--vft-deadline`). Defaults to `defaultSvgExportTheme.deadline`. */
+  /** Deadline indicators and the late outline (`--vw-deadline`). Defaults to `defaultSvgExportTheme.deadline`. */
   deadline?: string
-  /** Status-date line and progress line (`--vft-status`). Defaults to `defaultSvgExportTheme.status`. */
+  /** Status-date line and progress line (`--vw-status`). Defaults to `defaultSvgExportTheme.status`. */
   status?: string
   tones: Record<ChartTone, SvgToneColors>
 }
@@ -80,7 +80,7 @@ export interface SvgExportOptions {
   title?: string
   /** Paint an opaque background. Default true. */
   background?: boolean
-  /** Prefix for the IDs of markers and clip paths, so several exports can be inlined in one page. Default `vft-export`. */
+  /** Prefix for the IDs of markers and clip paths, so several exports can be inlined in one page. Default `vw-export`. */
   idPrefix?: string
   /** Text direction of labels. For timelines, `rtl` also mirrors the time axis and places row headings on the right. */
   direction?: 'ltr' | 'rtl'
@@ -139,7 +139,7 @@ function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme>
 }
 
 function common(options: SvgExportOptions) {
-  const prefix = options.idPrefix ?? 'vft-export'
+  const prefix = options.idPrefix ?? 'vw-export'
   if (!/^[A-Za-z_][\w.-]*$/.test(prefix)) throw new Error('idPrefix must start with a letter or underscore and contain only letters, digits, _, . and -')
   if (options.direction !== undefined && options.direction !== 'ltr' && options.direction !== 'rtl') {
     throw new Error('direction must be ltr or rtl')
@@ -564,7 +564,7 @@ export function renderTimelineSvg(
       const box = span(bar.end, bar.latestEnd)
       const y = top + laneTop(bar) + barHeight / 2
       const tickX = rtl ? box.x + 1 : box.x + box.width - 1
-      area.push(tag('g', { class: 'vft-gantt-float' },
+      area.push(tag('g', { class: 'vw-gantt-float' },
         tag('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, stroke: theme.float, 'stroke-width': 2 })
         + tag('line', { x1: tickX, y1: y - 4, x2: tickX, y2: y + 4, stroke: theme.float, 'stroke-width': 2 })))
     }
@@ -580,7 +580,7 @@ export function renderTimelineSvg(
       const label = barLabel(bar)
       const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
       const late = bar.deadline !== undefined && bar.end > bar.deadline
-      const marks = { class: [bar.critical ? 'vft-critical' : '', late ? 'vft-late' : ''].filter(Boolean).join(' ') || undefined }
+      const marks = { class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : ''].filter(Boolean).join(' ') || undefined }
       if (bar.start === bar.end) {
         const x = X(bar.start)
         area.push(tag('g', marks, title + tag('polygon', {
@@ -598,13 +598,13 @@ export function renderTimelineSvg(
         for (const gap of gaps) {
           const part = span(gap.start, gap.end)
           shape += tag('line', {
-            class: 'vft-gantt-segment-gap', x1: part.x, y1: y + barHeight / 2, x2: part.x + part.width, y2: y + barHeight / 2,
+            class: 'vw-gantt-segment-gap', x1: part.x, y1: y + barHeight / 2, x2: part.x + part.width, y2: y + barHeight / 2,
             stroke: solid ? colors.solid : colors.line, 'stroke-width': 2,
           })
         }
         for (const piece of pieces) {
           const part = { ...span(piece.start, piece.end), y, height: barHeight }
-          shape += tag('rect', { ...part, class: 'vft-gantt-segment', rx: 4, fill, stroke, 'stroke-width': strokeWidth })
+          shape += tag('rect', { ...part, class: 'vw-gantt-segment', rx: 4, fill, stroke, 'stroke-width': strokeWidth })
           if (piece.filled > 0) {
             const filled = part.width * piece.filled
             shape += tag('rect', {
@@ -637,7 +637,7 @@ export function renderTimelineSvg(
       const x = X(bar.deadline)
       const y = top + laneTop(bar)
       const late = bar.end > bar.deadline
-      area.push(tag('g', { class: late ? 'vft-gantt-deadline vft-late' : 'vft-gantt-deadline' },
+      area.push(tag('g', { class: late ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline' },
         tag('title', {}, escapeXml(`${barLabel(bar)} ${format(bar.deadline)}`))
         + tag('line', { x1: x, y1: y - 3, x2: x, y2: y + barHeight + 3, stroke: theme.deadline, 'stroke-width': 2 })
         + tag('polygon', {
@@ -695,12 +695,12 @@ export function renderTimelineSvg(
           : [{ x: X(time), y: headerHeight + index * rowHeight + laneTop(bar) + barHeight / 2, reach: barHeight / 2 }]
       }))
       area.push(tag('polyline', {
-        class: 'vft-gantt-progress-line', fill: 'none', stroke: theme.status, 'stroke-width': 2, 'stroke-linejoin': 'round',
+        class: 'vw-gantt-progress-line', fill: 'none', stroke: theme.status, 'stroke-width': 2, 'stroke-linejoin': 'round',
         points: progressLinePoints(x, headerHeight, headerHeight + bodyHeight, kinks).map(([px, py]) => num(px) + ',' + num(py)).join(' '),
       }))
     }
     const label = options.statusDateLabel ?? 'Status date'
-    area.push(tag('g', { class: 'vft-gantt-status-date' },
+    area.push(tag('g', { class: 'vw-gantt-status-date' },
       tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
   }
   if (histogram) {

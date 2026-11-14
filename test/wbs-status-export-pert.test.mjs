@@ -274,41 +274,41 @@ test('GanttChart server markup is unchanged without rowsReorderable and statusDa
   for (const extra of [{}, { markers: [{ id: 'x', time: 2 * hour, label: 'X' }], showNow: true, now: hour }, { dir: 'rtl', rowDraggable: true, creatable: true }]) {
     const plain = await render(extra)
     assert.equal(await render({ ...extra, rowsReorderable: false, showProgressLine: true, validateRowMove: () => false }), plain)
-    assert.doesNotMatch(plain, /vft-row-move-handle|vft-reorderable|vft-gantt-status-date|vft-gantt-progress-line|reorder-hint|Status date/)
+    assert.doesNotMatch(plain, /vw-row-move-handle|vw-reorderable|vw-gantt-status-date|vw-gantt-progress-line|reorder-hint|Status date/)
   }
-  assert.doesNotMatch(await render({ rowsReorderable: true, readonly: true }), /vft-row-move-handle/)
+  assert.doesNotMatch(await render({ rowsReorderable: true, readonly: true }), /vw-row-move-handle/)
 })
 
 test('GanttChart renders row move handles with names and a keyboard hint on the server', async () => {
   const html = await render({ rowsReorderable: true, creatable: row => row.id === 'r2', labels: { moveRow: 'Zeile verschieben' } })
-  const handles = html.match(/<button type="button" class="vft-row-move-handle"[^>]*>/g)
+  const handles = html.match(/<button type="button" class="vw-row-move-handle"[^>]*>/g)
   assert.equal(handles.length, 3)
-  assert.match(handles[1], /data-vft-row-handle="r1" aria-label="Zeile verschieben Row 1" aria-describedby="(v-\d+)-reorder-hint"/)
+  assert.match(handles[1], /data-vw-row-handle="r1" aria-label="Zeile verschieben Row 1" aria-describedby="(v-\d+)-reorder-hint"/)
   const hint = /aria-describedby="([^"]+-reorder-hint)"/.exec(html)[1]
-  assert.match(html, new RegExp(`<span id="${hint}" class="vft-sr-only">Alt\\+Up and Alt\\+Down move the row among its siblings\\. Alt\\+Shift\\+Right indents`))
+  assert.match(html, new RegExp(`<span id="${hint}" class="vw-sr-only">Alt\\+Up and Alt\\+Down move the row among its siblings\\. Alt\\+Shift\\+Right indents`))
   // The parent keeps its toggle after the handle, and the creatable row keeps its add button.
-  assert.match(html, /aria-label="Zeile verschieben Parent"[^>]*><span aria-hidden="true">⋮⋮<\/span><\/button><button type="button" class="vft-row-toggle"/)
-  assert.match(html, /aria-label="Zeile verschieben Row 2"[^>]*>.*?<\/button><!----><button type="button" class="vft-gantt-create-button" aria-label="Add bar to Row 2">/)
+  assert.match(html, /aria-label="Zeile verschieben Parent"[^>]*><span aria-hidden="true">⋮⋮<\/span><\/button><button type="button" class="vw-row-toggle"/)
+  assert.match(html, /aria-label="Zeile verschieben Row 2"[^>]*>.*?<\/button><!----><button type="button" class="vw-gantt-create-button" aria-label="Add bar to Row 2">/)
   assert.match(await render({ rowsReorderable: true, dir: 'rtl' }), /Alt\+Shift\+Left indents it and Alt\+Shift\+Right outdents it/)
 })
 
 test('GanttChart renders the status date and a progress line on the server', async () => {
   const html = await render({ statusDate: 2.5 * hour, showProgressLine: true, labels: { statusDate: 'Stichtag' } })
-  assert.match(html, /<div class="vft-gantt-marker vft-gantt-status-date" role="img" aria-label="Stichtag 02:30" title="Stichtag 02:30" style="left:calc\(var\(--vft-label-area-width\) \+ 25px\);"><span>Stichtag<\/span><\/div>/)
-  const lines = html.match(/<svg class="vft-gantt-progress-line"[^>]*><polyline points="[^"]*"><\/polyline><\/svg>/g)
+  assert.match(html, /<div class="vw-gantt-marker vw-gantt-status-date" role="img" aria-label="Stichtag 02:30" title="Stichtag 02:30" style="left:calc\(var\(--vw-label-area-width\) \+ 25px\);"><span>Stichtag<\/span><\/div>/)
+  const lines = html.match(/<svg class="vw-gantt-progress-line"[^>]*><polyline points="[^"]*"><\/polyline><\/svg>/g)
   assert.equal(lines.length, 3)
   // Row 1: bar A (1–3 h, 50%) kinks the line to its progress point at 2 h; the other rows keep it straight.
   assert.match(lines[1], /points="25,0 25,7 20,33 25,59 25,66"/)
   assert.match(lines[0], /points="25,0 25,66"/)
   assert.match(lines[0], /aria-hidden="true"/)
   const statusOnly = await render({ statusDate: 2.5 * hour })
-  assert.match(statusOnly, /vft-gantt-status-date/)
-  assert.doesNotMatch(statusOnly, /vft-gantt-progress-line/)
+  assert.match(statusOnly, /vw-gantt-status-date/)
+  assert.doesNotMatch(statusOnly, /vw-gantt-progress-line/)
   const rtl = await render({ dir: 'rtl', statusDate: 2.5 * hour, showProgressLine: true })
-  assert.match(rtl, /class="vft-gantt-marker vft-gantt-status-date"[^>]*style="right:calc\(var\(--vft-label-area-width\) \+ 25px\);"/)
-  assert.match(rtl, /<svg class="vft-gantt-progress-line"[^>]*style="right:calc/)
+  assert.match(rtl, /class="vw-gantt-marker vw-gantt-status-date"[^>]*style="right:calc\(var\(--vw-label-area-width\) \+ 25px\);"/)
+  assert.match(rtl, /<svg class="vw-gantt-progress-line"[^>]*style="right:calc/)
   // Outside the range nothing is drawn.
-  assert.doesNotMatch(await render({ statusDate: 20 * hour, showProgressLine: true }), /vft-gantt-status-date/)
+  assert.doesNotMatch(await render({ statusDate: 20 * hour, showProgressLine: true }), /vw-gantt-status-date/)
 })
 
 test('GanttChart reports an invalid statusDate through validation-error', async () => {
@@ -331,10 +331,10 @@ test('renderTimelineSvg draws the status date and the progress line only when as
   const svg = renderTimelineSvg(chartRows, chartBars, [], scale, {
     statusDate: 2.5 * hour, showProgressLine: true, statusDateLabel: 'Stichtag', theme: { status: '#123456' },
   })
-  assert.match(svg, /<g class="vft-gantt-status-date"><title>Stichtag 02:30<\/title><line x1="179" y1="40" x2="179" y2="238" stroke="#123456" stroke-width="2"\/>/)
-  assert.match(svg, /<polyline class="vft-gantt-progress-line" fill="none" stroke="#123456" stroke-width="2" stroke-linejoin="round" points="179,40 179,113 174,139 179,165 179,238"\/>/)
+  assert.match(svg, /<g class="vw-gantt-status-date"><title>Stichtag 02:30<\/title><line x1="179" y1="40" x2="179" y2="238" stroke="#123456" stroke-width="2"\/>/)
+  assert.match(svg, /<polyline class="vw-gantt-progress-line" fill="none" stroke="#123456" stroke-width="2" stroke-linejoin="round" points="179,40 179,113 174,139 179,165 179,238"\/>/)
   const rtl = renderTimelineSvg(chartRows, chartBars, [], scale, { statusDate: 2.5 * hour, direction: 'rtl' })
-  assert.match(rtl, /<g class="vft-gantt-status-date"><title>Status date 02:30<\/title><line x1="75"/)
-  assert.doesNotMatch(rtl, /vft-gantt-progress-line/)
+  assert.match(rtl, /<g class="vw-gantt-status-date"><title>Status date 02:30<\/title><line x1="75"/)
+  assert.doesNotMatch(rtl, /vw-gantt-progress-line/)
   assert.throws(() => renderTimelineSvg(chartRows, chartBars, [], scale, { statusDate: Number.NaN }), RangeError)
 })

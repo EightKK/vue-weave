@@ -49,7 +49,7 @@ export interface TimelineBar extends TimeRange {
   progress?: number
   baseline?: TimeRange
   data?: unknown
-  /** Draws the bar with the critical outline (`--vft-critical`) and adds `GanttLabels.critical` to its description. */
+  /** Draws the bar with the critical outline (`--vw-critical`) and adds `GanttLabels.critical` to its description. */
   critical?: boolean
   /** Latest finish that keeps the plan; a float line is drawn from `end` to it. Finite and not before `end`. */
   latestEnd?: number
@@ -484,7 +484,7 @@ export interface GanttExportOptions {
   rowHeading?: string
   /** Prefix for marker and clip-path IDs. Defaults to an ID unique to the component instance. */
   idPrefix?: string
-  /** Colours that replace the values read from the `--vft-*` custom properties. */
+  /** Colours that replace the values read from the `--vw-*` custom properties. */
   theme?: SvgExportThemeInput
   barLabel?: (bar: TimelineBar) => string
   rowLabel?: (row: TimelineRow) => string
@@ -501,7 +501,7 @@ export interface GraphExportOptions {
   title?: string
   /** Prefix for marker IDs. Defaults to an ID unique to the component instance. */
   idPrefix?: string
-  /** Colours that replace the values read from the `--vft-*` custom properties. */
+  /** Colours that replace the values read from the `--vw-*` custom properties. */
   theme?: SvgExportThemeInput
   /** Draw selected nodes in the selected style. Default true. */
   includeSelection?: boolean

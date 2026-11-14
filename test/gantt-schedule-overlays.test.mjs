@@ -147,15 +147,15 @@ test('renderTimelineSvg draws shading, critical outlines, float lines, deadlines
   assert.match(svg, new RegExp(`<rect x="130" width="10" y="40" height="66" fill="${theme.nonWorking}"/>`))
   assert.match(svg, new RegExp(`<rect x="190" width="10" y="40" height="66" fill="${theme.nonWorking}"/>`))
   assert.ok(svg.indexOf(theme.nonWorking) < svg.indexOf('<line'), 'shading is drawn before the grid lines')
-  assert.equal(svg.match(/class="vft-gantt-segment"/g)?.length, 2)
-  assert.equal(svg.match(/class="vft-gantt-segment-gap"/g)?.length, 1)
-  assert.match(svg, /<rect x="120" width="10" y="47" height="52" class="vft-gantt-segment" rx="4" fill="[^"]+" stroke="#b42318" stroke-width="2"\/>/)
+  assert.equal(svg.match(/class="vw-gantt-segment"/g)?.length, 2)
+  assert.equal(svg.match(/class="vw-gantt-segment-gap"/g)?.length, 1)
+  assert.match(svg, /<rect x="120" width="10" y="47" height="52" class="vw-gantt-segment" rx="4" fill="[^"]+" stroke="#b42318" stroke-width="2"\/>/)
   // Half of three working hours is complete: all of the first hour and half an hour of the second piece.
   assert.match(svg, /<rect x="120" y="47" width="10" height="52" rx="4" fill="#ffffff" fill-opacity="0\.18"\/>/)
   assert.match(svg, /<rect x="140" y="47" width="5" height="52" rx="4" fill="#ffffff" fill-opacity="0\.18"\/>/)
-  assert.match(svg, /<g class="vft-critical vft-late">/)
-  assert.match(svg, /<g class="vft-gantt-float"><line x1="160" y1="73" x2="180" y2="73" stroke="#5b7083" stroke-width="2"\/>/)
-  assert.match(svg, /<g class="vft-gantt-deadline vft-late"><title>Bar 05:00<\/title><line x1="150"/)
+  assert.match(svg, /<g class="vw-critical vw-late">/)
+  assert.match(svg, /<g class="vw-gantt-float"><line x1="160" y1="73" x2="180" y2="73" stroke="#5b7083" stroke-width="2"\/>/)
+  assert.match(svg, /<g class="vw-gantt-deadline vw-late"><title>Bar 05:00<\/title><line x1="150"/)
   assert.match(svg, /stroke="#a74f08" stroke-width="2" stroke-dasharray="4 3"/)
 })
 
@@ -166,7 +166,7 @@ test('renderTimelineSvg mirrors the new layers right to left and reads theme ove
   })
   // The axis runs from x = 100 (range start) down to 0, so [3 h, 4 h) sits at 60–70.
   assert.match(svg, /<rect x="60" width="10" y="40" height="66" fill="#010203"\/>/)
-  assert.match(svg, /<rect x="70" width="10" y="47" height="52" class="vft-gantt-segment" rx="4" fill="[^"]+" stroke="#040506"/)
+  assert.match(svg, /<rect x="70" width="10" y="47" height="52" class="vw-gantt-segment" rx="4" fill="[^"]+" stroke="#040506"/)
   assert.match(svg, /<line x1="20" y1="73" x2="40" y2="73" stroke="#070809"/)
   assert.match(svg, /<line x1="21" y1="69" x2="21" y2="77" stroke="#070809"/)
   assert.match(svg, /<line x1="50" y1="44" x2="50" y2="102" stroke="#0a0b0c"/)
@@ -175,7 +175,7 @@ test('renderTimelineSvg mirrors the new layers right to left and reads theme ove
 test('renderTimelineSvg is unchanged without the new inputs and validates nonWorkingPeriods', () => {
   const plain = renderTimelineSvg(rows, [{ ...base, progress: 0.5 }], [], exportScale)
   assert.equal(renderTimelineSvg(rows, [{ ...base, progress: 0.5, critical: false }], [], exportScale, { nonWorkingPeriods: [] }), plain)
-  assert.doesNotMatch(plain, /class="vft-|stroke-width="2"|#eaeff3/)
+  assert.doesNotMatch(plain, /class="vw-|stroke-width="2"|#eaeff3/)
   for (const period of [{ start: 2, end: 2 }, { start: 3, end: 1 }, { start: Number.NaN, end: 1 }, { start: 0, end: Infinity }]) {
     assert.throws(() => renderTimelineSvg(rows, [base], [], exportScale, { nonWorkingPeriods: [period] }), RangeError)
   }
@@ -189,13 +189,13 @@ test('GanttChart renders shading, critical, float, deadline and segments on the 
     nonWorkingPeriods: [{ start: 3 * hour, end: 4 * hour }, { start: 3.5 * hour, end: 4.5 * hour }, { start: 20 * hour, end: 30 * hour }],
   }) }))
   // Overlapping intervals are drawn as given; intervals outside the window are not rendered.
-  assert.match(html, /<div class="vft-gantt-non-working-layer" aria-hidden="true"><!--\[--><span class="vft-gantt-non-working" style="left:30px;width:10px;"><\/span><span class="vft-gantt-non-working" style="left:35px;width:10px;"><\/span><!--\]--><\/div><div class="vft-gantt-grid"/)
-  assert.match(html, /class="vft-gantt-bar vft-tone-blue solid editable vft-critical vft-late vft-segmented"/)
-  assert.match(html, /<span class="vft-gantt-segment" style="left:-1px;width:10px;" aria-hidden="true"><span class="vft-bar-progress" style="width:100%;"><\/span><\/span>/)
-  assert.match(html, /<span class="vft-gantt-segment" style="left:19px;width:20px;" aria-hidden="true"><span class="vft-bar-progress" style="width:25%;"><\/span><\/span>/)
-  assert.match(html, /<span class="vft-gantt-segment-gap" style="left:9px;width:10px;" aria-hidden="true">/)
-  assert.match(html, /<div class="vft-gantt-float" style="left:calc\(var\(--vft-label-area-width\) \+ 60px\);width:20px;top:29px;" aria-hidden="true">/)
-  assert.match(html, /<div class="vft-gantt-deadline vft-late" style="left:calc\(var\(--vft-label-area-width\) \+ 45px\);top:4px;height:58px;" aria-hidden="true">/)
+  assert.match(html, /<div class="vw-gantt-non-working-layer" aria-hidden="true"><!--\[--><span class="vw-gantt-non-working" style="left:30px;width:10px;"><\/span><span class="vw-gantt-non-working" style="left:35px;width:10px;"><\/span><!--\]--><\/div><div class="vw-gantt-grid"/)
+  assert.match(html, /class="vw-gantt-bar vw-tone-blue solid editable vw-critical vw-late vw-segmented"/)
+  assert.match(html, /<span class="vw-gantt-segment" style="left:-1px;width:10px;" aria-hidden="true"><span class="vw-bar-progress" style="width:100%;"><\/span><\/span>/)
+  assert.match(html, /<span class="vw-gantt-segment" style="left:19px;width:20px;" aria-hidden="true"><span class="vw-bar-progress" style="width:25%;"><\/span><\/span>/)
+  assert.match(html, /<span class="vw-gantt-segment-gap" style="left:9px;width:10px;" aria-hidden="true">/)
+  assert.match(html, /<div class="vw-gantt-float" style="left:calc\(var\(--vw-label-area-width\) \+ 60px\);width:20px;top:29px;" aria-hidden="true">/)
+  assert.match(html, /<div class="vw-gantt-deadline vw-late" style="left:calc\(var\(--vw-label-area-width\) \+ 45px\);top:4px;height:58px;" aria-hidden="true">/)
   // The information is in the accessible description, not the accessible name.
   assert.match(html, /aria-label="Bar 02:00–06:00"/)
   const describedBy = /aria-describedby="([^"]+)"/.exec(html)[1].split(' ')
@@ -209,10 +209,10 @@ test('GanttChart localizes the bar description and mirrors the new layers right 
     ...chartProps, dir: 'rtl', bars: [{ ...segmented, id: 'b2' }], nonWorkingPeriods: [{ start: 3 * hour, end: 4 * hour }],
     labels: { critical: 'Kritisch', float: 'Puffer bis', deadline: 'Frist', late: 'Verspätet' },
   }) }))
-  assert.match(html, /<span class="vft-gantt-non-working" style="right:30px;width:10px;">/)
-  assert.match(html, /<span class="vft-gantt-segment" style="right:19px;width:20px;"/)
-  assert.match(html, /class="vft-gantt-float" style="right:calc\(var\(--vft-label-area-width\) \+ 60px\)/)
-  assert.match(html, /class="vft-gantt-deadline vft-late" style="right:calc\(var\(--vft-label-area-width\) \+ 45px\)/)
+  assert.match(html, /<span class="vw-gantt-non-working" style="right:30px;width:10px;">/)
+  assert.match(html, /<span class="vw-gantt-segment" style="right:19px;width:20px;"/)
+  assert.match(html, /class="vw-gantt-float" style="right:calc\(var\(--vw-label-area-width\) \+ 60px\)/)
+  assert.match(html, /class="vw-gantt-deadline vw-late" style="right:calc\(var\(--vw-label-area-width\) \+ 45px\)/)
   // A bar that is not editable is described by its overlay text alone.
   const id = /aria-describedby="([^" ]+)"/.exec(html)[1]
   assert.match(html, new RegExp(`<span id="${id}" hidden>Kritisch\\. Puffer bis 08:00\\. Frist 05:00\\. Verspätet\\.</span>`))
@@ -229,10 +229,10 @@ test('GanttChart places shading, segments and float lines with a custom scale', 
   const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
     ...chartProps, scale, bars: [segmented], nonWorkingPeriods: [{ start: 4 * hour, end: 6 * hour }],
   }) }))
-  assert.match(html, /<span class="vft-gantt-non-working" style="left:80px;width:24px;"><\/span>/)
-  assert.match(html, /<span class="vft-gantt-segment" style="left:-1px;width:20px;"/)
-  assert.match(html, /<span class="vft-gantt-segment" style="left:39px;width:24px;"/)
-  assert.match(html, /class="vft-gantt-float" style="left:calc\(var\(--vft-label-area-width\) \+ 104px\);width:8px;/)
+  assert.match(html, /<span class="vw-gantt-non-working" style="left:80px;width:24px;"><\/span>/)
+  assert.match(html, /<span class="vw-gantt-segment" style="left:-1px;width:20px;"/)
+  assert.match(html, /<span class="vw-gantt-segment" style="left:39px;width:24px;"/)
+  assert.match(html, /class="vw-gantt-float" style="left:calc\(var\(--vw-label-area-width\) \+ 104px\);width:8px;/)
 })
 
 test('GanttChart markup, names and descriptions are unchanged without the new inputs', async () => {
@@ -240,9 +240,9 @@ test('GanttChart markup, names and descriptions are unchanged without the new in
   const render = props => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }) }))
   const plain = await render({ bars })
   assert.equal(await render({ bars: bars.map(bar => ({ ...bar, critical: false })), nonWorkingPeriods: [] }), plain)
-  assert.doesNotMatch(plain, /vft-gantt-non-working|vft-critical|vft-late|vft-segmented|vft-gantt-segment|vft-gantt-float|vft-gantt-deadline|hidden>/)
+  assert.doesNotMatch(plain, /vw-gantt-non-working|vw-critical|vw-late|vw-segmented|vw-gantt-segment|vw-gantt-float|vw-gantt-deadline|hidden>/)
   assert.match(plain, /title="Bar 02:00–06:00" aria-label="Bar 02:00–06:00" aria-pressed="false" aria-describedby="v-0-hint"/)
-  assert.match(plain, /<span class="vft-bar-progress" style="width:50%;" aria-hidden="true"><\/span>/)
+  assert.match(plain, /<span class="vw-bar-progress" style="width:50%;" aria-hidden="true"><\/span>/)
   assert.match(plain, /title="Bar 07:00–07:00" aria-label="Bar 07:00–07:00" aria-pressed="false">/)
 })
 
@@ -261,6 +261,6 @@ test('GanttChart reports invalid nonWorkingPeriods and new bar fields through va
     assert.ok(reported[0] instanceof RangeError)
     assert.match(reported[0].message, expected)
     assert.match(html, /No rows to display/)
-    assert.doesNotMatch(html, /vft-gantt-canvas/)
+    assert.doesNotMatch(html, /vw-gantt-canvas/)
   }
 })

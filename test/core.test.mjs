@@ -227,9 +227,9 @@ test('invalid Gantt data reports validation-error and renders the empty state', 
   const html = await renderToString(createSSRApp({ render: () => h(GanttChart, props) })).catch(() => '')
   assert.equal(errors.length, 1)
   assert.match(errors[0].message, /duplicate/)
-  assert.ok(!html.includes('vft-gantt-bar'))
+  assert.ok(!html.includes('vw-gantt-bar'))
   const valid = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...props, bars: [bar], onValidationError: () => assert.fail('unexpected') }) }))
-  assert.match(valid, /vft-gantt-bar/)
+  assert.match(valid, /vw-gantt-bar/)
 })
 
 test('invalid Gantt row hierarchies report validation-error before rendering', async () => {
@@ -249,7 +249,7 @@ test('invalid Gantt row hierarchies report validation-error before rendering', a
     assert.match(reported[0].message, expected)
     assert.deepEqual(handled, reported)
     assert.match(html, /No rows to display/)
-    assert.ok(!html.includes('vft-gantt-canvas'))
+    assert.ok(!html.includes('vw-gantt-canvas'))
   }
 })
 
@@ -264,7 +264,7 @@ test('production builds do not render invalid Gantt data', () => {
       rows: [{ id: 'r', label: 'Row' }], bars: [bar, bar], range: { start: 0, end: 7200000 },
       onValidationError: error => errors.push(error.message),
     }) }))
-    console.log(JSON.stringify({ errors, rendered: html.includes('vft-gantt-bar') }))
+    console.log(JSON.stringify({ errors, rendered: html.includes('vw-gantt-bar') }))
   `
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
     env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
@@ -340,7 +340,7 @@ function bigGraph(count) {
   const n = nodes(...Array.from({ length: count }, (_, i) => 'n' + i))
   return { nodes: n, edges: edges(...n.slice(1).map((node, i) => [n[i].id, node.id])) }
 }
-const renderedNodeCount = html => (html.match(/class="vft-network-node/g) ?? []).length
+const renderedNodeCount = html => (html.match(/class="vw-network-node/g) ?? []).length
 
 test('server rendering with cullOffscreen is deterministic and renders only the initial viewport', async () => {
   const graph = bigGraph(400)
@@ -389,12 +389,12 @@ test('matchIds and dimmedIds dim nodes and the edges that touch them', async () 
     nodes: n, edges: edges(['a', 'b'], ['b', 'c']), matchIds: new Set(['a', 'b']),
   }) }))
   // Node c and the edge b to c are dimmed; edge a to b and nodes a and b are not.
-  assert.equal((html.match(/vft-dimmed/g) ?? []).length, 2)
-  assert.match(html, /class="[^"]*vft-dimmed[^"]*"[^>]*aria-label="c"/)
+  assert.equal((html.match(/vw-dimmed/g) ?? []).length, 2)
+  assert.match(html, /class="[^"]*vw-dimmed[^"]*"[^>]*aria-label="c"/)
   const plain = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [] }) }))
-  assert.doesNotMatch(plain, /vft-dimmed/)
+  assert.doesNotMatch(plain, /vw-dimmed/)
   const explicit = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes: n, edges: [], dimmedIds: new Set(['b']) }) }))
-  assert.equal((explicit.match(/vft-dimmed/g) ?? []).length, 1)
+  assert.equal((explicit.match(/vw-dimmed/g) ?? []).length, 1)
 })
 
 test('NetworkGraph renders RL and BT and keeps default output unchanged', async () => {
@@ -406,7 +406,7 @@ test('NetworkGraph renders RL and BT and keeps default output unchanged', async 
   assert.equal(await render({ direction: 'LR' }), base)
   for (const direction of ['RL', 'BT']) {
     const html = await render({ direction, crossingReduction: 'barycenter', crossingSweeps: 3 })
-    assert.ok(html.includes('vft-network'))
+    assert.ok(html.includes('vw-network'))
     assert.ok(!/NaN|Infinity/.test(html))
     assert.notEqual(html, base)
   }

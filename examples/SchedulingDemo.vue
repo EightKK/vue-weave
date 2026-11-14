@@ -247,7 +247,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       :status-date="statusDate" :show-progress-line="showProgressLine"
       @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
-      <template #bar="{ bar }"><span class="vft-bar-text">{{ workHours.get(bar.id) }} h</span></template>
+      <template #bar="{ bar }"><span class="vw-bar-text">{{ workHours.get(bar.id) }} h</span></template>
       <template #legend><span class="hint">Drag a cutting order or use its arrow keys; dashed outlines preview the operations that move with it. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
     </GanttChart>
     <p class="status" role="status">{{ notice }}</p>

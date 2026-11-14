@@ -23,69 +23,133 @@ import { progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
+  /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
   rows: readonly TimelineRow[]
+  /** Bars drawn on the rows. Each has an ID, `rowId`, label and numeric half-open `[start, end)` interval in the units of `range`; a zero-duration bar is a milestone. Required. */
   bars: readonly TimelineBar[]
+  /** Links between bars by ID, with an optional FS, SS, FF or SF type. They are drawn only; scheduling constraints are enforced by the application. Default: `[]`. */
   dependencies?: readonly TimelineDependency[]
+  /** IDs of dependencies drawn with the highlight style. */
   highlightedDependencyIds?: ReadonlySet<string>
+  /** Visible axis bounds as a finite `{ start, end }` with `start < end`, in the caller's time units. Required. */
   range: TimeRange
+  /** Base linear time scale in pixels per time unit. Default: 80 pixels per hour, in milliseconds. */
   pixelsPerUnit?: number
+  /** Candidate tick intervals in time units, positive and ascending. The first step that keeps tick labels at least 76 px apart is used. Default: 30 minutes, 1, 2, 4 and 24 hours, in milliseconds. */
   tickSteps?: readonly number[]
+  /** Step in time units that edit displacements snap to; also the default minimum duration. Default: 900000 (15 minutes in milliseconds). */
   snap?: number
+  /** Formats a time for tick labels and accessible bar labels. Default: UTC `HH:mm`. */
   formatTime?: (time: number) => string
+  /** Controlled set of selected bar IDs, highlighted in the chart. With `multiSelect`, clicks propose changes through `update:selectedIds`. */
   selectedIds?: ReadonlySet<string>
+  /** Controlled set of collapsed row IDs. When omitted, the component keeps the collapsed set itself; changes are reported through `update:collapsedIds`. */
   collapsedIds?: ReadonlySet<string>
+  /** Header levels drawn above the ticks. Each level is an ordered list of non-overlapping `{ start, end, label }` intervals. */
   headerBands?: readonly (readonly TimelineBand[])[]
+  /** Vertical markers with a unique ID, finite time and label, drawn inside the visible time window. */
   markers?: readonly TimelineMarker[]
+  /** Extra sticky columns next to the row label, each with an ID, label, pixel width, `value(row, summary)` and optional `editable`. */
   columns?: readonly TimelineColumn[]
+  /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
   showSummaries?: boolean
+  /** Synchronous check of a cell edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateCellEdit?: (change: TimelineCellEdit) => boolean | string | void
+  /** Fixed row height in pixels; at least `8 + laneCount * 14`. Default: 66. */
   rowHeight?: number
+  /** Number of bar lanes per row. Default: 1. */
   laneCount?: number
+  /** Height of the scroll viewport, as a number of pixels or a CSS length. Default: 316px. */
   height?: number | string
+  /** Overrides for the English UI strings and accessible names; fields you omit keep their defaults. */
   labels?: Partial<GanttLabels>
+  /** Disables all editing (bar edits, connections, creation, deletion, progress, row moves and cell edits). Default: false. */
   readonly?: boolean
+  /** Interval that bars must stay inside to be editable and that proposals are kept within. Default: `range`. */
   editBounds?: TimeRange
+  /** Smallest duration, in time units, that a resize may propose. Default: the active `snap`. */
   minDuration?: number
+  /** Synchronous check of a bar edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateEdit?: EditValidator
+  /** Custom time-to-pixel mapping that replaces the linear scale, before component zoom is applied. */
   scale?: TimeScale
+  /** Shows the zoom buttons. Default: true. */
   showControls?: boolean
+  /** Scrolls the timeline horizontally while a pointer drag is held near the left or right edge of the viewport. Default: true. */
   autoScroll?: boolean
+  /** Shows link handles on bars so a drag or two activations propose a new dependency through `connect`. Opt-in. Default: false. */
   connectable?: boolean
+  /** Lets a selected dependency be moved to other bar ends, proposed through `reconnect`. Opt-in. Default: false. */
   reconnectable?: boolean
+  /** Synchronous check of a connection proposal; receives the existing dependency ID when reconnecting. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConnection?: TimelineConnectionValidator
+  /** Controlled selected dependency ID. When omitted, the component tracks the selection itself. */
   selectedDependencyId?: string
+  /** With `selectedIds`, click toggles membership with Ctrl, Meta or Shift and moves all selected editable bars together. Opt-in. Default: false. */
   multiSelect?: boolean
+  /** Synchronous check of a whole batch of edits. Without it, each change goes through `validateEdit` and the first rejection rejects the batch. */
   validateEdits?: BatchEditValidator
+  /** Lets a move also propose a different row for a bar, by pointer or Up/Down arrows, carried as `row` on the edit. Opt-in. Default: false. */
   rowDraggable?: boolean
+  /** Named zoom levels, each with a unique `id`, label, `pixelsPerUnit` and optional `tickSteps`, `headerBands` and `snap`. The active preset replaces the matching props. */
   zoomPresets?: readonly TimelineZoomPreset[]
+  /** Controlled ID of the active zoom preset. An unknown ID is reported through `validation-error`. */
   zoomPreset?: string
+  /** Draws a "now" marker. Opt-in. Default: false. */
   showNow?: boolean
+  /** Time of the "now" marker, in the units of `range`. Supply it for deterministic output; otherwise the clock is read after mounting. */
   now?: number
+  /** Resource load rows drawn below the task rows on the same time axis. Each has a unique ID, label and optional detail. */
   loadRows?: readonly TimelineLoadRow[]
+  /** Load segments (`resourceId`, `start`, `end`, `load`, `capacity`) drawn in the load rows. They must reference a load row and not overlap within a resource. */
   loadSegments?: readonly TimelineLoadSegment[]
+  /** Height of each load row in pixels; at least 16. Default: 44. */
   loadRowHeight?: number
+  /** Zooms the time axis between 65% and 300% with a two-finger pinch. Opt-in. Default: false. */
   pinchZoom?: boolean
+  /** Text direction: `ltr`, `rtl` or `auto`. `rtl` places row headings on the right and runs time right to left. Default: `ltr`. */
   dir?: ChartDirection
+  /** Half-open intervals shaded as non-working time behind the grid. They may overlap and need not be sorted. */
   nonWorkingPeriods?: readonly TimeRange[]
+  /** Shows a progress slider on editable bars, proposed through `progress-edit`. Opt-in. Default: false. */
   progressEditable?: boolean
+  /** Step that progress proposals snap to, greater than 0 and at most 1. Default: 0.05. */
   progressStep?: number
+  /** Synchronous check of a progress edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateProgressEdit?: ProgressEditValidator
+  /** Lets Delete or Backspace on a focused deletable bar propose its removal through `bars-delete`. Opt-in. Default: false. */
   deletable?: boolean
+  /** Synchronous check of a bar deletion proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateBarsDelete?: BarsDeleteValidator
+  /** Hover delay in milliseconds before the `tooltip` slot appears; finite and nonnegative. Default: 400. */
   tooltipDelay?: number
+  /** Reports context menu requests through `context-menu` instead of opening the browser menu. The component renders no menu. Opt-in. Default: false. */
   contextMenu?: boolean
+  /** Enables proposing new bars by dragging or clicking an empty part of a row, or via its add button. Pass `true` for every row or a predicate to choose rows. Default: false. */
   creatable?: boolean | ((row: TimelineRow) => boolean)
+  /** Length in time units of a bar proposed by a click or the add button; finite and positive. Default: 4 times `snap`. */
   createDuration?: number
+  /** Synchronous check of a new bar proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateCreate?: CreateValidator
+  /** Synchronous, side-effect-free callback returning follow-on edits of other bars for a move or resize. They are previewed during a drag and proposed with it as one batch through `edits`. */
   cascade?: TimelineCascade
+  /** Shows a move handle on each row heading to propose hierarchy moves by drag or Alt+arrow keys, through `row-move`. Opt-in. Default: false. */
   rowsReorderable?: boolean
+  /** Synchronous check of a row move proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateRowMove?: RowMoveValidator
+  /** Time in the units of `range` at which a labelled status-date line is drawn. Must be finite. */
   statusDate?: number
+  /** With `statusDate`, also draws a progress line that kinks to each bar's progress point. No effect without `statusDate`. Opt-in. Default: false. */
   showProgressLine?: boolean
+  /** Shows resize separators on the row label column and each extra column, proposing new widths through `column-resize`. Opt-in. Default: false. */
   columnsResizable?: boolean
+  /** Width in pixels of the row label column; finite and positive. Default: the theme width. */
   labelWidth?: number
+  /** Smallest width in pixels that a column resize may propose. Default: 48. */
   minColumnWidth?: number
+  /** Largest width in pixels that a column resize may propose; at least `minColumnWidth`. Default: 800. */
   maxColumnWidth?: number
+  /** Synchronous check of a column resize proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateColumnResize?: ColumnResizeValidator
 }>(), {
   dir: 'ltr',
@@ -103,34 +167,63 @@ const props = withDefaults(defineProps<{
   loadRowHeight: 44,
 })
 const emit = defineEmits<{
+  /** A bar was activated by click or Enter/Space; carries its ID. Fires once per click, on release. */
   select: [id: string]
+  /** Invalid input data or props were detected; carries the error. The chart then renders its empty state. */
   'validation-error': [error: Error]
+  /** Proposal to move or resize one bar. The parent applies it by updating the bar. */
   edit: [change: TimelineEdit]
+  /** The set of collapsed row IDs changed; supports `v-model:collapsed-ids`. */
   'update:collapsedIds': [ids: Set<string>]
+  /** Proposal to change a column cell; `after` is a string the parent converts and applies. */
   'cell-edit': [change: TimelineCellEdit]
+  /** A cell edit was rejected by `validateCellEdit`; carries the proposal and the reason. */
   'cell-edit-rejected': [change: TimelineCellEdit, reason: string]
+  /** A bar edit was rejected by `validateEdit`; carries the proposal and the reason. */
   'edit-rejected': [change: TimelineEdit, reason: string]
+  /** The set of selected bar IDs changed; supports `v-model:selected-ids`. */
   'update:selectedIds': [ids: Set<string>]
+  /** Proposal for several bar changes at once, from a multiple-selection move or a `cascade`. The parent applies them together. */
   edits: [changes: TimelineEdit[]]
+  /** A batch of edits was rejected; carries the proposals and the reason. */
   'edits-rejected': [changes: TimelineEdit[], reason: string]
+  /** Proposal to add a dependency; carries `from`, `to` and the derived type. The parent assigns an ID and adds it. */
   connect: [connection: TimelineConnection]
+  /** Proposal to move a dependency endpoint; carries the ID plus `before` and `after` connections. The parent replaces the dependency. */
   reconnect: [change: TimelineReconnect]
+  /** A connection or reconnection was rejected by `validateConnection`; carries the proposal and the reason. */
   'connect-rejected': [connection: TimelineConnection, reason: string]
+  /** A dependency was activated by click, Enter or Space; carries its ID. */
   'dependency-select': [id: string]
+  /** The selected dependency ID changed; supports `v-model:selected-dependency-id`. */
   'update:selectedDependencyId': [id: string]
+  /** Delete or Backspace was pressed on a focused dependency; carries its ID. The parent removes it to accept. Not emitted when `readonly`. */
   'dependency-delete': [id: string]
+  /** The active zoom preset changed; carries the preset ID. Supports `v-model:zoom-preset`. */
   'update:zoomPreset': [id: string]
+  /** The zoom factor or active preset changed through the buttons, presets or pinch; carries the zoom state. */
   'zoom-change': [state: TimelineZoomState]
+  /** Proposal to change a bar's progress (0 to 1). The parent sets `progress` to `after` to accept. */
   'progress-edit': [change: TimelineProgressEdit]
+  /** A progress edit was rejected by `validateProgressEdit`; carries the proposal and the reason. */
   'progress-edit-rejected': [change: TimelineProgressEdit, reason: string]
+  /** Proposal to remove bars; carries their IDs. The parent removes them to accept. */
   'bars-delete': [ids: string[]]
+  /** A bar deletion was rejected by `validateBarsDelete`; carries the IDs and the reason. */
   'bars-delete-rejected': [ids: string[], reason: string]
+  /** A context menu was requested by pointer or keyboard; carries the target, position and source. Only with `contextMenu`. */
   'context-menu': [event: TimelineContextMenu]
+  /** Proposal to add a bar; carries `rowId`, `lane`, `start`, `end` and `source`. The parent assigns an ID and adds it. */
   create: [proposal: TimelineCreate]
+  /** A new bar was rejected by `validateCreate`; carries the proposal and the reason. */
   'create-rejected': [proposal: TimelineCreate, reason: string]
+  /** Proposal to move a row in the hierarchy; carries `before` and `after` positions. Apply it with `moveTimelineRow`. */
   'row-move': [change: TimelineRowMove]
+  /** A row move was rejected by `validateRowMove`; carries the proposal and the reason. */
   'row-move-rejected': [change: TimelineRowMove, reason: string]
+  /** Proposal to resize a column; carries `id`, `before` and `after` widths in pixels. The parent applies the new width. */
   'column-resize': [change: TimelineColumnResize]
+  /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
   'column-resize-rejected': [change: TimelineColumnResize, reason: string]
 }>()
 
@@ -442,7 +535,7 @@ const markerEntries = computed(() => {
   if (time !== undefined && !validationError.value && time >= props.range.start && time <= props.range.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end) {
     const label = messages.value.statusDate!
-    entries.push({ key: 'status', time, label, className: 'vft-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
+    entries.push({ key: 'status', time, label, className: 'vw-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
   }
   return entries
 })
@@ -483,7 +576,7 @@ const nowTime = computed(() => {
 const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, props.range.start))
 // Grid lines are drawn at each tick's own x (as exportSvg does), so non-linear scales stay aligned with the labels.
 const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
-// Kept for custom stylesheets that read --vft-grid-step; the built-in styles no longer use it.
+// Kept for custom stylesheets that read --vw-grid-step; the built-in styles no longer use it.
 const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value) - axis.value.toX(props.range.start))
 type BarPreview = { range: TimeRange; rowShift: number; mode: EditMode }
 const previews = shallowRef<ReadonlyMap<string, BarPreview>>()
@@ -616,7 +709,7 @@ function rowShiftStyle(bar: TimelineBar) {
 function floatStyle(bar: TimelineBar, end: number, latestEnd: number) {
   const left = axis.value.toX(end)
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left}px)`,
     width: `${axis.value.toX(latestEnd) - left}px`,
     top: `${laneTop(bar) + barHeight.value / 2 - 4}px`,
     ...rowShiftStyle(bar),
@@ -624,7 +717,7 @@ function floatStyle(bar: TimelineBar, end: number, latestEnd: number) {
 }
 function deadlineStyle(bar: TimelineBar, deadline: number) {
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${axis.value.toX(deadline) - 5}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${axis.value.toX(deadline) - 5}px)`,
     top: `${laneTop(bar) - 3}px`,
     height: `${barHeight.value + 6}px`,
     ...rowShiftStyle(bar),
@@ -683,7 +776,7 @@ function intervalBox(range: TimeRange) {
 function previewStyle(range: TimeRange, rowIndex: number, lane: number) {
   const box = intervalBox(range)
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${box.left}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${box.left}px)`,
     width: `${box.width}px`,
     top: `${headerHeight.value + rowIndex * props.rowHeight + laneOffset(lane)}px`,
     height: `${barHeight.value}px`,
@@ -693,7 +786,7 @@ function previewStyle(range: TimeRange, rowIndex: number, lane: number) {
 function barStyle(bar: TimelineBar) {
   const box = barBox(bar)
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${box.left}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${box.left}px)`,
     width: `${box.width}px`,
     height: `${barHeight.value}px`,
     top: `${laneTop(bar)}px`,
@@ -704,7 +797,7 @@ function barStyle(bar: TimelineBar) {
 function summaryStyle(summary: TimelineSummary) {
   const left = axis.value.toX(summary.start)
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left}px)`,
     width: `${Math.max(3, axis.value.toX(summary.end) - left)}px`,
   }
 }
@@ -714,7 +807,7 @@ function baselineStyle(bar: TimelineBar) {
   const left = axis.value.toX(baseline.start)
   const width = axis.value.toX(baseline.end) - left
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
     width: `${Math.max(3, width)}px`,
     top: `${laneTop(bar) + barHeight.value + 1}px`,
   }
@@ -723,7 +816,7 @@ function baselineStyle(bar: TimelineBar) {
 function syncViewport() {
   const el = scroller.value
   if (!el) return
-  const labels = el.querySelector('.vft-gantt-corner')?.getBoundingClientRect().width ?? 154
+  const labels = el.querySelector('.vw-gantt-corner')?.getBoundingClientRect().width ?? 154
   viewport.value = {
     width: el.clientWidth, height: el.clientHeight, left: scrollStart(el), top: el.scrollTop, labels,
   }
@@ -1128,8 +1221,8 @@ function revealBar(id: string) {
   syncViewport()
 }
 function focusBar(id: string) {
-  for (const element of scroller.value?.querySelectorAll<HTMLElement>('[data-vft-bar]') ?? []) {
-    if (element.dataset.vftBar === id) return element.focus({ preventScroll: true })
+  for (const element of scroller.value?.querySelectorAll<HTMLElement>('[data-vw-bar]') ?? []) {
+    if (element.dataset.vwBar === id) return element.focus({ preventScroll: true })
   }
 }
 // After a keyboard edit, wait for the parent to apply it (new bars), then keep the bar in view.
@@ -1300,7 +1393,7 @@ const rowDropStyle = computed(() => {
   const indent = 9 + Math.min(drop.depth, 5) * 11
   return {
     [inlineSide.value]: `${indent}px`,
-    width: `calc(var(--vft-label-area-width) + ${axis.value.width - indent}px)`,
+    width: `calc(var(--vw-label-area-width) + ${axis.value.width - indent}px)`,
     top: `${headerHeight.value + drop.gap * props.rowHeight - 1}px`,
   }
 })
@@ -1319,8 +1412,8 @@ watch(() => props.rows, async () => {
   else if (top + props.rowHeight > el.scrollTop + visible) el.scrollTop = top + props.rowHeight - visible
   syncViewport()
   await nextTick()
-  for (const element of el.querySelectorAll<HTMLElement>('[data-vft-row-handle]')) {
-    if (element.dataset.vftRowHandle === id) return element.focus({ preventScroll: true })
+  for (const element of el.querySelectorAll<HTMLElement>('[data-vw-row-handle]')) {
+    if (element.dataset.vwRowHandle === id) return element.focus({ preventScroll: true })
   }
 })
 
@@ -1352,7 +1445,7 @@ function linkHandleStyle(bar: TimelineBar, end: TimelineBarEnd) {
   // Keep handles inside the axis so the sticky label column never covers them.
   const x = Math.max(0, Math.min(axis.value.width - 12, end === 'start' ? box.left - 15 : box.left + box.width + 3))
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${x}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${x}px)`,
     top: `${laneTop(bar) + barHeight.value / 2 - 6}px`,
   }
 }
@@ -1408,19 +1501,19 @@ function finishLink(event: PointerEvent) {
   skipLinkClick = true
   // A press without movement leaves the end armed for a second click or key.
   if (!dragged) return
-  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-vft-link], [data-vft-bar]')
+  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-vw-link], [data-vw-bar]')
   if (!element || !scroller.value?.contains(element)) {
     linkDraft.value = undefined
     return
   }
-  if (element.dataset.vftLink) {
-    const [bar, end] = JSON.parse(element.dataset.vftLink) as [string, TimelineBarEnd]
+  if (element.dataset.vwLink) {
+    const [bar, end] = JSON.parse(element.dataset.vwLink) as [string, TimelineBarEnd]
     return completeLink({ bar, end })
   }
   // Dropping on a bar body picks its nearer end.
   const rect = element.getBoundingClientRect()
   const firstHalf = event.clientX < rect.left + rect.width / 2
-  completeLink({ bar: element.dataset.vftBar!, end: firstHalf !== rtl.value ? 'start' : 'finish' })
+  completeLink({ bar: element.dataset.vwBar!, end: firstHalf !== rtl.value ? 'start' : 'finish' })
 }
 function activateLink(bar: TimelineBar, end: TimelineBarEnd, event: MouseEvent | KeyboardEvent) {
   if (event.type === 'click' && skipLinkClick) {
@@ -1550,13 +1643,13 @@ watch([
 // drags and proposes keyboard steps; the parent accepts `column-resize` by setting the column width or `labelWidth`.
 const minColumnSize = computed(() => props.minColumnWidth ?? 48)
 const maxColumnSize = computed(() => Math.max(minColumnSize.value, props.maxColumnWidth ?? 800))
-/** The rendered width of the row label column, read from `--vft-row-label-width` after mounting. */
+/** The rendered width of the row label column, read from `--vw-row-label-width` after mounting. */
 const measuredLabelWidth = ref<number>()
 const columnResize = shallowRef<{ id: string; width: number }>()
 let columnDrag: { id: string; pointerId: number; target: HTMLElement; x: number; before: number } | undefined
 function measureLabelColumn() {
   if (!props.columnsResizable || columnResize.value || !root.value) return
-  const width = parseFloat(getComputedStyle(root.value).getPropertyValue('--vft-row-label-width'))
+  const width = parseFloat(getComputedStyle(root.value).getPropertyValue('--vw-row-label-width'))
   measuredLabelWidth.value = Number.isFinite(width) && width > 0 ? width : undefined
 }
 watch(() => props.columnsResizable, () => { if (mounted) measureLabelColumn() })
@@ -1576,7 +1669,7 @@ const columnResizeDelta = computed(() => {
 const labelWidthStyle = computed(() => {
   const preview = columnResize.value
   const width = preview?.id === timelineLabelColumnId ? preview.width : props.labelWidth
-  return width === undefined ? undefined : { '--vft-row-label-width': width + 'px' }
+  return width === undefined ? undefined : { '--vw-row-label-width': width + 'px' }
 })
 const resizeHandles = computed(() => {
   if (!props.columnsResizable || validationError.value) return []
@@ -1604,8 +1697,8 @@ function handleCell(handle: ResizeHandle): HeaderCell {
   const pointer = (event: Event) => event as PointerEvent
   return {
     key: '\u0000resize:' + handle.id,
-    className: columnResize.value?.id === handle.id ? 'vft-column-resize active' : 'vft-column-resize',
-    style: { [inlineSide.value]: `calc(var(--vft-row-label-width) + ${handle.offset - 8}px)` },
+    className: columnResize.value?.id === handle.id ? 'vw-column-resize active' : 'vw-column-resize',
+    style: { [inlineSide.value]: `calc(var(--vw-row-label-width) + ${handle.offset - 8}px)` },
     attrs: {
       role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': `${messages.value.resizeColumn} ${handle.label}`,
       'aria-valuenow': handle.shown, 'aria-valuemin': minColumnSize.value, 'aria-valuemax': maxColumnSize.value,
@@ -1626,7 +1719,7 @@ const headerCells = computed(() => {
   const handles = resizeHandles.value
   const cells: HeaderCell[] = handles.length ? [handleCell(handles[0]!)] : []
   ;(props.columns ?? []).forEach((column, index) => {
-    cells.push({ key: column.id, className: 'vft-extra-column', style: { width: shownColumnWidth(column) + 'px' }, attrs: {}, on: {}, text: column.label })
+    cells.push({ key: column.id, className: 'vw-extra-column', style: { width: shownColumnWidth(column) + 'px' }, attrs: {}, on: {}, text: column.label })
     if (handles[index + 1]) cells.push(handleCell(handles[index + 1]!))
   })
   return cells
@@ -1714,18 +1807,18 @@ function barHandles(bar: TimelineBar): readonly BarHandle[] {
 function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   if (handle !== 'progress') {
     return {
-      class: ['vft-gantt-link-handle', handle, { active: linkPressed(bar, handle) }],
+      class: ['vw-gantt-link-handle', handle, { active: linkPressed(bar, handle) }],
       style: linkHandleStyle(bar, handle),
-      'data-vft-link': linkKey({ bar: bar.id, end: handle }),
+      'data-vw-link': linkKey({ bar: bar.id, end: handle }),
       'aria-label': linkHandleName(bar, handle),
       'aria-pressed': linkPressed(bar, handle),
     }
   }
   const value = shownProgress(bar) ?? 0
   return {
-    class: ['vft-gantt-progress-handle', { dragging: progressPreview.value?.id === bar.id }],
+    class: ['vw-gantt-progress-handle', { dragging: progressPreview.value?.id === bar.id }],
     style: progressHandleStyle(bar),
-    'data-vft-progress': bar.id,
+    'data-vw-progress': bar.id,
     role: 'slider',
     'aria-label': `${messages.value.progressOf} ${bar.label}`,
     'aria-valuemin': 0,
@@ -1756,7 +1849,7 @@ function progressHandleStyle(bar: TimelineBar) {
   const range = rangeOf(bar)
   const x = axis.value.toX(progressTime(range, workSegments(bar, range), shownProgress(bar) ?? 0))
   return {
-    [inlineSide.value]: `calc(var(--vft-label-area-width) + ${x - 6}px)`,
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${x - 6}px)`,
     top: `${laneTop(bar) + barHeight.value - 6}px`,
     ...rowShiftStyle(bar),
   }
@@ -2001,11 +2094,11 @@ function onContextMenu(event: MouseEvent) {
   emit('context-menu', menu)
 }
 function contextTarget(element: Element | undefined): TimelineContextTarget | undefined {
-  const owner = element?.closest<HTMLElement | SVGElement>('[data-vft-bar], [data-vft-progress], [data-vft-link], [data-vft-dependency]')
+  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-link], [data-vw-dependency]')
   if (!owner || !scroller.value?.contains(owner)) return undefined
-  const { vftBar, vftProgress, vftLink, vftDependency } = owner.dataset
-  if (vftDependency !== undefined) return { kind: 'dependency', id: vftDependency }
-  const id = vftBar ?? vftProgress ?? (vftLink ? (JSON.parse(vftLink) as [string, TimelineBarEnd])[0] : undefined)
+  const { vwBar, vwProgress, vwLink, vwDependency } = owner.dataset
+  if (vwDependency !== undefined) return { kind: 'dependency', id: vwDependency }
+  const id = vwBar ?? vwProgress ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
   return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
 }
 
@@ -2117,7 +2210,7 @@ function leaveTooltip() {
 function placeTooltip() {
   const tip = tooltipEl.value, el = scroller.value, id = tooltipTarget.value
   if (!tip || !el || id === undefined) return
-  const anchor = [...el.querySelectorAll<HTMLElement>('[data-vft-bar]')].find(element => element.dataset.vftBar === id)
+  const anchor = [...el.querySelectorAll<HTMLElement>('[data-vw-bar]')].find(element => element.dataset.vwBar === id)
   if (!anchor) return hideTooltip()
   const box = anchor.getBoundingClientRect()
   const outer = el.getBoundingClientRect()
@@ -2234,10 +2327,10 @@ function scrollToRow(id: string) {
   if (index !== undefined && scroller.value) scroller.value.scrollTop = index * props.rowHeight
   syncViewport()
 }
-/** Width of the row heading column, read from `--vft-row-label-width`. */
+/** Width of the row heading column, read from `--vw-row-label-width`. */
 function rowLabelWidth() {
   const element = canvas.value ?? root.value
-  const value = element ? parseFloat(getComputedStyle(element).getPropertyValue('--vft-row-label-width')) : NaN
+  const value = element ? parseFloat(getComputedStyle(element).getPropertyValue('--vw-row-label-width')) : NaN
   return Number.isFinite(value) && value >= 0 ? value : 154
 }
 /**
@@ -2249,7 +2342,7 @@ function exportSvg(options: GanttExportOptions = {}) {
   const { includeLoad = true, includeStatusDate = true, theme, ...rest } = options
   const time = props.now ?? clientNow.value
   return renderTimelineSvg(props.rows, props.bars, props.dependencies, axis.value, {
-    idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
+    idPrefix: 'vw-export-' + marker.replace(/[^\w-]/g, ''),
     ...rest,
     collapsedIds: collapsed.value,
     rowHeight: props.rowHeight,
@@ -2303,7 +2396,7 @@ onMounted(() => {
   syncViewport()
   observer = new ResizeObserver(syncViewport)
   observer.observe(scroller.value)
-  const corner = scroller.value.querySelector('.vft-gantt-corner')
+  const corner = scroller.value.querySelector('.vw-gantt-corner')
   if (corner) observer.observe(corner)
   scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
 })
@@ -2318,109 +2411,109 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vft-gantt" :class="{ 'vft-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
-    <div class="vft-gantt-toolbar">
+  <div ref="root" class="vw-gantt" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+    <div class="vw-gantt-toolbar">
       <slot name="legend" />
-      <div v-if="zoomPresets?.length" class="vft-gantt-presets" role="group" :aria-label="messages.zoomPresets">
+      <div v-if="zoomPresets?.length" class="vw-gantt-presets" role="group" :aria-label="messages.zoomPresets">
         <button v-for="preset in zoomPresets" :key="preset.id" type="button" :aria-pressed="activePreset?.id === preset.id"
           @click="choosePreset(preset.id)">{{ preset.label }}</button>
       </div>
-      <div v-if="showControls !== false" class="vft-gantt-zoom" role="group" :aria-label="messages.zoom">
+      <div v-if="showControls !== false" class="vw-gantt-zoom" role="group" :aria-label="messages.zoom">
         <button type="button" :aria-label="messages.zoomOut" :disabled="zoom <= minZoom" @click="setZoom(1 / 1.35)">−</button>
         <output>{{ Math.round(zoom * 100) }}%</output>
         <button type="button" :aria-label="messages.zoomIn" :disabled="zoom >= maxZoom" @click="setZoom(1.35)">＋</button>
       </div>
     </div>
     <div
-      ref="scroller" class="vft-gantt-scroll" :class="{ 'vft-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
+      ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
       @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event); moveRowDrag($event)"
       @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
       @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
       @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
     >
-      <div v-if="!validationError" ref="canvas" class="vft-gantt-canvas" :style="{
-        width: `calc(var(--vft-label-area-width) + ${axis.width}px)`,
+      <div v-if="!validationError" ref="canvas" class="vw-gantt-canvas" :style="{
+        width: `calc(var(--vw-label-area-width) + ${axis.width}px)`,
         height: `${headerHeight + bodyHeight + loadHeight}px`,
-        '--vft-label-area-width': `calc(var(--vft-row-label-width) + ${columnWidth + columnResizeDelta}px)`,
-        '--vft-header-height': `${headerHeight}px`,
-        '--vft-axis-width': `${axis.width}px`,
-        '--vft-grid-step': `${gridStep}px`,
+        '--vw-label-area-width': `calc(var(--vw-row-label-width) + ${columnWidth + columnResizeDelta}px)`,
+        '--vw-header-height': `${headerHeight}px`,
+        '--vw-axis-width': `${axis.width}px`,
+        '--vw-grid-step': `${gridStep}px`,
         ...labelWidthStyle,
       }">
-        <div class="vft-gantt-head">
-          <div class="vft-gantt-corner" :class="{ 'vft-column-group': columns?.length }">
-            <div class="vft-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
+        <div class="vw-gantt-head">
+          <div class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
+            <div class="vw-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
             <!-- Column headers and, with columnsResizable, their resize separators share one list so that the default markup stays unchanged. -->
             <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>
           </div>
-          <div class="vft-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
-            <span v-for="line in tickXs" :key="'line-' + line.tick" class="vft-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
-            <span v-for="{ tick, x } in tickXs" :key="tick" class="vft-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+          <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
+            <span v-for="line in tickXs" :key="'line-' + line.tick" class="vw-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
+            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
-          <div v-for="(level, index) in shownBands" :key="index" class="vft-gantt-band-level"
+          <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
-            <div v-for="band in level" :key="band.start" class="vft-gantt-band"
+            <div v-for="band in level" :key="band.start" class="vw-gantt-band"
               :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
           </div>
         </div>
-        <div v-if="shownNonWorking.length" class="vft-gantt-non-working-layer" aria-hidden="true">
-          <span v-for="band in shownNonWorking" :key="band.key" class="vft-gantt-non-working"
+        <div v-if="shownNonWorking.length" class="vw-gantt-non-working-layer" aria-hidden="true">
+          <span v-for="band in shownNonWorking" :key="band.key" class="vw-gantt-non-working"
             :style="{ [inlineSide]: band.left + 'px', width: band.width + 'px' }"></span>
         </div>
-        <div class="vft-gantt-grid" aria-hidden="true">
-          <span v-for="line in tickXs" :key="line.tick" class="vft-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
+        <div class="vw-gantt-grid" aria-hidden="true">
+          <span v-for="line in tickXs" :key="line.tick" class="vw-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
         </div>
-        <div v-for="item in markerEntries" :key="item.key" class="vft-gantt-marker" :class="item.className"
+        <div v-for="item in markerEntries" :key="item.key" class="vw-gantt-marker" :class="item.className"
           :role="item.role" :aria-label="item.name" :title="item.name"
-          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(item.time)}px)` }">
+          :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${axis.toX(item.time)}px)` }">
           <span>{{ item.label }}</span>
         </div>
-        <div v-if="nowTime !== undefined" class="vft-gantt-marker vft-gantt-now" :title="`${messages.now} ${formatTime(nowTime)}`"
-          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${axis.toX(nowTime)}px)` }">
+        <div v-if="nowTime !== undefined" class="vw-gantt-marker vw-gantt-now" :title="`${messages.now} ${formatTime(nowTime)}`"
+          :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${axis.toX(nowTime)}px)` }">
           <span>{{ messages.now }}</span>
         </div>
-        <div v-for="row in shownRows" :key="row.row.id" class="vft-gantt-row"
+        <div v-for="row in shownRows" :key="row.row.id" class="vw-gantt-row"
           :style="{ top: `${headerHeight + row.index * rowHeight}px`, height: `${rowHeight}px` }"
           @pointerdown="pressRow($event, row.row)"
         >
-          <div class="vft-gantt-row-label" :class="{ 'vft-column-group': columns?.length }"
+          <div class="vw-gantt-row-label" :class="{ 'vw-column-group': columns?.length }"
           >
-            <div class="vft-name-column" :class="{ 'vft-tree-row': row.hasChildren || row.depth > 0, 'vft-creatable': row.creatable, 'vft-reorderable': row.reorderable }"
-              :style="{ '--vft-row-depth': Math.min(row.depth, 5) }">
-            <button v-if="row.hasChildren && !row.creatable && !row.reorderable" type="button" class="vft-row-toggle"
+            <div class="vw-name-column" :class="{ 'vw-tree-row': row.hasChildren || row.depth > 0, 'vw-creatable': row.creatable, 'vw-reorderable': row.reorderable }"
+              :style="{ '--vw-row-depth': Math.min(row.depth, 5) }">
+            <button v-if="row.hasChildren && !row.creatable && !row.reorderable" type="button" class="vw-row-toggle"
               :aria-expanded="!collapsed.has(row.row.id)"
               :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
               @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
             <template v-else-if="row.creatable && !row.reorderable">
-              <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
+              <button v-if="row.hasChildren" type="button" class="vw-row-toggle"
                 :aria-expanded="!collapsed.has(row.row.id)"
                 :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
                 @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
-              <button type="button" class="vft-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
+              <button type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
                 @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
             </template>
             <template v-else-if="row.reorderable">
-              <button type="button" class="vft-row-move-handle" :data-vft-row-handle="row.row.id"
+              <button type="button" class="vw-row-move-handle" :data-vw-row-handle="row.row.id"
                 :aria-label="`${messages.moveRow} ${row.row.label}`" :aria-describedby="marker + '-reorder-hint'"
                 @pointerdown="startRowDrag($event, row.row)" @keydown="rowHandleKeys($event, row.row)"><span aria-hidden="true">⋮⋮</span></button>
-              <button v-if="row.hasChildren" type="button" class="vft-row-toggle"
+              <button v-if="row.hasChildren" type="button" class="vw-row-toggle"
                 :aria-expanded="!collapsed.has(row.row.id)"
                 :aria-label="`${collapsed.has(row.row.id) ? messages.expandRow : messages.collapseRow} ${row.row.label}`"
                 @click="toggleRow(row.row.id)">{{ collapsed.has(row.row.id) ? (rtl ? '◂' : '▸') : '▾' }}</button>
-              <button v-if="row.creatable" type="button" class="vft-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
+              <button v-if="row.creatable" type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
                 @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
             </template>
-            <div class="vft-row-content">
+            <div class="vw-row-content">
               <slot name="row" :row="row.row" :index="row.index" :depth="row.depth" :expanded="!collapsed.has(row.row.id)">
                 <strong>{{ row.row.label }}</strong>
                 <small v-if="row.row.detail">{{ row.row.detail }}</small>
               </slot>
             </div>
             </div>
-            <div v-for="column in columns" :key="column.id" class="vft-extra-column" :style="{ width: shownColumnWidth(column) + 'px' }">
+            <div v-for="column in columns" :key="column.id" class="vw-extra-column" :style="{ width: shownColumnWidth(column) + 'px' }">
               <slot name="cell" :row="row.row" :column="column" :value="cellValue(row.row, column)" :summary="summaries?.get(row.row.id)">
-                <input v-if="canEditCell(row.row, column)" class="vft-cell-input" type="text"
+                <input v-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
                   :aria-label="row.row.label + ' · ' + column.label" :value="cellValue(row.row, column)"
                   @change="commitCell($event, row.row, column)" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                   @keydown.esc.stop.prevent="cancelCell($event, row.row, column)">
@@ -2428,21 +2521,21 @@ onUnmounted(() => {
               </slot>
             </div>
           </div>
-          <div v-if="row.summary && intersectsWindow(row.summary, timeWindow)" class="vft-gantt-summary"
+          <div v-if="row.summary && intersectsWindow(row.summary, timeWindow)" class="vw-gantt-summary"
             :style="summaryStyle(row.summary)"
             :title="`${row.row.label} · ${row.summary.count} · ${formatTime(row.summary.start)}–${formatTime(row.summary.end)}`">
             <span v-if="row.summary.progress !== undefined" :style="{ width: (row.summary.progress * 100) + '%' }"></span>
           </div>
-          <div v-for="bar in row.baselines" :key="bar.id" class="vft-gantt-baseline"
+          <div v-for="bar in row.baselines" :key="bar.id" class="vw-gantt-baseline"
             :style="baselineStyle(bar)" :title="`${messages.baseline} · ${bar.label} ${formatTime(bar.baseline!.start)}–${formatTime(bar.baseline!.end)}`"></div>
-          <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vft-gantt-float" :style="item.style" aria-hidden="true"></div>
+          <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vw-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
-            v-for="bar in row.bars" :key="bar.id" type="button" class="vft-gantt-bar"
-            :class="[`vft-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'outline' : 'solid', {
+            v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
+            :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'outline' : 'solid', {
               selected: selectedIds?.has(bar.id), editable: editable(bar), dragging: previews?.has(bar.id), milestone: bar.start === bar.end,
-              'vft-critical': bar.critical, 'vft-late': row.overlays.get(bar.id)?.late, 'vft-segmented': row.overlays.get(bar.id)?.segments,
+              'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
             }]"
-            :style="barStyle(bar)" :data-vft-bar="bar.id"
+            :style="barStyle(bar)" :data-vw-bar="bar.id"
             :title="barTitle(bar, row.overlays.get(bar.id))"
             :aria-label="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
             :aria-pressed="Boolean(selectedIds?.has(bar.id))"
@@ -2452,20 +2545,20 @@ onUnmounted(() => {
             @pointerenter="hoverBar(bar)" @pointerleave="leaveBar(bar)"
           >
             <template v-if="row.overlays.get(bar.id)?.segments">
-              <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vft-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
-              <span v-for="piece in row.overlays.get(bar.id)!.segments!.pieces" :key="piece.key" class="vft-gantt-segment" :style="piece.style" aria-hidden="true">
-                <span v-if="shownProgress(bar) !== undefined" class="vft-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
+              <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vw-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
+              <span v-for="piece in row.overlays.get(bar.id)!.segments!.pieces" :key="piece.key" class="vw-gantt-segment" :style="piece.style" aria-hidden="true">
+                <span v-if="shownProgress(bar) !== undefined" class="vw-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
               </span>
             </template>
-            <span v-else-if="shownProgress(bar) !== undefined" class="vft-bar-progress" :style="{ width: (shownProgress(bar)! * 100) + '%' }" aria-hidden="true"></span>
+            <span v-else-if="shownProgress(bar) !== undefined" class="vw-bar-progress" :style="{ width: (shownProgress(bar)! * 100) + '%' }" aria-hidden="true"></span>
             <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
-              <span class="vft-bar-text">{{ bar.label }}</span>
+              <span class="vw-bar-text">{{ bar.label }}</span>
             </slot>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vft-bar-handle first" data-edit-mode="start" aria-hidden="true"></span>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vft-bar-handle last" data-edit-mode="end" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle first" data-edit-mode="start" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle last" data-edit-mode="end" aria-hidden="true"></span>
             <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
           </button>
-          <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vft-gantt-deadline" :class="{ 'vft-late': item.late }"
+          <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vw-gantt-deadline" :class="{ 'vw-late': item.late }"
             :style="item.style" aria-hidden="true"></div>
           <template v-if="(linkHandlesVisible || progressHandlesVisible) && !row.progress">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
@@ -2480,15 +2573,15 @@ onUnmounted(() => {
                   @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
               </template>
             </template>
-            <svg class="vft-gantt-progress-line" aria-hidden="true" :width="xWindow.right - xWindow.left" :height="rowHeight"
-              :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)` }"
+            <svg class="vw-gantt-progress-line" aria-hidden="true" :width="xWindow.right - xWindow.left" :height="rowHeight"
+              :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)` }"
               :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
           </template>
         </div>
-        <svg v-if="shownLines.length" class="vft-gantt-links" aria-hidden="true"
+        <svg v-if="shownLines.length" class="vw-gantt-links" aria-hidden="true"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
-            [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
+            [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
             top: `${headerHeight + rowWindow.first * rowHeight}px`,
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
@@ -2503,76 +2596,76 @@ onUnmounted(() => {
             :d="line.path" :marker-end="`url(#${marker})`"
           />
         </svg>
-        <svg v-if="dependencyTargets && shownLines.length" class="vft-gantt-link-hits"
+        <svg v-if="dependencyTargets && shownLines.length" class="vw-gantt-link-hits"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
-            [inlineSide]: `calc(var(--vft-label-area-width) + ${xWindow.left}px)`,
+            [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
             top: `${headerHeight + rowWindow.first * rowHeight}px`,
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
         >
-          <path v-for="line in shownLines" :key="line.id" class="vft-dependency-hit" :class="{ active: activeDependencyId === line.id }"
-            :d="line.path" role="button" tabindex="0" :data-vft-dependency="contextMenu ? line.id : undefined"
+          <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ active: activeDependencyId === line.id }"
+            :d="line.path" role="button" tabindex="0" :data-vw-dependency="contextMenu ? line.id : undefined"
             :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
             :aria-pressed="activeDependencyId === line.id"
             @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
         </svg>
-        <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vft-gantt-reconnect-handle"
-          :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
+        <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vw-gantt-reconnect-handle"
+          :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
           :aria-label="item.label" :aria-pressed="Boolean(linkDraft?.dependency && linkDraft.role === item.end)"
-          :data-vft-dependency="contextMenu ? item.dependency.id : undefined"
+          :data-vw-dependency="contextMenu ? item.dependency.id : undefined"
           @pointerdown="reconnectDependency(item.dependency, item.end, $event)"
           @click.stop="clickReconnect(item.dependency, item.end)"
           @keydown.enter.stop.prevent="reconnectDependency(item.dependency, item.end)"
           @keydown.space.stop.prevent="reconnectDependency(item.dependency, item.end)"></button>
-        <svg v-if="linkPreviewPath" class="vft-gantt-link-preview" width="1" height="1" overflow="visible" aria-hidden="true"
+        <svg v-if="linkPreviewPath" class="vw-gantt-link-preview" width="1" height="1" overflow="visible" aria-hidden="true"
           :style="{ top: `${headerHeight}px` }">
           <path :d="linkPreviewPath" />
         </svg>
-        <div v-else-if="createBox" class="vft-gantt-create-preview" :style="createBox" aria-hidden="true"></div>
+        <div v-else-if="createBox" class="vw-gantt-create-preview" :style="createBox" aria-hidden="true"></div>
         <template v-else-if="cascadeBoxes.length">
-          <div v-for="item in cascadeBoxes" :key="item.id" class="vft-gantt-cascade-preview" :style="item.style" aria-hidden="true"></div>
+          <div v-for="item in cascadeBoxes" :key="item.id" class="vw-gantt-cascade-preview" :style="item.style" aria-hidden="true"></div>
         </template>
-        <div v-else-if="rowDropStyle" class="vft-gantt-row-drop" :style="rowDropStyle" aria-hidden="true"></div>
-        <div v-for="item in shownLoadRows" :key="item.row.id" class="vft-gantt-load-row" role="group"
+        <div v-else-if="rowDropStyle" class="vw-gantt-row-drop" :style="rowDropStyle" aria-hidden="true"></div>
+        <div v-for="item in shownLoadRows" :key="item.row.id" class="vw-gantt-load-row" role="group"
           :aria-label="`${messages.loadRegion} ${item.row.label}`"
           :style="{ top: `${headerHeight + bodyHeight + item.index * loadRowHeight}px`, height: `${loadRowHeight}px` }">
-          <span v-for="band in shownNonWorking" :key="band.key" class="vft-gantt-non-working" aria-hidden="true"
-            :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${band.left}px)`, width: band.width + 'px' }"></span>
-          <div class="vft-gantt-row-label">
+          <span v-for="band in shownNonWorking" :key="band.key" class="vw-gantt-non-working" aria-hidden="true"
+            :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${band.left}px)`, width: band.width + 'px' }"></span>
+          <div class="vw-gantt-row-label">
             <slot name="load-row" :row="item.row" :peak="item.peak">
               <strong>{{ item.row.label }}</strong>
               <small v-if="item.row.detail">{{ item.row.detail }}</small>
             </slot>
           </div>
-          <div v-for="segment in item.segments" :key="segment.key" class="vft-gantt-load-segment"
+          <div v-for="segment in item.segments" :key="segment.key" class="vw-gantt-load-segment"
             :class="{ overloaded: segment.overload > 0, idle: segment.segment.load === 0 }" role="img"
             :aria-label="segment.label" :title="segment.label"
-            :style="{ [inlineSide]: `calc(var(--vft-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
+            :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
             <slot name="load-segment" :segment="segment.segment" :row="item.row" :peak="item.peak" :overload="segment.overload">
-              <span class="vft-load-fill" :style="{ height: segment.fill + '%' }"></span>
-              <span v-if="segment.overload > 0" class="vft-load-over" :style="{ bottom: segment.capacity + '%', height: segment.over + '%' }"></span>
-              <span class="vft-load-capacity" :style="{ bottom: segment.capacity + '%' }"></span>
+              <span class="vw-load-fill" :style="{ height: segment.fill + '%' }"></span>
+              <span v-if="segment.overload > 0" class="vw-load-over" :style="{ bottom: segment.capacity + '%', height: segment.over + '%' }"></span>
+              <span class="vw-load-capacity" :style="{ bottom: segment.capacity + '%' }"></span>
             </slot>
           </div>
         </div>
       </div>
     </div>
-    <div v-if="validationError || !rows.length" class="vft-gantt-empty"><slot name="empty">{{ messages.empty }}</slot></div>
+    <div v-if="validationError || !rows.length" class="vw-gantt-empty"><slot name="empty">{{ messages.empty }}</slot></div>
     <template v-else-if="deletable || tooltipBar">
-      <span v-if="deletable" :id="marker + '-delete-hint'" class="vft-sr-only">{{ messages.deleteHint }}</span>
-      <div v-if="tooltipBar" :id="tooltipId" ref="tooltipEl" class="vft-gantt-tooltip" role="tooltip"
+      <span v-if="deletable" :id="marker + '-delete-hint'" class="vw-sr-only">{{ messages.deleteHint }}</span>
+      <div v-if="tooltipBar" :id="tooltipId" ref="tooltipEl" class="vw-gantt-tooltip" role="tooltip"
         :style="tooltipPlace ?? { left: '0px', top: '0px', visibility: 'hidden' }"
         @pointerenter="enterTooltip" @pointerleave="leaveTooltip">
         <slot name="tooltip" :bar="tooltipBar" :range="rangeOf(tooltipBar)" :selected="Boolean(selectedIds?.has(tooltipBar.id))" />
       </div>
     </template>
-    <span :id="marker + '-hint'" class="vft-sr-only">{{ messages.editHint }}</span>
-    <span v-if="rowDraggable && !rowHandlesVisible" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
+    <span :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+    <span v-if="rowDraggable && !rowHandlesVisible" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>
     <template v-else-if="rowHandlesVisible">
-      <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vft-sr-only">{{ messages.moveRowHint }}</span>
-      <span :id="marker + '-reorder-hint'" class="vft-sr-only">{{ messages.moveRowKeysHint }}</span>
+      <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>
+      <span :id="marker + '-reorder-hint'" class="vw-sr-only">{{ messages.moveRowKeysHint }}</span>
     </template>
-    <span class="vft-sr-only" aria-live="polite">{{ notice }}</span>
+    <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
   </div>
 </template>

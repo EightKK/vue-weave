@@ -58,7 +58,7 @@ test('renderGraphSvg draws every node, edge, label and group as escaped standalo
   assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
   assert.match(svg, /<title>Graph &amp; &quot;export&quot;<\/title>/)
   assert.equal(count(svg, /<g transform="translate\(/g), graphNodes.length + 1)
-  assert.equal(count(svg, /marker-end="url\(#vft-export-arrow\)"/g), graphEdges.length)
+  assert.equal(count(svg, /marker-end="url\(#vw-export-arrow\)"/g), graphEdges.length)
   assert.match(svg, />Alpha &lt;one&gt; &amp; &quot;two&quot;</)
   assert.match(svg, />detail &amp; more</)
   assert.match(svg, />a &lt; b</)
@@ -132,7 +132,7 @@ test('renderTimelineSvg draws rows, columns, bands, ticks, bars, milestones, bas
   assert.match(svg, />Work &amp; rows</)
   assert.equal(count(svg, /<polygon /g), 1, 'one milestone')
   assert.equal(count(svg, /<path d="M [^"]*" fill="none"/g), 2, 'two dependency paths')
-  assert.equal(count(svg, /url\(#vft-export-arrow-highlight\)/g), 1)
+  assert.equal(count(svg, /url\(#vw-export-arrow-highlight\)/g), 1)
   assert.equal(count(svg, /font-size="11" font-weight="700" fill="#172c3b" text-anchor/g), 9, 'ticks 00:00 to 08:00')
   assert.match(svg, />Morning</)
   assert.match(svg, />Afternoon</)
@@ -160,7 +160,7 @@ test('renderTimelineSvg respects collapsed rows and row and time ranges', () => 
   assert.match(slice, />Sketch &lt;v1&gt;</)
   assert.match(slice, />Code</)
   assert.equal(count(slice, /<polygon /g), 0, 'the milestone lies outside the window')
-  assert.match(slice, /<clipPath id="vft-export-axis"><rect x="154" y="0" width="160" height="172"\/>/)
+  assert.match(slice, /<clipPath id="vw-export-axis"><rect x="154" y="0" width="160" height="172"\/>/)
 
   const empty = renderTimelineSvg(rows, bars, dependencies, scale, { rowRange: { start: 2, end: 2 } })
   assertWellFormed(empty)
@@ -171,7 +171,7 @@ test('renderTimelineSvg mirrors the axis for right-to-left output', () => {
   const svg = renderTimelineSvg(rows, bars, dependencies, scale, { direction: 'rtl', tickStep: hour })
   assertWellFormed(svg)
   // The time area starts at x = 0 and the heading column sits on the right.
-  assert.match(svg, /<clipPath id="vft-export-axis"><rect x="0" y="0" width="640"/)
+  assert.match(svg, /<clipPath id="vw-export-axis"><rect x="0" y="0" width="640"/)
   assert.match(svg, /<g transform="matrix\(-1 0 0 1 640 0\)">/)
   // The milestone at 06:00 is 160 px from the left edge, which is 08:00.
   assert.match(svg, /<polygon points="160,/)
