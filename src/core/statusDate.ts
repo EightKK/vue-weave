@@ -1,4 +1,6 @@
-import { buildScheduleModel } from './scheduleModel.js'
+import {
+  buildScheduleModel, limitsOf, lowerBounds, slotFor, targetFinish, topologicalOrder, type WorkClock,
+} from './scheduleModel.js'
 import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 
@@ -16,12 +18,16 @@ import type { TimeRange } from './timeline.js'
  *   started.
  * - Progress 0: the task starts no earlier than the status date (in addition to its own bounds).
  *
- * A started or finished task is pinned at its start: its incoming dependencies, `startNoEarlierThan`,
- * `startNoLaterThan`, `fixedStart` and `mode` no longer apply, because its start has happened. Its finish bounds and
- * its outgoing dependencies still apply, so successors follow the new finish. Unstarted tasks keep every bound and
- * dependency; a `fixedStart` before the status date then makes the plan infeasible, which is returned as such.
- * Returns the result of scheduling the adjusted plan; dependencies into started tasks are left out of it, so they
- * never appear in `criticalDependencyIds`. The input is not modified.
+ * A started or finished task is pinned at its start: `startNoEarlierThan`, `startNoLaterThan`, `fixedStart` and
+ * `mode` no longer apply, because its start has happened, and neither do incoming FS and SS dependencies, which bound
+ * the start. Incoming FF and SF dependencies, with their lag, still bound the finish of a partly done task: when its
+ * remaining work would finish too early, the remaining work resumes later, and the gap after the done work grows.
+ * A finished task ignores every incoming dependency. Finish bounds and outgoing dependencies still apply, so
+ * successors follow the new finish. A kept link that cannot be met, for example because the required finish lies
+ * after a `finishNoLaterThan`, the deadline or the horizon, makes the plan infeasible, and the failure names the
+ * link. Unstarted tasks keep every bound and dependency; a `fixedStart` before the status date then makes the plan
+ * infeasible, which is returned as such. Returns the result of scheduling the adjusted plan; the dependencies that
+ * no longer apply are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
  *
  * Throws a RangeError for a status date that is not finite, outside `input.range` or not aligned with the quantum,
  * a progress value outside 0..1 or a done share that does not fit before the status date, and an Error for a progress
@@ -46,13 +52,14 @@ export function rescheduleFromStatusDate(
   const base = scheduleTasks(input)
   if (!base.ok) return base
   const current = new Map(base.tasks.map(task => [task.id, task]))
-  const started = new Set<string>()
+  const completed = new Set<string>()
+  const resumes = new Map<string, Resume>()
   const tasks = input.tasks.map((task): ScheduleTask => {
     const value = progress.get(task.id) ?? 0
     const modelled = model.tasks.get(task.id)!
     const { startNoEarlierThan, startNoLaterThan, fixedStart: _fixed, mode: _mode, ...rest } = task
     if (value === 1) {
-      started.add(task.id)
+      completed.add(task.id)
       return { ...rest, fixedStart: current.get(task.id)!.start }
     }
     // Floating-point noise must not drop a whole quantum; a value just below 1 still leaves one quantum to do.
@@ -68,11 +75,61 @@ export function rescheduleFromStatusDate(
     if (doneStart < 0) throw new RangeError('The done work does not fit before the status date: ' + task.id)
     const start = clock.dateAt(doneStart, false)
     const doneEnd = clock.dateAt(doneStart + done, true)
-    started.add(task.id)
+    resumes.set(task.id, { pauses: task.pauses ?? [], doneEnd, resume: statusWork, remaining: modelled.duration - done, clock })
     const pinned: ScheduleTask = { ...rest, fixedStart: start }
     if (doneEnd < statusDate) pinned.pauses = [...task.pauses ?? [], { start: doneEnd, end: statusDate } satisfies TimeRange]
     return pinned
   })
-  const dependencies = (input.dependencies ?? []).filter(link => !started.has(link.to))
-  return scheduleTasks({ ...input, tasks, dependencies })
+  // Links that bound the start of a started task no longer apply; FF and SF links still bound the finish of its
+  // remaining work. No link into a completed task applies.
+  const dependencies = (input.dependencies ?? []).filter(link =>
+    !completed.has(link.to) && !(resumes.has(link.to) && !targetFinish(link)))
+  return scheduleTasks({ ...input, tasks: delayRemainingWork({ ...input, tasks, dependencies }, resumes), dependencies })
+}
+
+/** A partly done task: its own pauses, where its done work ends, its remaining work and its clock without the gap. */
+interface Resume {
+  pauses: readonly TimeRange[]
+  doneEnd: number
+  /** Work position on `clock` at the status date, where the remaining work resumes at the earliest. */
+  resume: number
+  remaining: number
+  clock: WorkClock
+}
+
+/**
+ * A started task is pinned at its start, so a kept FF or SF link cannot move it as a whole. Its remaining work is
+ * delayed instead, by extending the pause after its done work until its finish meets every kept link. This forward
+ * pass follows the earliest dates of `scheduleTasks` in dependency order and returns the tasks with the extended
+ * pauses. It stops at the first task without a slot and at a finish that does not fit in the horizon; scheduling the
+ * returned plan then reports that failure.
+ */
+function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>): ScheduleTask[] {
+  const tasks = [...adjusted.tasks]
+  const model = buildScheduleModel(adjusted)
+  if (![...resumes.keys()].some(id => model.tasks.get(id)!.incoming.length)) return tasks
+  const sorted = topologicalOrder(model)
+  if ('cycles' in sorted) return tasks
+  const earliest = new Map<string, TimeRange>()
+  for (const id of sorted.order) {
+    const task = model.tasks.get(id)!
+    const bounds = lowerBounds(task, earliest)
+    const pinned = resumes.get(id)
+    if (pinned && task.incoming.length) {
+      const required = bounds.endLower.reduce((value, bound) => bound.dependencyId ? Math.max(value, bound.value) : value, -Infinity)
+      const { clock } = pinned
+      const resume = Math.max(pinned.resume, clock.minFinishWork(required) - pinned.remaining)
+      if (resume + pinned.remaining > clock.total) break
+      const source = tasks[task.index]!
+      if (resume > pinned.resume) {
+        tasks[task.index] = { ...source, pauses: [...pinned.pauses, { start: pinned.doneEnd, end: clock.dateAt(resume, false) }] }
+      }
+      earliest.set(id, { start: source.fixedStart!, end: clock.dateAt(resume + pinned.remaining, true) })
+      continue
+    }
+    const slot = slotFor(task.clock, task.duration, limitsOf(bounds), false)
+    if (!slot) break
+    earliest.set(id, slot)
+  }
+  return tasks
 }

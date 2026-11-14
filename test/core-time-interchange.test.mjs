@@ -169,10 +169,17 @@ test('fractional steps snap without floating-point drift and integer steps are u
   assert.deepEqual(moveTimeRanges([{ start: 0.1, end: 0.3 }], 4, 2, bounds), [{ start: 0.1 + 4, end: 0.3 + 4 }])
 })
 
-test('validateTimelineData scopes ID uniqueness to each collection and leaves self-dependencies to the scheduler', () => {
+test('validateTimelineData scopes ID uniqueness to each collection and rejects self-dependencies', () => {
   const rows = [{ id: 'x', label: 'Row' }]
-  const bars = [{ id: 'x', rowId: 'x', label: 'Bar', start: 0, end: 1 }]
-  assert.doesNotThrow(() => validateTimelineData(rows, bars, [{ id: 'x', from: 'x', to: 'x' }]))
+  const bars = [{ id: 'x', rowId: 'x', label: 'Bar', start: 0, end: 1 }, { id: 'y', rowId: 'x', label: 'Other', start: 1, end: 2 }]
+  // A row, a bar and a dependency may share an ID.
+  assert.doesNotThrow(() => validateTimelineData(rows, bars, [{ id: 'x', from: 'x', to: 'y' }]))
+  for (const type of [undefined, 'FS', 'SS', 'FF', 'SF']) {
+    const dependencies = [{ id: 'xy', from: 'x', to: 'y' }, { id: 'loop', from: 'y', to: 'y', type }]
+    assert.throws(() => validateTimelineData(rows, bars, dependencies), error =>
+      error.constructor === Error && error.message === 'A dependency cannot link a bar to itself: loop on bar y')
+  }
+  // scheduleTasks takes its own links and still reports a self-link as a one-task cycle.
   assert.deepEqual(scheduleTasks({ range: { start: 0, end: 10 }, tasks: [{ id: 'x', duration: 2 }], dependencies: [{ id: 'self', from: 'x', to: 'x' }] }),
     { ok: false, code: 'cycle', cycles: [{ taskIds: ['x'], dependencyIds: ['self'] }] })
 })

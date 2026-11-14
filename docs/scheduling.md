@@ -117,7 +117,13 @@ function cascade(change: TimelineEdit): TimelineEdit[] {
 - **Progress between 0 and 1.** The done work is `progress × duration` rounded down to whole quanta (a value just below 1 still leaves one quantum). It stays where it is, from the current start. When that would carry it past the status date (the task is ahead of plan or started early), it is placed so that it ends at the status date instead. The remaining work is scheduled at or after the status date on the task's calendar. When time is left between the two parts, the task is split: its `work` lists both parts, and `scheduledBarFields` turns them into `segments`. Internally the gap becomes a pause of the task. A task whose done work rounds down to zero, and a milestone, is treated as not started.
 - **Progress 0.** The task starts no earlier than the status date, in addition to its own bounds and dependencies.
 
-A started or finished task is pinned at its start with `fixedStart`: its incoming dependencies, `startNoEarlierThan`, `startNoLaterThan`, previous `fixedStart` and `mode` no longer apply, because its start has happened. Its finish bounds (`finishNoEarlierThan`, `finishNoLaterThan`, the deadline) and its outgoing dependencies still apply, so successors follow the new finish. Unstarted tasks keep every bound and dependency; an unstarted task with a `fixedStart` before the status date makes the plan infeasible, which is returned as an `infeasible` failure. The result is the `ScheduleResult` of the adjusted plan. Dependencies into started tasks are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
+A started or finished task is pinned at its start with `fixedStart`: its `startNoEarlierThan`, `startNoLaterThan`, previous `fixedStart` and `mode` no longer apply, because its start has happened. Its finish bounds (`finishNoEarlierThan`, `finishNoLaterThan`, the deadline) and its outgoing dependencies still apply, so successors follow the new finish. Incoming dependencies depend on the link type and the progress:
+
+- **FS and SS links** bound the start, so they no longer apply to a started task.
+- **FF and SF links** bound the finish, so they still apply to a partly done task, including their lag. When the remaining work would finish before a link allows, it resumes later instead of right at the status date: the gap after the done work grows, and the task finishes at the earliest time the link allows on its calendar. The done work stays where it is.
+- **A finished task** (progress 1) ignores every incoming link and keeps its dates.
+
+A kept FF or SF link that cannot be met makes the plan infeasible. When the required finish lies after the task's `finishNoLaterThan`, the deadline or the end of the horizon, the result is an `infeasible` failure for the task that names the link in `dependencyIds`, with `finishNoLaterThan`, `deadline` or `range` in `constraints`. Unstarted tasks keep every bound and dependency; an unstarted task with a `fixedStart` before the status date makes the plan infeasible, which is returned as an `infeasible` failure. The result is the `ScheduleResult` of the adjusted plan. The dependencies that no longer apply are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
 
 ```ts
 import { rescheduleFromStatusDate } from 'vue-weave/core'
@@ -125,6 +131,9 @@ import { rescheduleFromStatusDate } from 'vue-weave/core'
 // Continuous time: a (10 units) → b (10 units); status date 15.
 const result = rescheduleFromStatusDate(input, 15, new Map([['a', 1], ['b', 0.3]]))
 // a keeps [0, 10). b keeps 3 units at [10, 13) and does the other 7 at [15, 22): work [[10, 13], [15, 22]].
+
+// a (6 units) →FF→ b (4 units); b is half done at status date 2, a has not started and now runs [2, 8).
+// b keeps its done half at [0, 2) and does the other half at [6, 8), so it finishes with a: work [[0, 2], [6, 8]].
 ```
 
 The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
@@ -151,7 +160,7 @@ The sweep reports load, available capacity, excess units and active task IDs for
 
 ## Diagnose failures
 
-A `cycle` failure lists `cycles`. Each entry is a strongly connected group of tasks: `taskIds` in input order, and `dependencyIds`, the links between members, in input order. Every listed link lies on at least one cycle. A self-link forms a group with one task. Tasks that only depend on a cycle are not listed. Entries are ordered by the input position of their first task. Detection is iterative, so long cycles do not exhaust the call stack.
+A `cycle` failure lists `cycles`. Each entry is a strongly connected group of tasks: `taskIds` in input order, and `dependencyIds`, the links between members, in input order. Every listed link lies on at least one cycle. A self-link (a link from a task to itself) forms a group with one task. `validateTimelineData` rejects such a link between bars with an Error, so it reaches `scheduleTasks` only when the links are built some other way. Tasks that only depend on a cycle are not listed. Entries are ordered by the input position of their first task. Detection is iterative, so long cycles do not exhaust the call stack.
 
 An `infeasible` failure names the first task without a feasible slot and the bounds that conflict. `constraints` holds the names of the binding bounds in this fixed order: `range`, `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, `deadline`, `projectFinish` and `calendar`. `dependencyIds` lists the binding links in input order. A bound is binding when it sets the effective lower or upper limit that cannot be met. The horizon (`range`) is listed only when no other bound sets the same limit. `calendar` is added when the numeric bounds could be met in continuous time but the task's working time, including its pauses, has no slot between them. For example, a 5-unit task with a deadline of 4 reports `['range', 'deadline']`, and a fixed start in a break reports `['fixedStart', 'calendar']`.
 

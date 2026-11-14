@@ -197,6 +197,8 @@ test('renderTimelineSvg validates options', () => {
   assert.throws(() => run({ headerBands: [[{ start: 2, end: 1, label: 'B' }]] }), RangeError)
   assert.throws(() => run({ direction: 'up' }), /direction/)
   assert.throws(() => renderTimelineSvg(rows, bars, [{ id: 'x', from: 'd1', to: 'missing' }], scale), /Unknown dependency endpoint/)
+  assert.throws(() => renderTimelineSvg(rows, bars, [{ id: 'x', from: 'd1', to: 'd1' }], scale),
+    { name: 'Error', message: 'A dependency cannot link a bar to itself: x on bar d1' })
   assert.throws(() => renderTimelineSvg(rows, bars, dependencies, { width: 0, toX: x => x, toTime: x => x }), RangeError)
 })
 

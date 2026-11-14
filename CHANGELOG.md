@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `rescheduleFromStatusDate` now drops only FS and SS dependencies into started tasks. FF and SF dependencies into a partly done task still apply, with their lag: when the remaining work would finish before a dependency allows, it resumes later and the task is split. A dependency that cannot be met returns an `infeasible` failure naming it. Completed tasks still ignore every incoming dependency.
+- `validateTimelineData` now throws an `Error` for a dependency from a bar to itself, naming the dependency and the bar. GanttChart reports such data through `validation-error` and renders its empty state, and `renderTimelineSvg` throws. `scheduleTasks` still reports a self-link as a `cycle` failure.
+
 ### Changed
 
 - **Behaviour change:** NetworkGraph keeps a camera the user or the API placed (pan, zoom, minimap, keyboard pan, auto-pan, pinch, `setViewport`, `focusNode`, `fit({ ids })`) when the parent applies a structural change such as `connect`, `delete`, paste, duplicate or a group collapse or expand. It still re-fits while the camera is in automatic fit mode, when the `layout` function or layout `options` change, and when the graph is replaced (it was or becomes empty, or none of the previous node IDs remain). If a smaller graph raises the minimum zoom, a kept camera is clamped to it.

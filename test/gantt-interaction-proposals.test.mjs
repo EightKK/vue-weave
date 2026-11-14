@@ -165,3 +165,18 @@ test('GanttChart reports invalid markers, columns and header bands through valid
     assert.match(html, /No rows to display/)
   }
 })
+
+test('GanttChart reports a self-dependency through validation-error and renders the empty state', async () => {
+  const reported = []
+  const selfLink = { id: 'aa', from: 'a', to: 'a', type: 'FF' }
+  const app = createSSRApp({ render: () => h(GanttChart, {
+    ...chartProps, dependencies: [...dependencies, selfLink], onValidationError: error => reported.push(error),
+  }) })
+  app.config.errorHandler = () => {}
+  const html = await renderToString(app)
+  assert.equal(reported.length, 1)
+  assert.equal(reported[0].constructor, Error)
+  assert.equal(reported[0].message, 'A dependency cannot link a bar to itself: aa on bar a')
+  assert.match(html, /No rows to display/)
+  assert.doesNotMatch(html, /data-vw-dependency/)
+})

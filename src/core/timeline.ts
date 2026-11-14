@@ -210,7 +210,8 @@ function checkSegments(bar: TimelineBar) {
 
 /**
  * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
- * bar may share an ID. A dependency from a bar to itself is accepted here; `scheduleTasks` reports it as a cycle.
+ * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
+ * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.)
  */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
@@ -245,6 +246,9 @@ export function validateTimelineData(
   }
   for (const dependency of dependencies) {
     if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
+    if (dependency.from === dependency.to) {
+      throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
+    }
     if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type')
   }
 }
