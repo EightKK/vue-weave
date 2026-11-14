@@ -10,6 +10,12 @@ export interface TimeRange {
 
 export type EditMode = 'move' | 'start' | 'end'
 
+/**
+ * The `TimelineColumnResize.id` of the row label column, which has no `TimelineColumn` of its own. Do not use it as
+ * the ID of a `TimelineColumn` in a chart with `columnsResizable`.
+ */
+export const timelineLabelColumnId = '$label'
+
 /** A monotonic, continuous mapping. All components use the same coordinate space. */
 export interface TimeScale {
   width: number

@@ -242,6 +242,11 @@ path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var
 .vft-gantt-progress-line { position: absolute; top: 0; z-index: 3; overflow: visible; pointer-events: none; }
 .vft-gantt-progress-line polyline { fill: none; stroke: var(--vft-status, #1f7a4d); stroke-width: 2px; stroke-linejoin: round; }
 .vft-gantt.vft-rtl .vft-gantt-progress-line { transform: scaleX(-1); }
+/* Opt-in column resizing (columnsResizable): a separator along the inline-end edge of each header cell. */
+.vft-column-resize { position: absolute; top: 0; bottom: 0; z-index: 2; width: 8px; cursor: col-resize; touch-action: none; }
+.vft-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vft-border, #c3d2dc); }
+.vft-column-resize:hover::after, .vft-column-resize.active::after { background: var(--vft-accent, #245e96); }
+.vft-column-resize:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }
 
 /* Built-in dark theme. Opt in with `vft-theme-dark`, or follow the OS with `vft-theme-auto`; place the class on a component root or any ancestor. */
 .vft-theme-dark {
@@ -349,6 +354,8 @@ path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var
   .vft-network button:focus-visible, .vft-gantt button:focus-visible, .vft-gantt-scroll:focus-visible, .vft-cell-input:focus-visible { outline-color: Highlight; }
   .vft-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
   .vft-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
+  .vft-column-resize::after { forced-color-adjust: none; background: CanvasText; }
+  .vft-column-resize:focus-visible { outline-color: Highlight; }
   .vft-gantt-tooltip { border-color: CanvasText; }
   .vft-gantt-create-preview, .vft-gantt-cascade-preview { forced-color-adjust: none; border-color: Highlight; background: transparent; box-shadow: none; }
   .vft-network.vft-network-patterned { background: Canvas; }
@@ -368,7 +375,7 @@ path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var
   .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
   .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
   .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-gantt-create-button, .vft-gantt-create-preview, .vft-gantt-cascade-preview, .vft-guides,
-  .vft-group-toggle, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle, .vft-row-move-handle, .vft-gantt-row-drop { display: none !important; }
+  .vft-group-toggle, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle, .vft-row-move-handle, .vft-gantt-row-drop, .vft-column-resize { display: none !important; }
   .vft-gantt-toolbar { display: none; }
   .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
   .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
