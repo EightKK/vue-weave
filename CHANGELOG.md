@@ -4,7 +4,7 @@
 
 No changes yet.
 
-## 0.1.0
+## 0.1.0 - 2026-11-14
 
 First public release. The version restarts at 0.1.0; earlier version numbers were internal only. While the version is 0.x, minor releases can contain breaking changes, which are listed under "Breaking changes".
 
