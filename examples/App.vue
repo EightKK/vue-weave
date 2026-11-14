@@ -8,6 +8,8 @@ import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
 import { download, imageSize } from './download'
 
+const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
+
 const preset = ref('manufacturing')
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
@@ -37,7 +39,7 @@ const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.v
   : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e)
     : layoutKind.value === 'force' && forceAvailable.value ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
 const dark = ref(false)
-const builtInTheme = ref<'' | 'vft-theme-dark' | 'vft-theme-auto'>('')
+const builtInTheme = ref<'' | 'vw-theme-dark' | 'vw-theme-auto'>('')
 const custom = ref(false)
 const locked = ref(false)
 const graphEditing = ref(false)
@@ -262,7 +264,7 @@ function closeMenu(restoreFocus = true) {
   void nextTick(() => {
     // A deleted element cannot take focus back, so the graph stage does.
     const target = previous instanceof HTMLElement || previous instanceof SVGElement
-      ? previous.isConnected ? previous : graph.value?.$el.querySelector('.vft-network-stage') : undefined
+      ? previous.isConnected ? previous : graph.value?.$el.querySelector('.vw-network-stage') : undefined
     target?.focus({ preventScroll: true })
   })
 }
@@ -473,7 +475,7 @@ function commit(change: TimelineEdit) {
 
 <template>
   <div class="demo" :class="[{ dark }, builtInTheme]">
-    <header><a href="./" class="wordmark">Vue Weave <span>0.4</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vft-theme-dark">Dark</option><option value="vft-theme-auto">Auto (system)</option></select></label></header>
+    <header><a href="./" class="wordmark">Vue Weave <span>{{ releaseLine }}</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vw-theme-dark">Dark</option><option value="vw-theme-auto">Auto (system)</option></select></label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
@@ -523,7 +525,7 @@ function commit(change: TimelineEdit) {
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
-            <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vft-surface, #fff)' }" />
+            <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vw-surface, #fff)' }" />
             <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
           </template>
           <template v-if="graphEditing" #tooltip="{ target }">
@@ -553,7 +555,7 @@ function commit(change: TimelineEdit) {
           <template #row-heading>Resource</template>
         </GanttChart>
         <p class="status" role="status">{{ status }}</p>
-        <output class="vft-sr-only" aria-label="Select events">{{ selectCount }}</output>
+        <output class="vw-sr-only" aria-label="Select events">{{ selectCount }}</output>
       </section>
       </template>
       <footer>Vue 3 · TypeScript · SVG + HTML · MIT</footer>

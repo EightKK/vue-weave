@@ -127,7 +127,7 @@ function resize({ id, before, after }: GraphNodeResize) {
 }
 ```
 
-A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vft-group-toggle`, `vft-waypoint-handle`, `vft-waypoint-add` and `vft-resize-handle` and take their colours from `--vft-accent` and `--vft-surface`; no new theme variables are needed.
+A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no new theme variables are needed.
 
 ## Custom content
 
@@ -149,53 +149,53 @@ Gantt row/bar/tick slots accept ordinary HTML. The bar slot is already inside a 
 
 ## Themes and localization
 
-Styles use the vft- class prefix. Set CSS variables on an ancestor to change themes. Examples include --vft-surface, --vft-surface-muted, --vft-surface-hover, --vft-text, --vft-muted, --vft-border, --vft-grid, --vft-edge, --vft-accent and --vft-on-solid.
+Styles use the vw- class prefix. Set CSS variables on an ancestor to change themes. Examples include --vw-surface, --vw-surface-muted, --vw-surface-hover, --vw-text, --vw-muted, --vw-border, --vw-grid, --vw-edge, --vw-accent and --vw-on-solid.
 
-Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo's own `.dark` class uses this contract too. `--vft-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
+Tone-specific variables follow --vw-blue-ink, --vw-blue-line, --vw-blue-pale and --vw-blue-solid. The same suffixes are available for teal, amber and violet. `--vw-baseline`, `--vw-marker` and `--vw-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo's own `.dark` class uses this contract too. `--vw-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
 
-`--vft-edge-selected` (default `--vft-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vft-surface`, `--vft-border` and `--vft-text`.
+`--vw-edge-selected` (default `--vw-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vw-surface`, `--vw-border` and `--vw-text`.
 
 NetworkGraph editing aids add two variables, used only when the matching prop is set:
 
 | Variable | Default | Used for |
 | --- | --- | --- |
-| `--vft-background-pattern` | `--vft-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
-| `--vft-guide` | `#c2255c` | Dashed alignment guides (`vft-guide`) drawn with `alignmentGuides` |
+| `--vw-background-pattern` | `--vw-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
+| `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
 
-GanttChart editing and load overlays add `--vft-now` (now marker), `--vft-load` (load within capacity), `--vft-load-overload` (load above capacity) and `--vft-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vft-accent`; zoom preset buttons use `--vft-accent` and `--vft-on-solid` for the active preset.
+GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
 
 Scheduling overlays add four variables, used only when the matching input is set:
 
 | Variable | Default | Used for |
 | --- | --- | --- |
-| `--vft-non-working` | `#eaeff3` | `nonWorkingPeriods` shading behind the grid |
-| `--vft-critical` | `#b42318` | Outline of bars with `critical: true` |
-| `--vft-float` | `#5b7083` | Float line from a bar's end to its `latestEnd` |
-| `--vft-deadline` | `#a74f08` | Deadline indicator and the dashed outline of a late bar |
+| `--vw-non-working` | `#eaeff3` | `nonWorkingPeriods` shading behind the grid |
+| `--vw-critical` | `#b42318` | Outline of bars with `critical: true` |
+| `--vw-float` | `#5b7083` | Float line from a bar's end to its `latestEnd` |
+| `--vw-deadline` | `#a74f08` | Deadline indicator and the dashed outline of a late bar |
 
 Segmented bars draw their work pieces and gap connectors with the bar's tone variables.
 
-The opt-in progress slider (`progressEditable`) is drawn in `--vft-accent`, and the tooltip slot container (`vft-gantt-tooltip`) uses `--vft-surface`, `--vft-text` and `--vft-border`; they add no new variables. Restyle the tooltip through its class or your slot content.
+The opt-in progress slider (`progressEditable`) is drawn in `--vw-accent`, and the tooltip slot container (`vw-gantt-tooltip`) uses `--vw-surface`, `--vw-text` and `--vw-border`; they add no new variables. Restyle the tooltip through its class or your slot content.
 
-Drag to create (`creatable`) draws its preview (`vft-gantt-create-preview`) with `--vft-accent` and the row add button (`vft-gantt-create-button`) with `--vft-surface`, `--vft-border` and `--vft-accent`. The cascade preview of the `cascade` prop adds one variable:
-
-| Variable | Default | Used for |
-| --- | --- | --- |
-| `--vft-cascade` | `#6d4bb3` | Dashed outline and light fill of the bars a `cascade` callback moves during a drag (`vft-gantt-cascade-preview`) |
-
-Row hierarchy moves (`rowsReorderable`) draw the move handles (`vft-row-move-handle`) with `--vft-muted` and `--vft-surface-hover` and the drop indicator (`vft-gantt-row-drop`) with `--vft-accent`. The status date adds one variable:
+Drag to create (`creatable`) draws its preview (`vw-gantt-create-preview`) with `--vw-accent` and the row add button (`vw-gantt-create-button`) with `--vw-surface`, `--vw-border` and `--vw-accent`. The cascade preview of the `cascade` prop adds one variable:
 
 | Variable | Default | Used for |
 | --- | --- | --- |
-| `--vft-status` | `#1f7a4d` | The `statusDate` line and its label (`vft-gantt-status-date`) and the progress line of `showProgressLine` (`vft-gantt-progress-line`); the `status` export theme colour |
+| `--vw-cascade` | `#6d4bb3` | Dashed outline and light fill of the bars a `cascade` callback moves during a drag (`vw-gantt-cascade-preview`) |
 
-Column resizing (`columnsResizable`) draws its separators (`vft-column-resize`) with `--vft-border`, and with `--vft-accent` while hovered, dragged or focused; it adds no new variable. The width of the row label column is the existing `--vft-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
+Row hierarchy moves (`rowsReorderable`) draw the move handles (`vw-row-move-handle`) with `--vw-muted` and `--vw-surface-hover` and the drop indicator (`vw-gantt-row-drop`) with `--vw-accent`. The status date adds one variable:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-status` | `#1f7a4d` | The `statusDate` line and its label (`vw-gantt-status-date`) and the progress line of `showProgressLine` (`vw-gantt-progress-line`); the `status` export theme colour |
+
+Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) with `--vw-border`, and with `--vw-accent` while hovered, dragged or focused; it adds no new variable. The width of the row label column is the existing `--vw-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
 
 ### Built-in dark theme
 
-Add `vft-theme-dark` to a component root or any ancestor to apply a dark value to every `--vft-*` variable, including `--vft-dimmed-opacity`, `--vft-now`, `--vft-load`, `--vft-load-overload`, `--vft-load-capacity`, `--vft-non-working`, `--vft-critical`, `--vft-float`, `--vft-deadline`, `--vft-cascade`, `--vft-background-pattern`, `--vft-guide`, `--vft-status`, the tone families and the new `--vft-marker-ink`. Add `vft-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, the tone families and the new `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
-`--vft-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vft-on-solid` is dark.
+`--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
 
 ### Media queries
 
@@ -359,7 +359,7 @@ Object.assign(document.createElement('a'), { href: url, download: 'plan.png' }).
 URL.revokeObjectURL(url)
 ```
 
-The export reads the `--vft-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
+The export reads the `--vw-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
 
 To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
 
@@ -373,4 +373,4 @@ Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to
 
 The timeline then runs from right to left and its row headings sit on the right. Edit proposals keep the same times and units, so validation and persistence code needs no change. Arrow keys follow the screen: ArrowLeft makes a bar later. Translate the edit hint through `labels.editHint` to describe this to screen reader users. `auto` is resolved after mounting, so server-rendered markup is left-to-right until hydration; use an explicit `rtl` for server rendering.
 
-The new right-to-left rules are scoped to the `vft-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+The new right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.

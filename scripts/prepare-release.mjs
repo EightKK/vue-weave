@@ -17,7 +17,7 @@ const staging = await realpath(await mkdtemp(join(resolvedArtifacts, 'release-ca
 assert.equal(dirname(staging), resolvedArtifacts, 'Staging must stay directly inside artifacts/')
 
 const sourcePaths = [
-  '.github', '.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
+  '.editorconfig', '.github', '.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
   'LICENSE', 'README.md', 'README.ja.md', 'Start.cmd', 'THIRD_PARTY_NOTICES.md',
   'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
   'vite.config.ts', 'vite.demo.config.ts', 'playwright.config.ts',

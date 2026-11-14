@@ -7,14 +7,14 @@ export const maxCanvasSide = 16_384
 export const maxCanvasArea = 268_435_456
 
 const properties: Record<string, string> = {
-  surface: '--vft-surface', surfaceMuted: '--vft-surface-muted', text: '--vft-text', muted: '--vft-muted', border: '--vft-border',
-  grid: '--vft-grid', edge: '--vft-edge', accent: '--vft-accent', onSolid: '--vft-on-solid', markerInk: '--vft-marker-ink', baseline: '--vft-baseline',
-  marker: '--vft-marker', now: '--vft-now', load: '--vft-load', loadOverload: '--vft-load-overload',
-  loadCapacity: '--vft-load-capacity', dependencyHighlight: '--vft-dependency-highlight',
-  nonWorking: '--vft-non-working', critical: '--vft-critical', float: '--vft-float', deadline: '--vft-deadline', status: '--vft-status',
+  surface: '--vw-surface', surfaceMuted: '--vw-surface-muted', text: '--vw-text', muted: '--vw-muted', border: '--vw-border',
+  grid: '--vw-grid', edge: '--vw-edge', accent: '--vw-accent', onSolid: '--vw-on-solid', markerInk: '--vw-marker-ink', baseline: '--vw-baseline',
+  marker: '--vw-marker', now: '--vw-now', load: '--vw-load', loadOverload: '--vw-load-overload',
+  loadCapacity: '--vw-load-capacity', dependencyHighlight: '--vw-dependency-highlight',
+  nonWorking: '--vw-non-working', critical: '--vw-critical', float: '--vw-float', deadline: '--vw-deadline', status: '--vw-status',
 }
 
-/** Read the `--vft-*` custom properties in effect on an element; unset properties keep the export defaults. */
+/** Read the `--vw-*` custom properties in effect on an element; unset properties keep the export defaults. */
 export function readExportTheme(element: Element, overrides: SvgExportThemeInput = {}): SvgExportThemeInput {
   const style = getComputedStyle(element)
   const read = (name: string) => style.getPropertyValue(name).trim() || undefined
@@ -23,7 +23,7 @@ export function readExportTheme(element: Element, overrides: SvgExportThemeInput
   const tones: Partial<Record<ChartTone, Partial<SvgToneColors>>> = {}
   for (const tone of ['teal', 'blue', 'amber', 'violet'] as const) {
     tones[tone] = {
-      ink: read(`--vft-${tone}-ink`), line: read(`--vft-${tone}-line`), pale: read(`--vft-${tone}-pale`), solid: read(`--vft-${tone}-solid`),
+      ink: read(`--vw-${tone}-ink`), line: read(`--vw-${tone}-line`), pale: read(`--vw-${tone}-pale`), solid: read(`--vw-${tone}-solid`),
       ...overrides.tones?.[tone],
     }
   }

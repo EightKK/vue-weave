@@ -2,9 +2,46 @@
 
 Identifiers are nonempty strings and must be unique within their corresponding collection. Named port IDs are scoped to each node. Labels are rendered as Vue text. Escape/sanitize any HTML you supply in custom slots according to your application's trust boundaries.
 
-The package is ESM-only. Import Vue components and shared types from `vue-weave`, headless calculations from `vue-weave/core`, and the stylesheet from `vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency.
+The package is ESM-only. Import Vue components and shared types from `vue-weave`, headless calculations from `vue-weave/core`, and the stylesheet from `vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency. The package also exports `vue-weave/package.json`, so tools can read the installed version.
 
-The stylesheet also ships opt-in `vft-theme-dark` and `vft-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
+The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
+
+## Contents
+
+- [NetworkGraph](#networkgraph)
+  - [Graph editing and minimap](#graph-editing-and-minimap)
+  - [Named ports, reconnection and group actions](#named-ports-reconnection-and-group-actions)
+  - [Large graphs, touch gestures, nested groups and search](#large-graphs-touch-gestures-nested-groups-and-search)
+  - [Edge selection, deletion, context menu, tooltips and fit to selection](#edge-selection-deletion-context-menu-tooltips-and-fit-to-selection)
+  - [Snap to grid, alignment guides, auto-pan, drops and clipboard](#snap-to-grid-alignment-guides-auto-pan-drops-and-clipboard)
+  - [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)
+  - [NetworkGraph directions and crossing reduction](#networkgraph-directions-and-crossing-reduction)
+- [GanttChart](#ganttchart)
+  - [Editing contract](#editing-contract)
+  - [Timeline planning overlays](#timeline-planning-overlays)
+  - [Timeline columns and rollups](#timeline-columns-and-rollups)
+  - [Column resizing](#column-resizing)
+  - [Dependency editing](#dependency-editing)
+  - [Multiple selection, batch moves and row moves](#multiple-selection-batch-moves-and-row-moves)
+  - [Zoom presets, now marker and touch zoom](#zoom-presets-now-marker-and-touch-zoom)
+  - [Resource load histogram](#resource-load-histogram)
+  - [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments)
+  - [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit)
+  - [Drag to create and cascade previews](#drag-to-create-and-cascade-previews)
+  - [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line)
+  - [Timeline editing helpers](#timeline-editing-helpers)
+- [Core entry point](#core-entry-point)
+  - [Graph routing](#graph-routing)
+  - [Layout directions, crossing reduction and extra layouts](#layout-directions-crossing-reduction-and-extra-layouts)
+  - [Graph algorithms](#graph-algorithms)
+  - [Viewport helpers](#viewport-helpers)
+  - [Row trees and summaries](#row-trees-and-summaries)
+  - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
+  - [Interchange exports](#interchange-exports)
+  - [Network diagram from a schedule](#network-diagram-from-a-schedule)
+- [Application undo and redo](#application-undo-and-redo)
+- [Export to SVG and PNG](#export-to-svg-and-png)
+- [Right-to-left layout](#right-to-left-layout)
 
 ## NetworkGraph
 
@@ -80,7 +117,7 @@ Two-finger gestures use Pointer Events with pointerType touch. When a second fin
 
 Nested groups are opt-in. Give a group parentId to place it in another group. nodeIds lists only the direct members, and a group that has child groups may have an empty nodeIds. A node can still belong to one group directly. Parents are painted first, in input order among siblings. The parent bounds enclose the child bounds, its label strip and a margin, and nested bounds can extend past the layout padding, so leave extra options.padding for deep nesting. Dragging a parent label (or using arrow keys on it) moves every descendant member as one node-move or nodes-move proposal. Dragging a child moves only its own members. A nested group is announced as "Move group Inner within Outer"; the within word is the optional GraphLabels.groupWithin label. The component throws Error for a duplicate ID, an unknown parentId, a parent cycle, an unknown or repeated member, or a group with no members after expansion. Groups without parentId behave as before.
 
-The dimming hooks are presentation only. Dimmed nodes and the edges that touch them receive the vft-dimmed class and reduced opacity (--vft-dimmed-opacity, default 0.28). Selection, events and keyboard behavior do not change. The node and edge slots receive dimmed. Compute matches in your application; the component never filters data.
+The dimming hooks are presentation only. Dimmed nodes and the edges that touch them receive the vw-dimmed class and reduced opacity (--vw-dimmed-opacity, default 0.28). Selection, events and keyboard behavior do not change. The node and edge slots receive dimmed. Compute matches in your application; the component never filters data.
 
 ### Edge selection, deletion, context menu, tooltips and fit to selection
 
@@ -99,13 +136,13 @@ The dimming hooks are presentation only. Dimmed nodes and the edges that touch t
 | tooltipDelay | number / 400. Hover delay in milliseconds before the tooltip appears. Must be finite and nonnegative, otherwise rendering throws RangeError. |
 | fit(options?) | Exposed method. GraphFitOptions has ids (node IDs) and padding (screen pixels, finite and nonnegative, default 0). |
 
-Edge selection is opt-in. With edgesSelectable, a plain edge selection also empties a controlled selectedIds set, and a plain node selection or box selection empties the edge selection, so one Delete removes what is shown as selected. Toggling with Ctrl, Meta or Shift keeps the other kind. Selected edges receive the selected class on their hit area and their group receives vft-edge-selected; the default edge path is drawn in --vft-edge-selected (default --vft-accent). Culling keeps selected edges rendered, like selected nodes. Without edgesSelectable, reconnectable edges behave as before.
+Edge selection is opt-in. With edgesSelectable, a plain edge selection also empties a controlled selectedIds set, and a plain node selection or box selection empties the edge selection, so one Delete removes what is shown as selected. Toggling with Ctrl, Meta or Shift keeps the other kind. Selected edges receive the selected class on their hit area and their group receives vw-edge-selected; the default edge path is drawn in --vw-edge-selected (default --vw-accent). Culling keeps selected edges rendered, like selected nodes. Without edgesSelectable, reconnectable edges behave as before.
 
 A deletion proposal is never emitted during a pointer drag, connection, pan, box selection or pinch, nor while a keyboard connection is armed. Holding the key does not repeat it. Keys pressed in focusable slot content such as an input keep their usual meaning. The parent applies the proposal by replacing nodes and edges, and should also prune positions, groups and selections that mention removed IDs (groups must keep at least one member). When the focused element disappears, focus moves to the stage.
 
 GraphContextMenu has target ({ kind: 'node' | 'edge' | 'group', id } or { kind: 'canvas' }), point (GraphPoint in chart coordinates, the inverse of the camera transform), clientX and clientY (viewport coordinates for a position: fixed menu) and source ('pointer' or 'keyboard'). A right-click on the thin drawn path of an edge reports the edge; with edgesSelectable or reconnectable the wider hit area does too. Requesting a menu cancels an armed connection and hides the tooltip. Render the menu in your application with role menu, move focus into it, close it with Escape and return focus to the element that had it. The browser's follow-up contextmenu event after a handled keyboard request is cancelled and not reported twice.
 
-The tooltip is never rendered on the server or before mounting. Hover shows it after tooltipDelay; moving to another element switches it at once. Keyboard focus shows it immediately; focus caused by a pointer press does not. The pointer can move onto the tooltip without hiding it (WCAG 1.4.13), and Escape dismisses it anywhere on the page. A press in the stage, a drag, connection, box selection, pan or pinch hides it. While shown it has role tooltip and an ID from useId, and the described node or edge hit area references it with aria-describedby. It is placed beside the element and follows the camera, after the element or before it in right-to-left graphs, flipping to the side with more room. While the slot is provided, nodes omit their SVG title so the browser does not show a second tooltip; the accessible name is unchanged. Style it through the vft-network-tooltip class.
+The tooltip is never rendered on the server or before mounting. Hover shows it after tooltipDelay; moving to another element switches it at once. Keyboard focus shows it immediately; focus caused by a pointer press does not. The pointer can move onto the tooltip without hiding it (WCAG 1.4.13), and Escape dismisses it anywhere on the page. A press in the stage, a drag, connection, box selection, pan or pinch hides it. While shown it has role tooltip and an ID from useId, and the described node or edge hit area references it with aria-describedby. It is placed beside the element and follows the camera, after the element or before it in right-to-left graphs, flipping to the side with more room. While the slot is provided, nodes omit their SVG title so the browser does not show a second tooltip; the accessible name is unchanged. Style it through the vw-network-tooltip class.
 
 fit() without options shows the whole graph exactly as before. fit({ ids }) centres the combined boxes of those nodes at the largest scale that fits inside the viewport minus padding on each side, capped at 1.15 like Fit to view and clamped to the zoom range, then emits viewport-change. Unknown IDs throw Error, invalid padding throws RangeError, and an empty ids list leaves the camera unchanged and emits nothing. fit({ padding }) fits the whole graph with that margin and keeps it when the viewport is resized, until the camera moves or fit() runs again.
 
@@ -131,7 +168,7 @@ Every new input is opt-in; without them the markup, events and keyboard behavior
 
 Snapping moves a reference point: the top-left corner of the dragged or focused node, or of the bounding box of the moved nodes when a group label is dragged or focused. The other moved nodes keep their offsets from it, so the multiple selection and group members move rigidly; nodes that started off the grid stay off it relative to the reference. No node moves to a negative coordinate: a move that would cross the origin stops at the first grid line that keeps every moved node at zero or above. Emitted node-move and nodes-move proposals carry the snapped positions. A keyboard move only snaps the axis of its arrow key.
 
-Alignment guides compare the dragged node's box, or the bounding box of every moved node when several move, with the boxes of the nodes that do not move. On each axis the closest anchor within guideThreshold screen pixels wins, ties being broken in the layout's box order; on that axis the guide wins over snapGrid. Guides for the final position, including positions the grid or the origin clamp happen to align, are drawn as lines with the class vft-guide inside an aria-hidden group (vft-guides) and in the colour --vft-guide; they disappear when the drag ends or is cancelled. With cullOffscreen only rendered nodes, those within the viewport and cullOverscan, are compared. Keyboard moves draw no guides. The same calculation is available as graphAlignmentGuides in the core entry.
+Alignment guides compare the dragged node's box, or the bounding box of every moved node when several move, with the boxes of the nodes that do not move. On each axis the closest anchor within guideThreshold screen pixels wins, ties being broken in the layout's box order; on that axis the guide wins over snapGrid. Guides for the final position, including positions the grid or the origin clamp happen to align, are drawn as lines with the class vw-guide inside an aria-hidden group (vw-guides) and in the colour --vw-guide; they disappear when the drag ends or is cancelled. With cullOffscreen only rendered nodes, those within the viewport and cullOverscan, are compared. Keyboard moves draw no guides. The same calculation is available as graphAlignmentGuides in the core entry.
 
 Auto-pan uses requestAnimationFrame. The speed grows from 0 at 40 pixels from the edge to 20 pixels per frame at or beyond the edge, independently on each axis, and only after the gesture has moved (past the 4-pixel drag threshold, or once a connection or box preview exists). The preview stays under the pointer, the camera change emits viewport-change, and panning stops when the pointer is released, the gesture is cancelled (Escape, data change, a second touch) or the component unmounts. It never runs during a pinch. Towards the left and top it stops 40 pixels beyond the chart origin, or the content when that is further out; towards the right and bottom it continues while the pointer is held, so a node can be dragged into new space. Culling keeps the dragged nodes, their edges and the connection source rendered while the camera moves.
 
@@ -139,7 +176,7 @@ With droppable, dragenter, dragover and drop events on the stage call preventDef
 
 With clipboard, Ctrl+C (Cmd+C), Ctrl+V and Ctrl+D on the stage or one of its nodes, edges, group labels or handles emit proposals; keys pressed in focusable slot content such as an input keep their usual meaning, Alt or Shift with the key is ignored, and held keys do not repeat. Like deletion, a focused node or edge outside the selection is copied or duplicated alone; otherwise the selection is: selectedIds (or selectedId) plus the edge selection, and every edge between two listed nodes is added. Nothing is emitted, and the browser default is kept, when that is empty. paste-request is always emitted. Nothing is proposed during a pointer drag, connection, pan, box selection or pinch, nor while a keyboard connection is armed. The component keeps no clipboard: store what copy-selection reports, then build the copies with cloneGraphElements and commit them as one history entry. Ctrl+D is also the browser's bookmark shortcut; it is only cancelled when duplicate-selection is emitted.
 
-The background pattern is a pattern element with an ID from useId, inside an aria-hidden group drawn behind the groups, edges and nodes; its rectangle ignores pointer events. Cells are backgroundGap chart units apart; when that is less than 8 screen pixels, every second (fourth, and so on) line is drawn. The dots and lines keep a 1-pixel size at every zoom level and use --vft-background-pattern (default --vft-grid). With a pattern, the root also receives vft-network-patterned, which replaces the fixed dotted backdrop with the plain --vft-surface-muted surface. The pattern is part of the server markup.
+The background pattern is a pattern element with an ID from useId, inside an aria-hidden group drawn behind the groups, edges and nodes; its rectangle ignores pointer events. Cells are backgroundGap chart units apart; when that is less than 8 screen pixels, every second (fourth, and so on) line is drawn. The dots and lines keep a 1-pixel size at every zoom level and use --vw-background-pattern (default --vw-grid). With a pattern, the root also receives vw-network-patterned, which replaces the fixed dotted backdrop with the plain --vw-surface-muted surface. The pattern is part of the server markup.
 
 ### Group collapse, edge styles and waypoints, level of detail and node resizing
 
@@ -152,7 +189,7 @@ The background pattern is a pattern element with an ID from useId, inside an ari
 | editableEdges | boolean / false. Gives every edge its focusable hit area (like edgesSelectable) and shows waypoint handles on the selected edge (the edge whose reconnect handles would show): a "Move waypoint N · edge" button per waypoint and an "Add waypoint N · edge" button in the middle of every segment between the edge ends and the waypoints. |
 | edge-reshape(change) | GraphEdgeReshape with id, before and after: the edge's whole waypoint list before and after. Set the edge's points to after (remove the field when it is empty). |
 | validateEdgeReshape / edge-reshape-rejected(change, reason) | Synchronous check; false rejects with labels.reshapeRejected, a string rejects with that reason, announced in the live region. |
-| lodThreshold | number / undefined. Level of detail: while the camera scale is below it, the root gets vft-lod-low and the default renderer hides node detail text and edge labels. Must be greater than 0 and at most 3, otherwise rendering throws RangeError. Accessible names are unchanged. |
+| lodThreshold | number / undefined. Level of detail: while the camera scale is below it, the root gets vw-lod-low and the default renderer hides node detail text and edge labels. Must be greater than 0 and at most 3, otherwise rendering throws RangeError. Accessible names are unchanged. |
 | node and edge slot scale | The node slot ({node, box, selected, dimmed, scale}) and the edge slot receive the current camera scale for custom level-of-detail rendering. |
 | sizes | ReadonlyMap<string, GraphNodeSize> / undefined. Width and height per node ID, applied on top of the layout boxes after positions, keeping each box's top-left corner; incident edges are rerouted. Sizes must be finite and positive (RangeError); unknown IDs are ignored. |
 | resizable | boolean / false. Shows four corner handles on the node when exactly one node is selected (selectedId, or a selectedIds set of one), named "Resize" plus the node label and the corner ("Resize Split · bottom right"). NetworkNode.resizable false opts a node out; proxies of collapsed groups are not resizable. |
@@ -160,7 +197,7 @@ The background pattern is a pattern element with an ID from useId, inside an ari
 | node-resize(change) | GraphNodeResize with id, before and after boxes ({ x, y, width, height }). Store after.width and after.height in sizes and, when after.x or after.y changed (a left or top corner), after.x and after.y in positions. |
 | validateNodeResize / node-resize-rejected(change, reason) | Synchronous check; false rejects with labels.resizeRejected, a string with that reason. |
 
-Every input is opt-in. Without them, and with edgeStyle 'curve', no waypoints, no sizes and no collapsed groups, the server markup, routes, events and accessible names are unchanged. The toggles and handles are drawn in one vft-network-overlay group above the nodes, which then also holds the connection preview and alignment guides.
+Every input is opt-in. Without them, and with edgeStyle 'curve', no waypoints, no sizes and no collapsed groups, the server markup, routes, events and accessible names are unchanged. The toggles and handles are drawn in one vw-network-overlay group above the nodes, which then also holds the connection preview and alignment guides.
 
 Collapsing uses collapseGraphGroups before layout, so the layout, culling, the minimap, Fit to view, fit, focusNode and exportSvg all see the collapsed graph. Each outermost collapsed group becomes one proxy node whose ID is the group ID, with the group label, the detail "N nodes" (labels.collapsedNode and labels.collapsedNodes), the rounded shape and data { collapsedGroup, nodeIds }. Members are hidden; their edges are re-attached to the proxy, edges inside the group are dropped, and parallel re-attached edges merge into one edge that keeps the ID of the first original edge. Group IDs must therefore differ from node IDs. A collapsed child group becomes a member of its expanded parent. Hidden nodes cannot be focused, fitted or selected; fit and focusNode throw Error for their IDs, so map them to the proxy (the group ID). Toggling moves keyboard focus to the replacement toggle.
 
@@ -174,6 +211,10 @@ The orthogonal router leaves the source and enters the target on the sides that 
 
 Waypoint and resize handles are focusable buttons. On a waypoint handle the arrow keys move it by 10 chart units (40 with Shift), or to the next snapGrid line (four with Shift); Delete or Backspace removes it and focus returns to the edge. Enter or Space on an add handle inserts a waypoint at that point. A pointer drag of a waypoint, or of an add handle, which inserts a new waypoint there, previews the route and proposes the new list on release; a press without movement on an add handle inserts the waypoint at the handle. On a resize handle the arrow keys move that corner's vertical or horizontal edge by 10 (40 with Shift), or to the next grid line; a pointer drag previews the box with the dragged edges on the grid when snapGrid is set. Resizes keep the opposite corner, minNodeSize and a nonnegative origin. Waypoints are clamped to nonnegative coordinates. Escape, pointer cancellation, a second touch and changes of the source data or layout cancel a drag in flight without a proposal. The new GraphLabels fields collapseGroup, expandGroup, collapsedNode, collapsedNodes, moveWaypoint, addWaypoint, reshapeRejected, resizeNode, topLeft, topRight, bottomLeft, bottomRight and resizeRejected localize the names and announcements.
 
+### NetworkGraph directions and crossing reduction
+
+`NetworkGraph` `options.direction` accepts `LR`, `TB`, `RL` and `BT`. Edge endpoints, edited positions, ports, groups, the minimap and culling follow the chosen direction; unnamed endpoints use the mirrored sides for RL and BT, and the default handle of a node without ports sits on its left edge in RL. `options.crossingReduction` (`none`, `barycenter`, `median`) and `options.crossingSweeps` are passed to `layoutLayeredGraph`; the defaults (`none`, 8) leave the layout identical to earlier versions. When the `layout` prop is set, it replaces the built-in layout and these two options are ignored, while `options.direction` still controls edge routing for moved nodes.
+
 ## GanttChart
 
 | Prop | Type / default | Meaning |
@@ -182,7 +223,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | bars | readonly TimelineBar[] / required | ID, rowId, label, numeric start/end and optional attributes |
 | range | TimeRange / required | Visible axis bounds; finite start < end |
 | dependencies | readonly TimelineDependency[] / [] | ID, from/to bar IDs, optional FS/SS/FF/SF type |
-| highlightedDependencyIds | ReadonlySet<string> / undefined | Highlight link IDs using --vft-dependency-highlight |
+| highlightedDependencyIds | ReadonlySet<string> / undefined | Highlight link IDs using --vw-dependency-highlight |
 | selectedIds | ReadonlySet<string> / undefined | Controlled highlighted bars |
 | pixelsPerUnit | number / 80 per hour in milliseconds | Base linear time scale |
 | scale | TimeScale / undefined | Custom mapping before component zoom |
@@ -209,7 +250,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | cascade | TimelineCascade / undefined | Follow-on changes of other bars for a move or resize, previewed during a drag and proposed with it as one batch; see the same section |
 | rowsReorderable, validateRowMove | boolean / false, RowMoveValidator / undefined | A move handle on each row heading proposes row hierarchy moves by pointer drag or Alt+arrow keys; see [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line) |
 | statusDate, showProgressLine | number / undefined, boolean / false | Draws a labelled status-date line and, with showProgressLine, a progress line; see the same section |
-| columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vft-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
+| columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vw-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
 
 TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
@@ -247,7 +288,7 @@ Slots are legend(), row-heading(), row({row,index}), bar({bar,range,selected}), 
 | headerBands | Array of header levels, each with ordered non-overlapping intervals containing start, end and label. Levels appear above the default ticks. |
 | markers | Array of unique IDs with finite time and label. Drawn as vertical markers in the visible time window. |
 
-The row slot also receives depth and expanded. The row index refers to the expanded view. Links with hidden endpoints disappear while the group is collapsed. scrollToRow targets expanded rows. Any summary interval or progress can be supplied as a bar on the parent row. The optional GanttLabels fields expandRow, collapseRow and baseline localize these additions. CSS variables --vft-baseline and --vft-marker theme the overlays.
+The row slot also receives depth and expanded. The row index refers to the expanded view. Links with hidden endpoints disappear while the group is collapsed. scrollToRow targets expanded rows. Any summary interval or progress can be supplied as a bar on the parent row. The optional GanttLabels fields expandRow, collapseRow and baseline localize these additions. CSS variables --vw-baseline and --vw-marker theme the overlays.
 
 ### Timeline columns and rollups
 
@@ -267,8 +308,8 @@ Opt-in with `columnsResizable`. Without it and without `labelWidth`, the chart r
 
 | API | Behavior |
 | --- | --- |
-| columnsResizable | `boolean`, default false. A separator (`vft-column-resize`, `role="separator"`, `aria-orientation="vertical"`, focusable) sits on the inline-end edge of the row label column and of each `columns` header. Its accessible name is `GanttLabels.resizeColumn` (default "Resize column") followed by the column label, or by `GanttLabels.rows` for the label column, for example "Resize column Owner". `aria-valuenow` is the current width in pixels, `aria-valuemin` and `aria-valuemax` the limits. Separators are also drawn when `readonly` is set, because widths are not data. |
-| labelWidth | `number` in pixels. Sets `--vft-row-label-width` on the chart canvas; without it the label column keeps the theme width (154 px, 106 px on narrow screens). Set it to accept a proposal for the label column. A value that is not finite and positive is reported through validation-error. |
+| columnsResizable | `boolean`, default false. A separator (`vw-column-resize`, `role="separator"`, `aria-orientation="vertical"`, focusable) sits on the inline-end edge of the row label column and of each `columns` header. Its accessible name is `GanttLabels.resizeColumn` (default "Resize column") followed by the column label, or by `GanttLabels.rows` for the label column, for example "Resize column Owner". `aria-valuenow` is the current width in pixels, `aria-valuemin` and `aria-valuemax` the limits. Separators are also drawn when `readonly` is set, because widths are not data. |
+| labelWidth | `number` in pixels. Sets `--vw-row-label-width` on the chart canvas; without it the label column keeps the theme width (154 px, 106 px on narrow screens). Set it to accept a proposal for the label column. A value that is not finite and positive is reported through validation-error. |
 | minColumnWidth, maxColumnWidth | Limits of every proposal in pixels, defaults 48 and 800. `maxColumnWidth` must not be below `minColumnWidth`. Existing widths outside the limits are drawn as given. |
 | column-resize(change) | `TimelineColumnResize`: `id` (the `TimelineColumn.id`, or `timelineLabelColumnId`, `'$label'`, for the row label column), `before` and `after` widths in pixels (whole numbers within the limits) and `source` (`pointer` or `keyboard`). Accept it by setting that column's `width`, or `labelWidth` for the label column. An unchanged width is not proposed. |
 | validateColumnResize / column-resize-rejected(change, reason) | Synchronous `ColumnResizeValidator`. Accepts with true or undefined, rejects with false (default `GanttLabels.columnResizeRejected`, "This column resize was rejected.") or a reason string. The reason is announced in the live region. |
@@ -344,11 +385,11 @@ All of these are opt-in. Without `nonWorkingPeriods` and the new bar fields, the
 
 | API | Behavior |
 | --- | --- |
-| nonWorkingPeriods | Half-open intervals drawn as background bands (`vft-gantt-non-working`, colour `--vft-non-working`) over the full body height, task rows and load rows, behind grid lines and bars. Only the parts inside `range` and the visible time window are rendered. Intervals may overlap and need not be sorted. A non-finite endpoint or `start >= end` is reported through validation-error. The bands are decorative (`aria-hidden`). `invertWorkPeriods` turns work periods into these intervals. |
-| TimelineBar.critical | `true` adds the `vft-critical` class and an outline in `--vft-critical`. |
-| TimelineBar.latestEnd | Latest finish that keeps the plan. A float line (`vft-gantt-float`, `--vft-float`) runs from the bar's end to latestEnd at the bar's vertical centre, ending in a short tick. Nothing is drawn when latestEnd equals end. Must be finite and not before end (RangeError). |
-| TimelineBar.deadline | A due time. A small indicator (`vft-gantt-deadline`, `--vft-deadline`) is drawn at that time in the bar's lane. When end is after the deadline, the bar gets the `vft-late` class and a dashed outline, and the indicator gets `vft-late`. Must be finite (RangeError). |
-| TimelineBar.segments | The worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. Touching pieces are allowed. The bar gets the `vft-segmented` class, each piece is drawn solid (`vft-gantt-segment`) and every gap, including one before the first or after the last piece, is drawn as a thin connector (`vft-gantt-segment-gap`). Progress fills the first part of the working time piece by piece, so a half-complete bar fills half of its work. An empty array or segments on a milestone are rejected with a RangeError. |
+| nonWorkingPeriods | Half-open intervals drawn as background bands (`vw-gantt-non-working`, colour `--vw-non-working`) over the full body height, task rows and load rows, behind grid lines and bars. Only the parts inside `range` and the visible time window are rendered. Intervals may overlap and need not be sorted. A non-finite endpoint or `start >= end` is reported through validation-error. The bands are decorative (`aria-hidden`). `invertWorkPeriods` turns work periods into these intervals. |
+| TimelineBar.critical | `true` adds the `vw-critical` class and an outline in `--vw-critical`. |
+| TimelineBar.latestEnd | Latest finish that keeps the plan. A float line (`vw-gantt-float`, `--vw-float`) runs from the bar's end to latestEnd at the bar's vertical centre, ending in a short tick. Nothing is drawn when latestEnd equals end. Must be finite and not before end (RangeError). |
+| TimelineBar.deadline | A due time. A small indicator (`vw-gantt-deadline`, `--vw-deadline`) is drawn at that time in the bar's lane. When end is after the deadline, the bar gets the `vw-late` class and a dashed outline, and the indicator gets `vw-late`. Must be finite (RangeError). |
+| TimelineBar.segments | The worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. Touching pieces are allowed. The bar gets the `vw-segmented` class, each piece is drawn solid (`vw-gantt-segment`) and every gap, including one before the first or after the last piece, is drawn as a thin connector (`vw-gantt-segment-gap`). Progress fills the first part of the working time piece by piece, so a half-complete bar fills half of its work. An empty array or segments on a milestone are rejected with a RangeError. |
 | GanttLabels.critical / float / deadline / late | Text of the bar description. Defaults "Critical", "Float until", "Deadline" and "Late". |
 
 When a bar has any of these fields, the information is added to the bar's accessible description, never to its accessible name, which keeps the `formatTime` label used by tests and assistive technology. The description reads, for example, "Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00. Late." (float and deadline times use `formatTime`). It is a hidden element referenced first in `aria-describedby`, before the edit hint of an editable bar, and it is also appended to the bar's `title` tooltip.
@@ -363,7 +404,7 @@ const bars = plan.ok ? plan.tasks.map(task => ({ id: task.id, rowId: task.id, la
 const nonWorkingPeriods = invertWorkPeriods(periods, range)
 ```
 
-`exportSvg`, `exportPng` and `renderTimelineSvg` draw the same layers with the colours of `--vft-non-working`, `--vft-critical`, `--vft-float` and `--vft-deadline`. In a right-to-left chart every layer is mirrored with the time axis.
+`exportSvg`, `exportPng` and `renderTimelineSvg` draw the same layers with the colours of `--vw-non-working`, `--vw-critical`, `--vw-float` and `--vw-deadline`. In a right-to-left chart every layer is mirrored with the time axis.
 
 ### Progress editing, deletion, tooltips, context menu and fit
 
@@ -386,7 +427,7 @@ All of these are opt-in. Without `progressEditable`, `deletable`, `contextMenu` 
 
 The progress slider is a `button` with `role="slider"`, `aria-valuemin` 0, `aria-valuemax` 100, `aria-valuenow` in percent and `aria-valuetext` such as "40%". Its accessible name is `GanttLabels.progressOf` (default "Progress of") followed by the bar label. Dragging it previews the fill and proposes the snapped value on release. On a segmented bar the pointer is mapped to progress over working time, as the fill is drawn: the slider sits where that share of the work is done, and a pointer in a gap counts the work before the gap. ArrowRight and ArrowUp add one step, ArrowLeft and ArrowDown subtract one, PageUp and PageDown change it by 0.25, Home sets 0 and End sets 1. Each key press proposes one change from the bar's current `progress`. In a right-to-left chart progress grows towards the left, so ArrowLeft adds a step and ArrowRight subtracts one. Escape, pointer cancellation, lost capture, changes to bars, rows, the coordinate system, `progressEditable`, `progressStep` or `readonly`, and the start of a `pinchZoom` pinch cancel the preview without a proposal.
 
-After an accepted deletion removes the focused bar, focus moves to the chart region. The tooltip appears next to the hovered bar after `tooltipDelay`, or at once when a bar receives keyboard focus (`:focus-visible`). It has `role="tooltip"` and an ID from `useId()`, which is appended to the bar's `aria-describedby` list after the existing description and hint IDs while it is shown. It is placed above the visible part of the bar, or below it when there is no room, and kept inside the scroll viewport. The pointer can move onto it without hiding it. Escape hides it until the pointer re-enters the bar or the bar is focused again. Pressing a bar hides it, and it does not appear during bar drags and resizes, progress drags, pending connections, pinches or drag autoscroll. Its timers are cleared when the component unmounts. Style it with the `vft-gantt-tooltip` class.
+After an accepted deletion removes the focused bar, focus moves to the chart region. The tooltip appears next to the hovered bar after `tooltipDelay`, or at once when a bar receives keyboard focus (`:focus-visible`). It has `role="tooltip"` and an ID from `useId()`, which is appended to the bar's `aria-describedby` list after the existing description and hint IDs while it is shown. It is placed above the visible part of the bar, or below it when there is no room, and kept inside the scroll viewport. The pointer can move onto it without hiding it. Escape hides it until the pointer re-enters the bar or the bar is focused again. Pressing a bar hides it, and it does not appear during bar drags and resizes, progress drags, pending connections, pinches or drag autoscroll. Its timers are cleared when the component unmounts. Style it with the `vw-gantt-tooltip` class.
 
 For a pointer `contextmenu`, `target` is the bar under the pointer (including its link handles and progress slider), else the dependency path (dependency paths are interactive only with `connectable` or `reconnectable`), else the displayed task row under the pointer (its heading, cells or empty timeline area), else `chart` (the header, load rows or empty space). `rowId` is that task row, and `time` is the time under the pointer through the active scale, including zoom and right-to-left layout, whenever the pointer is over the time area (not the sticky heading column). Text inputs in `columns` keep the browser menu. The ContextMenu key and Shift+F10 report the focused element's on-screen centre, `source: 'keyboard'`, no `time`, and for a bar its `rowId`. Without `contextMenu` the browser menu is not affected.
 
@@ -403,13 +444,13 @@ Both are opt-in. Without `creatable` and `cascade`, the chart renders the same m
 | create(proposal) | `TimelineCreate` with `rowId`, `lane`, `start`, `end` and `source` (`pointer` or `keyboard`). The parent assigns an ID and a label and adds the bar to accept it. |
 | validateCreate / create-rejected(proposal, reason) | Synchronous `CreateValidator` with the same convention as validateEdit; false uses `GanttLabels.createRejected` (default "This new bar was rejected."). The reason is announced in the live region. |
 | cascade | `TimelineCascade`: `(change: TimelineEdit) => readonly TimelineEdit[]`, synchronous and free of side effects. Returns the follow-on changes of other bars, for example from `propagateEdit`. |
-| `vft-gantt-create-preview`, `vft-gantt-cascade-preview` | Classes of the previews. The create preview uses `--vft-accent` and cascade previews use `--vft-cascade`. Both are `aria-hidden` and ignore the pointer. |
+| `vw-gantt-create-preview`, `vw-gantt-cascade-preview` | Classes of the previews. The create preview uses `--vw-accent` and cascade previews use `--vw-cascade`. Both are `aria-hidden` and ignore the pointer. |
 
 **Pointer.** Press the primary button (or touch) on the empty timeline area of a creatable row and drag. The empty area is the row background: not a bar, handle, progress slider, dependency path, baseline or summary, and not the row heading or its cells. The preview runs from the press time to the time under the pointer, both rounded to the nearest multiple of `snap` from `range.start`. It is at least `minDuration` long (growing away from the press point) and is kept inside `editBounds`. It stays in the pressed row and sits in the lane under the pointer, clamped to the row's lanes. Release proposes the previewed interval with `source: 'pointer'`. A click, or a movement of less than 3 px along the time axis, proposes `[t, t + createDuration)` from the snapped press time `t`, moved back inside `editBounds` when it would end after them, in the lane under the pointer. A drag near the left or right edge scrolls the timeline (`autoScroll`). The time follows the active scale, zoom and right-to-left layout: in RTL, dragging to the left extends the bar to later times.
 
 Escape, pointer cancellation (including a native touch pan), lost capture and changes to bars, rows, the coordinate system, `readonly`, `createDuration` or the other props that cancel edits discard the preview without a proposal, and so does the second touch of a `pinchZoom` pinch. Zoom buttons and presets are ignored during the drag. A press does not start a create gesture while another gesture is active. Pressing a row focuses the chart region, so Escape works at once. Tooltips are hidden during the drag.
 
-**Keyboard.** Every creatable row gets an add button (`vft-gantt-create-button`) in its heading, named `GanttLabels.createIn` (default "Add bar to") followed by the row label, for example "Add bar to Web team". Activating it with Enter or Space proposes `createDuration` from the first multiple of `snap` at or after the time at the inline-start edge of the visible time area, moved inside `editBounds`. The lane is the lowest lane of the row without an overlapping bar (lane 0 when every lane is taken) and `source` is `keyboard` (a mouse click on the button reports `pointer`). Focus stays on the button. The row's expand toggle keeps its place before the button.
+**Keyboard.** Every creatable row gets an add button (`vw-gantt-create-button`) in its heading, named `GanttLabels.createIn` (default "Add bar to") followed by the row label, for example "Add bar to Web team". Activating it with Enter or Space proposes `createDuration` from the first multiple of `snap` at or after the time at the inline-start edge of the visible time area, moved inside `editBounds`. The lane is the lowest lane of the row without an overlapping bar (lane 0 when every lane is taken) and `source` is `keyboard` (a mouse click on the button reports `pointer`). Focus stays on the button. The row's expand toggle keeps its place before the button.
 
 **Cascade.** During a pointer move or resize, the chart calls `cascade` with the primary `TimelineEdit` (source `pointer`) whenever the snapped previewed interval or row changes, never on every pointer movement. Each returned change is drawn as a dashed outline at its `after` interval, in the lane of its bar and in the row of `change.row?.after` (or the bar's own row). The bars, their names and the dependency paths keep their current positions until the parent applies the result. Keyboard moves, resizes and row moves call it once per key press, without a preview. When the release or key press proposes the edit, the primary change comes first and the cascaded changes follow. All of them are emitted once through `edits` and checked like a batch: by `validateEdits`, or else by `validateEdit` for each change, where the first rejection rejects the batch through `edits-rejected`. When the callback returns no change, the single `edit` path is used as before.
 
@@ -434,15 +475,15 @@ All of these are opt-in. Without `rowsReorderable` and `statusDate`, the chart r
 
 | API | Behavior |
 | --- | --- |
-| rowsReorderable | `boolean`, default false. Each displayed row heading gets a move handle (`vft-row-move-handle`, a button before the expand toggle and the add button) named `GanttLabels.moveRow` (default "Move row") followed by the row label, for example "Move row Web team", and described by `GanttLabels.moveRowKeysHint`. No handles are drawn when `readonly` is set. |
+| rowsReorderable | `boolean`, default false. Each displayed row heading gets a move handle (`vw-row-move-handle`, a button before the expand toggle and the add button) named `GanttLabels.moveRow` (default "Move row") followed by the row label, for example "Move row Web team", and described by `GanttLabels.moveRowKeysHint`. No handles are drawn when `readonly` is set. |
 | row-move(change) | `TimelineRowMove`: `id`, `before` and `after` (`TimelineRowPosition`: optional `parentId`, absent for a root row, and the zero-based `index` among that parent's children) and `source` (`pointer` or `keyboard`). `after.index` counts the new siblings without the moved row. Accept it with `moveTimelineRow(rows, change.id, change.after)`. A move to the current position is not proposed. |
 | validateRowMove / row-move-rejected(change, reason) | Synchronous `RowMoveValidator`. Accepts with true or undefined, rejects with false (default `GanttLabels.rowMoveRejected`, "This row move was rejected.") or a reason string. The reason is announced in the live region. |
-| statusDate | `number`, in the units of `range`. Draws a vertical line (`vft-gantt-marker vft-gantt-status-date`, colour `--vft-status`) labelled `GanttLabels.statusDate` (default "Status date"). The line has `role="img"` and the accessible name and title "Status date" followed by `formatTime(statusDate)`. It is drawn only inside `range` and the visible time window. A non-finite value is reported through validation-error. |
-| showProgressLine | `boolean`, default false. With `statusDate`, draws a progress line (`vft-gantt-progress-line`, `--vft-status`) down the rendered rows. It runs along the status date and kinks to the progress point of each bar that is behind or ahead: a bar that started before the status date and is not complete, or that ends after it and has progress. The progress point is `start + progress × duration`, or the time at which that share of the work is done for a segmented bar. Milestones, complete bars before the status date and unstarted bars without progress keep the line straight. The line is decorative (`aria-hidden`) and follows previews of moves and progress drags. |
+| statusDate | `number`, in the units of `range`. Draws a vertical line (`vw-gantt-marker vw-gantt-status-date`, colour `--vw-status`) labelled `GanttLabels.statusDate` (default "Status date"). The line has `role="img"` and the accessible name and title "Status date" followed by `formatTime(statusDate)`. It is drawn only inside `range` and the visible time window. A non-finite value is reported through validation-error. |
+| showProgressLine | `boolean`, default false. With `statusDate`, draws a progress line (`vw-gantt-progress-line`, `--vw-status`) down the rendered rows. It runs along the status date and kinks to the progress point of each bar that is behind or ahead: a bar that started before the status date and is not complete, or that ends after it and has progress. The progress point is `start + progress × duration`, or the time at which that share of the work is done for a segmented bar. Milestones, complete bars before the status date and unstarted bars without progress keep the line straight. The line is decorative (`aria-hidden`) and follows previews of moves and progress drags. |
 
 **Keyboard.** On a focused move handle, Alt+ArrowUp and Alt+ArrowDown move the row one place among its siblings (nothing is proposed at either end). Alt+Shift+ArrowRight indents the row: it becomes the last child of its previous sibling. Alt+Shift+ArrowLeft outdents it: it becomes the next sibling after its parent. In right-to-left charts the two directions are swapped, so the arrow towards the row text indents, and the default hint says so. A first sibling cannot be indented and a root row cannot be outdented. After the parent applies the move, the chart scrolls the row into view and returns focus to its handle.
 
-**Pointer.** Press the primary button (or touch) on a move handle and drag vertically. A drop indicator (`vft-gantt-row-drop`, `--vft-accent`, `aria-hidden`) shows the position: the upper half of a displayed row places the moved row before it, the lower half after it, which is its first child when the row's children are shown. Positions inside the moved row's subtree are not offered. Release proposes the indicated position with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a source change (rows, collapsed rows, `rowsReorderable` and the other props listed in the editing contract) and a second pinch touch cancel the drag without a proposal.
+**Pointer.** Press the primary button (or touch) on a move handle and drag vertically. A drop indicator (`vw-gantt-row-drop`, `--vw-accent`, `aria-hidden`) shows the position: the upper half of a displayed row places the moved row before it, the lower half after it, which is its first child when the row's children are shown. Positions inside the moved row's subtree are not offered. Release proposes the indicated position with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a source change (rows, collapsed rows, `rowsReorderable` and the other props listed in the editing contract) and a second pinch touch cancel the drag without a proposal.
 
 ```ts
 import { moveTimelineRow, timelineWbsCodes, type TimelineRowMove } from 'vue-weave/core'
@@ -623,52 +664,6 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 
 The exported types are `ScheduleSuccess`, `ScheduleFailure`, `ScheduleCycle`, `ScheduleConstraintName`, `LevelResourcesInput`, `LevelResourcesSuccess`, `LevelResourcesResult`, `ResourceDelay`, `ScheduleEdit`, `ScheduleChange`, `PropagateEditSuccess` and `PropagateEditResult`. `levelResources` ranks ready tasks by priority, then total float, then early start, then ID, and gives each the earliest start with enough capacity before its latest feasible dates. Tasks without such a start keep their earliest dates and are reported as unresolved. The [scheduling guide](scheduling.md#level-resources) defines each step. Optimization policies remain the application's concern.
 
-## Application undo and redo
-
-Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
-
-Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
-
-### NetworkGraph directions and crossing reduction
-
-`NetworkGraph` `options.direction` accepts `LR`, `TB`, `RL` and `BT`. Edge endpoints, edited positions, ports, groups, the minimap and culling follow the chosen direction; unnamed endpoints use the mirrored sides for RL and BT, and the default handle of a node without ports sits on its left edge in RL. `options.crossingReduction` (`none`, `barycenter`, `median`) and `options.crossingSweeps` are passed to `layoutLayeredGraph`; the defaults (`none`, 8) leave the layout identical to earlier versions. When the `layout` prop is set, it replaces the built-in layout and these two options are ignored, while `options.direction` still controls edge routing for moved nodes.
-
-### Export to SVG and PNG
-
-Both components expose two export methods on their template ref. They need no dependencies and never change props or component state.
-
-| Method | Returns | Behavior |
-| --- | --- | --- |
-| exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
-| exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
-
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vft-*` custom properties in effect on the component, and the font from its computed `font-family`.
-
-The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
-
-`GanttExportOptions`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `includeStatusDate` (default true: the `statusDate` line and, with `showProgressLine`, the progress line), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`.
-
-`GraphExportOptions`: `padding` (default 16), `background` (default true), `title`, `idPrefix`, `theme`, `includeSelection` (default true), `nodeLabel(node)`, `nodeDetail(node)` and `edgeLabel(edge)`.
-
-`exportPng` additionally takes `scale` (`PngExportOptions`), the number of device pixels per CSS pixel: greater than 0 and at most 8, default 1. The PNG is `ceil(width × scale)` by `ceil(height × scale)` pixels. It must fit within 16,384 pixels per side and 268,435,456 pixels in total; otherwise the promise rejects with a `RangeError` that names the size. Invalid numeric options (for example a negative `padding`, an inverted `timeRange` or an out-of-range `rowRange`) throw a `RangeError` from `exportSvg` and reject the `exportPng` promise. `exportSvg` on a GanttChart whose input is invalid throws the current validation error. PNG export requires a browser (`Image`, `canvas`); call `exportSvg` or the core builders on a server.
-
-```ts
-const svg = chart.value!.exportSvg({ title: 'Plan', timeRange: { start, end } })
-const png = await chart.value!.exportPng({ scale: 2 })
-```
-
-The core entry provides the same rendering without Vue or a DOM, for servers, workers and tests.
-
-| Export | Purpose |
-| --- | --- |
-| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
-| escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
-| defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
-| mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
-
-Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vft-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline`, `status` and per-tone `ink`, `line`, `pale`, `solid`; the five newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vft-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
-
 ### Interchange exports
 
 The core entry builds three interchange formats as strings, and reads CSV back, without a DOM or dependencies. Save them with a `Blob` (`application/xml`, `text/calendar` or `text/csv`) or send them from a server.
@@ -715,14 +710,56 @@ const imported = timelineFromCsvTable(parseCsv(await file.text()), { parseTime: 
 
 `relatedIds` highlights the critical tasks and the edges between them; use `criticalEdgeIds` with an `edge` slot to style exactly the controlling links.
 
-### Right-to-left layout
+## Application undo and redo
+
+Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
+
+Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+
+## Export to SVG and PNG
+
+Both components expose two export methods on their template ref. They need no dependencies and never change props or component state.
+
+| Method | Returns | Behavior |
+| --- | --- | --- |
+| exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
+| exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
+
+The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines, summaries, dependencies (including `highlightedDependencyIds`), markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
+
+The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
+
+`GanttExportOptions`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `includeStatusDate` (default true: the `statusDate` line and, with `showProgressLine`, the progress line), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`.
+
+`GraphExportOptions`: `padding` (default 16), `background` (default true), `title`, `idPrefix`, `theme`, `includeSelection` (default true), `nodeLabel(node)`, `nodeDetail(node)` and `edgeLabel(edge)`.
+
+`exportPng` additionally takes `scale` (`PngExportOptions`), the number of device pixels per CSS pixel: greater than 0 and at most 8, default 1. The PNG is `ceil(width × scale)` by `ceil(height × scale)` pixels. It must fit within 16,384 pixels per side and 268,435,456 pixels in total; otherwise the promise rejects with a `RangeError` that names the size. Invalid numeric options (for example a negative `padding`, an inverted `timeRange` or an out-of-range `rowRange`) throw a `RangeError` from `exportSvg` and reject the `exportPng` promise. `exportSvg` on a GanttChart whose input is invalid throws the current validation error. PNG export requires a browser (`Image`, `canvas`); call `exportSvg` or the core builders on a server.
+
+```ts
+const svg = chart.value!.exportSvg({ title: 'Plan', timeRange: { start, end } })
+const png = await chart.value!.exportPng({ scale: 2 })
+```
+
+The core entry provides the same rendering without Vue or a DOM, for servers, workers and tests.
+
+| Export | Purpose |
+| --- | --- |
+| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
+| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
+| escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
+| defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
+| mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
+
+Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vw-marker-ink` by the component export methods), `baseline`, `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline`, `status` and per-tone `ink`, `line`, `pale`, `solid`; the five newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vw-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+
+## Right-to-left layout
 
 Both components take an opt-in `dir` prop of type `ChartDirection`.
 
 | Value | Behavior |
 | --- | --- |
 | `ltr` (default) | Unchanged left-to-right rendering. No `dir` attribute is written. |
-| `rtl` | Writes `dir="rtl"` on the component root and adds the `vft-rtl` class. Server rendering already produces right-to-left markup. |
+| `rtl` | Writes `dir="rtl"` on the component root and adds the `vw-rtl` class. Server rendering already produces right-to-left markup. |
 | `auto` | Writes no attribute and follows the CSS `direction` inherited by the component root, read after mounting and whenever `dir` changes. Server rendering and the first client render are left-to-right. |
 
 In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, the status-date and progress lines, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.

@@ -1,383 +1,383 @@
-.vft-network, .vft-gantt { color: var(--vft-text, #172c3b); font-family: inherit; }
-.vft-network button, .vft-gantt button { color: inherit; cursor: pointer; }
-.vft-network button:disabled, .vft-gantt button:disabled { cursor: default; opacity: .5; }
-.vft-network button:focus-visible, .vft-gantt button:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: 2px; }
-.vft-network *, .vft-gantt * { box-sizing: border-box; }
-.vft-network button, .vft-gantt button { font-family: inherit; }
-.vft-network { position: relative; border: 1px solid var(--vft-border, #dce6ed); border-radius: 8px; background: radial-gradient(circle, var(--vft-grid, #c7d6df) 1px, transparent 1.1px) 1px 1px / 17px 17px, var(--vft-surface-muted, #f6f9fb); }
-.vft-network-stage { display: block; width: 100%; height: 220px; cursor: grab; touch-action: none; overflow: hidden; }
-.vft-network-stage.panning { cursor: grabbing; }
-.vft-network-edge { fill: none; stroke: var(--vft-edge, #76929f); stroke-width: 1.65; }
-.vft-network-edge.related { stroke: var(--vft-accent, #2368a8); stroke-width: 2.15; }
-.vft-tone-teal { --vft-item-ink: var(--vft-teal-ink, #115e58); --vft-item-line: var(--vft-teal-line, #5d9c93); --vft-item-pale: var(--vft-teal-pale, #e1f2ee); --vft-item-solid: var(--vft-teal-solid, #2b756b); }
-.vft-tone-blue { --vft-item-ink: var(--vft-blue-ink, #1d4d84); --vft-item-line: var(--vft-blue-line, #6b96c5); --vft-item-pale: var(--vft-blue-pale, #e6effa); --vft-item-solid: var(--vft-blue-solid, #29609a); }
-.vft-tone-amber { --vft-item-ink: var(--vft-amber-ink, #764908); --vft-item-line: var(--vft-amber-line, #b58848); --vft-item-pale: var(--vft-amber-pale, #f9efdc); --vft-item-solid: var(--vft-amber-solid, #825411); }
-.vft-tone-violet { --vft-item-ink: var(--vft-violet-ink, #523b78); --vft-item-line: var(--vft-violet-line, #9983ba); --vft-item-pale: var(--vft-violet-pale, #efe7f8); --vft-item-solid: var(--vft-violet-solid, #624888); }
-.vft-network-node { cursor: pointer; outline: none; }
-.vft-network-node rect { fill: var(--vft-item-pale); stroke: var(--vft-item-line); stroke-width: 1.25px; }
-.vft-network-node.related rect { stroke: var(--vft-item-ink); stroke-width: 1.7px; }
-.vft-network-node:hover rect, .vft-network-node:focus-visible rect, .vft-network-node.selected rect { stroke: var(--vft-item-ink); stroke-width: 2.8px; }
-.vft-network-node.selected rect { fill: var(--vft-item-solid); }
-.vft-network-node text { user-select: none; pointer-events: none; fill: var(--vft-item-ink); }
-.vft-network-node.selected text { fill: var(--vft-on-solid, #fff); }
-.vft-node-title { font-size: 15.5px; font-weight: 700; }
-.vft-node-detail { font-size: 12px; font-weight: 550; }
-.vft-network-empty { position: absolute; inset: 30% 0 auto; text-align: center; color: var(--vft-muted, #4c6371); font-size: 13px; pointer-events: none; }
-.vft-zoom-tools, .vft-gantt-zoom { flex-shrink: 0; display: flex; align-items: center; color: var(--vft-text, #234157); background: var(--vft-surface, #fff); border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; white-space: nowrap; }
-.vft-zoom-tools { position: absolute; bottom: 8px; right: 8px; }
-.vft-zoom-tools button, .vft-gantt-zoom button { background: var(--vft-surface, #fff); border: none; min-width: 27px; height: 25px; line-height: 1; }
-.vft-zoom-tools button:hover, .vft-gantt-zoom button:not(:disabled):hover { background: var(--vft-surface-hover, #edf5fa); }
-.vft-zoom-tools button:focus-visible, .vft-gantt-zoom button:focus-visible { outline-offset: -2px; }
-.vft-zoom-tools output, .vft-gantt-zoom output { min-width: 40px; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 700; }
-.vft-zoom-tools .vft-fit-button { font-size: 10px; padding: 0 8px; border-left: 1px solid var(--vft-border, #e0e9ef); }
-.vft-gantt { --vft-row-label-width: 154px; }
-.vft-gantt-toolbar { min-height: 37px; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 16px; }
-.vft-gantt-scroll { height: 316px; overflow: auto; scrollbar-width: thin; border-block: 1px solid var(--vft-border, #d8e2e9); background: var(--vft-surface-muted, #f9fbfc); }
-.vft-gantt-scroll:focus-visible { outline-offset: -2px; }
-.vft-gantt-canvas { position: relative; min-width: 100%; background: var(--vft-surface, #fff); }
-.vft-gantt-head { position: sticky; top: 0; z-index: 5; height: 40px; background: var(--vft-surface-muted, #eff4f7); border-bottom: 1px solid var(--vft-border, #d8e2e9); }
-.vft-gantt-corner, .vft-gantt-row-label { position: sticky; left: 0; width: var(--vft-label-area-width); display: flex; flex-direction: column; justify-content: center; padding: 0 11px; border-right: 1px solid var(--vft-border, #d8e2e9); }
-.vft-gantt-corner { background: var(--vft-surface-muted, #e8f0f4); height: 100%; z-index: 1; color: var(--vft-text, #365469); font-weight: 700; font-size: 11px; }
-.vft-gantt-time-head { position: absolute; inset: 0 auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; }
-.vft-gantt-tick-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vft-grid, #d9e4eb); pointer-events: none; }
-.vft-gantt-tick { position: absolute; top: 12px; padding-left: 7px; color: var(--vft-text, #375468); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700; }
-.vft-gantt-tick.end { transform: translateX(-100%); padding: 0 7px 0 0; }
-.vft-gantt-grid { position: absolute; inset: 40px auto 0 var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; pointer-events: none; }
-.vft-gantt-grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vft-grid, #e2e9ef); }
-.vft-gantt-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vft-border, #e5edf1); }
-.vft-gantt-row-label { height: 100%; gap: 2px; background: var(--vft-surface-muted, #f3f7fa); z-index: 4; font-size: 12px; }
-.vft-gantt-row-label strong, .vft-gantt-row-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vft-gantt-row-label small { color: var(--vft-muted, #4c6371); font-size: 10px; }
-.vft-gantt-bar { position: absolute; z-index: 3; display: flex; align-items: center; padding: 0 7px; border-radius: 5px; border: 1px solid var(--vft-item-line); text-align: left; font-size: 11px; font-weight: 650; user-select: none; }
-.vft-gantt-bar.solid { background: var(--vft-item-solid); color: var(--vft-on-solid, #fff); border-color: var(--vft-item-solid); }
-.vft-gantt-bar.outline { background: var(--vft-item-pale); color: var(--vft-item-ink); }
-.vft-gantt-bar.selected { box-shadow: 0 0 0 2px var(--vft-accent, #174878); }
-.vft-gantt-bar.editable { cursor: grab; touch-action: none; }
-.vft-gantt-bar.dragging { cursor: grabbing; }
-.vft-gantt-bar.milestone { padding: 0; clip-path: polygon(50% 10%, 100% 50%, 50% 90%, 0 50%); }
-.vft-gantt-bar.milestone .vft-bar-text { visibility: hidden; }
-.vft-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.vft-bar-handle { position: absolute; top: 0; bottom: 0; width: min(8px, 28%); cursor: ew-resize; }
-.vft-bar-handle.first { left: 0; }
-.vft-bar-handle.last { right: 0; }
-.vft-bar-handle::after { content: ""; position: absolute; top: 28%; bottom: 28%; left: 43%; width: 1px; background: currentColor; opacity: 0; }
-.vft-gantt-bar:hover .vft-bar-handle::after, .vft-gantt-bar.selected .vft-bar-handle::after { opacity: .7; }
-.vft-gantt-links { position: absolute; z-index: 2; pointer-events: none; }
-.vft-gantt-links path { fill: none; stroke: var(--vft-edge, #738c9e); stroke-width: 1.3px; }
-.vft-gantt-links marker path { fill: context-stroke; stroke: none; }
-.vft-gantt-links path.related { stroke: var(--vft-accent, #245e96); stroke-width: 1.7px; }
-.vft-gantt-links path.highlighted { stroke: var(--vft-dependency-highlight, #a74f08); stroke-width: 2px; }
+.vw-network, .vw-gantt { color: var(--vw-text, #172c3b); font-family: inherit; }
+.vw-network button, .vw-gantt button { color: inherit; cursor: pointer; }
+.vw-network button:disabled, .vw-gantt button:disabled { cursor: default; opacity: .5; }
+.vw-network button:focus-visible, .vw-gantt button:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
+.vw-network *, .vw-gantt * { box-sizing: border-box; }
+.vw-network button, .vw-gantt button { font-family: inherit; }
+.vw-network { position: relative; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: radial-gradient(circle, var(--vw-grid, #c7d6df) 1px, transparent 1.1px) 1px 1px / 17px 17px, var(--vw-surface-muted, #f6f9fb); }
+.vw-network-stage { display: block; width: 100%; height: 220px; cursor: grab; touch-action: none; overflow: hidden; }
+.vw-network-stage.panning { cursor: grabbing; }
+.vw-network-edge { fill: none; stroke: var(--vw-edge, #76929f); stroke-width: 1.65; }
+.vw-network-edge.related { stroke: var(--vw-accent, #2368a8); stroke-width: 2.15; }
+.vw-tone-teal { --vw-item-ink: var(--vw-teal-ink, #115e58); --vw-item-line: var(--vw-teal-line, #5d9c93); --vw-item-pale: var(--vw-teal-pale, #e1f2ee); --vw-item-solid: var(--vw-teal-solid, #2b756b); }
+.vw-tone-blue { --vw-item-ink: var(--vw-blue-ink, #1d4d84); --vw-item-line: var(--vw-blue-line, #6b96c5); --vw-item-pale: var(--vw-blue-pale, #e6effa); --vw-item-solid: var(--vw-blue-solid, #29609a); }
+.vw-tone-amber { --vw-item-ink: var(--vw-amber-ink, #764908); --vw-item-line: var(--vw-amber-line, #b58848); --vw-item-pale: var(--vw-amber-pale, #f9efdc); --vw-item-solid: var(--vw-amber-solid, #825411); }
+.vw-tone-violet { --vw-item-ink: var(--vw-violet-ink, #523b78); --vw-item-line: var(--vw-violet-line, #9983ba); --vw-item-pale: var(--vw-violet-pale, #efe7f8); --vw-item-solid: var(--vw-violet-solid, #624888); }
+.vw-network-node { cursor: pointer; outline: none; }
+.vw-network-node rect { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-network-node.related rect { stroke: var(--vw-item-ink); stroke-width: 1.7px; }
+.vw-network-node:hover rect, .vw-network-node:focus-visible rect, .vw-network-node.selected rect { stroke: var(--vw-item-ink); stroke-width: 2.8px; }
+.vw-network-node.selected rect { fill: var(--vw-item-solid); }
+.vw-network-node text { user-select: none; pointer-events: none; fill: var(--vw-item-ink); }
+.vw-network-node.selected text { fill: var(--vw-on-solid, #fff); }
+.vw-node-title { font-size: 15.5px; font-weight: 700; }
+.vw-node-detail { font-size: 12px; font-weight: 550; }
+.vw-network-empty { position: absolute; inset: 30% 0 auto; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; pointer-events: none; }
+.vw-zoom-tools, .vw-gantt-zoom { flex-shrink: 0; display: flex; align-items: center; color: var(--vw-text, #234157); background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; white-space: nowrap; }
+.vw-zoom-tools { position: absolute; bottom: 8px; right: 8px; }
+.vw-zoom-tools button, .vw-gantt-zoom button { background: var(--vw-surface, #fff); border: none; min-width: 27px; height: 25px; line-height: 1; }
+.vw-zoom-tools button:hover, .vw-gantt-zoom button:not(:disabled):hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-zoom-tools button:focus-visible, .vw-gantt-zoom button:focus-visible { outline-offset: -2px; }
+.vw-zoom-tools output, .vw-gantt-zoom output { min-width: 40px; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.vw-zoom-tools .vw-fit-button { font-size: 10px; padding: 0 8px; border-left: 1px solid var(--vw-border, #e0e9ef); }
+.vw-gantt { --vw-row-label-width: 154px; }
+.vw-gantt-toolbar { min-height: 37px; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 16px; }
+.vw-gantt-scroll { height: 316px; overflow: auto; scrollbar-width: thin; border-block: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f9fbfc); }
+.vw-gantt-scroll:focus-visible { outline-offset: -2px; }
+.vw-gantt-canvas { position: relative; min-width: 100%; background: var(--vw-surface, #fff); }
+.vw-gantt-head { position: sticky; top: 0; z-index: 5; height: 40px; background: var(--vw-surface-muted, #eff4f7); border-bottom: 1px solid var(--vw-border, #d8e2e9); }
+.vw-gantt-corner, .vw-gantt-row-label { position: sticky; left: 0; width: var(--vw-label-area-width); display: flex; flex-direction: column; justify-content: center; padding: 0 11px; border-right: 1px solid var(--vw-border, #d8e2e9); }
+.vw-gantt-corner { background: var(--vw-surface-muted, #e8f0f4); height: 100%; z-index: 1; color: var(--vw-text, #365469); font-weight: 700; font-size: 11px; }
+.vw-gantt-time-head { position: absolute; inset: 0 auto 0 var(--vw-label-area-width); width: var(--vw-axis-width); overflow: hidden; }
+.vw-gantt-tick-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vw-grid, #d9e4eb); pointer-events: none; }
+.vw-gantt-tick { position: absolute; top: 12px; padding-left: 7px; color: var(--vw-text, #375468); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700; }
+.vw-gantt-tick.end { transform: translateX(-100%); padding: 0 7px 0 0; }
+.vw-gantt-grid { position: absolute; inset: 40px auto 0 var(--vw-label-area-width); width: var(--vw-axis-width); overflow: hidden; pointer-events: none; }
+.vw-gantt-grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--vw-grid, #e2e9ef); }
+.vw-gantt-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vw-border, #e5edf1); }
+.vw-gantt-row-label { height: 100%; gap: 2px; background: var(--vw-surface-muted, #f3f7fa); z-index: 4; font-size: 12px; }
+.vw-gantt-row-label strong, .vw-gantt-row-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-gantt-row-label small { color: var(--vw-muted, #4c6371); font-size: 10px; }
+.vw-gantt-bar { position: absolute; z-index: 3; display: flex; align-items: center; padding: 0 7px; border-radius: 5px; border: 1px solid var(--vw-item-line); text-align: left; font-size: 11px; font-weight: 650; user-select: none; }
+.vw-gantt-bar.solid { background: var(--vw-item-solid); color: var(--vw-on-solid, #fff); border-color: var(--vw-item-solid); }
+.vw-gantt-bar.outline { background: var(--vw-item-pale); color: var(--vw-item-ink); }
+.vw-gantt-bar.selected { box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
+.vw-gantt-bar.editable { cursor: grab; touch-action: none; }
+.vw-gantt-bar.dragging { cursor: grabbing; }
+.vw-gantt-bar.milestone { padding: 0; clip-path: polygon(50% 10%, 100% 50%, 50% 90%, 0 50%); }
+.vw-gantt-bar.milestone .vw-bar-text { visibility: hidden; }
+.vw-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.vw-bar-handle { position: absolute; top: 0; bottom: 0; width: min(8px, 28%); cursor: ew-resize; }
+.vw-bar-handle.first { left: 0; }
+.vw-bar-handle.last { right: 0; }
+.vw-bar-handle::after { content: ""; position: absolute; top: 28%; bottom: 28%; left: 43%; width: 1px; background: currentColor; opacity: 0; }
+.vw-gantt-bar:hover .vw-bar-handle::after, .vw-gantt-bar.selected .vw-bar-handle::after { opacity: .7; }
+.vw-gantt-links { position: absolute; z-index: 2; pointer-events: none; }
+.vw-gantt-links path { fill: none; stroke: var(--vw-edge, #738c9e); stroke-width: 1.3px; }
+.vw-gantt-links marker path { fill: context-stroke; stroke: none; }
+.vw-gantt-links path.related { stroke: var(--vw-accent, #245e96); stroke-width: 1.7px; }
+.vw-gantt-links path.highlighted { stroke: var(--vw-dependency-highlight, #a74f08); stroke-width: 2px; }
 @media (max-width: 700px) {
-  .vft-network-stage { height: 185px; }
-  .vft-gantt { --vft-row-label-width: 106px; }
-  .vft-gantt-toolbar { padding-inline: 8px; }
-  .vft-gantt-row-label, .vft-gantt-corner { padding-inline: 6px; }
+  .vw-network-stage { height: 185px; }
+  .vw-gantt { --vw-row-label-width: 106px; }
+  .vw-gantt-toolbar { padding-inline: 8px; }
+  .vw-gantt-row-label, .vw-gantt-corner { padding-inline: 6px; }
 }
-.vft-edge-label { font-size: 11px; text-anchor: middle; fill: var(--vft-text, #172c3b); paint-order: stroke; stroke: var(--vft-surface-muted, #f6f9fb); stroke-width: 4px; pointer-events: none; }
-.vft-bar-progress { position: absolute; inset-block: 0; left: 0; background: currentColor; opacity: .18; pointer-events: none; border-radius: inherit; }
-.vft-bar-text { position: relative; z-index: 1; }
-.vft-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.vft-gantt-empty { padding: 16px; text-align: center; }
-.vft-network-node.draggable { cursor: grab; }
-.vft-connect-handle { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 2px; cursor: crosshair; }
-.vft-connect-handle.active, .vft-connect-handle:focus-visible { fill: var(--vft-accent, #245e96); stroke: var(--vft-surface, #fff); outline: none; }
-.vft-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); }
-.vft-minimap svg { display: block; width: 100%; height: 100%; }
-.vft-minimap rect { fill: var(--vft-edge, #76929f); }
-.vft-minimap rect.selected { fill: var(--vft-accent, #245e96); }
-.vft-minimap .vft-minimap-window { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.vft-gantt-head { height: var(--vft-header-height, 40px); }
-.vft-gantt-grid { top: var(--vft-header-height, 40px); }
-.vft-gantt-band-level { position: absolute; left: var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; }
-.vft-gantt-band { position: absolute; height: 100%; padding: 5px 7px; border-right: 1px solid var(--vft-grid, #d9e4eb); border-bottom: 1px solid var(--vft-grid, #d9e4eb); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 700; }
-.vft-name-column.vft-tree-row { flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; padding-left: calc(9px + var(--vft-row-depth) * 11px); }
-.vft-row-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.vft-row-toggle { flex: none; border: 0; padding: 2px 4px; border-radius: 3px; background: transparent; }
-.vft-row-toggle:hover { background: var(--vft-surface-hover, #e3edf5); }
-.vft-gantt-baseline { position: absolute; z-index: 2; height: 4px; border-radius: 2px; background: var(--vft-baseline, #718497); }
-.vft-gantt-marker { position: absolute; z-index: 2; top: var(--vft-header-height, 40px); bottom: 0; border-left: 1px dashed var(--vft-marker, #a74f08); pointer-events: none; }
-.vft-gantt-marker span { display: inline-block; padding: 2px 5px; background: var(--vft-marker, #a74f08); color: #fff; white-space: nowrap; font-size: 10px; }
-.vft-network-group rect { fill: var(--vft-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vft-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
-.vft-network-group text { fill: var(--vft-text, #274256); font-size: 10px; user-select: none; }
-.vft-network-group text[role="button"] { cursor: grab; }
-.vft-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
-.vft-edge-hit.active, .vft-edge-hit:focus-visible { stroke: var(--vft-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
-.vft-reconnect-handle { fill: var(--vft-accent, #245e96); stroke: var(--vft-surface, #fff); stroke-width: 2px; cursor: crosshair; }
-.vft-connection-preview { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
-.vft-box-selection { fill: var(--vft-accent, #245e96); fill-opacity: .14; stroke: var(--vft-accent, #245e96); pointer-events: none; }
+.vw-edge-label { font-size: 11px; text-anchor: middle; fill: var(--vw-text, #172c3b); paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; pointer-events: none; }
+.vw-bar-progress { position: absolute; inset-block: 0; left: 0; background: currentColor; opacity: .18; pointer-events: none; border-radius: inherit; }
+.vw-bar-text { position: relative; z-index: 1; }
+.vw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.vw-gantt-empty { padding: 16px; text-align: center; }
+.vw-network-node.draggable { cursor: grab; }
+.vw-connect-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: crosshair; }
+.vw-connect-handle.active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); outline: none; }
+.vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); }
+.vw-minimap svg { display: block; width: 100%; height: 100%; }
+.vw-minimap rect { fill: var(--vw-edge, #76929f); }
+.vw-minimap rect.selected { fill: var(--vw-accent, #245e96); }
+.vw-minimap .vw-minimap-window { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.vw-gantt-head { height: var(--vw-header-height, 40px); }
+.vw-gantt-grid { top: var(--vw-header-height, 40px); }
+.vw-gantt-band-level { position: absolute; left: var(--vw-label-area-width); width: var(--vw-axis-width); overflow: hidden; }
+.vw-gantt-band { position: absolute; height: 100%; padding: 5px 7px; border-right: 1px solid var(--vw-grid, #d9e4eb); border-bottom: 1px solid var(--vw-grid, #d9e4eb); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 700; }
+.vw-name-column.vw-tree-row { flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; padding-left: calc(9px + var(--vw-row-depth) * 11px); }
+.vw-row-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vw-row-toggle { flex: none; border: 0; padding: 2px 4px; border-radius: 3px; background: transparent; }
+.vw-row-toggle:hover { background: var(--vw-surface-hover, #e3edf5); }
+.vw-gantt-baseline { position: absolute; z-index: 2; height: 4px; border-radius: 2px; background: var(--vw-baseline, #718497); }
+.vw-gantt-marker { position: absolute; z-index: 2; top: var(--vw-header-height, 40px); bottom: 0; border-left: 1px dashed var(--vw-marker, #a74f08); pointer-events: none; }
+.vw-gantt-marker span { display: inline-block; padding: 2px 5px; background: var(--vw-marker, #a74f08); color: #fff; white-space: nowrap; font-size: 10px; }
+.vw-network-group rect { fill: var(--vw-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vw-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
+.vw-network-group text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
+.vw-network-group text[role="button"] { cursor: grab; }
+.vw-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.vw-edge-hit.active, .vw-edge-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
+.vw-reconnect-handle { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); stroke-width: 2px; cursor: crosshair; }
+.vw-connection-preview { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
+.vw-box-selection { fill: var(--vw-accent, #245e96); fill-opacity: .14; stroke: var(--vw-accent, #245e96); pointer-events: none; }
 
-.vft-gantt-corner.vft-column-group, .vft-gantt-row-label.vft-column-group { padding: 0; display: flex; flex-direction: row; justify-content: flex-start; gap: 0; }
-.vft-column-group > .vft-name-column { flex: 0 0 var(--vft-row-label-width); width: var(--vft-row-label-width); padding: 0 9px; display: flex; align-items: center; }
-.vft-name-column.vft-tree-row { display: flex; align-items: center; }
-.vft-column-group > .vft-tree-row { padding-left: calc(8px + var(--vft-row-depth) * 9px); }
-.vft-extra-column { min-width: 0; flex: none; padding: 0 6px; border-left: 1px solid var(--vft-border, #d8e2e9); display: flex; align-items: center; overflow: hidden; }
-.vft-extra-column > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vft-cell-input { width: 100%; min-width: 0; color: inherit; background: var(--vft-surface, #fff); border: 1px solid var(--vft-border, #d8e2e9); border-radius: 4px; padding: 4px; font: inherit; }
-.vft-cell-input:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: -1px; }
-.vft-gantt-summary { position: absolute; z-index: 2; height: 14px; top: calc(50% - 7px); background: var(--vft-grid, #d1dde6); border-bottom: 2px solid var(--vft-edge, #50677a); border-radius: 3px; overflow: hidden; }
-.vft-gantt-summary span { display: block; height: 100%; background: var(--vft-accent, #245e96); opacity: .75; }
+.vw-gantt-corner.vw-column-group, .vw-gantt-row-label.vw-column-group { padding: 0; display: flex; flex-direction: row; justify-content: flex-start; gap: 0; }
+.vw-column-group > .vw-name-column { flex: 0 0 var(--vw-row-label-width); width: var(--vw-row-label-width); padding: 0 9px; display: flex; align-items: center; }
+.vw-name-column.vw-tree-row { display: flex; align-items: center; }
+.vw-column-group > .vw-tree-row { padding-left: calc(8px + var(--vw-row-depth) * 9px); }
+.vw-extra-column { min-width: 0; flex: none; padding: 0 6px; border-left: 1px solid var(--vw-border, #d8e2e9); display: flex; align-items: center; overflow: hidden; }
+.vw-extra-column > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-cell-input { width: 100%; min-width: 0; color: inherit; background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; padding: 4px; font: inherit; }
+.vw-cell-input:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -1px; }
+.vw-gantt-summary { position: absolute; z-index: 2; height: 14px; top: calc(50% - 7px); background: var(--vw-grid, #d1dde6); border-bottom: 2px solid var(--vw-edge, #50677a); border-radius: 3px; overflow: hidden; }
+.vw-gantt-summary span { display: block; height: 100%; background: var(--vw-accent, #245e96); opacity: .75; }
 
-.vft-network .vft-dimmed { opacity: var(--vft-dimmed-opacity, .28); }
+.vw-network .vw-dimmed { opacity: var(--vw-dimmed-opacity, .28); }
 /* Opt-in edge selection and the tooltip slot of NetworkGraph. */
-.vft-edge-hit.selected { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
-.vft-edge-selected .vft-network-edge { stroke: var(--vft-edge-selected, var(--vft-accent, #245e96)); stroke-width: 2.6; }
-.vft-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); color: var(--vft-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.vw-edge-hit.selected { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
+.vw-edge-selected .vw-network-edge { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 2.6; }
+.vw-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 /* Opt-in NetworkGraph background pattern and alignment guides. The pattern replaces the fixed dotted backdrop. */
-.vft-network.vft-network-patterned { background: var(--vft-surface-muted, #f6f9fb); }
-.vft-network-background { pointer-events: none; }
-.vft-network-pattern { fill: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); stroke: none; }
-path.vft-network-pattern { fill: none; stroke: var(--vft-background-pattern, var(--vft-grid, #c7d6df)); }
-.vft-guide { stroke: var(--vft-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.vw-network.vw-network-patterned { background: var(--vw-surface-muted, #f6f9fb); }
+.vw-network-background { pointer-events: none; }
+.vw-network-pattern { fill: var(--vw-background-pattern, var(--vw-grid, #c7d6df)); stroke: none; }
+path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(--vw-grid, #c7d6df)); }
+.vw-guide { stroke: var(--vw-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Opt-in NetworkGraph group collapse toggles, waypoint and resize handles, and level of detail. */
-.vft-group-toggle { cursor: pointer; }
-.vft-group-toggle rect { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 1.5px; }
-.vft-group-toggle path { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 1.6px; stroke-linecap: round; pointer-events: none; }
-.vft-group-toggle:focus-visible { outline: none; }
-.vft-group-toggle:focus-visible rect { fill: var(--vft-accent, #245e96); }
-.vft-group-toggle:focus-visible path { stroke: var(--vft-surface, #fff); }
-.vft-waypoint-handle { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 2px; cursor: move; touch-action: none; }
-.vft-waypoint-add { fill: var(--vft-accent, #245e96); fill-opacity: .35; stroke: var(--vft-accent, #245e96); stroke-width: 1px; cursor: copy; touch-action: none; }
-.vft-resize-handle { fill: var(--vft-surface, #fff); stroke: var(--vft-accent, #245e96); stroke-width: 1.5px; touch-action: none; }
-.vft-resize-topLeft, .vft-resize-bottomRight { cursor: nwse-resize; }
-.vft-resize-topRight, .vft-resize-bottomLeft { cursor: nesw-resize; }
-.vft-waypoint-handle:focus-visible, .vft-waypoint-add:focus-visible, .vft-resize-handle:focus-visible { fill: var(--vft-accent, #245e96); fill-opacity: 1; stroke: var(--vft-surface, #fff); outline: none; }
-.vft-network.vft-lod-low .vft-node-detail, .vft-network.vft-lod-low .vft-edge-label { display: none; }
+.vw-group-toggle { cursor: pointer; }
+.vw-group-toggle rect { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 1.5px; }
+.vw-group-toggle path { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.6px; stroke-linecap: round; pointer-events: none; }
+.vw-group-toggle:focus-visible { outline: none; }
+.vw-group-toggle:focus-visible rect { fill: var(--vw-accent, #245e96); }
+.vw-group-toggle:focus-visible path { stroke: var(--vw-surface, #fff); }
+.vw-waypoint-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: move; touch-action: none; }
+.vw-waypoint-add { fill: var(--vw-accent, #245e96); fill-opacity: .35; stroke: var(--vw-accent, #245e96); stroke-width: 1px; cursor: copy; touch-action: none; }
+.vw-resize-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 1.5px; touch-action: none; }
+.vw-resize-topLeft, .vw-resize-bottomRight { cursor: nwse-resize; }
+.vw-resize-topRight, .vw-resize-bottomLeft { cursor: nesw-resize; }
+.vw-waypoint-handle:focus-visible, .vw-waypoint-add:focus-visible, .vw-resize-handle:focus-visible { fill: var(--vw-accent, #245e96); fill-opacity: 1; stroke: var(--vw-surface, #fff); outline: none; }
+.vw-network.vw-lod-low .vw-node-detail, .vw-network.vw-lod-low .vw-edge-label { display: none; }
 /* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
-.vft-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vft-surface, #fff); }
-.vft-gantt-presets button { border: none; border-left: 1px solid var(--vft-border, #e0e9ef); background: var(--vft-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
-.vft-gantt-presets button:first-child { border-left: none; }
-.vft-gantt-presets button[aria-pressed="true"] { background: var(--vft-accent, #245e96); color: var(--vft-on-solid, #fff); }
-.vft-gantt-presets button:focus-visible { outline-offset: -2px; }
-.vft-gantt-now { border-left: 2px solid var(--vft-now, #c23b22); z-index: 3; }
-.vft-gantt-now span { background: var(--vft-now, #c23b22); }
-.vft-gantt-link-handle, .vft-gantt-reconnect-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--vft-accent, #245e96); background: var(--vft-surface, #fff); cursor: crosshair; touch-action: none; }
-.vft-gantt-link-handle.active, .vft-gantt-link-handle:focus-visible, .vft-gantt-reconnect-handle { background: var(--vft-accent, #245e96); border-color: var(--vft-surface, #fff); }
-.vft-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vft-accent, #245e96); }
-.vft-gantt-link-hits { position: absolute; z-index: 2; pointer-events: none; overflow: visible; }
-.vft-dependency-hit { fill: none; stroke: transparent; stroke-width: 12px; pointer-events: stroke; cursor: pointer; outline: none; }
-.vft-dependency-hit.active, .vft-dependency-hit:focus-visible { stroke: var(--vft-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
-.vft-gantt-links path.selected { stroke: var(--vft-accent, #245e96); stroke-width: 2.4px; }
-.vft-gantt-link-preview { position: absolute; left: var(--vft-label-area-width); z-index: 5; pointer-events: none; }
-.vft-gantt-link-preview path { fill: none; stroke: var(--vft-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; }
-.vft-gantt-bar.dragging { z-index: 4; }
-.vft-gantt-scroll.vft-pinch-zoom { touch-action: pan-x pan-y; }
-.vft-gantt-load-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vft-border, #e5edf1); background: var(--vft-surface-muted, #f9fbfc); }
-.vft-gantt-load-segment { position: absolute; top: 4px; bottom: 4px; z-index: 2; border-right: 1px solid var(--vft-surface, #fff); }
-.vft-gantt-load-segment > span { position: absolute; left: 0; right: 0; }
-.vft-load-fill { bottom: 0; background: var(--vft-load, #6b96c5); }
-.vft-load-over { background: var(--vft-load-overload, #b4441c); }
-.vft-load-capacity { height: 0; border-top: 2px dashed var(--vft-load-capacity, #31495b); }
-.vft-gantt-load-segment.idle .vft-load-capacity { opacity: .55; }
+.vw-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, #fff); }
+.vw-gantt-presets button { border: none; border-left: 1px solid var(--vw-border, #e0e9ef); background: var(--vw-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
+.vw-gantt-presets button:first-child { border-left: none; }
+.vw-gantt-presets button[aria-pressed="true"] { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
+.vw-gantt-presets button:focus-visible { outline-offset: -2px; }
+.vw-gantt-now { border-left: 2px solid var(--vw-now, #c23b22); z-index: 3; }
+.vw-gantt-now span { background: var(--vw-now, #c23b22); }
+.vw-gantt-link-handle, .vw-gantt-reconnect-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--vw-accent, #245e96); background: var(--vw-surface, #fff); cursor: crosshair; touch-action: none; }
+.vw-gantt-link-handle.active, .vw-gantt-link-handle:focus-visible, .vw-gantt-reconnect-handle { background: var(--vw-accent, #245e96); border-color: var(--vw-surface, #fff); }
+.vw-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vw-accent, #245e96); }
+.vw-gantt-link-hits { position: absolute; z-index: 2; pointer-events: none; overflow: visible; }
+.vw-dependency-hit { fill: none; stroke: transparent; stroke-width: 12px; pointer-events: stroke; cursor: pointer; outline: none; }
+.vw-dependency-hit.active, .vw-dependency-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
+.vw-gantt-links path.selected { stroke: var(--vw-accent, #245e96); stroke-width: 2.4px; }
+.vw-gantt-link-preview { position: absolute; left: var(--vw-label-area-width); z-index: 5; pointer-events: none; }
+.vw-gantt-link-preview path { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; }
+.vw-gantt-bar.dragging { z-index: 4; }
+.vw-gantt-scroll.vw-pinch-zoom { touch-action: pan-x pan-y; }
+.vw-gantt-load-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vw-border, #e5edf1); background: var(--vw-surface-muted, #f9fbfc); }
+.vw-gantt-load-segment { position: absolute; top: 4px; bottom: 4px; z-index: 2; border-right: 1px solid var(--vw-surface, #fff); }
+.vw-gantt-load-segment > span { position: absolute; left: 0; right: 0; }
+.vw-load-fill { bottom: 0; background: var(--vw-load, #6b96c5); }
+.vw-load-over { background: var(--vw-load-overload, #b4441c); }
+.vw-load-capacity { height: 0; border-top: 2px dashed var(--vw-load-capacity, #31495b); }
+.vw-gantt-load-segment.idle .vw-load-capacity { opacity: .55; }
 
 /* Non-working time, critical path, float, deadlines and segmented bars (opt-in through nonWorkingPeriods and bar fields). */
-.vft-gantt-non-working-layer { position: absolute; top: var(--vft-header-height, 40px); bottom: 0; left: var(--vft-label-area-width); width: var(--vft-axis-width); overflow: hidden; pointer-events: none; }
-.vft-gantt-non-working { position: absolute; top: 0; bottom: 0; background: var(--vft-non-working, #eaeff3); pointer-events: none; }
-.vft-gantt-bar.vft-critical { border-color: var(--vft-critical, #b42318); box-shadow: inset 0 0 0 1px var(--vft-critical, #b42318); }
-.vft-gantt-bar.vft-critical.selected { box-shadow: inset 0 0 0 1px var(--vft-critical, #b42318), 0 0 0 2px var(--vft-accent, #174878); }
-.vft-gantt-bar.vft-late { outline: 2px dashed var(--vft-deadline, #a74f08); outline-offset: 1px; }
-.vft-gantt-float { position: absolute; z-index: 2; height: 8px; pointer-events: none; border-inline-end: 2px solid var(--vft-float, #5b7083); }
-.vft-gantt-float::before { content: ""; position: absolute; inset-inline: 0; top: 3px; border-top: 2px solid var(--vft-float, #5b7083); }
-.vft-gantt-deadline { position: absolute; z-index: 3; width: 10px; pointer-events: none; }
-.vft-gantt-deadline::before { content: ""; position: absolute; top: 0; left: 0; border-inline: 5px solid transparent; border-top: 6px solid var(--vft-deadline, #a74f08); }
-.vft-gantt-deadline::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: var(--vft-deadline, #a74f08); }
-.vft-gantt-bar.vft-segmented { background: transparent; border-color: transparent; box-shadow: none; }
-.vft-gantt-bar.vft-segmented.selected { box-shadow: 0 0 0 2px var(--vft-accent, #174878); }
-.vft-gantt-segment { position: absolute; top: -1px; bottom: -1px; border: 1px solid var(--vft-item-line); border-radius: 4px; overflow: hidden; pointer-events: none; }
-.vft-gantt-bar.solid .vft-gantt-segment { background: var(--vft-item-solid); border-color: var(--vft-item-solid); }
-.vft-gantt-bar.outline .vft-gantt-segment { background: var(--vft-item-pale); }
-.vft-gantt-bar.vft-critical .vft-gantt-segment { border-color: var(--vft-critical, #b42318); box-shadow: inset 0 0 0 1px var(--vft-critical, #b42318); }
-.vft-gantt-segment-gap { position: absolute; top: calc(50% - 1px); height: 2px; background: var(--vft-item-line); pointer-events: none; }
-.vft-gantt-bar.solid .vft-gantt-segment-gap { background: var(--vft-item-solid); }
-.vft-gantt-bar.solid.vft-segmented .vft-bar-text { text-shadow: 0 0 2px var(--vft-item-solid), 0 0 3px var(--vft-item-solid); }
+.vw-gantt-non-working-layer { position: absolute; top: var(--vw-header-height, 40px); bottom: 0; left: var(--vw-label-area-width); width: var(--vw-axis-width); overflow: hidden; pointer-events: none; }
+.vw-gantt-non-working { position: absolute; top: 0; bottom: 0; background: var(--vw-non-working, #eaeff3); pointer-events: none; }
+.vw-gantt-bar.vw-critical { border-color: var(--vw-critical, #b42318); box-shadow: inset 0 0 0 1px var(--vw-critical, #b42318); }
+.vw-gantt-bar.vw-critical.selected { box-shadow: inset 0 0 0 1px var(--vw-critical, #b42318), 0 0 0 2px var(--vw-accent, #174878); }
+.vw-gantt-bar.vw-late { outline: 2px dashed var(--vw-deadline, #a74f08); outline-offset: 1px; }
+.vw-gantt-float { position: absolute; z-index: 2; height: 8px; pointer-events: none; border-inline-end: 2px solid var(--vw-float, #5b7083); }
+.vw-gantt-float::before { content: ""; position: absolute; inset-inline: 0; top: 3px; border-top: 2px solid var(--vw-float, #5b7083); }
+.vw-gantt-deadline { position: absolute; z-index: 3; width: 10px; pointer-events: none; }
+.vw-gantt-deadline::before { content: ""; position: absolute; top: 0; left: 0; border-inline: 5px solid transparent; border-top: 6px solid var(--vw-deadline, #a74f08); }
+.vw-gantt-deadline::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: var(--vw-deadline, #a74f08); }
+.vw-gantt-bar.vw-segmented { background: transparent; border-color: transparent; box-shadow: none; }
+.vw-gantt-bar.vw-segmented.selected { box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
+.vw-gantt-segment { position: absolute; top: -1px; bottom: -1px; border: 1px solid var(--vw-item-line); border-radius: 4px; overflow: hidden; pointer-events: none; }
+.vw-gantt-bar.solid .vw-gantt-segment { background: var(--vw-item-solid); border-color: var(--vw-item-solid); }
+.vw-gantt-bar.outline .vw-gantt-segment { background: var(--vw-item-pale); }
+.vw-gantt-bar.vw-critical .vw-gantt-segment { border-color: var(--vw-critical, #b42318); box-shadow: inset 0 0 0 1px var(--vw-critical, #b42318); }
+.vw-gantt-segment-gap { position: absolute; top: calc(50% - 1px); height: 2px; background: var(--vw-item-line); pointer-events: none; }
+.vw-gantt-bar.solid .vw-gantt-segment-gap { background: var(--vw-item-solid); }
+.vw-gantt-bar.solid.vw-segmented .vw-bar-text { text-shadow: 0 0 2px var(--vw-item-solid), 0 0 3px var(--vw-item-solid); }
 /* Opt-in progress slider (progressEditable) and tooltip slot. */
-.vft-gantt .vft-gantt-progress-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border: 0; border-radius: 2px; background: transparent; cursor: ew-resize; touch-action: none; }
-.vft-gantt-progress-handle::before { content: ""; position: absolute; left: 0; top: 2px; border-inline: 6px solid transparent; border-bottom: 9px solid var(--vft-accent, #245e96); filter: drop-shadow(0 0 1px var(--vft-surface, #fff)); }
-.vft-gantt-progress-handle::after { content: ""; position: absolute; inset: -3px; }
-.vft-gantt .vft-gantt-progress-handle:focus-visible { outline-offset: 1px; }
-.vft-gantt-tooltip { position: absolute; z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 6px; background: var(--vft-surface, #fff); color: var(--vft-text, #172c3b); box-shadow: 0 4px 14px rgb(0 0 0 / .16); font-size: 12px; line-height: 1.4; }
+.vw-gantt .vw-gantt-progress-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border: 0; border-radius: 2px; background: transparent; cursor: ew-resize; touch-action: none; }
+.vw-gantt-progress-handle::before { content: ""; position: absolute; left: 0; top: 2px; border-inline: 6px solid transparent; border-bottom: 9px solid var(--vw-accent, #245e96); filter: drop-shadow(0 0 1px var(--vw-surface, #fff)); }
+.vw-gantt-progress-handle::after { content: ""; position: absolute; inset: -3px; }
+.vw-gantt .vw-gantt-progress-handle:focus-visible { outline-offset: 1px; }
+.vw-gantt-tooltip { position: absolute; z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 4px 14px rgb(0 0 0 / .16); font-size: 12px; line-height: 1.4; }
 
 /* Right-to-left (opt-in through the dir prop). Positions come from the component as `right` offsets; these rules
    mirror the sticky label column, header, grid, handles and dependency layers. */
-.vft-gantt.vft-rtl .vft-gantt-corner, .vft-gantt.vft-rtl .vft-gantt-row-label { left: auto; right: 0; border-right: 0; border-inline-start: 0; border-inline-end: 1px solid var(--vft-border, #d8e2e9); }
-.vft-gantt.vft-rtl .vft-gantt-time-head, .vft-gantt.vft-rtl .vft-gantt-grid, .vft-gantt.vft-rtl .vft-gantt-non-working-layer { left: auto; inset-inline-start: var(--vft-label-area-width); }
-.vft-gantt.vft-rtl .vft-gantt-tick { padding-left: 0; padding-inline-start: 7px; }
-.vft-gantt.vft-rtl .vft-gantt-tick.end { transform: translateX(100%); padding-inline: 0 7px; }
-.vft-gantt.vft-rtl .vft-gantt-band-level { left: auto; inset-inline-start: var(--vft-label-area-width); }
-.vft-gantt.vft-rtl .vft-gantt-band { border-right: 0; border-inline-end: 1px solid var(--vft-grid, #d9e4eb); }
-.vft-gantt.vft-rtl .vft-gantt-bar { text-align: start; }
-.vft-gantt.vft-rtl .vft-bar-handle.first { left: auto; inset-inline-start: 0; }
-.vft-gantt.vft-rtl .vft-bar-handle.last { right: auto; inset-inline-end: 0; }
-.vft-gantt.vft-rtl .vft-bar-progress { left: auto; inset-inline-start: 0; }
-.vft-gantt.vft-rtl .vft-gantt-marker { border-left: 0; border-inline-start: 1px dashed var(--vft-marker, #a74f08); }
-.vft-gantt.vft-rtl .vft-gantt-now { border-left: 0; border-inline-start: 2px solid var(--vft-now, #c23b22); }
-.vft-gantt.vft-rtl .vft-gantt-links, .vft-gantt.vft-rtl .vft-gantt-link-hits, .vft-gantt.vft-rtl .vft-gantt-link-preview { transform: scaleX(-1); }
-.vft-gantt.vft-rtl .vft-gantt-link-preview { left: auto; inset-inline-start: var(--vft-label-area-width); }
-.vft-gantt.vft-rtl .vft-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vft-surface, #fff); }
-.vft-gantt.vft-rtl .vft-extra-column { border-left: 0; border-inline-start: 1px solid var(--vft-border, #d8e2e9); }
-.vft-gantt.vft-rtl .vft-name-column.vft-tree-row { padding-left: 0; padding-inline-start: calc(9px + var(--vft-row-depth) * 11px); }
-.vft-gantt.vft-rtl .vft-column-group > .vft-tree-row { padding-left: 9px; padding-inline-start: calc(8px + var(--vft-row-depth) * 9px); }
-.vft-gantt.vft-rtl .vft-gantt-presets { margin-left: 0; margin-inline-start: auto; }
-.vft-network.vft-rtl .vft-zoom-tools { right: auto; inset-inline-end: 8px; }
-.vft-network.vft-rtl .vft-minimap { right: auto; inset-inline-end: 8px; }
-.vft-network.vft-rtl .vft-zoom-tools .vft-fit-button { border-left: 0; border-inline-start: 1px solid var(--vft-border, #e0e9ef); }
-.vft-network.vft-rtl .vft-network-node text, .vft-network.vft-rtl .vft-network-group text, .vft-network.vft-rtl .vft-edge-label { direction: rtl; unicode-bidi: embed; }
+.vw-gantt.vw-rtl .vw-gantt-corner, .vw-gantt.vw-rtl .vw-gantt-row-label { left: auto; right: 0; border-right: 0; border-inline-start: 0; border-inline-end: 1px solid var(--vw-border, #d8e2e9); }
+.vw-gantt.vw-rtl .vw-gantt-time-head, .vw-gantt.vw-rtl .vw-gantt-grid, .vw-gantt.vw-rtl .vw-gantt-non-working-layer { left: auto; inset-inline-start: var(--vw-label-area-width); }
+.vw-gantt.vw-rtl .vw-gantt-tick { padding-left: 0; padding-inline-start: 7px; }
+.vw-gantt.vw-rtl .vw-gantt-tick.end { transform: translateX(100%); padding-inline: 0 7px; }
+.vw-gantt.vw-rtl .vw-gantt-band-level { left: auto; inset-inline-start: var(--vw-label-area-width); }
+.vw-gantt.vw-rtl .vw-gantt-band { border-right: 0; border-inline-end: 1px solid var(--vw-grid, #d9e4eb); }
+.vw-gantt.vw-rtl .vw-gantt-bar { text-align: start; }
+.vw-gantt.vw-rtl .vw-bar-handle.first { left: auto; inset-inline-start: 0; }
+.vw-gantt.vw-rtl .vw-bar-handle.last { right: auto; inset-inline-end: 0; }
+.vw-gantt.vw-rtl .vw-bar-progress { left: auto; inset-inline-start: 0; }
+.vw-gantt.vw-rtl .vw-gantt-marker { border-left: 0; border-inline-start: 1px dashed var(--vw-marker, #a74f08); }
+.vw-gantt.vw-rtl .vw-gantt-now { border-left: 0; border-inline-start: 2px solid var(--vw-now, #c23b22); }
+.vw-gantt.vw-rtl .vw-gantt-links, .vw-gantt.vw-rtl .vw-gantt-link-hits, .vw-gantt.vw-rtl .vw-gantt-link-preview { transform: scaleX(-1); }
+.vw-gantt.vw-rtl .vw-gantt-link-preview { left: auto; inset-inline-start: var(--vw-label-area-width); }
+.vw-gantt.vw-rtl .vw-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vw-surface, #fff); }
+.vw-gantt.vw-rtl .vw-extra-column { border-left: 0; border-inline-start: 1px solid var(--vw-border, #d8e2e9); }
+.vw-gantt.vw-rtl .vw-name-column.vw-tree-row { padding-left: 0; padding-inline-start: calc(9px + var(--vw-row-depth) * 11px); }
+.vw-gantt.vw-rtl .vw-column-group > .vw-tree-row { padding-left: 9px; padding-inline-start: calc(8px + var(--vw-row-depth) * 9px); }
+.vw-gantt.vw-rtl .vw-gantt-presets { margin-left: 0; margin-inline-start: auto; }
+.vw-network.vw-rtl .vw-zoom-tools { right: auto; inset-inline-end: 8px; }
+.vw-network.vw-rtl .vw-minimap { right: auto; inset-inline-end: 8px; }
+.vw-network.vw-rtl .vw-zoom-tools .vw-fit-button { border-left: 0; border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
+.vw-network.vw-rtl .vw-network-node text, .vw-network.vw-rtl .vw-network-group text, .vw-network.vw-rtl .vw-edge-label { direction: rtl; unicode-bidi: embed; }
 
 /* Opt-in drag to create (creatable) and cascade previews (cascade). Placed after the right-to-left rules so the
    heading padding that makes room for the add button also applies there. */
-.vft-gantt .vft-gantt-row-label .vft-name-column.vft-creatable { position: relative; padding-inline-end: 26px; }
-.vft-gantt-create-button { position: absolute; inset-inline-end: 3px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; padding: 0; border: 1px solid var(--vft-border, #cbd9e2); border-radius: 4px; background: var(--vft-surface, #fff); color: var(--vft-accent, #245e96); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
-.vft-gantt-create-button:hover { background: var(--vft-surface-hover, #edf5fa); }
-.vft-gantt-create-preview, .vft-gantt-cascade-preview { position: absolute; z-index: 3; box-sizing: border-box; border-radius: 5px; pointer-events: none; box-shadow: 0 0 0 1px var(--vft-surface, #fff), inset 0 0 0 1px var(--vft-surface, #fff); }
-.vft-gantt-create-preview { border: 2px dashed var(--vft-accent, #245e96); background: color-mix(in srgb, var(--vft-accent, #245e96) 16%, transparent); }
-.vft-gantt-cascade-preview { border: 2px dashed var(--vft-cascade, #6d4bb3); background: color-mix(in srgb, var(--vft-cascade, #6d4bb3) 14%, transparent); }
+.vw-gantt .vw-gantt-row-label .vw-name-column.vw-creatable { position: relative; padding-inline-end: 26px; }
+.vw-gantt-create-button { position: absolute; inset-inline-end: 3px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; padding: 0; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 4px; background: var(--vw-surface, #fff); color: var(--vw-accent, #245e96); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+.vw-gantt-create-button:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-gantt-create-preview, .vw-gantt-cascade-preview { position: absolute; z-index: 3; box-sizing: border-box; border-radius: 5px; pointer-events: none; box-shadow: 0 0 0 1px var(--vw-surface, #fff), inset 0 0 0 1px var(--vw-surface, #fff); }
+.vw-gantt-create-preview { border: 2px dashed var(--vw-accent, #245e96); background: color-mix(in srgb, var(--vw-accent, #245e96) 16%, transparent); }
+.vw-gantt-cascade-preview { border: 2px dashed var(--vw-cascade, #6d4bb3); background: color-mix(in srgb, var(--vw-cascade, #6d4bb3) 14%, transparent); }
 /* Opt-in row hierarchy moves (rowsReorderable), status date and progress line (statusDate, showProgressLine). */
-.vft-gantt .vft-gantt-row-label .vft-name-column.vft-reorderable { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; }
-.vft-row-move-handle { flex: none; width: 18px; height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vft-muted, #4c6371); font-size: 11px; letter-spacing: -2px; line-height: 1; cursor: grab; touch-action: none; }
-.vft-row-move-handle:hover { background: var(--vft-surface-hover, #e3edf5); }
-.vft-row-move-handle:active { cursor: grabbing; }
-.vft-gantt-row-drop { position: absolute; z-index: 5; height: 3px; border-radius: 2px; background: var(--vft-accent, #245e96); pointer-events: none; }
-.vft-gantt-status-date { border-left: 2px solid var(--vft-status, #1f7a4d); z-index: 3; }
-.vft-gantt-status-date span { background: var(--vft-status, #1f7a4d); }
-.vft-gantt.vft-rtl .vft-gantt-status-date { border-left: 0; border-inline-start: 2px solid var(--vft-status, #1f7a4d); }
-.vft-gantt-progress-line { position: absolute; top: 0; z-index: 3; overflow: visible; pointer-events: none; }
-.vft-gantt-progress-line polyline { fill: none; stroke: var(--vft-status, #1f7a4d); stroke-width: 2px; stroke-linejoin: round; }
-.vft-gantt.vft-rtl .vft-gantt-progress-line { transform: scaleX(-1); }
+.vw-gantt .vw-gantt-row-label .vw-name-column.vw-reorderable { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; }
+.vw-row-move-handle { flex: none; width: 18px; height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vw-muted, #4c6371); font-size: 11px; letter-spacing: -2px; line-height: 1; cursor: grab; touch-action: none; }
+.vw-row-move-handle:hover { background: var(--vw-surface-hover, #e3edf5); }
+.vw-row-move-handle:active { cursor: grabbing; }
+.vw-gantt-row-drop { position: absolute; z-index: 5; height: 3px; border-radius: 2px; background: var(--vw-accent, #245e96); pointer-events: none; }
+.vw-gantt-status-date { border-left: 2px solid var(--vw-status, #1f7a4d); z-index: 3; }
+.vw-gantt-status-date span { background: var(--vw-status, #1f7a4d); }
+.vw-gantt.vw-rtl .vw-gantt-status-date { border-left: 0; border-inline-start: 2px solid var(--vw-status, #1f7a4d); }
+.vw-gantt-progress-line { position: absolute; top: 0; z-index: 3; overflow: visible; pointer-events: none; }
+.vw-gantt-progress-line polyline { fill: none; stroke: var(--vw-status, #1f7a4d); stroke-width: 2px; stroke-linejoin: round; }
+.vw-gantt.vw-rtl .vw-gantt-progress-line { transform: scaleX(-1); }
 /* Opt-in column resizing (columnsResizable): a separator along the inline-end edge of each header cell. */
-.vft-column-resize { position: absolute; top: 0; bottom: 0; z-index: 2; width: 8px; cursor: col-resize; touch-action: none; }
-.vft-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vft-border, #c3d2dc); }
-.vft-column-resize:hover::after, .vft-column-resize.active::after { background: var(--vft-accent, #245e96); }
-.vft-column-resize:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }
+.vw-column-resize { position: absolute; top: 0; bottom: 0; z-index: 2; width: 8px; cursor: col-resize; touch-action: none; }
+.vw-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vw-border, #c3d2dc); }
+.vw-column-resize:hover::after, .vw-column-resize.active::after { background: var(--vw-accent, #245e96); }
+.vw-column-resize:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
 
-/* Built-in dark theme. Opt in with `vft-theme-dark`, or follow the OS with `vft-theme-auto`; place the class on a component root or any ancestor. */
-.vft-theme-dark {
+/* Built-in dark theme. Opt in with `vw-theme-dark`, or follow the OS with `vw-theme-auto`; place the class on a component root or any ancestor. */
+.vw-theme-dark {
   color-scheme: dark;
-  --vft-surface: #182a37; --vft-surface-muted: #1e3343; --vft-surface-hover: #2d4656;
-  --vft-text: #e5edf3; --vft-muted: #b1c7d7; --vft-border: #355164; --vft-grid: #324c60;
-  --vft-edge: #8da9bb; --vft-accent: #82badf; --vft-on-solid: #0d1a24;
-  --vft-blue-ink: #b6d9f5; --vft-blue-pale: #243e58; --vft-blue-line: #6388ad; --vft-blue-solid: #8fc1e6;
-  --vft-teal-ink: #adede1; --vft-teal-pale: #20453f; --vft-teal-line: #65a295; --vft-teal-solid: #7fd0c0;
-  --vft-amber-ink: #f3d49a; --vft-amber-pale: #43331a; --vft-amber-line: #b58848; --vft-amber-solid: #e6b86a;
-  --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
-  --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
-  --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
-  --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060; --vft-cascade: #c4a8f0; --vft-status: #7ad39b;
-  --vft-dimmed-opacity: .4;
-  --vft-background-pattern: #3d5a6f; --vft-guide: #ff7aa8;
+  --vw-surface: #182a37; --vw-surface-muted: #1e3343; --vw-surface-hover: #2d4656;
+  --vw-text: #e5edf3; --vw-muted: #b1c7d7; --vw-border: #355164; --vw-grid: #324c60;
+  --vw-edge: #8da9bb; --vw-accent: #82badf; --vw-on-solid: #0d1a24;
+  --vw-blue-ink: #b6d9f5; --vw-blue-pale: #243e58; --vw-blue-line: #6388ad; --vw-blue-solid: #8fc1e6;
+  --vw-teal-ink: #adede1; --vw-teal-pale: #20453f; --vw-teal-line: #65a295; --vw-teal-solid: #7fd0c0;
+  --vw-amber-ink: #f3d49a; --vw-amber-pale: #43331a; --vw-amber-line: #b58848; --vw-amber-solid: #e6b86a;
+  --vw-violet-ink: #ddccf6; --vw-violet-pale: #3b3152; --vw-violet-line: #a48cc4; --vw-violet-solid: #c3aee6;
+  --vw-baseline: #8da0b4; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
+  --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
+  --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
+  --vw-dimmed-opacity: .4;
+  --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
 }
-.vft-theme-dark.vft-gantt { background: var(--vft-surface); }
+.vw-theme-dark.vw-gantt { background: var(--vw-surface); }
 @media (prefers-color-scheme: dark) {
-  .vft-theme-auto {
+  .vw-theme-auto {
     color-scheme: dark;
-    --vft-surface: #182a37; --vft-surface-muted: #1e3343; --vft-surface-hover: #2d4656;
-    --vft-text: #e5edf3; --vft-muted: #b1c7d7; --vft-border: #355164; --vft-grid: #324c60;
-    --vft-edge: #8da9bb; --vft-accent: #82badf; --vft-on-solid: #0d1a24;
-    --vft-blue-ink: #b6d9f5; --vft-blue-pale: #243e58; --vft-blue-line: #6388ad; --vft-blue-solid: #8fc1e6;
-    --vft-teal-ink: #adede1; --vft-teal-pale: #20453f; --vft-teal-line: #65a295; --vft-teal-solid: #7fd0c0;
-    --vft-amber-ink: #f3d49a; --vft-amber-pale: #43331a; --vft-amber-line: #b58848; --vft-amber-solid: #e6b86a;
-    --vft-violet-ink: #ddccf6; --vft-violet-pale: #3b3152; --vft-violet-line: #a48cc4; --vft-violet-solid: #c3aee6;
-    --vft-baseline: #8da0b4; --vft-marker: #f0a060; --vft-marker-ink: #0d1a24; --vft-dependency-highlight: #f0a060;
-    --vft-now: #ff8f7a; --vft-load: #5d8fc0; --vft-load-overload: #e8734a; --vft-load-capacity: #c3d3df;
-    --vft-non-working: #13212c; --vft-critical: #ff8a80; --vft-float: #9fb3c3; --vft-deadline: #f0a060; --vft-cascade: #c4a8f0; --vft-status: #7ad39b;
-    --vft-dimmed-opacity: .4;
-    --vft-background-pattern: #3d5a6f; --vft-guide: #ff7aa8;
+    --vw-surface: #182a37; --vw-surface-muted: #1e3343; --vw-surface-hover: #2d4656;
+    --vw-text: #e5edf3; --vw-muted: #b1c7d7; --vw-border: #355164; --vw-grid: #324c60;
+    --vw-edge: #8da9bb; --vw-accent: #82badf; --vw-on-solid: #0d1a24;
+    --vw-blue-ink: #b6d9f5; --vw-blue-pale: #243e58; --vw-blue-line: #6388ad; --vw-blue-solid: #8fc1e6;
+    --vw-teal-ink: #adede1; --vw-teal-pale: #20453f; --vw-teal-line: #65a295; --vw-teal-solid: #7fd0c0;
+    --vw-amber-ink: #f3d49a; --vw-amber-pale: #43331a; --vw-amber-line: #b58848; --vw-amber-solid: #e6b86a;
+    --vw-violet-ink: #ddccf6; --vw-violet-pale: #3b3152; --vw-violet-line: #a48cc4; --vw-violet-solid: #c3aee6;
+    --vw-baseline: #8da0b4; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
+    --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
+    --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
+    --vw-dimmed-opacity: .4;
+    --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
   }
-  .vft-theme-auto.vft-gantt { background: var(--vft-surface); }
+  .vw-theme-auto.vw-gantt { background: var(--vw-surface); }
 }
 /* Text on marker and now-marker labels; defaults to white. */
-.vft-gantt-marker span { color: var(--vft-marker-ink, #fff); }
+.vw-gantt-marker span { color: var(--vw-marker-ink, #fff); }
 
 @media (prefers-reduced-motion: reduce) {
-  .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  .vw-network, .vw-gantt, .vw-network *, .vw-gantt * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 
 @media (forced-colors: active) {
-  .vft-network, .vft-gantt { forced-color-adjust: auto; }
-  .vft-network { background: Canvas; border-color: CanvasText; }
-  .vft-network-edge, .vft-gantt-links path { stroke: CanvasText; }
-  .vft-gantt-links marker path { fill: CanvasText; }
-  .vft-network-edge.related, .vft-gantt-links path.related { stroke: Highlight; stroke-width: 3px; }
-  .vft-gantt-links path.highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
-  .vft-gantt-links path.selected { stroke: Highlight; stroke-width: 3.5px; }
-  .vft-network-node rect, .vft-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
-  .vft-network-node text, .vft-network-group text, .vft-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
-  .vft-network-node.related rect { stroke: Highlight; stroke-width: 2.5px; }
-  .vft-network-node:hover rect, .vft-network-node:focus-visible rect { stroke: Highlight; stroke-width: 4px; }
-  .vft-network-node.selected rect { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
-  .vft-network-node.selected text { fill: HighlightText; }
-  .vft-gantt-bar { forced-color-adjust: none; border: 1px solid CanvasText; }
-  .vft-gantt-bar.solid { background: CanvasText; color: Canvas; border-color: CanvasText; }
-  .vft-gantt-bar.outline { background: Canvas; color: CanvasText; border-color: CanvasText; }
-  .vft-gantt-bar.selected { border-width: 2px; outline: 3px solid Highlight; outline-offset: 2px; }
-  .vft-gantt-bar:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
-  .vft-gantt-bar.milestone { background: CanvasText; }
-  .vft-bar-progress { inset-block: auto 0; height: 4px; background: Highlight; opacity: 1; }
-  .vft-bar-handle::after { background: currentColor; }
-  .vft-gantt-bar:hover .vft-bar-handle::after, .vft-gantt-bar.selected .vft-bar-handle::after { opacity: 1; }
-  .vft-gantt-baseline { background: GrayText; }
-  .vft-gantt-summary { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; border-bottom-width: 3px; }
-  .vft-gantt-summary span { background: Highlight; opacity: 1; }
-  .vft-gantt-marker { border-left: 2px dashed CanvasText; }
-  .vft-gantt-marker span { forced-color-adjust: none; background: Canvas; color: CanvasText; border: 1px solid CanvasText; }
-  .vft-gantt-now { border-left: 3px solid Highlight; }
-  .vft-gantt.vft-rtl .vft-gantt-marker { border-left: 0; border-inline-start: 2px dashed CanvasText; }
-  .vft-gantt.vft-rtl .vft-gantt-now { border-left: 0; border-inline-start: 3px solid Highlight; }
-  .vft-gantt-now span { background: Highlight; color: HighlightText; border-color: Highlight; }
-  .vft-gantt-grid-line, .vft-gantt-tick-line { forced-color-adjust: none; background: GrayText; }
-  .vft-gantt-load-segment { forced-color-adjust: none; }
-  .vft-load-fill { background: GrayText; }
-  .vft-load-over { background: repeating-linear-gradient(45deg, CanvasText 0 2px, Highlight 2px 5px); }
-  .vft-load-capacity { border-top: 2px dashed CanvasText; }
-  .vft-gantt-link-handle, .vft-gantt-reconnect-handle, .vft-connect-handle, .vft-reconnect-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
-  .vft-gantt-link-handle.active, .vft-gantt-link-handle:focus-visible, .vft-gantt-reconnect-handle, .vft-connect-handle.active, .vft-connect-handle:focus-visible, .vft-reconnect-handle { fill: Highlight; stroke: CanvasText; background: Highlight; border-color: CanvasText; outline: 2px solid Highlight; outline-offset: 2px; }
-  .vft-edge-hit.active, .vft-edge-hit:focus-visible, .vft-dependency-hit.active, .vft-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
-  .vft-edge-hit.selected { stroke: Highlight; stroke-opacity: .6; }
-  .vft-edge-selected .vft-network-edge { stroke: Highlight; stroke-width: 3.5px; }
-  .vft-network-tooltip { border-color: CanvasText; box-shadow: none; }
-  .vft-connection-preview, .vft-gantt-link-preview path { stroke: Highlight; }
-  .vft-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
-  .vft-minimap rect { fill: CanvasText; }
-  .vft-minimap rect.selected, .vft-minimap .vft-minimap-window { fill: none; stroke: Highlight; }
-  .vft-minimap rect.selected { fill: Highlight; }
-  .vft-gantt-presets button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
-  .vft-gantt-non-working { forced-color-adjust: none; background: repeating-linear-gradient(135deg, GrayText 0 1px, transparent 1px 7px); }
-  .vft-gantt-bar.vft-critical:not(.vft-segmented) { border: 3px double CanvasText; box-shadow: none; }
-  .vft-gantt-bar.vft-late:not(.selected):not(:focus-visible) { outline: 2px dashed CanvasText; }
-  .vft-gantt-float, .vft-gantt-float::before { forced-color-adjust: none; border-color: CanvasText; }
-  .vft-gantt-deadline::before { forced-color-adjust: none; border-top-color: CanvasText; }
-  .vft-gantt-deadline::after { forced-color-adjust: none; background: CanvasText; }
-  .vft-gantt-bar.vft-segmented { background: transparent; border-color: transparent; }
-  .vft-gantt-bar.vft-segmented.solid { color: CanvasText; }
-  .vft-gantt-bar.vft-segmented .vft-bar-text { text-shadow: none; }
-  .vft-gantt-segment { border-color: CanvasText; background: Canvas; }
-  .vft-gantt-bar.vft-critical .vft-gantt-segment { border: 3px double CanvasText; box-shadow: none; }
-  .vft-gantt-segment-gap, .vft-gantt-bar.solid .vft-gantt-segment-gap { background: CanvasText; }
-  .vft-network button:focus-visible, .vft-gantt button:focus-visible, .vft-gantt-scroll:focus-visible, .vft-cell-input:focus-visible { outline-color: Highlight; }
-  .vft-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
-  .vft-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
-  .vft-column-resize::after { forced-color-adjust: none; background: CanvasText; }
-  .vft-column-resize:focus-visible { outline-color: Highlight; }
-  .vft-gantt-tooltip { border-color: CanvasText; }
-  .vft-gantt-create-preview, .vft-gantt-cascade-preview { forced-color-adjust: none; border-color: Highlight; background: transparent; box-shadow: none; }
-  .vft-network.vft-network-patterned { background: Canvas; }
-  .vft-network-pattern { forced-color-adjust: none; fill: GrayText; }
-  path.vft-network-pattern { fill: none; stroke: GrayText; }
-  .vft-guide { forced-color-adjust: none; stroke: Highlight; stroke-width: 2px; }
-  .vft-group-toggle rect, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
-  .vft-group-toggle path { forced-color-adjust: none; stroke: CanvasText; }
-  .vft-group-toggle:focus-visible rect, .vft-waypoint-handle:focus-visible, .vft-waypoint-add:focus-visible, .vft-resize-handle:focus-visible { fill: Highlight; stroke: CanvasText; }
-  .vft-gantt-row-drop { forced-color-adjust: none; background: Highlight; }
-  .vft-gantt-status-date, .vft-gantt.vft-rtl .vft-gantt-status-date { border-left: 0; border-inline-start: 3px solid CanvasText; }
-  .vft-gantt-progress-line polyline { stroke: CanvasText; stroke-dasharray: 6 2; }
+  .vw-network, .vw-gantt { forced-color-adjust: auto; }
+  .vw-network { background: Canvas; border-color: CanvasText; }
+  .vw-network-edge, .vw-gantt-links path { stroke: CanvasText; }
+  .vw-gantt-links marker path { fill: CanvasText; }
+  .vw-network-edge.related, .vw-gantt-links path.related { stroke: Highlight; stroke-width: 3px; }
+  .vw-gantt-links path.highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
+  .vw-gantt-links path.selected { stroke: Highlight; stroke-width: 3.5px; }
+  .vw-network-node rect, .vw-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-network-node text, .vw-network-group text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
+  .vw-network-node.related rect { stroke: Highlight; stroke-width: 2.5px; }
+  .vw-network-node:hover rect, .vw-network-node:focus-visible rect { stroke: Highlight; stroke-width: 4px; }
+  .vw-network-node.selected rect { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
+  .vw-network-node.selected text { fill: HighlightText; }
+  .vw-gantt-bar { forced-color-adjust: none; border: 1px solid CanvasText; }
+  .vw-gantt-bar.solid { background: CanvasText; color: Canvas; border-color: CanvasText; }
+  .vw-gantt-bar.outline { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .vw-gantt-bar.selected { border-width: 2px; outline: 3px solid Highlight; outline-offset: 2px; }
+  .vw-gantt-bar:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+  .vw-gantt-bar.milestone { background: CanvasText; }
+  .vw-bar-progress { inset-block: auto 0; height: 4px; background: Highlight; opacity: 1; }
+  .vw-bar-handle::after { background: currentColor; }
+  .vw-gantt-bar:hover .vw-bar-handle::after, .vw-gantt-bar.selected .vw-bar-handle::after { opacity: 1; }
+  .vw-gantt-baseline { background: GrayText; }
+  .vw-gantt-summary { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; border-bottom-width: 3px; }
+  .vw-gantt-summary span { background: Highlight; opacity: 1; }
+  .vw-gantt-marker { border-left: 2px dashed CanvasText; }
+  .vw-gantt-marker span { forced-color-adjust: none; background: Canvas; color: CanvasText; border: 1px solid CanvasText; }
+  .vw-gantt-now { border-left: 3px solid Highlight; }
+  .vw-gantt.vw-rtl .vw-gantt-marker { border-left: 0; border-inline-start: 2px dashed CanvasText; }
+  .vw-gantt.vw-rtl .vw-gantt-now { border-left: 0; border-inline-start: 3px solid Highlight; }
+  .vw-gantt-now span { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .vw-gantt-grid-line, .vw-gantt-tick-line { forced-color-adjust: none; background: GrayText; }
+  .vw-gantt-load-segment { forced-color-adjust: none; }
+  .vw-load-fill { background: GrayText; }
+  .vw-load-over { background: repeating-linear-gradient(45deg, CanvasText 0 2px, Highlight 2px 5px); }
+  .vw-load-capacity { border-top: 2px dashed CanvasText; }
+  .vw-gantt-link-handle, .vw-gantt-reconnect-handle, .vw-connect-handle, .vw-reconnect-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .vw-gantt-link-handle.active, .vw-gantt-link-handle:focus-visible, .vw-gantt-reconnect-handle, .vw-connect-handle.active, .vw-connect-handle:focus-visible, .vw-reconnect-handle { fill: Highlight; stroke: CanvasText; background: Highlight; border-color: CanvasText; outline: 2px solid Highlight; outline-offset: 2px; }
+  .vw-edge-hit.active, .vw-edge-hit:focus-visible, .vw-dependency-hit.active, .vw-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
+  .vw-edge-hit.selected { stroke: Highlight; stroke-opacity: .6; }
+  .vw-edge-selected .vw-network-edge { stroke: Highlight; stroke-width: 3.5px; }
+  .vw-network-tooltip { border-color: CanvasText; box-shadow: none; }
+  .vw-connection-preview, .vw-gantt-link-preview path { stroke: Highlight; }
+  .vw-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
+  .vw-minimap rect { fill: CanvasText; }
+  .vw-minimap rect.selected, .vw-minimap .vw-minimap-window { fill: none; stroke: Highlight; }
+  .vw-minimap rect.selected { fill: Highlight; }
+  .vw-gantt-presets button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .vw-gantt-non-working { forced-color-adjust: none; background: repeating-linear-gradient(135deg, GrayText 0 1px, transparent 1px 7px); }
+  .vw-gantt-bar.vw-critical:not(.vw-segmented) { border: 3px double CanvasText; box-shadow: none; }
+  .vw-gantt-bar.vw-late:not(.selected):not(:focus-visible) { outline: 2px dashed CanvasText; }
+  .vw-gantt-float, .vw-gantt-float::before { forced-color-adjust: none; border-color: CanvasText; }
+  .vw-gantt-deadline::before { forced-color-adjust: none; border-top-color: CanvasText; }
+  .vw-gantt-deadline::after { forced-color-adjust: none; background: CanvasText; }
+  .vw-gantt-bar.vw-segmented { background: transparent; border-color: transparent; }
+  .vw-gantt-bar.vw-segmented.solid { color: CanvasText; }
+  .vw-gantt-bar.vw-segmented .vw-bar-text { text-shadow: none; }
+  .vw-gantt-segment { border-color: CanvasText; background: Canvas; }
+  .vw-gantt-bar.vw-critical .vw-gantt-segment { border: 3px double CanvasText; box-shadow: none; }
+  .vw-gantt-segment-gap, .vw-gantt-bar.solid .vw-gantt-segment-gap { background: CanvasText; }
+  .vw-network button:focus-visible, .vw-gantt button:focus-visible, .vw-gantt-scroll:focus-visible, .vw-cell-input:focus-visible { outline-color: Highlight; }
+  .vw-gantt-progress-handle::before { forced-color-adjust: none; border-inline-color: transparent; border-bottom-color: Highlight; filter: none; }
+  .vw-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
+  .vw-column-resize::after { forced-color-adjust: none; background: CanvasText; }
+  .vw-column-resize:focus-visible { outline-color: Highlight; }
+  .vw-gantt-tooltip { border-color: CanvasText; }
+  .vw-gantt-create-preview, .vw-gantt-cascade-preview { forced-color-adjust: none; border-color: Highlight; background: transparent; box-shadow: none; }
+  .vw-network.vw-network-patterned { background: Canvas; }
+  .vw-network-pattern { forced-color-adjust: none; fill: GrayText; }
+  path.vw-network-pattern { fill: none; stroke: GrayText; }
+  .vw-guide { forced-color-adjust: none; stroke: Highlight; stroke-width: 2px; }
+  .vw-group-toggle rect, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-group-toggle path { forced-color-adjust: none; stroke: CanvasText; }
+  .vw-group-toggle:focus-visible rect, .vw-waypoint-handle:focus-visible, .vw-waypoint-add:focus-visible, .vw-resize-handle:focus-visible { fill: Highlight; stroke: CanvasText; }
+  .vw-gantt-row-drop { forced-color-adjust: none; background: Highlight; }
+  .vw-gantt-status-date, .vw-gantt.vw-rtl .vw-gantt-status-date { border-left: 0; border-inline-start: 3px solid CanvasText; }
+  .vw-gantt-progress-line polyline { stroke: CanvasText; stroke-dasharray: 6 2; }
 }
 
 @media print {
-  .vft-network, .vft-gantt, .vft-network *, .vft-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .vft-zoom-tools, .vft-gantt-zoom, .vft-gantt-presets, .vft-minimap, .vft-bar-handle, .vft-gantt-link-handle, .vft-gantt-reconnect-handle,
-  .vft-connect-handle, .vft-reconnect-handle, .vft-box-selection, .vft-connection-preview, .vft-gantt-link-preview, .vft-edge-hit, .vft-dependency-hit,
-  .vft-network-tooltip, .vft-gantt-progress-handle, .vft-gantt-tooltip, .vft-gantt-create-button, .vft-gantt-create-preview, .vft-gantt-cascade-preview, .vft-guides,
-  .vft-group-toggle, .vft-waypoint-handle, .vft-waypoint-add, .vft-resize-handle, .vft-row-move-handle, .vft-gantt-row-drop, .vft-column-resize { display: none !important; }
-  .vft-gantt-toolbar { display: none; }
-  .vft-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
-  .vft-network, .vft-gantt-row, .vft-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
-  .vft-gantt-head { break-after: avoid; page-break-after: avoid; }
+  .vw-network, .vw-gantt, .vw-network *, .vw-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .vw-zoom-tools, .vw-gantt-zoom, .vw-gantt-presets, .vw-minimap, .vw-bar-handle, .vw-gantt-link-handle, .vw-gantt-reconnect-handle,
+  .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
+  .vw-network-tooltip, .vw-gantt-progress-handle, .vw-gantt-tooltip, .vw-gantt-create-button, .vw-gantt-create-preview, .vw-gantt-cascade-preview, .vw-guides,
+  .vw-group-toggle, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle, .vw-row-move-handle, .vw-gantt-row-drop, .vw-column-resize { display: none !important; }
+  .vw-gantt-toolbar { display: none; }
+  .vw-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
+  .vw-network, .vw-gantt-row, .vw-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
+  .vw-gantt-head { break-after: avoid; page-break-after: avoid; }
 }

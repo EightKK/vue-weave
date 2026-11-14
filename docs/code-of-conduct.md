@@ -10,9 +10,12 @@ This policy applies to project issues, pull requests, discussions and other spac
 
 ## Reporting
 
-Do not post sensitive incident details or personal information in public issues. To arrange a private conversation with project maintainers, [request a private conduct reporting contact](https://github.com/EightKK/vue-weave/issues/new?title=Private%20conduct%20reporting%20contact) in an issue containing only a request for a private channel. Share the incident details after a private channel has been agreed. Include relevant context, links and the follow-up you are requesting.
+Report conduct problems through GitHub's reporting tools; the project has no separate contact address. Do not post incident details or personal information in public issues.
 
-For abusive content on GitHub, use [GitHub's reporting tools](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam). Where available, **Report to repository admins** requests project moderation. Reports about violations of GitHub's own policies, including those involving a project maintainer, can be sent to GitHub Support through that process.
+- To ask the project maintainers to moderate a comment, issue, pull request or discussion, report it from the content's **...** menu and choose **Report to repository admins**. Only repository maintainers see these reports.
+- For abuse, spam or violations of GitHub's own policies, including conduct by a project maintainer, report the content to GitHub Support from the same menu, or [report abuse to GitHub](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
+
+Include links to the content and the follow-up you are requesting.
 
 ## Enforcement
 

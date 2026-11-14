@@ -44,15 +44,15 @@ const range = { start: 0, end: 6 * hour }
 test('GanttChart renders right-to-left on the server with inline-start offsets', async () => {
   const ltr = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range }) }))
   assert.doesNotMatch(ltr, /dir="/)
-  assert.doesNotMatch(ltr, /vft-rtl/)
-  assert.match(ltr, /left:calc\(var\(--vft-label-area-width\) \+ 80px\)/)
+  assert.doesNotMatch(ltr, /vw-rtl/)
+  assert.match(ltr, /left:calc\(var\(--vw-label-area-width\) \+ 80px\)/)
   const rtl = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range, dir: 'rtl' }) }))
-  assert.match(rtl, /<div dir="rtl" class="vft-gantt vft-rtl"|<div class="vft-gantt vft-rtl" dir="rtl"/)
-  assert.match(rtl, /right:calc\(var\(--vft-label-area-width\) \+ 80px\)/)
-  assert.doesNotMatch(rtl, /left:calc\(var\(--vft-label-area-width\)/)
+  assert.match(rtl, /<div dir="rtl" class="vw-gantt vw-rtl"|<div class="vw-gantt vw-rtl" dir="rtl"/)
+  assert.match(rtl, /right:calc\(var\(--vw-label-area-width\) \+ 80px\)/)
+  assert.doesNotMatch(rtl, /left:calc\(var\(--vw-label-area-width\)/)
   // `auto` cannot know the inherited direction on the server and renders left-to-right markup.
   const auto = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range, dir: 'auto' }) }))
-  assert.doesNotMatch(auto, /vft-rtl|dir="/)
+  assert.doesNotMatch(auto, /vw-rtl|dir="/)
 })
 
 test('NetworkGraph right-to-left aligns labels to the right without moving nodes', async () => {
@@ -60,9 +60,9 @@ test('NetworkGraph right-to-left aligns labels to the right without moving nodes
   const edges = [{ id: 'e', from: 'a', to: 'b' }]
   const ltr = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges }) }))
   const rtl = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, dir: 'rtl' }) }))
-  assert.match(ltr, /<text x="13" y="24" class="vft-node-title">Alpha<\/text>/)
-  assert.match(rtl, /<text x="131" y="24" class="vft-node-title">Alpha<\/text>/)
-  assert.match(rtl, /class="vft-network vft-rtl"/)
+  assert.match(ltr, /<text x="13" y="24" class="vw-node-title">Alpha<\/text>/)
+  assert.match(rtl, /<text x="131" y="24" class="vw-node-title">Alpha<\/text>/)
+  assert.match(rtl, /class="vw-network vw-rtl"/)
   const transforms = html => [...html.matchAll(/translate\([^)]*\)/g)].map(match => match[0])
   assert.deepEqual(transforms(rtl), transforms(ltr))
 })

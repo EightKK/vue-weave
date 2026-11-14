@@ -182,22 +182,22 @@ test('GanttChart server markup is unchanged without creatable and cascade', asyn
       ...extra, creatable: false, createDuration: hour, validateCreate: () => false, cascade: () => [{ id: 'b', before: bars[1], after: bars[0], mode: 'move', source: 'pointer' }],
     })
     assert.equal(disabled, plain)
-    assert.doesNotMatch(plain, /vft-creatable|vft-gantt-create|vft-gantt-cascade|Add bar to/)
+    assert.doesNotMatch(plain, /vw-creatable|vw-gantt-create|vw-gantt-cascade|Add bar to/)
   }
 })
 
 test('GanttChart renders an add button for each creatable row on the server', async () => {
   const html = await render({ creatable: row => row.id !== 'p', labels: { createIn: 'Balken hinzufügen zu' } })
-  const buttons = html.match(/<button type="button" class="vft-gantt-create-button"[^>]*>/g)
+  const buttons = html.match(/<button type="button" class="vw-gantt-create-button"[^>]*>/g)
   assert.deepEqual(buttons, [
-    '<button type="button" class="vft-gantt-create-button" aria-label="Balken hinzufügen zu Row 1">',
-    '<button type="button" class="vft-gantt-create-button" aria-label="Balken hinzufügen zu Row 2">',
+    '<button type="button" class="vw-gantt-create-button" aria-label="Balken hinzufügen zu Row 1">',
+    '<button type="button" class="vw-gantt-create-button" aria-label="Balken hinzufügen zu Row 2">',
   ])
   // The parent row keeps its expand toggle and gets no button; no preview exists before a gesture.
-  assert.match(html, /aria-label="Collapse Parent">▾<\/button><div class="vft-row-content">/)
-  assert.doesNotMatch(html, /vft-gantt-create-preview|vft-gantt-cascade-preview/)
-  assert.equal((await render({ creatable: true })).match(/vft-gantt-create-button/g).length, 3)
-  assert.doesNotMatch(await render({ creatable: true, readonly: true }), /vft-gantt-create-button/)
+  assert.match(html, /aria-label="Collapse Parent">▾<\/button><div class="vw-row-content">/)
+  assert.doesNotMatch(html, /vw-gantt-create-preview|vw-gantt-cascade-preview/)
+  assert.equal((await render({ creatable: true })).match(/vw-gantt-create-button/g).length, 3)
+  assert.doesNotMatch(await render({ creatable: true, readonly: true }), /vw-gantt-create-button/)
 })
 
 test('GanttChart reports an invalid createDuration through validation-error', async () => {

@@ -70,12 +70,18 @@ Include the checks run and any failures or unverified behavior in the pull reque
 
 By submitting a contribution, you agree to provide it under this project's [MIT license](LICENSE). Submit only work you have permission to distribute under that license. Identify third-party code or assets and their license requirements in your pull request. Preserve existing copyright and third-party notices. No contributor license agreement or sign-off requirement is currently imposed.
 
+## Versioning
+
+Versions follow [Semantic Versioning](https://semver.org/). While the version is 0.x, a minor release (0.x.0) can contain breaking changes and a patch release (0.x.y) contains only backward-compatible fixes. Breaking changes are listed under "Breaking changes" in the changelog entry of the release that introduces them.
+
 ## Prepare a release
 
-1. Review the release version, package metadata and distribution rights for source, examples and assets. Move the relevant `Unreleased` entries into the release's changelog entry. Generate lockfile updates with npm when package metadata or dependencies change.
+Releases are made manually by a maintainer as GitHub Releases. The package is not published to npm, and CI never publishes.
+
+1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. Update the tarball name in the install instructions of `README.md` and `README.ja.md`. Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
-3. Verify that the security and conduct reporting routes work. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
-4. Create the release tag and notes from the checked revision. Use the tarball retained by `test:package` for package distribution and record its checksum with the release assets. Verify registry publishing access before npm distribution. Source releases and npm releases can be distributed independently.
+3. Verify that the reporting routes work: private vulnerability reporting is enabled under the repository's **Settings > Security**, and reported content is enabled under **Settings > Moderation options**. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
+4. Run `npm run prepare:release` (below), then create the `v<version>` tag and a GitHub Release from the checked revision. Attach `artifacts/<name>-<version>.tgz`, `artifacts/<name>-<version>-source-demo.tar.gz` and `artifacts/SHA256SUMS`, and use the changelog entry as the release notes.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 
@@ -85,6 +91,4 @@ npm run prepare:release
 
 This command reruns the full check, browser tests, package-consumer tests and dependency audit. It requires registry access (or a populated npm cache), Chromium and a `tar` executable, which is supplied by current Windows and Linux environments. It uses an explicit source-file allowlist, rejects symlinks, and excludes `.git`, `node_modules`, local settings, credentials and test output. It checks that source files stay unchanged during verification, creates an archive with the generated `preview/`, compares every extracted file against the source inventory, and smoke-tests the extracted demo without installing dependencies. It then replaces the local candidates, `artifacts/SHA256SUMS` and `artifacts/release-verification.json` together. The verification record lists file hashes and outstanding publication checks; it does not certify distribution rights, Git history or hosted settings. No publishing, tags or repository changes are performed. Review the allowlisted source files for confidential content before sharing them. GitHub's generated source ZIP omits ignored `preview/` and requires a demo build.
 
-Host a public demo as static files from `preview/`, with the relevant third-party notices. The local preview server binds to `127.0.0.1`.
-
-The included CI validates changes; publishing is a separate maintainer action. Keep registry credentials out of source files, issues and pull requests.
+To host a public demo, serve the static files from `preview/` with the relevant third-party notices. The local preview server binds to `127.0.0.1`.

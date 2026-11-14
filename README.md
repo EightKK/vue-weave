@@ -1,22 +1,88 @@
 # Vue Weave
 
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [日本語](README.ja.md)
 
-[Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues)
+[Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
 
 Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, production views, project schedules and resource timelines with typed components and framework-independent graph, scheduling and resource-load calculations.
 
+![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](.github/images/network-graph.png)
+
+![GanttChart in the scheduling demo: a calendar-aware schedule with non-working time, critical-path outlines, float lines, split bars, a status-date line, a deadline flag and Finish and Float columns](.github/images/gantt-chart.png)
+
+## Highlights
+
+Everything beyond the basics is opt-in through props. Details are in [docs/api.md](docs/api.md), [docs/integration.md](docs/integration.md) and [docs/scheduling.md](docs/scheduling.md).
+
+### NetworkGraph
+
+- Built-in layout for branches, merges, disconnected nodes, directed cycles and self-loops, with `LR`, `TB`, `RL` or `BT` direction and `crossingReduction: 'barycenter'`.
+- Your own placement and routing through a `layout` function, for example `layoutTreeGraph`, `layoutRadialGraph`, the deterministic `layoutForceGraph`, or ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)).
+- Custom SVG through the `node` and `edge` slots, plus a `tooltip` slot.
+- Node moves, connections, multiple selection and the minimap; edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`) and context-menu requests (`contextMenu`).
+- Nested groups (`parentId`), collapsing into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`) and node resizing (`sizes`, `resizable`).
+- Orthogonal or straight edges (`edgeStyle`) and waypoints (`GraphEdge.points`, edited with `editableEdges`).
+- Large graphs and touch: viewport culling (`cullOffscreen`), pinch zoom, and level of detail when zoomed out (`lodThreshold`).
+- Search highlighting (`matchIds`, `dimmedIds`) and the `focusNode(id)` and `fit({ ids })` methods.
+- Snap to grid (`snapGrid`) with a dotted or lined `background`, `alignmentGuides` and `autoPan`.
+- Palette drops (`droppable`, the `node-drop` event, `toGraphPoint(x, y)` and `getViewportCenter()`).
+- Copy, paste and duplicate proposals (`clipboard` with the `copy-selection`, `paste-request` and `duplicate-selection` events, applied with `cloneGraphElements`).
+
+### GanttChart
+
+- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines, header bands and date markers; row and time-window virtualization.
+- Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
+- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
+- Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
+- Drag to create bars (`creatable`, `create`), stacked without overlap by `assignLanes`.
+- Auto-scheduling previews (`cascade`) that show the bars a move would push and propose them with it as one `edits` batch.
+- Progress sliders (`progressEditable`, `progress-edit`) and bar deletion (`deletable`, `bars-delete`, accepted with `removeTimelineBars`).
+- Row hierarchy editing by pointer or Alt+arrow keys (`rowsReorderable`, `row-move`, accepted with `moveTimelineRow`), with `timelineWbsCodes` for a WBS column.
+- Column resizing by pointer or arrow keys (`columnsResizable`, `column-resize`, `labelWidth`).
+- A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
+- Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
+- A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
+- Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
+
+### Headless core (`vue-weave/core`)
+
+- Graph analysis: `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
+- Graph geometry: `collapseGraphGroups`, `routeGraphEdges` and `applyGraphSizes` compute the same shapes as the component props.
+- Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses and IANA time-zone calendars (`WorkWeek.timeZone`).
+- Resource leveling with `levelResources`, and plan updates with `propagateEdit` (ready to return from `cascade`) and `rescheduleFromStatusDate`.
+- Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
+- Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars.
+
+### Export, themes, RTL
+
+- `exportSvg(options)` and `exportPng(options)` on both components, and `renderGraphSvg` and `renderTimelineSvg` for server-side SVG.
+- Built-in dark theme (`vw-theme-dark`) and `vw-theme-auto`, which follows `prefers-color-scheme`; forced colors, reduced motion and print styles.
+- Right-to-left layouts with `dir="rtl"` (or `auto`).
+
+## Status and support
+
+- **Version 0.1.0, the first public release.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
+- **Vue:** 3.5 or later (peer dependency).
+- **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution.
+- **Node.js:** 22.18 or later for the headless `vue-weave/core` entry, server-side rendering and development.
+- **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
+- **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](docs/architecture.md)), so do not assume full conformance.
+
 ## Install
 
-The package is not distributed through npm. [Build a local package](CONTRIBUTING.md#build-a-local-package), then install the generated `.tgz` from your application's directory. Replace the example path with the actual tarball path.
+The package is not published to npm. Download the `vue-weave-0.1.0.tgz` tarball attached to a [GitHub Release](https://github.com/EightKK/vue-weave/releases), or [build a local package](CONTRIBUTING.md#build-a-local-package) from a checkout. Then install the tarball from your application's directory. Replace the example path with the actual tarball path.
 
 ```sh
-npm install ./path/to/package.tgz
+npm install ./vue-weave-0.1.0.tgz
 ```
 
-Vue 3.5+ is a peer dependency. The library ships ES modules, TypeScript declarations and one stylesheet. Import the stylesheet once in your application. The `vue-weave/core` entry runs without Vue and supports TypeScript `NodeNext` resolution.
+Vue 3.5+ is a peer dependency. The library ships ES modules, TypeScript declarations and one stylesheet. Import the stylesheet once in your application with `import 'vue-weave/style.css'`. The `vue-weave/core` entry runs without Vue and supports TypeScript `NodeNext` resolution.
 
-## A network graph
+## Quick start
+
+### A network graph
 
 ```vue
 <script setup lang="ts">
@@ -46,9 +112,7 @@ const edges: GraphEdge[] = [
 </template>
 ```
 
-The built-in layout supports branches, merges, disconnected nodes, directed cycles and self-loops. Choose `LR`, `TB`, `RL` or `BT`, and opt in to `crossingReduction: 'barycenter'` to reduce edge crossings. Supply a `layout` function to own placement and edge routing, for example from ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)). Customize the SVG through the `node` and `edge` slots. Opt in to node moves, connections, multiple selection and the minimap through component props.
-
-For other shapes, `layoutTreeGraph`, `layoutRadialGraph` and the deterministic force-directed `layoutForceGraph` from `vue-weave/core` are drop-in `layout` functions. Opt in to nested groups (`parentId`), viewport culling for large graphs (`cullOffscreen`), pinch zoom on touch screens, and search highlighting with `matchIds`, `dimmedIds` and the `focusNode(id)` method. Edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`), context-menu requests (`contextMenu`), a `tooltip` slot and `fit({ ids })` for the selection are opt-in as well. So are snap to grid (`snapGrid`) with a dotted or lined `background`, `alignmentGuides`, `autoPan` near the edges, palette drops (`droppable` with the `node-drop` event, `toGraphPoint(x, y)` and `getViewportCenter()`) and copy, paste and duplicate proposals (`clipboard` with the `copy-selection`, `paste-request` and `duplicate-selection` events, applied with `cloneGraphElements`). Groups can collapse into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`), edges can be drawn orthogonal or straight (`edgeStyle`) and through waypoints (`GraphEdge.points`, edited with `editableEdges`), node details fade out below a zoom level (`lodThreshold`), and nodes can be resized (`sizes`, `resizable`); the core helpers `collapseGraphGroups`, `routeGraphEdges` and `applyGraphSizes` compute the same geometry. Core helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph` analyze the same node and edge data.
+Other features are enabled the same way, through props and `options`. For example, this graph flows right to left, reduces edge crossings, highlights search matches and skips drawing off-screen nodes:
 
 ```vue
 <NetworkGraph
@@ -61,7 +125,7 @@ For other shapes, `layoutTreeGraph`, `layoutRadialGraph` and the deterministic f
 />
 ```
 
-## A controlled Gantt chart
+### A controlled Gantt chart
 
 ```vue
 <script setup lang="ts">
@@ -93,28 +157,11 @@ function commit(change: TimelineEdit) {
 </template>
 ```
 
-The component previews pointer edits, then emits a proposal. The parent commits it by replacing the affected interval. This supports application-specific validation, API persistence and asynchronous approval. A synchronous `validateEdit` hook can reject a proposal before the event is emitted.
-
-Intervals support multiple lanes, progress, milestones and FS/SS/FF/SF dependencies. Row groups, baselines, header bands and date markers support planning views. Row and time-window virtualization limit rendered elements. `formatTime`, `labels`, slots and CSS variables control presentation.
-
-Further opt-in features, all emitted as proposals for the parent to accept:
-
-- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
-- Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
-- A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
-- Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
-- Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
-- Progress sliders (`progressEditable`, `progress-edit`), bar deletion with Delete or Backspace (`deletable`, `bars-delete`, accepted with `removeTimelineBars`), a hoverable `tooltip` slot, a `context-menu` event for your own menu (`contextMenu`) and a `fitToBars()` method.
-- Drag to create new bars on empty row space or with a per-row add button (`creatable`, `create`), stacked without overlap by `assignLanes`, and auto-scheduling previews (`cascade`) that draw the bars a move would push and propose them with it as one `edits` batch.
-- Row hierarchy editing with a move handle per row, by pointer drag or Alt+arrow keys for indent and outdent (`rowsReorderable`, `row-move`), accepted with `moveTimelineRow`; `timelineWbsCodes` numbers the rows for a WBS column.
-- A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
-- Column resizing by pointer drag or arrow keys on a separator at the edge of the row heading column and each extra column (`columnsResizable`, `column-resize`, `labelWidth`).
-
-Use `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad` from `vue-weave/core` for working calendars, dependency scheduling, critical tasks and resource overload diagnostics. The application calls these functions and passes accepted results to the chart; `scheduledBarFields` turns a scheduled task into those bar fields and `invertWorkPeriods` turns a calendar into the time to shade. `propagateEdit` reschedules a plan with one task pinned at a new start and lists every task that moves, ready to return from `cascade`. Scheduling also reports cycle and infeasibility diagnostics, supports as-late-as-possible tasks (`mode: 'alap'`), pauses and IANA time-zone calendars (`WorkWeek.timeZone`), and `levelResources` delays tasks so that assigned load stays within capacity. `rescheduleFromStatusDate` updates a plan from reported progress at a status date, and `scheduleToGraph` turns a schedule into a PERT network diagram for `NetworkGraph`. `toMsProjectXml`, `toICalendar` and `toCsv` export plans as Microsoft Project XML, iCalendar and CSV, and `parseCsv` with `timelineFromCsvTable` imports such a CSV file as rows and bars. See the [scheduling guide](docs/scheduling.md).
+The component previews pointer edits, then emits a proposal. The parent commits it by replacing the affected interval. This supports application-specific validation, API persistence and asynchronous approval. A synchronous `validateEdit` hook can reject a proposal before the event is emitted. Intervals are half-open `[start, end)`, and a zero-duration bar is a milestone.
 
 ## Export, direction and themes
 
-Both components expose `exportSvg(options)` and `exportPng(options)` on their template ref to save the whole chart, and `renderGraphSvg` and `renderTimelineSvg` in `vue-weave/core` build the same SVG on a server. Set `dir="rtl"` (or `auto`) for right-to-left layouts. Add the `vft-theme-dark` class to a component or an ancestor for the built-in dark theme, or `vft-theme-auto` to follow `prefers-color-scheme`. The stylesheet also covers forced colors, reduced motion and print. See [integration](docs/integration.md).
+Both components expose `exportSvg(options)` and `exportPng(options)` on their template ref, and `vue-weave/core` can build the same SVG on a server. Set `dir="rtl"` (or `auto`) for right-to-left layouts. Add `vw-theme-dark` to a component or an ancestor for the dark theme, or `vw-theme-auto` to follow `prefers-color-scheme`. See [integration](docs/integration.md).
 
 ```ts
 const svg = chart.value!.exportSvg({ title: 'Plan' })
@@ -123,7 +170,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## Run the demo
 
-Use Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
+There is no hosted demo. Run it locally with Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
 
 ```sh
 npm ci
@@ -131,9 +178,9 @@ npm run build:demo
 npm start
 ```
 
-The demo includes manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons and a theme switch. Enable **Edit graph** for connections, reconnection, box selection, group movement, edge selection, deletion, a context menu, tooltips, **Fit selection**, **Snap to grid**, **Alignment guides**, auto-pan, a node palette (drag **Add operation** or **Add lot** onto the graph, or activate it), copy, paste and duplicate with Ctrl+C, Ctrl+V and Ctrl+D, **Collapsible groups**, **Editable edges** (waypoints), **Resizable nodes**, an **Edge style** select and level of detail when zoomed out. Enable **Planning overlays** for editable columns and rollups. **Undo** and **Redo** restore accepted edits. In **Scheduling**, moving an order recalculates downstream dates and equipment load against a split-shift calendar, with non-working time shaded and the critical path, float, split work and a deadline drawn on the bars. Edits remain in the demo's local state.
+The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. Edits remain in the demo's local state.
 
-If you have a prebuilt demo archive containing `preview/`, extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
+If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
 
 For development and verification commands, see [Contributing](CONTRIBUTING.md).
 

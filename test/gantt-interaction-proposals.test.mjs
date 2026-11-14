@@ -64,7 +64,7 @@ test('GanttChart markup is unchanged without the new interaction props', async (
       ...extra, progressEditable: false, progressStep: 0.05, deletable: false, contextMenu: false, tooltipDelay: 400,
     }, { tooltip: () => 'never on the server' })
     assert.equal(disabled, plain)
-    assert.doesNotMatch(plain, /role="slider"|vft-gantt-progress-handle|data-vft-progress|delete-hint|role="tooltip"|vft-gantt-tooltip|data-vft-dependency/)
+    assert.doesNotMatch(plain, /role="slider"|vw-gantt-progress-handle|data-vw-progress|delete-hint|role="tooltip"|vw-gantt-tooltip|data-vw-dependency/)
   }
 })
 
@@ -84,19 +84,19 @@ test('GanttChart renders a progress slider for editable bars on the server', asy
   const sliders = html.match(/<button[^>]*role="slider"[^>]*>/g)
   // Milestones and bars that are not editable get no slider.
   assert.equal(sliders.length, 3)
-  assert.equal(sliders[0], '<button type="button" class="vft-gantt-progress-handle" style="left:calc(var(--vft-label-area-width) + 12px);top:53px;" '
-    + 'data-vft-progress="a" role="slider" aria-label="Progress of A" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40" aria-valuetext="40%">')
-  assert.match(sliders[1], /style="left:calc\(var\(--vft-label-area-width\) \+ 24px\);top:53px;" data-vft-progress="s"/)
+  assert.equal(sliders[0], '<button type="button" class="vw-gantt-progress-handle" style="left:calc(var(--vw-label-area-width) + 12px);top:53px;" '
+    + 'data-vw-progress="a" role="slider" aria-label="Progress of A" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40" aria-valuetext="40%">')
+  assert.match(sliders[1], /style="left:calc\(var\(--vw-label-area-width\) \+ 24px\);top:53px;" data-vw-progress="s"/)
   assert.match(sliders[1], /aria-valuenow="50" aria-valuetext="50%"/)
   // Undefined progress is drawn as 0.
-  assert.match(sliders[2], /\+ 54px\);top:53px;" data-vft-progress="u"[^>]*aria-valuenow="0" aria-valuetext="0%"/)
+  assert.match(sliders[2], /\+ 54px\);top:53px;" data-vw-progress="u"[^>]*aria-valuenow="0" aria-valuetext="0%"/)
   assert.doesNotMatch(html, /Progress of [BM]"/)
 })
 
 test('GanttChart mirrors and localizes the slider and hides it when readonly', async () => {
   const props = { progressEditable: true, bars: [{ ...bars[0], progress: 0.25 }], dependencies: [] }
   const rtl = await render({ ...props, dir: 'rtl', labels: { progressOf: 'Fortschritt von' } })
-  assert.match(rtl, /style="right:calc\(var\(--vft-label-area-width\) \+ 9px\);top:53px;" data-vft-progress="a" role="slider" aria-label="Fortschritt von A"/)
+  assert.match(rtl, /style="right:calc\(var\(--vw-label-area-width\) \+ 9px\);top:53px;" data-vw-progress="a" role="slider" aria-label="Fortschritt von A"/)
   assert.doesNotMatch(await render({ ...props, readonly: true }), /role="slider"/)
 })
 
@@ -109,11 +109,11 @@ test('GanttChart describes deletable bars after the existing hints', async () =>
       { ...bars[2], deletable: true },
     ],
   })
-  const described = id => new RegExp(`data-vft-bar="${id}"[^>]*aria-describedby="([^"]+)"`).exec(html)?.[1]
+  const described = id => new RegExp(`data-vw-bar="${id}"[^>]*aria-describedby="([^"]+)"`).exec(html)?.[1]
   assert.equal(described('a'), 'v-0-hint v-0-row-hint v-0-delete-hint')
   assert.equal(described('b'), 'v-0-hint v-0-row-hint')
   assert.equal(described('c'), 'v-0-delete-hint')
-  assert.match(html, /<span id="v-0-delete-hint" class="vft-sr-only">Entf löscht den Balken\.<\/span>/)
+  assert.match(html, /<span id="v-0-delete-hint" class="vw-sr-only">Entf löscht den Balken\.<\/span>/)
   const readonly = await render({ deletable: true, readonly: true })
   assert.doesNotMatch(readonly, /aria-describedby="[^"]*delete-hint/)
 })
@@ -123,7 +123,7 @@ test('GanttChart renders no tooltip on the server and marks dependency targets o
   const html = await render({ contextMenu: true, connectable: true, tooltipDelay: 0 }, { tooltip: () => { calls++; return 'Tip' } })
   assert.equal(calls, 0)
   assert.doesNotMatch(html, /role="tooltip"|Tip/)
-  assert.match(html, /role="button" tabindex="0" data-vft-dependency="ab" aria-label="Select dependency A → B FS"/)
+  assert.match(html, /role="button" tabindex="0" data-vw-dependency="ab" aria-label="Select dependency A → B FS"/)
 })
 
 test('GanttChart reports invalid progressStep and tooltipDelay through validation-error', async () => {

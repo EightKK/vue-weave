@@ -8,13 +8,13 @@ Security fixes target the latest release. Users of older versions may need to up
 
 Do not disclose an unpatched vulnerability, exploit details, credentials or sensitive application data in a public issue or pull request.
 
-Open the [repository's Security tab](https://github.com/EightKK/vue-weave/security) and choose **Report a vulnerability** when available. See [GitHub's private reporting instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately).
+Report vulnerabilities through GitHub private vulnerability reporting: open the [repository's Security tab](https://github.com/EightKK/vue-weave/security), choose **Report a vulnerability** and fill in the advisory form ([direct link](https://github.com/EightKK/vue-weave/security/advisories/new)). Only the reporter and the repository maintainers can see the report. See [GitHub's private reporting instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately).
 
-If that option is unavailable, [request a private security reporting contact](https://github.com/EightKK/vue-weave/issues/new?title=Private%20security%20reporting%20contact) in an issue containing only a request for a private channel. Share vulnerability details only after a private channel has been agreed with a maintainer.
+This is the only reporting channel. Do not send vulnerability details through issues, pull requests, discussions or other public channels.
 
 In the private report, include the affected version or commit, environment, a minimal reproduction with synthetic data, impact and any suggested mitigation. Keep reproduction steps within systems you are authorized to test.
 
-Maintainers should acknowledge reports privately, investigate with the reporter, prepare and validate a fix, and coordinate a release and advisory. If a credential has been exposed, revoke or rotate it; removing a file alone does not revoke it.
+Maintainers acknowledge reports in the private advisory, investigate with the reporter there, prepare and validate a fix, and coordinate a release and the published advisory. If a credential has been exposed, revoke or rotate it; removing a file alone does not revoke it.
 
 ## Application security boundaries
 

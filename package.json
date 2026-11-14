@@ -1,6 +1,6 @@
 {
   "name": "vue-weave",
-  "version": "0.4.0",
+  "version": "0.1.0",
   "description": "Composable network graphs and interactive timelines for Vue 3.",
   "type": "module",
   "license": "MIT",
@@ -37,7 +37,8 @@
       "types": "./dist/types/core/index.d.ts",
       "import": "./dist/core.js"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": "./dist/style.css",
+    "./package.json": "./package.json"
   },
   "engines": {
     "node": ">=22.18.0"

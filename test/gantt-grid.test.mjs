@@ -24,19 +24,19 @@ const offsets = (html, className, side) => [...html.matchAll(
 
 test('Gantt grid lines follow every tick of a piecewise time scale', async () => {
   const html = await render({ tickSteps: [10] })
-  assert.deepEqual(offsets(html, 'vft-gantt-tick', 'left'), tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-tick-line', 'left'), tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-grid-line', 'left'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-tick', 'left'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-tick-line', 'left'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-grid-line', 'left'), tickPositions)
   // One line per tick for the whole body, not one per row.
-  assert.equal(html.split('vft-gantt-grid-line').length - 1, tickPositions.length)
+  assert.equal(html.split('vw-gantt-grid-line').length - 1, tickPositions.length)
 })
 
 test('Gantt grid lines mirror with the ticks in right-to-left charts', async () => {
   const html = await render({ tickSteps: [10], dir: 'rtl' })
-  assert.deepEqual(offsets(html, 'vft-gantt-tick', 'right'), tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-grid-line', 'right'), tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-tick-line', 'right'), tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-grid-line', 'left'), [])
+  assert.deepEqual(offsets(html, 'vw-gantt-tick', 'right'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-grid-line', 'right'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-tick-line', 'right'), tickPositions)
+  assert.deepEqual(offsets(html, 'vw-gantt-grid-line', 'left'), [])
 })
 
 test('Gantt screen grid lines match the per-tick lines of the SVG export', async () => {
@@ -44,11 +44,11 @@ test('Gantt screen grid lines match the per-tick lines of the SVG export', async
   const svg = renderTimelineSvg(rows, [], [], scale, { tickStep: 10, tickAnchor: 0, labelWidth: 0 })
   const exported = [...svg.matchAll(/<line x1="([\d.]+)" y1="0" x2="\1"/g)].map(match => Number(match[1]))
   assert.deepEqual(exported, tickPositions)
-  assert.deepEqual(offsets(html, 'vft-gantt-grid-line', 'left'), exported)
+  assert.deepEqual(offsets(html, 'vw-gantt-grid-line', 'left'), exported)
 })
 
 test('Gantt label density uses the smallest visible tick gap', async () => {
   // The first interval of 10 and 50 is at least 76 px, but their narrowest visible gaps are 10 px and 50 px.
   const html = await render({ tickSteps: [10, 50, 100] })
-  assert.deepEqual(offsets(html, 'vft-gantt-grid-line', 'left'), [0, 550])
+  assert.deepEqual(offsets(html, 'vw-gantt-grid-line', 'left'), [0, 550])
 })

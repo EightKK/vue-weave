@@ -63,7 +63,7 @@ No linter or formatter is configured. Match the surrounding code.
 - Write Vue components with `<script setup lang="ts">` and type-based `defineProps`, `defineEmits` and `defineSlots`.
 - Validate inputs at public boundaries and throw descriptive errors. Use `RangeError` for invalid numbers or geometry, and `Error` for bad references, duplicate IDs or cycles.
 - Public functions return new values and never mutate their arguments.
-- CSS classes use the `vft-` prefix, and theme values are `--vft-*` custom properties. Document any new variable in `docs/integration.md`.
+- CSS classes use the `vw-` prefix, and theme values are `--vw-*` custom properties. Document any new variable in `docs/integration.md`.
 - Write comments, API docs and test descriptions in English.
 
 ## Testing

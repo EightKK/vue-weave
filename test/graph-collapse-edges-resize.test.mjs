@@ -262,22 +262,22 @@ const render = props => renderToString(createSSRApp({ render: () => h(NetworkGra
 test('NetworkGraph server markup is unchanged by default values of the new inputs', async () => {
   const plain = await render({ groups, draggable: true, edgesSelectable: true })
   assert.equal(await render({ groups, draggable: true, edgesSelectable: true, edgeStyle: 'curve', collapsedGroupIds: new Set(), sizes: new Map(), lodThreshold: 0.05 }), plain)
-  for (const name of ['vft-network-overlay', 'vft-lod-low', 'vft-group-toggle', 'vft-waypoint', 'vft-resize-handle']) assert.equal(plain.includes(name), false)
+  for (const name of ['vw-network-overlay', 'vw-lod-low', 'vw-group-toggle', 'vw-waypoint', 'vw-resize-handle']) assert.equal(plain.includes(name), false)
 })
 
 test('NetworkGraph renders collapsed groups, edge styles, waypoints, sizes and the LOD class on the server', async () => {
   const collapsible = await render({ groups, collapsibleGroups: true })
-  assert.match(collapsible, /class="vft-network-overlay"/)
-  assert.match(collapsible, /aria-label="Collapse group Group" aria-expanded="true" data-vft-toggle="g"/)
+  assert.match(collapsible, /class="vw-network-overlay"/)
+  assert.match(collapsible, /aria-label="Collapse group Group" aria-expanded="true" data-vw-toggle="g"/)
   const collapsed = await render({ groups, collapsibleGroups: true, collapsedGroupIds: new Set(['g']), labels: { expandGroup: 'Open' } })
-  assert.match(collapsed, /aria-label="Open Group" aria-expanded="false" data-vft-toggle="g"/)
-  assert.match(collapsed, /data-vft-node="g"[^>]*aria-label="Group 2 nodes"/)
-  assert.equal(collapsed.includes('data-vft-node="b"'), false)
-  assert.equal(collapsed.includes('class="vft-network-group"'), false)
+  assert.match(collapsed, /aria-label="Open Group" aria-expanded="false" data-vw-toggle="g"/)
+  assert.match(collapsed, /data-vw-node="g"[^>]*aria-label="Group 2 nodes"/)
+  assert.equal(collapsed.includes('data-vw-node="b"'), false)
+  assert.equal(collapsed.includes('class="vw-network-group"'), false)
   // A controlled set applies without toggles; unknown IDs are ignored.
   const controlled = await render({ groups, collapsedGroupIds: new Set(['g', 'gone']) })
-  assert.match(controlled, /data-vft-node="g"/)
-  assert.equal(controlled.includes('vft-group-toggle'), false)
+  assert.match(controlled, /data-vw-node="g"/)
+  assert.equal(controlled.includes('vw-group-toggle'), false)
 
   const orthogonal = await render({ edgeStyle: 'orthogonal' })
   const layout = layoutLayeredGraph(nodes, edges)
@@ -290,8 +290,8 @@ test('NetworkGraph renders collapsed groups, edge styles, waypoints, sizes and t
   assert.match(sized, /<svg width="220" height="90" overflow="hidden">/)
 
   // The initial camera scale is below 3 and above 0.05.
-  assert.match(await render({ lodThreshold: 3 }), /class="vft-network vft-lod-low"/)
-  assert.equal((await render({ lodThreshold: 0.05 })).includes('vft-lod-low'), false)
+  assert.match(await render({ lodThreshold: 3 }), /class="vw-network vw-lod-low"/)
+  assert.equal((await render({ lodThreshold: 0.05 })).includes('vw-lod-low'), false)
   for (const lodThreshold of [0, -1, 3.5, NaN]) await assert.rejects(render({ lodThreshold }), RangeError)
   await assert.rejects(render({ edgeStyle: 'wavy' }), { name: 'RangeError', message: /Unknown edge style: wavy/ })
   await assert.rejects(render({ resizable: true, minNodeSize: { width: 0, height: 10 } }), RangeError)
@@ -311,10 +311,10 @@ test('NetworkGraph passes the camera scale to node and edge slots and renders re
 
   const resizable = await render({ resizable: true, selectedId: 'b' })
   for (const corner of ['top left', 'top right', 'bottom left', 'bottom right']) assert.match(resizable, new RegExp(`aria-label="Resize B · ${corner}"`))
-  assert.equal((await render({ resizable: true, selectedId: 'b', nodes: nodes.map(node => node.id === 'b' ? { ...node, resizable: false } : node) })).includes('vft-resize-handle'), false)
-  assert.equal((await render({ resizable: true, selectedIds: new Set(['a', 'b']) })).includes('vft-resize-handle'), false)
+  assert.equal((await render({ resizable: true, selectedId: 'b', nodes: nodes.map(node => node.id === 'b' ? { ...node, resizable: false } : node) })).includes('vw-resize-handle'), false)
+  assert.equal((await render({ resizable: true, selectedIds: new Set(['a', 'b']) })).includes('vw-resize-handle'), false)
   // Without a selected edge there are no waypoint handles, but edges get their hit areas.
   const editable = await render({ editableEdges: true })
   assert.match(editable, /aria-label="Select edge feeds"/)
-  assert.equal(editable.includes('vft-waypoint'), false)
+  assert.equal(editable.includes('vw-waypoint'), false)
 })

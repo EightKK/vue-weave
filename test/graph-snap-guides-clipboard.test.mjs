@@ -174,7 +174,7 @@ const render = (props, slots) => renderToString(createSSRApp({ render: () => h(N
 
 test('NetworkGraph markup is unchanged by the editing props and the none background', async () => {
   const plain = await render({})
-  assert.doesNotMatch(plain, /vft-network-patterned|vft-network-backdrop|<pattern|vft-guide/)
+  assert.doesNotMatch(plain, /vw-network-patterned|vw-network-backdrop|<pattern|vw-guide/)
   const opted = await render({
     snapGrid: 20, alignmentGuides: true, guideThreshold: 3, autoPan: true, droppable: true, clipboard: true, background: 'none', backgroundGap: 30,
   })
@@ -186,16 +186,16 @@ test('NetworkGraph markup is unchanged by the editing props and the none backgro
 test('NetworkGraph renders a decorative background pattern on the server', async () => {
   const groups = [{ id: 'g', label: 'Group', nodeIds: ['a', 'b'] }]
   const plain = await render({ groups })
-  for (const [background, shape] of [['dots', /<circle class="vft-network-pattern" cx="10" cy="10" r="[\d.]+"><\/circle>/], ['lines', /<path class="vft-network-pattern" stroke-width="[\d.]+" d="M 10 0 V 20 M 0 10 H 20"><\/path>/]]) {
+  for (const [background, shape] of [['dots', /<circle class="vw-network-pattern" cx="10" cy="10" r="[\d.]+"><\/circle>/], ['lines', /<path class="vw-network-pattern" stroke-width="[\d.]+" d="M 10 0 V 20 M 0 10 H 20"><\/path>/]]) {
     const html = await render({ groups, background, snapGrid: 20 })
     const id = html.match(/<pattern id="([^"]+)"/)[1]
     assert.match(id, /-background$/)
     assert.match(html, shape)
-    assert.match(html, /<g class="vft-network-backdrop" aria-hidden="true"><pattern [^>]*patternUnits="userSpaceOnUse" x="-10" y="-10" width="20" height="20">/)
-    assert.match(html, new RegExp(`<rect class="vft-network-background" [^>]*fill="url\\(#${id}\\)">`))
-    assert.match(html, /^<div class="vft-network vft-network-patterned">/)
+    assert.match(html, /<g class="vw-network-backdrop" aria-hidden="true"><pattern [^>]*patternUnits="userSpaceOnUse" x="-10" y="-10" width="20" height="20">/)
+    assert.match(html, new RegExp(`<rect class="vw-network-background" [^>]*fill="url\\(#${id}\\)">`))
+    assert.match(html, /^<div class="vw-network vw-network-patterned">/)
     // Everything else, groups included, is the markup without a background.
-    const stripped = html.replace(/<g class="vft-network-backdrop"[\s\S]*?<\/rect><\/g>/, '').replace(' vft-network-patterned', '')
+    const stripped = html.replace(/<g class="vw-network-backdrop"[\s\S]*?<\/rect><\/g>/, '').replace(' vw-network-patterned', '')
     assert.equal(stripped, plain)
   }
   // backgroundGap overrides the grid; the default gap is 20.

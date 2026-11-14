@@ -131,14 +131,14 @@ test('editing, preset, histogram and now-marker props render on the server witho
   assert.match(html, /aria-pressed="true"[^>]*>Day</)
   assert.match(html, /Shift A/)
   assert.match(html, /aria-label="CNC cell 02:00–04:00: load 2 \/ capacity 1, overloaded by 1"/)
-  assert.match(html, /vft-pinch-zoom/)
+  assert.match(html, /vw-pinch-zoom/)
   // Without an explicit time the clock is read only after mounting.
-  assert.ok(!html.includes('vft-gantt-now'))
+  assert.ok(!html.includes('vw-gantt-now'))
   const fixed = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, showNow: true, now: 5 * hour }) }))
-  assert.match(fixed, /vft-gantt-now/)
+  assert.match(fixed, /vw-gantt-now/)
   assert.match(fixed, /title="Now 05:00"/)
   const hidden = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, now: 5 * hour }) }))
-  assert.ok(!hidden.includes('vft-gantt-now'))
+  assert.ok(!hidden.includes('vw-gantt-now'))
 })
 
 test('invalid presets and load segments report validation-error and render the empty state', async () => {
