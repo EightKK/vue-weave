@@ -1,7 +1,8 @@
-import type { GraphBox, GraphEdge, GraphLayout, IdentifiedNode } from './graph.js'
+import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
+import type { GraphRect } from './graphView.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -10,7 +11,11 @@ export interface NetworkNode extends IdentifiedNode {
   detail?: string
   tone?: ChartTone
   draggable?: boolean
+  /** False keeps the node out of NetworkGraph deletion proposals (`deletable`). */
+  deletable?: boolean
   shape?: 'box' | 'rounded'
+  /** False hides the NetworkGraph resize handles of this node (`resizable`). */
+  resizable?: boolean
   data?: unknown
 }
 
@@ -44,6 +49,22 @@ export interface TimelineBar extends TimeRange {
   progress?: number
   baseline?: TimeRange
   data?: unknown
+  /** Draws the bar with the critical outline (`--vft-critical`) and adds `GanttLabels.critical` to its description. */
+  critical?: boolean
+  /** Latest finish that keeps the plan; a float line is drawn from `end` to it. Finite and not before `end`. */
+  latestEnd?: number
+  /** A due time, drawn as an indicator in the bar's lane. A bar whose `end` is after it is marked late. */
+  deadline?: number
+  /**
+   * Worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. The gaps are
+   * drawn as a thin connector. Not allowed on milestones.
+   */
+  segments?: readonly TimeRange[]
+  /**
+   * Whether Delete or Backspace may propose removing the bar when the chart's `deletable` prop is set.
+   * Defaults to `editable`.
+   */
+  deletable?: boolean
 }
 
 export interface TimelineSummary extends TimeRange {
@@ -111,6 +132,31 @@ export interface GraphLabels {
   rejected?: string
   selectEdge?: string
   groupWithin?: string
+  /** Announced when `validateDelete` returns false. */
+  deleteRejected?: string
+  /** Name prefix of the toggle that collapses a group, followed by the group label. Default "Collapse group". */
+  collapseGroup?: string
+  /** Name prefix of the toggle that expands a collapsed group, followed by the group label. Default "Expand group". */
+  expandGroup?: string
+  /** Proxy detail after a member count of one. Default "node". */
+  collapsedNode?: string
+  /** Proxy detail after any other member count. Default "nodes". */
+  collapsedNodes?: string
+  /** Name prefix of a waypoint handle, followed by its number and the edge label or ID. Default "Move waypoint". */
+  moveWaypoint?: string
+  /** Name prefix of a handle that inserts a waypoint, followed by its number and the edge label or ID. Default "Add waypoint". */
+  addWaypoint?: string
+  /** Announced when `validateEdgeReshape` returns false. Default "This edge change was rejected." */
+  reshapeRejected?: string
+  /** Name prefix of a resize handle, followed by the node label and the corner. Default "Resize". */
+  resizeNode?: string
+  /** Corner names of the resize handles. Defaults "top left", "top right", "bottom left" and "bottom right". */
+  topLeft?: string
+  topRight?: string
+  bottomLeft?: string
+  bottomRight?: string
+  /** Announced when `validateNodeResize` returns false. Default "This resize was rejected." */
+  resizeRejected?: string
 }
 
 export interface GanttLabels {
@@ -140,6 +186,30 @@ export interface GanttLabels {
   capacity?: string
   overload?: string
   moveRowHint?: string
+  /** Bar description for `TimelineBar.critical`. Default "Critical". */
+  critical?: string
+  /** Bar description prefix before the formatted `latestEnd`. Default "Float until". */
+  float?: string
+  /** Bar description prefix before the formatted `deadline`. Default "Deadline". */
+  deadline?: string
+  /** Bar description for a bar that ends after its deadline. Default "Late". */
+  late?: string
+  /** Accessible name prefix of the progress slider, followed by the bar label. Default "Progress of". */
+  progressOf?: string
+  /** Description of a deletable bar. Default "Delete or Backspace removes the bar." */
+  deleteHint?: string
+  /** Accessible name prefix of the add-bar button of a creatable row, followed by the row label. Default "Add bar to". */
+  createIn?: string
+  /** Announced when `validateCreate` returns false. Default "This new bar was rejected." */
+  createRejected?: string
+  /** Accessible name prefix of a row's move handle (`rowsReorderable`), followed by the row label. Default "Move row". */
+  moveRow?: string
+  /** Description of the row move handles. Default lists the Alt key shortcuts. */
+  moveRowKeysHint?: string
+  /** Announced when `validateRowMove` returns false. Default "This row move was rejected." */
+  rowMoveRejected?: string
+  /** Label of the status-date line (`statusDate`). Default "Status date". */
+  statusDate?: string
 }
 
 export interface NetworkNodeSlot {
@@ -147,6 +217,27 @@ export interface NetworkNodeSlot {
   box: GraphBox
   selected: boolean
   dimmed?: boolean
+  /** The current camera scale, for level-of-detail rendering in custom node slots. */
+  scale: number
+}
+
+/** A waypoint proposal from NetworkGraph (`editableEdges`). Set the edge's `points` to `after` to accept it. */
+export interface GraphEdgeReshape {
+  id: string
+  /** The edge's waypoints before the change; empty when it had none. */
+  before: GraphPoint[]
+  /** The proposed waypoints; empty when the last one was removed. */
+  after: GraphPoint[]
+}
+
+/**
+ * A resize proposal from NetworkGraph (`resizable`). Set the node's size to `after.width` and `after.height` (the `sizes`
+ * prop) and, when `after.x` or `after.y` changed, its position (the `positions` prop).
+ */
+export interface GraphNodeResize {
+  id: string
+  before: GraphRect
+  after: GraphRect
 }
 
 /** A visual group. `parentId` nests it inside another group; `nodeIds` lists only its direct members. */
@@ -157,6 +248,52 @@ export interface NetworkGroup extends GraphGroup {
 export interface NetworkFocusOptions {
   /** Camera scale after centering, between 0.1 and 3. Defaults to the current scale. */
   scale?: number
+}
+
+/** Options of the NetworkGraph `fit` method. Without options, `fit()` shows the whole graph. */
+export interface GraphFitOptions {
+  /** Node IDs whose combined boxes are fitted. An empty list leaves the camera unchanged. */
+  ids?: Iterable<string>
+  /** Nonnegative margin in screen pixels kept around the fitted content. Default 0. */
+  padding?: number
+}
+
+/** The element a NetworkGraph `context-menu` event refers to. */
+export type GraphContextMenuTarget =
+  | { kind: 'node'; id: string }
+  | { kind: 'edge'; id: string }
+  | { kind: 'group'; id: string }
+  | { kind: 'canvas' }
+
+/** Payload of the NetworkGraph `context-menu` event. The component renders no menu itself. */
+export interface GraphContextMenu {
+  target: GraphContextMenuTarget
+  /** The pointer position, or the centre of the focused element, in chart (world) coordinates. */
+  point: GraphPoint
+  /** Viewport coordinates for positioning a menu, for example with `position: fixed`. */
+  clientX: number
+  clientY: number
+  source: 'pointer' | 'keyboard'
+}
+
+/**
+ * Payload of the NetworkGraph `copy-selection` and `duplicate-selection` events: node and edge IDs in input order, including every edge
+ * between two listed nodes, and the current top-left position of each listed node in chart coordinates.
+ */
+export interface GraphClipboardSelection {
+  nodeIds: string[]
+  edgeIds: string[]
+  positions: Map<string, GraphPoint>
+}
+
+/** Payload of the NetworkGraph `paste-request` event: where to place the pasted content, in chart coordinates. */
+export interface GraphPaste {
+  point: GraphPoint
+}
+
+/** Props of the NetworkGraph `tooltip` slot. */
+export interface NetworkTooltipSlot {
+  target: { kind: 'node'; node: NetworkNode } | { kind: 'edge'; edge: GraphEdge }
 }
 
 /** The bar end a dependency handle belongs to. `start` maps to S and `finish` to F in a dependency type. */
@@ -183,6 +320,90 @@ export type TimelineConnectionValidator = (
 ) => boolean | string | void
 
 export type BatchEditValidator = (changes: readonly TimelineEdit[]) => boolean | string | void
+
+/** A progress proposal from GanttChart (`progressEditable`). The parent sets the bar's `progress` to `after`. */
+export interface TimelineProgressEdit {
+  id: string
+  /** The bar's progress before the edit, or undefined when the bar had none (drawn as 0). */
+  before: number | undefined
+  /** Proposed progress from 0 to 1, snapped to `progressStep`; Home and End propose exactly 0 and 1. */
+  after: number
+  source: 'pointer' | 'keyboard'
+}
+
+export type ProgressEditValidator = (change: TimelineProgressEdit) => boolean | string | void
+
+/** Synchronous check of a `bars-delete` proposal. Accept with true or undefined; reject with false or a reason. */
+export type BarsDeleteValidator = (ids: readonly string[]) => boolean | string | void
+
+/**
+ * A new bar proposed by GanttChart (`creatable`): a drag or click on an empty part of a row, or the row's add button.
+ * The parent assigns an ID and a label and adds the bar to accept it.
+ */
+export interface TimelineCreate {
+  rowId: string
+  /** Zero-based lane: the lane under the pointer, or the lowest free lane for the add button. */
+  lane: number
+  start: number
+  end: number
+  /** `keyboard` when the add button was activated with Enter or Space. */
+  source: 'pointer' | 'keyboard'
+}
+
+/** A place in a row hierarchy: the parent row (absent for a root row) and the zero-based index among its children. */
+export interface TimelineRowPosition {
+  parentId?: string
+  index: number
+}
+
+/**
+ * A row hierarchy proposal from GanttChart (`rowsReorderable`). Apply it with
+ * `moveTimelineRow(rows, change.id, change.after)`. `after.index` counts the new siblings without the moved row.
+ */
+export interface TimelineRowMove {
+  id: string
+  before: TimelineRowPosition
+  after: TimelineRowPosition
+  source: 'pointer' | 'keyboard'
+}
+
+/** Synchronous check of a `row-move` proposal. Accept with true or undefined; reject with false or a reason. */
+export type RowMoveValidator = (change: TimelineRowMove) => boolean | string | void
+
+/** Synchronous check of a `create` proposal. Accept with true or undefined; reject with false or a reason. */
+export type CreateValidator = (proposal: TimelineCreate) => boolean | string | void
+
+/**
+ * Auto-scheduling hook of GanttChart (`cascade`): the follow-on changes of other bars for one proposed move or resize.
+ * It must be synchronous and free of side effects, because it also runs for every snapped step of a drag preview.
+ */
+export type TimelineCascade = (change: TimelineEdit) => readonly TimelineEdit[]
+
+/** What a GanttChart `context-menu` event was opened on. */
+export type TimelineContextTarget =
+  | { kind: 'bar'; id: string }
+  | { kind: 'dependency'; id: string }
+  | { kind: 'row'; id: string }
+  | { kind: 'chart' }
+
+/** Payload of the GanttChart `context-menu` event. The component renders no menu itself. */
+export interface TimelineContextMenu {
+  target: TimelineContextTarget
+  /** Time under the pointer when it is over the time area. Absent for the keyboard. */
+  time?: number
+  /** Displayed task row under the pointer, or the row of a bar opened from the keyboard. */
+  rowId?: string
+  /** Viewport coordinates of the pointer, or of the focused element's centre for the keyboard. */
+  clientX: number
+  clientY: number
+  source: 'pointer' | 'keyboard'
+}
+
+/** Options of the GanttChart `fitToBars` method. */
+export interface TimelineFitOptions {
+  /** Space in screen pixels kept on each side of the fitted bars. Default 24. */
+  padding?: number
+}
 
 export interface TimelineZoomPreset {
   id: string
@@ -248,6 +469,8 @@ export interface GanttExportOptions {
   theme?: SvgExportThemeInput
   barLabel?: (bar: TimelineBar) => string
   rowLabel?: (row: TimelineRow) => string
+  /** Include the `statusDate` line and, with `showProgressLine`, the progress line. Default true. */
+  includeStatusDate?: boolean
 }
 
 /** Options of the `exportSvg` method on NetworkGraph. */

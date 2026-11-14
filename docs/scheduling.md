@@ -50,6 +50,89 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 - Invalid references or values throw. Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
 - The forward pass finds earliest dates. The backward pass holds the earliest project finish as its upper limit and finds latest dates. Total float is the task's own working time between those starts, or elapsed time for a milestone. workFloat is always working time on the task's calendar: it equals totalFloat for tasks and, for a milestone, the calendar's working time between its earliest and latest points. Use workFloat to compare milestones with tasks. A zero-float task is critical. A critical link binds two critical tasks after projecting the dependency endpoint onto the successor calendar. The result can contain multiple controlling chains and individually constrained critical tasks.
 
+## Show a plan in GanttChart
+
+`scheduledBarFields(task)` turns each task of a successful result into the bar fields the chart draws: `start` and `end`, `critical`, `latestEnd` for the float line and, when the work is split by breaks, closed dates or pauses, `segments` from the task's `work`. Spread it into a `TimelineBar` and add the fields the scheduler does not know, such as the row, label, tone, `editable` and an optional display `deadline`. `invertWorkPeriods(periods, range)` returns the time between the calendar's work periods, which the chart shades through `nonWorkingPeriods`.
+
+```ts
+import { buildWorkPeriods, invertWorkPeriods, scheduleTasks, scheduledBarFields, type TimelineBar } from 'vue-weave/core'
+
+const periods = buildWorkPeriods(range, { utcOffsetMinutes: 540, weekly })
+const plan = scheduleTasks({ range, quantum: 60_000, calendars: [{ id: 'plant', periods }], defaultCalendarId: 'plant', tasks, dependencies })
+const bars: TimelineBar[] = plan.ok ? plan.tasks.map(task => ({
+  id: task.id, rowId: task.id, label: labels.get(task.id)!, editable: true,
+  ...scheduledBarFields(task),
+  deadline: dueDates.get(task.id),
+})) : []
+const nonWorkingPeriods = invertWorkPeriods(periods, range)
+```
+
+```vue
+<GanttChart :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :non-working-periods="nonWorkingPeriods" @edit="reschedule" />
+```
+
+Critical bars get an outline, `latestEnd` draws a float line from the end of the bar, a `deadline` adds an indicator and marks a bar that ends after it as late, and `segments` draw the work pieces joined by a connector across each gap. The same information is added to each bar's accessible description. The chart still only proposes edits. A move preview shifts the segments with the bar, and a resize preview shows the plain interval. Turn the accepted `TimelineEdit` into a new constraint, for example `startNoEarlierThan`, call `scheduleTasks` again and pass the new bars, so segments, float and critical flags follow the recalculated plan. `scheduledBarFields` omits `segments` for a task with a single work segment and for milestones, which cannot have segments. ALAP tasks report their placed dates with the latest finish of the plan.
+
+## Propagate an edit
+
+`propagateEdit(input, edit)` answers "what else moves if this task moves?". `edit` is a `ScheduleEdit` with the task `id`, a new `start` and an optional new `end`. The function schedules a copy of the plan in which the task has `fixedStart` at the new start, replacing any fixed start it had. With `end`, the task's working duration becomes the working time in `[start, end)` on its own calendar, after its pauses, so resizing a bar across a break keeps only the working hours. Every other bound of the task, every dependency, the horizon and the deadline still apply. The input is not modified.
+
+```ts
+import { propagateEdit } from 'vue-weave/core'
+
+const result = propagateEdit(input, { id: 'cut', start: 1 })
+if (result.ok) {
+  // result.schedule is the full ScheduleSuccess; result.changes lists the tasks whose dates moved.
+  for (const { id, before, after } of result.changes) console.log(id, before, after)
+}
+```
+
+With the plan of [Calculate a plan](#calculate-a-plan), moving cutting to 1 gives `changes` of cutting `[0, 4)` → `[1, 6)` (it now works 1–4 and 5–6) and inspection `[5, 7)` → `[6, 8)`. `changes` holds one `ScheduleChange` (`id`, `before`, `after`) for every task whose start or end differs from `scheduleTasks(input)`, in input order, including the edited task when its dates change. Moving a task to its current dates gives an empty list.
+
+- The new start follows the `fixedStart` rule: it must align with the horizon and quantum (otherwise a `RangeError` is thrown, like `scheduleTasks`) and, for positive work, lie in a working period. A start in a break is infeasible; move it to the next working time first if the application wants that. `end` must also be aligned and not before `start`.
+- An unknown task ID throws an `Error`; malformed input throws as in `scheduleTasks`.
+- When the edited plan fails, its `ScheduleFailure` (`cycle` or `infeasible`, with `constraints` such as `fixedStart` and the binding `dependencyIds`) is returned unchanged. When only the unedited plan fails, there is nothing to compare with and its failure is returned.
+
+### Cascade previews in GanttChart
+
+`propagateEdit` is the usual body of the GanttChart `cascade` prop. The chart calls `cascade(change)` with the proposed `TimelineEdit` whenever a dragged bar reaches a new snapped interval, draws the returned changes as dashed outlines, and on release emits the move and the cascaded changes together through `edits`. Keyboard moves call it once per key press. Return `[]` for edits you do not cascade (for example resizes) and when the schedule fails, so the plain `edit` path reports the problem.
+
+```ts
+function cascade(change: TimelineEdit): TimelineEdit[] {
+  if (change.mode !== 'move') return []
+  const result = propagateEdit(scheduleInput(tasks.value), { id: change.id, start: change.after.start })
+  if (!result.ok) return []
+  return result.changes.filter(item => item.id !== change.id)
+    .map(item => ({ id: item.id, before: item.before, after: item.after, mode: 'move', source: change.source }))
+}
+```
+
+`changes` are measured against `scheduleTasks(input)`. When the plan on screen came from different constraints, for example a requested `startNoEarlierThan` that the drag replaces, build `input` so that it reproduces the plan on screen: the demo pins the dragged task with `fixedStart` at its current start and removes its `startNoEarlierThan` before calling `propagateEdit`. The chart ignores changes for the dragged bar itself and for unknown bars. Persist the accepted batch the same way as a single edit, for example by turning the primary change (the first entry) into a new constraint and scheduling again.
+
+## Reschedule from a status date
+
+`rescheduleFromStatusDate(input, statusDate, progress)` updates a plan after progress has been reported at a status date. `progress` is a `ReadonlyMap` from task ID to the completed share of its working duration, from 0 to 1; a task without an entry has progress 0. The current dates are those of `scheduleTasks(input)`; when that fails, its failure is returned.
+
+- **Progress 1.** The task keeps its current dates, even when they lie after the status date.
+- **Progress between 0 and 1.** The done work is `progress × duration` rounded down to whole quanta (a value just below 1 still leaves one quantum). It stays where it is, from the current start. When that would carry it past the status date (the task is ahead of plan or started early), it is placed so that it ends at the status date instead. The remaining work is scheduled at or after the status date on the task's calendar. When time is left between the two parts, the task is split: its `work` lists both parts, and `scheduledBarFields` turns them into `segments`. Internally the gap becomes a pause of the task. A task whose done work rounds down to zero, and a milestone, is treated as not started.
+- **Progress 0.** The task starts no earlier than the status date, in addition to its own bounds and dependencies.
+
+A started or finished task is pinned at its start with `fixedStart`: its incoming dependencies, `startNoEarlierThan`, `startNoLaterThan`, previous `fixedStart` and `mode` no longer apply, because its start has happened. Its finish bounds (`finishNoEarlierThan`, `finishNoLaterThan`, the deadline) and its outgoing dependencies still apply, so successors follow the new finish. Unstarted tasks keep every bound and dependency; an unstarted task with a `fixedStart` before the status date makes the plan infeasible, which is returned as an `infeasible` failure. The result is the `ScheduleResult` of the adjusted plan. Dependencies into started tasks are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
+
+```ts
+import { rescheduleFromStatusDate } from 'vue-weave/core'
+
+// Continuous time: a (10 units) → b (10 units); status date 15.
+const result = rescheduleFromStatusDate(input, 15, new Map([['a', 1], ['b', 0.3]]))
+// a keeps [0, 10). b keeps 3 units at [10, 13) and does the other 7 at [15, 22): work [[10, 13], [15, 22]].
+```
+
+The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
+
+## Network diagram
+
+`scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).
+
 ## Compare demand with capacity
 
 Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available. Each assignment requests positive integer units and applies to every work segment of the task. Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
@@ -110,5 +193,11 @@ Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task
 ## Try the demo
 
 Open **Scheduling** and focus **Cut order A**. Press Right Arrow once to move its requested start from 08:00 to 09:00. Inspection moves to 13:00, projected finish moves from 16:00 to 17:00, and the CNC overlap grows from one to two resource-hours. Press Right Arrow again to see packing finish on 11 November after the 10 November closure. Further moves beyond the horizon leave the accepted plan on screen. **Reset schedule** restores the original dates.
+
+The status date slider (09 Nov 12:00 by default) draws the status-date line, and **Show progress line** draws the progress line from the reported progress: cutting order A is done, B is half done and inspection a quarter done. **Reschedule from status date** applies `rescheduleFromStatusDate`: B keeps its first hour and finishes after lunch, inspection keeps its first half hour and continues at 13:00, and packing moves to 14:30–16:30. The next edit recalculates the plan from the requested starts. **Export MS Project XML**, **Export iCalendar** and **Export CSV** save the current plan with `toMsProjectXml`, `toICalendar` and `toCsv`, and **Network diagram** shows it as a NetworkGraph built with `scheduleToGraph`.
+
+Drag **Cut order A** two hours to the right with the pointer: while it is held, dashed outlines show inspection and packing at the dates `propagateEdit` computes for the new start, and the bars stay where they are. Release to accept the move and the cascaded operations as one batch; Escape discards the preview. A requested start inside the lunch break or on the closed day is previewed from the next working time, as the scheduler places it.
+
+The demo shades breaks, nights and the closed date with `invertWorkPeriods` and builds its bars with `scheduledBarFields`. Inspection crosses the lunch break, so it is drawn as two work pieces. Critical tasks have a red outline, **Cut order B** shows its float as a thin line, and packing has a dispatch deadline at 17:00 on 9 November. After the second move, packing is split by the closure and marked late. Clear **Shade non-working time** or **Show critical path and float** to hide these layers, and use **Export schedule SVG** to save the chart with them.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).
