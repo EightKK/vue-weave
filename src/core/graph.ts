@@ -19,6 +19,11 @@ export interface GraphEdge extends GraphConnection {
   id: string
   label?: string
   data?: unknown
+  /**
+   * Optional waypoints in chart coordinates. `routeGraphEdges` (and NetworkGraph) draws the edge through them: a
+   * polyline in the straight and orthogonal styles and a smooth curve through the points in the curve style.
+   */
+  points?: readonly GraphPoint[]
 }
 
 export interface GraphIndex {
@@ -507,7 +512,49 @@ export function applyGraphPositions(
     height = Math.max(height, point.y + box.height + 32)
   }
   if (!moved.size) return layout
+  return { ...rerouteIncidentEdges(layout, boxes, edges, moved, direction), width, height }
+}
 
+/** A node size for the `applyGraphSizes` overlay, in chart units. */
+export interface GraphNodeSize {
+  width: number
+  height: number
+}
+
+/**
+ * Apply saved node sizes on top of a layout (after any positions), keeping each box's top-left corner. Edges that touch
+ * a resized node are rerouted like moved ones; other routes are kept. IDs without a box are ignored. Throws RangeError
+ * for a size that is not finite and positive. Returns the same layout when nothing changes.
+ */
+export function applyGraphSizes(
+  layout: GraphLayout,
+  edges: readonly GraphEdge[],
+  sizes: ReadonlyMap<string, GraphNodeSize>,
+  direction: GraphLayoutDirection = 'LR',
+): GraphLayout {
+  if (!sizes.size) return layout
+  const boxes = new Map(layout.boxes)
+  const changed = new Set<string>()
+  let { width, height } = layout
+  for (const [id, size] of sizes) {
+    if (![size.width, size.height].every(value => Number.isFinite(value) && value > 0)) {
+      throw new RangeError('Graph node sizes must be finite and positive: ' + id)
+    }
+    const box = boxes.get(id)
+    if (!box || (size.width === box.width && size.height === box.height)) continue
+    boxes.set(id, { ...box, width: size.width, height: size.height })
+    changed.add(id)
+    width = Math.max(width, box.x + size.width + 32)
+    height = Math.max(height, box.y + size.height + 32)
+  }
+  if (!changed.size) return layout
+  return { ...rerouteIncidentEdges(layout, boxes, edges, changed, direction), width, height }
+}
+
+// Curves for the edges that touch a moved or resized node; other routes are kept.
+function rerouteIncidentEdges(
+  layout: GraphLayout, boxes: Map<string, GraphBox>, edges: readonly GraphEdge[], moved: ReadonlySet<string>, direction: GraphLayoutDirection,
+): GraphLayout {
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
   for (const edge of edges) {
@@ -535,5 +582,5 @@ export function applyGraphPositions(
       edgeLabels.set(edge.id, { x: mid, y: (y1 + y2) / 2 - 6 })
     }
   }
-  return { boxes, paths, edgeLabels, width, height }
+  return { boxes, paths, edgeLabels, width: layout.width, height: layout.height }
 }
