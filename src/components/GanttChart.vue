@@ -1349,13 +1349,18 @@ function isMenuKey(event: KeyboardEvent) {
 function keyboardContextMenu(event: KeyboardEvent, target: TimelineContextTarget, rowId?: string) {
   event.preventDefault()
   const element = event.currentTarget as Element
-  // Some browsers still follow the key with a `contextmenu` event on the focused element; it is ignored for a moment.
+  // Some browsers still follow the key with a `contextmenu` event on the focused element; it is ignored for a moment,
+  // unless a pointer press shows that the next one comes from a real right-click.
   keyboardMenu = { at: event.timeStamp, element }
   hideTooltip()
   const rect = element.getBoundingClientRect()
   const menu: TimelineContextMenu = { target, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, source: 'keyboard' }
   if (rowId !== undefined) menu.rowId = rowId
   emit('context-menu', menu)
+}
+function pressScroller(event: PointerEvent) {
+  keyboardMenu = undefined
+  trackTouch(event)
 }
 function onContextMenu(event: MouseEvent) {
   const el = scroller.value, area = canvas.value
@@ -1715,7 +1720,7 @@ onUnmounted(() => {
     </div>
     <div
       ref="scroller" class="vft-gantt-scroll" :class="{ 'vft-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
-      @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="trackTouch" @contextmenu="onContextMenu"
+      @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
       @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event)"
       @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
       @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event)"
