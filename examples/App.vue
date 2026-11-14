@@ -2,15 +2,25 @@
 import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
+import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
 import { download, imageSize } from './download'
 
 const preset = ref('manufacturing')
-const history = useEditHistory({ data: makeExample(preset.value), positions: new Map<string, GraphPoint>() })
+// One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
+type DemoState = {
+  data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
+}
+const history = useEditHistory<DemoState>({ data: makeExample(preset.value), positions: new Map(), sizes: new Map(), collapsed: new Set() })
+function commitState(change: Partial<DemoState>) {
+  history.commit({ ...history.state.value, ...change })
+}
 const data = computed(() => history.state.value.data)
 const positions = computed(() => history.state.value.positions)
+const sizes = computed(() => history.state.value.sizes)
+const collapsed = computed(() => history.state.value.collapsed)
 const canUndo = history.canUndo
 const canRedo = history.canRedo
 const initialBars = ref(data.value.bars)
@@ -101,7 +111,7 @@ const selectedBars = computed(() => new Set(data.value.bars.filter(bar => (bar.d
 
 function reset() {
   const example = makeExample(preset.value)
-  history.reset({ data: example, positions: new Map() })
+  history.reset({ data: example, positions: new Map(), sizes: new Map(), collapsed: new Set() })
   initialBars.value = example.bars
   graphSelection.value = new Set()
   edgeSelection.value = new Set()
@@ -113,10 +123,11 @@ function reset() {
 function commitNodes(changes: GraphNodeMove[]) {
   const nextPositions = new Map(positions.value)
   for (const change of changes) nextPositions.set(change.id, change.after)
-  history.commit({ data: data.value, positions: nextPositions })
+  commitState({ data: data.value, positions: nextPositions })
   status.value = changes.length === 1 ? 'Moved node ' + changes[0]!.id + '.' : 'Moved ' + changes.length + ' nodes.'
 }
 function validateConnection({ from, to, fromPort, toPort }: GraphConnection, replacing?: string) {
+  if (collapsedView.value?.proxies.has(from) || collapsedView.value?.proxies.has(to)) return 'Expand the group to connect its nodes.'
   if (data.value.edges.some(edge => edge.id !== replacing && edge.from === from && edge.to === to
     && edge.fromPort === fromPort && edge.toPort === toPort)) return 'This connection already exists.'
 }
@@ -124,13 +135,13 @@ function commitConnection(connection: GraphConnection) {
   let number = data.value.edges.length + 1
   while (data.value.edges.some(edge => edge.id === 'connection-' + number)) number++
   const edges = [...data.value.edges, { id: 'connection-' + number, ...connection }]
-  history.commit({ data: { ...data.value, edges }, positions: positions.value })
+  commitState({ data: { ...data.value, edges }, positions: positions.value })
   status.value = 'Connected ' + connection.from + ' to ' + connection.to + '.'
 }
 function commitReconnect(change: GraphReconnect) {
   const edges = data.value.edges.map(edge => edge.id === change.id
     ? { ...edge, fromPort: undefined, toPort: undefined, ...change.after } : edge)
-  history.commit({ data: { ...data.value, edges }, positions: positions.value })
+  commitState({ data: { ...data.value, edges }, positions: positions.value })
   status.value = 'Reconnected edge ' + change.id + '.'
 }
 function validateDelete(deletion: GraphDeletion) {
@@ -140,7 +151,8 @@ function commitDeletion(deletion: GraphDeletion) {
   const { nodes, edges } = removeGraphElements(data.value.nodes, data.value.edges, deletion)
   const removed = new Set(deletion.nodeIds), removedEdges = new Set(deletion.edgeIds)
   const nextPositions = new Map([...positions.value].filter(([id]) => !removed.has(id)))
-  history.commit({ data: { ...data.value, nodes, edges }, positions: nextPositions })
+  const nextSizes = new Map([...sizes.value].filter(([id]) => !removed.has(id)))
+  commitState({ data: { ...data.value, nodes, edges }, positions: nextPositions, sizes: nextSizes })
   graphSelection.value = new Set([...graphSelection.value].filter(id => !removed.has(id)))
   edgeSelection.value = new Set([...edgeSelection.value].filter(id => !removedEdges.has(id)))
   const count = (value: number, noun: string) => value + ' ' + noun + (value === 1 ? '' : 's')
@@ -168,6 +180,9 @@ function fitSelection(target?: GraphContextMenuTarget) {
   const edge = target?.kind === 'edge' ? data.value.edges.find(item => item.id === target.id) : undefined
   if (!ids.length && edge) ids = [edge.from, edge.to]
   if (!ids.length && target?.kind === 'group') ids = graphGroups.value?.find(item => item.id === target.id)?.nodeIds.slice() ?? []
+  // Nodes hidden in a collapsed group are represented by its proxy.
+  const owners = collapsedView.value?.owners
+  ids = [...new Set(ids.map(id => owners?.get(id) ?? id))]
   if (ids.length) {
     graph.value?.fit({ ids, padding: 24 })
     status.value = 'Fitted ' + ids.length + (ids.length === 1 ? ' node.' : ' nodes.')
@@ -183,7 +198,7 @@ const menu = ref<{ label: string; x: number; y: number; items: MenuItem[] }>()
 const menuElement = ref<HTMLElement>()
 let menuReturnFocus: Element | null = null
 function nodeLabel(id: string) {
-  return data.value.nodes.find(node => node.id === id)?.label ?? id
+  return data.value.nodes.find(node => node.id === id)?.label ?? collapsedView.value?.proxies.get(id)?.label ?? id
 }
 function edgeName(edge: GraphEdge) {
   return edge.label ?? edge.id
@@ -191,11 +206,14 @@ function edgeName(edge: GraphEdge) {
 function deletionForTarget(target: GraphContextMenuTarget) {
   const { nodes, edges } = data.value
   const selected = target.kind === 'node' ? graphSelection.value.has(target.id) : target.kind === 'edge' && edgeSelection.value.has(target.id)
-  if (selected) {
+  if (selected && !collapsedView.value) {
     const present = new Set(nodes.map(node => node.id)), presentEdges = new Set(edges.map(edge => edge.id))
     return graphDeletion(nodes, edges, [...graphSelection.value].filter(id => present.has(id)), [...edgeSelection.value].filter(id => presentEdges.has(id)))
   }
-  return target.kind === 'node' ? graphDeletion(nodes, edges, [target.id]) : graphDeletion(nodes, edges, [], target.kind === 'edge' ? [target.id] : [])
+  const view = collapsedView.value
+  // A collapsed group's proxy stands for its members, and a merged edge for its original edges.
+  if (target.kind === 'node') return graphDeletion(nodes, edges, view?.proxies.get(target.id)?.nodeIds ?? [target.id])
+  return graphDeletion(nodes, edges, [], target.kind === 'edge' ? view?.mergedEdges.get(target.id) ?? [target.id] : [])
 }
 function openMenu(request: GraphContextMenu) {
   const { target } = request
@@ -291,7 +309,7 @@ function addNode(kind: PaletteKind, center: GraphPoint) {
   let corner = { x: center.x - 72, y: center.y - 29 }
   if (snapToGrid.value) corner = snapGraphPoint(corner, gridSize)
   const nextPositions = new Map(positions.value).set(id, { x: Math.max(0, corner.x), y: Math.max(0, corner.y) })
-  history.commit({ data: { ...data.value, nodes: [...data.value.nodes, node] }, positions: nextPositions })
+  commitState({ data: { ...data.value, nodes: [...data.value.nodes, node] }, positions: nextPositions })
   graphSelection.value = new Set([id])
   edgeSelection.value = new Set()
   status.value = 'Added ' + node.label + '.'
@@ -317,7 +335,7 @@ function copyIds() {
 }
 function insertCopies(result: GraphCloneResult<NetworkNode, GraphEdge>, verb: string) {
   const copies = result.nodes.map(node => node.label.endsWith(' (copy)') ? node : { ...node, label: node.label + ' (copy)' })
-  history.commit({
+  commitState({
     data: { ...data.value, nodes: [...data.value.nodes, ...copies], edges: [...data.value.edges, ...result.edges] },
     positions: new Map([...positions.value, ...result.positions]),
   })
@@ -358,6 +376,43 @@ function duplicateSelection(selection: GraphClipboardSelection) {
   insertCopies(cloneGraphElements(data.value.nodes, data.value.edges, selection.nodeIds, { createId: copyIds(), positions: selection.positions, offset }), 'Duplicated')
 }
 
+// Group collapse, edge styles and waypoints, node resizing and level of detail. Each accepted change is one history entry.
+const collapsibleGroups = ref(false)
+const editableEdges = ref(false)
+const resizableNodes = ref(false)
+const edgeStyle = ref<GraphEdgeStyle>('curve')
+const collapseOn = computed(() => graphEditing.value && collapsibleGroups.value && graphGroups.value !== undefined)
+// The same collapsed view the graph draws, used to map proxies back to their members.
+const collapsedView = computed(() => {
+  const list = graphGroups.value
+  if (!collapseOn.value || !list) return undefined
+  const known = new Set(list.map(item => item.id))
+  const ids = [...collapsed.value].filter(id => known.has(id))
+  return ids.length ? collapseGraphGroups(data.value.nodes, data.value.edges, list, ids) : undefined
+})
+function commitCollapse(ids: Set<string>) {
+  const opened = [...collapsed.value].filter(id => !ids.has(id)), closed = [...ids].filter(id => !collapsed.value.has(id))
+  commitState({ collapsed: ids })
+  const label = (id: string) => graphGroups.value?.find(item => item.id === id)?.label ?? id
+  status.value = closed.length ? 'Collapsed ' + label(closed[0]!) + '.' : opened.length ? 'Expanded ' + label(opened[0]!) + '.' : status.value
+}
+function commitReshape(change: GraphEdgeReshape) {
+  const edges = data.value.edges.map(edge => {
+    if (edge.id !== change.id) return edge
+    const { points: _points, ...rest } = edge
+    return change.after.length ? { ...rest, points: change.after } : rest
+  })
+  commitState({ data: { ...data.value, edges } })
+  status.value = 'Edge ' + change.id + ' has ' + plural(change.after.length, 'waypoint') + '.'
+}
+function commitResize(change: GraphNodeResize) {
+  const { id, before, after } = change
+  const nextSizes = new Map(sizes.value).set(id, { width: after.width, height: after.height })
+  const nextPositions = after.x !== before.x || after.y !== before.y ? new Map(positions.value).set(id, { x: after.x, y: after.y }) : positions.value
+  commitState({ sizes: nextSizes, positions: nextPositions })
+  status.value = 'Resized ' + nodeLabel(id) + ' to ' + Math.round(after.width) + ' × ' + Math.round(after.height) + '.'
+}
+
 function degree(id: string) {
   const edges = data.value.edges
   return edges.filter(edge => edge.to === id).length + ' in · ' + edges.filter(edge => edge.from === id).length + ' out'
@@ -369,7 +424,7 @@ function validateCell(change: TimelineCellEdit) {
 }
 function commitCell(change: TimelineCellEdit) {
   const rows = data.value.rows.map(row => row.id === change.rowId ? { ...row, detail: change.after.trim() } : row)
-  history.commit({ data: { ...data.value, rows }, positions: positions.value })
+  commitState({ data: { ...data.value, rows }, positions: positions.value })
   status.value = 'Updated resource note.'
 }
 function undo() {
@@ -395,7 +450,7 @@ function validate(change: TimelineEdit) {
 }
 function commit(change: TimelineEdit) {
   const bars = data.value.bars.map(bar => bar.id === change.id ? { ...bar, ...change.after } : bar)
-  history.commit({ data: { ...data.value, bars }, positions: positions.value })
+  commitState({ data: { ...data.value, bars }, positions: positions.value })
   status.value = change.id + ' → ' + formatTime(change.after.start) + '–' + formatTime(change.after.end) + ' (' + change.source + ')'
 }
 </script>
@@ -423,6 +478,10 @@ function commit(change: TimelineEdit) {
         <div v-if="graphEditing" class="graph-tools">
           <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>
           <label><input v-model="alignmentGuides" type="checkbox"> Alignment guides</label>
+          <label v-if="preset === 'manufacturing'"><input v-model="collapsibleGroups" type="checkbox"> Collapsible groups</label>
+          <label><input v-model="editableEdges" type="checkbox"> Editable edges</label>
+          <label><input v-model="resizableNodes" type="checkbox"> Resizable nodes</label>
+          <label>Edge style <select v-model="edgeStyle"><option>curve</option><option>orthogonal</option><option>straight</option></select></label>
           <div class="graph-palette" role="group" aria-label="Node palette">
             <button v-for="item in paletteItems" :key="item.kind" type="button" class="palette-chip" draggable="true"
               @dragstart="startPaletteDrag($event, item.kind)" @click="addPaletteNode(item.kind)">{{ item.label }}</button>
@@ -439,6 +498,9 @@ function commit(change: TimelineEdit) {
           :snap-grid="graphEditing && snapToGrid ? gridSize : undefined" :background="graphEditing && snapToGrid ? 'dots' : 'none'"
           :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @node-drop="dropNode"
           :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
+          :collapsible-groups="collapseOn" :collapsed-group-ids="collapseOn ? collapsed : undefined" @update:collapsed-group-ids="commitCollapse"
+          :edge-style="graphEditing ? edgeStyle : 'curve'" :editable-edges="graphEditing && editableEdges" @edge-reshape="commitReshape"
+          :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize" :lod-threshold="graphEditing ? 0.5 : undefined"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
