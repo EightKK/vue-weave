@@ -2,6 +2,7 @@ import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } fro
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
+import type { GraphRect } from './graphView.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -13,6 +14,8 @@ export interface NetworkNode extends IdentifiedNode {
   /** False keeps the node out of NetworkGraph deletion proposals (`deletable`). */
   deletable?: boolean
   shape?: 'box' | 'rounded'
+  /** False hides the NetworkGraph resize handles of this node (`resizable`). */
+  resizable?: boolean
   data?: unknown
 }
 
@@ -131,6 +134,29 @@ export interface GraphLabels {
   groupWithin?: string
   /** Announced when `validateDelete` returns false. */
   deleteRejected?: string
+  /** Name prefix of the toggle that collapses a group, followed by the group label. Default "Collapse group". */
+  collapseGroup?: string
+  /** Name prefix of the toggle that expands a collapsed group, followed by the group label. Default "Expand group". */
+  expandGroup?: string
+  /** Proxy detail after a member count of one. Default "node". */
+  collapsedNode?: string
+  /** Proxy detail after any other member count. Default "nodes". */
+  collapsedNodes?: string
+  /** Name prefix of a waypoint handle, followed by its number and the edge label or ID. Default "Move waypoint". */
+  moveWaypoint?: string
+  /** Name prefix of a handle that inserts a waypoint, followed by its number and the edge label or ID. Default "Add waypoint". */
+  addWaypoint?: string
+  /** Announced when `validateEdgeReshape` returns false. Default "This edge change was rejected." */
+  reshapeRejected?: string
+  /** Name prefix of a resize handle, followed by the node label and the corner. Default "Resize". */
+  resizeNode?: string
+  /** Corner names of the resize handles. Defaults "top left", "top right", "bottom left" and "bottom right". */
+  topLeft?: string
+  topRight?: string
+  bottomLeft?: string
+  bottomRight?: string
+  /** Announced when `validateNodeResize` returns false. Default "This resize was rejected." */
+  resizeRejected?: string
 }
 
 export interface GanttLabels {
@@ -183,6 +209,27 @@ export interface NetworkNodeSlot {
   box: GraphBox
   selected: boolean
   dimmed?: boolean
+  /** The current camera scale, for level-of-detail rendering in custom node slots. */
+  scale: number
+}
+
+/** A waypoint proposal from NetworkGraph (`editableEdges`). Set the edge's `points` to `after` to accept it. */
+export interface GraphEdgeReshape {
+  id: string
+  /** The edge's waypoints before the change; empty when it had none. */
+  before: GraphPoint[]
+  /** The proposed waypoints; empty when the last one was removed. */
+  after: GraphPoint[]
+}
+
+/**
+ * A resize proposal from NetworkGraph (`resizable`). Set the node's size to `after.width` and `after.height` (the `sizes`
+ * prop) and, when `after.x` or `after.y` changed, its position (the `positions` prop).
+ */
+export interface GraphNodeResize {
+  id: string
+  before: GraphRect
+  after: GraphRect
 }
 
 /** A visual group. `parentId` nests it inside another group; `nodeIds` lists only its direct members. */

@@ -3,7 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, wat
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
 import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, NetworkTooltipSlot } from '../core/types.js'
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
-import { applyGraphPositions, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect } from '../core/graph.js'
+import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphNodeSize } from '../core/graph.js'
+import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
+import { collapseGraphGroups } from '../core/graphCollapse.js'
+import { routeGraphEdges, type GraphEdgeStyle } from '../core/graphRouting.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect, type GraphRect } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
 import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '../core/graphSnapping.js'
@@ -50,7 +53,17 @@ const props = withDefaults(defineProps<{
   autoPan?: boolean
   droppable?: boolean
   clipboard?: boolean
-}>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6 })
+  collapsibleGroups?: boolean
+  collapsedGroupIds?: ReadonlySet<string>
+  edgeStyle?: GraphEdgeStyle
+  editableEdges?: boolean
+  validateEdgeReshape?: (change: GraphEdgeReshape) => boolean | string | void
+  lodThreshold?: number
+  sizes?: ReadonlyMap<string, GraphNodeSize>
+  resizable?: boolean
+  minNodeSize?: GraphNodeSize
+  validateNodeResize?: (change: GraphNodeResize) => boolean | string | void
+}>(), { showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   select: [id: string]
   'update:selectedId': [id: string]
@@ -70,10 +83,15 @@ const emit = defineEmits<{
   'copy-selection': [selection: GraphClipboardSelection]
   'paste-request': [event: GraphPaste]
   'duplicate-selection': [selection: GraphClipboardSelection]
+  'update:collapsedGroupIds': [ids: Set<string>]
+  'edge-reshape': [change: GraphEdgeReshape]
+  'edge-reshape-rejected': [change: GraphEdgeReshape, reason: string]
+  'node-resize': [change: GraphNodeResize]
+  'node-resize-rejected': [change: GraphNodeResize, reason: string]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot): unknown
-  edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean }): unknown
+  edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
   empty(): unknown
   tooltip?(props: NetworkTooltipSlot): unknown
 }>()
@@ -83,7 +101,10 @@ const messages = computed<GraphLabels>(() => ({
   minimap: 'Navigate graph overview', connectFrom: 'Start connection from', connectTo: 'Connect to',
   reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of', moveGroup: 'Move group',
   rejected: 'This connection was rejected.', selectEdge: 'Select edge', groupWithin: 'within',
-  deleteRejected: 'This deletion was rejected.', ...props.labels,
+  deleteRejected: 'This deletion was rejected.', collapseGroup: 'Collapse group', expandGroup: 'Expand group',
+  collapsedNode: 'node', collapsedNodes: 'nodes', moveWaypoint: 'Move waypoint', addWaypoint: 'Add waypoint',
+  reshapeRejected: 'This edge change was rejected.', resizeNode: 'Resize', topLeft: 'top left', topRight: 'top right',
+  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...props.labels,
 }))
 function isSelected(id: string) {
   return props.selectedIds ? props.selectedIds.has(id) : props.selectedId === id
@@ -125,41 +146,110 @@ const options = computed<GraphLayeredLayoutOptions>((previous) => {
   return previous && (Object.keys(value) as (keyof GraphLayeredLayoutOptions)[]).every(key => previous[key] === value[key])
     ? previous : value
 })
+// Group collapse. Without collapsed groups the view is the input itself, so nothing else changes.
+const localCollapsed = shallowRef<ReadonlySet<string>>(new Set())
+const collapsedIds = computed(() => props.collapsedGroupIds ?? (props.collapsibleGroups ? localCollapsed.value : undefined))
+const collapsedView = computed(() => {
+  const ids = collapsedIds.value, groups = props.groups
+  if (!ids?.size || !groups?.length) return undefined
+  // IDs of groups that no longer exist are ignored, so deleting a collapsed group's nodes does not break rendering.
+  const known = new Set(groups.map(group => group.id))
+  const active = [...ids].filter(id => known.has(id))
+  if (!active.length) return undefined
+  const { collapsedNode, collapsedNodes } = messages.value
+  return collapseGraphGroups(props.nodes, props.edges, groups, active, {
+    detail: group => group.nodeIds.length + ' ' + (group.nodeIds.length === 1 ? collapsedNode : collapsedNodes),
+  })
+})
+const viewNodes = computed<readonly NetworkNode[]>(() => collapsedView.value?.nodes ?? props.nodes)
+const viewEdges = computed<readonly GraphEdge[]>(() => collapsedView.value?.edges ?? props.edges)
+const viewGroups = computed(() => collapsedView.value?.groups ?? props.groups)
+const realNodesById = computed(() => collapsedView.value ? new Map(props.nodes.map(node => [node.id, node])) : nodesById.value)
+const realEdgesById = computed(() => collapsedView.value ? new Map(props.edges.map(edge => [edge.id, edge])) : edgesById.value)
 const baseLayout = computed(() => {
-  if (props.layout) indexGraph(props.nodes, props.edges)
-  const result = props.layout ? props.layout(props.nodes, props.edges) : layoutLayeredGraph(props.nodes, props.edges, options.value)
+  const nodes = viewNodes.value, edges = viewEdges.value
+  if (props.layout) indexGraph(nodes, edges)
+  const result = props.layout ? props.layout(nodes, edges) : layoutLayeredGraph(nodes, edges, options.value)
   if (!Number.isFinite(result.width) || !Number.isFinite(result.height) || result.width <= 0 || result.height <= 0) {
     throw new Error('A custom layout must return positive finite dimensions')
   }
-  for (const node of props.nodes) {
+  for (const node of nodes) {
     const box = result.boxes.get(node.id)
     if (!box || ![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
       throw new Error('Missing or invalid layout box: ' + node.id)
     }
   }
-  for (const edge of props.edges) {
+  for (const edge of edges) {
     if (!result.paths.has(edge.id)) throw new Error('Missing layout path: ' + edge.id)
   }
   return result
 })
-const nodesById = computed(() => new Map(props.nodes.map(node => [node.id, node])))
-const edgesById = computed(() => new Map(props.edges.map(edge => [edge.id, edge])))
+const nodesById = computed(() => new Map(viewNodes.value.map(node => [node.id, node])))
+const edgesById = computed(() => new Map(viewEdges.value.map(edge => [edge.id, edge])))
 const direction = computed(() => options.value.direction ?? 'LR')
 const dragPreview = ref<ReadonlyMap<string, GraphPoint>>()
-const savedLayout = computed(() => props.positions?.size
-  ? applyGraphPositions(baseLayout.value, props.edges, props.positions, direction.value)
-  : baseLayout.value)
-const savedRouted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, props.edges, direction.value))
-const layout = computed(() => {
-  if (!dragPreview.value) return savedRouted.value
-  const positions = new Map([...props.positions ?? [], ...dragPreview.value])
-  return routeGraphPorts(applyGraphPositions(baseLayout.value, props.edges, positions, direction.value), nodesById.value, props.edges, direction.value)
+// Previews of a node resize and of an edge's waypoints during a pointer drag.
+const resizePreview = shallowRef<{ id: string; box: GraphRect }>()
+const reshapePreview = shallowRef<{ id: string; points: GraphPoint[] }>()
+// The uncollapsed layout with saved positions. Only read when groups are collapsed, to place proxies and move members.
+const expandedLayout = computed(() => {
+  const base = props.layout ? props.layout(props.nodes, props.edges) : layoutLayeredGraph(props.nodes, props.edges, options.value)
+  return props.positions?.size ? applyGraphPositions(base, props.edges, props.positions, direction.value) : base
 })
-const positioned = computed(() => props.nodes.map(node => ({ ...node, box: layout.value.boxes.get(node.id)! })))
+function memberCorner(ids: readonly string[]): GraphPoint {
+  let x = Infinity, y = Infinity
+  for (const id of ids) {
+    const box = expandedLayout.value.boxes.get(id)
+    if (!box) continue
+    x = Math.min(x, box.x)
+    y = Math.min(y, box.y)
+  }
+  return Number.isFinite(x) ? { x, y } : { x: 0, y: 0 }
+}
+// Saved positions of the view. A proxy whose members have saved positions sits at the top-left corner of their boxes.
+const viewPositions = computed(() => {
+  const view = collapsedView.value, saved = props.positions
+  if (!view || !saved?.size) return saved
+  let result: Map<string, GraphPoint> | undefined
+  for (const proxy of view.proxies.values()) {
+    if (proxy.nodeIds.some(id => saved.has(id))) (result ??= new Map(saved)).set(proxy.id, memberCorner(proxy.nodeIds))
+  }
+  return result ?? saved
+})
+function arrange(positions: ReadonlyMap<string, GraphPoint> | undefined, sizes: ReadonlyMap<string, GraphNodeSize> | undefined) {
+  const edges = viewEdges.value
+  const placed = positions?.size ? applyGraphPositions(baseLayout.value, edges, positions, direction.value) : baseLayout.value
+  return sizes?.size ? applyGraphSizes(placed, edges, sizes, direction.value) : placed
+}
+const routeOptions = computed(() => ({ style: props.edgeStyle, direction: direction.value, cornerRadius: props.edgeStyle === 'orthogonal' ? 6 : 0 }))
+// Ports first, then the edge style and waypoints. The default curve style without waypoints keeps the routed layout.
+function route(geometry: GraphLayout, edges: readonly GraphEdge[] = viewEdges.value) {
+  return routeGraphEdges(routeGraphPorts(geometry, nodesById.value, edges, direction.value), edges, nodesById.value, routeOptions.value)
+}
+const savedLayout = computed(() => arrange(viewPositions.value, props.sizes))
+const savedRouted = computed(() => route(savedLayout.value))
+const layout = computed(() => {
+  const moving = dragPreview.value, resizing = resizePreview.value, reshaping = reshapePreview.value
+  if (!moving && !resizing && !reshaping) return savedRouted.value
+  let geometry = savedLayout.value
+  if (moving || resizing) {
+    const positions = new Map([...viewPositions.value ?? [], ...moving ?? []])
+    let sizes = props.sizes
+    if (resizing) {
+      const { id, box } = resizing
+      positions.set(id, { x: box.x, y: box.y })
+      sizes = new Map([...props.sizes ?? [], [id, { width: box.width, height: box.height }]])
+    }
+    geometry = arrange(positions, sizes)
+  }
+  const edges = reshaping ? viewEdges.value.map(edge => edge.id === reshaping.id ? { ...edge, points: reshaping.points } : edge) : viewEdges.value
+  return route(geometry, edges)
+})
+const positioned = computed(() => viewNodes.value.map(node => ({ ...node, box: layout.value.boxes.get(node.id)! })))
 
 type GroupShape = NetworkGroup & { members: string[]; depth: number; parentLabel?: string }
 const groupMembership = computed<GroupShape[]>(() => {
-  const list = props.groups ?? []
+  const list = viewGroups.value ?? []
   const byId = new Map<string, NetworkGroup>(), members = new Set<string>()
   for (const group of list) {
     if (!group.id || byId.has(group.id)) throw new Error('Invalid graph group: ' + group.id)
@@ -425,10 +515,27 @@ function emitMoves(before: ReadonlyMap<string, GraphPoint>, after: ReadonlyMap<s
   const changes: GraphNodeMove[] = []
   for (const [id, point] of after) {
     const previous = before.get(id)!
-    if (previous.x !== point.x || previous.y !== point.y) changes.push({ id, before: previous, after: point })
+    if (previous.x === point.x && previous.y === point.y) continue
+    const proxy = collapsedView.value?.proxies.get(id)
+    if (proxy) changes.push(...proxyMoves(proxy.nodeIds, point))
+    else changes.push({ id, before: previous, after: point })
   }
   if (changes.length === 1) emit('node-move', changes[0]!)
   else if (changes.length > 1) emit('nodes-move', changes)
+}
+
+// A moved proxy moves its movable members: they keep their offsets, and the top-left corner of their boxes in the
+// expanded graph lands on the proxy's new position.
+function proxyMoves(ids: readonly string[], after: GraphPoint): GraphNodeMove[] {
+  const corner = memberCorner(ids)
+  const changes: GraphNodeMove[] = []
+  for (const id of ids) {
+    const box = expandedLayout.value.boxes.get(id)
+    if (!box || realNodesById.value.get(id)?.draggable === false) continue
+    const point = { x: Math.max(0, box.x - corner.x + after.x), y: Math.max(0, box.y - corner.y + after.y) }
+    if (point.x !== box.x || point.y !== box.y) changes.push({ id, before: { x: box.x, y: box.y }, after: point })
+  }
+  return changes
 }
 
 // Snapping. The reference point of a move is the top-left corner of the dragged or focused node, or of the bounding
@@ -643,7 +750,7 @@ function selectEdge(id: string, event: MouseEvent | KeyboardEvent) {
 }
 const reconnectHandles = computed(() => {
   const edge = props.reconnectable && currentEdgeId.value ? edgesById.value.get(currentEdgeId.value) : undefined
-  if (!edge) return []
+  if (!edge || collapsedView.value?.mergedEdges.has(edge.id)) return []
   return (['from', 'to'] as const).map(end => {
     const { x, y, side } = graphEdgeEndpoint(layout.value, nodesById.value, edge, end, direction.value)
     const offsets = { left: [-14, 0], right: [14, 0], top: [0, -14], bottom: [0, 14] } as const
@@ -764,6 +871,7 @@ function portPressed(handle: PortRef) {
 function cancelInteraction() {
   stopAutoPan()
   cancelNodeDrag()
+  cancelHandleDrag()
   endPinch()
   if (connectionDrag) skipHandleClick = true
   clearConnectionCapture()
@@ -888,6 +996,265 @@ function autoPanStep() {
   autoPanFrame = requestAnimationFrame(autoPanStep)
 }
 
+// Group collapse toggles, waypoint handles and resize handles share the overlay drawn above the nodes.
+const overlay = computed(() => Boolean(props.collapsibleGroups || props.editableEdges || props.resizable))
+type GroupToggle = { id: string; expanded: boolean; x: number; y: number; label: string }
+const groupToggles = computed(() => {
+  if (!props.collapsibleGroups) return []
+  const toggles: GroupToggle[] = []
+  for (const group of renderedGroups.value) {
+    toggles.push({
+      id: group.id, expanded: true, x: rtl.value ? group.x + 4 : group.x + group.width - 18, y: group.y + 4,
+      label: messages.value.collapseGroup + ' ' + group.label,
+    })
+  }
+  for (const proxy of collapsedView.value?.proxies.values() ?? []) {
+    const box = layout.value.boxes.get(proxy.id)
+    if (!box || (visible.value && !visible.value.nodes.has(proxy.id))) continue
+    toggles.push({
+      id: proxy.id, expanded: false, x: rtl.value ? box.x + 4 : box.x + box.width - 18, y: box.y + 4,
+      label: messages.value.expandGroup + ' ' + proxy.label,
+    })
+  }
+  return toggles
+})
+function toggleGroup(toggle: GroupToggle) {
+  if (gestureInFlight()) return
+  const next = new Set(collapsedIds.value ?? [])
+  if (toggle.expanded) next.add(toggle.id)
+  else next.delete(toggle.id)
+  if (props.collapsedGroupIds === undefined) localCollapsed.value = next
+  emit('update:collapsedGroupIds', next)
+  // The toggle is replaced by the toggle of the proxy or of the expanded group; keep keyboard focus on it.
+  void nextTick(() => {
+    const element = [...root.value?.querySelectorAll<SVGElement>('[data-vft-toggle]') ?? []].find(item => item.getAttribute('data-vft-toggle') === toggle.id)
+    element?.focus({ preventScroll: true })
+  })
+}
+
+function clampPoint(point: GraphPoint): GraphPoint {
+  return { x: Math.max(0, point.x), y: Math.max(0, point.y) }
+}
+// The next grid line (or four with Shift) from a value in a direction, or a plain step of 10 (40) without a grid.
+function stepValue(value: number, direction: number, shift: boolean) {
+  const grid = props.snapGrid
+  if (!direction) return value
+  if (grid === undefined) return value + direction * (shift ? 40 : 10)
+  const cells = shift ? 4 : 1
+  return direction > 0 ? (Math.floor(value / grid + 1e-9) + cells) * grid : (Math.ceil(value / grid - 1e-9) - cells) * grid + 0
+}
+const arrowOffsets: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+
+// Edge waypoints. The edge whose reconnect handles would show also shows its waypoint handles.
+const reshapeEdge = computed(() => {
+  const id = props.editableEdges ? currentEdgeId.value : undefined
+  const edge = id === undefined ? undefined : edgesById.value.get(id)
+  return edge && !collapsedView.value?.mergedEdges.has(edge.id) ? edge : undefined
+})
+type WaypointHandle = { key: string; kind: 'move' | 'add'; index: number; x: number; y: number; label: string }
+const waypointHandles = computed(() => {
+  const edge = reshapeEdge.value
+  if (!edge || !layout.value.paths.has(edge.id)) return []
+  const preview = reshapePreview.value
+  const points = preview?.id === edge.id ? preview.points : edge.points ?? []
+  const name = edge.label ?? edge.id
+  const chain = [
+    graphEdgeEndpoint(layout.value, nodesById.value, edge, 'from', direction.value), ...points,
+    graphEdgeEndpoint(layout.value, nodesById.value, edge, 'to', direction.value),
+  ]
+  const handles: WaypointHandle[] = []
+  for (let i = 1; i < chain.length; i++) {
+    const a = chain[i - 1]!, b = chain[i]!
+    handles.push({ key: 'add' + i, kind: 'add', index: i - 1, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, label: messages.value.addWaypoint + ' ' + i + ' · ' + name })
+  }
+  points.forEach((point, index) => handles.push({
+    key: 'move' + index, kind: 'move', index, x: point.x, y: point.y, label: messages.value.moveWaypoint + ' ' + (index + 1) + ' · ' + name,
+  }))
+  return handles
+})
+function proposeReshape(edge: GraphEdge, after: GraphPoint[]) {
+  const change: GraphEdgeReshape = { id: edge.id, before: (edge.points ?? []).map(point => ({ x: point.x, y: point.y })), after }
+  notice.value = ''
+  const result = props.validateEdgeReshape?.(change)
+  if (result === false || typeof result === 'string') {
+    notice.value = typeof result === 'string' ? result : messages.value.reshapeRejected!
+    emit('edge-reshape-rejected', change, notice.value)
+    return
+  }
+  emit('edge-reshape', change)
+}
+function focusEdge(id: string) {
+  const hit = [...svg.value?.querySelectorAll<SVGElement>('.vft-edge-hit') ?? []].find(item => item.getAttribute('data-vft-edge') === id)
+  ;(hit ?? svg.value)?.focus({ preventScroll: true })
+}
+function waypointKeys(event: KeyboardEvent, handle: WaypointHandle) {
+  const edge = reshapeEdge.value
+  if (!edge || gestureInFlight()) return
+  const points = (edge.points ?? []).map(point => ({ x: point.x, y: point.y }))
+  if (handle.kind === 'add') {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    points.splice(handle.index, 0, clampPoint(props.snapGrid === undefined ? { x: handle.x, y: handle.y } : snapGraphPoint(handle, props.snapGrid)))
+    proposeReshape(edge, points)
+    return
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.repeat) return
+    points.splice(handle.index, 1)
+    proposeReshape(edge, points)
+    // The removed handle leaves the DOM; focus returns to the edge.
+    void nextTick(() => {
+      if (!document.activeElement || !root.value?.contains(document.activeElement)) focusEdge(edge.id)
+    })
+    return
+  }
+  const offset = arrowOffsets[event.key]
+  if (!offset) return
+  event.preventDefault()
+  event.stopPropagation()
+  const point = points[handle.index]!
+  points[handle.index] = clampPoint({ x: stepValue(point.x, offset[0], event.shiftKey), y: stepValue(point.y, offset[1], event.shiftKey) })
+  proposeReshape(edge, points)
+}
+
+// Node resizing. Handles at the corners of the only selected node.
+type Corner = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'
+const corners: readonly Corner[] = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']
+const minimumSize = computed(() => {
+  const size = props.minNodeSize ?? { width: 40, height: 24 }
+  if (![size.width, size.height].every(value => Number.isFinite(value) && value > 0)) throw new RangeError('minNodeSize must have a finite positive width and height')
+  return size
+})
+const resizeHandles = computed(() => {
+  if (!props.resizable) return []
+  const ids = props.selectedIds ? [...props.selectedIds] : props.selectedId === undefined ? [] : [props.selectedId]
+  const node = ids.length === 1 ? nodesById.value.get(ids[0]!) : undefined
+  const box = node && layout.value.boxes.get(node.id)
+  if (!node || !box || node.resizable === false || collapsedView.value?.proxies.has(node.id)) return []
+  return corners.map(corner => ({
+    corner, node: node.id, x: corner === 'topLeft' || corner === 'bottomLeft' ? box.x : box.x + box.width,
+    y: corner === 'topLeft' || corner === 'topRight' ? box.y : box.y + box.height,
+    label: messages.value.resizeNode + ' ' + node.label + ' · ' + messages.value[corner],
+  }))
+})
+function savedBox(id: string): GraphRect | undefined {
+  const box = savedLayout.value.boxes.get(id)
+  return box && { x: box.x, y: box.y, width: box.width, height: box.height }
+}
+// Moves the box edges that a corner controls, keeping the opposite edges, the minimum size and a nonnegative origin.
+function resizeBox(box: GraphRect, corner: Corner, left: number, top: number, right: number, bottom: number): GraphRect {
+  const min = minimumSize.value
+  const west = corner === 'topLeft' || corner === 'bottomLeft', north = corner === 'topLeft' || corner === 'topRight'
+  const x0 = west ? Math.max(0, Math.min(left, box.x + box.width - min.width)) : box.x
+  const x1 = west ? box.x + box.width : Math.max(box.x + min.width, right)
+  const y0 = north ? Math.max(0, Math.min(top, box.y + box.height - min.height)) : box.y
+  const y1 = north ? box.y + box.height : Math.max(box.y + min.height, bottom)
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+function proposeResize(id: string, before: GraphRect, after: GraphRect) {
+  if (before.x === after.x && before.y === after.y && before.width === after.width && before.height === after.height) return
+  const change: GraphNodeResize = { id, before, after }
+  notice.value = ''
+  const result = props.validateNodeResize?.(change)
+  if (result === false || typeof result === 'string') {
+    notice.value = typeof result === 'string' ? result : messages.value.resizeRejected!
+    emit('node-resize-rejected', change, notice.value)
+    return
+  }
+  emit('node-resize', change)
+}
+function resizeKeys(event: KeyboardEvent, id: string, corner: Corner) {
+  const offset = arrowOffsets[event.key]
+  const before = savedBox(id)
+  if (!offset || !before || gestureInFlight()) return
+  event.preventDefault()
+  event.stopPropagation()
+  const west = corner === 'topLeft' || corner === 'bottomLeft', north = corner === 'topLeft' || corner === 'topRight'
+  const right = before.x + before.width, bottom = before.y + before.height
+  proposeResize(id, before, resizeBox(before, corner,
+    west ? stepValue(before.x, offset[0], event.shiftKey) : before.x, north ? stepValue(before.y, offset[1], event.shiftKey) : before.y,
+    west ? right : stepValue(right, offset[0], event.shiftKey), north ? bottom : stepValue(bottom, offset[1], event.shiftKey)))
+}
+
+// Pointer drags of waypoint, insert and resize handles.
+type HandleDrag = {
+  pointerId: number; target: SVGElement; start: GraphPoint; camera: GraphPoint; kind: 'move' | 'add' | 'resize'
+  id: string; index: number; origin: GraphPoint; corner?: Corner; box?: GraphRect
+}
+let handleDrag: HandleDrag | undefined
+function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId' | 'target' | 'start' | 'camera'>) {
+  if (!event.isPrimary || event.button !== 0 || gestureInFlight()) return
+  const target = event.currentTarget as SVGElement
+  handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY }, camera: { x: camera.value.x, y: camera.value.y } }
+  target.focus({ preventScroll: true })
+  target.setPointerCapture(event.pointerId)
+}
+function startWaypointDrag(event: PointerEvent, handle: WaypointHandle) {
+  const edge = reshapeEdge.value
+  if (edge) startHandleDrag(event, { kind: handle.kind, id: edge.id, index: handle.index, origin: { x: handle.x, y: handle.y } })
+}
+function startResizeDrag(event: PointerEvent, id: string, corner: Corner) {
+  const box = savedBox(id)
+  if (box) startHandleDrag(event, { kind: 'resize', id, index: 0, corner, box, origin: { x: box.x, y: box.y } })
+}
+function snapOrKeep(value: number) {
+  return props.snapGrid === undefined ? value : snapValue(value, props.snapGrid)
+}
+function moveHandle(event: PointerEvent) {
+  const drag = handleDrag
+  if (!drag || drag.pointerId !== event.pointerId) return
+  if (!resizePreview.value && !reshapePreview.value && Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) < 4) return
+  const { x, y, scale } = camera.value
+  const dx = (event.clientX - drag.start.x - (x - drag.camera.x)) / scale, dy = (event.clientY - drag.start.y - (y - drag.camera.y)) / scale
+  if (drag.kind === 'resize') {
+    const box = drag.box!
+    resizePreview.value = { id: drag.id, box: resizeBox(box, drag.corner!, snapOrKeep(box.x + dx), snapOrKeep(box.y + dy),
+      snapOrKeep(box.x + box.width + dx), snapOrKeep(box.y + box.height + dy)) }
+    return
+  }
+  const edge = edgesById.value.get(drag.id)
+  if (!edge) return
+  const point = clampPoint({ x: snapOrKeep(drag.origin.x + dx), y: snapOrKeep(drag.origin.y + dy) })
+  const points = (edge.points ?? []).map(item => ({ x: item.x, y: item.y }))
+  if (drag.kind === 'add') points.splice(drag.index, 0, point)
+  else points[drag.index] = point
+  reshapePreview.value = { id: drag.id, points }
+}
+function cancelHandleDrag() {
+  const drag = handleDrag
+  handleDrag = undefined
+  resizePreview.value = undefined
+  reshapePreview.value = undefined
+  if (drag?.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId)
+}
+function finishHandle(event: PointerEvent) {
+  const drag = handleDrag
+  if (!drag || drag.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelHandleDrag()
+  moveHandle(event)
+  const resized = resizePreview.value, reshaped = reshapePreview.value
+  cancelHandleDrag()
+  if (drag.kind === 'resize') {
+    if (resized) proposeResize(drag.id, drag.box!, resized.box)
+    return
+  }
+  const edge = edgesById.value.get(drag.id)
+  if (!edge) return
+  if (reshaped) proposeReshape(edge, reshaped.points)
+  else if (drag.kind === 'add') {
+    // A press without movement inserts the waypoint at the handle.
+    const points = (edge.points ?? []).map(item => ({ x: item.x, y: item.y }))
+    points.splice(drag.index, 0, clampPoint({ x: snapOrKeep(drag.origin.x), y: snapOrKeep(drag.origin.y) }))
+    proposeReshape(edge, points)
+  }
+}
+
+// Level of detail. Below the threshold scale the default renderer hides node details and edge labels (CSS).
+const lodLow = computed(() => props.lodThreshold !== undefined && camera.value.scale < props.lodThreshold)
+
 function isDimmed(id: string) {
   return Boolean(props.dimmedIds?.has(id) || (props.matchIds && !props.matchIds.has(id)))
 }
@@ -915,7 +1282,7 @@ function releaseFocus(event: FocusEvent) {
 const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedRouted.value) : undefined)
 const incidentEdges = computed(() => {
   const index = new Map<string, string[]>()
-  for (const edge of props.edges) {
+  for (const edge of viewEdges.value) {
     for (const id of edge.from === edge.to ? [edge.from] : [edge.from, edge.to]) {
       const list = index.get(id)
       if (list) list.push(edge.id)
@@ -931,10 +1298,11 @@ const visible = computed(() => {
   const nodes = new Set<string>(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
   for (const id of gestureIds.value) nodes.add(id)
   const edges = new Set<string>()
-  for (const id of dragPreview.value?.keys() ?? []) {
+  for (const id of [...dragPreview.value?.keys() ?? [], ...resizePreview.value ? [resizePreview.value.id] : []]) {
     nodes.add(id)
     for (const edgeId of incidentEdges.value.get(id) ?? []) edges.add(edgeId)
   }
+  if (reshapePreview.value) edges.add(reshapePreview.value.id)
   if (draft.value) nodes.add(draft.value.fixed.node)
   if (focused.value?.node) nodes.add(focused.value.node)
   for (const id of [currentEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
@@ -949,7 +1317,7 @@ const visible = computed(() => {
   return { ...result, groups }
 })
 const shownNodes = computed(() => visible.value ? positioned.value.filter(node => visible.value!.nodes.has(node.id)) : positioned.value)
-const shownEdges = computed(() => visible.value ? props.edges.filter(edge => visible.value!.edges.has(edge.id)) : props.edges)
+const shownEdges = computed(() => visible.value ? viewEdges.value.filter(edge => visible.value!.edges.has(edge.id)) : viewEdges.value)
 const renderedGroups = computed(() => visible.value ? shownGroups.value.filter(group => visible.value!.groups.has(group.id)) : shownGroups.value)
 const renderedHandles = computed(() => visible.value ? handles.value.filter(handle => visible.value!.nodes.has(handle.node)) : handles.value)
 
@@ -1018,7 +1386,7 @@ function elementNode(element: Element) {
   return element.hasAttribute('data-vft-port') ? null : element.getAttribute('data-vft-node')
 }
 function gestureInFlight() {
-  return Boolean(nodeDrag || connectionDrag || pinch || pan || draft.value)
+  return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan || draft.value)
 }
 // The stage itself or one of its own nodes, edges, group labels and handles. Keys pressed in focusable slot content,
 // such as an input in a custom node, keep their usual meaning.
@@ -1039,8 +1407,14 @@ function deletionFor(element: Element): GraphDeletion | undefined {
     nodeIds = props.selectedIds ? [...props.selectedIds] : props.selectedId === undefined ? [] : [props.selectedId]
     edgeIds = selectedEdgeList()
   }
-  nodeIds = nodeIds.filter(id => nodesById.value.has(id) && nodesById.value.get(id)!.deletable !== false)
-  edgeIds = edgeIds.filter(id => edgesById.value.has(id))
+  // A proxy stands for its members and a re-attached edge for the edges merged into it.
+  const view = collapsedView.value
+  if (view) {
+    nodeIds = nodeIds.flatMap(id => view.proxies.get(id)?.nodeIds ?? [id])
+    edgeIds = edgeIds.flatMap(id => view.mergedEdges.get(id) ?? [id])
+  }
+  nodeIds = nodeIds.filter(id => realNodesById.value.has(id) && realNodesById.value.get(id)!.deletable !== false)
+  edgeIds = edgeIds.filter(id => realEdgesById.value.has(id))
   return nodeIds.length || edgeIds.length ? graphDeletion(props.nodes, props.edges, nodeIds, edgeIds) : undefined
 }
 function deleteWithKeys(event: KeyboardEvent) {
@@ -1145,9 +1519,11 @@ function clipboardSelection(element: Element): GraphClipboardSelection | undefin
     nodes = new Set(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
     edges = new Set(selectedEdgeList())
   }
-  const nodeIds = props.nodes.filter(node => nodes.has(node.id)).map(node => node.id)
+  // Nodes hidden in a collapsed group and proxies are not copied.
+  const nodeIds = props.nodes.filter(node => nodes.has(node.id) && savedLayout.value.boxes.has(node.id)).map(node => node.id)
   const copied = new Set(nodeIds)
-  const edgeIds = props.edges.filter(edge => edges.has(edge.id) || (copied.has(edge.from) && copied.has(edge.to))).map(edge => edge.id)
+  const merged = collapsedView.value?.mergedEdges
+  const edgeIds = props.edges.filter(edge => (edges.has(edge.id) && !merged?.has(edge.id)) || (copied.has(edge.from) && copied.has(edge.to))).map(edge => edge.id)
   if (!nodeIds.length && !edgeIds.length) return undefined
   const positions = new Map(nodeIds.map(id => {
     const box = savedLayout.value.boxes.get(id)!
@@ -1188,6 +1564,10 @@ const editingOptions = computed(() => {
   const threshold = props.guideThreshold
   if (!Number.isFinite(threshold) || threshold < 0) throw new RangeError('guideThreshold must be a nonnegative finite number of screen pixels')
   if (!['none', 'dots', 'lines'].includes(props.background)) throw new Error('Unknown NetworkGraph background: ' + props.background)
+  if (!['curve', 'orthogonal', 'straight'].includes(props.edgeStyle)) throw new RangeError('Unknown edge style: ' + props.edgeStyle)
+  const lod = props.lodThreshold
+  if (lod !== undefined && (!Number.isFinite(lod) || lod <= 0 || lod > 3)) throw new RangeError('lodThreshold must be a finite scale greater than 0 and at most 3')
+  if (props.resizable) void minimumSize.value
   return { gap }
 })
 const patternId = marker + '-background'
@@ -1220,7 +1600,8 @@ const tooltipDelayValid = computed(() => {
   return true
 })
 const tooltipBlocked = computed(() => Boolean(
-  dragPreview.value || connectionPoint.value || boxPreview.value || isPanning.value || pinching.value || draft.value,
+  dragPreview.value || connectionPoint.value || boxPreview.value || isPanning.value || pinching.value || draft.value
+    || resizePreview.value || reshapePreview.value,
 ))
 function clearTooltipTimers() {
   clearTimeout(showTimer)
@@ -1368,7 +1749,7 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
 function exportSvg(options: GraphExportOptions = {}) {
   const { includeSelection = true, theme, ...rest } = options
   const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
-  return renderGraphSvg(layout.value, props.nodes, props.edges, {
+  return renderGraphSvg(layout.value, viewNodes.value, viewEdges.value, {
     idPrefix: 'vft-export-' + marker.replace(/[^\w-]/g, ''),
     ...rest,
     groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
@@ -1387,8 +1768,8 @@ defineExpose({
   fit, zoom, getViewport: () => ({ ...camera.value }), setViewport, focusNode, exportSvg, exportPng, toGraphPoint, getViewportCenter,
 })
 
-watch(savedLayout, cancelInteraction)
-watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value], cancelInteraction)
+watch(savedRouted, cancelInteraction)
+watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value, props.editableEdges, props.resizable], cancelInteraction)
 watch(baseLayout, () => {
   if (activeEdgeId.value && !edgesById.value.has(activeEdgeId.value)) activeEdgeId.value = undefined
   fitMode.value = 'auto'
@@ -1419,18 +1800,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl, 'vft-network-patterned': pattern }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vft-network" :class="{ 'vft-rtl': rtl, 'vft-network-patterned': pattern, 'vft-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
       ref="svg" class="vft-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
       :aria-label="messages.region" tabindex="0"
       @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
       @wheel="onWheel" @pointerdown.capture="pressStage($event); trackPointer($event)" @pointerdown="startPan"
-      @pointermove="trackPointer($event); moveTouch($event); movePan($event); moveNode($event); moveConnection($event)"
+      @pointermove="trackPointer($event); moveTouch($event); movePan($event); moveNode($event); moveConnection($event); moveHandle($event)"
       @pointerleave="forgetPointer"
-      @pointerup="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
-      @pointercancel="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event)"
-      @lostpointercapture="stopPan($event); finishNodeDrag($event); finishConnection($event)"
+      @pointerup="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event); finishHandle($event)"
+      @pointercancel="endTouch($event); stopPan($event); finishNodeDrag($event); finishConnection($event); finishHandle($event)"
+      @lostpointercapture="stopPan($event); finishNodeDrag($event); finishConnection($event); finishHandle($event)"
       @dragenter="acceptDrag" @dragover="acceptDrag" @drop="dropOnStage"
     >
       <defs>
@@ -1457,14 +1838,14 @@ onUnmounted(() => {
         </g>
         <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vft-dimmed': edgeIsDimmed(edge), 'vft-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
           :data-vft-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
-          <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)">
+          <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)" :scale="camera.scale">
             <path class="vft-network-edge" :class="{ related: edgeIsRelated(edge) }"
               :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
             <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vft-edge-label"
               :x="layout.edgeLabels.get(edge.id)!.x" :y="layout.edgeLabels.get(edge.id)!.y"
             >{{ edge.label }}</text>
           </slot>
-          <path v-if="reconnectable || edgesSelectable" class="vft-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
+          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vft-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
             :d="layout.paths.get(edge.id)" role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)"
             :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vft-edge="edge.id"
             @pointerdown.stop @click="selectEdge(edge.id, $event)" @keydown.enter.prevent="selectEdge(edge.id, $event)" @keydown.space.prevent="selectEdge(edge.id, $event)" />
@@ -1480,7 +1861,7 @@ onUnmounted(() => {
           @keydown.enter.self.prevent="select(node.id, $event)" @keydown.space.self.prevent="select(node.id, $event)"
         >
           <title v-if="!$slots.tooltip">{{ node.label }} {{ node.detail }}</title>
-          <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)">
+          <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)" :scale="camera.scale">
           <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
           <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
           <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vft-node-title">{{ node.label }}</text>
@@ -1488,12 +1869,35 @@ onUnmounted(() => {
           </svg>
           </slot>
         </g>
-        <path v-if="connectionPath" class="vft-connection-preview" :d="connectionPath" />
+        <path v-if="connectionPath && !overlay" class="vft-connection-preview" :d="connectionPath" />
         <!-- Guides only appear during a node drag, never with a connection preview, so they share its conditional. -->
-        <g v-else-if="guideLines?.length" class="vft-guides" aria-hidden="true">
+        <g v-else-if="guideLines?.length && !overlay" class="vft-guides" aria-hidden="true">
           <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vft-guide"
             :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
             :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
+        </g>
+        <!-- With collapsible groups, editable edges or resizable nodes, one overlay holds the previews and the handles,
+          so the markup without those inputs is unchanged. -->
+        <g v-else-if="overlay" class="vft-network-overlay">
+          <path v-if="connectionPath" class="vft-connection-preview" :d="connectionPath" />
+          <g v-if="guideLines?.length" class="vft-guides" aria-hidden="true">
+            <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vft-guide"
+              :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
+              :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
+          </g>
+          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vft-group-toggle" :class="{ collapsed: !toggle.expanded }"
+            :transform="`translate(${toggle.x} ${toggle.y})`" role="button" tabindex="0" :aria-label="toggle.label"
+            :aria-expanded="toggle.expanded" :data-vft-toggle="toggle.id"
+            @pointerdown.stop @click.stop="toggleGroup(toggle)" @keydown.enter.stop.prevent="toggleGroup(toggle)" @keydown.space.stop.prevent="toggleGroup(toggle)">
+            <rect width="14" height="14" rx="3" />
+            <path :d="toggle.expanded ? 'M 4 7 H 10' : 'M 4 7 H 10 M 7 4 V 10'" />
+          </g>
+          <circle v-for="handle in waypointHandles" :key="handle.key" :class="handle.kind === 'add' ? 'vft-waypoint-add' : 'vft-waypoint-handle'"
+            :cx="handle.x" :cy="handle.y" :r="handle.kind === 'add' ? 4.5 : 6" role="button" tabindex="0" :aria-label="handle.label"
+            @pointerdown.stop="startWaypointDrag($event, handle)" @keydown="waypointKeys($event, handle)" />
+          <rect v-for="handle in resizeHandles" :key="'resize:' + handle.corner" class="vft-resize-handle" :class="'vft-resize-' + handle.corner"
+            :x="handle.x - 5" :y="handle.y - 5" width="10" height="10" rx="2" role="button" tabindex="0" :aria-label="handle.label"
+            @pointerdown.stop="startResizeDrag($event, handle.node, handle.corner)" @keydown="resizeKeys($event, handle.node, handle.corner)" />
         </g>
         <rect v-if="boxPreview" class="vft-box-selection" v-bind="boxPreview" />
         <template v-if="connectable || draft?.edge">

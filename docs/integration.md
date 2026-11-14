@@ -106,9 +106,32 @@ function duplicate(selection: GraphClipboardSelection) {
 
 For `paste-request`, store the copied nodes, edges and `positions` from the `copy-selection` event, then clone them with an `offset` that moves their top-left corner to `event.point`. Committing each operation as one `useEditHistory` entry makes Undo remove the copies together.
 
+## Collapsing groups, edge styles, waypoints and resizing
+
+Keep the collapsed group IDs, node sizes and edge waypoints in your application state next to `positions`, and commit each accepted proposal as one history entry:
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :groups="groups" :positions="positions" :sizes="sizes" draggable
+  collapsible-groups :collapsed-group-ids="collapsed" @update:collapsed-group-ids="ids => commit({ collapsed: ids })"
+  edge-style="orthogonal" editable-edges edges-selectable resizable :lod-threshold="0.5"
+  @edge-reshape="reshape" @node-resize="resize" @node-move="move" @nodes-move="moveAll" />
+```
+
+```ts
+function reshape({ id, after }: GraphEdgeReshape) {
+  commit({ edges: edges.value.map(edge => edge.id === id ? { ...edge, points: after.length ? after : undefined } : edge) })
+}
+function resize({ id, before, after }: GraphNodeResize) {
+  const nextPositions = after.x !== before.x || after.y !== before.y ? new Map(positions.value).set(id, { x: after.x, y: after.y }) : positions.value
+  commit({ sizes: new Map(sizes.value).set(id, { width: after.width, height: after.height }), positions: nextPositions })
+}
+```
+
+A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vft-group-toggle`, `vft-waypoint-handle`, `vft-waypoint-add` and `vft-resize-handle` and take their colours from `--vft-accent` and `--vft-surface`; no new theme variables are needed.
+
 ## Custom content
 
-The graph node slot receives its node and measured layout box. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
+The graph node slot receives its node, measured layout box and the camera `scale`. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
 
 ```vue
 <NetworkGraph :nodes="nodes" :edges="edges">
