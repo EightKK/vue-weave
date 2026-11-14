@@ -25,7 +25,7 @@ import type { TimeRange } from './timeline.js'
  *
  * Throws a RangeError for a status date that is not finite, outside `input.range` or not aligned with the quantum,
  * a progress value outside 0..1 or a done share that does not fit before the status date, and an Error for a progress
- * entry of an unknown task.
+ * that is not a Map and a progress entry of an unknown task.
  */
 export function rescheduleFromStatusDate(
   input: ScheduleInput, statusDate: number, progress: ReadonlyMap<string, number>,
@@ -34,6 +34,9 @@ export function rescheduleFromStatusDate(
   if (typeof statusDate !== 'number' || !Number.isFinite(statusDate)) throw new RangeError('The status date must be finite')
   if (statusDate < model.range.start || statusDate > model.range.end) throw new RangeError('The status date must be inside the schedule range')
   model.validateTime(statusDate)
+  if (typeof progress?.get !== 'function' || typeof progress[Symbol.iterator] !== 'function') {
+    throw new Error('Progress must be a Map from task ID to the completed share, such as new Map([[\'a\', 0.5]])')
+  }
   for (const [id, value] of progress) {
     if (!model.tasks.has(id)) throw new Error('Unknown task in progress: ' + id)
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {

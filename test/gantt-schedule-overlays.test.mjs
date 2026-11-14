@@ -35,7 +35,8 @@ test('invertWorkPeriods validates its input and does not mutate it', () => {
   const periods = Object.freeze([Object.freeze({ start: 4, end: 2 })])
   assert.throws(() => invertWorkPeriods(periods, { start: 0, end: 10 }), RangeError)
   assert.throws(() => invertWorkPeriods([{ start: 1, end: 1 }], { start: 0, end: 10 }), RangeError)
-  assert.throws(() => invertWorkPeriods([{ start: 0.5, end: 2 }], { start: 0, end: 10 }), RangeError)
+  // Fractional endpoints are valid in caller-chosen units.
+  assert.deepEqual(invertWorkPeriods([{ start: 0.5, end: 2 }], { start: 0, end: 10 }), [{ start: 0, end: 0.5 }, { start: 2, end: 10 }])
   assert.throws(() => invertWorkPeriods([{ start: 0, end: Number.NaN }], { start: 0, end: 10 }), RangeError)
   assert.throws(() => invertWorkPeriods([], { start: 10, end: 10 }), RangeError)
   assert.throws(() => invertWorkPeriods([], { start: 0, end: Infinity }), RangeError)

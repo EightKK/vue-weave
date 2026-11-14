@@ -2,6 +2,7 @@
 import { escapeXml } from './exportSvg.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import { createTimelineRowTree } from './timeline.js'
+import { maxUtcOffsetMinutes } from './workCalendar.js'
 import type { TimelineBar, TimelineDependencyType, TimelineRow } from './types.js'
 
 export interface MsProjectTask {
@@ -40,22 +41,32 @@ export interface MsProjectXmlOptions {
 }
 
 const minuteMs = 60_000
+const secondMs = 1000
 const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
 
 function checkTime(value: number, what: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 8.64e15) throw new RangeError(what + ' must be a finite time')
 }
 
-/** A local ISO date-time without an offset, as MSPDI expects. */
+function checkText(value: unknown, what: string) {
+  if (value === undefined || value === null) throw new Error(what + ' is missing')
+}
+
+/** Round a time to the nearest whole second (halves up), the resolution of MSPDI and iCalendar date-times. */
+function toSecond(time: number) {
+  return Math.round(time / secondMs) * secondMs
+}
+
+/** A local ISO date-time without an offset, as MSPDI expects. `time` is a whole second. */
 function localIso(time: number, offset: number) {
   const iso = new Date(time + offset * minuteMs).toISOString()
   if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
   return iso.slice(0, 19)
 }
 
-/** An ISO 8601 duration with whole hours, minutes and seconds, such as PT26H30M0S. */
+/** An ISO 8601 duration with whole hours, minutes and seconds, such as PT26H30M0S. `ms` is whole seconds. */
 function isoDuration(ms: number) {
-  const seconds = Math.round(ms / 1000)
+  const seconds = Math.round(ms / secondMs)
   return `PT${Math.floor(seconds / 3600)}H${Math.floor(seconds % 3600 / 60)}M${seconds % 60}S`
 }
 
@@ -65,21 +76,27 @@ function isoDuration(ms: number) {
  * name, start, finish, elapsed duration, outline level and number, milestone and summary flags and percent complete.
  * Dependencies become `PredecessorLink` elements with the MSPDI link type (FF 0, FS 1, SF 2, SS 3) and the lag in
  * tenths of a minute as elapsed minutes. Dates are wall-clock times at `utcOffsetMinutes` without an offset suffix.
+ * Start and finish are rounded to the nearest whole second, and the duration is the difference of the rounded times.
  *
  * Not exported: calendars, resources, assignments, baselines, constraints, notes and custom fields. Task IDs of the
  * input are not written; the UIDs follow the input order.
  *
- * Throws an Error for empty or duplicate task IDs, unknown dependency ends and unknown link types, and a RangeError
+ * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends and unknown
+ * link types, and a RangeError
  * for non-finite or unordered dates, an invalid outline level, percent complete or lag.
  */
 export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
   const offset = options.utcOffsetMinutes ?? 0
-  if (!Number.isInteger(offset) || Math.abs(offset) > 18 * 60) throw new RangeError('utcOffsetMinutes must be an integer between -1080 and 1080')
+  if (!Number.isInteger(offset) || Math.abs(offset) > maxUtcOffsetMinutes) {
+    throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
+  }
+  checkText(project.name, 'The project name')
   const uids = new Map<string, number>()
   let previousLevel = 0
   const levels: number[] = []
   for (const task of project.tasks) {
     if (typeof task.id !== 'string' || !task.id || uids.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
+    checkText(task.name, 'The name of task ' + task.id)
     checkTime(task.start, 'Task start')
     checkTime(task.end, 'Task end')
     if (task.end < task.start) throw new RangeError('A task cannot end before it starts: ' + task.id)
@@ -112,8 +129,8 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
   }
   let projectStart = Infinity, projectEnd = -Infinity
   for (const task of project.tasks) {
-    projectStart = Math.min(projectStart, task.start)
-    projectEnd = Math.max(projectEnd, task.end)
+    projectStart = Math.min(projectStart, toSecond(task.start))
+    projectEnd = Math.max(projectEnd, toSecond(task.end))
   }
   const outline: number[] = []
   const tasks = project.tasks.map((task, index) => {
@@ -124,8 +141,9 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
     const uid = index + 1
     const milestone = task.milestone === true || task.start === task.end
     const summary = (levels[index + 1] ?? 0) > level
-    const start = localIso(task.start, offset), finish = localIso(task.end, offset)
-    const duration = isoDuration(milestone ? 0 : task.end - task.start)
+    const startTime = toSecond(task.start), finishTime = toSecond(task.end)
+    const start = localIso(startTime, offset), finish = localIso(finishTime, offset)
+    const duration = isoDuration(milestone ? 0 : finishTime - startTime)
     return '<Task>'
       + `<UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(task.name)}</Name><Active>1</Active><Manual>1</Manual>`
       + `<WBS>${number}</WBS><OutlineNumber>${number}</OutlineNumber><OutlineLevel>${level}</OutlineLevel>`
@@ -167,10 +185,10 @@ export interface ICalendarOptions {
 
 const encoder = new TextEncoder()
 
-/** UTC date-time in iCalendar basic format, such as 20261109T080000Z. */
+/** UTC date-time in iCalendar basic format, such as 20261109T080000Z, rounded to the nearest whole second. */
 function icalTime(time: number) {
   checkTime(time, 'An event time')
-  const iso = new Date(time).toISOString()
+  const iso = new Date(toSecond(time)).toISOString()
   if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
   return iso.slice(0, 19).replace(/[-:]/g, '') + 'Z'
 }
@@ -203,8 +221,9 @@ function fold(line: string) {
 
 /**
  * Build an iCalendar (RFC 5545) document with one VEVENT per event: UID, DTSTAMP, DTSTART, DTEND, SUMMARY and an
- * optional DESCRIPTION. Times are written in UTC, text is escaped, lines end with CRLF and are folded at 75 octets.
- * Throws an Error for empty or duplicate IDs and a RangeError for non-finite or unordered times.
+ * optional DESCRIPTION. Times are written in UTC, rounded to the nearest whole second; DTEND is written only when the
+ * rounded end is after the rounded start. Text is escaped, lines end with CRLF and are folded at 75 octets.
+ * Throws an Error for empty or duplicate IDs and a missing summary, and a RangeError for non-finite or unordered times.
  */
 export function toICalendar(events: readonly ICalendarEvent[], options: ICalendarOptions = {}): string {
   const stamp = icalTime(options.timestamp ?? Date.now())
@@ -218,8 +237,10 @@ export function toICalendar(events: readonly ICalendarEvent[], options: ICalenda
     ids.add(event.id)
     const start = icalTime(event.start), end = icalTime(event.end)
     if (event.end < event.start) throw new RangeError('An event cannot end before it starts: ' + event.id)
+    checkText(event.summary, 'The summary of event ' + event.id)
     lines.push('BEGIN:VEVENT', 'UID:' + icalText(event.id), 'DTSTAMP:' + stamp, 'DTSTART:' + start)
-    if (event.end > event.start) lines.push('DTEND:' + end)
+    // RFC 5545 requires DTEND after DTSTART; a span that rounds to nothing is written as an instant.
+    if (end !== start) lines.push('DTEND:' + end)
     lines.push('SUMMARY:' + icalText(event.summary))
     if (event.description !== undefined) lines.push('DESCRIPTION:' + icalText(event.description))
     lines.push('END:VEVENT')
@@ -407,6 +428,7 @@ export interface TimelineCsvImport {
 }
 
 const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
+const decimalPattern = /^\+?(\d+\.?\d*|\.\d+)$/
 
 /**
  * Read a table written by `timelineCsvTable` (for example from `parseCsv`) back into rows and bars. The table needs a
@@ -420,9 +442,10 @@ const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
  * label of their `bar` cell, the parsed start and end and, when the progress cell is not empty, the progress from 0
  * to 1. Records whose fields are all empty are skipped.
  *
- * Throws an Error for missing or repeated columns and an Error naming the line (the one-based record number, with the
+ * A custom header takes precedence over another column's default header. Throws an Error for missing or repeated
+ * columns, for two custom headers that are equal (ignoring case and surrounding white space) and an Error naming the line (the one-based record number, with the
  * header on line 1) for an invalid WBS code, a time that `parseTime` cannot read, an end before the start and a
- * progress that is not a number from 0 to 1.
+ * progress that is not a plain decimal number from 0 to 1 (such as `0.5`; not `0x1` or `1e0`).
  */
 export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], options: TimelineCsvImportOptions): TimelineCsvImport {
   if (typeof options?.parseTime !== 'function') throw new Error('timelineFromCsvTable needs a parseTime function')
@@ -437,9 +460,23 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
       position.set(column, index)
     })
   } else {
+    // A custom header takes precedence over another column's default header; two custom headers must differ.
     const wanted = new Map<string, TimelineCsvColumn>()
-    for (const column of Object.keys(csvHeaders) as TimelineCsvColumn[]) {
-      wanted.set((options.headers?.[column] ?? csvHeaders[column]).trim().toLowerCase(), column)
+    const custom = new Set<string>()
+    const columns = Object.keys(csvHeaders) as TimelineCsvColumn[]
+    for (const column of columns) {
+      if (options.headers?.[column] === undefined) continue
+      const key = String(options.headers[column]).trim().toLowerCase()
+      const other = wanted.get(key)
+      if (other !== undefined) {
+        throw new Error(`The CSV columns ${other} and ${column} have the same header text: ${key}; give each a distinct header`)
+      }
+      wanted.set(key, column)
+      custom.add(column)
+    }
+    for (const column of columns) {
+      const key = csvHeaders[column].trim().toLowerCase()
+      if (!custom.has(column) && !wanted.has(key)) wanted.set(key, column)
     }
     header.forEach((cell, index) => {
       const column = wanted.get(String(cell ?? '').trim().toLowerCase())
@@ -490,7 +527,8 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
     const bar: TimelineBar = { id: 'bar-' + (bars.length + 1), rowId: found.get(key)!.id, label: text(record, 'bar'), start, end }
     const progressText = text(record, 'progress').trim()
     if (progressText) {
-      const progress = Number(progressText)
+      // Plain decimal notation only: no hexadecimal, binary, octal or exponent forms.
+      const progress = decimalPattern.test(progressText) ? Number(progressText) : NaN
       if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
         throw new RangeError(`Progress must be a number from 0 to 1 on CSV line ${line}: ${progressText}`)
       }
@@ -500,11 +538,15 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
   })
   const entries = [...found.values()]
   if (position.has('wbs')) {
-    // Tree preorder: compare codes part by part as numbers.
-    const parts = (code: string) => code.split('.').map(Number)
+    // Tree preorder: compare codes part by part as numbers. Parts have no leading zeros, so comparing their digit
+    // strings by length and then lexically is exact at any size.
+    const compareParts = (x: string, y: string) => x.length - y.length || (x < y ? -1 : x > y ? 1 : 0)
     entries.sort((a, b) => {
-      const x = parts(a.code!), y = parts(b.code!)
-      for (let index = 0; index < Math.min(x.length, y.length); index++) if (x[index] !== y[index]) return x[index]! - y[index]!
+      const x = a.code!.split('.'), y = b.code!.split('.')
+      for (let index = 0; index < Math.min(x.length, y.length); index++) {
+        const order = compareParts(x[index]!, y[index]!)
+        if (order) return order
+      }
       return x.length - y.length
     })
   }

@@ -5,6 +5,9 @@
 ### Changed
 
 - **Behaviour change:** NetworkGraph keeps a camera the user or the API placed (pan, zoom, minimap, keyboard pan, auto-pan, pinch, `setViewport`, `focusNode`, `fit({ ids })`) when the parent applies a structural change such as `connect`, `delete`, paste, duplicate or a group collapse or expand. It still re-fits while the camera is in automatic fit mode, when the `layout` function or layout `options` change, and when the graph is replaced (it was or becomes empty, or none of the previous node IDs remain). If a smaller graph raises the minimum zoom, a kept camera is clamped to it.
+- `invertWorkPeriods` accepts finite non-integer periods and ranges. `normalizeWorkPeriods` and scheduling still require safe integers.
+- `buildWorkPeriods` accepts fixed UTC offsets up to ±1080 minutes (previously ±840), the same limit as `calendarBands` and `toMsProjectXml`.
+- `ResourceLoadSegment.taskIds` arrays are shared between segments with the same active tasks; treat them as read-only, as their type says.
 
 ### Fixed
 
@@ -27,6 +30,13 @@
 - `scheduleToGraph` throws an Error for duplicate dependency IDs instead of returning duplicate edge IDs that NetworkGraph rejects.
 - `graphPathBounds` and `graphPathEndpoints` reject path data that does not begin with a moveto (`M` or `m`).
 - Documented that `layoutLayeredGraph` places every node of a cycle in one rank, so a large cycle becomes one long column.
+- `calculateResourceLoad` no longer copies the active task IDs into every segment, which greatly reduces memory and time for many overlapping tasks. Output values are unchanged.
+- `timeTicks` throws a RangeError instead of silently returning no ticks when the window is too far from the anchor.
+- `timeTicks`, `editTimeRange` and `moveTimeRanges` no longer accumulate floating-point drift with fractional steps (three steps of 0.1 give 0.3). Integer steps are unchanged.
+- `toMsProjectXml` and `toICalendar` round times to the nearest second, so start, finish and duration agree; an iCalendar event whose rounded end equals its start is written without DTEND.
+- `timelineFromCsvTable` lets a custom header take precedence over another column's default header whatever the column order, and throws when two custom headers are equal. It reads progress only in plain decimal notation (`0x1` and `1e0` are now rejected) and orders WBS parts of any length exactly.
+- `toMsProjectXml` and `toICalendar` throw an Error for a missing project or task name or event summary instead of writing "undefined".
+- `rescheduleFromStatusDate` throws a descriptive Error when `progress` is not a Map.
 
 ## 0.1.0 - 2026-11-14
 

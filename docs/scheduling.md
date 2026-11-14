@@ -6,7 +6,7 @@ The scheduling functions are available from `vue-weave/core` and the Vue package
 
 A calendar contains an ID and absolute half-open work periods `[start, end)`. Overlapping or touching periods are combined. Missing periods represent time off. Work can span several periods, with gaps retained in the elapsed start/end span. The result's `work` array contains the segments that consume work or capacity.
 
-Use `buildWorkPeriods(range, { weekly, utcOffsetMinutes, exceptions })` to expand weekly rules into epoch milliseconds in a fixed UTC offset. Weekdays run from Sunday (0) to Saturday (6). A shift starts at `startMinute` and ends at `endMinute` relative to the start of its local date. An end beyond 1440 continues into the next date. Shifts are at most 24 hours long. An exception replaces its entire civil date, including overnight carry-in. An empty exception closes the date. For a zone that observes daylight-saving transitions, pass an IANA `timeZone` instead of `utcOffsetMinutes`, as described in [Time-zone calendars](#time-zone-calendars).
+Use `buildWorkPeriods(range, { weekly, utcOffsetMinutes, exceptions })` to expand weekly rules into epoch milliseconds in a fixed UTC offset, an integer number of minutes from -1080 to 1080 (the same limit as `calendarBands`). Weekdays run from Sunday (0) to Saturday (6). A shift starts at `startMinute` and ends at `endMinute` relative to the start of its local date. An end beyond 1440 continues into the next date. Shifts are at most 24 hours long. An exception replaces its entire civil date, including overnight carry-in. An empty exception closes the date. For a zone that observes daylight-saving transitions, pass an IANA `timeZone` instead of `utcOffsetMinutes`, as described in [Time-zone calendars](#time-zone-calendars).
 
 ## Calculate a plan
 
@@ -111,7 +111,7 @@ function cascade(change: TimelineEdit): TimelineEdit[] {
 
 ## Reschedule from a status date
 
-`rescheduleFromStatusDate(input, statusDate, progress)` updates a plan after progress has been reported at a status date. `progress` is a `ReadonlyMap` from task ID to the completed share of its working duration, from 0 to 1; a task without an entry has progress 0. The current dates are those of `scheduleTasks(input)`; when that fails, its failure is returned.
+`rescheduleFromStatusDate(input, statusDate, progress)` updates a plan after progress has been reported at a status date. `progress` is a `ReadonlyMap` from task ID to the completed share of its working duration, from 0 to 1; a task without an entry has progress 0. Anything that is not a map, such as a plain object, throws an Error. The current dates are those of `scheduleTasks(input)`; when that fails, its failure is returned.
 
 - **Progress 1.** The task keeps its current dates, even when they lie after the status date.
 - **Progress between 0 and 1.** The done work is `progress × duration` rounded down to whole quanta (a value just below 1 still leaves one quantum). It stays where it is, from the current start. When that would carry it past the status date (the task is ahead of plan or started early), it is placed so that it ends at the status date instead. The remaining work is scheduled at or after the status date on the task's calendar. When time is left between the two parts, the task is split: its `work` lists both parts, and `scheduledBarFields` turns them into `segments`. Internally the gap becomes a pause of the task. A task whose done work rounds down to zero, and a milestone, is treated as not started.

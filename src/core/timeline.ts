@@ -2,6 +2,7 @@ import type {
   CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
   TimelineLoadSegment, TimelineRow, TimelineSummary,
 } from './types.js'
+import { maxUtcOffsetMinutes } from './workCalendar.js'
 
 export interface TimeRange {
   start: number
@@ -58,13 +59,64 @@ export function mirrorTimeScale(scale: TimeScale): TimeScale {
   }
 }
 
+/** Decimal places (at most 15) that represent a value exactly as a scaled safe integer, or undefined. */
+function decimalPlaces(value: number) {
+  for (let places = 0, scale = 1; places <= 15; places++, scale *= 10) {
+    const scaled = Math.round(value * scale)
+    if (!Number.isSafeInteger(scaled)) return undefined
+    if (scaled / scale === value) return places
+  }
+  return undefined
+}
+
+/**
+ * The power of ten that turns a fractional step and the other values of a snapped computation into exact safe
+ * integers, so that, for example, three steps of 0.1 give 0.3. Integer steps, and values without a short decimal
+ * form, return 1: they keep plain floating-point arithmetic.
+ */
+function decimalScale(step: number, values: readonly number[]) {
+  if (Number.isInteger(step)) return 1
+  let places = 0
+  for (const value of [step, ...values]) {
+    const own = decimalPlaces(value)
+    if (own === undefined) return 1
+    places = Math.max(places, own)
+  }
+  const scale = 10 ** places
+  return [step, ...values].every(value => {
+    const integer = Math.round(value * scale)
+    return Number.isSafeInteger(integer) && integer / scale === value
+  }) ? scale : 1
+}
+
+/** Values multiplied by a decimal scale, rounded to the integers they represent. A scale of 1 leaves them unchanged. */
+function scaled(scale: number, values: readonly number[]) {
+  return scale === 1 ? values.slice() : values.map(value => Math.round(value * scale))
+}
+
+/**
+ * Ticks at `anchor + k × step` inside the closed window. With a fractional step, tick values are computed in exact
+ * decimal arithmetic when the step and anchor have at most 15 decimal places, so ticks of 0.1 are 0.1, 0.2, 0.3 and
+ * not 0.30000000000000004. Integer steps use plain arithmetic.
+ */
 export function timeTicks(window: TimeRange, step: number, anchor = 0): number[] {
   checkRange(window, true)
   if (!Number.isFinite(anchor) || !Number.isFinite(step) || step <= 0) throw new RangeError('Invalid tick step or anchor')
   const first = Math.ceil((window.start - anchor) / step)
   const last = Math.floor((window.end - anchor) / step)
+  if (!Number.isFinite(first) || !Number.isFinite(last)) {
+    throw new RangeError('The tick window is too far from the anchor for this tick step')
+  }
   const count = Math.max(0, last - first + 1)
   if (count > 10000) throw new RangeError('Too many ticks; increase the tick step or reduce the visible window')
+  const scale = decimalScale(step, [anchor])
+  if (scale !== 1) {
+    const [unit, origin] = scaled(scale, [step, anchor]) as [number, number]
+    // Exact while every scaled tick is a safe integer; otherwise fall back to plain arithmetic.
+    if (Number.isSafeInteger(origin + first * unit) && Number.isSafeInteger(origin + last * unit)) {
+      return Array.from({ length: count }, (_, i) => (origin + (first + i) * unit) / scale)
+    }
+  }
   return Array.from({ length: count }, (_, i) => anchor + (first + i) * step)
 }
 
@@ -101,16 +153,29 @@ export function editTimeRange(
   }
   if (!['move', 'start', 'end'].includes(mode)) throw new RangeError('Unknown edit mode')
   if (range.start < bounds.start || range.end > bounds.end) throw new RangeError('Editable intervals must fit inside editBounds')
-  const duration = range.end - range.start
-  if (mode !== 'move' && duration < minDuration) throw new RangeError('The interval is shorter than minDuration')
-  const snapped = Math.sign(delta) * Math.round(Math.abs(delta) / step) * step
+  if (mode !== 'move' && range.end - range.start < minDuration) throw new RangeError('The interval is shorter than minDuration')
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / step)
+  const values = [step, range.start, range.end, bounds.start, bounds.end, minDuration]
+  // A fractional step is computed on exact scaled integers, see decimalScale; integer steps keep plain arithmetic.
+  const scale = decimalScale(step, values.slice(1))
+  const exact = scale === 1 ? undefined : snapRange(scaled(scale, values), mode, steps, scale)
+  return exact ?? snapRange(values, mode, steps, 1)!
+}
+
+/** The snapped edit on (possibly scaled) values; undefined when scaled arithmetic would not stay exact. */
+function snapRange(values: readonly number[], mode: EditMode, steps: number, scale: number): TimeRange | undefined {
+  const [step, rangeStart, rangeEnd, boundsStart, boundsEnd, minDuration] = values as [number, number, number, number, number, number]
+  const duration = rangeEnd - rangeStart
+  const snapped = steps * step
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+  let start = rangeStart, end = rangeEnd
   if (mode === 'move') {
-    const start = clamp(range.start + snapped, bounds.start, bounds.end - duration)
-    return { start, end: start + duration }
-  }
-  if (mode === 'start') return { start: clamp(range.start + snapped, bounds.start, range.end - minDuration), end: range.end }
-  return { start: range.start, end: clamp(range.end + snapped, range.start + minDuration, bounds.end) }
+    start = clamp(rangeStart + snapped, boundsStart, boundsEnd - duration)
+    end = start + duration
+  } else if (mode === 'start') start = clamp(rangeStart + snapped, boundsStart, rangeEnd - minDuration)
+  else end = clamp(rangeEnd + snapped, rangeStart + minDuration, boundsEnd)
+  if (scale !== 1 && !(Number.isSafeInteger(snapped) && Number.isSafeInteger(start) && Number.isSafeInteger(end))) return undefined
+  return { start: start / scale, end: end / scale }
 }
 
 export function dependencyPath(x1: number, y1: number, x2: number, y2: number) {
@@ -143,7 +208,10 @@ function checkSegments(bar: TimelineBar) {
   }
 }
 
-/** Validate once per input change. IDs are unique across the entire chart. */
+/**
+ * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
+ * bar may share an ID. A dependency from a bar to itself is accepted here; `scheduleTasks` reports it as a cycle.
+ */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
   dependencies: readonly TimelineDependency[] = [], laneCount = 1,
@@ -279,8 +347,24 @@ export function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step
     min = Math.max(min, bounds.start - range.start)
     max = Math.min(max, bounds.end - range.end)
   }
-  const snapped = Math.sign(delta) * Math.round(Math.abs(delta) / step) * step
-  const shift = ranges.length ? Math.max(min, Math.min(max, snapped)) : 0
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / step)
+  const shift = ranges.length ? Math.max(min, Math.min(max, steps * step)) : 0
+  // A fractional step is applied on exact scaled integers, see decimalScale; integer steps keep plain arithmetic.
+  const values = Number.isInteger(step) ? [] : [step, bounds.start, bounds.end, ...ranges.flatMap(range => [range.start, range.end])]
+  const scale = values.length ? decimalScale(step, values.slice(1)) : 1
+  if (scale !== 1) {
+    const [unit, low, high, ...ends] = scaled(scale, values) as number[]
+    let scaledMin = -Infinity, scaledMax = Infinity
+    for (let i = 0; i < ends.length; i += 2) {
+      scaledMin = Math.max(scaledMin, low! - ends[i]!)
+      scaledMax = Math.min(scaledMax, high! - ends[i + 1]!)
+    }
+    const scaledShift = Math.max(scaledMin, Math.min(scaledMax, steps * unit!))
+    const moved = ends.map(value => value + scaledShift)
+    if (Number.isSafeInteger(steps * unit!) && moved.every(Number.isSafeInteger)) {
+      return ranges.map((_, index) => ({ start: moved[2 * index]! / scale, end: moved[2 * index + 1]! / scale }))
+    }
+  }
   return ranges.map(range => ({ start: range.start + shift, end: range.end + shift }))
 }
 
@@ -418,8 +502,8 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
   checkRange(range)
   const { utcOffsetMinutes = 0, step = 1, weekStartsOn = 1, label } = options
   if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
-  if (!Number.isInteger(utcOffsetMinutes) || Math.abs(utcOffsetMinutes) > 18 * 60) {
-    throw new RangeError('utcOffsetMinutes must be an integer between -1080 and 1080')
+  if (!Number.isInteger(utcOffsetMinutes) || Math.abs(utcOffsetMinutes) > maxUtcOffsetMinutes) {
+    throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
   }
   if (!Number.isSafeInteger(step) || step <= 0 || (unit === 'hour' && 24 % step !== 0)) {
     throw new RangeError('step must be a positive integer (a divisor of 24 for hours)')
