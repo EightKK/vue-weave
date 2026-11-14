@@ -2702,3 +2702,33 @@ test('demo copy, paste and duplicate go through the edit history, and guides app
   await expect(page.locator('.vft-guide')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('force graph layout renders selectable nodes without overlapping boxes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const nodes = page.locator('.vft-network-node')
+  await expect(nodes.first()).toBeVisible()
+  const count = await nodes.count()
+  await page.getByLabel('Graph layout').selectOption('force')
+  await page.getByLabel('Edit graph').check()
+  await expect(nodes).toHaveCount(count)
+  const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+  const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
+  await expect(split).toBeVisible()
+  await split.click()
+  await finish.click({ modifiers: ['Shift'] })
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(finish).toHaveAttribute('aria-pressed', 'true')
+  const boxes = await nodes.evaluateAll(elements => elements.map(element => {
+    const { x, y, width, height } = element.getBoundingClientRect()
+    return { x, y, width, height }
+  }))
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i]!, b = boxes[j]!
+      expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5).toBe(true)
+    }
+  }
+  expect(errors).toEqual([])
+})

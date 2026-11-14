@@ -28,6 +28,7 @@
 - Opt-in `crossingReduction` (`barycenter` or `median`, with `crossingSweeps`) for `layoutLayeredGraph` through the new `GraphLayeredLayoutOptions`, plus `countGraphCrossings`. The default output is unchanged.
 - `RL` and `BT` layout directions, exposed as the `GraphLayoutDirection` type and accepted by `graphEdgeEndpoint`, `routeGraphPorts` and `applyGraphPositions`.
 - `layoutTreeGraph` and `layoutRadialGraph`, drop-in `GraphLayout` producers for the `layout` prop.
+- `layoutForceGraph` with `GraphForceLayoutOptions`, a deterministic force-directed `GraphLayout` producer: seeded start positions, Barnes–Hut repulsion, box-overlap removal, packed components, `initialPositions` and pinned `fixed` nodes. The demo offers it as the `force` graph layout.
 - Graph helpers `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
 - `NetworkGraph` opt-in `cullOffscreen` (with `cullOverscan`) viewport culling, backed by the Vue-free `graphViewportRect`, `graphRectsIntersect`, `graphPathBounds`, `graphLayoutBounds`, `cullGraphElements` and `graphCameraAt` helpers. A large-graph demo preset is included.
 - `NetworkGraph` two-finger pinch zoom and pan for touch input, clamped to the existing zoom range and reported through `viewport-change`.

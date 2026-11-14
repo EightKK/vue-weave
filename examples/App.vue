@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, shallowRef, watch } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
@@ -17,10 +17,11 @@ const initialBars = ref(data.value.bars)
 const selected = ref('split')
 const direction = ref<GraphLayoutDirection>('LR')
 const crossingReduction = ref<GraphCrossingReduction>('none')
-const layoutKind = ref<'layered' | 'tree' | 'radial'>('layered')
+const layoutKind = ref<'layered' | 'tree' | 'radial' | 'force'>('layered')
 const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
   ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
-  : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e) : undefined)
+  : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e)
+    : layoutKind.value === 'force' ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
 const dark = ref(false)
 const builtInTheme = ref<'' | 'vft-theme-dark' | 'vft-theme-auto'>('')
 const custom = ref(false)
@@ -418,7 +419,7 @@ function commit(change: TimelineEdit) {
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option>force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
         <div v-if="graphEditing" class="graph-tools">
           <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>

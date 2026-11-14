@@ -449,6 +449,22 @@ All exported interfaces and component props are included in the declaration file
 - `GraphTreeLayoutOptions`: direction (LR, TB, RL, BT), nodeWidth, nodeHeight, columnGap (between depths), rowGap (between leaves), padding and roots. Leaves are spaced evenly and each parent is centred over its children. Box `rank` is the tree depth.
 - `GraphRadialLayoutOptions`: nodeWidth, nodeHeight, ringGap (default 40), padding and roots. Nodes sit on concentric rings by depth; one root is placed at the centre, several roots share the first ring. Subtrees receive angular wedges proportional to their leaf counts and ring radii are widened so boxes do not overlap. Edges are straight segments clipped to the box borders.
 
+`layoutForceGraph(nodes, edges, options)` is a deterministic force-directed `GraphLayout` producer for the same `layout` prop, for example `(n, e) => layoutForceGraph(n, e, { seed: 1 })`. Linked nodes are pulled toward `linkDistance`, every pair of nodes repels through an iterative Barnes–Hut quadtree, and a weak gravity pulls each group toward its centre while the simulation cools over `iterations` steps. Grid-based passes then push overlapping boxes apart until every pair keeps `nodeGap` of free space, spreading free nodes slightly when a region stays crowded. The same input and options always give the same output: start positions come from a seeded mulberry32 generator, never `Math.random`. About 2,000 nodes with the default 300 iterations take roughly half a second in Node.
+
+| Option | Meaning |
+| --- | --- |
+| nodeWidth, nodeHeight, padding | Box size (144 × 58) and outer margin (20). |
+| iterations | Positive integer simulation steps. Default 300. |
+| linkDistance | Preferred distance between the centres of linked nodes. Default 180. |
+| repulsion | Nonnegative many-body repulsion strength. Default 600. |
+| gravity | Pull toward the group centre in [0, 1]. Default 0.05. |
+| nodeGap | Minimum free space between boxes after the overlap passes. Default 16. |
+| seed | Integer seed for the initial placement. Default 1. |
+| initialPositions | `ReadonlyMap<string, GraphPoint>` of start positions as box top-left corners, for example the boxes of a previous layout. A node without one starts near an already placed neighbour, otherwise at a seeded point. Unknown IDs are ignored. |
+| fixed | `ReadonlySet<string>` of pinned node IDs. They keep their initial position (or their seeded start without one). Unknown IDs are ignored. |
+
+Connected components (ignoring edge direction) are laid out separately and packed in rows, so disconnected parts never overlap. Without pinned nodes the drawing is translated so its bounding box starts at `padding`. Components that contain a pinned node are simulated together in the caller's coordinate frame and the other components are packed to their right; pinned boxes are reported at exactly their given coordinates unless some node or route would start above or left of `padding`, in which case the whole drawing is shifted by the same amount. Overlaps between two pinned boxes are not resolved. Box `rank` is the breadth-first depth, ignoring edge direction, from the first node of its component in input order. Edges are straight segments clipped to the box borders with labels at their midpoints. Parallel edges between one pair (in either direction) bend to alternate sides as quadratic curves with the label at the curve midpoint, and self-loops are drawn as growing loops on the right side. An empty graph returns `2 × padding` (at least 1) for both dimensions. Unknown endpoints and duplicate IDs throw `Error` through `indexGraph`; invalid numbers, a non-integer seed and non-finite initial positions throw `RangeError`. All traversals are iterative and the arguments are never mutated.
+
 ### Graph algorithms
 
 All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs and bad ports throw `Error`) and never mutate their arguments.

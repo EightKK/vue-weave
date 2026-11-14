@@ -9,6 +9,8 @@ export * from './resourceLoad.js'
 export { countGraphCrossings } from './graphCrossings.js'
 export { layoutTreeGraph, layoutRadialGraph } from './graphLayouts.js'
 export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions } from './graphLayouts.js'
+export { layoutForceGraph } from './graphForce.js'
+export type { GraphForceLayoutOptions } from './graphForce.js'
 export { topologicalOrder, findGraphCycles, shortestGraphPath, searchGraphNodes, filterGraph } from './graphAlgorithms.js'
 export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
