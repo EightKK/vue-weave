@@ -74,9 +74,10 @@ export interface GraphCloneResult<N extends IdentifiedNode = IdentifiedNode, E e
  * Copies the nodes listed in `nodeIds` and every edge whose source and target are both among them, in input order.
  * Copies are shallow: they keep every field (ports, data, labels) and only receive new IDs from `options.createId`,
  * and copied edges point at the copied nodes. Saved positions of the source nodes are moved by `options.offset` and
- * returned under the new IDs. Duplicate IDs in `nodeIds` are ignored. Throws an Error for an invalid graph, an
- * unknown node ID, or a new ID that is empty, repeated or already used by a node (or edge) of the input, and a
- * RangeError for a non-finite offset or copied position. The input arrays and maps are not modified.
+ * returned under the new IDs, and the waypoints (`points`) of copied edges are moved by the same offset so routes keep
+ * their shape. Duplicate IDs in `nodeIds` are ignored. Throws an Error for an invalid graph, an unknown node ID, or a
+ * new ID that is empty, repeated or already used by a node (or edge) of the input, and a RangeError for a non-finite
+ * offset, copied position or copied waypoint. The input arrays, maps and waypoints are not modified.
  */
 export function cloneGraphElements<N extends IdentifiedNode, E extends GraphEdge>(
   nodes: readonly N[], edges: readonly E[], nodeIds: Iterable<string>, options: GraphCloneOptions,
@@ -114,7 +115,15 @@ export function cloneGraphElements<N extends IdentifiedNode, E extends GraphEdge
     if (from === undefined || to === undefined) continue
     const id = newId(edge.id, 'edge', usedEdges)
     edgeMap.set(edge.id, id)
-    copiedEdges.push({ ...edge, id, from, to })
+    const copy: E = { ...edge, id, from, to }
+    if (edge.points) {
+      copy.points = edge.points.map(point => {
+        const x = point.x + offset.x, y = point.y + offset.y
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new RangeError('Copied edge waypoints must be finite: ' + edge.id)
+        return { ...point, x, y }
+      })
+    }
+    copiedEdges.push(copy)
   }
   const positions = new Map<string, GraphPoint>()
   for (const [source, id] of nodeMap) {

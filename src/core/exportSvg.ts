@@ -121,7 +121,7 @@ function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme>
   const theme: Required<SvgExportTheme> = { ...defaultSvgExportTheme, tones: { ...defaultSvgExportTheme.tones } }
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined) continue
-    if (typeof value !== 'string' || !(key in defaultSvgExportTheme)) throw new Error('Invalid export theme colour: ' + key)
+    if (typeof value !== 'string' || !Object.hasOwn(defaultSvgExportTheme, key)) throw new Error('Invalid export theme colour: ' + key)
     if (value.trim()) (theme as unknown as Record<string, string>)[key] = value.trim()
   }
   for (const tone of tones) {
@@ -136,6 +136,11 @@ function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme>
     theme.tones[tone] = merged
   }
   return theme
+}
+
+/** The colours of a tone, or of blue for a missing or unknown tone (including inherited names such as `constructor`). */
+function toneColors(theme: Required<SvgExportTheme>, tone: string | undefined) {
+  return tone !== undefined && Object.hasOwn(theme.tones, tone) ? theme.tones[tone as keyof typeof theme.tones] : theme.tones.blue
 }
 
 function common(options: SvgExportOptions) {
@@ -285,7 +290,7 @@ export function renderGraphSvg(
   }
   for (const node of nodes) {
     const box = layout.boxes.get(node.id)!
-    const colors = theme.tones[node.tone ?? 'blue'] ?? theme.tones.blue
+    const colors = toneColors(theme, node.tone)
     const active = selected.has(node.id)
     const label = nodeLabel(node), detail = nodeDetail(node)
     const ink = active ? theme.onSolid : colors.ink
@@ -570,7 +575,7 @@ export function renderTimelineSvg(
     }
     for (const bar of own) {
       if (!intersectsWindow(bar, window)) continue
-      const colors = theme.tones[bar.tone ?? 'blue'] ?? theme.tones.blue
+      const colors = toneColors(theme, bar.tone)
       const solid = bar.appearance !== 'outline'
       const fill = solid ? colors.solid : colors.pale
       const stroke = bar.critical ? theme.critical : solid ? colors.solid : colors.line

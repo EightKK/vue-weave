@@ -99,7 +99,8 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
   for (const dependency of project.dependencies ?? []) {
     const from = uids.get(dependency.from), to = uids.get(dependency.to)
     if (from === undefined || to === undefined) throw new Error(`Unknown dependency end: ${dependency.from} → ${dependency.to}`)
-    const type = linkTypes[dependency.type ?? 'FS']
+    const name = dependency.type ?? 'FS'
+    const type = Object.hasOwn(linkTypes, name) ? linkTypes[name] : undefined
     if (type === undefined) throw new Error('Invalid dependency type: ' + dependency.type)
     const lag = dependency.lag ?? 0
     if (typeof lag !== 'number' || !Number.isFinite(lag)) throw new RangeError('Dependency lag must be finite')
@@ -274,7 +275,7 @@ export function timelineCsvTable(
   const tree = createTimelineRowTree(rows)
   const codes = timelineWbsCodes(rows)
   const columns = options.columns ?? (Object.keys(csvHeaders) as TimelineCsvColumn[])
-  for (const column of columns) if (!(column in csvHeaders)) throw new Error('Unknown CSV column: ' + column)
+  for (const column of columns) if (!Object.hasOwn(csvHeaders, column)) throw new Error('Unknown CSV column: ' + column)
   const format = options.formatTime ?? ((time: number) => new Date(time).toISOString())
   const byRow = new Map<string, TimelineBar[]>()
   for (const bar of bars) {
@@ -411,9 +412,9 @@ const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
  * Read a table written by `timelineCsvTable` (for example from `parseCsv`) back into rows and bars. The table needs a
  * `bar`, `start` and `end` column and a `row` or `wbs` column; `progress` is optional.
  *
- * With a WBS column, each distinct code is a row with the ID `row-<code>`, the label of its `row` cell (or the code
- * when there is none) and the row of the code without its last part as parent. A parent code that has no record of its
- * own becomes a row labelled with its code. Without a WBS column, each distinct row label is a top-level row with the
+ * With a WBS column, each distinct code is a row with the ID `row-<code>`, the label of the first of its `row` cells
+ * that is not blank (or the code when there is none) and the row of the code without its last part as parent. A
+ * parent code that has no record of its own becomes a row labelled with its code. Without a WBS column, each distinct row label is a top-level row with the
  * ID `row-1`, `row-2`, … in order of appearance. Rows are returned in tree preorder; sibling order follows the WBS
  * numbers, or the order of appearance without WBS codes. Bars get the IDs `bar-1`, `bar-2`, … in record order, the
  * label of their `bar` cell, the parsed start and end and, when the progress cell is not empty, the progress from 0
@@ -431,7 +432,7 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
   if (options.columns) {
     options.columns.forEach((column, index) => {
       if (column === undefined) return
-      if (!(column in csvHeaders)) throw new Error('Unknown CSV column: ' + column)
+      if (!Object.hasOwn(csvHeaders, column)) throw new Error('Unknown CSV column: ' + column)
       if (position.has(column)) throw new Error('Repeated CSV column: ' + column)
       position.set(column, index)
     })
@@ -475,7 +476,8 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
       }
       key = code
       const row = found.get(code)!
-      if (position.has('row') && row.label === undefined) row.label = label
+      // A blank row cell is no label, so a later record of the same code can still name the row.
+      if (position.has('row') && row.label === undefined && label.trim()) row.label = label
     } else {
       key = label
       if (!found.has(key)) found.set(key, { id: 'row-' + (found.size + 1), label })

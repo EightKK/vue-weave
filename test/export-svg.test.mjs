@@ -200,6 +200,29 @@ test('renderTimelineSvg validates options', () => {
   assert.throws(() => renderTimelineSvg(rows, bars, dependencies, { width: 0, toX: x => x, toTime: x => x }), RangeError)
 })
 
+test('renderTimelineSvg draws a milestone at the end of the exported time range', () => {
+  // The Release milestone lies at 6 h, exactly on the window end; a bar starting there would be outside.
+  const window = { start: hour, end: 6 * hour }
+  const svg = renderTimelineSvg(rows, bars, dependencies, scale, { timeRange: window })
+  assert.equal(count(svg, /<polygon /g), 1)
+  assert.match(svg, /<title>Release /)
+  const after = renderTimelineSvg(rows, [...bars, { id: 'late', rowId: 'ship', label: 'Late', start: 6 * hour, end: 7 * hour }], dependencies, scale, { timeRange: window })
+  assert.doesNotMatch(after, /<title>Late /)
+})
+
+test('SVG exports fall back to blue for inherited tone names and reject inherited theme keys', () => {
+  const layout = layoutLayeredGraph(graphNodes, graphEdges)
+  const blueGraph = renderGraphSvg(layout, graphNodes.map(node => ({ ...node, tone: 'blue' })), graphEdges)
+  const blueTimeline = renderTimelineSvg(rows, bars.map(bar => ({ ...bar, tone: 'blue' })), dependencies, scale)
+  for (const tone of ['constructor', '__proto__', 'toString', 'unknown']) {
+    assert.equal(renderGraphSvg(layout, graphNodes.map(node => ({ ...node, tone })), graphEdges), blueGraph, tone)
+    assert.equal(renderTimelineSvg(rows, bars.map(bar => ({ ...bar, tone })), dependencies, scale), blueTimeline, tone)
+  }
+  for (const key of ['toString', 'constructor', 'hasOwnProperty']) {
+    assert.throws(() => renderGraphSvg(layout, graphNodes, graphEdges, { theme: { [key]: '#123456' } }), { name: 'Error', message: 'Invalid export theme colour: ' + key })
+  }
+})
+
 test('escapeXml escapes markup characters and drops characters XML forbids', () => {
   assert.equal(escapeXml('<a href="x">&\'</a>'), '&lt;a href=&quot;x&quot;&gt;&amp;&apos;&lt;/a&gt;')
   assert.equal(escapeXml('a\u0000b\u0007c\uD800d'), 'abcd')

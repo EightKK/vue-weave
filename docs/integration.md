@@ -88,7 +88,7 @@ A palette can add nodes in two ways. Drag and drop: make the palette items `drag
 
 `drop.point` is the drop position in chart coordinates, rounded to the grid. To centre a new node on the pointer instead of placing its corner there, convert `drop.clientX` and `drop.clientY` with `toGraphPoint` and round the corner once with `snapGraphPoint`. Saved positions must stay nonnegative.
 
-The `copy-selection`, `paste-request` and `duplicate-selection` events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs and moved positions:
+The `copy-selection`, `paste-request` and `duplicate-selection` events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs, moved positions and moved edge waypoints:
 
 ```ts
 function duplicate(selection: GraphClipboardSelection) {

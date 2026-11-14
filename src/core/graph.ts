@@ -425,10 +425,10 @@ export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
  * Where an edge meets its node. A named port gives its anchor. Otherwise, when the edge has an `id` and the layout
  * has a path for it, the drawn start or end point of that path is used, with the box side closest to it. Without a
  * path the side follows `direction`. Rendering and editing handles therefore agree after nodes are moved or when a
- * custom layout chooses its own sides.
+ * custom layout chooses its own sides. Throws an Error naming the edge and the node when the node has no layout box.
  */
 export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: GraphLayoutDirection) {
-  const box = layout.boxes.get(edge[end])!
+  const box = edgeEndBox(layout.boxes, edge, edge[end])
   const port = nodes.get(edge[end])?.ports?.find(port => port.id === (end === 'from' ? edge.fromPort : edge.toPort))
   if (port) return { ...graphPortAnchor(box, port), side: port.side }
   const side: GraphPort['side'] = direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
@@ -449,6 +449,15 @@ export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string
     if (distances[candidate] < distances[nearest]) nearest = candidate
   }
   return { x: point.x, y: point.y, side: nearest }
+}
+
+// The layout box of an edge end, with a descriptive error for a node the layout does not contain.
+function edgeEndBox(boxes: ReadonlyMap<string, GraphBox>, edge: GraphConnection, nodeId: string) {
+  const box = boxes.get(nodeId)
+  if (box) return box
+  const id = (edge as Partial<GraphEdge>).id
+  const name = typeof id === 'string' ? id : `${edge.from} → ${edge.to}`
+  throw new Error(`Graph edge ${name} references a node that is not in the layout: ${nodeId}`)
 }
 
 /** Route named endpoints after the node layout and any saved positions are applied. */
@@ -500,11 +509,11 @@ export function applyGraphPositions(
   const moved = new Set<string>()
   let { width, height } = layout
   for (const [id, point] of positions) {
-    const box = boxes.get(id)
-    if (!box) continue
-    if (![point.x, point.y].every(value => Number.isFinite(value) && value >= 0)) {
+    if (![point?.x, point?.y].every(value => Number.isFinite(value) && value! >= 0)) {
       throw new RangeError('Graph positions must be finite and nonnegative: ' + id)
     }
+    const box = boxes.get(id)
+    if (!box) continue
     if (point.x === box.x && point.y === box.y) continue
     boxes.set(id, { ...box, x: point.x, y: point.y })
     moved.add(id)
@@ -559,8 +568,8 @@ function rerouteIncidentEdges(
   const edgeLabels = new Map(layout.edgeLabels)
   for (const edge of edges) {
     if (!moved.has(edge.from) && !moved.has(edge.to)) continue
-    const source = boxes.get(edge.from)!
-    const target = boxes.get(edge.to)!
+    const source = edgeEndBox(boxes, edge, edge.from)
+    const target = edgeEndBox(boxes, edge, edge.to)
     if (edge.from === edge.to) {
       const x = source.x + source.width
       const y = source.y + source.height / 2

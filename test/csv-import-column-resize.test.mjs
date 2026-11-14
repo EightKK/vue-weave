@@ -87,6 +87,32 @@ test('timelineFromCsvTable supports custom headers, column lists, labels without
   assert.deepEqual(ordered.rows.map(row => row.label), ['Two', 'Ten'])
 })
 
+test('timelineFromCsvTable treats a blank row cell as no label', () => {
+  const header = ['Row', 'WBS', 'Bar', 'Start', 'End']
+  const result = timelineFromCsvTable([
+    header,
+    ['', '1', 'a', 0, 1],
+    ['  ', '1', 'b', 1, 2],
+    ['Named', '1', 'c', 2, 3],
+    ['Later', '1', 'd', 3, 4],
+    ['', '2', 'e', 0, 1],
+    [undefined, '2.1', 'f', 0, 1],
+  ], { parseTime: Number })
+  // A later record names the row of code 1; codes without a named record take the code as label.
+  assert.deepEqual(result.rows, [
+    { id: 'row-1', label: 'Named' },
+    { id: 'row-2', label: '2' },
+    { id: 'row-2.1', label: '2.1', parentId: 'row-2' },
+  ])
+})
+
+test('timelineFromCsvTable and timelineCsvTable reject inherited property names as columns', () => {
+  for (const column of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+    assert.throws(() => timelineFromCsvTable([['a']], { parseTime, columns: [column] }), { name: 'Error', message: 'Unknown CSV column: ' + column })
+    assert.throws(() => timelineCsvTable([], [], { columns: [column] }), { name: 'Error', message: 'Unknown CSV column: ' + column })
+  }
+})
+
 test('timelineFromCsvTable names the line of invalid data', () => {
   const header = ['Row', 'WBS', 'Bar', 'Start', 'End', 'Progress']
   const read = (...records) => timelineFromCsvTable([header, ...records], { parseTime })

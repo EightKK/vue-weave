@@ -182,6 +182,15 @@ test('toMsProjectXml validates tasks, outline levels and dependencies', () => {
   assertWellFormed(toMsProjectXml({ name: 'Empty', tasks: [] }))
 })
 
+test('toMsProjectXml rejects inherited property names as dependency types', () => {
+  const task = { id: 't', name: 'T', start: 0, end: hour }
+  for (const type of ['toString', 'constructor', '__proto__', 'valueOf']) {
+    assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', type }] }), {
+      name: 'Error', message: 'Invalid dependency type: ' + type,
+    })
+  }
+})
+
 test('toICalendar writes CRLF lines, UTC times, escaped text and folds at 75 octets', () => {
   const description = 'Line one; with, commas\\and a backslash\nLine two — ' + 'é'.repeat(60) + ' 🚀'.repeat(10)
   const text = toICalendar([

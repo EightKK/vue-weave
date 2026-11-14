@@ -80,8 +80,13 @@ export function visibleRows(scrollTop: number, bodyHeight: number, rowHeight: nu
   }
 }
 
+/**
+ * Whether an interval overlaps a window. Intervals are half-open, so one that ends at `window.start` or starts at
+ * `window.end` does not overlap; a zero-duration interval (milestone) overlaps when it lies inside the closed window,
+ * so a milestone at either window edge counts.
+ */
 export function intersectsWindow(bar: TimeRange, window: TimeRange) {
-  if (bar.start === bar.end) return bar.start >= window.start && bar.start < window.end
+  if (bar.start === bar.end) return bar.start >= window.start && bar.start <= window.end
   return bar.end > window.start && bar.start < window.end
 }
 
@@ -423,7 +428,16 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
   const offset = utcOffsetMinutes * minuteMs
   // Civil fields are read with UTC getters from shifted instants.
   const civil = (time: number) => new Date(time + offset)
-  const fromCivil = (year: number, month: number, day = 1, hour = 0) => Date.UTC(year, month, day, hour) - offset
+  // setUTCFullYear keeps years 0 to 99 literal, unlike Date.UTC, and normalizes overflowing months, days and hours.
+  const fromCivil = (year: number, month: number, day = 1, hour = 0) => {
+    const date = new Date(0)
+    date.setUTCFullYear(year, month, day)
+    date.setUTCHours(hour, 0, 0, 0)
+    return date.getTime() - offset
+  }
+  const modulo = (value: number) => ((value % step) + step) % step
+  // Multi-unit bands follow a fixed grid counted from the Unix epoch (days, weeks, months) or from year 0 (years), so
+  // overlapping ranges agree on their boundaries whatever their starts.
   function first(): number {
     const date = civil(range.start)
     const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
@@ -431,11 +445,17 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
     if (unit === 'day') {
       const midnight = fromCivil(year, month, day)
       const index = Math.floor((midnight + offset) / dayMs)
-      return midnight - (((index % step) + step) % step) * dayMs
+      return midnight - modulo(index) * dayMs
     }
-    if (unit === 'week') return fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
-    if (unit === 'month') return fromCivil(year, month - month % step)
-    return fromCivil(year - ((year % step) + step) % step, 0)
+    if (unit === 'week') {
+      const weekStart = fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
+      // Week 0 is the week containing 1970-01-01, a Thursday.
+      const epochWeekStart = -((4 - weekStartsOn + 7) % 7)
+      const index = Math.round((Math.round((weekStart + offset) / dayMs) - epochWeekStart) / 7)
+      return weekStart - modulo(index) * 7 * dayMs
+    }
+    if (unit === 'month') return fromCivil(year, month - modulo((year - 1970) * 12 + month))
+    return fromCivil(year - modulo(year), 0)
   }
   function next(time: number): number {
     const date = civil(time)

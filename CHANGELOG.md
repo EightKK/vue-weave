@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+
+- `calendarBands` week and month bands with `step` > 1 follow a fixed grid counted from 1970-01-01 (respecting `utcOffsetMinutes` and `weekStartsOn`), so overlapping ranges share band boundaries and any month step is stable. Years 0 to 99 are no longer shifted to 1900 to 1999.
+- `intersectsWindow` counts a zero-duration range (milestone) at `window.end` as visible, so GanttChart now renders milestones at the end of the time axis and `renderTimelineSvg` exports milestones at the end of `timeRange`. Non-empty intervals stay half-open.
+- `graphEdgeEndpoint`, `applyGraphPositions` and `applyGraphSizes` throw a descriptive `Error` naming the edge and the missing node, instead of a `TypeError`, when an edge endpoint has no layout box.
+- `applyGraphPositions` validates positions for unknown node IDs the same way `applyGraphSizes` validates sizes, throwing `RangeError` for invalid values.
+- `cloneGraphElements` moves the waypoints (`points`) of copied edges by `offset`, along with the node positions.
+- `timelineFromCsvTable` treats a blank Row cell as no label, so the row takes a later record's label or its WBS code.
+- `renderGraphSvg` and `renderTimelineSvg` fall back to the blue tone for inherited property names such as `constructor`, and reject inherited names as theme keys.
+- `toMsProjectXml` rejects inherited property names such as `toString` as dependency types. `timelineCsvTable` and `timelineFromCsvTable` reject them as columns.
 
 ## 0.1.0 - 2026-11-14
 

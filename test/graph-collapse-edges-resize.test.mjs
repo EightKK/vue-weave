@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import {
-  applyGraphPositions, applyGraphSizes, collapseGraphGroups, graphPathEndpoints, graphPolylinePath, graphSmoothPath, layoutLayeredGraph,
+  applyGraphPositions, applyGraphSizes, collapseGraphGroups, graphEdgeEndpoint, graphPathEndpoints, graphPolylinePath, graphSmoothPath, layoutLayeredGraph,
   routeGraphEdges, routeGraphPorts,
 } from 'vue-weave/core'
 import { NetworkGraph, collapseGraphGroups as rootCollapse, routeGraphEdges as rootRoute, applyGraphSizes as rootSizes } from 'vue-weave'
@@ -254,6 +254,32 @@ test('applyGraphSizes resizes boxes, reroutes incident edges and leaves other ro
   const tall = applyGraphSizes(tb, edges, new Map([['a', { width: 300, height: 90 }]]), 'TB')
   const a = tall.boxes.get('a')
   assert.deepEqual(graphPathEndpoints(tall.paths.get('ab')).start, { x: a.x + 150, y: a.y + 90 })
+})
+
+test('position and size overlays name the edge and node when an incident edge has no layout box', () => {
+  const layout = freeze(layoutLayeredGraph(nodes, edges))
+  const stray = [...edges, { id: 'ax', from: 'a', to: 'x' }]
+  const message = 'Graph edge ax references a node that is not in the layout: x'
+  const moved = new Map([['a', { x: 500, y: 500 }]])
+  assert.throws(() => applyGraphPositions(layout, stray, moved), { name: 'Error', message })
+  assert.throws(() => applyGraphSizes(layout, stray, new Map([['a', { width: 300, height: 90 }]])), { name: 'Error', message })
+  assert.throws(() => graphEdgeEndpoint(layout, new Map(), stray.at(-1), 'to', 'LR'), { name: 'Error', message })
+  assert.throws(() => graphEdgeEndpoint(layout, new Map(), { from: 'y', to: 'a' }, 'from', 'LR'), {
+    name: 'Error', message: 'Graph edge y → a references a node that is not in the layout: y',
+  })
+})
+
+test('position and size overlays validate entries of unknown node IDs alike', () => {
+  const layout = freeze(layoutLayeredGraph(nodes, edges))
+  // Valid entries for unknown IDs are ignored by both overlays.
+  assert.equal(applyGraphPositions(layout, edges, new Map([['zz', { x: 5, y: 5 }]])), layout)
+  assert.equal(applyGraphSizes(layout, edges, new Map([['zz', { width: 5, height: 5 }]])), layout)
+  // Invalid entries throw whether or not the node exists.
+  for (const id of ['a', 'zz']) {
+    assert.throws(() => applyGraphPositions(layout, edges, new Map([[id, { x: -1, y: 5 }]])), RangeError)
+    assert.throws(() => applyGraphPositions(layout, edges, new Map([[id, { x: 5, y: Number.NaN }]])), RangeError)
+    assert.throws(() => applyGraphSizes(layout, edges, new Map([[id, { width: 0, height: 5 }]])), RangeError)
+  }
 })
 
 const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]
