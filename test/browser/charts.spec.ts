@@ -2420,3 +2420,285 @@ test('the tooltip slot follows the camera and is placed before the node in right
   await expect(tooltip).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+type Point = { x: number; y: number }
+// JSON turns -0 into 0, so the expectation adds 0 as well.
+const snapped = (point: Point, grid: number) => ({ x: Math.round(point.x / grid) * grid + 0, y: Math.round(point.y / grid) * grid + 0 })
+const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })
+const readJson = async (page: Page, name: string) => JSON.parse(await fixtureStatus(page, name).textContent() || 'null')
+async function dragBy(page: Page, target: ReturnType<Page['locator']>, dx: number, dy: number, hold?: () => Promise<void>) {
+  const box = (await target.boundingBox())!
+  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + dx, y + dy, { steps: 6 })
+  await hold?.()
+  await page.mouse.up()
+}
+
+test('snap to grid lands pointer and keyboard moves on the grid and the background follows the camera', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=4&draggable=1&snap=20&background=dots')
+  const backdrop = page.locator('.vft-network-backdrop')
+  await expect(backdrop).toHaveAttribute('aria-hidden', 'true')
+  const pattern = backdrop.locator('pattern')
+  await expect(pattern).toHaveAttribute('id', /-background$/)
+  await expect(pattern).toHaveAttribute('width', '20')
+  const fill = page.locator('.vft-network-background')
+  await expect(fill).toHaveAttribute('fill', `url(#${await pattern.getAttribute('id')})`)
+  await expect(page.locator('.vft-network')).toHaveClass(/vft-network-patterned/)
+
+  // A drag of 37 x 23 screen pixels at scale 1.15 moves N0001 from (214, 20) by about (32, 20): it lands on (240, 40).
+  expect((await readCamera(page)).scale).toBeCloseTo(1.15, 6)
+  await dragBy(page, chainNode(page, 'N0001'), 37, 23)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  expect(await readJson(page, 'Last after')).toEqual({ N0001: { x: 240, y: 40 } })
+  await expect(chainNode(page, 'N0001')).toHaveAttribute('transform', 'translate(240 40)')
+
+  // Arrow keys step to the next grid line, four lines with Shift; N0002 starts off the grid at x 408.
+  const n2 = chainNode(page, 'N0002')
+  await n2.press('ArrowRight')
+  expect(await readJson(page, 'Last after')).toEqual({ N0002: { x: 420, y: 20 } })
+  await n2.press('Shift+ArrowDown')
+  expect(await readJson(page, 'Last after')).toEqual({ N0002: { x: 420, y: 100 } })
+  await n2.press('ArrowLeft')
+  expect(await readJson(page, 'Last after')).toEqual({ N0002: { x: 400, y: 100 } })
+  // At the origin a move towards negative coordinates proposes nothing.
+  await chainNode(page, 'N0000').press('ArrowUp')
+  await chainNode(page, 'N0000').press('ArrowUp')
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('5')
+  expect(await readJson(page, 'Last after')).toEqual({ N0000: { x: 20, y: 0 } })
+
+  // The pattern is drawn in chart units: zooming out widens the cells so they stay at least 8 pixels apart.
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 13, y: 7, scale: 0.2 }))
+  await expect(pattern).toHaveAttribute('width', '40')
+  await expect(pattern.locator('circle')).toHaveAttribute('r', '5')
+  await expect(fill).toHaveAttribute('x', '-105')
+  expect(errors).toEqual([])
+})
+
+test('alignment guides snap a dragged node to its neighbours, win over the grid and show guide lines during the drag', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=4&draggable=1&guides=1&snap=50')
+  const guides = page.locator('.vft-guide')
+  // Four pixels down is within the 6-pixel threshold of the row, so the top, middle and bottom guides appear.
+  await dragBy(page, chainNode(page, 'N0001'), 30, 4, async () => {
+    await expect(guides).toHaveCount(3)
+    await expect(page.locator('.vft-guides')).toHaveAttribute('aria-hidden', 'true')
+    await expect(guides.first()).toHaveAttribute('y1', '20')
+    await expect(guides.first()).toHaveAttribute('y2', '20')
+    await expect(guides.first()).toHaveAttribute('x1', '20')
+    await expect(guides.first()).toHaveAttribute('x2', '746')
+  })
+  await expect(guides).toHaveCount(0)
+  // The guide keeps y at 20 instead of the 50-unit grid line at 0; x, without a guide, snaps to the grid.
+  expect(await readJson(page, 'Last after')).toEqual({ N0001: { x: 250, y: 20 } })
+  // Forty pixels down is outside the threshold: no guides, and the grid decides.
+  await dragBy(page, chainNode(page, 'N0001'), 0, 40, async () => {
+    await expect(chainNode(page, 'N0001')).not.toHaveAttribute('transform', 'translate(250 20)')
+    await expect(guides).toHaveCount(0)
+  })
+  expect(await readJson(page, 'Last after')).toEqual({ N0001: { x: 250, y: 50 } })
+  expect(errors).toEqual([])
+})
+
+test('auto-pan moves the camera while a node drag is held near the edge and stops on release', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=30&draggable=1&autopan=1')
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 100, scale: 1 }))
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const node = chainNode(page, 'N0002')
+  const box = (await node.boundingBox())!
+  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const edgeX = stage.x + stage.width - 10
+  const viewportEvents = Number(await fixtureStatus(page, 'Viewport events').textContent())
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(edgeX, start.y, { steps: 10 })
+  // Holding still near the right edge keeps panning towards later ranks.
+  await expect.poll(async () => (await readCamera(page)).x).toBeLessThan(-150)
+  expect(Number(await fixtureStatus(page, 'Viewport events').textContent())).toBeGreaterThan(viewportEvents + 3)
+  // The previewed node stays under the pointer while the chart moves.
+  const held = (await node.boundingBox())!
+  expect(Math.abs(held.x + held.width / 2 - edgeX)).toBeLessThan(25)
+  await page.mouse.up()
+  const released = await readCamera(page)
+  await page.waitForTimeout(200)
+  expect(await readCamera(page)).toEqual(released)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  // The proposal includes the distance the camera travelled, not only the pointer movement.
+  const moved = (await readJson(page, 'Last after')).N0002 as Point
+  expect(moved.x).toBeGreaterThan(408 + (edgeX - start.x) + 150)
+  expect(moved.x).toBeCloseTo(408 + edgeX - start.x - released.x, 0)
+  expect(errors).toEqual([])
+})
+
+test('toGraphPoint, getViewportCenter and drop events report chart coordinates', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=4&drop=1&snap=10')
+  const stageLocator = page.getByLabel('Network graph', { exact: true })
+  const stage = (await stageLocator.boundingBox())!
+  const centre = await page.evaluate(({ x, y }) => {
+    const graph = (window as any).__vw.graph()
+    return { point: graph.toGraphPoint(x, y), centre: graph.getViewportCenter() }
+  }, { x: stage.x + stage.width / 2, y: stage.y + stage.height / 2 })
+  expect(centre.point.x).toBeCloseTo(centre.centre.x, 3)
+  expect(centre.point.y).toBeCloseTo(centre.centre.y, 3)
+  const camera = await readCamera(page)
+  const at = { x: Math.round(stage.x + 123), y: Math.round(stage.y + 77) }
+  const result = await stageLocator.evaluate((svg, at) => {
+    const data = new DataTransfer()
+    data.setData('text/plain', 'operation')
+    const init = { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, dataTransfer: data }
+    const over = new DragEvent('dragover', init), drop = new DragEvent('drop', init)
+    svg.dispatchEvent(over)
+    svg.dispatchEvent(drop)
+    return { over: over.defaultPrevented, drop: drop.defaultPrevented, point: (window as any).__vw.graph().toGraphPoint(at.x, at.y) }
+  }, at)
+  expect(result).toMatchObject({ over: true, drop: true })
+  expect(result.point.x).toBeCloseTo((at.x - stage.x - camera.x) / camera.scale, 3)
+  expect(await readJson(page, 'Last drop')).toEqual({
+    point: snapped(result.point, 10), clientX: at.x, clientY: at.y, text: 'operation',
+  })
+  expect(await page.evaluate(() => {
+    try { (window as any).__vw.graph().toGraphPoint(Number.NaN, 0) } catch (error) { return (error as Error).name }
+  })).toBe('RangeError')
+
+  // Without droppable the browser keeps its default handling and nothing is reported.
+  await openNetworkFixture(page, '?nodes=4')
+  expect(await stageLocator.evaluate(svg => {
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
+    svg.dispatchEvent(over)
+    svg.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }))
+    return over.defaultPrevented
+  })).toBe(false)
+  await expect(fixtureStatus(page, 'Last drop')).toHaveText('')
+  expect(errors).toEqual([])
+})
+
+test('clipboard shortcuts propose copy, paste and duplicate with the focused or selected elements', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=4&clipboard=1&snap=10&edgeselect=1')
+  await chainNode(page, 'N0001').click()
+  await page.keyboard.press('Control+c')
+  expect(await readJson(page, 'Last copy')).toEqual({ nodeIds: ['N0001'], edgeIds: [], positions: { N0001: { x: 214, y: 20 } } })
+  // A focused node outside the selection stands alone.
+  await chainNode(page, 'N0002').focus()
+  await page.keyboard.press('Control+d')
+  expect(await readJson(page, 'Last duplicate')).toEqual({ nodeIds: ['N0002'], edgeIds: [], positions: { N0002: { x: 408, y: 20 } } })
+  // From a selected edge, the node and edge selections are copied together.
+  await page.getByRole('button', { name: 'Select edge e0', exact: true }).press('Enter')
+  await page.keyboard.press('Meta+c')
+  expect(await readJson(page, 'Last copy')).toEqual({ nodeIds: ['N0001'], edgeIds: ['e0'], positions: { N0001: { x: 214, y: 20 } } })
+
+  // Paste goes to the pointer while it is over the stage, otherwise to the centre of the viewport, on the grid.
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const pointer = { x: Math.round(stage.x + 300), y: Math.round(stage.y + 200) }
+  await page.mouse.move(pointer.x, pointer.y)
+  await page.keyboard.press('Control+v')
+  const atPointer = await page.evaluate(({ x, y }) => (window as any).__vw.graph().toGraphPoint(x, y), pointer)
+  expect(await readJson(page, 'Last paste')).toEqual({ point: snapped(atPointer, 10) })
+  await page.mouse.move(stage.x + 5, stage.y - 20)
+  await page.keyboard.press('Control+v')
+  const centre = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
+  expect(await readJson(page, 'Last paste')).toEqual({ point: snapped(centre, 10) })
+
+  // Without the prop the keys keep their default meaning and nothing is proposed.
+  await openNetworkFixture(page, '?nodes=4')
+  await chainNode(page, 'N0001').focus()
+  await page.keyboard.press('Control+c')
+  await expect(fixtureStatus(page, 'Last copy')).toHaveText('')
+  expect(errors).toEqual([])
+})
+
+test('native copy, paste and drop listeners on the component still reach its root element', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const dispatch = () => page.locator('.vft-network').evaluate(root => {
+    const stage = root.querySelector('.vft-network-stage')!
+    stage.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }))
+    stage.dispatchEvent(new ClipboardEvent('paste', { bubbles: true }))
+    stage.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }))
+  })
+  // With the new props off, and with them on, the parent's native listeners receive the events.
+  for (const search of ['?nodes=3&native=1', '?nodes=3&native=1&clipboard=1&drop=1']) {
+    await openNetworkFixture(page, search)
+    await dispatch()
+    await expect(fixtureStatus(page, 'Native events')).toHaveText('copy paste drop')
+  }
+  // The component's own proposals use other names and still arrive.
+  await expect(fixtureStatus(page, 'Last drop')).not.toHaveText('')
+  expect(errors).toEqual([])
+})
+
+test('the demo palette adds nodes by drag and drop and by keyboard on the grid, and undo removes them', async ({ page }) => {
+  const { errors, button, status, nodes } = await openGraphEditor(page)
+  await page.getByLabel('Snap to grid').check()
+  await expect(page.locator('.vft-network-background')).toHaveCount(1)
+  const stage = page.getByLabel('Network graph', { exact: true })
+  await button('Add operation').dragTo(stage, { targetPosition: { x: 400, y: 150 } })
+  await expect(status('Added Operation 1.')).toBeVisible()
+  const added = button('Operation 1 New operation')
+  const [, x, y] = (await added.getAttribute('transform'))!.match(/^translate\((\S+) (\S+)\)$/)!
+  expect(Number(x) % 20).toBe(0)
+  expect(Number(y) % 20).toBe(0)
+  // The dropped node is centred on the drop point, give or take half a grid cell.
+  const box = (await added.boundingBox())!, area = (await stage.boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (area.x + 400))).toBeLessThan(15)
+  expect(Math.abs(box.y + box.height / 2 - (area.y + 150))).toBeLessThan(15)
+  await button('Add lot').press('Enter')
+  await expect(button('Lot 1 New lot')).toBeVisible()
+  await button('Add operation').focus()
+  await page.keyboard.press('Space')
+  await expect(button('Operation 2 New operation')).toBeVisible()
+  await expect(nodes).toHaveCount(9)
+  for (let i = 0; i < 3; i++) await button('Undo').click()
+  await expect(nodes).toHaveCount(6)
+  await expect(button('Operation 1 New operation')).toHaveCount(0)
+  await button('Redo').click()
+  await expect(button('Operation 1 New operation')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('demo copy, paste and duplicate go through the edit history, and guides appear in an aligned drag', async ({ page }) => {
+  const { errors, button, status, nodes, edges } = await openGraphEditor(page)
+  const split = button('Split Operation 101'), lot = button('Lot A123-01 72 units')
+  await split.click()
+  await lot.click({ modifiers: ['Shift'] })
+  await page.keyboard.press('Control+c')
+  await expect(status('Copied 2 nodes.')).toBeVisible()
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  await page.mouse.move(stage.x + 20, stage.y + 20)
+  await page.keyboard.press('Control+v')
+  await expect(status('Pasted 2 nodes and 1 edge.')).toBeVisible()
+  await expect(nodes).toHaveCount(8)
+  await expect(edges).toHaveCount(7)
+  await expect(button('Split (copy) Operation 101')).toHaveAttribute('aria-pressed', 'true')
+  await button('Undo').click()
+  await expect(nodes).toHaveCount(6)
+  await expect(edges).toHaveCount(6)
+
+  await button('Finish Operation 102').focus()
+  await page.keyboard.press('Control+d')
+  await expect(status('Duplicated 1 node.')).toBeVisible()
+  await expect(button('Finish (copy) Operation 102')).toBeVisible()
+  await expect(nodes).toHaveCount(7)
+  await button('Undo').click()
+  await expect(nodes).toHaveCount(6)
+  await button('Redo').click()
+  await expect(button('Finish (copy) Operation 102')).toBeVisible()
+
+  // The two lots share a column, so a slightly sideways drag of one aligns with the other.
+  await page.getByLabel('Alignment guides').check()
+  await dragBy(page, lot, 3, 50, async () => {
+    await expect(page.locator('.vft-guide').first()).toBeAttached()
+  })
+  await expect(status('Moved node lot1.')).toBeVisible()
+  await expect(page.locator('.vft-guide')).toHaveCount(0)
+  expect(errors).toEqual([])
+})

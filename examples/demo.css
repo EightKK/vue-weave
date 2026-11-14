@@ -65,3 +65,10 @@ footer { padding-block: 6px; }
 .graph-menu button { border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; padding: 7px 10px; }
 .graph-menu button:hover, .graph-menu button:focus-visible { background: var(--vft-surface-hover, #edf5fa); outline: 2px solid var(--vft-accent, #245e96); outline-offset: -2px; }
 .options button:disabled { opacity: .5; cursor: default; }
+
+.graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 10px; font-size: 12px; }
+.graph-palette { display: flex; gap: 6px; }
+.palette-chip { cursor: grab; border-style: dashed; border-radius: 999px; }
+.palette-chip:active { cursor: grabbing; }
+.palette-chip:focus-visible { outline: 2px solid var(--vft-accent, #245e96); outline-offset: 2px; }
+.dark .palette-chip { background: #243e58; color: #e5edf3; border-color: #6388ad; }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
+import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
@@ -263,6 +264,100 @@ watch(menu, (value, previous) => {
   else if (!value && previous) document.removeEventListener('pointerdown', closeMenuOutside, true)
 })
 watch(graphEditing, () => closeMenu(false))
+// Snapping, the node palette and the clipboard. The graph proposes; every change below is one history entry.
+const gridSize = 20
+const snapToGrid = ref(false)
+const alignmentGuides = ref(false)
+const paletteType = 'application/x-vue-weave-node'
+const paletteItems = [{ kind: 'operation', label: 'Add operation' }, { kind: 'lot', label: 'Add lot' }] as const
+type PaletteKind = typeof paletteItems[number]['kind']
+function plural(value: number, noun: string) {
+  return value + ' ' + noun + (value === 1 ? '' : 's')
+}
+function startPaletteDrag(event: DragEvent, kind: PaletteKind) {
+  if (!event.dataTransfer) return
+  event.dataTransfer.setData(paletteType, kind)
+  event.dataTransfer.effectAllowed = 'copy'
+}
+// Centres a new 144 x 58 node on the point, on the grid when snapping, and never at negative coordinates.
+function addNode(kind: PaletteKind, center: GraphPoint) {
+  const prefix = kind === 'operation' ? 'Operation' : 'Lot'
+  let number = 1
+  while (data.value.nodes.some(node => node.id === kind + '-' + number)) number++
+  const id = kind + '-' + number
+  const node: NetworkNode = kind === 'operation'
+    ? { id, label: prefix + ' ' + number, detail: 'New operation', shape: 'rounded' }
+    : { id, label: prefix + ' ' + number, detail: 'New lot', tone: 'teal' }
+  let corner = { x: center.x - 72, y: center.y - 29 }
+  if (snapToGrid.value) corner = snapGraphPoint(corner, gridSize)
+  const nextPositions = new Map(positions.value).set(id, { x: Math.max(0, corner.x), y: Math.max(0, corner.y) })
+  history.commit({ data: { ...data.value, nodes: [...data.value.nodes, node] }, positions: nextPositions })
+  graphSelection.value = new Set([id])
+  edgeSelection.value = new Set()
+  status.value = 'Added ' + node.label + '.'
+}
+function addPaletteNode(kind: PaletteKind) {
+  const center = graph.value?.getViewportCenter()
+  if (center) addNode(kind, center)
+}
+function dropNode(drop: GraphDrop) {
+  const kind = drop.dataTransfer?.getData(paletteType)
+  // drop.point is already on the grid; the unsnapped pointer position centres the node with a single rounding.
+  if (kind === 'operation' || kind === 'lot') addNode(kind, graph.value?.toGraphPoint(drop.clientX, drop.clientY) ?? drop.point)
+}
+// New IDs for copies: the source ID with a numbered suffix that is unused in the current graph.
+function copyIds() {
+  const used = { node: new Set(data.value.nodes.map(node => node.id)), edge: new Set(data.value.edges.map(edge => edge.id)) }
+  return (id: string, kind: 'node' | 'edge') => {
+    let number = 1
+    while (used[kind].has(id + '-copy-' + number)) number++
+    used[kind].add(id + '-copy-' + number)
+    return id + '-copy-' + number
+  }
+}
+function insertCopies(result: GraphCloneResult<NetworkNode, GraphEdge>, verb: string) {
+  const copies = result.nodes.map(node => node.label.endsWith(' (copy)') ? node : { ...node, label: node.label + ' (copy)' })
+  history.commit({
+    data: { ...data.value, nodes: [...data.value.nodes, ...copies], edges: [...data.value.edges, ...result.edges] },
+    positions: new Map([...positions.value, ...result.positions]),
+  })
+  graphSelection.value = new Set(copies.map(node => node.id))
+  edgeSelection.value = new Set()
+  status.value = verb + ' ' + plural(copies.length, 'node') + (result.edges.length ? ' and ' + plural(result.edges.length, 'edge') : '') + '.'
+}
+// The copied nodes, the edges between them and their positions, kept so a paste works after the originals change.
+const clipboard = shallowRef<{ nodes: NetworkNode[]; edges: GraphEdge[]; positions: ReadonlyMap<string, GraphPoint> }>()
+function copySelection(selection: GraphClipboardSelection) {
+  const ids = new Set(selection.nodeIds)
+  if (!ids.size) {
+    status.value = 'Select nodes to copy.'
+    return
+  }
+  const nodes = data.value.nodes.filter(node => ids.has(node.id))
+  clipboard.value = { nodes, edges: data.value.edges.filter(edge => ids.has(edge.from) && ids.has(edge.to)), positions: selection.positions }
+  status.value = 'Copied ' + plural(nodes.length, 'node') + '.'
+}
+function pasteClipboard({ point }: GraphPaste) {
+  const copied = clipboard.value
+  if (!copied) {
+    status.value = 'Nothing to paste. Copy nodes with Ctrl+C first.'
+    return
+  }
+  // The top-left corner of the copied nodes lands on the paste point.
+  const corners = [...copied.positions.values()]
+  const left = Math.min(...corners.map(position => position.x)), top = Math.min(...corners.map(position => position.y))
+  const offset = { x: Math.max(point.x - left, -left), y: Math.max(point.y - top, -top) }
+  insertCopies(cloneGraphElements(copied.nodes, copied.edges, copied.nodes.map(node => node.id), { createId: copyIds(), positions: copied.positions, offset }), 'Pasted')
+}
+function duplicateSelection(selection: GraphClipboardSelection) {
+  if (!selection.nodeIds.length) {
+    status.value = 'Select nodes to duplicate.'
+    return
+  }
+  const offset = { x: 2 * gridSize, y: 2 * gridSize }
+  insertCopies(cloneGraphElements(data.value.nodes, data.value.edges, selection.nodeIds, { createId: copyIds(), positions: selection.positions, offset }), 'Duplicated')
+}
+
 function degree(id: string) {
   const edges = data.value.edges
   return edges.filter(edge => edge.to === id).length + ' in · ' + edges.filter(edge => edge.from === id).length + ' out'
@@ -325,6 +420,15 @@ function commit(change: TimelineEdit) {
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
           <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
+        <div v-if="graphEditing" class="graph-tools">
+          <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>
+          <label><input v-model="alignmentGuides" type="checkbox"> Alignment guides</label>
+          <div class="graph-palette" role="group" aria-label="Node palette">
+            <button v-for="item in paletteItems" :key="item.kind" type="button" class="palette-chip" draggable="true"
+              @dragstart="startPaletteDrag($event, item.kind)" @click="addPaletteNode(item.kind)">{{ item.label }}</button>
+          </div>
+          <span class="hint">Drag a chip onto the graph, or activate it to add a node at the centre of the view.</span>
+        </div>
         <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
           :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
           :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
@@ -332,6 +436,9 @@ function commit(change: TimelineEdit) {
           :edges-selectable="graphEditing" :selected-edge-ids="graphEditing ? edgeSelection : undefined" @update:selected-edge-ids="edgeSelection = $event"
           :deletable="graphEditing" :validate-delete="validateDelete" @delete="commitDeletion" @delete-rejected="(_deletion, reason) => status = reason"
           :context-menu="graphEditing" @context-menu="openMenu"
+          :snap-grid="graphEditing && snapToGrid ? gridSize : undefined" :background="graphEditing && snapToGrid ? 'dots' : 'none'"
+          :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @node-drop="dropNode"
+          :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
@@ -343,7 +450,7 @@ function commit(change: TimelineEdit) {
             <template v-else>{{ nodeLabel(target.edge.from) }} → {{ nodeLabel(target.edge.to) }}<template v-if="target.edge.label"> · {{ target.edge.label }}</template></template>
           </template>
         </NetworkGraph>
-        <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions.</p>
+        <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions. Ctrl+C, Ctrl+V and Ctrl+D (⌘ on macOS) copy, paste and duplicate nodes.</p>
         <div v-if="menu" ref="menuElement" class="graph-menu" role="menu" :aria-label="menu.label"
           :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeydown" @contextmenu.prevent>
           <button v-for="item in menu.items" :key="item.label" type="button" role="menuitem" tabindex="-1" @click="runMenuItem(item)">{{ item.label }}</button>
