@@ -164,7 +164,16 @@ function reset() {
 // Done work stays where it is, partly done work is split at the status date and unstarted work moves after it. The
 // next edit recalculates the plan from the requested starts again.
 function rescheduleFromStatus() {
-  const plan = rescheduleFromStatusDate(scheduleInput(model.value.tasks), statusDate.value, reported)
+  let plan: ScheduleResult
+  try {
+    plan = rescheduleFromStatusDate(scheduleInput(model.value.tasks), statusDate.value, reported)
+  } catch (error) {
+    // Reported progress that cannot fit before the status date (for example at the start of the range) throws a
+    // RangeError; the current plan stays as it is.
+    if (!(error instanceof RangeError)) throw error
+    notice.value = `The reported progress does not fit before status date ${format(statusDate.value)}. Choose a later status date.`
+    return
+  }
   if (!plan.ok) {
     notice.value = plan.code === 'cycle' ? 'A dependency cycle prevents scheduling.' : 'The status date leaves no room for ' + labels.get(plan.taskId) + '.'
     return

@@ -1011,8 +1011,12 @@ const groupToggles = computed(() => {
   for (const proxy of collapsedView.value?.proxies.values() ?? []) {
     const box = layout.value.boxes.get(proxy.id)
     if (!box || (visible.value && !visible.value.nodes.has(proxy.id))) continue
+    // A proxy has no ports, so its connection handle sits in a top corner (see handles). The toggle goes in the bottom
+    // corner at the text end; a box too short for both gets it in the top corner away from the handle.
+    const tall = box.height >= 40
+    const left = tall ? rtl.value : direction.value !== 'RL'
     toggles.push({
-      id: proxy.id, expanded: false, x: rtl.value ? box.x + 4 : box.x + box.width - 18, y: box.y + 4,
+      id: proxy.id, expanded: false, x: left ? box.x + 4 : box.x + box.width - 18, y: tall ? box.y + box.height - 18 : box.y + 4,
       label: messages.value.expandGroup + ' ' + proxy.label,
     })
   }

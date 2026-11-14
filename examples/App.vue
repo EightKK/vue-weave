@@ -28,10 +28,14 @@ const selected = ref('split')
 const direction = ref<GraphLayoutDirection>('LR')
 const crossingReduction = ref<GraphCrossingReduction>('none')
 const layoutKind = ref<'layered' | 'tree' | 'radial' | 'force'>('layered')
+// The force simulation runs synchronously on the main thread and takes about a second for the 3,750-node large graph,
+// so the demo offers it for smaller graphs only and falls back to the layered layout.
+const forceNodeLimit = 1000
+const forceAvailable = computed(() => data.value.nodes.length <= forceNodeLimit)
 const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
   ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
   : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e)
-    : layoutKind.value === 'force' ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
+    : layoutKind.value === 'force' && forceAvailable.value ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
 const dark = ref(false)
 const builtInTheme = ref<'' | 'vft-theme-dark' | 'vft-theme-auto'>('')
 const custom = ref(false)
@@ -110,6 +114,11 @@ const status = ref('Select a node or a bar. Edit a planned interval to try the c
 const timeline = ref<InstanceType<typeof GanttChart>>()
 const selectedBars = computed(() => new Set(data.value.bars.filter(bar => (bar.data ?? bar.id) === selected.value).map(bar => bar.id)))
 
+watch(forceAvailable, available => {
+  if (available || layoutKind.value !== 'force') return
+  layoutKind.value = 'layered'
+  status.value = `The force layout is offered for up to ${forceNodeLimit.toLocaleString('en-US')} nodes; switched to the layered layout.`
+})
 function reset() {
   const example = makeExample(preset.value)
   history.reset({ data: example, positions: new Map(), sizes: new Map(), collapsed: new Set() })
@@ -472,15 +481,16 @@ function commit(change: TimelineEdit) {
           :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
         <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
         <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
-        <button v-if="preset !== 'scheduling'" type="button" :disabled="!canUndo" @click="undo">Undo</button>
-        <button v-if="preset !== 'scheduling'" type="button" :disabled="!canRedo" @click="redo">Redo</button>
+        <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
+        <button v-if="preset !== 'scheduling' && preset !== 'editing'" type="button" :disabled="!canUndo" @click="undo">Undo</button>
+        <button v-if="preset !== 'scheduling' && preset !== 'editing'" type="button" :disabled="!canRedo" @click="redo">Redo</button>
       </nav>
       <SchedulingDemo v-if="preset === 'scheduling'" />
       <GanttEditingDemo v-else-if="preset === 'editing'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option>force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option :disabled="!forceAvailable">force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
         <div v-if="graphEditing" class="graph-tools">
           <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>
