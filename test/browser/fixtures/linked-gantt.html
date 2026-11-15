@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Linked Gantt regression fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/linked-gantt-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/linked-gantt-test/vue.js", "vue-weave": "/linked-gantt-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { GanttChart } from 'vue-weave'
+
+      // GanttChart opt-in props for linked views and typed editing: highlightedBarIds, loadSelectable, droppable,
+      // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel
+      // and revealBar. The parent applies nothing unless a test asks for it, so every event payload stays visible.
+      const query = new URLSearchParams(location.search)
+      const rows = shallowRef([
+        { id: 'r1', label: 'Row 1', data: { effort: 3 } },
+        { id: 'r2', label: 'Row 2', data: { effort: null } },
+        { id: 'P', label: 'Parent', data: { effort: 1 } },
+        { id: 'c1', label: 'Child', parentId: 'P', data: { effort: 1 } },
+        ...[3, 4, 5, 6, 7].map(n => ({ id: 'r' + n, label: 'Row ' + n, data: { effort: n } })),
+        { id: 'last', label: 'Last row', data: { effort: 9 } },
+      ])
+      const bars = shallowRef([
+        { id: 'a', rowId: 'r1', label: 'Task A', start: 2, end: 6, editable: true },
+        { id: 'b', rowId: 'r2', label: 'Task B', start: 8, end: 12, editable: true },
+        { id: 'hid', rowId: 'c1', label: 'Hidden task', start: 4, end: 8, editable: true },
+        { id: 'far', rowId: 'last', label: 'Far task', start: 180, end: 186, editable: true },
+      ])
+      const selected = ref(new Set(['a']))
+      const highlighted = shallowRef(new Set(['b']))
+      const outputs = ref({})
+      const counts = ref({})
+      const chart = ref()
+      const record = (name, value) => {
+        outputs.value = { ...outputs.value, [name]: JSON.stringify(value) }
+        counts.value = { ...counts.value, [name]: (counts.value[name] ?? 0) + 1 }
+      }
+      const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value ?? ''))
+      const effort = {
+        id: 'effort', label: 'Effort', width: 90, value: row => row.data.effort ?? '', editable: true,
+        field: { id: 'effort', kind: 'number', get: row => row.data.effort, min: 0 },
+      }
+      // Stable props: a new collapsed set or column list would cancel gestures, as new source data does.
+      const collapsedIds = new Set(['P'])
+      const columns = [effort]
+      const dependencies = [{ id: 'ab', from: 'a', to: 'b' }]
+      const loadRows = [{ id: 'dev', label: 'Developers' }]
+      const loadSegments = [{ resourceId: 'dev', start: 2, end: 6, load: 2, capacity: 1 }, { resourceId: 'dev', start: 6, end: 12, load: 1, capacity: 1 }]
+      const reveal = async (id, options) => record('Reveal result', await chart.value.revealBar(id, options))
+      // Tests call these between pointer events to change props during a gesture.
+      window.linkedFixture = {
+        replaceBars: () => { bars.value = bars.value.map(bar => ({ ...bar })) },
+        replaceRows: () => { rows.value = rows.value.map(row => ({ ...row })) },
+        highlight: ids => { highlighted.value = new Set(ids) },
+      }
+      const editor = props => [
+        h('input', {
+          'aria-label': 'Effort editor', value: String(props.draft ?? ''), 'aria-invalid': props.validation.ok ? undefined : 'true',
+          onKeydown: event => { if (event.key === 'Enter') props.commitText(event.target.value, 'keyboard') },
+        }),
+        props.error ? h('span', { role: 'alert' }, props.error) : null,
+      ]
+
+      createApp({
+        render: () => h('main', [
+          ...['Last edit', 'Last delete', 'Last target enter', 'Last target leave', 'Last target activate', 'Last drop', 'Last field edit',
+            'Last cancel', 'Reveal result'].map(name => output(name, outputs.value[name])),
+          output('Field edits', counts.value['Last field edit'] ?? 0),
+          output('Cancels', counts.value['Last cancel'] ?? 0),
+          output('Edits', (counts.value['Last edit'] ?? 0)),
+          h('button', { type: 'button', onClick: () => reveal('far', { focus: true }) }, 'Reveal far task'),
+          h('button', { type: 'button', onClick: () => reveal('hid') }, 'Reveal hidden task'),
+          h('button', { type: 'button', onClick: () => reveal('nope') }, 'Reveal unknown task'),
+          h('button', { type: 'button', onClick: () => window.linkedFixture.replaceRows() }, 'Replace rows'),
+          h(GanttChart, {
+            ref: chart, rows: rows.value, bars: bars.value, dependencies,
+            range: { start: 0, end: 200 }, tickSteps: [5], pixelsPerUnit: 20, snap: 1, formatTime: String, height: 300,
+            autoScroll: false, collapsedIds, columns,
+            selectedIds: selected.value, multiSelect: true, deletable: true, connectable: true,
+            highlightedBarIds: highlighted.value, loadSelectable: true, droppable: true,
+            loadRows, loadSegments,
+            labels: { region: 'Linked timeline' },
+            validateFieldEdit: change => change.after === 13 ? 'Thirteen is not allowed' : true,
+            'onUpdate:selectedIds': ids => { selected.value = ids },
+            onEdit: change => record('Last edit', change),
+            onEdits: changes => record('Last edit', changes),
+            onBarsDelete: ids => record('Last delete', ids),
+            onTargetEnter: event => record('Last target enter', event),
+            onTargetLeave: event => record('Last target leave', event),
+            onTargetActivate: event => record('Last target activate', event),
+            onBarDrop: event => record('Last drop', { time: event.time, rowId: event.rowId, text: event.dataTransfer?.getData('text/plain') }),
+            onFieldEdit: change => record('Last field edit', change),
+            onEditCancel: event => record('Last cancel', event),
+          }, query.has('builtin') ? undefined : { 'cell-editor': editor }),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

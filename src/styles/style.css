@@ -425,3 +425,24 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-network, .vw-gantt-row, .vw-gantt-load-row { break-inside: avoid; page-break-inside: avoid; }
   .vw-gantt-head { break-after: avoid; page-break-after: avoid; }
 }
+
+/* GanttChart linked views and typed cells: display-only bar highlights (`highlightedBarIds`), selectable load segments
+   (`loadSelectable`) and field cells (`TimelineColumn.field`). Outlines use logical properties, so they need no RTL rules. */
+.vw-gantt-bar.vw-is-highlighted { outline: 2px solid var(--vw-bar-highlight, var(--vw-dependency-highlight, #a74f08)); outline-offset: 2px; }
+.vw-gantt-bar.vw-is-highlighted.vw-is-selected { outline-offset: 4px; }
+.vw-gantt-load-segment.vw-is-selectable { cursor: pointer; }
+.vw-gantt-load-segment.vw-is-selectable:hover { filter: brightness(.94); }
+.vw-gantt-load-segment.vw-is-selectable:focus-visible { z-index: 3; outline: 2px solid var(--vw-load-focus, var(--vw-accent, #245e96)); outline-offset: 1px; }
+.vw-field-cell { width: 100%; min-width: 0; padding: 4px; color: inherit; font: inherit; text-align: start; background: transparent; border: 1px solid transparent; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+.vw-field-cell:hover { border-color: var(--vw-border, #d8e2e9); }
+.vw-field-cell:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -1px; }
+.vw-field-editor { width: 100%; min-width: 0; }
+.vw-cell-input[aria-invalid="true"] { border-color: var(--vw-field-invalid, #c4161c); }
+@media (forced-colors: active) {
+  .vw-gantt-bar.vw-is-highlighted { outline: 3px dashed CanvasText; outline-offset: 2px; }
+  .vw-gantt-bar.vw-is-highlighted.vw-is-selected, .vw-gantt-bar.vw-is-highlighted:focus-visible { outline: 3px solid Highlight; }
+  .vw-gantt-load-segment.vw-is-selectable:focus-visible { outline: 3px solid Highlight; }
+  .vw-field-cell { border-color: CanvasText; }
+  .vw-field-cell:focus-visible { outline-color: Highlight; }
+  .vw-cell-input[aria-invalid="true"] { border: 2px dashed CanvasText; }
+}

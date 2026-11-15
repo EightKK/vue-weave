@@ -176,6 +176,21 @@ export interface TimelineCellEdit {
   after: string
 }
 
+/** Why GanttChart cancelled an in-flight edit (`edit-cancel`). */
+export type TimelineEditCancelReason = 'escape' | 'source-changed' | 'api' | 'pointer-cancel' | 'hidden'
+
+/**
+ * Payload of the GanttChart `edit-cancel` event. It is emitted only when an edit was in flight: a pointer gesture
+ * (move, resize, progress, constraint, connection, create, row or column drag), an armed connection or an open
+ * `cell-editor`. `barIds` lists the bars of the gesture (empty for a create, row, column or cell edit); `cell` names
+ * the cell of a cancelled `cell-editor`.
+ */
+export interface TimelineEditCancel {
+  reason: TimelineEditCancelReason
+  barIds: readonly string[]
+  cell?: { rowId: string; columnId: string }
+}
+
 export interface TimelineBand extends TimeRange {
   label: string
 }

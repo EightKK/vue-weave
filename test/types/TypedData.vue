@@ -12,6 +12,7 @@ import {
   type TimelineRowMove,
   applyTimelineConstraintEdit, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit, type TimelineConstraintKind,
   type TimelineConstraints, type MsProjectTask,
+  type FieldValue, type RevealResult, type TimelineDrop, type TimelineEditCancel, type TimelineFieldEdit, type ViewTargetEvent,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -85,6 +86,16 @@ const creatable = (row: TeamRow) => team(row.data) === 'Core'
 const columns: TimelineColumn<TeamRow>[] = [
   { id: 'team', label: 'Team', width: 80, value: (row, summary) => (team(row.data) ?? '') + (summary?.count ?? ''), editable: row => row.data !== undefined },
 ]
+// Typed field columns: the field reads the application's row type.
+const fieldColumns: TimelineColumn<TeamRow>[] = [{
+  id: 'team', label: 'Team', width: 80, value: row => team(row.data) ?? '', editable: true,
+  field: { id: 'team', kind: 'text', get: row => team(row.data) ?? null },
+}]
+const validateFieldEdit = (change: TimelineFieldEdit<TeamRow>) => change.after !== null
+function fieldEdit(change: TimelineFieldEdit<TeamRow>): FieldValue { return change.after }
+function targetEvent(event: ViewTargetEvent) { return event.target.view === 'load' ? event.target.resourceId : event.target.id }
+function drop(event: TimelineDrop) { return event.dataTransfer?.getData('text/plain') ?? event.rowId }
+function editCancel(event: TimelineEditCancel) { return event.reason + event.barIds.join() + (event.cell?.columnId ?? '') }
 // @ts-expect-error A column of other rows does not fit these rows.
 const wrongColumns: TimelineColumn<TimelineRow<Cost>>[] = columns
 
@@ -104,6 +115,10 @@ function useRefs() {
   typedGraph.value?.focusNode('a')
   typedChart.value?.exportSvg({ barLabel: bar => String(cost(bar.data)) })
   void typedChart.value?.fitToBars(['b'])
+  const revealed: Promise<RevealResult> | undefined = typedChart.value?.revealBar('b', { focus: true })
+  void revealed?.then(result => result.status === 'hidden-by-collapse' ? result.proxyId : result.status)
+  // @ts-expect-error revealBar takes a bar ID.
+  void chart.value?.revealBar(1)
   graphInstance.value?.zoom(2)
   void graphInstance.value?.$el
   chartInstance.value?.cancelEdit()
@@ -208,6 +223,20 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   </GanttChart>
   <!-- @vue-expect-error A constraint validator receives constraint edits, not bar edits. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :validate-constraint-edit="validateEdit" />
+
+  <GanttChart :rows="rows" :bars="bars" :range="range" :columns="fieldColumns" :highlighted-bar-ids="new Set(['b'])" load-selectable droppable
+    :validate-field-edit="validateFieldEdit" @field-edit="fieldEdit" @field-edit-rejected="(change, text) => fieldEdit(change) + reason(text)"
+    @target-enter="targetEvent" @target-leave="targetEvent" @target-activate="targetEvent" @bar-drop="drop" @edit-cancel="editCancel">
+    <template #cell-editor="{ row, column, field, value, draft, error, validation, commit, commitText, cancel }">
+      <input :value="String(draft ?? '')" :aria-label="column.label + team(row.data) + field.id + String(value)"
+        :aria-invalid="!validation.ok" :title="error" @change="commitText(($event.target as HTMLInputElement).value)"
+        @keydown.enter="commit(team(row.data) ?? null, 'keyboard')" @keydown.esc="cancel()">
+      <!-- @vue-expect-error The row data is not `any`. -->
+      {{ row.data?.missing }}
+    </template>
+  </GanttChart>
+  <!-- @vue-expect-error A field validator receives field edits, not bar edits. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :validate-field-edit="validateEdit" />
 
   <!-- @vue-expect-error Baseline set IDs are strings. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :baseline-ids="[1, 2]" />

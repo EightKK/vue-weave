@@ -53,7 +53,7 @@ export type GanttChartComponent = (new <R extends TimelineRow = TimelineRow, B e
 
 export const NetworkGraph = NetworkGraphVue as unknown as NetworkGraphComponent
 export const GanttChart = GanttChartVue as unknown as GanttChartComponent
-export type { GraphDrop } from './components/types.js'
+export type { GraphDrop, TimelineDrop } from './components/types.js'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
