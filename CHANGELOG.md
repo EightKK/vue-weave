@@ -5,6 +5,8 @@
 ### Added
 
 - `EntityRef`, `ViewTarget` and `ViewBinding` types for linking graph, timeline and load views.
+- `serializeWeaveSnapshot`, `parseWeaveSnapshot` and `restoreWeaveSnapshot` in `vue-weave/core`: a versioned JSON snapshot (`WeaveSnapshotV1`) for graph, timeline and planning data and the saved view, with validation, migrations passed as options, codecs for non-JSON data and registries for layouts and columns.
+- `WeaveSnapshotError`, `SnapshotCodec`, `SnapshotDiagnostic` and the snapshot input, stored and restored types.
 
 ## 0.2.0 - 2026-11-15
 

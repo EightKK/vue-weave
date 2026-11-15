@@ -980,3 +980,34 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Versioned JSON snapshots
+
+`vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
+
+| Function | Contract |
+| --- | --- |
+| `serializeWeaveSnapshot(input, options?)` | Converts a `WeaveSnapshotInput` (Maps and Sets) to the stored form, validates it and returns JSON text. Throws `WeaveSnapshotError` (with `diagnostics`) for anything that cannot be stored. |
+| `parseWeaveSnapshot(text, options?)` | Checks JSON syntax, version, structure and references and returns `{ ok: true, snapshot, diagnostics }` or `{ ok: false, diagnostics }`. `options.migrations` maps an old `schemaVersion` to a function that returns the next document. Never throws for bad input. |
+| `restoreWeaveSnapshot(snapshot, registry?)` | Builds live values (Maps, Sets, decoded data, resolved layouts and columns). All or nothing: on any error there is no `snapshot` in the result. |
+
+`WeaveSnapshotV1` is a union on `kind`:
+
+| `kind` | `data` | `view` |
+| --- | --- | --- |
+| `'graph'` | `nodes`, `edges`, optional `groups`, `positions` and `sizes` (as `[id, value]` entries) | `view.graph`: `camera` (`{ center, scale }` in graph coordinates, independent of the container size), `collapsedGroupIds`, `layout` (`{ id, options }`) |
+| `'timeline'` | `rows`, `bars`, optional `dependencies`, `range`, `timeUnit` (`{ id, origin? }`; omitted means epoch milliseconds) | `view.timeline` |
+| `'planning'` | The input of `levelResources` (`range`, `quantum`, `calendars`, `tasks`, `dependencies`, `resources`, `assignments`, ...), plus optional `placements` and `display` | `view.timeline` |
+
+`view.timeline` holds `window`, `scroll` (`{ time, rowId }`), `zoom` (`{ zoom, preset }`), `columns` (`id`, `registryId`, `visible`, `width`, `editorId`, `rendererId`, in display order), `search`, `sort` (`columnId`, `direction`, `comparatorId`) and `collapsedRowIds`. Functions are never stored: columns, comparators, layouts, editors and renderers are stored by name and resolved from the `registry` on restore. `extensions` holds your own JSON under names you choose. `metadata` takes `title`, `savedAt` and `sourceVersion`; `savedAt` is only what you pass, so fixed metadata gives identical text for identical input. `sourceVersion` is a reference to where the snapshot came from and is not the current version of any server.
+
+Rules the functions enforce:
+
+- NaN, Infinity, functions, symbols, class instances and other non-JSON values fail instead of being dropped or turned into `null`. Application data that is not JSON (Date, BigInt, Map) needs a `SnapshotCodec` (`{ id, version?, matches, encode, decode }`), stored as `{ "$codec", "version", "value" }`. The key `$codec` is reserved. A codec that is missing on restore fails the restore.
+- Map entries and Set members are checked before a Map or Set is built: a repeated node ID in `positions` or `sizes` is an error, not a last-one-wins merge. Entries must name existing nodes.
+- IDs must be unique per collection. Edges, ports, group members, parent rows, dependency endpoints, assignments and saved-view IDs must refer to existing items. Assignments have no ID; the pair `(taskId, resourceId)` must be unique. Use business task IDs, never the IDs of projected rows.
+- Planning input is validated by the same rules as `scheduleTasks`. A dependency cycle or an infeasible plan is not invalid JSON: it is returned as a `schedule-cycle` or `schedule-infeasible` warning, and `restored.schedule` is that result.
+- Unknown fields in the document, `data` and `view` objects are errors; put your own data in `extensions`. Unknown versions fail. Only `schemaVersion` 1 exists; migrations are for your own older documents.
+- `registry.onMissing: 'fallback'` turns a missing layout, column, editor, renderer or comparator from an error into a warning and uses the default display. The default is `'fail'`.
+
+`parseWeaveSnapshot` and `restoreWeaveSnapshot` report `SnapshotDiagnostic` items (`severity`, `code`, `path`, `message`). The graph and timeline types of the restored value are the ordinary `NetworkNode`, `GraphEdge`, `NetworkGroup`, `TimelineRow`, `TimelineBar` and `TimelineDependency`.

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "graph",
+  "libraryVersion": "0.0.0-fixture",
+  "metadata": {
+    "title": "Order flow",
+    "savedAt": "2026-01-02T03:04:05.000Z",
+    "sourceVersion": "rev-17"
+  },
+  "data": {
+    "nodes": [
+      {
+        "id": "n3",
+        "label": "Ship",
+        "data": { "owner": "ops", "due": { "$codec": "date", "version": 1, "value": "2026-02-01T00:00:00.000Z" } }
+      },
+      {
+        "id": "n1",
+        "label": "Order",
+        "ports": [
+          { "id": "in", "side": "left", "direction": "target" },
+          { "id": "out", "side": "right", "direction": "source", "offset": 0.25 }
+        ]
+      },
+      {
+        "id": "n2",
+        "label": "Pay",
+        "ports": [{ "id": "in", "side": "left", "direction": "target" }]
+      }
+    ],
+    "edges": [
+      { "id": "e2", "from": "n2", "to": "n3", "label": "paid" },
+      { "id": "e1", "from": "n1", "to": "n2", "fromPort": "out", "toPort": "in", "points": [{ "x": 150, "y": 20 }, { "x": 150, "y": 60 }] },
+      { "id": "e3", "from": "n3", "to": "n1" }
+    ],
+    "groups": [
+      { "id": "g1", "label": "Front", "nodeIds": ["n1", "n2"] },
+      { "id": "g2", "label": "Back", "nodeIds": ["n3"], "parentId": "g1" }
+    ],
+    "positions": [
+      ["n3", { "x": 300, "y": 40 }],
+      ["n1", { "x": 0, "y": 0 }]
+    ],
+    "sizes": [["n2", { "width": 180, "height": 64 }]]
+  },
+  "view": {
+    "graph": {
+      "camera": { "center": { "x": 120, "y": 80 }, "scale": 1.5 },
+      "collapsedGroupIds": ["g2"],
+      "layout": { "id": "layered", "options": { "direction": "LR", "spacing": 40 } }
+    }
+  },
+  "extensions": { "acme.notes": { "pinned": ["n1"] } }
+}

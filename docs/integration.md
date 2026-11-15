@@ -423,3 +423,31 @@ The timeline then runs from right to left and its row headings sit on the right.
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
 The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+
+## Saving and restoring a view
+
+Use a snapshot to persist a chart's data and saved view as JSON (see "Versioned JSON snapshots" in [api.md](api.md)).
+
+```ts
+import { parseWeaveSnapshot, restoreWeaveSnapshot, serializeWeaveSnapshot } from 'vue-weave/core'
+
+// Save. Pass savedAt yourself; the same input and metadata give the same text.
+const text = serializeWeaveSnapshot({
+  kind: 'graph',
+  metadata: { title: 'Order flow', savedAt: new Date().toISOString() },
+  data: { nodes, edges, groups, positions, sizes }, // positions and sizes are Maps
+  view: { graph: { camera: { center, scale }, collapsedGroupIds } },
+}, { codecs: [dateCodec], space: 2 })
+
+// Restore. Nothing is applied until the whole snapshot is valid.
+const parsed = parseWeaveSnapshot(text)
+if (!parsed.ok) return showErrors(parsed.diagnostics)
+const restored = restoreWeaveSnapshot(parsed.snapshot, { codecs: [dateCodec], layouts })
+if (!restored.ok) return showErrors(restored.diagnostics) // the screen is unchanged
+```
+
+The restore procedure for a graph is: accept the restored `nodes`, `edges`, `groups`, `positions`, `sizes` and `view.collapsedGroupIds` into your state (`positions` and `sizes` are `Map` props, `collapsedGroupIds` is a `Set`), wait for the update with `nextTick`, then restore the camera. Replacing every node makes the chart fit itself to the new content, so a camera set earlier would be overwritten. In short: update nodes, `await nextTick()`, restore camera.
+
+The camera is stored as the graph point at the viewport center plus the scale, so the same snapshot looks the same in a container of any size. `NetworkGraph` already exposes `getViewportCenter()` and `getViewport().scale` to read them; a method to set the camera from a center and scale is added by a later change, so until it is available, apply `view.camera` with your own camera code.
+
+For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (or `restored.input` and `restored.schedule`) to your state first, then apply `view.window`, `view.collapsedRowIds` and the resolved `view.columns`. Reading a file never saves to a server by itself. To apply it to server data, fetch the server's current version and save the restored data as one change; `metadata.sourceVersion` is not that version.
