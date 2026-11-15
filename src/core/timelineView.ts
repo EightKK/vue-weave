@@ -1,4 +1,5 @@
 import { createTimelineRowTree, summarizeTimelineRows, validateTimelineData } from './timeline.js'
+import { timelineWbsCodes } from './rowHierarchy.js'
 import type { TimeRange } from './timeline.js'
 import type { TimelineBar, TimelineColumn, TimelineDependency, TimelineRow } from './types.js'
 
@@ -91,20 +92,6 @@ export interface TimelineViewProjection<R extends TimelineRow = TimelineRow, B e
   window?: TimeRange
   zoom?: string
   diagnostics: TimelineViewDiagnostic[]
-}
-
-/** WBS codes such as `1`, `1.2`, derived from the row order and hierarchy of `rows`. Iterative. */
-export function timelineWbsCodes(rows: readonly TimelineRow[]): Map<string, string> {
-  const tree = createTimelineRowTree(rows)
-  const counters = new Map<string | undefined, number>()
-  const codes = new Map<string, string>()
-  // The tree is a stable preorder, so parents are coded before children and siblings keep the array order.
-  for (const { row } of tree) {
-    const count = (counters.get(row.parentId) ?? 0) + 1
-    counters.set(row.parentId, count)
-    codes.set(row.id, row.parentId === undefined ? String(count) : codes.get(row.parentId)! + '.' + count)
-  }
-  return codes
 }
 
 /** A view that shows every column in declared order with no search, sort or collapsed rows. */

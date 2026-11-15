@@ -1,4 +1,5 @@
 import type { TimeRange } from './timeline.js'
+import { zonedInstant, zoneFormat, zoneOffset } from './timeZone.js'
 
 export interface WorkCalendar {
   id: string
@@ -17,11 +18,19 @@ export interface WeeklyShift extends WorkShift {
 export interface WorkWeek {
   weekly: readonly WeeklyShift[]
   utcOffsetMinutes?: number
+  /**
+   * IANA time zone such as `Europe/Berlin`. Shift minutes are then local wall-clock times,
+   * resolved with daylight-saving rules. Cannot be combined with `utcOffsetMinutes`.
+   */
+  timeZone?: string
   exceptions?: Readonly<Record<string, readonly WorkShift[]>>
 }
 
 const minuteMs = 60_000
 const dayMs = 1440 * minuteMs
+
+/** The largest fixed UTC offset, in minutes, accepted by `buildWorkPeriods`, `calendarBands` and `toMsProjectXml`. */
+export const maxUtcOffsetMinutes = 18 * 60
 
 export function assertScheduleRange(range: TimeRange) {
   if (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.end <= range.start
@@ -31,10 +40,21 @@ export function assertScheduleRange(range: TimeRange) {
 /** Clip, sort and unite half-open working periods without modifying the inputs. */
 export function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeRange): TimeRange[] {
   assertScheduleRange(range)
+  return mergePeriods(periods, range, true)
+}
+
+/**
+ * Clip, sort and unite periods. Scheduling and resource load count whole units, so they need safe integers;
+ * `invertWorkPeriods` only compares endpoints and accepts any finite numbers.
+ */
+function mergePeriods(periods: readonly TimeRange[], range: TimeRange, integers: boolean): TimeRange[] {
+  const valid = integers ? Number.isSafeInteger : Number.isFinite
   const clipped: TimeRange[] = []
   for (const period of periods) {
-    if (!Number.isSafeInteger(period.start) || !Number.isSafeInteger(period.end) || period.end <= period.start) {
-      throw new RangeError('Working periods must have finite integer endpoints and positive length')
+    if (!valid(period.start) || !valid(period.end) || period.end <= period.start) {
+      throw new RangeError(integers
+        ? 'Working periods must have finite integer endpoints and positive length'
+        : 'Working periods must have finite endpoints and positive length')
     }
     const start = Math.max(period.start, range.start), end = Math.min(period.end, range.end)
     if (start < end) clipped.push({ start, end })
@@ -49,6 +69,25 @@ export function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeR
   return merged
 }
 
+/**
+ * The sorted half-open gaps between working periods inside `range`, for example the non-working time to shade on a
+ * chart. The periods are clipped, sorted and merged first, so they may be unsorted, overlapping or touching. Unlike
+ * `normalizeWorkPeriods`, endpoints only need to be finite, so any numeric unit works, including fractions.
+ */
+export function invertWorkPeriods(periods: readonly TimeRange[], range: TimeRange): TimeRange[] {
+  if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) {
+    throw new RangeError('The range must have finite endpoints and positive length')
+  }
+  const gaps: TimeRange[] = []
+  let cursor = range.start
+  for (const period of mergePeriods(periods, range, false)) {
+    if (period.start > cursor) gaps.push({ start: cursor, end: period.start })
+    cursor = period.end
+  }
+  if (cursor < range.end) gaps.push({ start: cursor, end: range.end })
+  return gaps
+}
+
 function checkShift(shift: WorkShift) {
   const { startMinute, endMinute } = shift
   if (![startMinute, endMinute].every(Number.isInteger) || startMinute < 0 || startMinute >= 1440
@@ -57,14 +96,33 @@ function checkShift(shift: WorkShift) {
   }
 }
 
-/** Build epoch-millisecond periods for a weekly calendar in a fixed UTC offset. */
+/**
+ * Build epoch-millisecond periods for a weekly calendar in a fixed UTC offset or an IANA time zone.
+ * With `timeZone`, shift minutes are local wall-clock times: a shift that crosses a daylight-saving
+ * transition gains or loses the difference.
+ */
 export function buildWorkPeriods(range: TimeRange, week: WorkWeek): TimeRange[] {
   assertScheduleRange(range)
+  if (week.timeZone !== undefined && week.utcOffsetMinutes !== undefined) {
+    throw new Error('Specify either timeZone or utcOffsetMinutes, not both')
+  }
+  const format = week.timeZone === undefined ? undefined : zoneFormat(week.timeZone)
   const offset = week.utcOffsetMinutes ?? 0
-  if (!Number.isInteger(offset) || Math.abs(offset) > 840) throw new RangeError('Invalid fixed UTC offset')
+  if (!Number.isInteger(offset) || Math.abs(offset) > maxUtcOffsetMinutes) {
+    throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
+  }
   const offsetMs = offset * minuteMs
-  const firstDay = Math.floor((range.start + offsetMs) / dayMs) * dayMs
-  const lastDay = Math.floor((range.end - 1 + offsetMs) / dayMs) * dayMs
+  // Civil dates are handled as UTC midnights of the local calendar date.
+  const localDay = (instant: number) => {
+    const shift = format ? zoneOffset(format, instant) : offsetMs
+    return Math.floor((instant + shift) / dayMs) * dayMs
+  }
+  const toInstant = (wall: number) => format ? zonedInstant(format, wall) : wall - offsetMs
+  if (format && (!Number.isFinite(new Date(range.start - 2 * dayMs).getTime()) || !Number.isFinite(new Date(range.end + 2 * dayMs).getTime()))) {
+    throw new RangeError('Calendar horizon must be within 3,661 civil dates')
+  }
+  const firstDay = localDay(range.start)
+  const lastDay = localDay(range.end - 1)
   // Bound civil-date generation. Explicit periods have no such day count limit.
   if (!Number.isFinite(new Date(firstDay - dayMs).getTime()) || !Number.isFinite(new Date(lastDay + dayMs).getTime())
     || lastDay - firstDay > 3660 * dayMs) throw new RangeError('Calendar horizon must be within 3,661 civil dates')
@@ -89,15 +147,18 @@ export function buildWorkPeriods(range: TimeRange, week: WorkWeek): TimeRange[] 
   }
 
   const periods: TimeRange[] = []
+  const push = (start: number, end: number) => {
+    if (start < end) periods.push({ start, end })
+  }
   for (let day = firstDay; day <= lastDay; day += dayMs) {
-    const midnight = day - offsetMs
+    const midnight = toInstant(day), nextMidnight = toInstant(day + dayMs)
     for (const shift of shiftsOn(day)) {
-      periods.push({ start: midnight + shift.startMinute * minuteMs, end: midnight + Math.min(1440, shift.endMinute) * minuteMs })
+      push(toInstant(day + shift.startMinute * minuteMs), shift.endMinute >= 1440 ? nextMidnight : toInstant(day + shift.endMinute * minuteMs))
     }
     // An override owns its whole civil date, including any carry-in from a night shift.
     if (exceptions.has(new Date(day).toISOString().slice(0, 10))) continue
     for (const shift of shiftsOn(day - dayMs)) {
-      if (shift.endMinute > 1440) periods.push({ start: midnight, end: midnight + (shift.endMinute - 1440) * minuteMs })
+      if (shift.endMinute > 1440) push(midnight, toInstant(day + (shift.endMinute - 1440) * minuteMs))
     }
   }
   return normalizeWorkPeriods(periods, range)

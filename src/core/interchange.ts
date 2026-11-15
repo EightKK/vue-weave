@@ -1,0 +1,628 @@
+// Interchange formats: Microsoft Project XML (MSPDI), iCalendar and CSV. Pure string builders without a DOM.
+import { escapeXml } from './exportSvg.js'
+import { timelineWbsCodes } from './rowHierarchy.js'
+import { createTimelineRowTree } from './timeline.js'
+import { maxUtcOffsetMinutes } from './workCalendar.js'
+import type { TimelineBar, TimelineConstraintKind, TimelineConstraints, TimelineDependencyType, TimelineRow } from './types.js'
+import { timelineConstraints } from './timeline.js'
+
+export interface MsProjectTask {
+  id: string
+  name: string
+  /** Epoch milliseconds. */
+  start: number
+  /** Epoch milliseconds, not before `start`. */
+  end: number
+  /** Outline level from 1 (top level). Each task is at most one level below the task before it. Default 1. */
+  outlineLevel?: number
+  /** Percent complete from 0 to 100, rounded to an integer. */
+  percentComplete?: number
+  /** Export as a milestone. Tasks with `start === end` are always milestones. */
+  milestone?: boolean
+  /** Saved baselines, written as `Baseline` elements; at most one per `number`. */
+  baselines?: readonly MsProjectBaseline[]
+  /**
+   * Scheduling constraints in epoch milliseconds, for example `TimelineBar.constraints`. A Microsoft Project task holds
+   * one constraint, so exactly one set constraint is written as `ConstraintType` and `ConstraintDate`; with two or more
+   * none is written.
+   */
+  constraints?: TimelineConstraints
+}
+
+/**
+ * A saved baseline of a task. Microsoft Project numbers its baselines 0 (Baseline) to 10 (Baseline10); map your baseline
+ * set IDs to numbers, for example `plan` to 0 and `rev1` to 1.
+ */
+export interface MsProjectBaseline {
+  /** Integer from 0 to 10. */
+  number: number
+  /** Epoch milliseconds. */
+  start: number
+  /** Epoch milliseconds, not before `start`. */
+  end: number
+}
+
+export interface MsProjectDependency {
+  from: string
+  to: string
+  /** Default FS. */
+  type?: TimelineDependencyType
+  /** Elapsed lag in milliseconds; negative values are leads. Written in tenths of a minute. */
+  lag?: number
+}
+
+export interface MsProjectInput {
+  name: string
+  tasks: readonly MsProjectTask[]
+  dependencies?: readonly MsProjectDependency[]
+}
+
+export interface MsProjectXmlOptions {
+  /** Fixed offset from UTC in minutes for the written wall-clock dates. Default 0 (UTC). */
+  utcOffsetMinutes?: number
+}
+
+const minuteMs = 60_000
+const secondMs = 1000
+const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
+// MSPDI ConstraintType: 2 Must Start On, 4 Start No Earlier Than, 5 Start No Later Than, 6 Finish No Earlier Than and
+// 7 Finish No Later Than.
+const constraintTypes: Record<TimelineConstraintKind, number> = {
+  fixedStart: 2, startNoEarlierThan: 4, startNoLaterThan: 5, finishNoEarlierThan: 6, finishNoLaterThan: 7,
+}
+
+function checkTime(value: number, what: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 8.64e15) throw new RangeError(what + ' must be a finite time')
+}
+
+function checkText(value: unknown, what: string) {
+  if (value === undefined || value === null) throw new Error(what + ' is missing')
+}
+
+/** Round a time to the nearest whole second (halves up), the resolution of MSPDI and iCalendar date-times. */
+function toSecond(time: number) {
+  return Math.round(time / secondMs) * secondMs
+}
+
+/** A local ISO date-time without an offset, as MSPDI expects. `time` is a whole second. */
+function localIso(time: number, offset: number) {
+  const iso = new Date(time + offset * minuteMs).toISOString()
+  if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
+  return iso.slice(0, 19)
+}
+
+/** An ISO 8601 duration with whole hours, minutes and seconds, such as PT26H30M0S. `ms` is whole seconds. */
+function isoDuration(ms: number) {
+  const seconds = Math.round(ms / secondMs)
+  return `PT${Math.floor(seconds / 3600)}H${Math.floor(seconds % 3600 / 60)}M${seconds % 60}S`
+}
+
+/** `ConstraintType` and `ConstraintDate` of a task with exactly one constraint; nothing otherwise. */
+function constraintElements(constraints: TimelineConstraints | undefined, offset: number) {
+  const set = Object.entries(timelineConstraints(constraints) ?? {}) as [TimelineConstraintKind, number][]
+  if (set.length !== 1) return ''
+  const [kind, time] = set[0]!
+  return `<ConstraintType>${constraintTypes[kind]}</ConstraintType><ConstraintDate>${localIso(toSecond(time), offset)}</ConstraintDate>`
+}
+
+/**
+ * Build a Microsoft Project XML (MSPDI) document that Microsoft Project and compatible tools can open. Each task
+ * becomes a manually scheduled task (so its dates are kept as given) with a UID and ID from 1 in input order, its
+ * name, start, finish, elapsed duration, outline level and number, milestone and summary flags and percent complete.
+ * Dependencies become `PredecessorLink` elements with the MSPDI link type (FF 0, FS 1, SF 2, SS 3) and the lag in
+ * tenths of a minute as elapsed minutes. Dates are wall-clock times at `utcOffsetMinutes` without an offset suffix.
+ * Start and finish are rounded to the nearest whole second, and the duration is the difference of the rounded times.
+ *
+ * Task `baselines` become `Baseline` elements (after the predecessor links) with their number, start, finish and elapsed
+ * duration, rounded like the task dates.
+ *
+ * A task with exactly one constraint in `constraints` gets `ConstraintType` (2 Must Start On for `fixedStart`, 4 to 7 for
+ * start no earlier, start no later, finish no earlier and finish no later than) and `ConstraintDate`, rounded like the
+ * task dates. A task can hold only one constraint in Microsoft Project, so a task with several gets none.
+ *
+ * Not exported: calendars, resources, assignments, a second constraint of a task, notes, custom fields and baseline
+ * work or cost. Task IDs of the input are not written; the UIDs follow the input order.
+ *
+ * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
+ * dependency from a task to itself, unknown link types and a duplicate baseline number on a task, and a RangeError
+ * for non-finite or unordered dates (also of baselines), an invalid outline level, percent complete, lag, baseline number
+ * or constraint time.
+ */
+export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
+  const offset = options.utcOffsetMinutes ?? 0
+  if (!Number.isInteger(offset) || Math.abs(offset) > maxUtcOffsetMinutes) {
+    throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
+  }
+  checkText(project.name, 'The project name')
+  const uids = new Map<string, number>()
+  let previousLevel = 0
+  const levels: number[] = []
+  for (const task of project.tasks) {
+    if (typeof task.id !== 'string' || !task.id || uids.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
+    checkText(task.name, 'The name of task ' + task.id)
+    checkTime(task.start, 'Task start')
+    checkTime(task.end, 'Task end')
+    if (task.end < task.start) throw new RangeError('A task cannot end before it starts: ' + task.id)
+    const level = task.outlineLevel ?? 1
+    if (!Number.isInteger(level) || level < 1 || level > previousLevel + 1) {
+      throw new RangeError('Outline levels must start at 1 and grow by at most one per task: ' + task.id)
+    }
+    const percent = task.percentComplete
+    if (percent !== undefined && (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 100)) {
+      throw new RangeError('percentComplete must be between 0 and 100: ' + task.id)
+    }
+    if (task.baselines !== undefined) {
+      if (!Array.isArray(task.baselines)) throw new Error('baselines must be an array: ' + task.id)
+      const numbers = new Set<number>()
+      for (const baseline of task.baselines as readonly MsProjectBaseline[]) {
+        const number = baseline?.number
+        if (typeof number !== 'number' || !Number.isInteger(number) || number < 0 || number > 10) {
+          throw new RangeError('Baseline numbers must be integers from 0 to 10: ' + task.id)
+        }
+        if (numbers.has(number)) throw new Error(`Duplicate baseline ${number} on task ${task.id}`)
+        numbers.add(number)
+        checkTime(baseline.start, 'Baseline start')
+        checkTime(baseline.end, 'Baseline end')
+        if (baseline.end < baseline.start) throw new RangeError(`Baseline ${number} of task ${task.id} cannot end before it starts`)
+      }
+    }
+    for (const time of Object.values(timelineConstraints(task.constraints) ?? {})) checkTime(time, 'Constraint of task ' + task.id)
+    uids.set(task.id, uids.size + 1)
+    levels.push(level)
+    previousLevel = level
+  }
+  const predecessors = new Map<string, string[]>()
+  for (const dependency of project.dependencies ?? []) {
+    const from = uids.get(dependency.from), to = uids.get(dependency.to)
+    if (from === undefined || to === undefined) throw new Error(`Unknown dependency end: ${dependency.from} → ${dependency.to}`)
+    // MS Project rejects a task that is its own predecessor.
+    if (from === to) throw new Error(`Dependency ${dependency.from} → ${dependency.to} links task ${dependency.from} to itself`)
+    const name = dependency.type ?? 'FS'
+    const type = Object.hasOwn(linkTypes, name) ? linkTypes[name] : undefined
+    if (type === undefined) throw new Error('Invalid dependency type: ' + dependency.type)
+    const lag = dependency.lag ?? 0
+    if (typeof lag !== 'number' || !Number.isFinite(lag)) throw new RangeError('Dependency lag must be finite')
+    let list = predecessors.get(dependency.to)
+    if (!list) predecessors.set(dependency.to, list = [])
+    list.push('<PredecessorLink>'
+      + `<PredecessorUID>${from}</PredecessorUID><Type>${type}</Type><CrossProject>0</CrossProject>`
+      + `<LinkLag>${Math.round(lag / 6000)}</LinkLag><LagFormat>4</LagFormat></PredecessorLink>`)
+  }
+  let projectStart = Infinity, projectEnd = -Infinity
+  for (const task of project.tasks) {
+    projectStart = Math.min(projectStart, toSecond(task.start))
+    projectEnd = Math.max(projectEnd, toSecond(task.end))
+  }
+  const outline: number[] = []
+  const tasks = project.tasks.map((task, index) => {
+    const level = levels[index]!
+    outline.length = level
+    outline[level - 1] = (outline[level - 1] ?? 0) + 1
+    const number = outline.join('.')
+    const uid = index + 1
+    const milestone = task.milestone === true || task.start === task.end
+    const summary = (levels[index + 1] ?? 0) > level
+    const startTime = toSecond(task.start), finishTime = toSecond(task.end)
+    const start = localIso(startTime, offset), finish = localIso(finishTime, offset)
+    const duration = isoDuration(milestone ? 0 : finishTime - startTime)
+    return '<Task>'
+      + `<UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(task.name)}</Name><Active>1</Active><Manual>1</Manual>`
+      + `<WBS>${number}</WBS><OutlineNumber>${number}</OutlineNumber><OutlineLevel>${level}</OutlineLevel>`
+      + `<Start>${start}</Start><Finish>${finish}</Finish><Duration>${duration}</Duration>`
+      + `<ManualStart>${start}</ManualStart><ManualFinish>${finish}</ManualFinish><ManualDuration>${duration}</ManualDuration>`
+      + `<Milestone>${milestone ? 1 : 0}</Milestone><Summary>${summary ? 1 : 0}</Summary>`
+      + `<PercentComplete>${Math.round(task.percentComplete ?? 0)}</PercentComplete>`
+      + constraintElements(task.constraints, offset)
+      + (predecessors.get(task.id) ?? []).join('')
+      + (task.baselines ?? []).map(baseline => {
+        const baselineStart = toSecond(baseline.start), baselineFinish = toSecond(baseline.end)
+        return `<Baseline><Number>${baseline.number}</Number><Interim>0</Interim>`
+          + `<Start>${localIso(baselineStart, offset)}</Start><Finish>${localIso(baselineFinish, offset)}</Finish>`
+          + `<Duration>${isoDuration(baselineFinish - baselineStart)}</Duration></Baseline>`
+      }).join('')
+      + '</Task>'
+  })
+  const name = escapeXml(project.name)
+  const dates = project.tasks.length
+    ? `<StartDate>${localIso(projectStart, offset)}</StartDate><FinishDate>${localIso(projectEnd, offset)}</FinishDate>` : ''
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    + '<Project xmlns="http://schemas.microsoft.com/project">'
+    + `<Name>${name}</Name><Title>${name}</Title><ScheduleFromStart>1</ScheduleFromStart>${dates}`
+    + `<Tasks>${tasks.join('')}</Tasks></Project>\n`
+}
+
+export interface ICalendarEvent {
+  /** Unique within the calendar. Written as the event UID; make it globally unique, for example `id@example.com`. */
+  id: string
+  summary: string
+  /** Epoch milliseconds. */
+  start: number
+  /** Epoch milliseconds, not before `start`. An event with `end === start` is written without DTEND. */
+  end: number
+  description?: string
+}
+
+export interface ICalendarOptions {
+  /** PRODID value. Default `-//vue-weave//Timeline export//EN`. */
+  productId?: string
+  /** Calendar name, written as NAME and X-WR-CALNAME. */
+  calendarName?: string
+  /** DTSTAMP of every event, in epoch milliseconds. Default `Date.now()`; pass it for reproducible output. */
+  timestamp?: number
+}
+
+const encoder = new TextEncoder()
+
+/** UTC date-time in iCalendar basic format, such as 20261109T080000Z, rounded to the nearest whole second. */
+function icalTime(time: number) {
+  checkTime(time, 'An event time')
+  const iso = new Date(toSecond(time)).toISOString()
+  if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
+  return iso.slice(0, 19).replace(/[-:]/g, '') + 'Z'
+}
+
+/** Escape an iCalendar TEXT value and drop control characters other than tab and line breaks. */
+function icalText(value: string) {
+  return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n')
+}
+
+/** Fold a content line into lines of at most 75 octets, never splitting a UTF-8 character. */
+function fold(line: string) {
+  const parts: string[] = []
+  let current = '', size = 0
+  for (const char of line) {
+    const bytes = encoder.encode(char).length
+    // Continuation lines start with a space, which counts towards their 75 octets.
+    if (size + bytes > 75) {
+      parts.push(current)
+      current = ' '
+      size = 1
+    }
+    current += char
+    size += bytes
+  }
+  parts.push(current)
+  return parts.join('\r\n')
+}
+
+/**
+ * Build an iCalendar (RFC 5545) document with one VEVENT per event: UID, DTSTAMP, DTSTART, DTEND, SUMMARY and an
+ * optional DESCRIPTION. Times are written in UTC, rounded to the nearest whole second; DTEND is written only when the
+ * rounded end is after the rounded start. Text is escaped, lines end with CRLF and are folded at 75 octets.
+ * Throws an Error for empty or duplicate IDs and a missing summary, and a RangeError for non-finite or unordered times.
+ */
+export function toICalendar(events: readonly ICalendarEvent[], options: ICalendarOptions = {}): string {
+  const stamp = icalTime(options.timestamp ?? Date.now())
+  const ids = new Set<string>()
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:' + icalText(options.productId ?? '-//vue-weave//Timeline export//EN'), 'CALSCALE:GREGORIAN']
+  if (options.calendarName !== undefined) {
+    lines.push('NAME:' + icalText(options.calendarName), 'X-WR-CALNAME:' + icalText(options.calendarName))
+  }
+  for (const event of events) {
+    if (typeof event.id !== 'string' || !event.id || ids.has(event.id)) throw new Error('Invalid or duplicate event ID: ' + event.id)
+    ids.add(event.id)
+    const start = icalTime(event.start), end = icalTime(event.end)
+    if (event.end < event.start) throw new RangeError('An event cannot end before it starts: ' + event.id)
+    checkText(event.summary, 'The summary of event ' + event.id)
+    lines.push('BEGIN:VEVENT', 'UID:' + icalText(event.id), 'DTSTAMP:' + stamp, 'DTSTART:' + start)
+    // RFC 5545 requires DTEND after DTSTART; a span that rounds to nothing is written as an instant.
+    if (end !== start) lines.push('DTEND:' + end)
+    lines.push('SUMMARY:' + icalText(event.summary))
+    if (event.description !== undefined) lines.push('DESCRIPTION:' + icalText(event.description))
+    lines.push('END:VEVENT')
+  }
+  lines.push('END:VCALENDAR')
+  return lines.map(fold).join('\r\n') + '\r\n'
+}
+
+/** A CSV cell: text, a finite number or an empty cell. */
+export type CsvCell = string | number | undefined
+
+/**
+ * Build RFC 4180 CSV text: fields separated by commas, records ended by CRLF, and fields that contain a comma, a
+ * double quote, CR or LF enclosed in double quotes with inner quotes doubled. `undefined` is an empty field. Throws a
+ * RangeError for a non-finite number. Spreadsheet formulas are not neutralized; prefix cells that start with `=`,
+ * `+`, `-` or `@` yourself when the file is opened in a spreadsheet and the text is untrusted.
+ */
+export function toCsv(table: readonly (readonly CsvCell[])[]): string {
+  return table.map(record => record.map(cell => {
+    if (cell === undefined) return ''
+    if (typeof cell === 'number') {
+      if (!Number.isFinite(cell)) throw new RangeError('CSV numbers must be finite')
+      return String(cell)
+    }
+    const text = String(cell)
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text
+  }).join(',') + '\r\n').join('')
+}
+
+/** A column of `timelineCsvTable`. */
+export type TimelineCsvColumn = 'row' | 'wbs' | 'bar' | 'start' | 'end' | 'progress'
+
+export interface TimelineCsvOptions {
+  /** Start and end text. Default ISO 8601 in UTC, such as 2026-11-09T08:00:00.000Z. */
+  formatTime?: (time: number) => string
+  /** Columns in order. Default all: row, wbs, bar, start, end, progress. */
+  columns?: readonly TimelineCsvColumn[]
+  /** Header texts. Defaults: Row, WBS, Bar, Start, End, Progress. */
+  headers?: Partial<Record<TimelineCsvColumn, string>>
+}
+
+const csvHeaders: Record<TimelineCsvColumn, string> = { row: 'Row', wbs: 'WBS', bar: 'Bar', start: 'Start', end: 'End', progress: 'Progress' }
+
+/**
+ * A table for `toCsv`: a header record and one record per bar, ordered by row in tree preorder and then by bar input
+ * order. Cells are the row label, the row's WBS code (`timelineWbsCodes`), the bar label, the formatted start and end
+ * and the progress from 0 to 1 (empty without progress). Throws an Error for invalid rows, a bar of an unknown row and
+ * an unknown column.
+ */
+export function timelineCsvTable(
+  rows: readonly TimelineRow[], bars: readonly TimelineBar[], options: TimelineCsvOptions = {},
+): CsvCell[][] {
+  const tree = createTimelineRowTree(rows)
+  const codes = timelineWbsCodes(rows)
+  const columns = options.columns ?? (Object.keys(csvHeaders) as TimelineCsvColumn[])
+  for (const column of columns) if (!Object.hasOwn(csvHeaders, column)) throw new Error('Unknown CSV column: ' + column)
+  const format = options.formatTime ?? ((time: number) => new Date(time).toISOString())
+  const byRow = new Map<string, TimelineBar[]>()
+  for (const bar of bars) {
+    if (!codes.has(bar.rowId)) throw new Error('Unknown row for bar: ' + bar.id)
+    let list = byRow.get(bar.rowId)
+    if (!list) byRow.set(bar.rowId, list = [])
+    list.push(bar)
+  }
+  const table: CsvCell[][] = [columns.map(column => options.headers?.[column] ?? csvHeaders[column])]
+  for (const { row } of tree) {
+    for (const bar of byRow.get(row.id) ?? []) {
+      const cells: Record<TimelineCsvColumn, CsvCell> = {
+        row: row.label, wbs: codes.get(row.id), bar: bar.label, start: format(bar.start), end: format(bar.end), progress: bar.progress,
+      }
+      table.push(columns.map(column => cells[column]))
+    }
+  }
+  return table
+}
+
+export interface CsvParseOptions {
+  /** Field separator: one character other than a double quote, CR or LF. Default `,`. */
+  delimiter?: string
+}
+
+/**
+ * Parse RFC 4180 CSV text into records of fields, the inverse of `toCsv`. Records end with CRLF, LF or a lone CR, and a
+ * final line break is optional. Fields enclosed in double quotes can contain the delimiter, line breaks and doubled
+ * quotes (`""` is one quote). A quote inside an unquoted field is kept as text. A leading byte order mark is removed.
+ * Every field is a string; an empty line is a record with one empty field, and empty text has no records.
+ *
+ * Throws an Error with the line and column for an unterminated quoted field or text after a closing quote, and an
+ * Error for an invalid delimiter.
+ */
+export function parseCsv(text: string, options: CsvParseOptions = {}): string[][] {
+  const delimiter = options.delimiter ?? ','
+  if (typeof delimiter !== 'string' || delimiter.length !== 1 || delimiter === '"' || delimiter === '\r' || delimiter === '\n') {
+    throw new Error('The CSV delimiter must be one character other than a double quote, CR or LF')
+  }
+  const source = String(text)
+  const input = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source
+  const records: string[][] = []
+  if (!input) return records
+  let record: string[] = []
+  let field = ''
+  let index = 0, line = 1, lineStart = 0
+  const length = input.length
+  while (index < length) {
+    const fieldStart = index
+    if (input[index] === '"') {
+      // A quoted field runs to the next quote that is not doubled.
+      const openLine = line, openColumn = index - lineStart + 1
+      index++
+      for (;;) {
+        if (index >= length) throw new Error(`Unterminated quoted CSV field starting at line ${openLine}, column ${openColumn}`)
+        const char = input[index]!
+        if (char === '"') {
+          if (input[index + 1] === '"') {
+            field += '"'
+            index += 2
+            continue
+          }
+          index++
+          break
+        }
+        if (char === '\r' || char === '\n') {
+          if (char === '\r' && input[index + 1] === '\n') {
+            field += '\r'
+            index++
+          }
+          field += input[index]!
+          index++
+          line++
+          lineStart = index
+          continue
+        }
+        field += char
+        index++
+      }
+      const next = input[index]
+      if (next !== undefined && next !== delimiter && next !== '\r' && next !== '\n') {
+        throw new Error(`Unexpected text after a closing quote at line ${line}, column ${index - lineStart + 1}`)
+      }
+    } else {
+      while (index < length) {
+        const char = input[index]!
+        if (char === delimiter || char === '\r' || char === '\n') break
+        index++
+      }
+      field = input.slice(fieldStart, index)
+    }
+    record.push(field)
+    field = ''
+    const char = input[index]
+    if (char === delimiter) {
+      index++
+      // A delimiter at the end of a line or of the text leaves an empty last field.
+      const after = input[index]
+      if (after === undefined || after === '\r' || after === '\n') record.push('')
+    }
+    if (input[index] === '\r' || input[index] === '\n') {
+      index += input[index] === '\r' && input[index + 1] === '\n' ? 2 : 1
+      line++
+      lineStart = index
+      records.push(record)
+      record = []
+    }
+  }
+  if (record.length) records.push(record)
+  return records
+}
+
+export interface TimelineCsvImportOptions {
+  /** Read a start or end cell as a time; return NaN for text that is not a time. */
+  parseTime: (text: string) => number
+  /**
+   * The column of each field, in order, as `timelineCsvTable` wrote them. The first record is a header and is
+   * skipped. Default: the columns are found by matching the header record against `headers`, ignoring case and
+   * surrounding white space, and fields under other headers are ignored.
+   */
+  columns?: readonly (TimelineCsvColumn | undefined)[]
+  /** Header texts to look for without `columns`. Defaults: Row, WBS, Bar, Start, End, Progress. */
+  headers?: Partial<Record<TimelineCsvColumn, string>>
+}
+
+export interface TimelineCsvImport {
+  rows: TimelineRow[]
+  bars: TimelineBar[]
+}
+
+const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
+const decimalPattern = /^\+?(\d+\.?\d*|\.\d+)$/
+
+/**
+ * Read a table written by `timelineCsvTable` (for example from `parseCsv`) back into rows and bars. The table needs a
+ * `bar`, `start` and `end` column and a `row` or `wbs` column; `progress` is optional.
+ *
+ * With a WBS column, each distinct code is a row with the ID `row-<code>`, the label of the first of its `row` cells
+ * that is not blank (or the code when there is none) and the row of the code without its last part as parent. A
+ * parent code that has no record of its own becomes a row labelled with its code. Without a WBS column, each distinct row label is a top-level row with the
+ * ID `row-1`, `row-2`, … in order of appearance. Rows are returned in tree preorder; sibling order follows the WBS
+ * numbers, or the order of appearance without WBS codes. Bars get the IDs `bar-1`, `bar-2`, … in record order, the
+ * label of their `bar` cell, the parsed start and end and, when the progress cell is not empty, the progress from 0
+ * to 1. Records whose fields are all empty are skipped.
+ *
+ * A custom header takes precedence over another column's default header. Throws an Error for missing or repeated
+ * columns, for two custom headers that are equal (ignoring case and surrounding white space) and an Error naming the line (the one-based record number, with the
+ * header on line 1) for an invalid WBS code, a time that `parseTime` cannot read, an end before the start and a
+ * progress that is not a plain decimal number from 0 to 1 (such as `0.5`; not `0x1` or `1e0`).
+ */
+export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], options: TimelineCsvImportOptions): TimelineCsvImport {
+  if (typeof options?.parseTime !== 'function') throw new Error('timelineFromCsvTable needs a parseTime function')
+  const [header, ...records] = table
+  if (!header) throw new Error('The CSV table has no header record')
+  const position = new Map<TimelineCsvColumn, number>()
+  if (options.columns) {
+    options.columns.forEach((column, index) => {
+      if (column === undefined) return
+      if (!Object.hasOwn(csvHeaders, column)) throw new Error('Unknown CSV column: ' + column)
+      if (position.has(column)) throw new Error('Repeated CSV column: ' + column)
+      position.set(column, index)
+    })
+  } else {
+    // A custom header takes precedence over another column's default header; two custom headers must differ.
+    const wanted = new Map<string, TimelineCsvColumn>()
+    const custom = new Set<string>()
+    const columns = Object.keys(csvHeaders) as TimelineCsvColumn[]
+    for (const column of columns) {
+      if (options.headers?.[column] === undefined) continue
+      const key = String(options.headers[column]).trim().toLowerCase()
+      const other = wanted.get(key)
+      if (other !== undefined) {
+        throw new Error(`The CSV columns ${other} and ${column} have the same header text: ${key}; give each a distinct header`)
+      }
+      wanted.set(key, column)
+      custom.add(column)
+    }
+    for (const column of columns) {
+      const key = csvHeaders[column].trim().toLowerCase()
+      if (!custom.has(column) && !wanted.has(key)) wanted.set(key, column)
+    }
+    header.forEach((cell, index) => {
+      const column = wanted.get(String(cell ?? '').trim().toLowerCase())
+      if (column === undefined) return
+      if (position.has(column)) throw new Error('Repeated CSV column: ' + column)
+      position.set(column, index)
+    })
+  }
+  for (const column of ['bar', 'start', 'end'] as const) {
+    if (!position.has(column)) throw new Error('The CSV table has no ' + (options.headers?.[column] ?? csvHeaders[column]) + ' column')
+  }
+  if (!position.has('row') && !position.has('wbs')) throw new Error('The CSV table needs a Row or WBS column')
+  const text = (record: readonly CsvCell[], column: TimelineCsvColumn) => {
+    const index = position.get(column)
+    const cell = index === undefined ? undefined : record[index]
+    return cell === undefined ? '' : String(cell)
+  }
+  // Rows by WBS code (or by label without codes), in order of appearance.
+  const found = new Map<string, { id: string; label?: string; code?: string }>()
+  const bars: TimelineBar[] = []
+  records.forEach((record, offset) => {
+    const line = offset + 2
+    if (record.every(cell => cell === undefined || String(cell) === '')) return
+    const label = text(record, 'row')
+    let key: string
+    if (position.has('wbs')) {
+      const code = text(record, 'wbs').trim()
+      if (!wbsPattern.test(code)) throw new Error(`Invalid WBS code on CSV line ${line}: ${code || '(empty)'}`)
+      // Ancestors first, so a parent without records of its own still exists.
+      const parts = code.split('.')
+      for (let depth = 1; depth <= parts.length; depth++) {
+        const prefix = parts.slice(0, depth).join('.')
+        if (!found.has(prefix)) found.set(prefix, { id: 'row-' + prefix, code: prefix })
+      }
+      key = code
+      const row = found.get(code)!
+      // A blank row cell is no label, so a later record of the same code can still name the row.
+      if (position.has('row') && row.label === undefined && label.trim()) row.label = label
+    } else {
+      key = label
+      if (!found.has(key)) found.set(key, { id: 'row-' + (found.size + 1), label })
+    }
+    const startText = text(record, 'start'), endText = text(record, 'end')
+    const start = options.parseTime(startText), end = options.parseTime(endText)
+    if (typeof start !== 'number' || !Number.isFinite(start)) throw new RangeError(`Invalid start time on CSV line ${line}: ${startText}`)
+    if (typeof end !== 'number' || !Number.isFinite(end)) throw new RangeError(`Invalid end time on CSV line ${line}: ${endText}`)
+    if (end < start) throw new RangeError(`The bar on CSV line ${line} ends before it starts`)
+    const bar: TimelineBar = { id: 'bar-' + (bars.length + 1), rowId: found.get(key)!.id, label: text(record, 'bar'), start, end }
+    const progressText = text(record, 'progress').trim()
+    if (progressText) {
+      // Plain decimal notation only: no hexadecimal, binary, octal or exponent forms.
+      const progress = decimalPattern.test(progressText) ? Number(progressText) : NaN
+      if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+        throw new RangeError(`Progress must be a number from 0 to 1 on CSV line ${line}: ${progressText}`)
+      }
+      bar.progress = progress
+    }
+    bars.push(bar)
+  })
+  const entries = [...found.values()]
+  if (position.has('wbs')) {
+    // Tree preorder: compare codes part by part as numbers. Parts have no leading zeros, so comparing their digit
+    // strings by length and then lexically is exact at any size.
+    const compareParts = (x: string, y: string) => x.length - y.length || (x < y ? -1 : x > y ? 1 : 0)
+    entries.sort((a, b) => {
+      const x = a.code!.split('.'), y = b.code!.split('.')
+      for (let index = 0; index < Math.min(x.length, y.length); index++) {
+        const order = compareParts(x[index]!, y[index]!)
+        if (order) return order
+      }
+      return x.length - y.length
+    })
+  }
+  const rows = entries.map(entry => {
+    const row: TimelineRow = { id: entry.id, label: entry.label ?? entry.code ?? '' }
+    const cut = entry.code?.lastIndexOf('.') ?? -1
+    if (cut > 0) row.parentId = 'row-' + entry.code!.slice(0, cut)
+    return row
+  })
+  return { rows, bars }
+}

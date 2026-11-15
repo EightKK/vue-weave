@@ -1,22 +1,89 @@
 # Vue Weave
 
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [English](README.md)
 
-[ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues)
+[ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
 
 Vue 3でネットワークグラフやガントチャートを実装するためのライブラリです。製造のロット系譜、プロジェクト工程、設備・担当者別の予定などに利用できます。型付きコンポーネントと、フレームワークに依存しないグラフ・日程計算・設備負荷の集計機能を提供します。
 
+![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](.github/images/network-graph.png)
+
+![スケジューリングデモのGanttChart。非稼働時間の網掛け、クリティカルパスの枠線、余裕日数の線、分割バー、ステータス日付線、締切フラグ、完了日と余裕日数の列を表示したカレンダー対応スケジュール](.github/images/gantt-chart.png)
+
+## 主な機能
+
+基本機能以外はすべてpropsで有効にします。詳細は [docs/api.md](docs/api.md)、[docs/integration.md](docs/integration.md)、[docs/scheduling.md](docs/scheduling.md) を参照してください。
+
+### NetworkGraph
+
+- 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。
+- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
+- `node`・`edge` スロットでSVG描画を変更でき、`tooltip` スロットも使えます。
+- ノード移動、接続、複数選択、ミニマップ。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）。
+- 入れ子のグループ（`parentId`）、グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、ノードのサイズ変更（`sizes`・`resizable`）。
+- 辺の直角・直線表示（`edgeStyle`）と経由点（`GraphEdge.points`。`editableEdges` で編集）。
+- 大規模グラフとタッチ操作：表示範囲外の描画省略（`cullOffscreen`）、ピンチズーム、縮小時に詳細を隠す表示（`lodThreshold`）。
+- 検索結果の強調（`matchIds`・`dimmedIds`）と、`focusNode(id)`・`fit({ ids })` メソッド。
+- グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、`autoPan`。
+- パレットからのドロップ（`droppable` と `node-drop` イベント。`toGraphPoint(x, y)` と `getViewportCenter()` を併用）。
+- コピー・貼り付け・複製の提案（`clipboard`。`copy-selection`・`paste-request`・`duplicate-selection` イベントを `cloneGraphElements` で適用）。
+
+### GanttChart
+
+- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン（差異付きで最大3つの名前付きセット）、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
+- `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
+- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。
+- 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。
+- 行の空いている部分のドラッグによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。
+- 移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）。
+- 進捗率のスライダー（`progressEditable`、`progress-edit`）と、バーの削除（`deletable`、`bars-delete`。`removeTimelineBars` で反映できます）。
+- ポインターやAltキーと矢印キーによる行の階層編集（`rowsReorderable`、`row-move`。`moveTimelineRow` で反映できます）。`timelineWbsCodes` はWBS列に使う行番号を求めます。
+- ポインターのドラッグや矢印キーによる列幅の変更（`columnsResizable`、`column-resize`、`labelWidth`）。
+- 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
+- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
+- 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
+- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。
+- スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
+
+### ヘッドレスコア（`vue-weave/core`）
+
+- グラフの解析：`topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`。
+- グラフの形状：`collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` は、コンポーネントのpropsと同じ形状を計算します。
+- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
+- `levelResources` による設備負荷の平準化と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
+- チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
+- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして読み込みます。
+
+### 書き出し・テーマ・RTL
+
+- どちらのコンポーネントも `exportSvg(options)` と `exportPng(options)` を提供し、サーバーでは `renderGraphSvg` と `renderTimelineSvg` がSVGを生成します。
+- 組み込みのダークテーマ（`vw-theme-dark`）と、`prefers-color-scheme` に従う `vw-theme-auto`。強制カラー、モーション低減、印刷にも対応します。
+- `dir="rtl"`（または `auto`）による右から左のレイアウト。
+
+## 対応状況
+
+- **バージョン0.2.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
+- **Vue：** 3.5以降（peer dependency）。
+- **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
+- **Node.js：** ヘッドレスの `vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
+- **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
+- **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](docs/architecture.md)を参照）。十分に対応していると想定しないでください。
+
 ## 組み込む
 
-npmでは配布していません。[ローカルパッケージの作成手順](CONTRIBUTING.md#build-a-local-package)に従って作成した `.tgz` を、利用するアプリケーションのフォルダーからインストールしてください。次のパスは実際のファイルのパスに置き換えます。
+npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.2.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./path/to/package.tgz
+npm install ./vue-weave-0.2.0.tgz
 ```
 
-Vue 3.5以降をpeer dependencyとしています。ES modules、TypeScriptの型定義、スタイルシートを提供します。CSSはアプリケーションで一度読み込んでください。`vue-weave/core` はVueなしで動作し、TypeScriptの `NodeNext` による型解決にも対応しています。
+Vue 3.5以降をpeer dependencyとしています。ES modules、TypeScriptの型定義、スタイルシートを提供します。CSSはアプリケーションで `import 'vue-weave/style.css'` により一度だけ読み込んでください。`vue-weave/core` はVueなしで動作し、TypeScriptの `NodeNext` による型解決にも対応しています。
 
-## ネットワークグラフ
+## クイックスタート
+
+### ネットワークグラフ
 
 ```vue
 <script setup lang="ts">
@@ -46,9 +113,20 @@ const edges: GraphEdge[] = [
 </template>
 ```
 
-標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR` または `TB` から選べます。`layout` 関数で配置と経路を指定でき、`node`・`edge` スロットでSVG描画を変更できます。ノード移動、接続、複数選択、ミニマップはpropsで有効にします。
+ほかの機能も、propsと `options` で同じように有効にします。次の例は、右から左へ配置し、辺の交差を減らし、検索結果を強調し、画面外のノードの描画を省略します。
 
-## ガントチャート
+```vue
+<NetworkGraph
+  ref="graph"
+  :nodes="nodes"
+  :edges="edges"
+  :options="{ direction: 'RL', crossingReduction: 'barycenter' }"
+  :match-ids="matches"
+  cull-offscreen
+/>
+```
+
+### ガントチャート
 
 ```vue
 <script setup lang="ts">
@@ -80,15 +158,20 @@ function commit(change: TimelineEdit) {
 </template>
 ```
 
-コンポーネントはドラッグ中のプレビューを表示し、`edit` イベントで変更案を渡します。呼び出し側が採用した内容を `bars` に反映します。アプリ固有の検証、API保存、非同期の承認処理を組み込めます。同期の `validateEdit` フックでイベント発行前に変更案を拒否することもできます。
+コンポーネントはドラッグ中のプレビューを表示し、`edit` イベントで変更案を渡します。呼び出し側が採用した内容を `bars` に反映します。アプリ固有の検証、API保存、非同期の承認処理を組み込めます。同期の `validateEdit` フックでイベント発行前に変更案を拒否することもできます。区間は半開区間 `[start, end)` で、長さ0のバーはマイルストーンです。
 
-複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係に対応しています。階層行、ベースライン、多段見出し、日時マーカーを利用でき、行と表示時間範囲の仮想化で描画要素数を抑えます。`formatTime`、`labels`、スロット、CSS変数で表示を調整できます。
+## 書き出し・表示方向・テーマ
 
-稼働カレンダー、依存関係に基づく日程計算、クリティカル工程、設備負荷の診断には、`vue-weave/core` の `buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad` を使います。アプリケーションがこれらを呼び出し、採用した結果をチャートへ渡します。詳細は[日程計算と設備負荷](docs/scheduling.md)を参照してください。
+どちらのコンポーネントも、テンプレートrefの `exportSvg(options)` と `exportPng(options)` でチャート全体を保存でき、サーバーでは `vue-weave/core` が同じSVGを生成します。右から左の表示には `dir="rtl"`（または `auto`）を指定します。コンポーネントまたはその祖先に `vw-theme-dark` を付けるとダークテーマ、`vw-theme-auto` を付けると `prefers-color-scheme` に従います。詳細は[組み込みガイド](docs/integration.md)を参照してください。
+
+```ts
+const svg = chart.value!.exportSvg({ title: 'Plan' })
+const png = await chart.value!.exportPng({ scale: 2 })
+```
 
 ## デモを起動する
 
-Node.js 22.18以降とnpmを用意し、cloneしたソースやGitHubのソースZIPのフォルダーで次を実行します。
+ホスト型のデモはありません。Node.js 22.18以降とnpmを用意し、ローカルで起動します。cloneしたソースやGitHubのソースZIPのフォルダーで次を実行します。
 
 ```sh
 npm ci
@@ -96,9 +179,9 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、日程計算があります。**Edit graph** で接続・再接続・範囲選択・一括移動、**Planning overlays** で編集列と親行サマリーを試せます。**Undo**／**Redo** で採用済みの変更を戻せます。**Scheduling** では工程を移動すると、分割シフトの稼働カレンダーに従って後続工程と設備負荷を再計算します。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。編集結果はデモ画面内の状態として保持します。
 
-`preview/` を含むビルド済みデモのアーカイブを使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
+`preview/` を含むビルド済みデモのアーカイブ（リリースに添付されることがあります）を使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
 
 開発・検証コマンドは[Contributing](CONTRIBUTING.md)を参照してください。
 

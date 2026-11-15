@@ -105,3 +105,13 @@ test('fieldValuesEqual compares arrays by element and distinguishes 0 from null'
   assert.equal(fieldValuesEqual(Number.NaN, Number.NaN), true)
   assert.equal(fieldValuesEqual('a', ['a']), false)
 })
+
+test('IANA time zones apply daylight saving and round trip', () => {
+  const ny = { id: 'z', kind: 'time', get: () => null, timeZone: 'America/New_York' }
+  assert.deepEqual(parseFieldValue(ny, '2024-01-15 09:00'), { ok: true, value: Date.UTC(2024, 0, 15, 14, 0) })
+  assert.deepEqual(parseFieldValue(ny, '2024-07-15 09:00'), { ok: true, value: Date.UTC(2024, 6, 15, 13, 0) })
+  assert.deepEqual(parseFieldValue(ny, '2024-07-15 09:00Z'), { ok: true, value: Date.UTC(2024, 6, 15, 9, 0) })
+  assert.equal(formatFieldValue(ny, Date.UTC(2024, 6, 15, 13, 0)), '2024-07-15 09:00')
+  assert.equal(formatFieldValue(ny, Date.UTC(2024, 0, 15, 14, 0, 5, 20)), '2024-01-15 09:00:05.020')
+  assert.throws(() => parseFieldValue({ ...ny, timeZone: 'Not/AZone' }, '2024-01-15 09:00'), RangeError)
+})

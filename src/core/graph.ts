@@ -1,3 +1,9 @@
+import { flipGraphLayout } from './graphOrient.js'
+import { reduceCrossings } from './graphCrossings.js'
+import { graphPathEndpoints } from './graphView.js'
+import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
+import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
+
 export interface GraphPort {
   id: string
   side: 'left' | 'right' | 'top' | 'bottom'
@@ -11,10 +17,17 @@ export interface IdentifiedNode {
   ports?: readonly GraphPort[]
 }
 
-export interface GraphEdge extends GraphConnection {
+/** An edge between two nodes. `D` types the optional `data` payload; it defaults to `unknown`. */
+export interface GraphEdge<D = unknown> extends GraphConnection {
   id: string
   label?: string
-  data?: unknown
+  /** Application data. The components pass it through untouched. */
+  data?: D
+  /**
+   * Optional waypoints in chart coordinates. `routeGraphEdges` (and NetworkGraph) draws the edge through them: a
+   * polyline in the straight and orthogonal styles and a smooth curve through the points in the curve style.
+   */
+  points?: readonly GraphPoint[]
 }
 
 export interface GraphIndex {
@@ -35,10 +48,11 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
       const indexed = new Map<string, GraphPort>()
       for (const port of ports) {
         const offset = port.offset ?? 0.5
-        if (!port.id || indexed.has(port.id) || !['left', 'right', 'top', 'bottom'].includes(port.side)
+        if (!port.id || indexed.has(port.id)
           || !['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
           throw new Error('Invalid graph port on node: ' + id)
         }
+        assertGraphPortSide(id, port)
         indexed.set(port.id, port)
       }
       portsByNode.set(id, indexed)
@@ -184,13 +198,27 @@ export interface GraphLayout {
   height: number
 }
 
+/** LR and TB are the defaults; RL and BT mirror them so ranks grow right-to-left or bottom-to-top. */
+export type GraphLayoutDirection = 'LR' | 'TB' | 'RL' | 'BT'
+
+/** Ordering heuristic that reduces edge crossings between adjacent ranks. */
+export type GraphCrossingReduction = 'none' | 'barycenter' | 'median'
+
 export interface GraphLayoutOptions {
-  direction?: 'LR' | 'TB' 
+  direction?: GraphLayoutDirection
   nodeWidth?: number
   nodeHeight?: number
   columnGap?: number
   rowGap?: number
   padding?: number
+}
+
+/** Options accepted by layoutLayeredGraph: the shared layout options plus opt-in crossing reduction. */
+export interface GraphLayeredLayoutOptions extends GraphLayoutOptions {
+  /** Opt-in reordering of nodes within each rank. Default 'none' keeps input order. */
+  crossingReduction?: GraphCrossingReduction
+  /** Maximum number of alternating down/up sweeps when crossingReduction is enabled. Default 8. */
+  crossingSweeps?: number
 }
 
 type LaneEntry = [end: number, lane: number]
@@ -248,17 +276,30 @@ function assignLongEdgeLanes(edges: readonly GraphEdge[], ranks: ReadonlyMap<str
   return { lanes, count }
 }
 
+/**
+ * Deterministic layered layout. Ranks come from the condensation of the strongly connected components, so every node of
+ * a cycle shares one rank: a large cycle becomes a single column (or row for TB and BT) whose length grows with the
+ * number of nodes, and the edges inside it use same-rank side routes. A 5,000-node cycle with the default sizes is
+ * about 214 by 410,000 units. Break or filter large cycles before layout (findGraphCycles finds them), or use
+ * layoutForceGraph, when that shape is not wanted.
+ */
 export function layoutLayeredGraph(
   nodes: readonly IdentifiedNode[],
   edges: readonly GraphEdge[],
-  options: GraphLayoutOptions = {},
+  options: GraphLayeredLayoutOptions = {},
 ): GraphLayout {
-  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20 } = options
-  if (!['LR', 'TB'].includes(direction)) throw new RangeError('Unknown layout direction')
+  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20, crossingReduction = 'none', crossingSweeps = 8 } = options
+  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
+  if (!['none', 'barycenter', 'median'].includes(crossingReduction)) throw new RangeError('Unknown crossingReduction method')
+  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
   for (const [name, value] of Object.entries({ nodeWidth, nodeHeight, columnGap, rowGap, padding })) {
     if (!Number.isFinite(value) || value < 0 || ((name === 'nodeWidth' || name === 'nodeHeight') && value === 0)) {
       throw new RangeError(name + ' must be finite and positive (spacing may be zero)')
     }
+  }
+  if (direction === 'RL' || direction === 'BT') {
+    const base = layoutLayeredGraph(nodes, edges, { ...options, direction: direction === 'RL' ? 'LR' : 'TB' })
+    return flipGraphLayout(base, direction === 'RL' ? 'x' : 'y')
   }
   if (direction === 'TB') {
     const base = layoutLayeredGraph(nodes, edges, { ...options, direction: 'LR', nodeWidth: nodeHeight, nodeHeight: nodeWidth })
@@ -279,6 +320,8 @@ export function layoutLayeredGraph(
     const column = columns[rank] ??= []
     column.push(id)
   }
+
+  if (crossingReduction !== 'none') reduceCrossings(columns, edges, ranks, crossingReduction, crossingSweeps)
 
   const largestColumn = columns.reduce((max, column) => Math.max(max, column?.length ?? 0), 0)
   const longLanes = assignLongEdgeLanes(edges, ranks)
@@ -382,7 +425,9 @@ export interface GraphGroup {
   nodeIds: readonly string[]
 }
 
+/** The point of a port on a box side. Throws Error when `port.side` is not left, right, top or bottom. */
 export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
+  if (!isGraphPortSide(port.side)) throw new Error(`Invalid graph port ${port.id}: side ${String(port.side)}, expected left, right, top or bottom`)
   const offset = port.offset ?? 0.5
   if (port.side === 'left' || port.side === 'right') {
     return { x: box.x + (port.side === 'right' ? box.width : 0), y: box.y + box.height * offset }
@@ -390,32 +435,65 @@ export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
   return { x: box.x + box.width * offset, y: box.y + (port.side === 'bottom' ? box.height : 0) }
 }
 
-export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: 'LR' | 'TB') {
-  const box = layout.boxes.get(edge[end])!
+/**
+ * Where an edge meets its node. A named port gives its anchor. Otherwise, when the edge has an `id` and the layout
+ * has a path for it, the drawn start or end point of that path is used, with the box side closest to it. Without a
+ * path the side follows `direction`. Rendering and editing handles therefore agree after nodes are moved or when a
+ * custom layout chooses its own sides. Throws an Error naming the edge and the node when the node has no layout box,
+ * and an Error naming the node and the port when the port side is not left, right, top or bottom.
+ */
+export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphConnection, end: 'from' | 'to', direction: GraphLayoutDirection) {
+  const box = edgeEndBox(layout.boxes, edge, edge[end])
   const port = nodes.get(edge[end])?.ports?.find(port => port.id === (end === 'from' ? edge.fromPort : edge.toPort))
-  const side = port?.side ?? (direction === 'TB' ? (end === 'from' ? 'bottom' : 'top') : (end === 'from' ? 'right' : 'left'))
-  return { ...graphPortAnchor(box, port ?? { id: '', side }), side }
+  if (port) {
+    assertGraphPortSide(edge[end], port)
+    return { ...graphPortAnchor(box, port), side: port.side }
+  }
+  const side: GraphPort['side'] = direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
+    : direction === 'BT' ? (end === 'from' ? 'top' : 'bottom')
+    : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left')
+  const id = (edge as Partial<GraphEdge>).id
+  const path = typeof id === 'string' ? layout.paths.get(id) : undefined
+  const drawn = path === undefined ? undefined : graphPathEndpoints(path)
+  if (!drawn) return { ...graphPortAnchor(box, { id: '', side }), side }
+  const point = end === 'from' ? drawn.start : drawn.end
+  // The closest side wins; the direction's default side wins ties, such as at a corner.
+  const distances: Record<GraphPort['side'], number> = {
+    left: Math.abs(point.x - box.x), right: Math.abs(point.x - box.x - box.width),
+    top: Math.abs(point.y - box.y), bottom: Math.abs(point.y - box.y - box.height),
+  }
+  let nearest = side
+  for (const candidate of ['left', 'right', 'top', 'bottom'] as const) {
+    if (distances[candidate] < distances[nearest]) nearest = candidate
+  }
+  return { x: point.x, y: point.y, side: nearest }
+}
+
+// The layout box of an edge end, with a descriptive error for a node the layout does not contain.
+function edgeEndBox(boxes: ReadonlyMap<string, GraphBox>, edge: GraphConnection, nodeId: string) {
+  const box = boxes.get(nodeId)
+  if (box) return box
+  const id = (edge as Partial<GraphEdge>).id
+  const name = typeof id === 'string' ? id : `${edge.from} → ${edge.to}`
+  throw new Error(`Graph edge ${name} references a node that is not in the layout: ${nodeId}`)
 }
 
 /** Route named endpoints after the node layout and any saved positions are applied. */
-export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: 'LR' | 'TB'): GraphLayout {
+export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: GraphLayoutDirection): GraphLayout {
   if (!edges.some(edge => edge.fromPort !== undefined || edge.toPort !== undefined)) return layout
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
-  const outward = (point: GraphPoint & { side: GraphPort['side'] }, distance: number): GraphPoint => {
-    const offsets = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] } as const
-    const [dx, dy] = offsets[point.side]
-    return {
-      x: Math.min(layout.width, Math.max(0, point.x + dx * distance)),
-      y: Math.min(layout.height, Math.max(0, point.y + dy * distance)),
-    }
-  }
+  // Control points stay inside the layout.
+  const clamp = (point: GraphPoint): GraphPoint => ({
+    x: Math.min(layout.width, Math.max(0, point.x)),
+    y: Math.min(layout.height, Math.max(0, point.y)),
+  })
   for (const edge of edges) {
     if (edge.fromPort === undefined && edge.toPort === undefined) continue
     const from = graphEdgeEndpoint(layout, nodes, edge, 'from', direction)
     const to = graphEdgeEndpoint(layout, nodes, edge, 'to', direction)
-    const distance = Math.min(72, Math.max(22, Math.hypot(to.x - from.x, to.y - from.y) / 3))
-    const a = outward(from, distance), b = outward(to, distance)
+    const controls = graphPortControls(from, to)
+    const a = clamp(controls.a), b = clamp(controls.b)
     if (edge.from === edge.to && from.x === to.x && from.y === to.y) {
       if (from.side === 'left' || from.side === 'right') {
         a.y = Math.max(0, a.y - 18)
@@ -439,18 +517,18 @@ export function applyGraphPositions(
   layout: GraphLayout,
   edges: readonly GraphEdge[],
   positions: ReadonlyMap<string, GraphPoint>,
-  direction: 'LR' | 'TB' = 'LR',
+  direction: GraphLayoutDirection = 'LR',
 ): GraphLayout {
   if (!positions.size) return layout
   const boxes = new Map(layout.boxes)
   const moved = new Set<string>()
   let { width, height } = layout
   for (const [id, point] of positions) {
-    const box = boxes.get(id)
-    if (!box) continue
-    if (![point.x, point.y].every(value => Number.isFinite(value) && value >= 0)) {
+    if (![point?.x, point?.y].every(value => Number.isFinite(value) && value! >= 0)) {
       throw new RangeError('Graph positions must be finite and nonnegative: ' + id)
     }
+    const box = boxes.get(id)
+    if (!box) continue
     if (point.x === box.x && point.y === box.y) continue
     boxes.set(id, { ...box, x: point.x, y: point.y })
     moved.add(id)
@@ -458,33 +536,58 @@ export function applyGraphPositions(
     height = Math.max(height, point.y + box.height + 32)
   }
   if (!moved.size) return layout
+  return { ...rerouteIncidentEdges(layout, boxes, edges, moved, direction), width, height }
+}
 
+/** A node size for the `applyGraphSizes` overlay, in chart units. */
+export interface GraphNodeSize {
+  width: number
+  height: number
+}
+
+/**
+ * Apply saved node sizes on top of a layout (after any positions), keeping each box's top-left corner. Edges that touch
+ * a resized node are rerouted like moved ones; other routes are kept. IDs without a box are ignored. Throws RangeError
+ * for a size that is not finite and positive. Returns the same layout when nothing changes.
+ */
+export function applyGraphSizes(
+  layout: GraphLayout,
+  edges: readonly GraphEdge[],
+  sizes: ReadonlyMap<string, GraphNodeSize>,
+  direction: GraphLayoutDirection = 'LR',
+): GraphLayout {
+  if (!sizes.size) return layout
+  const boxes = new Map(layout.boxes)
+  const changed = new Set<string>()
+  let { width, height } = layout
+  for (const [id, size] of sizes) {
+    if (![size.width, size.height].every(value => Number.isFinite(value) && value > 0)) {
+      throw new RangeError('Graph node sizes must be finite and positive: ' + id)
+    }
+    const box = boxes.get(id)
+    if (!box || (size.width === box.width && size.height === box.height)) continue
+    boxes.set(id, { ...box, width: size.width, height: size.height })
+    changed.add(id)
+    width = Math.max(width, box.x + size.width + 32)
+    height = Math.max(height, box.y + size.height + 32)
+  }
+  if (!changed.size) return layout
+  return { ...rerouteIncidentEdges(layout, boxes, edges, changed, direction), width, height }
+}
+
+// Curves for the edges that touch a moved or resized node; other routes are kept.
+function rerouteIncidentEdges(
+  layout: GraphLayout, boxes: Map<string, GraphBox>, edges: readonly GraphEdge[], moved: ReadonlySet<string>, direction: GraphLayoutDirection,
+): GraphLayout {
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
   for (const edge of edges) {
     if (!moved.has(edge.from) && !moved.has(edge.to)) continue
-    const source = boxes.get(edge.from)!
-    const target = boxes.get(edge.to)!
-    if (edge.from === edge.to) {
-      const x = source.x + source.width
-      const y = source.y + source.height / 2
-      paths.set(edge.id, `M ${x} ${y} C ${x + 30} ${y + 18}, ${x + 30} ${y - 28}, ${x} ${y - 12}`)
-      edgeLabels.set(edge.id, { x: x + 21, y: y - 16 })
-    } else if (direction === 'TB') {
-      const forward = target.y + target.height / 2 >= source.y + source.height / 2
-      const x1 = source.x + source.width / 2, x2 = target.x + target.width / 2
-      const y1 = source.y + (forward ? source.height : 0), y2 = target.y + (forward ? 0 : target.height)
-      const mid = (y1 + y2) / 2
-      paths.set(edge.id, `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`)
-      edgeLabels.set(edge.id, { x: (x1 + x2) / 2, y: mid - 6 })
-    } else {
-      const forward = target.x + target.width / 2 >= source.x + source.width / 2
-      const x1 = source.x + (forward ? source.width : 0), x2 = target.x + (forward ? 0 : target.width)
-      const y1 = source.y + source.height / 2, y2 = target.y + target.height / 2
-      const mid = (x1 + x2) / 2
-      paths.set(edge.id, `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`)
-      edgeLabels.set(edge.id, { x: mid, y: (y1 + y2) / 2 - 6 })
-    }
+    const source = edgeEndBox(boxes, edge, edge.from)
+    const target = edgeEndBox(boxes, edge, edge.to)
+    const { path, label } = graphIncidentCurve(source, target, edge.from === edge.to, direction)
+    paths.set(edge.id, path)
+    edgeLabels.set(edge.id, label)
   }
-  return { boxes, paths, edgeLabels, width, height }
+  return { boxes, paths, edgeLabels, width: layout.width, height: layout.height }
 }

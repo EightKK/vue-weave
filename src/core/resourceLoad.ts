@@ -19,7 +19,16 @@ export interface ResourceLoadSegment extends TimeRange {
   load: number
   capacity: number
   overload: number
+  /**
+   * Tasks with work in the segment. Segments with the same tasks may share one array, so treat it as read-only.
+   */
   taskIds: readonly string[]
+}
+
+/** A set of active tasks in insertion order, with memoized successor states keyed by the change applied to it. */
+interface ActiveTasks {
+  ids: readonly string[]
+  next?: Map<string, ActiveTasks>
 }
 
 interface LoadEvent {
@@ -75,9 +84,14 @@ export function calculateResourceLoad(
   }
 
   const segments: ResourceLoadSegment[] = []
+  // Segments share one taskIds array while their tasks (and order) are equal. The order of a set follows from its
+  // previous order and the change, so a change applied to the same state is memoized; an empty set is one state.
+  // This keeps the output small when many tasks share work slices or when only the capacity changes.
+  const empty: ActiveTasks = { ids: [] }
   for (const [resourceId, events] of byResource) {
     const times = [...events.keys()].sort((a, b) => a - b)
     const active = new Set<string>()
+    let state = empty
     let load = 0, capacity = 0
     for (let i = 0; i < times.length - 1; i++) {
       const time = times[i]!, event = events.get(time)!
@@ -89,10 +103,17 @@ export function calculateResourceLoad(
         load += units
         active.add(taskId)
       }
+      if (event.ends.length || event.starts.length) {
+        const change = JSON.stringify([event.ends.map(item => item.taskId), event.starts.map(item => item.taskId)])
+        state.next ??= new Map()
+        let next = state.next.get(change)
+        if (!next) state.next.set(change, next = active.size ? { ids: [...active] } : empty)
+        state = next
+      }
       if (!Number.isSafeInteger(load)) throw new RangeError('Combined resource load exceeds the integer limit')
       capacity = event.capacity ?? capacity
       segments.push({ resourceId, start: time, end: times[i + 1]!, load, capacity,
-        overload: Math.max(0, load - capacity), taskIds: [...active] })
+        overload: Math.max(0, load - capacity), taskIds: state.ids })
     }
   }
   return segments

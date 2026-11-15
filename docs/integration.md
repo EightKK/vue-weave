@@ -4,6 +4,8 @@
 
 The package exports ES modules. Use `vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `vue-weave/style.css` once.
 
+Both components are generic over their item types. Type the `data` of your items, for example `NetworkNode<MyData>[]` or `TimelineBar<MyData>[]`, and the slot props, `layout`, `columns` callbacks and export label callbacks receive that type without casts. For a template ref, use `useTemplateRef`, which vue-tsc infers from the template, or `NetworkGraphExposed` and `GanttChartExposed`; `InstanceType<typeof NetworkGraph>` keeps working with the default types. See [Typed data](api.md#typed-data).
+
 For installation, follow the [README](../README.md#install).
 
 Declarations also support `noUncheckedSideEffectImports` without requiring CSS declarations just to import the components. If your application imports the stylesheet with that option enabled, its asset types must recognize CSS imports, for example through `vite/client` or an application-owned `declare module '*.css' {}` declaration.
@@ -23,9 +25,9 @@ Import components explicitly in a page or component.
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph } from 'vue-weave'
-const nodes = [{ id: 'root', label: 'Root' }]
-const edges = []
+import { NetworkGraph, type GraphEdge, type NetworkNode } from 'vue-weave'
+const nodes: NetworkNode[] = [{ id: 'root', label: 'Root' }]
+const edges: GraphEdge[] = []
 </script>
 <template>
   <NetworkGraph :nodes="nodes" :edges="edges" />
@@ -34,9 +36,104 @@ const edges = []
 
 The library accesses DOM measurement and ResizeObserver after mounting. Initial server rendering uses deterministic fallback viewport dimensions, then measures the actual container. Vue useId supplies instance-specific SVG marker IDs. Keep server/client data and formatTime output consistent. For timezone-specific labels, use Intl.DateTimeFormat with an explicit timeZone and locale.
 
+## Large graphs, touch and search
+
+For graphs with thousands of nodes, set `cullOffscreen` so only the visible region is in the DOM. Keep `showMinimap` on to orient users, because the minimap still draws every node. A search box can pass the IDs found by your own code as `matchIds` and call `focusNode(id)` on the component ref to bring a result into view.
+
+```vue
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" cull-offscreen show-minimap :match-ids="matches" />
+```
+
+```ts
+graph.value?.focusNode(matches.value.values().next().value, { scale: 1 })
+```
+
+The graph needs no setup for touch: pinch to zoom and drag with two fingers to pan. Nested groups take an optional `parentId` on each group; see the API reference. Culled nodes are absent from the DOM and keyboard order, so offer a search or list for keyboard users who need to reach a distant node.
+
+## Deleting, context menus and tooltips
+
+Deletion, like every graph edit, is a proposal. Enable `deletable` (and `edgesSelectable` so edges can be selected), then apply the `delete` event with `removeGraphElements` from the core entry. Committing the result as one `useEditHistory` entry lets Undo restore the nodes and edges together. Prune selections, saved positions and groups that mention removed IDs.
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" edges-selectable deletable context-menu
+  v-model:selected-ids="selection" v-model:selected-edge-ids="edgeSelection"
+  @delete="applyDeletion" @context-menu="openMenu">
+  <template #tooltip="{ target }">
+    {{ target.kind === 'node' ? target.node.detail : target.edge.label }}
+  </template>
+</NetworkGraph>
+```
+
+```ts
+function applyDeletion(deletion: GraphDeletion) {
+  const next = removeGraphElements(nodes.value, edges.value, deletion)
+  history.commit({ ...history.state.value, ...next })
+}
+```
+
+The `context-menu` event only reports the request with its target, chart point and viewport coordinates. Render your own menu, for example with `position: fixed` at `clientX` and `clientY`; give it `role="menu"` and `role="menuitem"` entries, focus the first entry, close it with Escape and return focus to the graph element. The tooltip slot renders HTML in an overlay that the component positions; keep it short and non-interactive, because a tooltip cannot be focused.
+
+## Snapping, palettes and the clipboard
+
+Turn on `snapGrid` (with `background="dots"` to show the grid), `alignmentGuides` and `autoPan` for a diagram editor feel. Node moves still arrive as `node-move` and `nodes-move` proposals, already snapped.
+
+A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `node-drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
+
+```vue
+<button type="button" draggable="true" @dragstart="$event.dataTransfer?.setData('application/x-node', 'task')"
+  @click="addTask(graph!.getViewportCenter())">Add task</button>
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :positions="positions" draggable droppable clipboard
+  :snap-grid="20" background="dots" alignment-guides auto-pan
+  @node-drop="drop => drop.dataTransfer?.getData('application/x-node') === 'task' && addTask(drop.point)"
+  @copy-selection="copied = $event" @paste-request="paste" @duplicate-selection="duplicate" />
+```
+
+`drop.point` is the drop position in chart coordinates, rounded to the grid. To centre a new node on the pointer instead of placing its corner there, convert `drop.clientX` and `drop.clientY` with `toGraphPoint` and round the corner once with `snapGraphPoint`. Saved positions must stay nonnegative.
+
+The `copy-selection`, `paste-request` and `duplicate-selection` events only report keys and selections; the application keeps the copied data. `cloneGraphElements` from the core entry copies nodes and the edges between them with new IDs, moved positions and moved edge waypoints:
+
+```ts
+function duplicate(selection: GraphClipboardSelection) {
+  const copies = cloneGraphElements(nodes.value, edges.value, selection.nodeIds, {
+    createId: (id, kind) => id + '-copy-' + nextNumber(kind),
+    positions: selection.positions,
+    offset: { x: 40, y: 40 },
+  })
+  history.commit({
+    nodes: [...nodes.value, ...copies.nodes], edges: [...edges.value, ...copies.edges],
+    positions: new Map([...positions.value, ...copies.positions]),
+  })
+}
+```
+
+For `paste-request`, store the copied nodes, edges and `positions` from the `copy-selection` event, then clone them with an `offset` that moves their top-left corner to `event.point`. Committing each operation as one `useEditHistory` entry makes Undo remove the copies together.
+
+## Collapsing groups, edge styles, waypoints and resizing
+
+Keep the collapsed group IDs, node sizes and edge waypoints in your application state next to `positions`, and commit each accepted proposal as one history entry:
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :groups="groups" :positions="positions" :sizes="sizes" draggable
+  collapsible-groups :collapsed-group-ids="collapsed" @update:collapsed-group-ids="ids => commit({ collapsed: ids })"
+  edge-style="orthogonal" editable-edges edges-selectable resizable :lod-threshold="0.5"
+  @edge-reshape="reshape" @node-resize="resize" @node-move="move" @nodes-move="moveAll" />
+```
+
+```ts
+function reshape({ id, after }: GraphEdgeReshape) {
+  commit({ edges: edges.value.map(edge => edge.id === id ? { ...edge, points: after.length ? after : undefined } : edge) })
+}
+function resize({ id, before, after }: GraphNodeResize) {
+  const nextPositions = after.x !== before.x || after.y !== before.y ? new Map(positions.value).set(id, { x: after.x, y: after.y }) : positions.value
+  commit({ sizes: new Map(sizes.value).set(id, { width: after.width, height: after.height }), positions: nextPositions })
+}
+```
+
+A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no further theme variables are needed.
+
 ## Custom content
 
-The graph node slot receives its node and measured layout box. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
+The graph node slot receives its node, measured layout box and the camera `scale`. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
 
 ```vue
 <NetworkGraph :nodes="nodes" :edges="edges">
@@ -54,9 +151,104 @@ Gantt row/bar/tick slots accept ordinary HTML. The bar slot is already inside a 
 
 ## Themes and localization
 
-Styles use the vft- class prefix. Set CSS variables on an ancestor to change themes. Examples include --vft-surface, --vft-surface-muted, --vft-surface-hover, --vft-text, --vft-muted, --vft-border, --vft-grid, --vft-edge, --vft-accent and --vft-on-solid.
+Styles use the vw- class prefix. Set CSS variables on an ancestor to change themes. Examples include --vw-surface, --vw-surface-muted, --vw-surface-hover, --vw-text, --vw-muted, --vw-border, --vw-grid, --vw-edge, --vw-accent and --vw-on-solid.
 
-Tone-specific variables follow --vft-blue-ink, --vft-blue-line, --vft-blue-pale and --vft-blue-solid. The same suffixes are available for teal, amber and violet. `--vft-baseline`, `--vft-marker` and `--vft-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. The demo contains a dark theme using this contract.
+Tone-specific variables follow --vw-blue-ink, --vw-blue-line, --vw-blue-pale and --vw-blue-solid. The same suffixes are available for teal, amber and violet. `--vw-baseline`, `--vw-marker` and `--vw-dependency-highlight` control baseline bars, time markers and highlighted dependency paths. When two or three baseline sets are drawn (`baselineIds`), `--vw-baseline` colours the first slot and `--vw-baseline-2` (default `#9a4c95`) and `--vw-baseline-3` (default `#23806f`) the second and third; the built-in dark theme sets them to `#dc9fd6` and `#6fd0bc`. To colour a set by its ID instead of its slot, style `.vw-gantt-baseline[data-vw-baseline="rev1"]`. The demo's own `.dark` class uses this contract too. `--vw-dimmed-opacity` (default 0.28) sets the opacity of graph nodes and edges de-emphasized through `matchIds` or `dimmedIds`.
+
+`--vw-edge-selected` (default `--vw-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vw-surface`, `--vw-border` and `--vw-text`.
+
+NetworkGraph editing aids add two variables, used only when the matching prop is set:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-background-pattern` | `--vw-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
+| `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
+
+GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
+
+Scheduling overlays add four variables, used only when the matching input is set:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-non-working` | `#eaeff3` | `nonWorkingPeriods` shading behind the grid |
+| `--vw-critical` | `#b42318` | Outline of bars with `critical: true` |
+| `--vw-float` | `#5b7083` | Float line from a bar's end to its `latestEnd` |
+| `--vw-deadline` | `#a74f08` | Deadline indicator and the dashed outline of a late bar |
+
+Segmented bars draw their work pieces and gap connectors with the bar's tone variables.
+
+The opt-in progress slider (`progressEditable`) is drawn in `--vw-accent`, and the tooltip slot container (`vw-gantt-tooltip`) uses `--vw-surface`, `--vw-text` and `--vw-border`; they add no variables. Restyle the tooltip through its class or your slot content.
+
+Drag to create (`creatable`) draws its preview (`vw-gantt-create-preview`) with `--vw-accent` and the row add button (`vw-gantt-create-button`) with `--vw-surface`, `--vw-border` and `--vw-accent`. The cascade preview of the `cascade` prop adds one variable:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-cascade` | `#6d4bb3` | Dashed outline and light fill of the bars a `cascade` callback moves during a drag (`vw-gantt-cascade-preview`) |
+
+Row hierarchy moves (`rowsReorderable`) draw the move handles (`vw-row-move-handle`) with `--vw-muted` and `--vw-surface-hover` and the drop indicator (`vw-gantt-row-drop`) with `--vw-accent`. The status date adds one variable:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-status` | `#1f7a4d` | The `statusDate` line and its label (`vw-gantt-status-date`) and the progress line of `showProgressLine` (`vw-gantt-progress-line`); the `status` export theme colour |
+
+Scheduling constraints (`TimelineBar.constraints`) add two variables. Their markers and, with `constraintsEditable`, their handles have the class `vw-gantt-constraint` with the modifiers `vw-is-start` or `vw-is-finish` (flag at the top or the bottom), `vw-is-lower`, `vw-is-upper` or `vw-is-fixed` (the glyph) and the states `vw-is-violated` and `vw-is-dragging`. The component sets `--vw-constraint-reach` on each, the length of its stem across the lane, for the stylesheet. A focused handle uses the `--vw-accent` focus outline.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-constraint` | `#a1246e` | Constraint markers and handles (`vw-gantt-constraint`); the `constraint` export theme colour |
+| `--vw-constraint-violated` | `#c4161c` | A constraint that the bar's dates break (`vw-gantt-constraint.vw-is-violated`, drawn with a dashed stem); the `constraintViolated` export theme colour |
+
+Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) with `--vw-border`, and with `--vw-accent` while hovered, dragged or focused; it adds no variable. The width of the row label column is the existing `--vw-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
+
+`GanttChart` also sets layout variables on its canvas element (`vw-gantt-canvas`) for its own stylesheet. A host stylesheet can read them, for example to place an overlay on the timeline, but setting them on an ancestor has no effect because the component sets them itself:
+
+| Variable | Value | Meaning |
+| --- | --- | --- |
+| `--vw-label-area-width` | length | Width of the row label area: `--vw-row-label-width` plus the width of any extra `columns`, including a column resize in progress. Time-axis content starts this far from the inline start edge |
+| `--vw-axis-width` | pixels | Width of the time axis |
+| `--vw-header-height` | pixels | Height of the header, including `headerBands` |
+| `--vw-row-depth` | number | Set on each row label: its hierarchy depth, capped at 5. The stylesheet uses it for indentation |
+| `--vw-grid-step` | pixels | Width of one tick step. Kept for custom stylesheets; the built-in styles no longer use it |
+
+`--vw-item-ink`, `--vw-item-line`, `--vw-item-pale` and `--vw-item-solid` are internal. The `vw-tone-*` classes set them from the tone families above, and nodes, bars and segments read them. They are not a theming API: change the tone variables (for example `--vw-blue-solid`) instead.
+
+### Class names
+
+Every class that the components emit and the stylesheet targets starts with `vw-`, so generic utility classes in the host page (for example Tailwind's `outline` or Bootstrap's `active`) cannot restyle chart elements. Element classes are named after the element (`vw-gantt-bar`, `vw-network-node`). State and variant modifiers use the `vw-is-*` form and are always combined with an element class, for example `.vw-gantt-bar.vw-is-selected` or `.vw-network-edge.vw-is-related`. Classes you add yourself, such as a `class` attribute on the component or the content of a slot, are passed through unchanged.
+
+In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1.0, rename them in custom stylesheets, test selectors and DOM queries:
+
+| Old class | New class | Applied to |
+| --- | --- | --- |
+| `selected` | `vw-is-selected` | Selected graph nodes, minimap nodes, selected edge hit areas, Gantt bars and the active dependency path |
+| `related` | `vw-is-related` | Graph nodes and edges next to the selection, and Gantt dependency paths that touch a selected bar |
+| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` |
+| `active` | `vw-is-active` | Pressed connection handles, the active graph edge and Gantt dependency hit areas, pressed Gantt link handles and the column resize separator being dragged |
+| `panning` | `vw-is-panning` | The graph stage while it is panned |
+| `draggable` | `vw-is-draggable` | Graph nodes that can be dragged |
+| `collapsed` | `vw-is-collapsed` | Group toggles of collapsed graph groups |
+| `solid`, `outline` | `vw-is-solid`, `vw-is-outline` | Gantt bars, from `TimelineBar.appearance` |
+| `editable` | `vw-is-editable` | Editable Gantt bars |
+| `dragging` | `vw-is-dragging` | Gantt bars with a pending preview and the progress slider being dragged (since 0.2.0 also a constraint handle being dragged) |
+| `milestone` | `vw-is-milestone` | Zero-duration Gantt bars |
+| `first`, `last` | `vw-is-first`, `vw-is-last` | The start and end resize handles of a Gantt bar (`vw-bar-handle`) |
+| `start`, `finish` | `vw-is-start`, `vw-is-finish` | The start and finish link handles of a Gantt bar (`vw-gantt-link-handle`) |
+| `end` | `vw-is-end` | The tick label at the end of the Gantt range |
+| `overloaded`, `idle` | `vw-is-overloaded`, `vw-is-idle` | Gantt load segments above capacity or without load |
+
+The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-auto`) and the other `vw-` classes, such as `vw-critical`, `vw-dimmed` and `vw-rtl`, keep their names.
+
+### Built-in dark theme
+
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+
+`--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
+
+### Media queries
+
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), the status-date line (a thick `CanvasText` line), the progress line (dashed `CanvasText`), dependency lag labels (`CanvasText` on a `Canvas` halo) and scheduling constraint markers and handles (`CanvasText` on a `Canvas` halo, a violated one with a dashed stem, a focused handle with a `Highlight` outline), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines and the scheduling constraint markers (also those drawn as handles) are printed, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
@@ -64,13 +256,34 @@ Supply partial labels objects to translate controls and accessible names. The ro
 
 The edit event carries the previous interval so your parent can detect a stale proposal. A synchronous local commit is shown in the README.
 
-For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize pending updates per bar or reject another edit while a save is pending. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
+For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize saves per document, not per bar: tasks, dependencies, assignments and calendars share one document version, so concurrent saves of different bars can conflict or leave related records inconsistent. Reject another edit (`useEditTransaction` returns `busy`) while a save is pending. The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically; a client-generated ID alone cannot prevent a double update on retry, and without these server guarantees retries are not safe. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
+
+Treat a Gantt `edits` batch as one transaction: apply every change or none, and commit it as one history entry. Row moves arrive as `change.row.after`. Dependency `connect`, `reconnect` and `dependency-delete` events are proposals as well; assign dependency IDs in the application or on the server, and check for cycles there if your scheduling rules forbid them. A `reconnect` of a dependency with a `lag` carries the lag in `before` and `after`, so `{ ...dependency, ...change.after }` keeps it; change a lag through your own UI and commit it like any other edit.
+
+`progress-edit` and `bars-delete` follow the same pattern. Accept a progress proposal by setting the bar's `progress` to `change.after`. Accept a deletion with `removeTimelineBars`, which also drops the dependencies that touch the removed bars, and commit both arrays as one history entry so that undo restores the bars and their links together:
+
+```ts
+function deleteBars(ids: string[]) {
+  const next = removeTimelineBars(history.state.value.bars, history.state.value.dependencies, ids)
+  history.commit(next)
+}
+```
+
+Accept a `create` proposal by adding a bar with an ID and label of your choice at `proposal.start`–`proposal.end` in `proposal.rowId` (and `proposal.lane` when you use lanes), again as one history entry. When new bars may overlap others, pass the bars through `assignLanes(bars, { keepLanes: true })` and give the chart its `laneCount` with a `rowHeight` of at least 8 + laneCount × 14. With `cascade`, an accepted move arrives as an `edits` batch that lists the bars the user moved first and the cascaded bars after them; apply it like any batch, or recompute the plan from the moved bars when the cascaded dates come from your scheduler.
+
+Accept a `row-move` proposal with `moveTimelineRow(rows, change.id, change.after)` and commit the new rows with the bars and dependencies as one history entry, so that undo restores the previous hierarchy. `timelineWbsCodes(rows)` numbers the rows for a WBS column.
+
+Accept a `column-resize` proposal by setting the column's `width`, or `labelWidth` when `change.id` is `timelineLabelColumnId`. Widths are view settings: keep them in the same history as the data when Undo should restore them, as the timeline editing demo does, or store them per user.
+
+To import a plan from CSV, read the file in the browser (`await file.text()`) or on a server, then call `timelineFromCsvTable(parseCsv(text), { parseTime })` and commit the returned rows and bars as one history entry. The importer assigns its own row and bar IDs, so map them to your records or keep a lookup by label when you merge an import into existing data. Catch its errors and show the message, which names the CSV line.
+
+The `context-menu` event only reports what was targeted, the time and row under the pointer and the client coordinates. Render your own menu there (for example `role="menu"` with `role="menuitem"` entries), move focus into it, close it on Escape and return focus to the element that had it. Menu actions can reuse the same accept functions as the keyboard proposals.
 
 ## Alternative time scales
 
 A TimeScale exposes width, toX(time) and toTime(x). It must map range.start to 0 and range.end to width, be finite and strictly increasing, and provide mutually inverse mappings over the range. It should also extrapolate beyond the range when tick or interval calculations require it. The Gantt component applies zoom to that mapping and uses its inverse for pointer displacement.
 
-For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset; the application must supply explicit work periods for timezone/DST transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
+For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
 
 ## Reusing calculations
 
@@ -84,4 +297,136 @@ Keep the source rows, bars and dependencies as they are and render the output of
 
 To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
 
-For typed editing, give a column a `field` spec. A `time` field needs an explicit `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text.
+For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text.
+## Use ELK.js for layout
+
+The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes. Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
+
+ELK lays out asynchronously, and NetworkGraph's `layout` prop is synchronous. Compute the layout in the application (in a worker, with ELK's `workerUrl`, for large graphs), then pass the nodes, the edges and a `layout` function that returns the cached result together, so that the chart never sees data without matching geometry.
+
+```ts
+import ELK from 'elkjs/lib/elk.bundled.js'
+import type { ElkExtendedEdge, ElkNode, ElkPoint } from 'elkjs/lib/elk-api'
+import { shallowRef, watch, type Ref } from 'vue'
+import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutFunction, type NetworkNode } from 'vue-weave'
+
+const elk = new ELK()
+const nodeWidth = 144, nodeHeight = 58
+const elkSide = { left: 'WEST', right: 'EAST', top: 'NORTH', bottom: 'SOUTH' } as const
+const elkPortId = (nodeId: string, portId: string) => nodeId + '\u0000' + portId
+
+function toElkGraph(nodes: readonly NetworkNode[], edges: readonly GraphEdge[]): ElkNode {
+  return {
+    id: 'root',
+    layoutOptions: {
+      'org.eclipse.elk.algorithm': 'layered',
+      'org.eclipse.elk.direction': 'RIGHT',
+      'org.eclipse.elk.edgeRouting': 'ORTHOGONAL',
+      'org.eclipse.elk.spacing.nodeNode': '24',
+      'org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers': '50',
+      'org.eclipse.elk.padding': '[top=20,left=20,bottom=20,right=20]',
+    },
+    children: nodes.map(node => ({
+      id: node.id,
+      width: nodeWidth,
+      height: nodeHeight,
+      // Fixed ports at the anchors NetworkGraph draws (side and offset), so ELK places the nodes for them.
+      layoutOptions: node.ports?.length ? { 'org.eclipse.elk.portConstraints': 'FIXED_POS' } : undefined,
+      ports: node.ports?.map(port => {
+        const anchor = graphPortAnchor({ x: 0, y: 0, width: nodeWidth, height: nodeHeight, rank: 0 }, port)
+        return {
+          id: elkPortId(node.id, port.id), x: anchor.x, y: anchor.y, width: 0, height: 0,
+          layoutOptions: { 'org.eclipse.elk.port.side': elkSide[port.side] },
+        }
+      }),
+    })),
+    edges: edges.map(edge => ({
+      id: edge.id,
+      sources: [edge.fromPort === undefined ? edge.from : elkPortId(edge.from, edge.fromPort)],
+      targets: [edge.toPort === undefined ? edge.to : elkPortId(edge.to, edge.toPort)],
+      labels: edge.label ? [{ text: edge.label, width: edge.label.length * 7, height: 14 }] : undefined,
+    })),
+  }
+}
+
+/** An SVG path through the start, bend and end points of each orthogonal edge section. */
+function sectionPath(edge: ElkExtendedEdge) {
+  return (edge.sections ?? []).map(section => [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
+    .map((point: ElkPoint, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ')).join(' ')
+}
+
+function fromElkGraph(graph: ElkNode): GraphLayout {
+  const children = graph.children ?? []
+  // ELK reports no layer index; number the distinct x positions of the left-to-right layers instead.
+  const layers = [...new Set(children.map(child => child.x ?? 0))].sort((a, b) => a - b)
+  const boxes = new Map<string, GraphBox>(children.map(child => [child.id, {
+    x: child.x ?? 0, y: child.y ?? 0, width: child.width ?? nodeWidth, height: child.height ?? nodeHeight,
+    rank: layers.indexOf(child.x ?? 0),
+  }]))
+  const paths = new Map<string, string>()
+  const edgeLabels = new Map<string, { x: number; y: number }>()
+  for (const edge of graph.edges ?? []) {
+    paths.set(edge.id, sectionPath(edge))
+    const label = edge.labels?.[0]
+    if (label?.x !== undefined && label.y !== undefined) {
+      edgeLabels.set(edge.id, { x: label.x + (label.width ?? 0) / 2, y: label.y + (label.height ?? 0) / 2 })
+    }
+  }
+  return { boxes, paths, edgeLabels, width: Math.max(1, graph.width ?? 1), height: Math.max(1, graph.height ?? 1) }
+}
+
+/** Nodes, edges and a synchronous layout that always belong together; undefined until the first layout finishes. */
+export function useElkLayout(nodes: Ref<readonly NetworkNode[]>, edges: Ref<readonly GraphEdge[]>) {
+  const view = shallowRef<{ nodes: readonly NetworkNode[]; edges: readonly GraphEdge[]; layout: GraphLayoutFunction }>()
+  watch([nodes, edges], async ([currentNodes, currentEdges], _previous, onCleanup) => {
+    let stale = false
+    onCleanup(() => { stale = true })
+    const result = fromElkGraph(await elk.layout(toElkGraph(currentNodes, currentEdges)))
+    // A newer change may have started another layout while this one ran.
+    if (!stale) view.value = { nodes: currentNodes, edges: currentEdges, layout: () => result }
+  }, { immediate: true })
+  return view
+}
+```
+
+```vue
+<NetworkGraph v-if="view" :nodes="view.nodes" :edges="view.edges" :layout="view.layout" />
+```
+
+Notes:
+
+- The edge coordinates above are those of the root graph, which holds every node and edge of a flat graph. For compound graphs (`children` inside children), ELK reports positions relative to each parent; add the parent offsets, or set `org.eclipse.elk.json.edgeCoords` to `ROOT` and `org.eclipse.elk.json.shapeCoords` to `ROOT`.
+- NetworkGraph checks the result: every node needs a box with a positive size and every edge a path, and `width` and `height` must be positive. Give ELK the sizes you render, for example from the `sizes` prop.
+- Keep the default `edgeStyle` (`curve`) to draw ELK's routes. `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are always redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Saved `positions` move nodes after the layout and reroute their edges in the same way.
+- With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
+- `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
+
+## Export to SVG and PNG
+
+Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
+
+```ts
+const svg = timeline.value!.exportSvg({ title: 'Production plan' })
+const png = await timeline.value!.exportPng({ scale: window.devicePixelRatio })
+const url = URL.createObjectURL(png)
+Object.assign(document.createElement('a'), { href: url, download: 'plan.png' }).click()
+URL.revokeObjectURL(url)
+```
+
+The export reads the `--vw-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
+
+To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
+
+## Right-to-left languages
+
+Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to follow the direction inherited from the page (for example `<html dir="rtl">`). The default `ltr` leaves rendering unchanged; in a right-to-left page it keeps the inherited direction, which the timeline does not support, so pass `rtl` or `auto` there.
+
+```vue
+<GanttChart dir="rtl" :rows="rows" :bars="bars" :range="range" :format-time="formatTime" @edit="apply" />
+```
+
+The timeline then runs from right to left and its row headings sit on the right. Edit proposals keep the same times and units, so validation and persistence code needs no change. Arrow keys follow the screen: ArrowLeft makes a bar later. Translate the edit hint through `labels.editHint` to describe this to screen reader users. `auto` is resolved after mounting, so server-rendered markup is left-to-right until hydration; use an explicit `rtl` for server rendering.
+
+`auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
+
+The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.

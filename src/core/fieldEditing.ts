@@ -1,3 +1,4 @@
+import { zonedInstant, zoneFormat, zoneOffset } from './timeZone.js'
 import type { TimelineRow } from './types.js'
 
 export type FieldPrimitive = string | number | boolean | null
@@ -37,9 +38,15 @@ export interface TimelineFieldSpec<R extends TimelineRow = TimelineRow> {
   /** `duration` only: accept negative values. Other kinds are not restricted unless `min` says so. */
   allowNegative?: boolean
   /**
+   * `time` only: IANA time zone name (for example `Asia/Tokyo`) used for text without an offset. Daylight saving
+   * is applied; a skipped wall time resolves to the transition and a repeated one to its earlier occurrence.
+   * Takes precedence over `utcOffsetMinutes`.
+   */
+  timeZone?: string
+  /**
    * `time` only: fixed offset from UTC in minutes (for example 540 for UTC+09:00). The built-in parser
    * and formatter never use the runtime's local time zone. Without it, `parse` and `format` are required
-   * for `time` fields; an offset written in the text itself (`Z`, `+09:00`) wins over this one.
+   * for `time` fields (unless `timeZone` is set); an offset written in the text itself (`Z`, `+09:00`) wins over this one.
    */
   utcOffsetMinutes?: number
   /** `duration` only: whether the value is elapsed or working time. Surfaced for editors to display. */
@@ -79,6 +86,7 @@ function checkSpec(spec: TimelineFieldSpec<any>) {
   for (const key of ['min', 'max', 'utcOffsetMinutes'] as const) {
     if (spec[key] !== undefined && !Number.isFinite(spec[key])) throw new RangeError('Field ' + key + ' must be finite: ' + spec.id)
   }
+  if (spec.timeZone !== undefined) zoneFormat(spec.timeZone)
   if (spec.min !== undefined && spec.max !== undefined && spec.min > spec.max) throw new RangeError('Field min exceeds max: ' + spec.id)
   if (spec.unitSize !== undefined && (!Number.isFinite(spec.unitSize) || spec.unitSize <= 0)) {
     throw new RangeError('Field unitSize must be finite and positive: ' + spec.id)
@@ -99,14 +107,16 @@ const NUMBER_TEXT = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i
 const TIME_TEXT = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i
 
 /** Parse `YYYY-MM-DD[ T]HH:mm[:ss[.SSS]]` with an optional `Z` or `±HH:MM`, without using the runtime's zone. */
-function parseTimeText(text: string, defaultOffset: number): number | undefined {
+function parseTimeText(text: string, defaultOffset: number | undefined, format?: Intl.DateTimeFormat): number | undefined {
   const match = TIME_TEXT.exec(text)
   if (!match) return undefined
   const [year, month, day, hour, minute, second] = match.slice(1, 7).map(part => (part === undefined ? 0 : Number(part))) as number[]
   const millis = match[7] === undefined ? 0 : Number(match[7].padEnd(3, '0'))
   let offset = defaultOffset
+  let explicit = false
   const zone = match[8]
   if (zone !== undefined) {
+    explicit = true
     if (zone.toUpperCase() === 'Z') offset = 0
     else {
       const sign = zone[0] === '-' ? -1 : 1
@@ -122,12 +132,17 @@ function parseTimeText(text: string, defaultOffset: number): number | undefined 
   date.setUTCFullYear(year!, month! - 1, day!)
   if (date.getUTCMonth() !== month! - 1 || date.getUTCDate() !== day) return undefined
   date.setUTCHours(hour!, minute!, second!, millis)
-  const time = date.getTime() - offset * 60000
+  if (!explicit && format) {
+    const instant = zonedInstant(format, date.getTime())
+    return Number.isFinite(instant) ? instant : undefined
+  }
+  const time = date.getTime() - offset! * 60000
   return Number.isFinite(time) ? time : undefined
 }
 
-function formatTimeText(time: number, offset: number): string | undefined {
-  const date = new Date(time + offset * 60000)
+function formatTimeText(time: number, offset: number | Intl.DateTimeFormat): string | undefined {
+  if (typeof offset !== 'number' && !Number.isFinite(time)) return undefined
+  const date = new Date(time + (typeof offset === 'number' ? offset * 60000 : zoneOffset(offset, time)))
   if (Number.isNaN(date.getTime())) return undefined
   const year = date.getUTCFullYear()
   if (year < 0 || year > 9999) return undefined
@@ -175,10 +190,10 @@ export function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): Fie
         break
       }
       case 'time': {
-        if (spec.utcOffsetMinutes === undefined) {
-          return fail('time-zone', 'A time field needs utcOffsetMinutes or a custom parse and format')
+        if (spec.utcOffsetMinutes === undefined && spec.timeZone === undefined) {
+          return fail('time-zone', 'A time field needs timeZone, utcOffsetMinutes or a custom parse and format')
         }
-        const time = parseTimeText(trimmed, spec.utcOffsetMinutes)
+        const time = parseTimeText(trimmed, spec.utcOffsetMinutes, spec.timeZone === undefined ? undefined : zoneFormat(spec.timeZone))
         if (time === undefined) return fail('invalid', 'Not a date and time (YYYY-MM-DD HH:mm): ' + trimmed)
         value = time
         break
@@ -248,8 +263,8 @@ export function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue
   if (Array.isArray(value)) return value.map(item => formatFieldValue(spec, item)).join(', ')
   switch (spec.kind) {
     case 'time':
-      if (typeof value === 'number' && spec.utcOffsetMinutes !== undefined) {
-        return formatTimeText(value, spec.utcOffsetMinutes) ?? String(value)
+      if (typeof value === 'number' && (spec.timeZone !== undefined || spec.utcOffsetMinutes !== undefined)) {
+        return formatTimeText(value, spec.timeZone !== undefined ? zoneFormat(spec.timeZone) : spec.utcOffsetMinutes!) ?? String(value)
       }
       return String(value)
     case 'duration':

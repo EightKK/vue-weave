@@ -10,12 +10,15 @@ This policy applies to project issues, pull requests, discussions and other spac
 
 ## Reporting
 
-Do not post sensitive incident details or personal information in public issues. To arrange a private conversation with project maintainers, [request a private conduct reporting contact](https://github.com/EightKK/vue-weave/issues/new?title=Private%20conduct%20reporting%20contact) in an issue containing only a request for a private channel. Share the incident details after a private channel has been agreed. Include relevant context, links and the follow-up you are requesting.
+Report conduct problems to GitHub Support with GitHub's abuse reporting; the project has no separate contact address and no private channel to the maintainers. Do not post incident details or personal information in public issues.
 
-For abusive content on GitHub, use [GitHub's reporting tools](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam). Where available, **Report to repository admins** requests project moderation. Reports about violations of GitHub's own policies, including those involving a project maintainer, can be sent to GitHub Support through that process.
+- For a comment, issue, pull request or discussion, open the content's **Show options** (**...**) menu, choose **Report content** and then **Report abuse to GitHub Support**. See [Reporting abuse or spam](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam).
+- For a user account, or for conduct by a project maintainer, use the same GitHub reporting process.
+
+Include links to the content and describe what happened. Reports are handled by GitHub Support under GitHub's policies; the maintainers do not see them.
 
 ## Enforcement
 
-Repository maintainers moderate the spaces they operate. They may edit or remove harmful content, request a change in behavior, close a conversation, or temporarily or permanently restrict participation. They should consider context and severity, explain decisions privately where practical and protect the reporter's privacy. A maintainer with a conflict of interest should leave the report to another uninvolved maintainer where available. GitHub Support handles GitHub-policy reports separately from project moderation.
+Repository maintainers moderate the spaces they operate based on what they observe in those spaces. They may hide, edit or remove harmful content, request a change in behavior, lock a conversation, or temporarily or permanently block a user from the project. They should consider context and severity and avoid exposing anyone's personal information. GitHub Support handles reports made through GitHub's abuse reporting separately from project moderation.
 
 These responsibilities do not create a response-time or confidentiality guarantee beyond what the maintainer can provide. Changes to this policy should be documented publicly.
