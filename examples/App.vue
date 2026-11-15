@@ -6,11 +6,15 @@ import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type G
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
+import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
+import PersistenceDemo from './PersistenceDemo.vue'
 import { download, imageSize } from './download'
 
 const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
 
 const preset = ref('manufacturing')
+// Demos that keep their own state and ignore the graph and timeline controls of this page.
+const standalone = computed(() => ['scheduling', 'editing', 'resource-planning', 'persistence'].includes(preset.value))
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -475,7 +479,7 @@ function commit(change: TimelineEdit) {
 
 <template>
   <div class="demo" :class="[{ dark }, builtInTheme]">
-    <header><a href="./" class="wordmark">Vue Weave <span>{{ releaseLine }}</span></a><span v-if="preset !== 'scheduling' && preset !== 'editing'" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vw-theme-dark">Dark</option><option value="vw-theme-auto">Auto (system)</option></select></label></header>
+    <header><a href="./" class="wordmark">Vue Weave <span>{{ releaseLine }}</span></a><span v-if="!standalone" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vw-theme-dark">Dark</option><option value="vw-theme-auto">Auto (system)</option></select></label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
@@ -483,12 +487,16 @@ function commit(change: TimelineEdit) {
           :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
         <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
         <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
+        <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
+        <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
-        <button v-if="preset !== 'scheduling' && preset !== 'editing'" type="button" :disabled="!canUndo" @click="undo">Undo</button>
-        <button v-if="preset !== 'scheduling' && preset !== 'editing'" type="button" :disabled="!canRedo" @click="redo">Redo</button>
+        <button v-if="!standalone" type="button" :disabled="!canUndo" @click="undo">Undo</button>
+        <button v-if="!standalone" type="button" :disabled="!canRedo" @click="redo">Redo</button>
       </nav>
       <SchedulingDemo v-if="preset === 'scheduling'" />
       <GanttEditingDemo v-else-if="preset === 'editing'" />
+      <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
+      <PersistenceDemo v-else-if="preset === 'persistence'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
