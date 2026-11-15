@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.3.0 - 2026-11-15
+
 Everything below is additive and opt-in: without the new props, options and functions, rendering, accessible names, events and results are the same as in 0.2.0. There are no breaking changes.
 
 ### Added
