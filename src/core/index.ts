@@ -41,3 +41,4 @@ export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
 
 export * from './viewBindings.js'
+export * from './editTransaction.js'

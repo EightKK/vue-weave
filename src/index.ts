@@ -57,3 +57,5 @@ export type { GraphDrop } from './components/types.js'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
+export { useEditTransaction } from './composables/useEditTransaction.js'
+export type { UseEditTransactionOptions, HistoryReset } from './composables/useEditTransaction.js'
