@@ -4638,3 +4638,229 @@ test('gantt edit-cancel reports gestures and cell editors cancelled by new sourc
   await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+// ---- reference planning and persistence demos (examples/ResourcePlanningDemo.vue, examples/PersistenceDemo.vue) ----
+async function openResourcePlanning(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Resource planning', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Resource plan', exact: true })
+  await expect(chart).toBeVisible()
+  return { errors, chart, notice: page.getByRole('status', { name: 'Planning notice', exact: true }), summary: page.getByRole('status', { name: 'Plan summary', exact: true }) }
+}
+
+test('resource planning places an unplanned task from the backlog by keyboard and refuses an unplaced predecessor', async ({ page }) => {
+  const { errors, chart, notice, summary } = await openResourcePlanning(page)
+  // Task A needs two resources: it has two bars, one set of dates.
+  await expect(chart.getByRole('button', { name: 'Mold A · Press 1 08:00–11:00', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })).toBeVisible()
+  await expect(summary).toContainText('Calculated with scheduleTasks')
+  await expect(summary).toContainText('overloaded interval')
+
+  // Inspect E depends on Rework D, which has no dates yet: refused as a diagnostic, never silently dropped.
+  await page.getByRole('button', { name: 'Place Inspect E', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirm placement of Inspect E', exact: true }).click()
+  await expect(notice).toContainText('Inspect E depends on Rework D, which is not placed yet')
+  await expect(page.getByRole('region', { name: /^Preview/ })).toHaveCount(0)
+
+  await page.getByRole('searchbox', { name: 'Search unplanned tasks', exact: true }).fill('rework')
+  await expect(page.getByRole('button', { name: 'Place Inspect E', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Place Rework D', exact: true }).click()
+  await page.getByLabel('Row for Rework D', { exact: true }).selectOption({ label: 'Press 2' })
+  await page.getByLabel('Start for Rework D', { exact: true }).selectOption({ label: '08:00' })
+  await page.getByRole('button', { name: 'Confirm placement of Rework D', exact: true }).click()
+  const preview = page.getByRole('region', { name: 'Preview: placed Rework D', exact: true })
+  await expect(preview).toContainText('Calculated with scheduleTasks')
+  await expect(chart.getByRole('button', { name: /^Rework D/ })).toHaveCount(0)
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Rework D · Press 2 08:00–10:00', exact: true })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Unplanned task list' }).getByText('Rework D')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('resource planning moves a bar to another resource as one change, undoes it once and reveals diagnostics', async ({ page }) => {
+  const { errors, chart, notice, summary } = await openResourcePlanning(page)
+  const before = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await before.press('ArrowDown')
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await expect(preview).toContainText('No overloaded interval')
+  // Nothing changes until the preview is applied.
+  await expect(before).toBeVisible()
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  const after = chart.getByRole('button', { name: 'Mold B · Press 2 09:00–11:00', exact: true })
+  await expect(after).toBeVisible()
+  await expect(after).toBeFocused()
+  await expect(before).toHaveCount(0)
+  await expect(summary).toContainText('No overloaded interval')
+
+  // One undo restores both the assignment and the load.
+  await page.getByRole('button', { name: 'Undo planning change', exact: true }).click()
+  await expect(before).toBeVisible()
+  await expect(after).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Undo planning change', exact: true })).toBeDisabled()
+  await expect(summary).toContainText('overloaded interval')
+
+  // A diagnostic highlights and reveals its bars.
+  await page.getByRole('button', { name: /Resource overload/ }).first().click()
+  await expect(notice).toContainText('Highlighted 3 bar(s)')
+  await expect(chart.locator('.vw-is-highlighted')).toHaveCount(3)
+
+  // A horizontal move changes the task's dates for every projection.
+  await chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true }).press('ArrowRight')
+  const horizontal = page.getByRole('region', { name: 'Preview: Mold A rescheduled', exact: true })
+  await expect(horizontal).toContainText('every row that shows it')
+  await horizontal.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Mold A · Press 1 08:15–11:15', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Mold A · Crew 08:15–11:15', exact: true })).toBeVisible()
+
+  // Leveling says which calculation ran and does not claim more than it did.
+  await page.getByRole('combobox', { name: 'Capacity policy' }).selectOption('level')
+  await expect(summary).toContainText('Calculated with levelResources')
+  await expect(summary).not.toContainText('Not resolved')
+  expect(errors).toEqual([])
+})
+
+async function openPersistence(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Saved editing', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Saved timeline', exact: true })
+  await expect(chart).toBeVisible()
+  return {
+    errors, chart, saveStatus: page.getByRole('status', { name: 'Save status', exact: true }),
+    server: (label: string) => page.getByRole('radio', { name: label, exact: true }),
+    weld: (time: string) => chart.getByRole('button', { name: 'Weld frames ' + time, exact: true }),
+  }
+}
+
+test('saved editing leaves the state unchanged when the server rejects a save', async ({ page }) => {
+  const { errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Reject').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo saved change', exact: true })).toBeDisabled()
+  await expect(page.getByText('Server version v1 · 0 commits')).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss save message', exact: true }).click()
+  await expect(saveStatus).toContainText('Accepted version v1')
+  expect(errors).toEqual([])
+})
+
+test('saved editing shows an unknown result and reconciles it with the server instead of resending', async ({ page }) => {
+  const { errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Result unknown').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Saving')
+  await expect(saveStatus).toContainText('Result unknown')
+  // The client neither commits nor resends: the accepted state is unchanged and the server holds one commit.
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByText('Server version v2 · 1 commits')).toBeVisible()
+  await page.getByRole('button', { name: 'Check with server', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'Last action', exact: true })).toContainText('The server had applied the save')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v2')
+  await expect(page.getByText('Server version v2 · 1 commits')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing detects a version conflict, reloads the latest version and restores snapshots through the server', async ({ page }) => {
+  const { chart, errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Version conflict').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Version conflict')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await page.getByRole('button', { name: 'Load latest version', exact: true }).click()
+  await expect(chart.getByText('Site survey (edited remotely)')).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Last action', exact: true })).toContainText('Loaded version')
+  await expect(page.getByRole('status', { name: 'History reset', exact: true })).toContainText('History was reset')
+
+  await server('Accept').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  // Undo is a restore transaction: the server gets a new version, the history position moves back once.
+  await page.getByRole('button', { name: 'Undo saved change', exact: true }).click()
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo saved change', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Redo saved change', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Redo saved change', exact: true }).click()
+  await expect(weld('13:15–17:15')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing edits typed cells with number, select and checkbox editors', async ({ page }) => {
+  const { chart, errors, saveStatus } = await openPersistence(page)
+  await chart.getByRole('button', { name: /^Weld frames · Effort/ }).click()
+  const effort = chart.getByRole('textbox', { name: 'Effort editor', exact: true })
+  await expect(effort).toBeFocused()
+  await effort.fill('abc')
+  await effort.press('Enter')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await expect(chart.getByRole('alert')).toBeVisible()
+  await effort.fill('0')
+  await effort.press('Enter')
+  await expect(chart.getByRole('button', { name: 'Weld frames · Effort 0', exact: true })).toBeFocused()
+  await expect(saveStatus).toContainText('Accepted version v2')
+  await chart.getByRole('button', { name: 'Weld frames · Effort 0', exact: true }).click()
+  await chart.getByRole('textbox', { name: 'Effort editor', exact: true }).fill('7.25')
+  await chart.getByRole('textbox', { name: 'Effort editor', exact: true }).press('Enter')
+  // The server normalises the stored effort to one decimal.
+  await expect(chart.getByRole('button', { name: 'Weld frames · Effort 7.3', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v3')
+
+  await chart.getByRole('button', { name: /^Paint · Owner/ }).click()
+  await chart.getByRole('combobox', { name: 'Owner editor', exact: true }).selectOption({ label: 'Ben' })
+  await expect(chart.getByRole('button', { name: 'Paint · Owner Ben', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v4')
+  await chart.getByRole('button', { name: 'Paint · Done No', exact: true }).click()
+  await chart.getByRole('checkbox', { name: 'Done editor', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Paint · Done Yes', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v5')
+  // The time field reads UTC text and moves the bar through the same transaction.
+  await chart.getByRole('button', { name: /^Paint · Start/ }).click()
+  await chart.getByRole('textbox', { name: 'Start editor', exact: true }).fill('2026-11-09 18:00')
+  await chart.getByRole('textbox', { name: 'Start editor', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Paint 18:00–20:00', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing writes JSON and restores the same IDs, document and view settings', async ({ page }) => {
+  const { chart, errors, weld } = await openPersistence(page)
+  await page.getByRole('searchbox', { name: 'Search tasks', exact: true }).fill('Weld')
+  await expect(chart.getByRole('button', { name: /^Site survey/ })).toHaveCount(0)
+  await page.getByRole('combobox', { name: 'Sort by' }).selectOption('effort')
+  await page.getByRole('checkbox', { name: 'Show Done column' }).uncheck()
+  await page.getByRole('button', { name: 'Save JSON', exact: true }).click()
+  const json = page.getByRole('textbox', { name: 'Snapshot JSON', exact: true })
+  const text = await json.inputValue()
+  const saved = JSON.parse(text) as { schemaVersion: number; kind: string; data: { rows: { id: string }[]; bars: { id: string }[] }; view: { timeline: { search: { query: string }; sort: unknown[]; columns: { id: string; visible: boolean }[] } } }
+  expect(saved.schemaVersion).toBe(1)
+  expect(saved.data.rows.map(row => row.id)).toEqual(['survey', 'design', 'weld', 'paint', 'ship'])
+  expect(saved.view.timeline.search.query).toBe('Weld')
+  expect(saved.view.timeline.columns.find(column => column.id === 'done')?.visible).toBe(false)
+
+  // Change the document and the view, then load the JSON back.
+  await page.getByRole('searchbox', { name: 'Search tasks', exact: true }).fill('')
+  await page.getByRole('combobox', { name: 'Sort by' }).selectOption('')
+  await page.getByRole('checkbox', { name: 'Show Done column' }).check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(page.getByRole('status', { name: 'Save status', exact: true })).toContainText('Accepted version v2')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  await json.fill(text)
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Loaded 5 tasks and the saved view')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('searchbox', { name: 'Search tasks', exact: true })).toHaveValue('Weld')
+  await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('effort')
+  await expect(page.getByRole('checkbox', { name: 'Show Done column' })).not.toBeChecked()
+  await expect(chart.getByRole('button', { name: /^Site survey/ })).toHaveCount(0)
+
+  // Broken JSON is reported and changes nothing.
+  await json.fill(text.replace('"schemaVersion": 1', '"schemaVersion": 7'))
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  expect(errors).toEqual([])
+})
