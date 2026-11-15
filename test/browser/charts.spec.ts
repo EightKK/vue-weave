@@ -5684,3 +5684,87 @@ test('linked views: the context toolbar keeps its size and tracks the target rec
   await expect(toolbar).toBeHidden()
   expect(errors).toEqual([])
 })
+
+test.describe('linked views: the context toolbar and deletion', () => {
+  async function openToolbarDemo(page: Page) {
+    const opened = await openLinkedDemo(page)
+    const { demo } = opened
+    const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+    const stage = demo.getByLabel('Linked network diagram', { exact: true })
+    const edge = (id: string) => demo.getByRole('button', { name: 'Select edge ' + id, exact: true })
+    // The toolbar is given the graph component; ask it for a target's rectangle the way the toolbar does.
+    // A role query skips a hidden toolbar, so the element is found by CSS here.
+    const rect = (target: unknown) => demo.locator('.linked-graph [role="toolbar"]').evaluate((element, value) => {
+      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree.
+      const find = (vnode: any, depth = 0): any => {
+        if (!vnode || typeof vnode !== 'object' || depth > 80) return undefined
+        if (vnode.component?.props?.graph) return vnode.component.props.graph
+        const children = [vnode.component?.subTree, ...(Array.isArray(vnode.children) ? vnode.children : [])]
+        for (const child of children) { const found = find(child, depth + 1); if (found) return found }
+        return undefined
+      }
+      const graph = find((document.querySelector('#app') as any)?._vnode)
+      const result = graph.getTargetClientRect(value) as DOMRect | undefined
+      return result && { width: result.width, height: result.height }
+    }, target)
+    const tasks = demo.getByRole('status', { name: 'Graph tasks', exact: true })
+    return { ...opened, toolbar, stage, edge, rect, tasks }
+  }
+
+  test('deleting the selected node hides the toolbar and it does not move to another item', async ({ page }) => {
+    const { errors, node, toolbar, stage, rect, tasks } = await openToolbarDemo(page)
+    await node('Inspect').click()
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Inspect')
+    expect(await rect({ view: 'graph', kind: 'node', id: 'inspect' })).toBeTruthy()
+    await expect(tasks).toHaveText('Graph tasks: 5')
+    await node('Inspect').press('Delete')
+    await expect(tasks).toHaveText('Graph tasks: 4')
+    await expect(node('Inspect')).toHaveCount(0)
+    await expect(toolbar).toBeHidden()
+    expect(await rect({ view: 'graph', kind: 'node', id: 'inspect' })).toBeUndefined()
+    // Nothing else is selected, so the toolbar stays away after later layout and camera changes.
+    await stage.focus()
+    await stage.press('ArrowLeft')
+    await stage.press('ArrowRight')
+    await expect(toolbar).toBeHidden()
+    await expect(node('Pack')).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test('deleting the selected edge hides the toolbar', async ({ page }) => {
+    const { errors, demo, edge, toolbar, rect, tasks } = await openToolbarDemo(page)
+    await edge('cutA-inspect').press('Enter')
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Cut order A to Inspect')
+    expect(await rect({ view: 'graph', kind: 'edge', id: 'cutA-inspect' })).toBeTruthy()
+    await edge('cutA-inspect').press('Delete')
+    await expect(edge('cutA-inspect')).toHaveCount(0)
+    await expect(toolbar).toBeHidden()
+    expect(await rect({ view: 'graph', kind: 'edge', id: 'cutA-inspect' })).toBeUndefined()
+    // Only the edge went; both tasks are still drawn.
+    await expect(tasks).toHaveText('Graph tasks: 5')
+    await expect(demo.getByRole('button', { name: /^Inspect ES / })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test('deleting another node keeps the toolbar on the selected target', async ({ page }) => {
+    const { errors, node, toolbar, tasks } = await openToolbarDemo(page)
+    await node('Inspect').click()
+    await expect(toolbar).toBeVisible()
+    const place = async () => {
+      const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+      return Math.abs(t!.x + t!.width / 2 - (n!.x + n!.width / 2))
+    }
+    await expect.poll(place).toBeLessThan(6)
+    // Focus Pack without selecting it, then delete it: only that unselected node is proposed.
+    await node('Pack').focus()
+    await node('Pack').press('Delete')
+    await expect(tasks).toHaveText('Graph tasks: 4')
+    await expect(node('Pack')).toHaveCount(0)
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Inspect')
+    await expect.poll(place).toBeLessThan(6)
+    expect(errors).toEqual([])
+  })
+})

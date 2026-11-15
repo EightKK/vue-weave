@@ -3,11 +3,11 @@
 // The view the user acts in owns the selection (`selectedIds`); the other views only get highlight props, so a linked
 // item can never be deleted or moved from another view. Hover is highlight only. "Go to counterpart" reveals an item
 // and handles collapsed groups and unknown targets with a visible message.
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, shallowRef, useTemplateRef } from 'vue'
 import {
-  GanttChart, NetworkGraph, buildViewBindingIndex, revealLinkedTarget, calculateResourceLoad, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
+  GanttChart, NetworkGraph, buildViewBindingIndex, revealLinkedTarget, calculateResourceLoad, removeGraphElements, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
   scheduleTasks, scheduleToGraph, traverseGraph, useLinkedSelection,
-  type EntityRef, type GraphViewTarget, type LoadViewTarget, type RevealResult, type ScheduleLink, type ScheduleTask,
+  type EntityRef, type GraphDeletion, type GraphViewTarget, type LoadViewTarget, type RevealResult, type ScheduleLink, type ScheduleTask,
   type TimelineBar, type TimelineLoadSegment, type ViewBinding, type ViewTarget, type ViewTargetEvent,
 } from '../src'
 import GraphContextToolbar from './components/GraphContextToolbar.vue'
@@ -35,7 +35,6 @@ const plan = scheduleTasks({ range, tasks, dependencies })
 if (!plan.ok) throw new Error('The linked demo schedule must be feasible')
 
 const network = scheduleToGraph(plan, dependencies, { label: id => names[id]!, formatTime: time => new Date(time).toISOString().slice(11, 16) })
-const graphGroups = [{ id: 'cutting-cell', label: 'Cutting cell', nodeIds: ['cutA', 'cutB'] }]
 const rows = [
   { id: 'prep', label: names.prep! }, { id: 'cutting', label: 'Cutting cell' },
   { id: 'cutA', parentId: 'cutting', label: names.cutA! }, { id: 'cutB', parentId: 'cutting', label: names.cutB! },
@@ -83,6 +82,18 @@ const message = ref('')
 const offer = ref<{ view: 'graph' | 'timeline'; taskId: string; proxyId: string } | undefined>()
 const revealTask = ref('')
 const deleteProposals = ref<string[][]>([])
+// The graph's own delete flow: Delete on a selected node or edge proposes a deletion and this view applies it. Only the
+// graph drawing changes; the schedule, the timeline and the bindings stay as they are.
+const graphNodes = shallowRef(network.nodes)
+const graphEdges = shallowRef(network.edges)
+const graphGroups = computed(() => [{ id: 'cutting-cell', label: 'Cutting cell', nodeIds: ['cutA', 'cutB'].filter(id => graphNodes.value.some(node => node.id === id)) }])
+function onGraphDelete(deletion: GraphDeletion) {
+  const next = removeGraphElements(graphNodes.value, graphEdges.value, deletion)
+  graphNodes.value = next.nodes
+  graphEdges.value = next.edges
+  bump()
+  void nextTick(bump)
+}
 
 // Impact range: what the selected tasks reach through dependencies, with an optional hop limit.
 const impactDirection = ref<'off' | 'forward' | 'backward' | 'both'>('off')
@@ -270,13 +281,13 @@ async function expandAndShow() {
     </p>
 
     <div class="linked-graph">
-      <NetworkGraph ref="graph" :nodes="network.nodes" :edges="network.edges" :groups="graphGroups" collapsible-groups
+      <NetworkGraph ref="graph" :nodes="graphNodes" :edges="graphEdges" :groups="graphGroups" collapsible-groups deletable
         :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="300" edges-selectable
         :selected-ids="graphSets.selectedNodeIds" :selected-edge-ids="graphSets.selectedEdgeIds"
         :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges"
         :labels="{ region: 'Linked network diagram' }"
         @target-enter="enter" @target-leave="leave" @target-activate="activate"
-        @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" />
+        @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" @delete="onGraphDelete" />
       <GraphContextToolbar :graph="graph" :target="toolbarTarget" :refresh-key="refreshKey" label="Selected graph item">
         <template #default="{ target }">
           <strong v-if="target?.kind === 'node'">{{ names[target.id] }}</strong>
@@ -298,6 +309,9 @@ async function expandAndShow() {
       <template #row-heading>Task</template>
       <template #legend><span class="hint">Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks.</span></template>
     </GanttChart>
+    <p class="hint">
+      <output aria-label="Graph tasks">Graph tasks: {{ graphNodes.length }}</output>
+    </p>
     <p class="hint">
       <output aria-label="Delete proposals">Delete proposals: {{ deleteProposals.length }}</output>
       <span v-if="deleteProposals.length"> (last: {{ deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join(', ') }}; the demo does not apply them)</span>
