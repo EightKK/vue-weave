@@ -254,3 +254,33 @@ The demo shades breaks, nights and the closed date with `invertWorkPeriods` and 
 Check **Show scheduling constraints** (off by default) to give packing a hard `finishNoLaterThan` at the 17:00 cut-off, which the scheduler applies, unlike the display-only deadline, and to show the requested start of each cutting order as a `startNoEarlierThan` handle. Drag the handle of **Cut order B** from 10:00 to 13:00: the demo applies the `constraint-edit` proposal to its tasks and reschedules. Drag it three hours further: packing can no longer finish by 17:00, so the demo shows the scheduler's diagnostic, "Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A", and keeps the plan. Focus the handle to move it with the arrow keys or remove it with Delete. With the option on, **Export MS Project XML** writes packing's constraint as `ConstraintType` 7.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).
+
+## Explain a plan
+
+Pass `{ explain: true }` as the second argument of `scheduleTasks` or `levelResources` to get a `trace` with the reasons for each task's dates. The calculation is the same: the reasons are recorded where the normal passes place each task, and without the option no reason is created and the result is unchanged.
+
+```ts
+import { collectScheduleReasons, scheduleTasks, toPlanningDiagnostics } from 'vue-weave/core'
+
+const plan = scheduleTasks(input, { explain: true })
+if (plan.ok) {
+  const why = collectScheduleReasons(plan.trace, 'B', { phases: ['earliest'] })
+}
+const problems = toPlanningDiagnostics(plan)
+```
+
+Each reason belongs to a phase. `earliest` is the forward pass and records the lower limits that set each task's earliest start or finish. `latest` is the backward pass and records the upper limits from successors, the project finish and the task's own bounds. `placement` records why an ALAP task was placed where it is. `leveling` records the limits and the capacity shortages met while `levelResources` reserved capacity; its `latest` reasons are those of the leveling horizon, which ignores the project finish.
+
+For example, with A and B of duration 2, an FS link with lag 1 and a calendar with working time [0, 3) and [5, 12), B's candidate start is 3. Time 3 is not working time, because [0, 3) is half-open, so B starts at 5. The trace holds a `dependency` reason (candidate 3, placed 5, parent: A's reason) and a `calendar` reason (3 to 5). A pause that moves the task further is a separate `pause` reason, so calendar time off and the task's own pauses can be told apart. Lag is elapsed time, so the candidate is the predecessor's end plus the lag before any calendar applies.
+
+When several limits are equal, all are reported, for example two FS predecessors that finish together. `range` is reported only when no other bound has the same value, as in failures.
+
+Leveling records why it delayed or split a task as `capacity` reasons with the resource, the interval, the units needed, the capacity there and the tasks that already held it. They are recorded in the reservation loop, not taken from the replayed `scheduleTasks` run, so the `startNoEarlierThan` that leveling adds to `leveledTasks` is never reported as the cause. A delay with `cause: 'capacity'` can also have dependency reasons when a predecessor moved too. A task that is listed in `unresolvedTaskIds` is not resolved even though the result is `ok: true`: do not show such a result as free of capacity conflicts. `toPlanningDiagnostics` lists it as `leveling-unresolved` next to its `resource-overload` segments.
+
+Keep the three kinds of deadline apart:
+
+- `ScheduleInput.deadline` is a hard limit on the whole project. It is reported as the `deadline` constraint and a `project-bound` reason.
+- `ScheduleTask.finishNoLaterThan` is a hard limit on one task, reported as a `constraint` reason.
+- `TimelineBar.deadline` is only drawn by GanttChart and never takes part in scheduling.
+
+`toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.

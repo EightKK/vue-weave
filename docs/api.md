@@ -980,3 +980,38 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Planning diagnostics and schedule traces
+
+These core helpers explain a plan without changing it. They are pure and return data; wording, translation and the list UI are the application's concern.
+
+| Export | Contract |
+| --- | --- |
+| scheduleTasks(input, options?) | `options.explain` (default false) adds a `trace: ScheduleTrace` to a successful result. Overloads type `trace` only for `{ explain: true }` (`ExplainedScheduleResult`). Dates, floats, critical flags and `criticalDependencyIds` are the same with or without it; without it the result has no `trace` property. Failures never have a trace. Options that are not an object, or an `explain` that is not a boolean, throw an Error |
+| levelResources(input, options?) | The same option and overloads (`ExplainedLevelResourcesResult`). Dates, `leveledTasks`, `delays`, `overloads` and `unresolvedTaskIds` are unchanged |
+| collectScheduleReasons(trace, taskId, options?) | The task's reasons followed by all their ancestors, breadth first, each once. `options.phases` limits the starting reasons. Iterative, so long chains do not exhaust the call stack. Throws an Error for an unknown task or parent reason |
+| toPlanningDiagnostics(result, load?) | Turns a `scheduleTasks` or `levelResources` result into `PlanningDiagnostic[]`. `load` (for example `calculateResourceLoad` output) replaces the result's own `overloads`; only segments with `overload > 0` are listed. A segment with a non-finite date or overload throws a RangeError |
+
+`ScheduleTrace` has `reasons` (each after its parents) and `taskReasonIds` (a `ReadonlyMap` from task ID to its own reason IDs, in input task order). Do not store a trace in a snapshot; recalculate it. A `ScheduleReason` has an `id` unique within its trace, `taskId`, `phase` (`ScheduleReasonPhase`), `kind` (`ScheduleReasonKind`), `bound` (`startLower`, `endLower`, `startUpper` or `endUpper`), `candidateTime` and `placedTime`, `parentReasonIds`, and depending on its kind `dependencyId`, `constraint`, `calendarId`, `resourceId`, `demand`, `capacity`, `relatedTaskIds` and `range`.
+
+| kind | Meaning |
+| --- | --- |
+| `dependency` | A link sets the limit. `relatedTaskIds` is the other task and the parents are its reasons in the same pass |
+| `constraint` | `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan` or `fixedStart` |
+| `project-bound` | `range`, the input `deadline`, `projectFinish` (parents: the reasons of the tasks that finish the project) or, without a `constraint`, the latest dates that leveling may not pass (parents: that task's `latest` reasons) |
+| `calendar` | Calendar time off moved the side from `candidateTime` to `placedTime` |
+| `pause` | The task's own pauses moved it further |
+| `capacity` | In `leveling`: `resourceId` had less remaining capacity than `demand` in `range`; `capacity` is its capacity there and `relatedTaskIds` the tasks that held it first |
+
+Tied limits are all reported, compared in working time as the scheduler places tasks. `range` is left out when a named bound has the same value, as in `ScheduleFailure.constraints`.
+
+A `PlanningDiagnostic` has `id` (a JSON array of the code and identifying values, stable across recalculations), `code` (`PlanningDiagnosticCode`), `severity` (`PlanningDiagnosticSeverity`), `entities` (`EntityRef[]` of kinds `task`, `dependency` and `resource`), optional `range`, optional `constraints` (for `schedule-infeasible`) and `reasonIds` into the result's trace.
+
+| code | severity | Source |
+| --- | --- | --- |
+| `schedule-cycle` | error | One per entry of a `cycle` failure: its tasks and dependencies |
+| `schedule-infeasible` | error | An `infeasible` failure: the task, its binding dependencies and `constraints` |
+| `leveling-unresolved` | warning | Each of `unresolvedTaskIds`, with its dates; `reasonIds` are its `leveling` reasons |
+| `resource-overload` | warning | Each overloaded segment: the resource, then its tasks; `reasonIds` are the overlapping `capacity` reasons |
+
+The exported types are `PlanningDiagnostic`, `PlanningDiagnosticCode`, `PlanningDiagnosticSeverity`, `ScheduleReason`, `ScheduleReasonPhase`, `ScheduleReasonKind`, `ScheduleReasonBound`, `ScheduleTrace`, `ScheduleOptions`, `CollectScheduleReasonsOptions`, `ExplainedScheduleSuccess`, `ExplainedScheduleResult`, `ExplainedLevelResourcesSuccess` and `ExplainedLevelResourcesResult`. See [Explain a plan](scheduling.md#explain-a-plan).

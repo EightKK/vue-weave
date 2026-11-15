@@ -2,6 +2,9 @@ import {
   addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, slotFor, sourceFinish, targetFinish,
   topologicalOrder, type Slot,
 } from './scheduleModel.js'
+import {
+  explainOption, recordSlotReasons, ScheduleTraceRecorder, type ExplainedScheduleResult, type ScheduleOptions,
+} from './scheduleTrace.js'
 import type { WorkCalendar } from './workCalendar.js'
 import type { TimeRange } from './timeline.js'
 import type { TimelineDependency } from './types.js'
@@ -90,32 +93,57 @@ export type ScheduleFailure =
 
 export type ScheduleResult = ScheduleSuccess | ScheduleFailure
 
-/** Calculate earliest and latest feasible dates without changing the supplied plan. */
-export function scheduleTasks(input: ScheduleInput): ScheduleResult {
-  const model = buildScheduleModel(input)
+/**
+ * Calculate earliest and latest feasible dates without changing the supplied plan. With `{ explain: true }`, a
+ * successful result also has a `trace` of why each task got its dates; the dates themselves do not change.
+ */
+export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions & { explain?: false }): ScheduleResult
+export function scheduleTasks(input: ScheduleInput, options: ScheduleOptions & { explain: true }): ExplainedScheduleResult
+export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): ScheduleResult | ExplainedScheduleResult
+export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): ScheduleResult | ExplainedScheduleResult {
+  const explain = explainOption(options)
+  const model = buildScheduleModel(input, explain)
   const { range, quantum, tasks } = model
   const dependencies = input.dependencies ?? []
   const sorted = topologicalOrder(model)
   if ('cycles' in sorted) return { ok: false, code: 'cycle', cycles: sorted.cycles }
   const { order } = sorted
+  const trace = explain ? new ScheduleTraceRecorder(input.tasks.map(task => task.id)) : undefined
 
   const earliest = new Map<string, Slot>()
   let finish = range.start
   for (const id of order) {
     const task = tasks.get(id)!
     const bounds = lowerBounds(task, earliest)
-    const slot = slotFor(task.clock, task.duration, limitsOf(bounds), false)
+    const limits = limitsOf(bounds)
+    const slot = slotFor(task.clock, task.duration, limits, false)
     if (!slot) return diagnose(model, task, bounds)
+    if (trace) {
+      recordSlotReasons(trace, 'earliest', task, bounds, limits, slot, false, {
+        linkParents: link => trace.ids('earliest', link.from),
+      })
+    }
     earliest.set(id, slot)
     finish = Math.max(finish, slot.end)
   }
 
+  let finishers: { parents: string[]; taskIds: string[] } | undefined
+  if (trace) {
+    const taskIds = input.tasks.filter(task => earliest.get(task.id)!.end === finish).map(task => task.id)
+    finishers = { taskIds, parents: taskIds.flatMap(id => trace.ids('earliest', id)) }
+  }
   const latest = new Map<string, Slot>()
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
     const bounds = addUpperBounds(cloneBounds(task.bounds), task, latest, finish)
-    const slot = slotFor(task.clock, task.duration, limitsOf(bounds), true)
+    const limits = limitsOf(bounds)
+    const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)
+    if (trace) {
+      recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, {
+        linkParents: link => trace.ids('latest', link.to), finish: finishers,
+      })
+    }
     latest.set(task.id, slot)
   }
 
@@ -125,8 +153,14 @@ export function scheduleTasks(input: ScheduleInput): ScheduleResult {
     const task = tasks.get(order[i]!)!
     if (!task.alap) continue
     const bounds = addUpperBounds(lowerBounds(task, earliest), task, placed, finish)
-    const slot = slotFor(task.clock, task.duration, limitsOf(bounds), true)
+    const limits = limitsOf(bounds)
+    const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)
+    if (trace) {
+      recordSlotReasons(trace, 'placement', task, bounds, limits, slot, true, {
+        linkParents: link => trace.ids(tasks.get(link.to)!.alap ? 'placement' : 'earliest', link.to), finish: finishers,
+      })
+    }
     placed.set(task.id, slot)
   }
 
@@ -159,7 +193,8 @@ export function scheduleTasks(input: ScheduleInput): ScheduleResult {
     if (work > task.clock.total || (!end && work === task.clock.total)) return false
     return task.clock.dateAt(work, end) === endpoint
   }).map(link => link.id)
-  return { ok: true, finish, tasks: result, criticalDependencyIds }
+  const success: ScheduleSuccess = { ok: true, finish, tasks: result, criticalDependencyIds }
+  return trace ? { ...success, trace: trace.trace() } : success
 }
 
 /** A proposed new start, and optionally a new end, of one task for `propagateEdit`. */
