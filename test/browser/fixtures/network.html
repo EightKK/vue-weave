@@ -17,7 +17,7 @@
 
       // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir,
       // edgeselect (controlled edge selection), delete, menu (context menu events), tooltip, snap (grid size),
-      // guides, autopan, drop, clipboard and background (dots or lines).
+      // guides, autopan, drop, clipboard, background (dots or lines) and slots (counting node and edge slots).
       const query = new URLSearchParams(location.search)
       const ids = query.get('preset') === 'groups'
         ? ['A', 'B', 'C', 'D']
@@ -56,7 +56,19 @@
       const menuEvents = ref(0)
       const lastDeletion = ref('')
       const tooltip = ({ target }) => h('span', 'Tip ' + (target.kind === 'node' ? target.node.label : target.edge.id))
-      window.__vw = { graph: () => graph.value }
+      // slots=1 renders nodes and edges through counting slots, so tests can see how many items re-render.
+      const renders = { node: 0, edge: 0 }
+      const itemSlots = query.get('slots') === '1' ? {
+        node: ({ node, box }) => {
+          renders.node++
+          return h('rect', { class: 'vw-test-node', width: box.width, height: box.height }, [])
+        },
+        edge: ({ edge, path }) => {
+          renders.edge++
+          return h('path', { class: 'vw-test-edge', d: path, 'data-edge': edge.id })
+        },
+      } : {}
+      window.__vw = { graph: () => graph.value, renders }
 
       createApp({
         render: () => h('main', [
@@ -109,7 +121,7 @@
               lastMenu.value = JSON.stringify(request)
               menuEvents.value++
             },
-          }, query.get('tooltip') === '1' ? { tooltip } : undefined),
+          }, query.get('tooltip') === '1' ? { ...itemSlots, tooltip } : query.get('slots') === '1' ? itemSlots : undefined),
         ]),
       }).mount('#app')
     </script>

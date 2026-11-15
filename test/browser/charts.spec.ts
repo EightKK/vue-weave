@@ -819,6 +819,52 @@ test('nested group rectangles stay inside the fitted view, the minimap and the e
   expect(errors).toEqual([])
 })
 
+// Structural guard for drag cost: the number of items that re-render, not wall-clock time.
+test('a node drag preview re-renders only the dragged node and its edges, without culling', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=300&draggable=1&slots=1&minimap=1')
+  await expect(page.locator('.vw-test-node')).toHaveCount(300)
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  // Past the drag threshold, so every following move updates the preview.
+  await page.mouse.move(x + 10, y + 6)
+  const transform = await node.getAttribute('transform')
+  await page.evaluate(() => {
+    const vw = (window as any).__vw
+    vw.renders.node = vw.renders.edge = 0
+    vw.changed = new Set()
+    vw.observer = new MutationObserver(records => {
+      for (const record of records) {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement
+        const owner = target?.closest('[data-vw-node], [data-edge]')
+        if (owner) vw.changed.add(owner.getAttribute('data-vw-node') ?? owner.getAttribute('data-edge'))
+      }
+    })
+    vw.observer.observe(document.querySelector('.vw-network-stage')!, { subtree: true, attributes: true, childList: true, characterData: true })
+  })
+  const moves = 8
+  for (let i = 1; i <= moves; i++) await page.mouse.move(x + 10 + i * 7, y + 6 + i * 3)
+  await expect(node).not.toHaveAttribute('transform', transform!)
+  const counts = await page.evaluate(() => {
+    const vw = (window as any).__vw
+    vw.observer.takeRecords()
+    vw.observer.disconnect()
+    return { node: vw.renders.node, edge: vw.renders.edge, changed: [...vw.changed].sort() }
+  })
+  // One render of the dragged node and of each of its two edges per move; nothing else in the stage changes.
+  expect(counts.node).toBeGreaterThanOrEqual(1)
+  expect(counts.node).toBeLessThanOrEqual(moves)
+  expect(counts.edge).toBeLessThanOrEqual(2 * moves)
+  expect(counts.changed).toEqual(['N0001', 'e0', 'e1'])
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Last move', exact: true })).toHaveText('N0001')
+  expect(errors).toEqual([])
+})
+
 test('culled drag previews keep the edges of dragged nodes rendered', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -2063,6 +2109,70 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
   await openNetworkFixture(page, '?preset=groups&minimap=1&dir=auto')
   await expect(page.locator('.vw-network')).toHaveClass(/vw-rtl/)
   await expect(page.locator('.vw-network')).not.toHaveAttribute('dir', /./)
+  expect(errors).toEqual([])
+})
+
+test('dir="auto" follows a runtime change of an ancestor dir attribute and cancels a gesture in flight', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const setDocumentDir = (dir: string | null) => page.evaluate(value => {
+    if (value === null) document.documentElement.removeAttribute('dir')
+    else document.documentElement.setAttribute('dir', value)
+  }, dir)
+
+  // Graph: the zoom tools follow the inline end; a node drag in flight ends without a proposal.
+  await openNetworkFixture(page, '?preset=groups&minimap=1&dir=auto&draggable=1')
+  const graph = page.locator('.vw-network')
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const toolsCentre = async () => {
+    const tools = (await page.getByRole('group', { name: 'Graph zoom', exact: true }).boundingBox())!
+    return tools.x + tools.width / 2
+  }
+  await expect(graph).not.toHaveClass(/vw-rtl/)
+  expect(await toolsCentre()).toBeGreaterThan(stage.x + stage.width / 2)
+  const node = page.getByRole('button', { name: 'A', exact: true })
+  const box = (await node.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 })
+  await setDocumentDir('rtl')
+  await expect(graph).toHaveClass(/vw-rtl/)
+  await expect(graph).not.toHaveAttribute('dir', /./)
+  expect(await toolsCentre()).toBeLessThan(stage.x + stage.width / 2)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('0')
+  await setDocumentDir('ltr')
+  await expect(graph).not.toHaveClass(/vw-rtl/)
+  expect(await toolsCentre()).toBeGreaterThan(stage.x + stage.width / 2)
+
+  // Gantt: the label column and the time origin move to the inline start of the new direction.
+  await setDocumentDir(null)
+  const { chart } = await openGanttFixture(page, '?auto=1')
+  const gantt = page.locator('.vw-gantt')
+  const geometry = async () => {
+    const region = (await chart.boundingBox())!
+    const label = (await chart.getByText('Row 1', { exact: true }).boundingBox())!
+    const bar = (await chart.locator('.vw-gantt-bar[aria-label^="Task A"]').boundingBox())!
+    return { middle: region.x + region.width / 2, label: label.x + label.width / 2, bar: bar.x + bar.width / 2 }
+  }
+  await expect(gantt).not.toHaveClass(/vw-rtl/)
+  const ltr = await geometry()
+  expect(ltr.label).toBeLessThan(ltr.middle)
+  expect(ltr.bar).toBeGreaterThan(ltr.label)
+  await setDocumentDir('rtl')
+  await expect(gantt).toHaveClass(/vw-rtl/)
+  await expect(async () => {
+    const rtl = await geometry()
+    expect(rtl.label).toBeGreaterThan(rtl.middle)
+    expect(rtl.bar).toBeLessThan(rtl.label)
+  }).toPass()
+  await setDocumentDir('ltr')
+  await expect(gantt).not.toHaveClass(/vw-rtl/)
+  await expect(async () => {
+    const back = await geometry()
+    expect(back.label).toBeCloseTo(ltr.label, 0)
+    expect(back.bar).toBeCloseTo(ltr.bar, 0)
+  }).toPass()
   expect(errors).toEqual([])
 })
 

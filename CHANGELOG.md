@@ -24,6 +24,7 @@
 - `invertWorkPeriods` accepts finite non-integer periods and ranges. `normalizeWorkPeriods` and scheduling still require safe integers.
 - `buildWorkPeriods` accepts fixed UTC offsets up to ±1080 minutes (previously ±840), the same limit as `calendarBands` and `toMsProjectXml`.
 - `ResourceLoadSegment.taskIds` arrays are shared between segments with the same active tasks; treat them as read-only, as their type says.
+- NetworkGraph renders each node and edge as an internal component and builds drag, resize and waypoint previews only for the changed nodes and their edges, so a drag re-renders the moved items instead of the whole graph (5,000 nodes: about 60 ms down to 0.3 ms per pointer move). Node and edge slots now re-run only when their slot props, the reactive state they read or the slot function change. Initial rendering of large graphs is somewhat slower.
 
 ### Fixed
 
@@ -59,6 +60,7 @@
 - GanttChart now measures its label column after mounting with invalid data or passing through an error state, so a later `labelWidth` or column change updates which bars are rendered.
 - With `cascade`, a change of `dependencies` during a bar drag cancels the drag without a proposal instead of proposing follow-on changes computed from the old dependencies.
 - Keyboard focus on a selected NetworkGraph node, or on a node rendered through the `node` slot, now shows a distinct accent outline (Highlight in forced-colours mode). Focused edge and dependency hit areas use an opaque dashed accent stroke with at least 3:1 contrast, distinct from the translucent active and selected bands.
+- With `dir="auto"`, NetworkGraph and GanttChart now follow a later change of an ancestor's `dir` attribute and cancel a gesture in flight when the direction changes.
 
 ## 0.1.0 - 2026-11-14
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, onScopeDispose, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
   BatchEditValidator, TimelineBarEnd, TimelineConnection, TimelineConnectionValidator, TimelineLoadRow, TimelineLoadSegment,
@@ -418,9 +418,21 @@ const root = ref<HTMLElement>()
 const inheritedRtl = ref(false)
 const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
 const inlineSide = computed(() => rtl.value ? 'right' : 'left')
+// With `dir="auto"`, a MutationObserver on the `dir` attributes of the ancestors detects the direction again when one
+// of them changes; the `rtl` watcher below then cancels gestures and keeps the scroll position.
+let directionObserver: MutationObserver | undefined
 function detectDirection() {
   const element = root.value
   inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+  directionObserver?.disconnect()
+  directionObserver = undefined
+  if (props.dir !== 'auto' || !element || typeof MutationObserver === 'undefined') return
+  directionObserver = new MutationObserver(() => {
+    inheritedRtl.value = props.dir === 'auto' && getComputedStyle(element).direction === 'rtl'
+  })
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    directionObserver.observe(ancestor, { attributes: true, attributeFilter: ['dir'] })
+  }
 }
 /** Horizontal scroll distance from the inline start. RTL containers report zero or negative `scrollLeft`. */
 function scrollStart(el: HTMLElement) {
@@ -2519,6 +2531,7 @@ defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng, fitT
 
 // Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
 watch(() => props.dir, detectDirection, { flush: 'post' })
+onScopeDispose(() => directionObserver?.disconnect())
 watch(rtl, async () => {
   cancelEdit()
   const start = viewport.value.left

@@ -15,10 +15,10 @@
       import { createApp, h, ref } from 'vue'
       import { GanttChart } from 'vue-weave'
 
-      // Query parameters pick the scenario: readonly, rowDraggable, rtl, piecewise (custom non-linear scale),
-      // controlled (the parent ignores zoom preset updates), interactions (progress editing, bar deletion, context menu
-      // and a tooltip; the parent applies nothing), lag (the dependency has a lag of 2 units, drawn as "+2 u"), wheel
-      // (Ctrl+wheel zoom), dark (built-in dark theme).
+      // Query parameters pick the scenario: readonly, rowDraggable, rtl, auto (dir="auto"), piecewise (custom non-linear
+      // scale), controlled (the parent ignores zoom preset updates), interactions (progress editing, bar deletion,
+      // context menu and a tooltip; the parent applies nothing), lag (the dependency has a lag of 2 units, drawn as
+      // "+2 u"), wheel (Ctrl+wheel zoom), dark (built-in dark theme).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
       const bars = [
@@ -68,7 +68,7 @@
             ref: chart,
             rows, bars, dependencies, range, tickSteps, zoomPresets, pixelsPerUnit: 50, snap: 1, formatTime: String,
             height: 240, autoScroll: false, connectable: true, reconnectable: true,
-            markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : undefined,
+            markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : query.has('auto') ? 'auto' : undefined,
             readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'), wheelZoom: query.has('wheel'),
             class: query.has('dark') ? 'vw-theme-dark' : undefined,
             ...(query.has('lag') ? { formatLag: lag => (lag > 0 ? '+' : '') + lag + ' u' } : {}),

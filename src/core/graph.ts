@@ -2,6 +2,7 @@ import { flipGraphLayout } from './graphOrient.js'
 import { reduceCrossings } from './graphCrossings.js'
 import { graphPathEndpoints } from './graphView.js'
 import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
+import { graphIncidentCurve } from './graphCurve.js'
 
 export interface GraphPort {
   id: string
@@ -585,26 +586,9 @@ function rerouteIncidentEdges(
     if (!moved.has(edge.from) && !moved.has(edge.to)) continue
     const source = edgeEndBox(boxes, edge, edge.from)
     const target = edgeEndBox(boxes, edge, edge.to)
-    if (edge.from === edge.to) {
-      const x = source.x + source.width
-      const y = source.y + source.height / 2
-      paths.set(edge.id, `M ${x} ${y} C ${x + 30} ${y + 18}, ${x + 30} ${y - 28}, ${x} ${y - 12}`)
-      edgeLabels.set(edge.id, { x: x + 21, y: y - 16 })
-    } else if (direction === 'TB' || direction === 'BT') {
-      const forward = target.y + target.height / 2 >= source.y + source.height / 2
-      const x1 = source.x + source.width / 2, x2 = target.x + target.width / 2
-      const y1 = source.y + (forward ? source.height : 0), y2 = target.y + (forward ? 0 : target.height)
-      const mid = (y1 + y2) / 2
-      paths.set(edge.id, `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`)
-      edgeLabels.set(edge.id, { x: (x1 + x2) / 2, y: mid - 6 })
-    } else {
-      const forward = target.x + target.width / 2 >= source.x + source.width / 2
-      const x1 = source.x + (forward ? source.width : 0), x2 = target.x + (forward ? 0 : target.width)
-      const y1 = source.y + source.height / 2, y2 = target.y + target.height / 2
-      const mid = (x1 + x2) / 2
-      paths.set(edge.id, `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`)
-      edgeLabels.set(edge.id, { x: mid, y: (y1 + y2) / 2 - 6 })
-    }
+    const { path, label } = graphIncidentCurve(source, target, edge.from === edge.to, direction)
+    paths.set(edge.id, path)
+    edgeLabels.set(edge.id, label)
   }
   return { boxes, paths, edgeLabels, width: layout.width, height: layout.height }
 }
