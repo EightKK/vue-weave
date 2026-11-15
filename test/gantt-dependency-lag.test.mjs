@@ -69,8 +69,9 @@ test('GanttChart labels a non-zero lag on the connector and describes the depend
   assert.ok(label, 'lag label between the rows, after the connector bend')
   // The name stays as before; the lag is the description of the focusable dependency.
   assert.match(html, new RegExp(`aria-label="Select dependency A → B FS" aria-describedby="${label[1]}"`))
-  // The connector itself is unchanged.
-  assert.match(html, /<path class="" d="M 30 99 H 40 V 165 H 50" marker-end="url\(#[^)]+\)"><\/path><text/)
+  // The connector itself is unchanged; the label is in its own layer after the dependency layer, so it is stacked above
+  // the marker, now and status-date lines.
+  assert.match(html, /<path class="" d="M 30 99 H 40 V 165 H 50" marker-end="url\(#[^)]+\)"><\/path><!--\]--><\/svg><svg class="vw-gantt-lag-layer" aria-hidden="true"[^>]*><!--\[--><text/)
 
   const lead = await render({
     dependencies: link({ lag: -90 * 60_000 }), highlightedDependencyIds: new Set(['ab']), labels: { lag: 'Verzug' },
@@ -112,4 +113,26 @@ test('renderTimelineSvg draws the same lag label, unmirrored in right-to-left ou
   const sameRow = [...bars, { id: 'c', rowId: 'r2', label: 'C', start: 8 * hour, end: 9 * hour }]
   assert.match(renderTimelineSvg(rows, sameRow, [{ id: 'bc', from: 'b', to: 'c', lag: hour }], scale),
     /<text class="vw-gantt-lag" x="224" y="\d+" text-anchor="middle"/)
+})
+
+test('lag labels are drawn after the marker, now and status-date lines, and output without a lag keeps its order', () => {
+  const scale = createTimeScale(range, 10 / hour)
+  const lines = { markers: [{ id: 'm', time: 4 * hour, label: 'Review' }], now: 4 * hour, statusDate: 4 * hour }
+  const svg = renderTimelineSvg(rows, bars, link({ lag: 2 * hour }), scale, lines)
+  const label = svg.indexOf('class="vw-gantt-lag"')
+  assert.ok(label > svg.lastIndexOf('>Review</text>') && label > svg.lastIndexOf('>Now</text>') && label > svg.lastIndexOf('>Status date</text>'))
+  // Without a lag nothing moves: the connector layer is still followed directly by the marker.
+  const plain = renderTimelineSvg(rows, bars, link(), scale, lines)
+  assert.match(plain, /marker-end="url\(#vw-export-arrow\)"\/><\/g><g><title>Review /)
+})
+
+test('GanttChart stacks the lag label layer above the now line in the stylesheet', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL(import.meta.resolve('vue-weave/style.css')), 'utf8')
+  // The first rule whose whole selector is `selector`, in the (possibly minified) stylesheet.
+  const zIndex = selector => Number(new RegExp(`(?:^|[}\\n])\\s*${selector.replace(/[.]/g, '\\.')}\\s*\\{[^}]*z-index:\\s*(\\d+)`).exec(css)?.[1])
+  assert.equal(zIndex('.vw-gantt-now'), 3)
+  // Equal z-index: the layer comes later in the canvas than the now line, so it is painted above it.
+  assert.ok(zIndex('.vw-gantt-lag-layer') >= zIndex('.vw-gantt-now'))
+  assert.ok(zIndex('.vw-gantt-lag-layer') > zIndex('.vw-gantt-links'))
 })

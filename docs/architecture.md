@@ -30,7 +30,7 @@ Calendar-derived overlays are display data, not scheduling logic. Non-working sh
 
 ## Supported scope
 
-The timeline supports fixed-height rows, collapsible row trees, explicit lanes and continuous invertible time scales. Timeline baselines and header bands come from application data. A collapsed group hides descendant bars and their links. Applications can provide a parent bar or display an aggregated descendant interval with showSummaries. The same rollup feeds extra column values.
+The timeline supports fixed-height rows, collapsible row trees, explicit lanes and continuous invertible time scales. Timeline baselines and header bands come from application data. A bar can carry several named baseline sets; up to three are drawn as stacked strips that the bars make room for, so rows keep their fixed height. A collapsed group hides descendant bars and their links. Applications can provide a parent bar or display an aggregated descendant interval with showSummaries. The same rollup feeds extra column values.
 
 Graph movement applies an overlay of absolute coordinates over the base layout. The SVG and minimap share the same geometry. Incident paths are recomputed during preview. The original node and edge arrays remain owned by the caller. Grouped moves, reconnection and deletion emit proposals, which let the caller accept each edit as one history entry. The context-menu event and the tooltip slot leave the menu and the tooltip content to the application; the component only reports targets and positions the tooltip overlay.
 

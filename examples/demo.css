@@ -32,6 +32,7 @@ footer { padding-block: 6px; }
   --vw-teal-ink: #adede1; --vw-teal-pale: #20453f; --vw-teal-line: #65a295;
   --vw-violet-ink: #ddccf6; --vw-violet-pale: #3b3152; --vw-violet-line: #a48cc4;
   --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060;
+  --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc;
 }
 .dark .intro > p:last-child, .dark .eyebrow { color: #b1c7d7; }
 .dark .options button { background: #243e58; color: #e5edf3; border-color: #6388ad; }

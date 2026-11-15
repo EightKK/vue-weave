@@ -13,18 +13,29 @@
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref } from 'vue'
-      import { GanttChart } from 'vue-weave'
+      import { GanttChart, baselineVariance } from 'vue-weave'
 
       // Query parameters pick the scenario: readonly, rowDraggable, rtl, auto (dir="auto"), piecewise (custom non-linear
       // scale), controlled (the parent ignores zoom preset updates), interactions (progress editing, bar deletion,
       // context menu and a tooltip; the parent applies nothing), lag (the dependency has a lag of 2 units, drawn as
-      // "+2 u"), wheel (Ctrl+wheel zoom), dark (built-in dark theme).
+      // "+2 u"), wheel (Ctrl+wheel zoom), dark (built-in dark theme), now (time of the now line, default 3), baselines
+      // (named baseline sets plan and rev1 on both bars; the tooltip shows the plan variance), sets (comma-separated
+      // baselineIds).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
+      const named = query.has('baselines')
       const bars = [
-        { id: 'a', rowId: 'r1', label: 'Task A', start: 0, end: 2, editable: true },
-        { id: 'b', rowId: 'r2', label: 'Task B', start: 4, end: 6, editable: true },
+        { id: 'a', rowId: 'r1', label: 'Task A', start: 0, end: 2, editable: true,
+          ...(named ? { baselines: [{ id: 'plan', start: 0, end: 2 }, { id: 'rev1', start: 1, end: 3 }] } : {}) },
+        { id: 'b', rowId: 'r2', label: 'Task B', start: 4, end: 6, editable: true,
+          ...(named ? { baselines: [{ id: 'plan', start: 3, end: 4 }, { id: 'rev1', start: 4, end: 7 }] } : {}) },
       ]
+      const variance = bar => {
+        const plan = bar.baselines?.find(item => item.id === 'plan')
+        if (!plan) return ''
+        const delta = baselineVariance(bar, plan)
+        return ` · plan start ${delta.start}, finish ${delta.end}, duration ${delta.duration}`
+      }
       const dependencies = [query.has('lag') ? { id: 'ab', from: 'a', to: 'b', lag: 2 } : { id: 'ab', from: 'a', to: 'b' }]
       const range = { start: 0, end: 200 }
       const tickSteps = [1]
@@ -49,6 +60,7 @@
       if (interactions) window.ganttChart = chart
       const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value))
       const controlled = query.has('controlled')
+      const sets = ref(query.has('sets') ? (query.get('sets') ? query.get('sets').split(',') : []) : undefined)
 
       createApp({
         render: () => h('main', [
@@ -64,14 +76,17 @@
           output('Last delete', lastDelete.value),
           output('Last context menu', lastMenu.value),
           h('button', { type: 'button', onClick: () => chart.value.fitToBars(['b'], { padding: 0 }) }, 'Fit Task B'),
+          named ? h('button', { type: 'button', onClick: () => { sets.value = ['plan'] } }, 'Show only the plan baseline') : null,
           h(GanttChart, {
             ref: chart,
             rows, bars, dependencies, range, tickSteps, zoomPresets, pixelsPerUnit: 50, snap: 1, formatTime: String,
             height: 240, autoScroll: false, connectable: true, reconnectable: true,
-            markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : query.has('auto') ? 'auto' : undefined,
+            markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: query.has('now') ? Number(query.get('now')) : 3, dir: query.has('rtl') ? 'rtl' : query.has('auto') ? 'auto' : undefined,
             readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'), wheelZoom: query.has('wheel'),
             class: query.has('dark') ? 'vw-theme-dark' : undefined,
             ...(query.has('lag') ? { formatLag: lag => (lag > 0 ? '+' : '') + lag + ' u' } : {}),
+            ...(named ? { formatVariance: delta => (delta > 0 ? '+' : '') + delta + ' u' } : {}),
+            ...(sets.value ? { baselineIds: sets.value } : {}),
             ...(controlled ? { zoomPreset: preset.value } : {}),
             // A piecewise scale: 0..50 at 10 px per unit, 50..100 at 1 px per unit.
             ...(query.has('piecewise') ? {
@@ -93,7 +108,7 @@
               onBarsDelete: ids => { lastDelete.value = JSON.stringify(ids) },
               onContextMenu: event => { lastMenu.value = JSON.stringify(event) },
             } : {}),
-          }, interactions ? { tooltip: ({ bar, range }) => `${bar.label} from ${range.start} to ${range.end}` } : undefined),
+          }, interactions ? { tooltip: ({ bar, range }) => `${bar.label} from ${range.start} to ${range.end}${variance(bar)}` } : undefined),
         ]),
       }).mount('#app')
     </script>

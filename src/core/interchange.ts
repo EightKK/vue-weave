@@ -18,6 +18,21 @@ export interface MsProjectTask {
   percentComplete?: number
   /** Export as a milestone. Tasks with `start === end` are always milestones. */
   milestone?: boolean
+  /** Saved baselines, written as `Baseline` elements; at most one per `number`. */
+  baselines?: readonly MsProjectBaseline[]
+}
+
+/**
+ * A saved baseline of a task. Microsoft Project numbers its baselines 0 (Baseline) to 10 (Baseline10); map your baseline
+ * set IDs to numbers, for example `plan` to 0 and `rev1` to 1.
+ */
+export interface MsProjectBaseline {
+  /** Integer from 0 to 10. */
+  number: number
+  /** Epoch milliseconds. */
+  start: number
+  /** Epoch milliseconds, not before `start`. */
+  end: number
 }
 
 export interface MsProjectDependency {
@@ -78,12 +93,15 @@ function isoDuration(ms: number) {
  * tenths of a minute as elapsed minutes. Dates are wall-clock times at `utcOffsetMinutes` without an offset suffix.
  * Start and finish are rounded to the nearest whole second, and the duration is the difference of the rounded times.
  *
- * Not exported: calendars, resources, assignments, baselines, constraints, notes and custom fields. Task IDs of the
- * input are not written; the UIDs follow the input order.
+ * Task `baselines` become `Baseline` elements (after the predecessor links) with their number, start, finish and elapsed
+ * duration, rounded like the task dates.
+ *
+ * Not exported: calendars, resources, assignments, constraints, notes, custom fields and baseline work or cost. Task
+ * IDs of the input are not written; the UIDs follow the input order.
  *
  * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
- * dependency from a task to itself and unknown link types, and a RangeError
- * for non-finite or unordered dates, an invalid outline level, percent complete or lag.
+ * dependency from a task to itself, unknown link types and a duplicate baseline number on a task, and a RangeError
+ * for non-finite or unordered dates (also of baselines), an invalid outline level, percent complete, lag or baseline number.
  */
 export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
   const offset = options.utcOffsetMinutes ?? 0
@@ -107,6 +125,21 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
     const percent = task.percentComplete
     if (percent !== undefined && (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 100)) {
       throw new RangeError('percentComplete must be between 0 and 100: ' + task.id)
+    }
+    if (task.baselines !== undefined) {
+      if (!Array.isArray(task.baselines)) throw new Error('baselines must be an array: ' + task.id)
+      const numbers = new Set<number>()
+      for (const baseline of task.baselines as readonly MsProjectBaseline[]) {
+        const number = baseline?.number
+        if (typeof number !== 'number' || !Number.isInteger(number) || number < 0 || number > 10) {
+          throw new RangeError('Baseline numbers must be integers from 0 to 10: ' + task.id)
+        }
+        if (numbers.has(number)) throw new Error(`Duplicate baseline ${number} on task ${task.id}`)
+        numbers.add(number)
+        checkTime(baseline.start, 'Baseline start')
+        checkTime(baseline.end, 'Baseline end')
+        if (baseline.end < baseline.start) throw new RangeError(`Baseline ${number} of task ${task.id} cannot end before it starts`)
+      }
     }
     uids.set(task.id, uids.size + 1)
     levels.push(level)
@@ -154,6 +187,12 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
       + `<Milestone>${milestone ? 1 : 0}</Milestone><Summary>${summary ? 1 : 0}</Summary>`
       + `<PercentComplete>${Math.round(task.percentComplete ?? 0)}</PercentComplete>`
       + (predecessors.get(task.id) ?? []).join('')
+      + (task.baselines ?? []).map(baseline => {
+        const baselineStart = toSecond(baseline.start), baselineFinish = toSecond(baseline.end)
+        return `<Baseline><Number>${baseline.number}</Number><Interim>0</Interim>`
+          + `<Start>${localIso(baselineStart, offset)}</Start><Finish>${localIso(baselineFinish, offset)}</Finish>`
+          + `<Duration>${isoDuration(baselineFinish - baselineStart)}</Duration></Baseline>`
+      }).join('')
       + '</Task>'
   })
   const name = escapeXml(project.name)

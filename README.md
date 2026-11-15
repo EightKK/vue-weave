@@ -32,7 +32,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 ### GanttChart
 
-- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines, header bands and date markers; row and time-window virtualization.
+- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines (up to three named baseline sets with variance), header bands and date markers; row and time-window virtualization.
 - Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
 - Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`), and lag or lead labels on dependencies (`lag`, `formatLag`) that the scheduler applies too.
 - Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).

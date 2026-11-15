@@ -34,7 +34,7 @@ export {
 export { rescheduleFromStatusDate } from './statusDate.js'
 export { toMsProjectXml, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchange.js'
 export type {
-  MsProjectTask, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
+  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
   TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'

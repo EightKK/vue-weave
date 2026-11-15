@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, onScopeDispose, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, onScopeDispose, onUnmounted, ref, shallowRef, useId, watch, type Slots } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
   BatchEditValidator, TimelineBarEnd, TimelineConnection, TimelineConnectionValidator, TimelineLoadRow, TimelineLoadSegment,
@@ -21,6 +21,8 @@ import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
+import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
+import { timelineBaselineId } from '../core/timeline.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -159,6 +161,15 @@ const props = withDefaults(defineProps<{
   maxColumnWidth?: number
   /** Synchronous check of a column resize proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateColumnResize?: ColumnResizeValidator
+  /**
+   * Baseline sets drawn below the bars, in slot order: at most 3 unique IDs from `TimelineBar.baselines`, and
+   * `timelineBaselineId` for `TimelineBar.baseline`. `[]` draws none. Default: the first 3 of `timelineBaselineIds(bars)`.
+   */
+  baselineIds?: readonly string[]
+  /** Label of a baseline set in titles and descriptions. Default: `labels.baseline` for `timelineBaselineId`, otherwise the set ID. */
+  baselineLabel?: (id: string) => string
+  /** Formats a baseline variance (`baselineVariance`) in titles and descriptions. Default: `formatDependencyLag`, signed hours such as `+2 h`. */
+  formatVariance?: (delta: number) => string
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -173,6 +184,7 @@ const props = withDefaults(defineProps<{
   snap: 900_000,
   formatTime: (time: number) => new Date(time).toISOString().slice(11, 16),
   formatLag: formatDependencyLag,
+  formatVariance: formatDependencyLag,
   loadRowHeight: 44,
 })
 const emit = defineEmits<{
@@ -253,6 +265,7 @@ const messages = computed<GanttLabels>(() => ({
   zoom: 'Timeline zoom', zoomIn: 'Zoom in', zoomOut: 'Zoom out',
   editHint: 'Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.',
   expandRow: 'Expand', collapseRow: 'Collapse', baseline: 'Baseline',
+  baselineStart: 'start', baselineFinish: 'finish', baselineDuration: 'duration',
   rejected: 'This change was rejected.',
   connectFrom: 'Start dependency from', connectTo: 'Connect dependency to', startOf: 'start of', finishOf: 'finish of',
   selectDependency: 'Select dependency', reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of',
@@ -280,6 +293,11 @@ const stableEditBounds = computed<TimeRange | undefined>(previous => sameRange(p
 const stableTickSteps = computed<readonly number[]>((previous) => {
   const next = props.tickSteps
   return previous && Array.isArray(next) && previous.length === next.length && previous.every((step, i) => step === next[i]) ? previous : next
+})
+// `baselineIds` is compared by value too, so an inline array in a parent template does not re-run validation.
+const stableBaselineIds = computed<readonly string[] | undefined>((previous) => {
+  const next = props.baselineIds
+  return previous && Array.isArray(next) && previous.length === next.length && previous.every((id, i) => id === next[i]) ? previous : next
 })
 const bounds = computed(() => stableEditBounds.value ?? stableRange.value)
 // Zoom presets replace the linear scale settings while they are active.
@@ -343,6 +361,7 @@ function validateDisplay() {
     if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
     markerIds.add(item.id)
   }
+  baselineSelection(props.bars, stableBaselineIds.value)
 }
 function validateProps() {
   validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount)
@@ -389,7 +408,7 @@ watch([
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
-  () => props.columns, () => props.headerBands, () => props.markers,
+  () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value,
 ], () => {
   try {
     const result = validateProps()
@@ -543,7 +562,10 @@ const barsByRow = computed(() => {
   return groups
 })
 const laneHeight = computed(() => (props.rowHeight - 8) / props.laneCount)
-const barHeight = computed(() => Math.max(1, laneHeight.value - 6))
+// Baseline sets drawn below the bars (`baselineIds`). Two or three sets take `reserve` pixels from the bar height.
+const baselineChoice = computed(() => validationError.value ? { ids: [], described: false } : baselineSelection(props.bars, stableBaselineIds.value))
+const baselineGeometry = computed(() => baselineLayout(baselineChoice.value.ids.length))
+const barHeight = computed(() => Math.max(1, laneHeight.value - 6 - baselineGeometry.value.reserve))
 const bodyHeight = computed(() => displayedRows.value.length * props.rowHeight)
 const xWindow = computed(() => ({
   left: Math.min(axis.value.width, Math.max(0, viewport.value.left - 80)),
@@ -664,7 +686,7 @@ const shownRows = computed(() => {
       reorderable: rowHandlesVisible.value,
       progress: progressSegment(item.row.id),
       summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
-      baselines: bars.filter(bar => bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)),
+      baselines: shownBaselines(bars),
       floats: bars.flatMap(bar => {
         const end = rangeOf(bar).end
         return bar.latestEnd !== undefined && bar.latestEnd > end && intersectsWindow({ start: end, end: bar.latestEnd }, timeWindow.value)
@@ -684,14 +706,17 @@ type BarOverlay = {
 }
 const barIndex = computed(() => new Map((validationError.value ? [] : props.bars).map((bar, index) => [bar.id, index])))
 function barOverlay(bar: TimelineBar): BarOverlay | undefined {
-  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments) return undefined
   const range = rangeOf(bar)
+  // Named baseline sets (or `baselineIds`) add each selected baseline with its variance to the description.
+  const strips = baselineChoice.value.described ? baselineStrips(bar, range, baselineChoice.value, baselineText.value) : []
+  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length) return undefined
   const parts: string[] = []
   if (bar.critical) parts.push(messages.value.critical!)
   if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
   if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)
   const late = bar.deadline !== undefined && range.end > bar.deadline
   if (late) parts.push(messages.value.late!)
+  for (const strip of strips) parts.push(`${strip.label} ${strip.dates}: ${strip.variance}`)
   return { description: parts.length ? parts.join('. ') + '.' : undefined, late, segments: segmentGeometry(bar, range) }
 }
 /**
@@ -811,10 +836,7 @@ function lagLabel(dep: TimelineDependency, lag: number, point: ReturnType<typeof
   return { ...point, text, id: `${marker}-lag-${dependencyIndex.value.get(dep.id)}`, description: `${messages.value.lag} ${text}` }
 }
 type LinkShapeProps = { tag: 'path' | 'text'; attrs: Record<string, unknown>; text?: string }
-/**
- * One element of the dependency layer: a connector or a lag label. Both come from one list so that a chart without lags
- * renders exactly the markup it did before.
- */
+/** One element of the dependency layer (a connector) or of the lag label layer above the marker lines (a lag label). */
 function LinkShape(shape: LinkShapeProps) {
   return h(shape.tag, shape.attrs, shape.text)
 }
@@ -832,6 +854,21 @@ const linkShapes = computed(() => {
       'marker-end': `url(#${marker})`,
     },
   }))
+  return shapes
+})
+/**
+ * The dependency layer (default slot), followed by the lag label layer (`lag` slot) when a dependency has a lag. Without
+ * lags it renders the dependency layer alone, so such charts render exactly the markup they did before.
+ */
+function DependencyLayers(_props: Record<string, never>, { slots }: { slots: Slots }) {
+  const links = slots.default?.() ?? []
+  if (lagShapes.value.length) return [...links, ...(slots.lag?.() ?? [])]
+  return links.length === 1 ? links[0] : links
+}
+// Lag labels have their own layer, stacked above the marker, now and status-date lines (and the bars, whose gaps they
+// sit in), so a line crossing a label does not cover its text. A chart without lags renders no layer.
+const lagShapes = computed(() => {
+  const shapes: (LinkShapeProps & { key: string })[] = []
   for (const line of shownLines.value) {
     const label = line.lag
     if (!label) continue
@@ -887,15 +924,44 @@ function summaryStyle(summary: TimelineSummary) {
   }
 }
 
-function baselineStyle(bar: TimelineBar) {
-  const baseline = bar.baseline!
+function baselineStyle(bar: TimelineBar, baseline: TimeRange, slot: number) {
   const left = axis.value.toX(baseline.start)
   const width = axis.value.toX(baseline.end) - left
   return {
     [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
     width: `${Math.max(3, width)}px`,
-    top: `${laneTop(bar) + barHeight.value + 1}px`,
+    top: `${laneTop(bar) + barHeight.value + baselineGeometry.value.offset(slot)}px`,
   }
+}
+const baselineText = computed<BaselineTextOptions>(() => ({
+  label: props.baselineLabel ?? (id => id === timelineBaselineId ? messages.value.baseline! : id),
+  formatTime: props.formatTime, formatVariance: props.formatVariance,
+  start: messages.value.baselineStart!, finish: messages.value.baselineFinish!, duration: messages.value.baselineDuration!,
+}))
+type ShownBaseline = { key: string; className: string; style: Record<string, string>; title: string; set?: string }
+/**
+ * The baseline strips of a row inside the visible time window. With only `TimelineBar.baseline` (no named sets and no
+ * `baselineIds`) each is drawn exactly as before; otherwise one strip per selected set, with its slot class, set ID and
+ * variance title.
+ */
+function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
+  const choice = baselineChoice.value
+  if (!choice.described) {
+    return bars.filter(bar => choice.ids.length && bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)).map(bar => ({
+      key: bar.id, className: 'vw-gantt-baseline', style: baselineStyle(bar, bar.baseline!, 0),
+      title: `${baselineText.value.label(timelineBaselineId)} · ${bar.label} ${props.formatTime(bar.baseline!.start)}–${props.formatTime(bar.baseline!.end)}`,
+    }))
+  }
+  const multiple = choice.ids.length > 1
+  return bars.flatMap(bar => baselineStrips(bar, rangeOf(bar), choice, baselineText.value)
+    .filter(strip => intersectsWindow(strip.range, timeWindow.value))
+    .map(strip => ({
+      key: bar.id + ':' + strip.id,
+      className: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline',
+      style: baselineStyle(bar, strip.range, strip.slot),
+      title: `${strip.label} · ${bar.label} ${strip.dates} · ${strip.variance}`,
+      set: strip.id,
+    })))
 }
 
 function syncViewport() {
@@ -1782,7 +1848,7 @@ watch(() => props.wheelZoom, syncWheelListener, { flush: 'post' })
 watch([
   () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => stableRange.value,
   () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => stableEditBounds.value, () => props.minDuration,
-  () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
+  () => props.rowHeight, () => props.laneCount, () => props.autoScroll, () => barHeight.value,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
   () => props.columnsResizable, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth,
@@ -2508,6 +2574,10 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     tickAnchor: stableRange.value.start,
     formatTime: props.formatTime,
     formatLag: props.formatLag,
+    baselineIds: stableBaselineIds.value,
+    baselineLabel: baselineText.value.label,
+    formatVariance: props.formatVariance,
+    varianceLabels: { start: baselineText.value.start, finish: baselineText.value.finish, duration: baselineText.value.duration },
     rowHeading: rest.rowHeading ?? messages.value.rows,
     loadRows: includeLoad && loadHistogram.value ? props.loadRows : undefined,
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
@@ -2694,8 +2764,8 @@ onUnmounted(() => {
             :title="`${row.row.label} · ${row.summary.count} · ${formatTime(row.summary.start)}–${formatTime(row.summary.end)}`">
             <span v-if="row.summary.progress !== undefined" :style="{ width: (row.summary.progress * 100) + '%' }"></span>
           </div>
-          <div v-for="bar in row.baselines" :key="bar.id" class="vw-gantt-baseline"
-            :style="baselineStyle(bar)" :title="`${messages.baseline} · ${bar.label} ${formatTime(bar.baseline!.start)}–${formatTime(bar.baseline!.end)}`"></div>
+          <div v-for="strip in row.baselines" :key="strip.key" :class="strip.className"
+            :style="strip.style" :title="strip.title" :data-vw-baseline="strip.set"></div>
           <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vw-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
             v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
@@ -2746,7 +2816,8 @@ onUnmounted(() => {
               :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
           </template>
         </div>
-        <svg v-if="shownLines.length" class="vw-gantt-links" aria-hidden="true"
+        <DependencyLayers v-if="shownLines.length">
+        <svg class="vw-gantt-links" aria-hidden="true"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
             [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
@@ -2761,6 +2832,17 @@ onUnmounted(() => {
           </defs>
           <LinkShape v-for="shape in linkShapes" :key="shape.key" :tag="shape.tag" :attrs="shape.attrs" :text="shape.text" />
         </svg>
+        <template #lag><svg class="vw-gantt-lag-layer" aria-hidden="true"
+          :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
+          :style="{
+            [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
+            top: `${headerHeight + rowWindow.first * rowHeight}px`,
+          }"
+          :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
+        >
+          <LinkShape v-for="shape in lagShapes" :key="shape.key" :tag="shape.tag" :attrs="shape.attrs" :text="shape.text" />
+        </svg></template>
+        </DependencyLayers>
         <svg v-if="dependencyTargets && shownLines.length" class="vw-gantt-link-hits"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{

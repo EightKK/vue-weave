@@ -2,6 +2,7 @@ import type {
   CalendarBandLocalTime, CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
   TimelineLoadSegment, TimelineRow, TimelineSummary,
 } from './types.js'
+import type { TimelineBaselineVariance } from './types.js'
 import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
@@ -17,6 +18,60 @@ export type EditMode = 'move' | 'start' | 'end'
  * the ID of a `TimelineColumn` in a chart with `columnsResizable`.
  */
 export const timelineLabelColumnId = '$label'
+
+/**
+ * The baseline set ID of the single unnamed `TimelineBar.baseline`, for `baselineIds` and `baselineLabel`. A
+ * `TimelineBar.baselines` entry may not use it.
+ */
+export const timelineBaselineId = '$baseline'
+
+/** The most baseline sets GanttChart and `renderTimelineSvg` draw at once. */
+export const timelineBaselineLimit = 3
+
+/** A bar's interval in baseline set `id`: `bar.baseline` for `timelineBaselineId`, otherwise the matching `bar.baselines` entry. */
+export function timelineBaseline(bar: Pick<TimelineBar, 'baseline' | 'baselines'>, id: string): TimeRange | undefined {
+  if (id === timelineBaselineId) return bar.baseline
+  return bar.baselines?.find(item => item.id === id)
+}
+
+/**
+ * Every baseline set ID that occurs in `bars`: `timelineBaselineId` first when any bar has a `baseline`, then the
+ * `baselines` IDs in order of first appearance. GanttChart draws the first `timelineBaselineLimit` of them when
+ * `baselineIds` is omitted.
+ */
+export function timelineBaselineIds(bars: readonly Pick<TimelineBar, 'baseline' | 'baselines'>[]): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  if (bars.some(bar => bar.baseline)) {
+    ids.push(timelineBaselineId)
+    seen.add(timelineBaselineId)
+  }
+  for (const bar of bars) {
+    for (const item of bar.baselines ?? []) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      ids.push(item.id)
+    }
+  }
+  return ids
+}
+
+/**
+ * The variance of a bar against a baseline, in the units of the bar: `start` and `end` are the bar's dates minus the
+ * baseline's and `duration` is the bar's length minus the baseline's, so positive values mean later or longer. Throws a
+ * RangeError for non-finite times.
+ */
+export function baselineVariance(bar: TimeRange, baseline: TimeRange): TimelineBaselineVariance {
+  for (const value of [bar.start, bar.end, baseline.start, baseline.end]) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError('baselineVariance needs finite times')
+  }
+  const zero = (value: number) => value === 0 ? 0 : value
+  return {
+    start: zero(bar.start - baseline.start),
+    end: zero(bar.end - baseline.end),
+    duration: zero((bar.end - bar.start) - (baseline.end - baseline.start)),
+  }
+}
 
 /** A monotonic, continuous mapping. All components use the same coordinate space. */
 export interface TimeScale {
@@ -209,6 +264,24 @@ function checkSegments(bar: TimelineBar) {
   }
 }
 
+function checkBaselines(bar: TimelineBar) {
+  const list: unknown = bar.baselines
+  if (!Array.isArray(list)) throw new Error('baselines must be an array: ' + bar.id)
+  const ids = new Set<string>()
+  for (const item of list as NonNullable<TimelineBar['baselines']>) {
+    if (!item || typeof item.id !== 'string' || !item.id) throw new Error('Invalid baseline set ID on bar: ' + bar.id)
+    if (item.id === timelineBaselineId) {
+      throw new Error(`The baseline set ID ${timelineBaselineId} is reserved for TimelineBar.baseline: ${bar.id}`)
+    }
+    if (ids.has(item.id)) throw new Error(`Duplicate baseline set ${item.id} on bar ${bar.id}`)
+    ids.add(item.id)
+    if (typeof item.start !== 'number' || typeof item.end !== 'number' || !Number.isFinite(item.start) || !Number.isFinite(item.end)
+      || item.end < item.start) {
+      throw new RangeError(`Baseline ${item.id} of bar ${bar.id} must have finite endpoints with start <= end`)
+    }
+  }
+}
+
 /**
  * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
  * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
@@ -234,6 +307,7 @@ export function validateTimelineData(
   for (const bar of bars) {
     checkRange(bar, true)
     if (bar.baseline) checkRange(bar.baseline, true)
+    if (bar.baselines !== undefined) checkBaselines(bar)
     if (!rowIds.has(bar.rowId)) throw new Error('Unknown row for bar: ' + bar.id)
     const lane = bar.lane ?? 0
     if (!Number.isInteger(lane) || lane < 0 || lane >= laneCount) throw new RangeError('Invalid lane for bar: ' + bar.id)

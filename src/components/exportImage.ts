@@ -12,6 +12,7 @@ const properties: Record<string, string> = {
   marker: '--vw-marker', now: '--vw-now', load: '--vw-load', loadOverload: '--vw-load-overload',
   loadCapacity: '--vw-load-capacity', dependencyHighlight: '--vw-dependency-highlight',
   nonWorking: '--vw-non-working', critical: '--vw-critical', float: '--vw-float', deadline: '--vw-deadline', status: '--vw-status',
+  baseline2: '--vw-baseline-2', baseline3: '--vw-baseline-3',
 }
 
 /** Read the `--vw-*` custom properties in effect on an element; unset properties keep the export defaults. */

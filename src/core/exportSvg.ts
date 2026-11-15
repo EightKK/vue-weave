@@ -2,13 +2,14 @@ import { indexGraph, type GraphEdge, type GraphLayout } from './graph.js'
 import { graphPathBounds } from './graphView.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
-  summarizeTimelineRows, timeTicks, validateTimelineData, type TimeRange, type TimeScale,
+  summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type TimeRange, type TimeScale,
 } from './timeline.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineRow,
 } from './types.js'
 import { checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
+import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -31,7 +32,12 @@ export interface SvgExportTheme {
   onSolid: string
   /** Text colour on marker and now-flag labels. */
   markerInk: string
+  /** The single baseline, and the first slot when several baseline sets are drawn (`--vw-baseline`). */
   baseline: string
+  /** The second baseline slot (`--vw-baseline-2`). Defaults to `defaultSvgExportTheme.baseline2`. */
+  baseline2?: string
+  /** The third baseline slot (`--vw-baseline-3`). Defaults to `defaultSvgExportTheme.baseline3`. */
+  baseline3?: string
   marker: string
   now: string
   load: string
@@ -62,6 +68,7 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
   edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', markerInk: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
   nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08', status: '#1f7a4d',
+  baseline2: '#9a4c95', baseline3: '#23806f',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -343,6 +350,17 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   formatTime?: (time: number) => string
   /** Text of the label drawn on a dependency with a non-zero `lag`. Default `formatDependencyLag` (signed hours of milliseconds). */
   formatLag?: (lag: number) => string
+  /**
+   * Baseline sets to draw, in slot order, as GanttChart `baselineIds`: at most `timelineBaselineLimit` unique IDs, with
+   * `timelineBaselineId` for `TimelineBar.baseline`. Default: the first three of `timelineBaselineIds(bars)`.
+   */
+  baselineIds?: readonly string[]
+  /** Label of a baseline set in titles. Default "Baseline" for `timelineBaselineId` and the set ID otherwise. */
+  baselineLabel?: (id: string) => string
+  /** Text of a baseline variance in titles. Default `formatDependencyLag` (signed hours of milliseconds). */
+  formatVariance?: (delta: number) => string
+  /** Words before the start, finish and duration variances in titles. Defaults "start", "finish" and "duration". */
+  varianceLabels?: { start?: string; finish?: string; duration?: string }
   /** Heading of the row column. Default "Rows". */
   rowHeading?: string
   /** Label of the now line. Default "Now". */
@@ -475,6 +493,15 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const barLabel = options.barLabel ?? ((bar: B) => bar.label)
   const rowLabel = options.rowLabel ?? ((row: R) => row.label)
   const highlighted = new Set(options.highlightedDependencyIds ?? [])
+  const baselines = baselineSelection(bars, options.baselineIds)
+  const stripLayout = baselineLayout(baselines.ids.length)
+  const baselineText = {
+    label: options.baselineLabel ?? ((id: string) => id === timelineBaselineId ? 'Baseline' : id),
+    formatTime: format, formatVariance: options.formatVariance ?? formatDependencyLag,
+    start: options.varianceLabels?.start ?? 'start', finish: options.varianceLabels?.finish ?? 'finish',
+    duration: options.varianceLabels?.duration ?? 'duration',
+  }
+  const stripFills = [theme.baseline, theme.baseline2, theme.baseline3]
 
   // Geometry. `local` measures from the window start; `view` mirrors it for right-to-left output.
   const local: TimeScale = { width: axisWidth, toX: time => scale.toX(time) - offset, toTime: x => scale.toTime(x + offset) }
@@ -495,7 +522,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const totalHeight = loadTop + (histogram ? loadRows.length * loadRowHeight : 0)
   const width = labelArea + axisWidth
   const laneHeight = (rowHeight - 8) / laneCount
-  const barHeight = Math.max(1, laneHeight - 6)
+  // Two or three baseline sets take `reserve` pixels from the bar so their strips fit in the lane.
+  const barHeight = Math.max(1, laneHeight - 6 - stripLayout.reserve)
   const laneTop = (bar: TimelineBar) => 7 + (bar.lane ?? 0) * laneHeight
 
   const clip = prefix + '-axis', arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
@@ -561,12 +589,27 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       area.push(tag('g', {}, tag('title', {}, escapeXml(`${rowLabel(item.row)} · ${summary.count} · ${format(summary.start)}–${format(summary.end)}`)) + shape))
     }
     for (const bar of own) {
-      if (!bar.baseline || !intersectsWindow(bar.baseline, window)) continue
-      const box = span(bar.baseline.start, bar.baseline.end)
-      area.push(tag('rect', {
-        x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + 1, width: Math.max(3, box.width), height: 4, rx: 2,
-        fill: theme.baseline,
-      }))
+      if (!baselines.described) {
+        // Only `TimelineBar.baseline`: drawn exactly as before named baseline sets existed.
+        if (!baselines.ids.length || !bar.baseline || !intersectsWindow(bar.baseline, window)) continue
+        const box = span(bar.baseline.start, bar.baseline.end)
+        area.push(tag('rect', {
+          x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + 1, width: Math.max(3, box.width), height: 4, rx: 2,
+          fill: theme.baseline,
+        }))
+        continue
+      }
+      const multiple = baselines.ids.length > 1
+      for (const strip of baselineStrips(bar, bar, baselines, baselineText)) {
+        if (!intersectsWindow(strip.range, window)) continue
+        const box = span(strip.range.start, strip.range.end)
+        const title = `${strip.label} · ${barLabel(bar)} ${strip.dates} · ${strip.variance}`
+        area.push(tag('g', { class: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline' },
+          tag('title', {}, escapeXml(title)) + tag('rect', {
+            x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + stripLayout.offset(strip.slot),
+            width: Math.max(3, box.width), height: stripLayout.height, rx: stripLayout.height / 2, fill: stripFills[strip.slot],
+          })))
+      }
     }
     for (const bar of own) {
       if (bar.latestEnd === undefined || bar.latestEnd <= bar.end || !intersectsWindow({ start: bar.end, end: bar.latestEnd }, window)) continue
@@ -687,8 +730,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   if (paths.length) {
     area.push(tag('g', { transform: rtl ? `matrix(-1 0 0 1 ${num(axisWidth)} 0)` : `translate(${num(labelArea)} 0)` }, paths.join('')))
   }
-  area.push(...lagLabels)
-  const flag = (x: number, text: string, color: string, strokeWidth: number, dashed: boolean) => {
+  const flag =(x: number, text: string, color: string, strokeWidth: number, dashed: boolean) => {
     const flagWidth = 10 + 6 * Array.from(text).length
     return tag('line', {
       x1: x, y1: headerHeight, x2: x, y2: totalHeight, stroke: color, 'stroke-width': strokeWidth,
@@ -725,6 +767,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     area.push(tag('g', { class: 'vw-gantt-status-date' },
       tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
   }
+  // Lag labels go above the marker, now and status-date lines so a line passing through a label does not cover its text.
+  area.push(...lagLabels)
   if (histogram) {
     loadRows.forEach((row, index) => {
       const { segments, peak } = histogram.get(row.id)!

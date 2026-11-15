@@ -32,7 +32,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ### GanttChart
 
-- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
+- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン（差異付きで最大3つの名前付きセット）、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
 - `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
 - 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。
 - 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。

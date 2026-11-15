@@ -80,6 +80,27 @@ const model = shallowRef({ tasks: originalTasks, plan: original })
 const notice = ref('Move either cutting order to recalculate the plan. Amber tasks have zero float. Amber links show controlling dependencies.')
 const selected = ref(new Set<string>())
 const originalDates = new Map(original.tasks.map(task => [task.id, { start: task.start, end: task.end }]))
+// A second saved baseline: the plan after a revision that held cutting order A back by one hour.
+const revision = propose(originalTasks.map(task => task.id === 'cut-a' ? { ...task, startNoEarlierThan: range.start + hour } : task))
+if (!revision.ok) throw new Error('The demo revision must be feasible')
+const revisionDates = new Map(revision.tasks.map(task => [task.id, { start: task.start, end: task.end }]))
+// Named baseline sets: off by default, so the chart shows the single original-plan baseline as before.
+const compareBaselines = ref(false)
+const baselineSets = [{ id: 'plan', label: 'Original plan' }, { id: 'rev1', label: 'Revision 1' }]
+const shownSets = ref(new Set(baselineSets.map(set => set.id)))
+const baselineIds = computed(() => compareBaselines.value ? baselineSets.filter(set => shownSets.value.has(set.id)).map(set => set.id) : undefined)
+const baselineLabel = (id: string) => baselineSets.find(set => set.id === id)?.label ?? id
+const slotColours = ['var(--vw-baseline, #718497)', 'var(--vw-baseline-2, #9a4c95)', 'var(--vw-baseline-3, #23806f)']
+function swatch(id: string) {
+  const slot = baselineIds.value?.indexOf(id) ?? -1
+  return slot < 0 ? 'transparent' : slotColours[slot]
+}
+function toggleSet(id: string, shown: boolean) {
+  const next = new Set(shownSets.value)
+  if (shown) next.add(id)
+  else next.delete(id)
+  shownSets.value = next
+}
 const byTask = computed(() => new Map(model.value.plan.tasks.map(task => [task.id, task])))
 const columns: TimelineColumn[] = [
   { id: 'finish', label: 'Finish (JST)', width: 106, value: row => format(byTask.value.get(row.id)!.end) },
@@ -99,7 +120,10 @@ const showProgressLine = ref(true)
 const taskBars = computed<TimelineBar[]>(() => model.value.plan.tasks.map(task => {
   const { critical, latestEnd, ...dates } = scheduledBarFields(task)
   return {
-    id: task.id, rowId: task.id, label: labels.get(task.id)!, ...dates, baseline: originalDates.get(task.id), progress: reported.get(task.id),
+    id: task.id, rowId: task.id, label: labels.get(task.id)!, ...dates, progress: reported.get(task.id),
+    ...(compareBaselines.value
+      ? { baselines: [{ id: 'plan', ...originalDates.get(task.id)! }, { id: 'rev1', ...revisionDates.get(task.id)! }] }
+      : { baseline: originalDates.get(task.id) }),
     editable: task.id.startsWith('cut-'), tone: task.critical ? 'amber' : 'blue',
     ...(showCritical.value ? { critical, latestEnd, deadline: deadlines.get(task.id) } : {}),
   }
@@ -192,6 +216,8 @@ function exportMsProject() {
     name: 'Calendar-aware schedule',
     tasks: model.value.plan.tasks.map(task => ({
       id: task.id, name: labels.get(task.id)!, start: task.start, end: task.end, percentComplete: (reported.get(task.id) ?? 0) * 100,
+      // Microsoft Project numbers baselines: the original plan is Baseline (0) and the revision Baseline1.
+      baselines: [{ number: 0, ...originalDates.get(task.id)! }, { number: 1, ...revisionDates.get(task.id)! }],
     })),
     dependencies: dependencies.map(link => ({ from: link.from, to: link.to, type: link.type, lag: link.lag })),
   }, { utcOffsetMinutes: 540 })
@@ -224,6 +250,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
         <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
         <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
+        <label><input v-model="compareBaselines" type="checkbox"> Compare baseline sets</label>
         <button type="button" @click="exportSchedule">Export schedule SVG</button>
         <button type="button" @click="reset">Reset schedule</button>
       </div>
@@ -238,6 +265,12 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       <button type="button" @click="exportICalendar">Export iCalendar</button>
       <button type="button" @click="exportCsv">Export CSV</button>
     </div>
+    <div v-if="compareBaselines" class="options status-options" role="group" aria-label="Baseline sets">
+      <label v-for="set in baselineSets" :key="set.id" class="baseline-key" :style="{ '--baseline-key': swatch(set.id) }">
+        <input type="checkbox" :checked="shownSets.has(set.id)" @change="toggleSet(set.id, ($event.target as HTMLInputElement).checked)">
+        {{ set.label }}</label>
+      <span class="hint">Strips under each bar, in this order. Hover a strip, or read a bar's description, for its variance.</span>
+    </div>
     <dl class="schedule-metrics">
       <div><dt>Projected finish</dt><dd data-testid="schedule-finish">{{ format(model.plan.finish) }}</dd></div>
       <div><dt>Zero-float tasks</dt><dd>{{ criticalCount }} / {{ rows.length }}</dd></div>
@@ -247,7 +280,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
-      :status-date="statusDate" :show-progress-line="showProgressLine"
+      :status-date="statusDate" :show-progress-line="showProgressLine" :baseline-ids="baselineIds" :baseline-label="baselineLabel"
       @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vw-bar-text">{{ workHours.get(bar.id) }} h</span></template>
@@ -282,4 +315,6 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
 <style scoped>
 .status-options { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .status-options input[type="range"] { vertical-align: middle; width: 180px; }
+/* Legend swatches in the colour of the slot each shown set is drawn in. */
+.baseline-key::after { content: ''; display: inline-block; width: 18px; height: 3px; border-radius: 1.5px; background: var(--baseline-key); }
 </style>

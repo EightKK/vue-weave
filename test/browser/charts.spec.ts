@@ -242,6 +242,153 @@ test('hierarchy, header bands, baselines and markers compose with controlled edi
   await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
 })
 
+test('the scheduling demo compares two baseline sets, toggles them through baselineIds and exports them', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
+  // By default the single original-plan baseline is drawn as before.
+  await expect(plan.locator('.vw-gantt-baseline')).toHaveCount(4)
+  await expect(plan.locator('[data-vw-baseline]')).toHaveCount(0)
+  const fullHeight = (await cutting.boundingBox())!.height
+
+  await page.getByRole('checkbox', { name: 'Compare baseline sets', exact: true }).check()
+  const sets = page.getByRole('group', { name: 'Baseline sets', exact: true })
+  const original = plan.locator('[data-vw-baseline="plan"]')
+  const revised = plan.locator('[data-vw-baseline="rev1"]')
+  await expect(original).toHaveCount(4)
+  await expect(revised).toHaveCount(4)
+  // The name is unchanged; both sets and their variance are in the description.
+  await expect(cutting).toHaveAccessibleDescription(new RegExp('^Critical\\. Float until 09 Nov 11:00\\. '
+    + 'Original plan 09 Nov 08:00–09 Nov 11:00: start \\+0 h, finish \\+0 h, duration \\+0 h\\. '
+    + 'Revision 1 09 Nov 09:00–09 Nov 12:00: start −1 h, finish −1 h, duration \\+0 h\\. Arrow keys move'))
+  await expect(revised.first()).toHaveAttribute('title', 'Revision 1 · Cut order A 09 Nov 09:00–09 Nov 12:00 · start −1 h, finish −1 h, duration +0 h')
+  // The strips are distinguishable: different colours, stacked in selection order below the bar without overlapping it or each other.
+  const geometry = async () => {
+    const bar = (await cutting.boundingBox())!
+    const [first, second] = [(await original.first().boundingBox())!, (await revised.first().boundingBox())!]
+    return { bar, first, second }
+  }
+  let { bar, first, second } = await geometry()
+  expect(bar.height).toBeCloseTo(fullHeight - 3, 0)
+  expect(first.y).toBeGreaterThanOrEqual(bar.y + bar.height)
+  expect(second.y).toBeGreaterThanOrEqual(first.y + first.height)
+  expect(first.height).toBeCloseTo(3, 0)
+  const colour = (strip: typeof original) => strip.first().evaluate(element => getComputedStyle(element).backgroundColor)
+  expect(await colour(original)).not.toBe(await colour(revised))
+  // The strip still lies inside its row.
+  const row = (await plan.locator('.vw-gantt-row').first().boundingBox())!
+  expect(second.y + second.height).toBeLessThanOrEqual(row.y + row.height)
+
+  // Unchecking a set removes it from baselineIds; the other one is drawn as the single baseline in the first slot.
+  await sets.getByRole('checkbox', { name: 'Original plan', exact: true }).uncheck()
+  await expect(original).toHaveCount(0)
+  await expect(revised).toHaveCount(4)
+  await expect(revised.first()).not.toHaveClass(/vw-gantt-baseline-2/)
+  expect((await revised.first().boundingBox())!.height).toBeCloseTo(4, 0)
+  expect((await cutting.boundingBox())!.height).toBeCloseTo(fullHeight, 0)
+  await expect(cutting).toHaveAccessibleDescription(/^Critical\. Float until 09 Nov 11:00\. Revision 1 09 Nov 09:00–09 Nov 12:00: start −1 h/)
+  await sets.getByRole('checkbox', { name: 'Revision 1', exact: true }).uncheck()
+  await expect(plan.locator('.vw-gantt-baseline')).toHaveCount(0)
+  await sets.getByRole('checkbox', { name: 'Original plan', exact: true }).check()
+  await sets.getByRole('checkbox', { name: 'Revision 1', exact: true }).check()
+  await expect(plan.locator('.vw-gantt-baseline-2')).toHaveCount(4)
+  ;({ bar, first, second } = await geometry())
+  expect(second.y).toBeGreaterThan(first.y)
+
+  // The SVG export draws the same sets; the Microsoft Project export writes them as numbered baselines.
+  const { readFile } = await import('node:fs/promises')
+  const download = async (name: string) => {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    return (await readFile((await (await pending).path())!)).toString('utf8')
+  }
+  const svg = await download('Export schedule SVG')
+  expect(svg.match(/<g class="vw-gantt-baseline vw-gantt-baseline-1">/g)).toHaveLength(4)
+  expect(svg.match(/<g class="vw-gantt-baseline vw-gantt-baseline-2">/g)).toHaveLength(4)
+  expect(svg).toContain('<title>Revision 1 · Cut order A 09 Nov 09:00–09 Nov 12:00 · start −1 h, finish −1 h, duration +0 h</title>')
+  const xml = await download('Export MS Project XML')
+  expect(xml).toContain('<Baseline><Number>0</Number><Interim>0</Interim><Start>2026-11-09T08:00:00</Start><Finish>2026-11-09T11:00:00</Finish>')
+  expect(xml).toContain('<Baseline><Number>1</Number><Interim>0</Interim><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T12:00:00</Finish>')
+
+  // Turning the comparison off restores the single baseline and the original descriptions.
+  await page.getByRole('checkbox', { name: 'Compare baseline sets', exact: true }).uncheck()
+  await expect(plan.locator('[data-vw-baseline]')).toHaveCount(0)
+  await expect(plan.locator('.vw-gantt-baseline')).toHaveCount(4)
+  await expect(cutting).toHaveAccessibleDescription(/^Critical\. Float until 09 Nov 11:00\. Arrow keys move/)
+  expect(errors).toEqual([])
+})
+
+test('gantt baseline sets follow baselineIds, mirror in right-to-left charts and feed a tooltip variance', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const rtl of [false, true]) {
+    const { chart } = await openGanttFixture(page, '?baselines=1&interactions=1&sets=rev1,plan' + (rtl ? '&rtl=1' : ''))
+    const task = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+    await expect(task).toHaveAccessibleDescription(/^rev1 1–3: start -1 u, finish -1 u, duration 0 u\. plan 0–2: start 0 u, finish 0 u, duration 0 u\. /)
+    const rev1 = chart.locator('[data-vw-baseline="rev1"]').first()
+    const plan = chart.locator('[data-vw-baseline="plan"]').first()
+    await expect(rev1).toHaveClass(/vw-gantt-baseline-1/)
+    await expect(plan).toHaveClass(/vw-gantt-baseline-2/)
+    const [bar, first, second] = [(await task.boundingBox())!, (await rev1.boundingBox())!, (await plan.boundingBox())!]
+    // rev1 (1–3) is half a bar later than the bar (0–2); plan matches the bar. In RTL later times are further left.
+    expect(second.x).toBeCloseTo(bar.x, 0)
+    expect(second.width).toBeCloseTo(bar.width, 0)
+    expect(first.x - bar.x).toBeCloseTo(rtl ? -bar.width / 2 : bar.width / 2, 0)
+    expect(first.y).toBeGreaterThanOrEqual(bar.y + bar.height)
+    expect(second.y).toBeGreaterThanOrEqual(first.y + first.height)
+    // The tooltip slot computes the variance with baselineVariance.
+    await task.hover()
+    await expect(page.getByRole('tooltip')).toHaveText('Task A from 0 to 2 · plan start 0, finish 0, duration 0')
+    await page.mouse.move(0, 0)
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).hover()
+    await expect(page.getByRole('tooltip')).toHaveText('Task B from 4 to 6 · plan start 1, finish 2, duration 1')
+    // The export draws the strips at the same mirrored positions.
+    const svg: string = await page.evaluate(() => (window as any).ganttChart.value.exportSvg())
+    expect(svg.match(/<g class="vw-gantt-baseline vw-gantt-baseline-\d">/g)).toHaveLength(4)
+    expect(svg).toContain('<title>rev1 · Task A 1–3 · start -1 u, finish -1 u, duration 0 u</title>')
+  }
+  // A selection that changes the bar height during a drag cancels the drag, like other coordinate changes.
+  const { chart, out } = await openGanttFixture(page, '?baselines=1&sets=plan,rev1')
+  const task = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  const box = (await task.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
+  await page.getByRole('button', { name: 'Show only the plan baseline', exact: true }).dispatchEvent('click')
+  await page.mouse.up()
+  await expect(chart.locator('[data-vw-baseline="rev1"]')).toHaveCount(0)
+  expect((await task.boundingBox())!.height).toBeCloseTo(box.height + 3, 0)
+  await expect(out('Last edit')).toHaveText('')
+  expect(errors).toEqual([])
+})
+
+test('gantt lag labels stay above a now line that crosses them', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const rtl of [false, true]) {
+    // The label "+2 u" starts 4 px after time 3 (x 150); a now line at 3.3 (x 165) runs through its text.
+    const { chart } = await openGanttFixture(page, '?lag=1&now=3.3' + (rtl ? '&rtl=1' : ''))
+    const label = chart.locator('.vw-gantt-lag')
+    const now = chart.locator('.vw-gantt-now')
+    const [text, line] = [(await label.boundingBox())!, (await now.boundingBox())!]
+    const lineX = rtl ? line.x + line.width - 1 : line.x + 1
+    expect(lineX).toBeGreaterThan(text.x)
+    expect(lineX).toBeLessThan(text.x + text.width)
+    // Make both hit-testable to probe the stacking order where they cross: the label is on top.
+    await page.addStyleTag({ content: '.vw-gantt-lag-layer, .vw-gantt-lag-layer *, .vw-gantt-now { pointer-events: auto !important; }' })
+    const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute('class'), { x: lineX, y: text.y + text.height / 2 })
+    // The glyph itself, or its layer between two glyphs; never the now line.
+    expect(top).toMatch(/^vw-gantt-lag(?:-layer)?$/)
+    // The now line itself is still above the bars and below nothing else it was below before.
+    expect(await now.evaluate(element => getComputedStyle(element).zIndex)).toBe('3')
+  }
+  expect(errors).toEqual([])
+})
+
 test('named port drag, edge reconnection and undo preserve the graph', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

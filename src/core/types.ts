@@ -59,7 +59,16 @@ export interface TimelineBar<D = unknown> extends TimeRange {
   appearance?: 'outline' | 'solid'
   editable?: boolean
   progress?: number
+  /**
+   * The single unnamed baseline, drawn below the bar. It takes part in baseline selection as the set
+   * `timelineBaselineId` (`'$baseline'`).
+   */
   baseline?: TimeRange
+  /**
+   * Named baselines, at most one per set ID (for example `plan` or `rev1`). Each is a finite interval with `end >= start`;
+   * the set ID `timelineBaselineId` is reserved for `baseline`. GanttChart `baselineIds` chooses the sets that are drawn.
+   */
+  baselines?: readonly TimelineBaseline[]
   /** Application data. The components pass it through untouched. */
   data?: D
   /** Draws the bar with the critical outline (`--vw-critical`) and adds `GanttLabels.critical` to its description. */
@@ -78,6 +87,22 @@ export interface TimelineBar<D = unknown> extends TimeRange {
    * Defaults to `editable`.
    */
   deletable?: boolean
+}
+
+/** A recorded interval of a bar in the baseline set `id`, for example `plan` or `rev1`. */
+export interface TimelineBaseline extends TimeRange {
+  /** Nonempty ID of the baseline set, unique per bar. */
+  id: string
+}
+
+/** A bar's interval minus a baseline: positive values are later or longer than the baseline. See `baselineVariance`. */
+export interface TimelineBaselineVariance {
+  /** `bar.start - baseline.start`. */
+  start: number
+  /** `bar.end - baseline.end`. */
+  end: number
+  /** `(bar.end - bar.start) - (baseline.end - baseline.start)`. */
+  duration: number
 }
 
 export interface TimelineSummary extends TimeRange {
@@ -190,7 +215,14 @@ export interface GanttLabels {
   rejected: string
   expandRow?: string
   collapseRow?: string
+  /** Label of the unnamed baseline (`TimelineBar.baseline`) in titles and descriptions. Default "Baseline". */
   baseline?: string
+  /** Word before the start variance in baseline titles and descriptions. Default "start". */
+  baselineStart?: string
+  /** Word before the finish variance in baseline titles and descriptions. Default "finish". */
+  baselineFinish?: string
+  /** Word before the duration variance in baseline titles and descriptions. Default "duration". */
+  baselineDuration?: string
   connectFrom?: string
   connectTo?: string
   startOf?: string

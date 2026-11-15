@@ -4,7 +4,8 @@
 // when the line it guards compiles, for example because a type became `any` or `unknown`.
 import { createApp, defineComponent, h, ref, useTemplateRef } from 'vue'
 import {
-  GanttChart, NetworkGraph, layoutLayeredGraph, moveTimelineRow, renderGraphSvg,
+  GanttChart, NetworkGraph, baselineVariance, layoutLayeredGraph, moveTimelineRow, renderGraphSvg, renderTimelineSvg, timelineBaseline,
+  timelineBaselineId, type TimelineBaseline, type TimelineBaselineVariance, type MsProjectBaseline,
   type GanttChartExposed, type GraphCollapsedNodeData, type GraphConnection, type GraphEdge, type GraphLayout,
   type GraphLayoutFunction, type GraphNodeMove, type NetworkGraphExposed, type NetworkGroup, type NetworkNode,
   type TimelineBar, type TimelineCellEdit, type TimelineColumn, type TimelineEdit, type TimelineRow,
@@ -27,6 +28,19 @@ const untypedEdges: GraphEdge[] = edges
 const rows: TeamRow[] = [{ id: 'r', label: 'Row', data: { team: 'Core' } }]
 const bars: TimelineBar<Cost>[] = [{ id: 'b', rowId: 'r', label: 'Bar', start: 0, end: 1, data: { cost: 3 } }]
 const range = { start: 0, end: 10 }
+// Named baselines keep the bar's data type.
+const planned: TimelineBaseline[] = [{ id: 'plan', start: 0, end: 2 }]
+const baselineBars: TimelineBar<Cost>[] = [{ ...bars[0]!, baseline: { start: 0, end: 1 }, baselines: planned }]
+const variance: TimelineBaselineVariance = baselineVariance(baselineBars[0]!, timelineBaseline(baselineBars[0]!, 'plan')!)
+const msBaseline: MsProjectBaseline = { number: 0, start: 0, end: 2 }
+// @ts-expect-error A baseline needs a set ID.
+const unnamed: TimelineBaseline = { start: 0, end: 1 }
+const baselineIds = [timelineBaselineId, 'plan'] as const
+const baselineSvg: string = renderTimelineSvg(rows, baselineBars, [], { width: 10, toX: t => t, toTime: x => x }, {
+  baselineIds, baselineLabel: id => id.toUpperCase(), formatVariance: delta => String(delta), varianceLabels: { start: 'S' },
+  barLabel: bar => String(cost(bar.data)),
+})
+function sets(bar: TimelineBar<Cost>) { return bar.baselines?.map(item => item.id).join() }
 // Unannotated array literals: the slots still see the optional fields of the base types.
 const literalNodes = [{ id: 'x', label: 'X' }]
 const literalRows = [{ id: 'r', label: 'Row' }]
@@ -95,7 +109,7 @@ createApp({}).component('NetworkGraph', NetworkGraph).component('GanttChart', Ga
 const moved: TeamRow[] = moveTimelineRow(rows, 'r', { index: 0 })
 const svg = renderGraphSvg(layoutLayeredGraph(nodes, edges), nodes, edges, { nodeLabel: node => node.label + priority(node.priority) })
 const layoutResult: GraphLayout = typedLayout(nodes, edges)
-void [useRefs, vnodes, registered, moved, svg, layoutResult, wrongColumns]
+void [useRefs, vnodes, registered, moved, svg, layoutResult, wrongColumns, variance, msBaseline, unnamed, baselineSvg]
 </script>
 
 <template>
@@ -168,6 +182,13 @@ void [useRefs, vnodes, registered, moved, svg, layoutResult, wrongColumns]
     </template>
     <template #tooltip="{ bar }">{{ cost(bar.data) }}</template>
   </GanttChart>
+
+  <GanttChart :rows="rows" :bars="baselineBars" :range="range" :baseline-ids="baselineIds" :baseline-label="id => id"
+    :format-variance="delta => delta.toFixed(1)">
+    <template #tooltip="{ bar }">{{ sets(bar) }} {{ cost(bar.data) }}</template>
+  </GanttChart>
+  <!-- @vue-expect-error Baseline set IDs are strings. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :baseline-ids="[1, 2]" />
 
   <!-- @vue-expect-error The columns must fit the rows. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :columns="([] as TimelineColumn<TimelineRow<Cost>>[])" />
