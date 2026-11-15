@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.2.0 - 2026-11-15
+
 ### Breaking changes
 
 - The state and variant classes that `NetworkGraph` and `GanttChart` put on their elements now use the `vw-is-` prefix, so every class the components emit starts with `vw-` and host utility classes (for example Tailwind's `outline` or Bootstrap's `active`) no longer restyle chart elements. Rename them in custom stylesheets, test selectors and DOM queries:

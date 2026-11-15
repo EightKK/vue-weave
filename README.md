@@ -63,7 +63,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 ## Status and support
 
-- **Version 0.1.0, the first public release.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
+- **Version 0.2.0.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
 - **Vue:** 3.5 or later (peer dependency).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `vue-weave/core` entry, server-side rendering and development.
@@ -72,10 +72,10 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 ## Install
 
-The package is not published to npm. Download the `vue-weave-0.1.0.tgz` tarball attached to a [GitHub Release](https://github.com/EightKK/vue-weave/releases), or [build a local package](CONTRIBUTING.md#build-a-local-package) from a checkout. Then install the tarball from your application's directory. Replace the example path with the actual tarball path.
+The package is not published to npm. Download the `vue-weave-0.2.0.tgz` tarball attached to a [GitHub Release](https://github.com/EightKK/vue-weave/releases), or [build a local package](CONTRIBUTING.md#build-a-local-package) from a checkout. Then install the tarball from your application's directory. Replace the example path with the actual tarball path.
 
 ```sh
-npm install ./vue-weave-0.1.0.tgz
+npm install ./vue-weave-0.2.0.tgz
 ```
 
 Vue 3.5+ is a peer dependency. The library ships ES modules, TypeScript declarations and one stylesheet. Import the stylesheet once in your application with `import 'vue-weave/style.css'`. The `vue-weave/core` entry runs without Vue and supports TypeScript `NodeNext` resolution.
