@@ -254,3 +254,37 @@ The demo shades breaks, nights and the closed date with `invertWorkPeriods` and 
 Check **Show scheduling constraints** (off by default) to give packing a hard `finishNoLaterThan` at the 17:00 cut-off, which the scheduler applies, unlike the display-only deadline, and to show the requested start of each cutting order as a `startNoEarlierThan` handle. Drag the handle of **Cut order B** from 10:00 to 13:00: the demo applies the `constraint-edit` proposal to its tasks and reschedules. Drag it three hours further: packing can no longer finish by 17:00, so the demo shows the scheduler's diagnostic, "Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A", and keeps the plan. Focus the handle to move it with the arrow keys or remove it with Delete. With the option on, **Export MS Project XML** writes packing's constraint as `ConstraintType` 7.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).
+
+## Resource rows and unplanned tasks
+
+A resource view shows each resource as a GanttChart row and each assignment as a bar. Build it with `projectResourceTimeline` from the placed tasks, the resources and the assignments, and keep the tasks and assignments as the data you edit and save. A task on two resources has two bars but is still one task: compute the load with `calculateResourceLoad` from the scheduled tasks and the original assignments, never from the projected bars.
+
+```ts
+import { createResourceTimelineProjector, resolveResourceTimelineEdit, scheduledBarFields } from 'vue-weave/core'
+
+const project = createResourceTimelineProjector()
+const projection = project({
+  resources: [{ id: 'cnc', label: 'CNC' }, { id: 'press', label: 'Press' }],
+  tasks: schedule.tasks.map(task => ({ id: task.id, label: names[task.id], ...scheduledBarFields(task) })),
+  assignments,
+  dependencies: links,
+})
+// <GanttChart :rows="projection.rows" :bars="projection.bars" :dependencies="projection.dependencies"
+//   :lane-count="projection.laneCount" row-draggable @edit="onEdit" />
+```
+
+Keep the arrays you pass to the projector unchanged between renders: a new `bars` array cancels a drag in progress, and the projector returns the previous projection while its inputs are the same objects.
+
+Edits arrive as ordinary `edit` events. `resolveResourceTimelineEdit` turns a horizontal move or resize into a task date change, which applies to every projection of the task, and a move to another row into an assignment replacement; a diagonal move gives both, which you accept or refuse together as one history step. A move to a resource the task already has is rejected. Removing a bar from a row is a choice between removing the assignment (`proposeResourceAssignment` with `kind: 'remove'`) and removing the task. After a replacement the bar ID changes to `resourceTimelineBarId(taskId, newResourceId)`. For cascade previews, pass `resourceTimelineCascade(projection, input)` as `cascade`: it runs `propagateEdit` on task IDs and maps the result back to every projection.
+
+### Chart links and scheduler links
+
+`ScheduleLink` and `TimelineDependency` share a shape, so a task chart can use one array for both. A resource view cannot: chart links connect bar IDs and scheduler links connect task IDs. Pass the task links to the projection and the scheduler, and the projection's `dependencies` to the chart. Each task link is drawn once, between representative projections (the preferred bars you pass, else the first row of each task); `dependencyOrigins` maps it back and `omittedDependencyIds` lists the links whose other projection pairs are not drawn.
+
+### Unplanned tasks
+
+An unplanned task is a task without dates, not a missing task. Do not give it invented dates. Pass its ID in `unplannedTaskIds`, where its assignments and links are accepted but not drawn, and leave it out of the scheduler with `buildPlacementInput(input, placedTaskIds)`. The scheduler and `calculateResourceLoad` throw for links and assignments to tasks they do not have; `buildPlacementInput` removes the unplaced tasks, their links and their assignments, so unplanned work does not count towards the load. A placed task whose predecessor is unplaced is reported as an `unplaced-predecessor` diagnostic and the result is not `ok`: refuse the placement, or place the predecessor too, instead of showing a plan that ignores the link.
+
+### Leveling previews
+
+`levelResources` ignores `mode`, so an ALAP task is previewed at its earliest leveled dates. When a placement or edit preview shows a plan, say whether it came from `scheduleTasks`, which does not resolve capacity, or from `levelResources`, and decide explicitly whether an overload is allowed, a warning or a reason to refuse.

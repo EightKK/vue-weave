@@ -5,6 +5,9 @@
 ### Added
 
 - `EntityRef`, `ViewTarget` and `ViewBinding` types for linking graph, timeline and load views.
+- `projectResourceTimeline`, `createResourceTimelineProjector` and `resourceTimelineBarId` show a task once per assigned resource in GanttChart, with lanes, distinct labels, one chart link per task link and maps back to tasks and links.
+- `resolveResourceTimelineEdit` and `resolveResourceTimelineEdits` turn resource-row edits into one task date change per task and assignment replacements, and reject stale, conflicting and duplicate assignments; `resourceTimelineCascade` maps `propagateEdit` results to every projection; `proposeResourceAssignment` checks adding, removing and replacing assignments.
+- `buildPlacementInput` builds a computable schedule input for placed tasks only and reports unplaced predecessors as diagnostics.
 
 ## 0.2.0 - 2026-11-15
 

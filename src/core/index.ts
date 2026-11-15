@@ -41,3 +41,15 @@ export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
 
 export * from './viewBindings.js'
+export {
+  projectResourceTimeline, createResourceTimelineProjector, resourceTimelineBarId, resolveResourceTimelineEdit,
+  resolveResourceTimelineEdits, resourceTimelineCascade, proposeResourceAssignment,
+} from './resourceTimeline.js'
+export type {
+  ResourceTimelineResource, ResourceTimelineTask, ResourceTimelineInput, ResourceTimelineOptions, ResourceBarOrigin,
+  ResourceTimelineProjection, ResourceTimelineScheduleChange, ResourceAssignmentReplacement, ResourceTimelineRejectionCode,
+  ResourceTimelineRejection, ResourceTimelineEditsResolution, ResourceTimelineEditResolution, ResourceAssignmentState,
+  ResourceAssignmentRequest, ResourceAssignmentProposal,
+} from './resourceTimeline.js'
+export { buildPlacementInput } from './placement.js'
+export type { PlacementInput, PlacementDiagnostic, PlacementResult } from './placement.js'

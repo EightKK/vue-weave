@@ -980,3 +980,28 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Resource timelines and unplanned tasks
+
+These `vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
+
+| Function | Returns |
+| --- | --- |
+| projectResourceTimeline(input, options?) | `ResourceTimelineProjection`: `{ rows, bars, dependencies, laneCount, origins, taskBarIds, dependencyOrigins, omittedDependencyIds, hiddenDependencyIds, unplannedTaskIds }` |
+| createResourceTimelineProjector() | A memoized `projectResourceTimeline` that returns the previous projection while the input fields and options are the same objects |
+| resourceTimelineBarId(taskId, resourceId) | The projected bar ID, the JSON tuple `[taskId, resourceId]` |
+| resolveResourceTimelineEdits(projection, edits) | `{ ok: true, scheduleChanges, assignmentReplacements }` or a `ResourceTimelineRejection` |
+| resolveResourceTimelineEdit(projection, edit) | `{ ok: true, scheduleChange?, assignmentReplacement? }` or a `ResourceTimelineRejection` |
+| resourceTimelineCascade(projection, input) | A `TimelineCascade` that runs `propagateEdit` on task IDs and returns edits of every affected projection |
+| proposeResourceAssignment(state, request) | `{ ok: true, assignments, added, removed }` or `{ ok: false, code: 'already-assigned' \| 'not-assigned', reason }` |
+| buildPlacementInput(input, placedTaskIds) | `PlacementResult`: `{ ok, input, diagnostics, unplacedTaskIds, excludedDependencyIds, excludedAssignments }` |
+
+`ResourceTimelineInput` has `resources` (`{ id, label, detail?, data? }`, one row each, with the resource ID as row ID), `tasks` (placed tasks: `TimelineBar` fields without `rowId` and `lane`, copied to each projection), `assignments` (`ResourceAssignment`), optional task-level `dependencies` and optional `unplannedTaskIds`. Bars are ordered by task and then by row, with lanes from `assignLanes`; pass `laneCount` to GanttChart. The default label is `task label · resource label`, so projections of one task have distinct accessible names; `options.barLabel(task, resource)` replaces it. Bar IDs come from the task and resource IDs and do not depend on input order. `origins` maps each bar ID to `{ taskId, resourceId }` and `taskBarIds` maps each placed task to its bar IDs in row order.
+
+Chart links use bar IDs, so the scheduler's `ScheduleLink` array cannot be passed to the chart unchanged. Each task link becomes at most one chart link, with the link's ID, between the first projection of each task in `options.preferredBarIds` (for example the selected bars) or else its first projection in row order. `dependencyOrigins` maps chart link IDs to task link IDs, `omittedDependencyIds` lists drawn links whose tasks have several projections, and `hiddenDependencyIds` lists links not drawn because a task has no bar. The projection throws an Error for duplicate IDs, unknown or duplicate assignments, unknown link endpoints, a link from a task to itself and a task that is both placed and unplanned. The input is not modified.
+
+`resolveResourceTimelineEdits` turns GanttChart edits, including several projections of one task from `edits` or a cascade, into one `ResourceTimelineScheduleChange` (`{ taskId, before, after, mode, source }`) per task whose dates change, and one `ResourceAssignmentReplacement` (`{ taskId, fromResourceId, toResourceId }`) per bar whose `row` changes. A diagonal move gives both; apply them as one change. Rejections carry `code` and the `barIds` involved: `stale` (the bar is not in the projection, or its dates or row differ from `before`), `already-assigned` (the task already has the target resource), `conflicting-schedule` (projections of one task with different new dates) and `conflicting-assignment` (one bar to two rows, or two projections of one task to one row). A target row that is not in the projection throws an Error.
+
+`proposeResourceAssignment(state, request)` takes `{ assignments, resourceIds?, taskIds? }` and one of `{ kind: 'add', taskId, resourceId, units? }`, `{ kind: 'remove', taskId, resourceId }` and `{ kind: 'replace', taskId, fromResourceId, toResourceId }`. A replacement keeps the position and units of the replaced assignment. Unknown tasks or resources (when the lists are given) and duplicate assignments in the state throw an Error, and units that are not a positive integer throw a RangeError.
+
+`buildPlacementInput(input, placedTaskIds)` takes a `ScheduleInput` with optional `assignments`, such as a `LevelResourcesInput`, and returns the same kind of input with only the placed tasks, the links between them and their assignments. A link from an unplaced task to a placed one is reported as `{ code: 'unplaced-predecessor', taskId, predecessorId, dependencyId }` and makes `ok` false. Duplicate or unknown IDs and duplicate assignments still throw an Error.
