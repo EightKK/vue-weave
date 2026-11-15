@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- `EntityRef`, `ViewTarget` and `ViewBinding` types for linking graph, timeline and load views.
 
 ## 0.2.0 - 2026-11-15
 

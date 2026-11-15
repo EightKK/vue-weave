@@ -39,3 +39,5 @@ export type {
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
+
+export * from './viewBindings.js'
