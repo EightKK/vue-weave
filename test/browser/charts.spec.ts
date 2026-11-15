@@ -4999,6 +4999,9 @@ test('saved editing writes JSON and restores the same IDs, document and view set
   await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
   await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
   await expect(weld('13:00–17:00')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 async function openLinkedDemo(page: Page) {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -5091,7 +5094,10 @@ test('linked views: an overloaded load segment highlights the competing tasks', 
   await expect(node('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
   await expect(demo.locator('.linked-mark[data-mark="selected"]')).toHaveCount(1)
   // The segment after the overload belongs to cutting order A alone.
-  await demo.getByRole('button', { name: 'CNC cell 12:00–13:00: load 1 / capacity 1' }).press('Enter')
+  await page.mouse.move(2, 2)
+  const following = demo.getByRole('button', { name: 'CNC cell 12:00–13:00: load 1 / capacity 1' })
+  await following.focus()
+  await following.press('Enter')
   await expect(summary).toHaveText(/^Selected in load: Cut order A(\.|$)/)
   await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
   await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
