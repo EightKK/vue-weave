@@ -57,3 +57,8 @@ export type { GraphDrop } from './components/types.js'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
+
+export { useLinkedSelection } from './composables/useLinkedSelection.js'
+export type {
+  LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions,
+} from './composables/useLinkedSelection.js'
