@@ -1,7 +1,25 @@
-// Internal helper for the curve of an edge whose node was moved or resized. Not exported from the package entry
-// points; `applyGraphPositions` and `applyGraphSizes` draw rerouted edges with it, and NetworkGraph uses it to reroute
-// only the edges of the dragged nodes during a preview.
-import type { GraphBox, GraphLayoutDirection, GraphPoint } from './graph.js'
+// Internal helpers for the curve of an edge whose node was moved or resized, and for the curve of an edge with a named
+// port. Not exported from the package entry points; `applyGraphPositions` and `applyGraphSizes` draw rerouted edges
+// with them, `routeGraphPorts` draws port edges with them, and NetworkGraph uses them to reroute only the edges a drag
+// preview changes.
+import type { GraphBox, GraphLayoutDirection, GraphPoint, GraphPort } from './graph.js'
+
+const outwardOffsets = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] } as const
+
+/**
+ * The control points of the curve `routeGraphPorts` draws between two endpoints, before it clamps them to the layout:
+ * each lies outward from its endpoint's side, a third of the distance between the endpoints and from 22 to 72 away.
+ */
+export function graphPortControls(
+  from: GraphPoint & { side: GraphPort['side'] }, to: GraphPoint & { side: GraphPort['side'] },
+): { a: GraphPoint; b: GraphPoint } {
+  const distance = Math.min(72, Math.max(22, Math.hypot(to.x - from.x, to.y - from.y) / 3))
+  const outward = (point: GraphPoint & { side: GraphPort['side'] }): GraphPoint => {
+    const [dx, dy] = outwardOffsets[point.side]
+    return { x: point.x + dx * distance, y: point.y + dy * distance }
+  }
+  return { a: outward(from), b: outward(to) }
+}
 
 /** The path and label anchor of an edge between two boxes, as drawn after a move. A self-loop passes the same box twice. */
 export function graphIncidentCurve(

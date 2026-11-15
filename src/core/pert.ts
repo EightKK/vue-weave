@@ -1,5 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import type { ScheduleSuccess, ScheduledTask } from './scheduling.js'
+import { formatDependencyLag } from './timeline.js'
 import type { ChartTone, NetworkNode, TimelineDependency } from './types.js'
 
 export interface ScheduleGraphOptions {
@@ -9,6 +10,11 @@ export interface ScheduleGraphOptions {
   formatTime?: (time: number) => string
   /** Float text in node details. Default hours of a millisecond duration, such as `1.5 h`. */
   formatDuration?: (duration: number) => string
+  /**
+   * Text of a non-zero dependency `lag` in its edge label. Default `formatDependencyLag`: signed hours of a millisecond
+   * lag, such as `+2 h` or `−1.5 h`. Called only for a non-zero lag.
+   */
+  formatLag?: (lag: number) => string
   /** Detail prefixes. Defaults: ES, EF and Float. */
   labels?: { earlyStart?: string; earlyFinish?: string; float?: string }
   /** Tone of critical tasks. Default amber. */
@@ -29,6 +35,8 @@ export interface ScheduleGraphNodeData {
 export interface ScheduleGraphEdgeData {
   type: NonNullable<TimelineDependency['type']>
   critical: boolean
+  /** The dependency's lag; present only when it is not zero. */
+  lag?: number
 }
 
 export interface ScheduleGraph {
@@ -48,9 +56,10 @@ const defaultDuration = (duration: number) => Math.round(duration / 36_000) / 10
  * in result order, whose detail shows its early start, early finish and total float, and one edge per dependency with
  * the dependency's ID. Critical tasks get `criticalTone` and are listed in `criticalNodeIds`; the result's
  * `criticalDependencyIds` are returned as `criticalEdgeIds`. Node and edge `data` carry the schedule values
- * (`ScheduleGraphNodeData`, `ScheduleGraphEdgeData`); edges of a type other than FS are labelled with their type.
+ * (`ScheduleGraphNodeData`, `ScheduleGraphEdgeData`). An edge label shows the type when it is not FS and a non-zero
+ * lag formatted by `formatLag`, such as `SS +2 h` or `+2 h`; an FS edge without lag has no label.
  * Throws an Error for a dependency whose ends are not tasks of the result, a dependency from a task to itself, or a
- * repeated dependency ID.
+ * repeated dependency ID, and a RangeError for a lag that is not a finite number.
  */
 export function scheduleToGraph(
   result: ScheduleSuccess, dependencies: readonly TimelineDependency[], options: ScheduleGraphOptions = {},
@@ -58,6 +67,7 @@ export function scheduleToGraph(
   if (!result || result.ok !== true) throw new Error('scheduleToGraph needs a successful schedule result')
   const format = options.formatTime ?? defaultFormat
   const duration = options.formatDuration ?? defaultDuration
+  const formatLag = options.formatLag ?? formatDependencyLag
   const prefix = { earlyStart: 'ES', earlyFinish: 'EF', float: 'Float', ...options.labels }
   const ids = new Set<string>()
   const criticalNodeIds = new Set<string>()
@@ -86,12 +96,21 @@ export function scheduleToGraph(
     // Dependency IDs become edge IDs, which NetworkGraph requires to be unique.
     if (edgeIds.has(dependency.id)) throw new Error('Duplicate dependency ID: ' + dependency.id)
     edgeIds.add(dependency.id)
+    const lag = dependency.lag
+    if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) {
+      throw new RangeError('Dependency lag must be finite: ' + dependency.id)
+    }
     const type = dependency.type ?? 'FS'
     const critical = criticalLinks.has(dependency.id)
     if (critical) criticalEdgeIds.add(dependency.id)
     const data: ScheduleGraphEdgeData = { type, critical }
     const edge: GraphEdge = { id: dependency.id, from: dependency.from, to: dependency.to, data }
-    if (type !== 'FS') edge.label = type
+    const parts: string[] = type === 'FS' ? [] : [type]
+    if (lag) {
+      data.lag = lag
+      parts.push(formatLag(lag))
+    }
+    if (parts.length) edge.label = parts.join(' ')
     return edge
   })
   return { nodes, edges, criticalNodeIds, criticalEdgeIds }

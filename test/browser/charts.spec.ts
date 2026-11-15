@@ -1084,6 +1084,68 @@ test('a node drag preview re-renders only the dragged node and its edges, withou
   expect(errors).toEqual([])
 })
 
+test('a node drag preview with the minimap, connection handles and groups changes only the items of the dragged node', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=300&draggable=1&minimap=1&connectable=1&groups=chain&reads=1&menu=1')
+  await expect(page.locator('.vw-minimap rect:not(.vw-minimap-window)')).toHaveCount(300)
+  await expect(page.getByRole('button', { name: 'Start connection from N0001', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Move group Group 0 within Parent 0', exact: true })).toBeVisible()
+  const node = chainNode(page, 'N0001')
+  const box = (await node.boundingBox())!
+  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  // Past the drag threshold, so every following move updates the preview.
+  await page.mouse.move(x + 10, y + 6)
+  const transform = await node.getAttribute('transform')
+  await page.evaluate(() => {
+    const vw = (window as any).__vw
+    const root = document.querySelector('.vw-network')!
+    const minimapRects = [...root.querySelectorAll('.vw-minimap rect:not(.vw-minimap-window)')]
+    vw.reads.count = 0
+    vw.records = 0
+    vw.changed = new Set()
+    // Each mutation is attributed to the item it belongs to: a node (with its connection handle), an edge (named by
+    // `data-vw-edge` with the context menu on), a group frame or a minimap rectangle, which follows the node order.
+    const owner = (element: Element | null) => {
+      const group = element?.closest('.vw-network-group')
+      if (group) return 'group ' + group.querySelector('[data-vw-group]')?.getAttribute('data-vw-group')
+      const item = element?.closest('[data-vw-node], [data-vw-edge]')
+      if (item) return item.getAttribute('data-vw-node') ?? item.getAttribute('data-vw-edge')
+      const index = element ? minimapRects.indexOf(element) : -1
+      if (index >= 0) return 'minimap N' + String(index).padStart(4, '0')
+      if (element?.closest('.vw-minimap')) return 'minimap view'
+      return 'other ' + element?.tagName + '.' + element?.getAttribute('class')
+    }
+    vw.observer = new MutationObserver(records => {
+      for (const record of records) {
+        vw.records++
+        vw.changed.add(owner(record.target instanceof Element ? record.target : record.target.parentElement))
+      }
+    })
+    vw.observer.observe(root, { subtree: true, attributes: true, childList: true, characterData: true })
+  })
+  const moves = 8
+  for (let i = 1; i <= moves; i++) await page.mouse.move(x + 10 + i * 7, y + 6 + i * 5)
+  await expect(node).not.toHaveAttribute('transform', transform!)
+  const result = await page.evaluate(() => {
+    const vw = (window as any).__vw
+    vw.observer.takeRecords().forEach(() => vw.records++)
+    vw.observer.disconnect()
+    return { reads: vw.reads.count, records: vw.records, changed: [...vw.changed].sort() }
+  })
+  // The dragged node, its handle and its two edges, the frames of its group and of the parent group, its minimap
+  // rectangle and the minimap view of the taller graph change; nothing else does, and the work per move does not
+  // read the other 299 nodes.
+  expect(result.changed).toEqual(['N0001', 'e0', 'e1', 'group g0', 'group p0', 'minimap N0001', 'minimap view'])
+  expect(result.records).toBeLessThanOrEqual(12 * moves)
+  expect(result.reads).toBeLessThan(40 * moves)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Last move', exact: true })).toHaveText('N0001')
+  expect(errors).toEqual([])
+})
+
 test('culled drag previews keep the edges of dragged nodes rendered', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

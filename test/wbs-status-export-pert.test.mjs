@@ -368,6 +368,38 @@ test('scheduleToGraph rejects a dependency from a task to itself', () => {
   })
 })
 
+test('scheduleToGraph labels a non-zero dependency lag on its edge and keeps edges without lag unchanged', () => {
+  const tasks = [{ id: 'a', duration: 2 * hour }, { id: 'b', duration: 4 * hour }, { id: 'c', duration: hour }, { id: 'd', duration: hour }]
+  const plain = [
+    { id: 'ab', from: 'a', to: 'b' }, { id: 'ac', from: 'a', to: 'c', type: 'SS' }, { id: 'bd', from: 'b', to: 'd' }, { id: 'cd', from: 'c', to: 'd', type: 'FF' },
+  ]
+  const lagged = [
+    { ...plain[0], lag: 2 * hour }, { ...plain[1], lag: -hour / 2 }, { ...plain[2], lag: 0 }, plain[3],
+  ]
+  const result = scheduleTasks({ range: { start: 0, end: 20 * hour }, quantum: hour / 2, tasks, dependencies: lagged })
+  assert.equal(result.ok, true)
+  const graph = scheduleToGraph(result, lagged)
+  assert.deepEqual(graph.edges.map(edge => [edge.id, edge.label, edge.data]), [
+    ['ab', '+2 h', { type: 'FS', critical: true, lag: 2 * hour }],
+    ['ac', 'SS −0.5 h', { type: 'SS', critical: false, lag: -hour / 2 }],
+    ['bd', undefined, { type: 'FS', critical: true }],
+    ['cd', 'FF', { type: 'FF', critical: false }],
+  ])
+  // A zero or missing lag gives the same edges as before lags existed.
+  assert.deepEqual(scheduleToGraph(result, lagged.slice(2)).edges, scheduleToGraph(result, plain.slice(2)).edges)
+  assert.equal(Object.hasOwn(graph.edges[2], 'label'), false)
+  assert.equal(Object.hasOwn(graph.edges[2].data, 'lag'), false)
+
+  const calls = []
+  const custom = scheduleToGraph(result, lagged, { formatLag: lag => { calls.push(lag); return 'lag ' + lag / hour + 'h' } })
+  assert.deepEqual(custom.edges.map(edge => edge.label), ['lag 2h', 'SS lag -0.5h', undefined, 'FF'])
+  assert.deepEqual(calls, [2 * hour, -hour / 2])
+
+  for (const lag of [Number.NaN, Infinity, '2']) {
+    assert.throws(() => scheduleToGraph(result, [{ ...plain[0], lag }]), { name: 'RangeError', message: 'Dependency lag must be finite: ab' })
+  }
+})
+
 const chartRows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]
 const chartBars = [
   { id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour, editable: true, progress: 0.5 },

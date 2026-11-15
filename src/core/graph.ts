@@ -2,7 +2,7 @@ import { flipGraphLayout } from './graphOrient.js'
 import { reduceCrossings } from './graphCrossings.js'
 import { graphPathEndpoints } from './graphView.js'
 import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
-import { graphIncidentCurve } from './graphCurve.js'
+import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 
 export interface GraphPort {
   id: string
@@ -483,20 +483,17 @@ export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, 
   if (!edges.some(edge => edge.fromPort !== undefined || edge.toPort !== undefined)) return layout
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
-  const outward = (point: GraphPoint & { side: GraphPort['side'] }, distance: number): GraphPoint => {
-    const offsets = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] } as const
-    const [dx, dy] = offsets[point.side]
-    return {
-      x: Math.min(layout.width, Math.max(0, point.x + dx * distance)),
-      y: Math.min(layout.height, Math.max(0, point.y + dy * distance)),
-    }
-  }
+  // Control points stay inside the layout.
+  const clamp = (point: GraphPoint): GraphPoint => ({
+    x: Math.min(layout.width, Math.max(0, point.x)),
+    y: Math.min(layout.height, Math.max(0, point.y)),
+  })
   for (const edge of edges) {
     if (edge.fromPort === undefined && edge.toPort === undefined) continue
     const from = graphEdgeEndpoint(layout, nodes, edge, 'from', direction)
     const to = graphEdgeEndpoint(layout, nodes, edge, 'to', direction)
-    const distance = Math.min(72, Math.max(22, Math.hypot(to.x - from.x, to.y - from.y) / 3))
-    const a = outward(from, distance), b = outward(to, distance)
+    const controls = graphPortControls(from, to)
+    const a = clamp(controls.a), b = clamp(controls.b)
     if (edge.from === edge.to && from.x === to.x && from.y === to.y) {
       if (from.side === 'left' || from.side === 'right') {
         a.y = Math.max(0, a.y - 18)
