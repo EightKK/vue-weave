@@ -4775,3 +4775,261 @@ test('gantt edit-cancel reports gestures and cell editors cancelled by new sourc
   await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+async function openLinkedDemo(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Linked views', exact: true }).click()
+  const demo = page.locator('section[aria-labelledby="linked-title"]')
+  await expect(demo.getByRole('button', { name: /^Cut order A 10:00/ })).toBeVisible()
+  return {
+    errors, demo,
+    node: (label: string) => demo.getByRole('button', { name: new RegExp('^' + label + ' ES ') }),
+    bar: (label: string) => demo.getByRole('button', { name: new RegExp('^' + label + ' \\d\\d:\\d\\d') }),
+    summary: demo.getByRole('status', { name: 'Linked selection' }),
+    navigation: demo.getByRole('status', { name: 'Navigation message' }),
+  }
+}
+
+test('linked views: a graph selection highlights bars without selecting or deleting them', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  await node('Cut order B').click()
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  await expect(summary).toContainText('Selected in graph: Cut order B')
+  await expect(bar('Cut order B')).toHaveClass(/\bvw-is-highlighted\b/)
+  // The timeline owns no selection: the highlighted bar is not selected.
+  await expect(bar('Cut order B')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-selected\b/)
+  await expect(bar('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // The impact range adds the dependent tasks as highlights too.
+  await demo.getByRole('combobox', { name: 'Impact direction' }).selectOption('forward')
+  await demo.getByRole('combobox', { name: 'Impact hop limit' }).selectOption('1')
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('combobox', { name: 'Impact hop limit' }).selectOption('all')
+  await expect(bar('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'false')
+
+  // Delete on a highlighted bar proposes only that bar; the other highlighted bars and the selected node are not included.
+  await bar('Inspect').focus()
+  await page.keyboard.press('Delete')
+  await expect(demo.getByLabel('Delete proposals')).toHaveText(/Delete proposals: 1\b/)
+  await expect(demo.getByLabel('Delete proposals').locator('..')).toContainText('last: Inspect;')
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  await expect(bar('Inspect')).toHaveAttribute('aria-pressed', 'false')
+
+  // Selecting a bar moves the selection to the timeline and clears the graph's own selection: no ping-pong.
+  await bar('Pack').click()
+  await expect(summary).toContainText('Selected in timeline: Pack')
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'true')
+  await expect(node('Pack')).toHaveAttribute('aria-pressed', 'false')
+  await expect(node('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'false')
+  await page.keyboard.press('Escape')
+  await page.mouse.move(2, 2)
+  await expect(summary).toContainText('Nothing selected')
+  await expect(node('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: hover propagates to the other views and clears on leave', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  await bar('Cut order A').hover()
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(summary).toContainText('Hovering: Cut order A')
+  await expect(demo.locator('.linked-mark[data-mark="linked"]')).toHaveCount(2)
+  await expect(node('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('heading', { name: 'Linked planning views' }).hover()
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(demo.locator('.linked-mark')).toHaveCount(0)
+  await expect(summary).toContainText('Nothing selected')
+
+  await node('Inspect').hover()
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Inspect')).toHaveAttribute('aria-pressed', 'false')
+  await page.mouse.move(2, 2)
+  await expect(bar('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: an overloaded load segment highlights the competing tasks', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  const overloaded = demo.getByRole('button', { name: 'CNC cell 10:00–12:00: load 2 / capacity 1, overloaded by 1' })
+  await overloaded.click()
+  await expect(summary).toContainText('Selected in load: Cut order A, Cut order B')
+  for (const label of ['Cut order A', 'Cut order B']) {
+    await expect(node(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(node(label)).toHaveAttribute('aria-pressed', 'false')
+    await expect(bar(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(bar(label)).toHaveAttribute('aria-pressed', 'false')
+  }
+  await expect(node('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(demo.locator('.linked-mark[data-mark="selected"]')).toHaveCount(1)
+  // The segment after the overload belongs to cutting order A alone.
+  await demo.getByRole('button', { name: 'CNC cell 12:00–13:00: load 1 / capacity 1' }).press('Enter')
+  await expect(summary).toHaveText(/^Selected in load: Cut order A(\.|$)/)
+  await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: the context toolbar follows the selected node and hides for hidden targets', async ({ page }) => {
+  const { errors, demo, node, summary } = await openLinkedDemo(page)
+  const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+  await expect(toolbar).toBeHidden()
+  await node('Inspect').click()
+  await expect(toolbar).toBeVisible()
+  const place = async () => {
+    const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+    return { t: t!, n: n! }
+  }
+  const before = await place()
+  expect(Math.abs(before.t.x + before.t.width / 2 - (before.n.x + before.n.width / 2))).toBeLessThan(6)
+  const fontSize = await toolbar.evaluate(element => getComputedStyle(element).fontSize)
+  // Zooming moves and scales the node, and the toolbar follows it without scaling its text.
+  await demo.getByRole('button', { name: 'Zoom out' }).first().click()
+  await expect.poll(async () => (await place()).n.width).toBeLessThan(before.n.width)
+  const after = await place()
+  expect(Math.abs(after.t.x + after.t.width / 2 - (after.n.x + after.n.width / 2))).toBeLessThan(6)
+  expect(after.t.width).toBeCloseTo(before.t.width, 0)
+  expect(await toolbar.evaluate(element => getComputedStyle(element).fontSize)).toBe(fontSize)
+  // The toolbar's own action goes to the counterpart in the timeline.
+  await toolbar.getByRole('button', { name: 'Show in timeline' }).click()
+  await expect(demo.getByRole('status', { name: 'Navigation message' })).toContainText('Showing Inspect in the timeline.')
+
+  // A node hidden by a collapsed group has no on-screen rectangle: the toolbar goes away.
+  await node('Cut order A').click()
+  await expect(toolbar).toBeVisible()
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(toolbar).toBeHidden()
+  await expect(summary).toContainText('Selected in graph: Cut order A')
+  expect(errors).toEqual([])
+})
+
+test('linked views: reveal handles collapsed groups, collapsed rows and unknown targets', async ({ page }) => {
+  const { errors, demo, node, bar, navigation } = await openLinkedDemo(page)
+  // Collapse the graph group, then select the bar of a hidden member in the timeline.
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(node('Cut order A')).toHaveCount(0)
+  await bar('Cut order A').click()
+  // The hidden node highlights its proxy.
+  await expect(demo.getByRole('button', { name: /^Cutting cell 2 nodes/ })).toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('button', { name: 'Go to graph' }).click()
+  await expect(navigation).toContainText('Cut order A is hidden inside the collapsed group “Cutting cell”.')
+  await expect(node('Cut order A')).toHaveCount(0)
+  await navigation.getByRole('button', { name: 'Expand and show' }).click()
+  await expect(navigation).toContainText('Showing Cut order A in the graph.')
+  await expect(node('Cut order A')).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'Collapse group Cutting cell' })).toBeVisible()
+  // Reaching the node by "go to" did not change the selection.
+  await expect(bar('Cut order A')).toHaveAttribute('aria-pressed', 'true')
+
+  // The same for a collapsed timeline row.
+  await demo.getByRole('button', { name: 'Collapse Cutting cell' }).click()
+  await expect(bar('Cut order B')).toHaveCount(0)
+  await node('Cut order B').click()
+  await demo.getByRole('button', { name: 'Go to timeline' }).click()
+  await expect(navigation).toContainText('Cut order B is hidden inside the collapsed row “Cutting cell”.')
+  await navigation.getByRole('button', { name: 'Expand and show' }).click()
+  await expect(navigation).toContainText('Showing Cut order B in the timeline.')
+  await expect(bar('Cut order B')).toBeVisible()
+
+  // An unknown task is reported and nothing moves or changes.
+  await demo.getByRole('combobox', { name: 'Task to go to' }).selectOption('retired')
+  await demo.getByRole('button', { name: 'Go to timeline' }).click()
+  await expect(navigation).toContainText('No timeline bar is known for “retired”.')
+  await expect(navigation.getByRole('button', { name: 'Expand and show' })).toHaveCount(0)
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+async function openAsyncDemo(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Async layout', exact: true }).click()
+  const demo = page.locator('section[aria-labelledby="async-title"]')
+  await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
+  return {
+    errors, demo,
+    frame: demo.getByLabel('Displayed frame'),
+    status: demo.getByRole('status', { name: 'Layout status' }),
+    log: demo.getByRole('list', { name: 'Layout responses' }),
+  }
+}
+
+test('async layout: responses that arrive out of order never replace the newest frame', async ({ page }) => {
+  const { errors, demo, frame, status, log } = await openAsyncDemo(page)
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('reverse')
+  // Request A (the shortcut link) is answered after request B (collapsing Intake); only B's frame may be shown.
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(status).toContainText('Computing layout')
+  await demo.getByRole('button', { name: 'Collapse group Intake' }).click()
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(log.getByRole('listitem').filter({ hasText: 'discarded (superseded)' })).toHaveCount(1, { timeout: 5000 })
+  await expect(status).toContainText('Layout up to date')
+  // The late, superseded response did not bring the 9-link frame back.
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(demo.getByRole('button', { name: /^Intake 3 nodes/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('async layout: toggling collapse while a layout is pending does not throw', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('button', { name: 'Collapse group Intake' }).click()
+  await expect(status).toContainText('Computing layout')
+  // The displayed frame is still the old one while the new input is pending.
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await demo.getByRole('button', { name: 'Expand all groups' }).click()
+  await demo.getByRole('button', { name: 'Collapse group Assembly' }).click()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(status).toContainText('Layout up to date', { timeout: 8000 })
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(demo.getByRole('button', { name: /^Assembly 3 nodes/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('async layout: a failing service keeps the last consistent frame and recovers', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await demo.getByRole('checkbox', { name: 'Layout service fails' }).check()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByRole('alert')).toContainText('Showing the last consistent layout.')
+  // The new link is drawn at once on the previous boxes with a temporary route; the failed layout is not shown.
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
+  await demo.getByRole('checkbox', { name: 'Layout service fails' }).uncheck()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).uncheck()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(demo.getByRole('alert')).toHaveCount(0)
+  await expect(status).toContainText('Layout up to date')
+  expect(errors).toEqual([])
+})
+
+test('async layout: the preserve routing policy keeps the engine routes of ported edges, also in a Worker', async ({ page }) => {
+  const { errors, demo, frame } = await openAsyncDemo(page)
+  const paths = () => demo.locator('path.vw-network-edge').evaluateAll(list => list.map(path => path.getAttribute('d')).join('|'))
+  const builtin = await paths()
+  await demo.getByRole('combobox', { name: 'Routing policy' }).selectOption('preserve')
+  await expect.poll(paths).not.toBe(builtin)
+  const preserved = await paths()
+  // A link connected while a layout is pending is drawn at once (temporary route) and the graph stays valid.
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Computing layout')
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Layout up to date', { timeout: 8000 })
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  // The same computation in a Web Worker gives the same routes.
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('fast')
+  await demo.getByRole('checkbox', { name: 'Compute in a Web Worker' }).check()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).uncheck()
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await expect.poll(paths).toBe(preserved)
+  expect(errors).toEqual([])
+})
