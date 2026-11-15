@@ -193,3 +193,22 @@ All exported interfaces and component props are included in the declaration file
 Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
 
 Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+
+## Typed fields and timeline views
+
+`TimelineColumn.field` is an optional `TimelineFieldSpec` (`id`, `kind`, raw getter `get`, optional `parse`, `format`, `required`, `choices`, `multiple`, `min`, `max`, `integer`, `allowNegative`, `utcOffsetMinutes`, `durationBasis`, `unitSize`, `unitLabel`). Columns without it behave as before. `kind` is `'text'`, `'number'`, `'time'`, `'duration'`, `'select'` or `'checkbox'`; `FieldValue` is a string, number, boolean, `null` or an array of those (multiple selection). `TimelineFieldEdit<R>` describes a typed change (`rowId`, `columnId`, `fieldId`, `before`, `after`, `source`).
+
+Core helpers in `vue-weave/core`:
+
+- `parseFieldValue(spec, text)` returns `{ ok: true, value }` or `{ ok: false, code, error }`. Blank text is `null` (or a `required` error); `0` and negative numbers are values. Error codes are `required`, `invalid`, `negative`, `range`, `integer`, `choice`, `time-zone` and `custom`.
+- `validateFieldValue(spec, value)` checks a value with the same rules and returns `{ ok: true }` or an error. `null` and `[]` are empty.
+- `formatFieldValue(spec, value)` returns editor text; `fieldValuesEqual(a, b)` compares values.
+- Built-in `time` parsing reads `YYYY-MM-DD[ T]HH:mm[:ss[.SSS]]` with the fixed `utcOffsetMinutes` of the spec, or a `Z`/`±HH:MM` written in the text. It never uses the runtime's time zone or `Date.parse`. Without `utcOffsetMinutes`, supply `parse` and `format`; otherwise parsing returns `time-zone`. `duration` values are in model units; `unitSize` converts the typed number and `durationBasis` (`'elapsed'` or `'working'`) states what is edited. Negative durations need `allowNegative`.
+
+Timeline view state (`TimelineViewState`, version 1) is JSON-safe: column order, visibility and width, a search (`text`, optional `columnIds`), sort entries (`ruleId`, `direction`), `collapsedIds`, `window` and a `zoom` preset ID. It holds no functions, DOM state or drafts.
+
+- `createTimelineViewState(columns?, patch?)`, `parseTimelineViewState(json)` (throws on a malformed value), `reconcileTimelineViewColumns(state, columns)` and `resolveTimelineColumns(state, columns)`. Unknown column IDs are dropped with an `unknown-column` diagnostic. Columns the state has not seen are appended after the known ones, visible, in declared order (`new-column`).
+- `projectTimelineView(input, state)` takes `{ rows, bars, dependencies?, columns?, sortRules?, laneCount? }` and returns display copies plus `matchedRowIds`, `removedDependencyIds`, `removedDependencyCount`, `hiddenTargets` (hidden bars that a shown bar still depends on or feeds), `wbs`, `collapsedIds`, `window`, `zoom` and `diagnostics`. Matching rows keep their ancestors; siblings are sorted stably, with ties in the original order; dependencies to hidden bars are removed. The output passes `validateTimelineData`. The input is not changed. A sort `ruleId` is a registered compare rule or a column ID.
+- `timelineWbsCodes(rows)` returns codes such as `1.2` from the original row order. `projectTimelineView` always computes them from the unfiltered rows.
+
+`useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state`, `projection`, `columns`, `diagnostics`, `setSearch`, `setSort`, `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.

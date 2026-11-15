@@ -4,3 +4,4 @@ export { default as GanttChart } from './components/GanttChart.vue'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
+export { useTimelineView } from './composables/useTimelineView.js'

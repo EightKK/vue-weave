@@ -1,5 +1,6 @@
 import type { GraphBox, GraphEdge, GraphLayout, IdentifiedNode } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
+import type { TimelineFieldSpec } from './fieldEditing.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -55,6 +56,8 @@ export interface TimelineColumn {
   width: number
   value: (row: TimelineRow, summary?: TimelineSummary) => string | number
   editable?: boolean | ((row: TimelineRow) => boolean)
+  /** Optional typed field definition. Leave it unset to keep the plain text cell behaviour. */
+  field?: TimelineFieldSpec
 }
 
 export interface TimelineCellEdit {

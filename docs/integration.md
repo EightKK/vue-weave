@@ -77,3 +77,11 @@ For example, a piecewise scale can give working hours more visual space while re
 Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph currently takes a synchronous layout callback. For an asynchronously computed layout, store the returned result in application state and supply a synchronous callback that returns the current result. Update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
+
+## Search, sort and saved views
+
+Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input.
+
+To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
+
+For typed editing, give a column a `field` spec. A `time` field needs an explicit `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text.
