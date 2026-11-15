@@ -58,3 +58,5 @@ export type {
 } from './resourceTimeline.js'
 export { buildPlacementInput } from './placement.js'
 export type { PlacementInput, PlacementDiagnostic, PlacementResult } from './placement.js'
+
+export * from './snapshot.js'
