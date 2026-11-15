@@ -42,3 +42,5 @@ export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, Schedu
 
 export * from './viewBindings.js'
 export * from './editTransaction.js'
+
+export * from './graphTraversal.js'

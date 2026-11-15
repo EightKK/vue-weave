@@ -5,6 +5,9 @@
 ### Added
 
 - `EntityRef`, `ViewTarget` and `ViewBinding` types for linking graph, timeline and load views.
+- Core view-binding helpers: `buildViewBindingIndex`, `resolveViewTargets`, `resolveEntityRefs` (load targets match by range overlap) and `resolveLoadTargets` (a target that overlaps no current load segment is reported as unknown, never moved to another segment).
+- Core `traverseGraph` (directional, hop-limited, iterative walk returning node and edge IDs plus unknown start IDs) and `resolveCollapsedTargets` (resolves node and edge IDs to the proxies and merged edges of a `collapseGraphGroups` result).
+- `useLinkedSelection` composable: the view the user acts in owns the selection, other views get display-only highlight sets, repeated selections are no-ops so event wiring cannot loop, and hover enter and leave are tracked.
 
 ## 0.2.0 - 2026-11-15
 

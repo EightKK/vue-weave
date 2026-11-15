@@ -1010,3 +1010,30 @@ Only an accepted response changes anything. It replaces the accepted state with 
 `useEditHistory` additionally returns `peekUndo()`, `peekRedo()` (the adjacent snapshot or `undefined`, position unchanged) and `replaceCurrent(snapshot)` (replace the current entry, keeping the others).
 
 The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically. See [integration](integration.md).
+
+## Linked views
+
+Core helpers and a composable link entities (tasks, resources, anything the application defines) to what the graph, timeline and load views show. They do not change the components; the application passes the results to props that already exist (`selectedIds` for the view the user acts in, `relatedIds`, `matchIds` or its own handling for the others).
+
+```ts
+import { buildViewBindingIndex, resolveViewTargets, resolveEntityRefs } from 'vue-weave/core'
+
+const index = buildViewBindingIndex([
+  { entity: { kind: 'task', id: 'A' }, target: { view: 'graph', kind: 'node', id: 'n1' } },
+  { entity: { kind: 'task', id: 'A' }, target: { view: 'timeline', kind: 'bar', id: 'b1' } },
+])
+resolveViewTargets(index, [{ kind: 'task', id: 'A' }]) // { targets: [n1, b1], unknown: [] }
+resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { entities: [task A], unknown: [] }
+```
+
+| Export | Contract |
+| --- | --- |
+| `buildViewBindingIndex(bindings)` | Two-way index. Many-to-many links are allowed, identical bindings count once, inputs are not modified. Keys encode kind and ID as a JSON tuple, so a task `A` and a resource `A` never collide. Throws for an empty kind or ID, and `RangeError` for a load range that is not finite or ends before it starts. |
+| `resolveViewTargets(index, entities)` | `{ targets, unknown }`: targets without repeats; entities with no binding are listed in `unknown`. |
+| `resolveEntityRefs(index, targets)` | `{ entities, unknown }`. A load target matches bound load targets of the same resource whose half-open range overlaps it. |
+| `resolveLoadTargets(segments, targets)` | `{ segments, unknown }`: current segments that overlap a load target. A load segment has no ID and its boundaries change when load is recalculated, so a target that overlaps no current segment is reported in `unknown` and never replaced by another segment. |
+| `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. |
+| `resolveCollapsedTargets(collapse, { nodeIds, edgeIds }, edges)` | Resolves IDs of the full graph against a `collapseGraphGroups` result: hidden nodes to their proxy, edges merged into a re-attached edge to the merged edge, and edges dropped inside one collapsed group to that group's proxy node. `edges` are the edges given to `collapseGraphGroups`. Returns `{ nodeIds, edgeIds, unknownNodeIds, unknownEdgeIds }`. |
+| `useLinkedSelection({ bindings, onSelect })` | See below. |
+
+`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them.
