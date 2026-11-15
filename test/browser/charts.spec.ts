@@ -4441,3 +4441,200 @@ test('gantt Ctrl+wheel does nothing without wheelZoom', async ({ page }) => {
   await expect(out('Zoom events')).toHaveText('')
   expect(errors).toEqual([])
 })
+
+async function openLinkedGanttFixture(page: Page, search = '') {
+  await page.route('**/linked-gantt-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/linked-gantt-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/linked-gantt.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/linked-gantt-test/' + search)
+  const chart = page.getByRole('region', { name: 'Linked timeline', exact: true })
+  await expect(chart).toBeVisible()
+  const out = (name: string) => page.getByRole('status', { name, exact: true })
+  const json = async (name: string) => JSON.parse((await out(name).textContent()) || 'null')
+  return { chart, out, json }
+}
+type LinkedFixture = { replaceBars(): void; highlight(ids: string[]): void }
+
+test('gantt highlighted bars are display-only: not deleted with the selection and no gesture cancel', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const taskA = chart.getByRole('button', { name: 'Task A 2–6', exact: true })
+  const taskB = chart.getByRole('button', { name: 'Task B 8–12', exact: true })
+  await expect(taskB).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(taskB).toHaveAttribute('aria-pressed', 'false')
+  await expect(taskA).toHaveAttribute('aria-pressed', 'true')
+  await taskA.press('Delete')
+  await expect.poll(() => json('Last delete')).toEqual(['a'])
+
+  // Changing the highlight during a drag neither cancels it nor moves the highlighted bar.
+  const box = (await taskA.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.highlight(['a', 'b']))
+  // The accessible name follows the drag preview, so the dragged bar is found by its ID here.
+  const dragged = chart.locator('[data-vw-bar="a"]')
+  await expect(dragged).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(dragged).toHaveClass(/\bvw-is-dragging\b/)
+  await page.mouse.up()
+  await expect.poll(() => json('Last edit')).toMatchObject({ id: 'a', before: { start: 2, end: 6 }, after: { start: 4, end: 8 }, mode: 'move' })
+  await expect(out('Cancels')).toHaveText('0')
+  expect(errors).toEqual([])
+})
+
+test('gantt bars and selectable load segments report target events by pointer and keyboard', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).hover()
+  await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+
+  const segment = chart.getByRole('button', { name: 'Developers 2–6: load 2 / capacity 1, overloaded by 1', exact: true })
+  await segment.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(segment).toBeFocused()
+  await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await page.keyboard.press('Enter')
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await page.keyboard.press('Tab')
+  await expect.poll(() => json('Last target leave')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await expect.poll(() => json('Last target enter')).toMatchObject({ target: { view: 'load', start: 6, end: 12 }, source: 'keyboard' })
+
+  // Focusing the load rows scrolled the task rows out of the window; scroll back to the top.
+  await chart.evaluate(element => { element.scrollTop = 0 })
+  await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).click()
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+  expect(errors).toEqual([])
+})
+
+test('gantt revealBar scrolls to an off-screen bar and focuses it, and reports collapsed and unknown bars', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  const far = chart.getByRole('button', { name: 'Far task 180–186', exact: true })
+  await expect(far).toHaveCount(0)
+  await page.getByRole('button', { name: 'Reveal far task', exact: true }).click()
+  await expect(far).toBeFocused()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'revealed' })
+  await expect(far).toBeInViewport()
+
+  await page.getByRole('button', { name: 'Reveal hidden task', exact: true }).click()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'hidden-by-collapse', proxyId: 'P' })
+  await page.getByRole('button', { name: 'Reveal unknown task', exact: true }).click()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'unknown' })
+  expect(errors).toEqual([])
+})
+
+test('gantt droppable reports external drops with row and time and writes nothing', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  const box = (await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).boundingBox())!
+  const accepted = await chart.evaluate((element, point) => {
+    const target = document.elementFromPoint(point.x, point.y)!
+    const dataTransfer = new DataTransfer()
+    dataTransfer.setData('text/plain', 'backlog-7')
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, dataTransfer })
+    target.dispatchEvent(over)
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, dataTransfer }))
+    return over.defaultPrevented && element.contains(target)
+  }, { x: box.x + box.width + 40, y: box.y + box.height / 2 })
+  expect(accepted).toBe(true)
+  await expect.poll(() => json('Last drop')).toEqual({ time: 14, rowId: 'r2', text: 'backlog-7' })
+  await expect(chart.getByRole('button', { name: /backlog/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('gantt typed field cells edit through the cell-editor slot with keyboard commit, cancel and focus return', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const cell = chart.getByRole('button', { name: 'Row 1 · Effort 3', exact: true })
+  const editor = chart.getByRole('textbox', { name: 'Effort editor', exact: true })
+  await cell.focus()
+  await page.keyboard.press('Enter')
+  await expect(editor).toBeFocused()
+  await editor.fill('abc')
+  await editor.press('Enter')
+  await expect(chart.getByRole('alert')).toHaveText(/Not a number/)
+  await expect(editor).toBeFocused()
+  await editor.fill('13')
+  await editor.press('Enter')
+  await expect(chart.getByRole('alert')).toHaveText('Thirteen is not allowed')
+  await editor.fill('5')
+  await editor.press('Enter')
+  await expect(cell).toBeFocused()
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r1', columnId: 'effort', fieldId: 'effort', before: 3, after: 5, source: 'keyboard' })
+  await expect(out('Field edits')).toHaveText('1')
+
+  await page.keyboard.press('F2')
+  await expect(editor).toBeFocused()
+  await editor.fill('8')
+  await editor.press('Escape')
+  await expect(cell).toBeFocused()
+  await expect(out('Field edits')).toHaveText('1')
+  await expect.poll(() => json('Last cancel')).toEqual({ reason: 'escape', barIds: [], cell: { rowId: 'r1', columnId: 'effort' } })
+  expect(errors).toEqual([])
+})
+
+test('gantt built-in field input parses the text and emits field-edit only', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin')
+  const input = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await expect(input).toHaveValue('')
+  await input.fill('-1')
+  await input.press('Enter')
+  await expect(input).toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('0')
+  await input.press('Escape')
+  await expect(input).toHaveValue('')
+  await expect(input).not.toHaveAttribute('aria-invalid', 'true')
+  await input.fill('0')
+  await input.press('Enter')
+  await expect(input).toBeFocused()
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r2', columnId: 'effort', fieldId: 'effort', before: null, after: 0, source: 'keyboard' })
+  expect(errors).toEqual([])
+})
+
+test('gantt edit-cancel reports gestures and cell editors cancelled by new source data', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const taskB = chart.getByRole('button', { name: 'Task B 8–12', exact: true })
+  const box = (await taskB.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  const dragged = chart.locator('[data-vw-bar="b"]')
+  await expect(dragged).toHaveClass(/\bvw-is-dragging\b/)
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.replaceBars())
+  await expect(out('Cancels')).toHaveText('1')
+  expect(await json('Last cancel')).toEqual({ reason: 'source-changed', barIds: ['b'] })
+  await page.mouse.up()
+  await expect(out('Edits')).toHaveText('0')
+
+  await chart.getByRole('button', { name: 'Row 1 · Effort 3', exact: true }).click()
+  await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: 'Replace rows', exact: true }).click()
+  await expect(out('Cancels')).toHaveText('2')
+  expect(await json('Last cancel')).toEqual({ reason: 'source-changed', barIds: [], cell: { rowId: 'r1', columnId: 'effort' } })
+  await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+})

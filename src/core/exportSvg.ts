@@ -376,6 +376,11 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   /** Default 44. At least 16. */
   loadRowHeight?: number
   highlightedDependencyIds?: Iterable<string>
+  /**
+   * Bars drawn with the highlight outline and the `vw-is-highlighted` class, as GanttChart `highlightedBarIds`. The
+   * outline uses the `dependencyHighlight` theme colour.
+   */
+  highlightedBarIds?: Iterable<string>
   /** Half-open intervals shaded as non-working time behind the grid, over the task and load rows. May overlap. */
   nonWorkingPeriods?: readonly TimeRange[]
   /** Time of a status-date line. */
@@ -511,6 +516,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const barLabel = options.barLabel ?? ((bar: B) => bar.label)
   const rowLabel = options.rowLabel ?? ((row: R) => row.label)
   const highlighted = new Set(options.highlightedDependencyIds ?? [])
+  const highlightedBars = new Set(options.highlightedBarIds ?? [])
   const baselines = baselineSelection(bars, options.baselineIds)
   const stripLayout = baselineLayout(baselines.ids.length)
   const baselineText = {
@@ -652,10 +658,20 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       const label = barLabel(bar)
       const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
       const late = bar.deadline !== undefined && bar.end > bar.deadline
-      const marks = { class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : ''].filter(Boolean).join(' ') || undefined }
+      const strong = highlightedBars.has(bar.id)
+      const marks = {
+        class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : '', strong ? 'vw-is-highlighted' : ''].filter(Boolean).join(' ') || undefined,
+      }
+      // A highlighted bar gets an outline 3 px outside its box (or around the milestone diamond).
+      const outline = (box: { x: number; width: number }) => strong
+        ? tag('rect', {
+          class: 'vw-highlight', x: box.x - 3, y: y - 3, width: box.width + 6, height: barHeight + 6, rx: 7, fill: 'none',
+          stroke: theme.dependencyHighlight, 'stroke-width': 2,
+        })
+        : ''
       if (bar.start === bar.end) {
         const x = X(bar.start)
-        area.push(tag('g', marks, title + tag('polygon', {
+        area.push(tag('g', marks, title + outline({ x: x - 5, width: 10 }) + tag('polygon', {
           points: [[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]
             .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
           fill, stroke, 'stroke-width': strokeWidth,
@@ -663,7 +679,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
         continue
       }
       const box = { ...span(bar.start, bar.end), y, height: barHeight }
-      let shape = ''
+      let shape = outline(box)
       if (bar.segments) {
         // Work pieces with a connector across the gaps; progress fills the first part of the working time.
         const { pieces, gaps } = segmentPieces(bar, bar.segments, bar.progress)

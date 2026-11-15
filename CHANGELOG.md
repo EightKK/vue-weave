@@ -15,6 +15,13 @@
 - `WeaveSnapshotError`, `SnapshotCodec`, `SnapshotDiagnostic` and the snapshot input, stored and restored types.
 - `scheduleTasks` and `levelResources` take an optional second argument `{ explain: true }` that adds a `trace` (`ScheduleTrace`) of structured reasons for each task's dates: dependencies with their lag, constraints, project bounds, calendar time off, pauses and, for leveling, the resources, intervals and holding tasks that delayed or split a task. Overloads type `trace` only for `explain: true`. Results without the option are unchanged.
 - `collectScheduleReasons(trace, taskId, options?)` follows a task's reasons to their causes iteratively, visiting shared causes once.
+- GanttChart `highlightedBarIds`: display-only bar highlight (`vw-is-highlighted`, `--vw-bar-highlight`) that never joins the selection, deletion or batch moves and does not cancel gestures. `renderTimelineSvg` takes the same option and the export methods pass it.
+- GanttChart `target-enter`, `target-leave` and `target-activate` events (`ViewTargetEvent`) for bars, dependencies, rows and, with the new opt-in `loadSelectable` prop, load segments, by pointer and keyboard. Existing event payloads are unchanged.
+- GanttChart `revealBar(id, options?)` method: scrolls a bar into view and optionally focuses it, resolving a `RevealResult` (`revealed`, `hidden-by-collapse` with the ancestor row, or `unknown`) without throwing.
+- GanttChart `droppable` prop and `bar-drop` event (`TimelineDrop`, exported from `vue-weave`) report external HTML drops with the row and snapped time as a proposal.
+- GanttChart typed field editing: columns with `field` emit `field-edit` (checked with the new `validateFieldEdit`, rejected through `field-edit-rejected`) instead of `cell-edit`, through the new `cell-editor` slot or a built-in input that parses with the field. Columns without `field` are unchanged, and a `cell` slot still takes precedence.
+- GanttChart `edit-cancel` event (`TimelineEditCancel`) reports why an in-flight gesture, armed connection or cell editor was cancelled.
+- `ViewTargetEvent`, `RevealStatus`, `RevealOptions` and `RevealResult` types.
 - `toPlanningDiagnostics(result, load?)` turns cycles, infeasible tasks, unresolved leveling and overloaded load segments into `PlanningDiagnostic` entries with language-independent IDs and codes and `EntityRef` targets.
 
 ## 0.2.0 - 2026-11-15

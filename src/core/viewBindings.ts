@@ -10,6 +10,34 @@ export type ViewTarget =
   | { view: 'timeline'; kind: 'bar' | 'dependency' | 'row'; id: string }
   | { view: 'load'; resourceId: string; start: number; end: number }
 
+/** How a target was reached: by pointer or keyboard. */
+export type ViewTargetSource = 'pointer' | 'keyboard'
+
+/** Payload of the `target-enter`, `target-leave` and `target-activate` component events. */
+export interface ViewTargetEvent {
+  target: ViewTarget
+  source: ViewTargetSource
+}
+
+/**
+ * Result of a reveal method (`GanttChart.revealBar`). `unknown`: no such item, nothing moved. `hidden-by-collapse`:
+ * the item exists but a collapsed ancestor hides it; `proxyId` is the visible item that stands in for it (for a bar, the
+ * nearest displayed ancestor row) and nothing moved. `revealed`: the view scrolled to the item.
+ */
+export type RevealStatus = 'revealed' | 'hidden-by-collapse' | 'unknown'
+
+export interface RevealOptions {
+  /** Move DOM focus to the item after it is scrolled into view and rendered. Default false. */
+  focus?: boolean
+  /** Camera scale for graph reveals. Timeline reveals ignore it. */
+  scale?: number
+}
+
+export interface RevealResult {
+  status: RevealStatus
+  proxyId?: string
+}
+
 /** Links one entity to one target. Many-to-many links are allowed. */
 export interface ViewBinding {
   entity: EntityRef

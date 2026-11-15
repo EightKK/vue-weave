@@ -166,6 +166,16 @@ NetworkGraph editing aids add two variables, used only when the matching prop is
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
 
+Linked views and typed cells add three variables, used only when the matching prop is set:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-bar-highlight` | `--vw-dependency-highlight` (`#a74f08`) | Outline of bars in `highlightedBarIds` (`.vw-gantt-bar.vw-is-highlighted`) |
+| `--vw-load-focus` | `--vw-accent` (`#245e96`) | Focus outline of load segments with `loadSelectable` |
+| `--vw-field-invalid` | `#c4161c` | Border of a built-in field input whose text could not be read (`aria-invalid`) |
+
+In forced-colors mode highlighted bars get a dashed `CanvasText` outline and focused load segments a `Highlight` outline.
+
 Scheduling overlays add four variables, used only when the matching input is set:
 
 | Variable | Default | Used for |
@@ -222,7 +232,7 @@ In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1
 | --- | --- | --- |
 | `selected` | `vw-is-selected` | Selected graph nodes, minimap nodes, selected edge hit areas, Gantt bars and the active dependency path |
 | `related` | `vw-is-related` | Graph nodes and edges next to the selection, and Gantt dependency paths that touch a selected bar |
-| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` |
+| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` (since this release also Gantt bars in `highlightedBarIds`) |
 | `active` | `vw-is-active` | Pressed connection handles, the active graph edge and Gantt dependency hit areas, pressed Gantt link handles and the column resize separator being dragged |
 | `panning` | `vw-is-panning` | The graph stage while it is panned |
 | `draggable` | `vw-is-draggable` | Graph nodes that can be dragged |
@@ -297,7 +307,7 @@ Keep the source rows, bars and dependencies as they are and render the output of
 
 To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
 
-For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text.
+For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text. In GanttChart, a column with `field` emits `field-edit` instead of `cell-edit`: listen to `field-edit`, check it in `validateFieldEdit` and apply `change.after` to your row. Provide your own editor through the `cell-editor` slot (call `commit(value)` or `commitText(text)` and `cancel()`), or leave the slot out to use the built-in text input, which parses with the field. A `cell` slot still owns the whole cell.
 ## Use ELK.js for layout
 
 The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes. Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
