@@ -4,6 +4,8 @@
 
 The package exports ES modules. Use `vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `vue-weave/style.css` once.
 
+Both components are generic over their item types. Type the `data` of your items, for example `NetworkNode<MyData>[]` or `TimelineBar<MyData>[]`, and the slot props, `layout`, `columns` callbacks and export label callbacks receive that type without casts. For a template ref, use `useTemplateRef`, which vue-tsc infers from the template, or `NetworkGraphExposed` and `GanttChartExposed`; `InstanceType<typeof NetworkGraph>` keeps working with the default types. See [Typed data](api.md#typed-data).
+
 For installation, follow the [README](../README.md#install).
 
 Declarations also support `noUncheckedSideEffectImports` without requiring CSS declarations just to import the components. If your application imports the stylesheet with that option enabled, its asset types must recognize CSS imports, for example through `vite/client` or an application-owned `declare module '*.css' {}` declaration.

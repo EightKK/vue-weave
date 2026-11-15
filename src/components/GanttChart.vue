@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, onScopeDispose, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
@@ -25,9 +25,9 @@ import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
-  rows: readonly TimelineRow[]
+  rows: readonly R[]
   /** Bars drawn on the rows. Each has an ID, `rowId`, label and numeric half-open `[start, end)` interval in the units of `range`; a zero-duration bar is a milestone. Required. */
-  bars: readonly TimelineBar[]
+  bars: readonly B[]
   /** Links between bars by ID, with an optional FS, SS, FF or SF type. They are drawn only; scheduling constraints are enforced by the application. Default: `[]`. */
   dependencies?: readonly TimelineDependency[]
   /** IDs of dependencies drawn with the highlight style. */
@@ -53,7 +53,7 @@ const props = withDefaults(defineProps<{
   /** Vertical markers with a unique ID, finite time and label, drawn inside the visible time window. */
   markers?: readonly TimelineMarker[]
   /** Extra sticky columns next to the row label, each with an ID, label, pixel width, `value(row, summary)` and optional `editable`. */
-  columns?: readonly TimelineColumn[]
+  columns?: readonly TimelineColumn<R>[]
   /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
   showSummaries?: boolean
   /** Synchronous check of a cell edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -134,7 +134,7 @@ const props = withDefaults(defineProps<{
   /** Reports context menu requests through `context-menu` instead of opening the browser menu. The component renders no menu. Opt-in. Default: false. */
   contextMenu?: boolean
   /** Enables proposing new bars by dragging or clicking an empty part of a row, or via its add button. Pass `true` for every row or a predicate to choose rows. Default: false. */
-  creatable?: boolean | ((row: TimelineRow) => boolean)
+  creatable?: boolean | ((row: R) => boolean)
   /** Length in time units of a bar proposed by a click or the add button; finite and positive. Default: 4 times `snap`. */
   createDuration?: number
   /** Synchronous check of a new bar proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -239,14 +239,14 @@ const emit = defineEmits<{
 const slots = defineSlots<{
   legend(): unknown
   'row-heading'(): unknown
-  row(props: { row: TimelineRow; index: number; depth: number; expanded: boolean }): unknown
-  cell(props: { row: TimelineRow; column: TimelineColumn; value: string | number; summary?: TimelineSummary }): unknown
-  bar(props: { bar: TimelineBar; range: TimeRange; selected: boolean }): unknown
+  row(props: { row: R; index: number; depth: number; expanded: boolean }): unknown
+  cell(props: { row: R; column: TimelineColumn<R>; value: string | number; summary?: TimelineSummary }): unknown
+  bar(props: { bar: B; range: TimeRange; selected: boolean }): unknown
   tick(props: { time: number; label: string }): unknown
   empty(): unknown
   'load-row'(props: { row: TimelineLoadRow; peak: number }): unknown
   'load-segment'(props: { segment: TimelineLoadSegment; row: TimelineLoadRow; peak: number; overload: number }): unknown
-  tooltip(props: { bar: TimelineBar; range: TimeRange; selected: boolean }): unknown
+  tooltip(props: { bar: B; range: TimeRange; selected: boolean }): unknown
 }>()
 const messages = computed<GanttLabels>(() => ({
   region: 'Gantt chart', rows: 'Rows', empty: 'No rows to display',
@@ -296,7 +296,7 @@ const minimum = computed(() => props.minDuration ?? activeSnap.value)
 // Invalid input is reported through `validation-error` and never rendered. The error is rethrown so
 // development builds still surface it (production Vue logs it instead of rendering invalid data).
 const validationError = ref<Error>()
-const tree = shallowRef<ReturnType<typeof createTimelineRowTree>>([])
+const tree = shallowRef<ReturnType<typeof createTimelineRowTree<R>>>([])
 const loadHistogram = shallowRef<Map<string, ResourceLoadHistogram>>()
 function validateLoad() {
   if (!props.loadRows?.length) {
@@ -460,19 +460,19 @@ const columnWidth = computed(() => {
   for (const column of props.columns ?? []) width += column.width
   return width
 })
-function canEditCell(row: TimelineRow, column: TimelineColumn) {
+function canEditCell(row: R, column: TimelineColumn<R>) {
   if (props.readonly) return false
   return typeof column.editable === 'function' ? column.editable(row) : Boolean(column.editable)
 }
-function cellValue(row: TimelineRow, column: TimelineColumn) {
+function cellValue(row: R, column: TimelineColumn<R>) {
   return column.value(row, summaries.value?.get(row.id))
 }
-function cancelCell(event: KeyboardEvent, row: TimelineRow, column: TimelineColumn) {
+function cancelCell(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   input.value = String(cellValue(row, column))
   input.blur()
 }
-function commitCell(event: Event, row: TimelineRow, column: TimelineColumn) {
+function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   const before = cellValue(row, column)
   const after = input.value
@@ -535,7 +535,7 @@ const tickStep = computed(() => activeTickSteps.value.find(step => minTickGap(st
 const rowOrder = computed(() => new Map(displayedRows.value.map(({ row }, index) => [row.id, index])))
 const barById = computed(() => new Map((validationError.value ? [] : props.bars).map(bar => [bar.id, bar])))
 const barsByRow = computed(() => {
-  const groups = new Map<string, TimelineBar[]>()
+  const groups = new Map<string, B[]>()
   for (const bar of validationError.value ? [] : props.bars) {
     if (!groups.has(bar.rowId)) groups.set(bar.rowId, [])
     groups.get(bar.rowId)!.push(bar)
@@ -1805,7 +1805,7 @@ watch(() => props.columnsResizable, () => { if (mounted) measureLabelColumn() })
 function clampColumnWidth(width: number) {
   return Math.round(Math.max(minColumnSize.value, Math.min(maxColumnSize.value, width)))
 }
-function shownColumnWidth(column: TimelineColumn) {
+function shownColumnWidth(column: TimelineColumn<R>) {
   return columnResize.value?.id === column.id ? columnResize.value.width : column.width
 }
 /** Extra width of the columns while a column drag is previewed. */
@@ -2074,7 +2074,7 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
 const createPreview = shallowRef<{ rowId: string; lane: number; range: TimeRange }>()
 let createDrag: { pointerId: number; rowId: string; time: number; x: number; moved: boolean } | undefined
 const createLength = computed(() => props.createDuration ?? 4 * activeSnap.value)
-function canCreateIn(row: TimelineRow) {
+function canCreateIn(row: R) {
   if (!props.creatable || props.readonly || validationError.value) return false
   return typeof props.creatable === 'function' ? Boolean(props.creatable(row)) : true
 }
@@ -2110,7 +2110,7 @@ function laneAt(rowId: string, clientY: number) {
   const offset = clientY - canvas.value.getBoundingClientRect().top - headerHeight.value - index * props.rowHeight - laneOffset(0)
   return Math.max(0, Math.min(props.laneCount - 1, Math.floor(offset / laneHeight.value)))
 }
-function pressRow(event: PointerEvent, row: TimelineRow) {
+function pressRow(event: PointerEvent, row: R) {
   // Bars, handles, cells and the heading column are descendants; only the row's own background is empty.
   const el = scroller.value, area = canvas.value
   if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !event.isPrimary || event.button !== 0 || gestureActive()) return
@@ -2161,7 +2161,7 @@ function finishCreate(event: PointerEvent) {
   if (row && canCreateIn(row)) proposeCreate({ rowId: row.id, lane, start: range.start, end: range.end, source: 'pointer' })
 }
 /** The add button of a row proposes `createDuration` from the first snapped time in view, in the lowest free lane. */
-function createFromButton(event: MouseEvent, row: TimelineRow) {
+function createFromButton(event: MouseEvent, row: R) {
   if (!canCreateIn(row) || gestureActive()) return
   const el = scroller.value
   const step = activeSnap.value
@@ -2487,7 +2487,7 @@ function rowLabelWidth() {
  * A standalone SVG document of the chart with the default rendering: every displayed row (respecting collapsed rows),
  * the whole range at the current zoom, header bands, ticks, markers, the now line and load rows. Slots are not used.
  */
-function exportSvg(options: GanttExportOptions = {}) {
+function exportSvg(options: GanttExportOptions<R, B> = {}) {
   if (validationError.value) throw validationError.value
   const { includeLoad = true, includeStatusDate = true, theme, ...rest } = options
   const time = props.now ?? clientNow.value
@@ -2523,7 +2523,7 @@ function exportSvg(options: GanttExportOptions = {}) {
   })
 }
 /** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
-async function exportPng(options: GanttPngExportOptions = {}) {
+async function exportPng(options: GanttPngExportOptions<R, B> = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }

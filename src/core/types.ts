@@ -6,7 +6,11 @@ import type { GraphRect } from './graphView.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
-export interface NetworkNode extends IdentifiedNode {
+/**
+ * A node of NetworkGraph. `D` types the optional `data` payload; it defaults to `unknown`, so `NetworkNode` without a type
+ * argument is unchanged.
+ */
+export interface NetworkNode<D = unknown> extends IdentifiedNode {
   label: string
   detail?: string
   tone?: ChartTone
@@ -16,12 +20,17 @@ export interface NetworkNode extends IdentifiedNode {
   shape?: 'box' | 'rounded'
   /** False hides the NetworkGraph resize handles of this node (`resizable`). */
   resizable?: boolean
-  data?: unknown
+  /** Application data. The components pass it through untouched. */
+  data?: D
 }
 
-export type GraphLayoutFunction = (
-  nodes: readonly NetworkNode[],
-  edges: readonly GraphEdge[],
+/**
+ * A custom NetworkGraph layout. `N` and `E` type the nodes and edges it receives; with collapsed groups they include
+ * proxy nodes and re-attached edges (see `GraphShownNode` and `GraphShownEdge`).
+ */
+export type GraphLayoutFunction<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> = (
+  nodes: readonly N[],
+  edges: readonly E[],
 ) => GraphLayout
 
 export interface GraphViewport {
@@ -30,15 +39,18 @@ export interface GraphViewport {
   scale: number
 }
 
-export interface TimelineRow {
+/** A GanttChart row. `D` types the optional `data` payload; it defaults to `unknown`. */
+export interface TimelineRow<D = unknown> {
   id: string
   parentId?: string
   label: string
   detail?: string
-  data?: unknown
+  /** Application data. The components pass it through untouched. */
+  data?: D
 }
 
-export interface TimelineBar extends TimeRange {
+/** A GanttChart bar. `D` types the optional `data` payload; it defaults to `unknown`. */
+export interface TimelineBar<D = unknown> extends TimeRange {
   id: string
   rowId: string
   label: string
@@ -48,7 +60,8 @@ export interface TimelineBar extends TimeRange {
   editable?: boolean
   progress?: number
   baseline?: TimeRange
-  data?: unknown
+  /** Application data. The components pass it through untouched. */
+  data?: D
   /** Draws the bar with the critical outline (`--vw-critical`) and adds `GanttLabels.critical` to its description. */
   critical?: boolean
   /** Latest finish that keeps the plan; a float line is drawn from `end` to it. Finite and not before `end`. */
@@ -72,12 +85,13 @@ export interface TimelineSummary extends TimeRange {
   progress?: number
 }
 
-export interface TimelineColumn {
+/** An extra GanttChart column. `R` types the rows its callbacks receive. */
+export interface TimelineColumn<R extends TimelineRow = TimelineRow> {
   id: string
   label: string
   width: number
-  value: (row: TimelineRow, summary?: TimelineSummary) => string | number
-  editable?: boolean | ((row: TimelineRow) => boolean)
+  value: (row: R, summary?: TimelineSummary) => string | number
+  editable?: boolean | ((row: R) => boolean)
 }
 
 export interface TimelineCellEdit {
@@ -224,8 +238,9 @@ export interface GanttLabels {
   lag?: string
 }
 
-export interface NetworkNodeSlot {
-  node: NetworkNode
+/** Props of the NetworkGraph `node` slot. `N` types the node. */
+export interface NetworkNodeSlot<N extends NetworkNode = NetworkNode> {
+  node: N
   box: GraphBox
   selected: boolean
   dimmed?: boolean
@@ -303,9 +318,9 @@ export interface GraphPaste {
   point: GraphPoint
 }
 
-/** Props of the NetworkGraph `tooltip` slot. */
-export interface NetworkTooltipSlot {
-  target: { kind: 'node'; node: NetworkNode } | { kind: 'edge'; edge: GraphEdge }
+/** Props of the NetworkGraph `tooltip` slot. `N` and `E` type the node or edge under the pointer. */
+export interface NetworkTooltipSlot<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> {
+  target: { kind: 'node'; node: N } | { kind: 'edge'; edge: E }
 }
 
 /** The bar end a dependency handle belongs to. `start` maps to S and `finish` to F in a dependency type. */
@@ -505,7 +520,8 @@ export interface CalendarBandOptions {
 export type ChartDirection = 'ltr' | 'rtl' | 'auto'
 
 /** Options of the `exportSvg` method on GanttChart. Current props, collapsed rows and zoom supply everything else. */
-export interface GanttExportOptions {
+/** `R` and `B` type the rows and bars that `rowLabel` and `barLabel` receive. */
+export interface GanttExportOptions<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar> {
   /** Export only this time window. Defaults to the whole `range`. */
   timeRange?: TimeRange
   /** Export displayed rows `start` (inclusive) to `end` (exclusive), counted after collapsing. Defaults to all. */
@@ -521,14 +537,15 @@ export interface GanttExportOptions {
   idPrefix?: string
   /** Colours that replace the values read from the `--vw-*` custom properties. */
   theme?: SvgExportThemeInput
-  barLabel?: (bar: TimelineBar) => string
-  rowLabel?: (row: TimelineRow) => string
+  barLabel?: (bar: B) => string
+  rowLabel?: (row: R) => string
   /** Include the `statusDate` line and, with `showProgressLine`, the progress line. Default true. */
   includeStatusDate?: boolean
 }
 
 /** Options of the `exportSvg` method on NetworkGraph. */
-export interface GraphExportOptions {
+/** `N` and `E` type the nodes and edges that the label callbacks receive. */
+export interface GraphExportOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> {
   /** Margin around the content in pixels. Default 16. */
   padding?: number
   /** Paint an opaque background. Default true. */
@@ -540,9 +557,9 @@ export interface GraphExportOptions {
   theme?: SvgExportThemeInput
   /** Draw selected nodes in the selected style. Default true. */
   includeSelection?: boolean
-  nodeLabel?: (node: NetworkNode) => string
-  nodeDetail?: (node: NetworkNode) => string | undefined
-  edgeLabel?: (edge: GraphEdge) => string | undefined
+  nodeLabel?: (node: N) => string
+  nodeDetail?: (node: N) => string | undefined
+  edgeLabel?: (edge: E) => string | undefined
 }
 
 /** Raster options shared by the `exportPng` methods. */
@@ -551,5 +568,7 @@ export interface PngExportOptions {
   scale?: number
 }
 
-export interface GanttPngExportOptions extends GanttExportOptions, PngExportOptions {}
-export interface GraphPngExportOptions extends GraphExportOptions, PngExportOptions {}
+export interface GanttPngExportOptions<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar>
+  extends GanttExportOptions<R, B>, PngExportOptions {}
+export interface GraphPngExportOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge>
+  extends GraphExportOptions<N, E>, PngExportOptions {}

@@ -457,7 +457,7 @@ const selectCount = ref(0)
 function selectBar(id: string) {
   selectCount.value++
   const bar = data.value.bars.find(bar => bar.id === id)
-  selected.value = typeof bar?.data === 'string' ? bar.data : id
+  selected.value = bar?.data ?? id
 }
 function validate(change: TimelineEdit) {
   if (locked.value) return 'This example is locked. Uncheck “Reject edits” to apply changes.'

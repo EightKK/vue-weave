@@ -193,7 +193,8 @@ export interface GraphSvgGroup {
   height: number
 }
 
-export interface GraphSvgOptions extends SvgExportOptions {
+/** `N` and `E` type the nodes and edges that the label callbacks receive. */
+export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> extends SvgExportOptions {
   /** Group rectangles drawn behind the nodes. */
   groups?: readonly GraphSvgGroup[]
   /** Node IDs drawn in the selected style. */
@@ -201,19 +202,19 @@ export interface GraphSvgOptions extends SvgExportOptions {
   /** Margin around the content, in pixels. Default 16. */
   padding?: number
   /** Node title text. Defaults to `node.label`. */
-  nodeLabel?: (node: NetworkNode) => string
+  nodeLabel?: (node: N) => string
   /** Node detail text. Defaults to `node.detail`. */
-  nodeDetail?: (node: NetworkNode) => string | undefined
+  nodeDetail?: (node: N) => string | undefined
   /** Edge label text. Defaults to `edge.label`. */
-  edgeLabel?: (edge: GraphEdge) => string | undefined
+  edgeLabel?: (edge: E) => string | undefined
 }
 
 /**
  * Build a standalone SVG document of a whole graph with the default node rendering. Every node, edge, label and
  * group is included regardless of any camera or culling. Runs without a DOM.
  */
-export function renderGraphSvg(
-  layout: GraphLayout, nodes: readonly NetworkNode[], edges: readonly GraphEdge[], options: GraphSvgOptions = {},
+export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
+  layout: GraphLayout, nodes: readonly N[], edges: readonly E[], options: GraphSvgOptions<N, E> = {},
 ): string {
   indexGraph(nodes, edges)
   const { prefix, theme, rtl, font, background } = common(options)
@@ -256,8 +257,8 @@ export function renderGraphSvg(
   }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
-  const nodeLabel = options.nodeLabel ?? ((node: NetworkNode) => node.label)
-  const nodeDetail = options.nodeDetail ?? ((node: NetworkNode) => node.detail)
+  const nodeLabel = options.nodeLabel ?? ((node: N) => node.label)
+  const nodeDetail = options.nodeDetail ?? ((node: N) => node.detail)
   const arrow = prefix + '-arrow'
   const defs = tag('marker', { id: arrow, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
     tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: theme.edge }))
@@ -310,7 +311,8 @@ export function renderGraphSvg(
   return svgDocument(width, height, options, font, defs, parts.join(''))
 }
 
-export interface TimelineSvgOptions extends SvgExportOptions {
+/** `R` and `B` type the rows and bars that `columns`, `rowLabel` and `barLabel` receive. */
+export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar> extends SvgExportOptions {
   /** Collapsed parent rows; their descendants and the descendants' bars are omitted. */
   collapsedIds?: Iterable<string>
   /** Export only this time window. Defaults to the whole scale, from `toTime(0)` to `toTime(width)`. */
@@ -324,7 +326,7 @@ export interface TimelineSvgOptions extends SvgExportOptions {
   /** Width of the row heading column in pixels. Default 154. */
   labelWidth?: number
   /** Extra columns after the row heading column. */
-  columns?: readonly TimelineColumn[]
+  columns?: readonly TimelineColumn<R>[]
   /** Draw rollup bars on parent rows without bars of their own. */
   showSummaries?: boolean
   headerBands?: readonly (readonly TimelineBand[])[]
@@ -359,9 +361,9 @@ export interface TimelineSvgOptions extends SvgExportOptions {
   /** With `statusDate`, draw a progress line that kinks to the progress point of each bar that is behind or ahead. */
   showProgressLine?: boolean
   /** Bar label text. Defaults to `bar.label`. */
-  barLabel?: (bar: TimelineBar) => string
+  barLabel?: (bar: B) => string
   /** Row heading text. Defaults to `row.label`. */
-  rowLabel?: (row: TimelineRow) => string
+  rowLabel?: (row: R) => string
 }
 
 const defaultTickSteps = [1_800_000, 3_600_000, 7_200_000, 14_400_000, 86_400_000]
@@ -373,9 +375,9 @@ const bandHeight = 26
  * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, the now line and load rows.
  * Every displayed row is included (collapsed descendants are omitted) unless `rowRange` narrows it. Runs without a DOM.
  */
-export function renderTimelineSvg(
-  rows: readonly TimelineRow[], bars: readonly TimelineBar[], dependencies: readonly TimelineDependency[], scale: TimeScale,
-  options: TimelineSvgOptions = {},
+export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
+  rows: readonly R[], bars: readonly B[], dependencies: readonly TimelineDependency[], scale: TimeScale,
+  options: TimelineSvgOptions<R, B> = {},
 ): string {
   const rowHeight = options.rowHeight ?? 66
   const laneCount = options.laneCount ?? 1
@@ -470,8 +472,8 @@ export function renderTimelineSvg(
   }
   const ticks = timeTicks(window, step, anchor)
   const format = options.formatTime ?? defaultFormat
-  const barLabel = options.barLabel ?? ((bar: TimelineBar) => bar.label)
-  const rowLabel = options.rowLabel ?? ((row: TimelineRow) => row.label)
+  const barLabel = options.barLabel ?? ((bar: B) => bar.label)
+  const rowLabel = options.rowLabel ?? ((row: R) => row.label)
   const highlighted = new Set(options.highlightedDependencyIds ?? [])
 
   // Geometry. `local` measures from the window start; `view` mirrors it for right-to-left output.
@@ -535,7 +537,7 @@ export function renderTimelineSvg(
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
   }
-  const barsByRow = new Map<string, TimelineBar[]>()
+  const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue
     let list = barsByRow.get(bar.rowId)

@@ -44,10 +44,10 @@ Run `npm run check` before you consider a change done. Also run the browser test
 - `src/components/`: `NetworkGraph.vue` and `GanttChart.vue` handle rendering, measurement, camera and scroll state, and temporary pointer previews. `NetworkGraphNode.vue` and `NetworkGraphEdge.vue` are internal per-item components of `NetworkGraph`, so a drag re-renders only the moved items; they are not exported. `exportImage.ts` holds browser-only helpers for the `exportPng` methods and for reading theme colours, and `types.ts` holds types that refer to browser APIs (`GraphDrop`), so they stay out of core.
 - `src/composables/useEditHistory.ts` provides undo and redo over immutable snapshots.
 - `src/styles/style.css` is the only stylesheet. The build emits it as `dist/style.css`.
-- `src/index.ts` is the Vue entry. It re-exports the components, the composable and all of core.
+- `src/index.ts` is the Vue entry. It exports the components, the composable and all of core. `NetworkGraph.vue` and `GanttChart.vue` are generic SFCs; `src/index.ts` gives them their public types (`NetworkGraphComponent`, `GanttChartComponent`), which let templates infer the item types and keep `InstanceType<typeof NetworkGraph>` working.
 - `scripts/` holds Node scripts: `serve.mjs` serves `preview/`, `finalize-declarations.mjs` runs at the end of `build`, `check-package.mjs` backs `test:package`, and `prepare-release.mjs` backs `prepare:release`.
 - `examples/` holds the demo app and its business data and validation. It is the dev server root.
-- `test/*.test.mjs` are `node:test` core and SSR tests. `test/browser/` holds Playwright specs that run against the built demo.
+- `test/*.test.mjs` are `node:test` core and SSR tests. `test/browser/` holds Playwright specs that run against the built demo. `test/types/` holds type-level tests that `npm run typecheck` checks.
 - `docs/` covers API contracts, integration, architecture and scheduling. It is included in the npm package.
 
 ## Architecture rules

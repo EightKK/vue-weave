@@ -269,11 +269,11 @@ export function formatDependencyLag(lag: number): string {
 
 
 /** Build a stable preorder and validate that every row reaches a root. */
-export function createTimelineRowTree(rows: readonly TimelineRow[]) {
+export function createTimelineRowTree<R extends TimelineRow>(rows: readonly R[]) {
   const ids = new Set(rows.map(row => row.id))
   if (ids.size !== rows.length || ids.has('')) throw new Error('Invalid or duplicate row IDs')
-  const roots: TimelineRow[] = []
-  const children = new Map<string, TimelineRow[]>()
+  const roots: R[] = []
+  const children = new Map<string, R[]>()
   for (const row of rows) {
     if (row.parentId === undefined) {
       roots.push(row)
@@ -284,7 +284,7 @@ export function createTimelineRowTree(rows: readonly TimelineRow[]) {
     if (!group) children.set(row.parentId, group = [])
     group.push(row)
   }
-  const ordered: { row: TimelineRow; depth: number; hasChildren: boolean; afterSubtree: number }[] = []
+  const ordered: { row: R; depth: number; hasChildren: boolean; afterSubtree: number }[] = []
   const stack = roots.slice().reverse().map(row => ({ row, depth: 0 }))
   const ancestors: number[] = []
   while (stack.length) {

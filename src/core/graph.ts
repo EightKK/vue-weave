@@ -17,10 +17,12 @@ export interface IdentifiedNode {
   ports?: readonly GraphPort[]
 }
 
-export interface GraphEdge extends GraphConnection {
+/** An edge between two nodes. `D` types the optional `data` payload; it defaults to `unknown`. */
+export interface GraphEdge<D = unknown> extends GraphConnection {
   id: string
   label?: string
-  data?: unknown
+  /** Application data. The components pass it through untouched. */
+  data?: D
   /**
    * Optional waypoints in chart coordinates. `routeGraphEdges` (and NetworkGraph) draws the edge through them: a
    * polyline in the straight and orthogonal styles and a smooth curve through the points in the curve style.

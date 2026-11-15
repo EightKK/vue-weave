@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge, G extends NetworkGroup = never">
 import { computed, h, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch, type FunctionalComponent, type ShallowRef } from 'vue'
 import NetworkGraphEdge from './NetworkGraphEdge.vue'
 import NetworkGraphNode from './NetworkGraphNode.vue'
@@ -9,7 +9,7 @@ import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, Network
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
-import { collapseGraphGroups } from '../core/graphCollapse.js'
+import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
 import { routeGraphEdges, type GraphEdgeStyle } from '../core/graphRouting.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect, type GraphRect } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
@@ -19,11 +19,14 @@ import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
+// The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
+type ShownNode = GraphShownNode<N, G>
+type ShownEdge = GraphShownEdge<E, G>
 const props = withDefaults(defineProps<{
   /** Nodes to draw. Each has an ID, label, optional detail, tone, shape and opaque data. Required. */
-  nodes: readonly NetworkNode[]
+  nodes: readonly N[]
   /** Edges between nodes. Each has an ID, `from` and `to` node IDs, and optional label, port names (`fromPort`, `toPort`), waypoints (`points`) and data. Required. */
-  edges: readonly GraphEdge[]
+  edges: readonly E[]
   /** Controlled selected node ID; supports `v-model:selected-id`. */
   selectedId?: string
   /** Controlled set of selected node IDs for multiple selection. Ctrl, Meta or Shift toggles membership; a plain selection replaces the set. */
@@ -39,7 +42,7 @@ const props = withDefaults(defineProps<{
   /** Enables Shift-drag box selection on the canvas; use with controlled `selectedIds`. Opt-in. Default: false. */
   boxSelect?: boolean
   /** Groups with an ID, label, direct member `nodeIds` and optional `parentId`. Their bounds follow the member nodes. */
-  groups?: readonly NetworkGroup[]
+  groups?: readonly G[]
   /** Synchronous check of a connection proposal; receives the existing edge ID when reconnecting. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
   /** Shows an overview minimap of the graph and viewport. Opt-in. Default: false. */
@@ -49,7 +52,7 @@ const props = withDefaults(defineProps<{
   /** Configuration of the built-in layered layout: direction, node size, gaps, padding and crossing reduction. Defaults: direction LR, 144 x 58 nodes, column gap 50, row gap 24, padding 20. */
   options?: GraphLayeredLayoutOptions
   /** Custom layout function that replaces the built-in layout. It must return positive finite dimensions plus a box for every node and a path for every edge. */
-  layout?: GraphLayoutFunction
+  layout?: GraphLayoutFunction<ShownNode, ShownEdge>
   /** Overrides for the English UI strings and accessible names; fields you omit keep their defaults. */
   labels?: Partial<GraphLabels>
   /** Height of the SVG viewport, as a number of pixels or a CSS length. Default: 220px. */
@@ -164,10 +167,10 @@ const emit = defineEmits<{
   'node-resize-rejected': [change: GraphNodeResize, reason: string]
 }>()
 const slots = defineSlots<{
-  node(props: NetworkNodeSlot): unknown
-  edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
+  node(props: NetworkNodeSlot<ShownNode>): unknown
+  edge(props: { edge: ShownEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
   empty(): unknown
-  tooltip?(props: NetworkTooltipSlot): unknown
+  tooltip?(props: NetworkTooltipSlot<ShownNode, ShownEdge>): unknown
 }>()
 // Plain values compared one level deep: equal primitives, or arrays with identical items.
 function sameValue(a: unknown, b: unknown) {
@@ -275,8 +278,9 @@ const collapsedView = computed(() => {
     detail: group => group.nodeIds.length + ' ' + (group.nodeIds.length === 1 ? collapsedNode : collapsedNodes),
   })
 })
-const viewNodes = computed<readonly NetworkNode[]>(() => collapsedView.value?.nodes ?? props.nodes)
-const viewEdges = computed<readonly GraphEdge[]>(() => collapsedView.value?.edges ?? props.edges)
+// Collapsed views exist only with groups, so their proxies and merged edges are part of the shown types.
+const viewNodes = computed<readonly ShownNode[]>(() => (collapsedView.value?.nodes as ShownNode[] | undefined) ?? props.nodes)
+const viewEdges = computed<readonly ShownEdge[]>(() => (collapsedView.value?.edges as ShownEdge[] | undefined) ?? props.edges)
 const viewGroups = computed(() => collapsedView.value?.groups ?? groups.value)
 const realNodesById = computed(() => collapsedView.value ? new Map(props.nodes.map(node => [node.id, node])) : nodesById.value)
 const realEdgesById = computed(() => collapsedView.value ? new Map(props.edges.map(edge => [edge.id, edge])) : edgesById.value)
@@ -2071,7 +2075,7 @@ const tooltipView = computed(() => {
   const current = tooltip.value
   if (!current || !mounted.value || tooltipBlocked.value) return undefined
   const { x, y, scale } = camera.value
-  let target: NetworkTooltipSlot['target'], left: number, right: number, top: number, bottom: number
+  let target: NetworkTooltipSlot<ShownNode, ShownEdge>['target'], left: number, right: number, top: number, bottom: number
   if (current.kind === 'node') {
     const node = nodesById.value.get(current.id), box = layout.value.boxes.get(current.id)
     if (!node || !box || (visible.value && !visible.value.nodes.has(node.id))) return undefined
@@ -2232,7 +2236,7 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
   camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)
 }
 /** A standalone SVG document of the whole graph with the default rendering and the current theme colours. */
-function exportSvg(options: GraphExportOptions = {}) {
+function exportSvg(options: GraphExportOptions<ShownNode, ShownEdge> = {}) {
   const { includeSelection = true, theme, ...rest } = options
   const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
   return renderGraphSvg(layout.value, viewNodes.value, viewEdges.value, {
@@ -2246,7 +2250,7 @@ function exportSvg(options: GraphExportOptions = {}) {
   })
 }
 /** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
-async function exportPng(options: GraphPngExportOptions = {}) {
+async function exportPng(options: GraphPngExportOptions<ShownNode, ShownEdge> = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }

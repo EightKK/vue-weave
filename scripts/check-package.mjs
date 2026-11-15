@@ -102,7 +102,45 @@ try {
     const history = useEditHistory([bar])
     void [NetworkGraph, GanttChart, history, createTimeScale(range, 2)]
   `
+  // Typed item data: a Vue template constructs the component with its props, so `new` infers the item types the
+  // same way, and the slot and event types are read from the instance. Untyped items keep `unknown` data.
+  const typedProbe = `
+    import { h } from 'vue'
+    import {
+      NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
+      type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
+    } from '${manifest.name}'
+    interface MyData { owner: string }
+    type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
+    function assertType<T extends true>(value?: T) { return value }
+    const nodes: NetworkNode<MyData>[] = [{ id: 'a', label: 'A', data: { owner: 'Ada' } }]
+    const edges: GraphEdge<number>[] = []
+    const graph = new NetworkGraph({ nodes, edges })
+    type NodeSlot = Parameters<NonNullable<typeof graph.$slots.node>>[0]
+    type EdgeSlot = Parameters<NonNullable<typeof graph.$slots.edge>>[0]
+    assertType<Equal<NodeSlot['node']['data'], MyData | undefined>>()
+    assertType<Equal<EdgeSlot['edge']['data'], number | undefined>>()
+    assertType<Equal<Parameters<NonNullable<typeof graph.$props['onNode-move']>>[0], GraphNodeMove>>()
+    const plain = new NetworkGraph({ nodes: [] as NetworkNode[], edges: [] as GraphEdge[] })
+    assertType<Equal<Parameters<NonNullable<typeof plain.$slots.node>>[0]['node']['data'], unknown>>()
+    const rows: TimelineRow<{ team: string }>[] = [{ id: 'r', label: 'Row', data: { team: 'Core' } }]
+    const bars: TimelineBar<MyData>[] = [{ id: 'b', rowId: 'r', label: 'Bar', start: 0, end: 1, data: { owner: 'Ada' } }]
+    const chart = new GanttChart({ rows, bars, range: { start: 0, end: 10 } })
+    type BarSlot = Parameters<NonNullable<typeof chart.$slots.bar>>[0]
+    assertType<Equal<BarSlot['bar']['data'], MyData | undefined>>()
+    assertType<Equal<Parameters<NonNullable<typeof chart.$props.onEdit>>[0], TimelineEdit>>()
+    // @ts-expect-error The bar data is MyData, not any.
+    void (({} as BarSlot).bar.data?.missing)
+    const graphRef = undefined as InstanceType<typeof NetworkGraph> | undefined
+    graphRef?.fit()
+    const typedRef = undefined as NetworkGraphExposed<NetworkNode<MyData>> | undefined
+    typedRef?.exportSvg({ nodeLabel: node => node.data?.owner ?? node.label })
+    const chartRef = undefined as GanttChartExposed<TimelineRow, TimelineBar<MyData>> | undefined
+    chartRef?.exportSvg({ barLabel: bar => bar.data?.owner ?? bar.label })
+    void h(NetworkGraph, { nodes, edges })
+  `
   await writeFile(join(consumer, 'consumer.ts'), typeProbe)
+  await writeFile(join(consumer, 'typed-consumer.ts'), typedProbe)
   await writeFile(join(consumer, 'styled-consumer.ts'), `import './consumer.js'\nimport '${manifest.name}/style.css'\n`)
   await writeFile(join(consumer, 'styles.d.ts'), "declare module '*.css' {}\n")
   for (const [module, moduleResolution] of [
@@ -114,6 +152,7 @@ try {
       '--module', module, '--moduleResolution', moduleResolution, '--types', 'vue',
     ]
     execFileSync(process.execPath, [...compilerArguments, 'consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+    execFileSync(process.execPath, [...compilerArguments, 'typed-consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
     execFileSync(process.execPath, [...compilerArguments, 'styled-consumer.ts', 'styles.d.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
   }
   console.log(`Package verified: ${relative(root, tarball)} (${files.size} files)`)

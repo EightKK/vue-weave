@@ -65,7 +65,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 - **Version 0.1.0, the first public release.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
 - **Vue:** 3.5 or later (peer dependency).
-- **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution.
+- **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `vue-weave/core` entry, server-side rendering and development.
 - **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](docs/architecture.md)), so do not assume full conformance.

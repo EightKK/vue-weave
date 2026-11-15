@@ -43,17 +43,18 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
 - [Application undo and redo](#application-undo-and-redo)
 - [Export to SVG and PNG](#export-to-svg-and-png)
 - [Right-to-left layout](#right-to-left-layout)
+- [Typed data](#typed-data)
 
 ## NetworkGraph
 
 | Prop | Type / default | Meaning |
 | --- | --- | --- |
-| nodes | readonly NetworkNode[] / required | ID, label, optional detail, tone, shape and opaque data |
-| edges | readonly GraphEdge[] / required | ID, from/to node IDs, optional label and data |
+| nodes | readonly N[] (N extends NetworkNode) / required | ID, label, optional detail, tone, shape and opaque data. N is inferred; see [Typed data](#typed-data) |
+| edges | readonly E[] (E extends GraphEdge) / required | ID, from/to node IDs, optional label and data. E is inferred |
 | selectedId | string / undefined | Controlled selection; also supports v-model:selected-id |
 | relatedIds | ReadonlySet<string> / undefined | Emphasizes included nodes and edges joining two included nodes |
 | options | GraphLayeredLayoutOptions / defaults below | Built-in layout configuration |
-| layout | GraphLayoutFunction / undefined | Overrides built-in layout |
+| layout | GraphLayoutFunction<GraphShownNode<N, G>, GraphShownEdge<E, G>> / undefined | Overrides built-in layout. Without `groups` it receives N and E; see [Typed data](#typed-data) |
 | labels | Partial<GraphLabels> / English | Region, empty, zoom, zoomIn, zoomOut and fit |
 | height | number or CSS string / 220px | SVG viewport height |
 | showControls | boolean / true | Zoom/fit buttons |
@@ -61,7 +62,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
 
 GraphLayoutOptions defaults are direction LR, nodeWidth 144, nodeHeight 58, columnGap 50, rowGap 24 and padding 20. Sizes must be positive; spacing must be nonnegative. Empty graphs keep positive layout dimensions even with zero padding. TB changes the layout direction while preserving each node's physical width and height.
 
-NetworkNode has id, label, optional detail, tone (teal/blue/amber/violet), shape (box/rounded), resizable and data (unknown). GraphEdge has id, from, to, optional label, data and points (waypoints, see [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)). The default renderer clips long text to the node box; its title exposes the full label. Node slots own their clipping and sizing.
+NetworkNode<D> has id, label, optional detail, tone (teal/blue/amber/violet), shape (box/rounded), resizable and data (D, default unknown). GraphEdge<D> has id, from, to, optional label, data (D, default unknown) and points (waypoints, see [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)). The default renderer clips long text to the node box; its title exposes the full label. Node slots own their clipping and sizing.
 
 A custom layout returns GraphLayout containing boxes, paths and edgeLabels Maps plus positive finite width and height. Each node box has x, y, width, height and rank. Each edge needs an SVG path. Labels are optional map entries. Coordinates are chart-local pixels. Keep paths and boxes within the supplied bounds for accurate fit-to-view.
 
@@ -96,7 +97,7 @@ The optional GraphLabels fields minimap, connectFrom, connectTo, reconnectSource
 | reconnectable / reconnect(change) | Select an edge, then drag a source or target endpoint to a port. With the keyboard, select the edge and activate an endpoint and destination port. The proposal includes id, before and after. |
 | validateConnection(connection, replacingEdgeId) | Receives the existing edge ID during reconnection. The application can exclude it when checking for duplicates. |
 | boxSelect | Enables Shift-drag on the canvas. Partially intersecting nodes count. Add Ctrl or Meta to retain the previous selection. Use with controlled selectedIds. |
-| groups | Groups with id, label, nodeIds and an optional parentId (see Nested groups). Direct members are disjoint. The bounds follow member nodes. Drag a group label or focus it and use arrow keys to move movable members together. |
+| groups | Groups with id, label, nodeIds and an optional parentId (see Nested groups). The element type is the third type parameter G of NetworkGraph; with groups, slots and callbacks can also receive collapsed proxy nodes (see [Typed data](#typed-data)). Direct members are disjoint. The bounds follow member nodes. Drag a group label or focus it and use arrow keys to move movable members together. |
 | nodes-move(changes) | Emitted once when multiple nodes move. The node-move event covers single-node changes. |
 
 The application accepts reconnection by replacing the corresponding edge. Preserve the edge ID and metadata and set both endpoint port fields from the proposal, including clearing a field when it is absent. Group and multi-selection movements preserve relative offsets among the movable nodes. Nodes with draggable false keep their positions. Groups use absolute positions; nesting is opt-in through parentId. The diagram editor expects different source and target nodes.
@@ -220,8 +221,8 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 
 | Prop | Type / default | Meaning |
 | --- | --- | --- |
-| rows | readonly TimelineRow[] / required | ID, label, optional detail and data |
-| bars | readonly TimelineBar[] / required | ID, rowId, label, numeric start/end and optional attributes |
+| rows | readonly R[] (R extends TimelineRow) / required | ID, label, optional detail and data. R is inferred; see [Typed data](#typed-data) |
+| bars | readonly B[] (B extends TimelineBar) / required | ID, rowId, label, numeric start/end and optional attributes. B is inferred |
 | range | TimeRange / required | Visible axis bounds; finite start < end |
 | dependencies | readonly TimelineDependency[] / [] | ID, from/to bar IDs, optional FS/SS/FF/SF type and optional `lag` (see [Dependency lag](#dependency-lag)) |
 | highlightedDependencyIds | ReadonlySet<string> / undefined | Highlight link IDs using --vw-dependency-highlight |
@@ -248,13 +249,13 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | deletable, validateBarsDelete | boolean / false, BarsDeleteValidator / undefined | Delete or Backspace proposes removing bars; see the same section |
 | tooltipDelay | number / 400 | Hover delay in milliseconds of the opt-in tooltip slot |
 | contextMenu | boolean / false | Emits context-menu instead of opening the browser menu; see the same section |
-| creatable, createDuration, validateCreate | boolean or (row) => boolean / false, number / 4 × snap, CreateValidator / undefined | A drag or click on an empty part of a row, or its add button, proposes a new bar; see [Drag to create and cascade previews](#drag-to-create-and-cascade-previews) |
+| creatable, createDuration, validateCreate | boolean or (row: R) => boolean / false, number / 4 × snap, CreateValidator / undefined | A drag or click on an empty part of a row, or its add button, proposes a new bar; see [Drag to create and cascade previews](#drag-to-create-and-cascade-previews) |
 | cascade | TimelineCascade / undefined | Follow-on changes of other bars for a move or resize, previewed during a drag and proposed with it as one batch; see the same section |
 | rowsReorderable, validateRowMove | boolean / false, RowMoveValidator / undefined | A move handle on each row heading proposes row hierarchy moves by pointer drag or Alt+arrow keys; see [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line) |
 | statusDate, showProgressLine | number / undefined, boolean / false | Draws a labelled status-date line and, with showProgressLine, a progress line; see the same section |
 | columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vw-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
 
-TimelineBar adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
+TimelineRow<D> has id, optional parentId, label, optional detail and data (D, default unknown). TimelineBar<D> adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (D, default unknown), plus the optional critical, latestEnd, deadline and segments fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments) and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
 Display bars may extend beyond the axis. Editing is enabled only for intervals contained in editBounds. With custom numeric units, supply matching pixelsPerUnit, tickSteps, snap and formatTime.
 
@@ -296,7 +297,7 @@ The row slot also receives depth and expanded. The row index refers to the expan
 
 | API | Behavior |
 | --- | --- |
-| columns | Extra sticky columns described by id, label, width in pixels, value(row, summary) and optional editable. An editable predicate can limit editing to individual rows. |
+| columns | Extra sticky columns (`TimelineColumn<R>`) described by id, label, width in pixels, value(row, summary) and optional editable. An editable predicate can limit editing to individual rows. Both callbacks receive the chart's row type R. |
 | cell-edit(change) | Proposes rowId, columnId, before and after. The input supplies after as a string. The parent converts, validates and persists the value as needed. |
 | validateCellEdit / cell-edit-rejected | Uses the same accept or reject convention as bar edits. Rejection retains the accepted cell value and reports the reason. |
 | cell slot | Customize the cell using row, column, value and summary. A custom editor owns its interaction and persistence. |
@@ -585,7 +586,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | dependencyPath(x1, y1, x2, y2) | Orthogonal SVG path |
 | formatDependencyLag(lag) | Default text of a dependency lag: signed hours of milliseconds rounded to two decimals, such as `+2 h` or `−1.5 h` (U+2212). Throws RangeError for a non-finite lag |
 | validateTimelineData(rows, bars, dependencies = [], laneCount = 1) | Validate references, lanes, durations, progress and dependency lags (a lag that is not a finite number throws RangeError). IDs must be unique within each collection; a row and a bar may share an ID. A dependency from a bar to itself throws an Error that names the dependency and the bar, so GanttChart reports it through `validation-error` and renders its empty state, and `renderTimelineSvg` throws it. `scheduleTasks` takes its own links and reports a self-link as a `cycle` failure instead |
-| createTimelineRowTree(rows) | Validate row parents and cycles; produce stable preorder entries |
+| createTimelineRowTree(rows) | Validate row parents and cycles; produce stable preorder entries whose `row` keeps the type of the input rows |
 | summarizeTimelineRows(tree, bars) | Roll up leaf-row intervals and progress into a summary Map |
 | normalizeWorkPeriods(periods, range) | Clip, sort and merge overlapping or touching work periods |
 | invertWorkPeriods(periods, range) | Sorted half-open gaps between the clipped, sorted and merged work periods inside the range, for `nonWorkingPeriods`. Endpoints only need to be finite, so fractional units work; each period and the range must have positive length, otherwise RangeError |
@@ -603,7 +604,7 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | removeGraphElements(nodes, edges, deletion) | New node and edge arrays without the deleted elements and the edges incident to deleted nodes; unknown IDs throw Error and inputs are not modified |
 | cloneGraphElements(nodes, edges, nodeIds, options) | `GraphCloneResult` with shallow copies of the listed nodes and of every edge between two of them, in input order, with IDs from `options.createId(id, kind)` (`kind` is `node` or `edge`) and edges pointing at the copied nodes; ports, data and other fields are kept. `options.positions` entries of the source nodes are moved by `options.offset` (default 0, 0) and returned under the new IDs in `positions`, and the waypoints (`points`) of copied edges are moved by the same offset; `idMap.nodes` and `idMap.edges` map source IDs to new IDs. Duplicate requested IDs are ignored. Throws Error for an invalid graph, an unknown node ID or a new ID that is empty, repeated or already used in the input, and RangeError for a non-finite offset, position or waypoint. Keep the returned positions nonnegative before saving them |
 | graphAlignmentGuides(moving, others, threshold) | `GraphAlignment` `{ dx, dy, guides }` that aligns a `GraphRect` with the nearest left, centre or right (x) and top, middle or bottom (y) anchor of `others` within `threshold` chart units (inclusive), 0 on an axis without a match. Ties go to the earlier rectangle in `others`, then to the start, centre and end anchors of `moving`, then to those of the other rectangle. `guides` (`GraphAlignmentGuide`: `axis`, `position`, `from`, `to`) are the aligned lines of the shifted rectangle, x guides first, each sorted by position and spanning every rectangle aligned there. Throws RangeError for a negative or non-finite threshold and invalid rectangles. Iterative and deterministic |
-| collapseGraphGroups(nodes, edges, groups, collapsedIds, options) | `GraphCollapseResult` for the collapsed groups: visible `nodes` with one proxy per outermost collapsed group (ID and label of the group, detail from `options.detail`, default "N nodes", rounded shape, `data` of type `GraphCollapsedNodeData`), `edges` re-attached to proxies (ports on proxy ends and waypoints dropped, internal edges removed, parallel edges merged per source, source port, target and target port under the first ID), the remaining `groups` (a collapsed child becomes a member of its parent), `proxies` (`GraphCollapsedGroup` with every hidden node ID), `owners` (hidden node to proxy), `mergedEdges` (re-attached edge ID to original IDs) and `hiddenEdgeIds`. Throws Error for invalid groups like NetworkGraph (including an unknown parent anywhere up a parent chain and a parent cycle), an unknown collapsed ID or a group ID that is also a visible node ID. Inputs are not modified; untouched nodes and edges are returned as is |
+| collapseGraphGroups(nodes, edges, groups, collapsedIds, options) | `GraphCollapseResult` for the collapsed groups: visible `nodes` with one proxy per outermost collapsed group (ID and label of the group, detail from `options.detail`, default "N nodes", rounded shape, `data` of type `GraphCollapsedNodeData`), `edges` re-attached to proxies (ports on proxy ends and waypoints dropped, internal edges removed, parallel edges merged per source, source port, target and target port under the first ID), the remaining `groups` (a collapsed child becomes a member of its parent), `proxies` (`GraphCollapsedGroup` with every hidden node ID), `owners` (hidden node to proxy), `mergedEdges` (re-attached edge ID to original IDs) and `hiddenEdgeIds`. Throws Error for invalid groups like NetworkGraph (including an unknown parent anywhere up a parent chain and a parent cycle), an unknown collapsed ID or a group ID that is also a visible node ID. Inputs are not modified; untouched nodes and edges are returned as is. `GraphCollapsedNode` is the type of a proxy node, `NetworkNode<GraphCollapsedNodeData>` |
 | routeGraphEdges(layout, edges, nodes, options) | Reroutes a finished layout in `GraphEdgeRouteOptions.style` (`curve`, `orthogonal` or `straight`, default `curve`) for a `direction` (default LR) with an orthogonal `cornerRadius` (default 0), and draws edges with `points` through their waypoints; see [Group collapse, edge styles and waypoints](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing). Returns the input layout for `curve` without waypoints. Throws Error for an unknown endpoint or a named port whose side is not left, right, top or bottom, and RangeError for an unknown style or direction, a bad radius or a non-finite waypoint. Orthogonal detours stay at or above 0 in a layout at nonnegative coordinates and keep their full 16-unit stub when an end lies at a negative coordinate |
 | graphPolylinePath(points, cornerRadius = 0) / graphSmoothPath(points) | SVG path data of a polyline with optionally rounded corners, and of a smooth Catmull-Rom curve through the points, for custom edge renderers. Throws RangeError for a point with a non-finite coordinate |
 | applyGraphSizes(layout, edges, sizes, direction = LR) | Overlay `GraphNodeSize` widths and heights on the layout boxes (top-left corners kept), grow the bounds and reroute incident edges like `applyGraphPositions`. RangeError for sizes that are not finite and positive, also under unknown IDs, which are otherwise ignored; Error naming the edge and node when an incident edge references a node without a box; returns the input layout when nothing changes |
@@ -774,9 +775,9 @@ The export always covers the whole content, not the viewport. NetworkGraph expor
 
 The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
 
-`GanttExportOptions`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `includeStatusDate` (default true: the `statusDate` line and, with `showProgressLine`, the progress line), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`.
+`GanttExportOptions<R, B>`: `timeRange` (export a narrower time window), `rowRange` (`{ start, end }`, half-open indices into the displayed rows after collapsing), `includeLoad` (default true), `includeStatusDate` (default true: the `statusDate` line and, with `showProgressLine`, the progress line), `background` (default true), `title`, `rowHeading` (defaults to `labels.rows`), `idPrefix`, `theme` (an `SvgExportThemeInput` that overrides the colours read from CSS), `barLabel(bar)` and `rowLabel(row)`. On a chart the callbacks receive its row and bar types R and B.
 
-`GraphExportOptions`: `padding` (default 16), `background` (default true), `title`, `idPrefix`, `theme`, `includeSelection` (default true), `nodeLabel(node)`, `nodeDetail(node)` and `edgeLabel(edge)`.
+`GraphExportOptions<N, E>`: `padding` (default 16), `background` (default true), `title`, `idPrefix`, `theme`, `includeSelection` (default true), `nodeLabel(node)`, `nodeDetail(node)` and `edgeLabel(edge)`. On a graph the callbacks receive the nodes and edges it draws, `GraphShownNode<N, G>` and `GraphShownEdge<E, G>`.
 
 `exportPng` additionally takes `scale` (`PngExportOptions`), the number of device pixels per CSS pixel: greater than 0 and at most 8, default 1. The PNG is `ceil(width × scale)` by `ceil(height × scale)` pixels. It must fit within 16,384 pixels per side and 268,435,456 pixels in total; otherwise the promise rejects with a `RangeError` that names the size. Invalid numeric options (for example a negative `padding`, an inverted `timeRange` or an out-of-range `rowRange`) throw a `RangeError` from `exportSvg` and reject the `exportPng` promise. `exportSvg` on a GanttChart whose input is invalid throws the current validation error. PNG export requires a browser (`Image`, `canvas`); call `exportSvg` or the core builders on a server.
 
@@ -789,8 +790,8 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 
 | Export | Purpose |
 | --- | --- |
-| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
+| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions<N, E>` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks, which receive the node and edge types of the arguments, to the shared options |
+| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `barLabel` and `rowLabel`; `columns` and the label callbacks receive the row and bar types of the arguments (`TimelineSvgOptions<R, B>`). Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
@@ -814,3 +815,70 @@ Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused
 In a right-to-left NetworkGraph only the chrome changes: the zoom tools and the minimap move to the bottom-left corner, node titles and details, group labels and edge labels are right-aligned with `direction: rtl`, and the default node text is anchored at the box's right edge. Layout geometry, edge routes, camera, panning keys and saved positions are unchanged; use `options.direction: 'RL'` to mirror the layout itself. Custom node slots own their own text alignment.
 
 `exportSvg` and `exportPng` follow the component's direction. In the core, `renderTimelineSvg` and `renderGraphSvg` take `direction: 'rtl'`, and `mirrorTimeScale(scale)` returns a scale with `toX(range.start) = width` and `toX(range.end) = 0`; its round trips are exact whenever those of `scale` are and the pixel values are exactly representable.
+
+## Typed data
+
+`NetworkNode`, `GraphEdge`, `TimelineRow` and `TimelineBar` take the type of their optional `data` as a type parameter that defaults to `unknown`: `NetworkNode<D = unknown>`, `GraphEdge<D = unknown>`, `TimelineRow<D = unknown>` and `TimelineBar<D = unknown>`. Both components are generic over the whole item types, so extra fields that an application adds to its items (for example `NetworkNode<Owner> & { priority: number }`) reach the slots and callbacks as well. Vue infers the parameters from the props in a template; nothing is written at the component. Without type arguments every type is what it was before, with `unknown` data.
+
+| Component | Type parameters | Inferred from | Where the items come back |
+| --- | --- | --- | --- |
+| NetworkGraph | `N extends NetworkNode = NetworkNode`, `E extends GraphEdge = GraphEdge`, `G extends NetworkGroup = never` | `nodes`, `edges`, `groups` | `node`, `edge` and `tooltip` slot props, `layout`, the `exportSvg` and `exportPng` label callbacks |
+| GanttChart | `R extends TimelineRow = TimelineRow`, `B extends TimelineBar = TimelineBar` | `rows`, `bars` | `row`, `cell`, `bar` and `tooltip` slot props, `columns` (`value`, `editable`), `creatable`, the `exportSvg` and `exportPng` label callbacks |
+
+Events and validators carry IDs and intervals, not items (`select(id)`, `node-move`, `connect`, `edit`, `cell-edit`, `row-move`, `context-menu` targets and the others), so their types do not change; look an item up by its ID in your own typed array.
+
+A graph with `groups` can collapse them, and a collapsed group is drawn as a proxy node: a `GraphCollapsedNode` (`NetworkNode<GraphCollapsedNodeData>`), whose edges are re-attached and may merge into an edge without `data`. That is why the graph's slots and callbacks receive `GraphShownNode<N, G>` and `GraphShownEdge<E, G>`: N and E alone without `groups` (G is `never`), and with `groups` also the proxy node and a `GraphEdge<never>`. Narrow before reading application fields, for example with `node.data && 'collapsedGroup' in node.data`.
+
+```vue
+<script setup lang="ts">
+import { NetworkGraph, type GraphEdge, type NetworkNode } from 'vue-weave'
+
+interface Task { owner: string }
+const nodes: NetworkNode<Task>[] = [{ id: 'cut', label: 'Cut', data: { owner: 'Ada' } }]
+const edges: GraphEdge<{ weight: number }>[] = []
+</script>
+
+<template>
+  <NetworkGraph :nodes="nodes" :edges="edges">
+    <template #node="{ node, box }">
+      <!-- node.data is Task | undefined -->
+      <text :x="12" :y="box.height / 2">{{ node.label }} · {{ node.data?.owner }}</text>
+    </template>
+    <template #edge="{ edge, path }">
+      <path :d="path" :stroke-width="edge.data?.weight ?? 1" />
+    </template>
+  </NetworkGraph>
+</template>
+```
+
+```vue
+<script setup lang="ts">
+import { GanttChart, type TimelineBar, type TimelineColumn, type TimelineRow } from 'vue-weave'
+
+type Team = TimelineRow<{ lead: string }>
+const rows: Team[] = [{ id: 'core', label: 'Core', data: { lead: 'Grace' } }]
+const bars: TimelineBar<{ cost: number }>[] = [{ id: 'b', rowId: 'core', label: 'Build', start: 0, end: 3_600_000, data: { cost: 4 } }]
+const columns: TimelineColumn<Team>[] = [{ id: 'lead', label: 'Lead', width: 96, value: row => row.data?.lead ?? '' }]
+</script>
+
+<template>
+  <GanttChart :rows="rows" :bars="bars" :columns="columns" :range="{ start: 0, end: 8 * 3_600_000 }">
+    <template #bar="{ bar }">{{ bar.label }} ({{ bar.data?.cost }})</template>
+  </GanttChart>
+</template>
+```
+
+Template refs: in a single-file component, `useTemplateRef('graph')` (Vue 3.5) is inferred by vue-tsc from the template, including the item types. To declare the type yourself, use `NetworkGraphExposed<N, E, G>` and `GanttChartExposed<R, B>`, the methods each component exposes, with the same type arguments as the props. `InstanceType<typeof NetworkGraph>` and `InstanceType<typeof GanttChart>` keep working and give the component instance with the default item types, so their `exportSvg` callbacks receive `unknown` data.
+
+```ts
+import { ref, useTemplateRef } from 'vue'
+import type { GanttChartExposed, GraphEdge, NetworkGraphExposed, NetworkNode, TimelineBar, TimelineRow } from 'vue-weave'
+
+const graph = useTemplateRef('graph') // inferred from <NetworkGraph ref="graph" ...>
+const typedGraph = ref<NetworkGraphExposed<NetworkNode<{ owner: string }>, GraphEdge>>()
+const chart = ref<GanttChartExposed<TimelineRow, TimelineBar<{ cost: number }>>>()
+typedGraph.value?.exportSvg({ nodeLabel: node => node.data?.owner ?? node.label })
+chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
+```
+
+The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.

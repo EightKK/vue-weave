@@ -16,6 +16,25 @@ export interface GraphCollapsedNodeData {
   nodeIds: string[]
 }
 
+/** A proxy node made by `collapseGraphGroups`: it stands for a collapsed group and has its ID and label. */
+export type GraphCollapsedNode = NetworkNode<GraphCollapsedNodeData>
+
+/**
+ * A node that NetworkGraph draws and hands to its `node` and `tooltip` slots, its `layout` function and its export
+ * callbacks: an input node of type `N`, or, when the graph has groups (`G` is not `never`), a `GraphCollapsedNode`
+ * proxy of a collapsed group.
+ */
+export type GraphShownNode<N extends NetworkNode = NetworkNode, G extends NetworkGroup = NetworkGroup> =
+  N | ([G] extends [never] ? never : GraphCollapsedNode)
+
+/**
+ * An edge that NetworkGraph draws and hands to its `edge` and `tooltip` slots, its `layout` function and its export
+ * callbacks: an input edge of type `E`, or, when the graph has groups (`G` is not `never`), an edge that merges several
+ * edges re-attached to a collapsed group, which has no `data`.
+ */
+export type GraphShownEdge<E extends GraphEdge = GraphEdge, G extends NetworkGroup = NetworkGroup> =
+  E | ([G] extends [never] ? never : GraphEdge<never>)
+
 export interface GraphCollapseOptions {
   /** Detail text of a proxy node. Default "1 node" or "N nodes". Return undefined for no detail. */
   detail?: (group: GraphCollapsedGroup) => string | undefined
