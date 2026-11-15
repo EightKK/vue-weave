@@ -423,3 +423,58 @@ The timeline then runs from right to left and its row headings sit on the right.
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
 The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+
+## Asynchronous layouts and preserved routes
+
+`NetworkGraph`'s `layout` prop stays synchronous. To compute layouts in a Worker or another asynchronous engine, use `useAsyncGraphLayout` and bind the frame it displays. The composable keeps the *desired* frame (the latest input, being computed) apart from the *display* frame (the last input whose layouts are all ready). Bind every field of `display` together, so new nodes are never drawn with old geometry, and pass the returned `layout` function, whose identity never changes, so a new result does not re-fit the camera:
+
+```vue
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { NetworkGraph, graphLayoutWorkerAdapter, layoutLayeredGraph, useAsyncGraphLayout } from 'vue-weave'
+
+const worker = typeof Worker === 'undefined' ? undefined : new Worker(new URL('./graphLayout.worker.ts', import.meta.url), { type: 'module' })
+const dragging = ref(false)
+const graph = useAsyncGraphLayout({
+  input: () => ({ nodes: nodes.value, edges: edges.value, groups, collapsedGroupIds: collapsed.value }),
+  adapter: worker ? graphLayoutWorkerAdapter(worker) : () => Promise.reject(new Error('Workers are not available')),
+  initialLayout: (shownNodes, shownEdges) => layoutLayeredGraph(shownNodes, shownEdges),
+  gesture: dragging,
+})
+onBeforeUnmount(() => worker?.terminate())
+// `initialLayout` makes the first frame synchronous, so `display` is always set here.
+const frame = computed(() => graph.display.value!)
+</script>
+
+<template>
+  <NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :groups="frame.groups"
+    :collapsed-group-ids="frame.collapsedGroupIds" :layout="graph.layout" />
+</template>
+```
+
+- Requests start when the component mounts, so nothing runs during server rendering. With `initialLayout` the server and the first client render show the same synchronous layout; without it `display` is undefined until the first result, so render a loading state in both.
+- Use the controlled `collapsedGroupIds` prop with the frame's value. With collapsed groups NetworkGraph lays out two inputs (the full graph, to place proxies, and the collapsed view); a frame is shown only when both layouts are ready. Uncontrolled `collapsibleGroups` would ask for a layout that has not been computed.
+- Every request carries a `requestId` and an `inputKey`. Only results for the current input are shown, whatever order they arrive in; results of cancelled or disposed requests are discarded. The key covers edges, ports, sizes and labels, not just node IDs; bump `revision` when node `data` or engine settings outside `settings` change the layout.
+- While `gesture` is true a finished frame waits, so an ongoing drag is not cancelled; it is shown when the gesture ends.
+- A failure keeps the last display and sets `error` with the revision and input key that failed.
+- When only edges change (for example after a `connect` is accepted), the frame is shown at once with the previous boxes and temporary routes from `completeGraphLayout` (`source: 'provisional'`, `temporaryEdgeIds`) until the engine answers.
+
+A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
+
+### Preserving external routes
+
+`routeGraphPorts` and `routeGraphEdges` take `policy: 'preserve'`. With it, a path the layout drew is kept, in every edge style and also for edges with named ports, while both ends still fit: at the port anchor for a named port, otherwise on the box border. A layout can return route metadata in `layout.routes` (start and end points, ports, the sides a route leaves and enters, bend points); it is then checked as well, and it is carried through `applyGraphPositions`, `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges`. Only these edges fall back to built-in routing: edges with `points` (explicit waypoints win), edges of a node that `positions` or `sizes` moved or resized, edges whose port or metadata no longer fits, and temporary routes. Note that with `preserve`, edges with named ports are no longer always rerouted. The default `'builtin'` policy is unchanged.
+
+Direct core users get the routed layout that NetworkGraph draws, and that `renderGraphSvg` should receive, by running the same steps:
+
+```ts
+import { applyGraphPositions, applyGraphSizes, renderGraphSvg, routeGraphEdges, routeGraphPorts } from 'vue-weave/core'
+
+const nodesById = new Map(nodes.map(node => [node.id, node]))
+const placed = applyGraphSizes(applyGraphPositions(layout, edges, positions, direction), edges, sizes, direction)
+const ported = routeGraphPorts(placed, nodesById, edges, direction, { policy: 'preserve' })
+const routed = routeGraphEdges(ported, edges, nodesById, { style: 'orthogonal', direction, policy: 'preserve' })
+const svg = renderGraphSvg(routed, nodes, edges, { theme })
+```
+
+`renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.

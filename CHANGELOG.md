@@ -5,6 +5,9 @@
 ### Added
 
 - `EntityRef`, `ViewTarget` and `ViewBinding` types for linking graph, timeline and load views.
+- `useAsyncGraphLayout` composable and `graphLayoutWorkerAdapter` for Worker or other asynchronous layouts of NetworkGraph: desired and display frames, request IDs and input keys that reject stale results, a cache by scope and input key, a `layout` function of stable identity, results deferred during gestures, provisional frames with temporary routes, and no requests during server rendering.
+- `buildGraphLayoutRequests`, `graphLayoutInputKey`, `validateGraphLayoutResponse`, `completeGraphLayout` and layout Worker message helpers (`graphLayoutToJson`, `graphLayoutFromJson`, `graphLayoutMessageToJson`, `graphLayoutMessageFromJson`, `parseGraphLayoutMessage`) in `vue-weave/core`.
+- Routing policy `'preserve'` for `routeGraphPorts` and `routeGraphEdges` (`policy` option), which keeps valid routes from the layout, including edges with named ports and in the orthogonal and straight styles, and `isGraphRouteValid`. `GraphLayout` gains an optional `routes` map of route metadata, carried through the positioning and routing functions. The default `'builtin'` policy is unchanged.
 
 ## 0.2.0 - 2026-11-15
 

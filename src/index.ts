@@ -57,3 +57,8 @@ export type { GraphDrop } from './components/types.js'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
+export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
+export type {
+  AsyncGraphLayoutAdapter, AsyncGraphFrame, AsyncGraphDisplayFrame, AsyncGraphLayoutError, UseAsyncGraphLayoutOptions, AsyncGraphLayout,
+  GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
+} from './composables/useAsyncGraphLayout.js'

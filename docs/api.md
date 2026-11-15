@@ -980,3 +980,23 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Asynchronous layouts and preserved routes
+
+Core (`vue-weave/core`):
+
+- `graphLayoutInputKey(input: GraphLayoutKeyInput): string` identifies a layout input: scope, direction, `settings` (JSON text), `revision`, and in order the nodes (ID, label, detail, shape, ports), edges (ID, ends, ports, label, waypoints), groups, collapsed group IDs, and any `positions` and `sizes` given to the engine. Node and edge `data` is not read; change `revision` when it matters. Throws RangeError for an unknown scope or direction or settings that are not JSON-serializable.
+- `buildGraphLayoutRequests(input: GraphLayoutRequestInput<N, E, G>, requestId: string): GraphLayoutRequests<N, E, G>` makes the requests NetworkGraph's `layout` calls correspond to: one `shown` request (ID `requestId + ':shown'`) and, while a known group is collapsed, an `expanded` request (`requestId + ':expanded'`) for the full input plus the `collapse` result. Unknown collapsed IDs are dropped and proxy details use `labels.collapsedNode` / `labels.collapsedNodes`, as in NetworkGraph.
+- `validateGraphLayoutResponse(request, response): GraphLayout` checks that a response echoes `requestId`, `inputKey` and `scope`; every node needs a finite positive box; a `shown` layout also needs finite positive dimensions, a path for every edge and route metadata (when given) with finite points and the edge's ports.
+- `completeGraphLayout(layout, nodes, edges, options?: { direction? }): { layout, temporaryEdgeIds, unresolvedEdgeIds }` adds temporary built-in routes for edges without a path whose end boxes exist.
+- `isGraphRouteValid(layout, nodes: ReadonlyMap<string, IdentifiedNode>, edge): boolean` tells whether the `preserve` policy keeps an edge's path.
+- `graphLayoutToJson(layout)`, `graphLayoutFromJson(value)`, `graphLayoutMessageToJson(message)`, `graphLayoutMessageFromJson(value)` and `parseGraphLayoutMessage(value)` convert and check layout Worker messages (`request`, `cancel`, `success`, `failure`; each with `requestId` and `inputKey`) for JSON and structured-clone transport.
+- `routeGraphPorts(layout, nodes, edges, direction, options?: GraphPortRouteOptions)` and `routeGraphEdges(layout, edges, nodes, options)` accept `policy?: GraphRoutingPolicy` (`'builtin'` default, or `'preserve'`).
+- `GraphLayout` has an optional `routes?: Map<string, GraphLayoutRoute>`: `start`, `end`, `fromPort`, `toPort`, `fromSide`, `toSide` and bend `points` of each routed edge.
+- Types: `GraphLayoutScope`, `GraphLayoutRequestInput`, `GraphLayoutRequest`, `GraphLayoutResponse`, `GraphLayoutRequests`, `GraphLayoutKeyInput`, `GraphLayoutCompletionOptions`, `GraphLayoutCompletion`, `GraphLayoutRoute`, `GraphRoutingPolicy`, `GraphPortRouteOptions`, `GraphLayoutWorkerMessage` (and its four members), `GraphLayoutJson`, `GraphLayoutRequestJson`, `GraphLayoutWorkerJsonMessage`.
+
+Vue (`vue-weave`):
+
+- `useAsyncGraphLayout(options: UseAsyncGraphLayoutOptions<N, E, G>): AsyncGraphLayout<N, E, G>` with `input`, `adapter(request, signal)`, optional `initialLayout`, `gesture`, `provisional` (default true) and `cacheSize` (default 32). It returns `desired` and `display` frames, a `layout` function of stable identity, `pending`, `deferred`, `error`, `cancel()` and `dispose()`.
+- `graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options?: { transport?: 'clone' | 'json' })` makes an adapter that talks to a Worker the caller created.
+- Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.
