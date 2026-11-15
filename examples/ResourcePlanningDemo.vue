@@ -2,13 +2,15 @@
 import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import {
   GanttChart, buildPlacementInput, calculateResourceLoad, createResourceTimelineProjector, levelResources, proposeResourceAssignment,
-  resolveResourceTimelineEdit, resourceTimelineBarId, scheduleTasks, scheduledBarFields, toPlanningDiagnostics, useEditHistory,
-  type FieldValue, type LevelResourcesInput, type LevelResourcesResult, type PlanningDiagnostic, type ResourceAssignment, type ResourceLoadSegment,
+  resolveResourceTimelineEdit, resourceTimelineBarId, scheduleTasks, scheduledBarFields, toPlanningDiagnostics, useEditHistory, useEditTransaction,
+  type FieldValue, type SaveResult, type TransactionAdapter, type TransactionOutcome, type LevelResourcesInput, type LevelResourcesResult, type PlanningDiagnostic, type ResourceAssignment, type ResourceLoadSegment,
   type ScheduleLink, type ScheduleResult, type ScheduleTask, type ScheduleTrace, type TimelineDrop, type TimelineEdit,
 } from '../src'
+import { createTransactionStore, type ServerMode } from './adapters/transactionStore'
 import PlanningBacklog from './components/PlanningBacklog.vue'
 import PlanningDiagnostics from './components/PlanningDiagnostics.vue'
 import PlanningInspector from './components/PlanningInspector.vue'
+import SaveStatus from './components/SaveStatus.vue'
 import { BACKLOG_MIME, type InspectorField, type PlaceRequest } from './components/types'
 import { formatTime, hour, origin } from './data'
 
@@ -48,8 +50,103 @@ const initial: PlanModel = {
   placed: ['A', 'B', 'C'],
 }
 const history = useEditHistory<PlanModel>(initial)
-const model = history.state
 const policy = ref<Policy>('warn')
+
+// ---- optional server-backed mode: one user operation = one transaction over tasks, assignments and placement ----
+// The load is derived from the accepted plan, so it is never saved and never changes on its own: a rejected,
+// conflicting or unknown save leaves tasks, assignments and load exactly as they were. The candidate is only previewed.
+type PlanChange =
+  | { type: 'tasks'; tasks: ScheduleTask[] }
+  | { type: 'assignments'; assignments: ResourceAssignment[] }
+  | { type: 'placed'; placed: string[] }
+const server = createTransactionStore<PlanModel>(initial, {
+  // In conflict mode another planner lengthens Finish C first, so the reloaded plan visibly differs.
+  remoteEdit: plan => ({ ...plan, tasks: plan.tasks.map(item => item.id === 'C' ? { ...item, duration: item.duration + hour } : item) }),
+})
+const planAdapter: TransactionAdapter<PlanModel, PlanChange> = {
+  validate(_plan, changes) {
+    for (const change of changes) {
+      if (change.type === 'assignments') {
+        const seen = new Set<string>()
+        for (const item of change.assignments) {
+          const key = item.taskId + '\u0000' + item.resourceId
+          if (seen.has(key)) return taskLabel(item.taskId) + ' is assigned to ' + resourceLabel(item.resourceId) + ' twice.'
+          if (!resourceIds.includes(item.resourceId)) return 'Unknown resource ' + item.resourceId + '.'
+          seen.add(key)
+        }
+      }
+      if (change.type === 'placed' && new Set(change.placed).size !== change.placed.length) return 'A task is placed twice.'
+    }
+  },
+  apply(plan, changes) {
+    let next = plan
+    for (const change of changes) {
+      if (change.type === 'tasks') next = { ...next, tasks: change.tasks }
+      else if (change.type === 'assignments') next = { ...next, assignments: change.assignments }
+      else next = { ...next, placed: change.placed }
+    }
+    return next
+  },
+  save: (request, candidate) => server.save(request, candidate),
+}
+const tx = useEditTransaction<PlanModel, PlanChange>({ documentId: 'resource-plan', initialState: initial, initialVersion: server.info.version, adapter: planAdapter })
+const serverBacked = ref(false)
+const busy = ref(false)
+const saving = computed(() => serverBacked.value && tx.status.value === 'saving')
+const model = computed(() => serverBacked.value ? tx.acceptedState.value : history.state.value)
+const canUndo = computed(() => serverBacked.value ? tx.canUndo.value && !saving.value : history.canUndo.value)
+const canRedo = computed(() => serverBacked.value ? tx.canRedo.value && !saving.value : history.canRedo.value)
+watch(serverBacked, on => {
+  proposal.value = undefined
+  busy.value = false
+  if (on) {
+    // Start from what the server stores; the local history does not travel to the server.
+    const latest = server.fetch()
+    tx.refresh(latest.state, latest.version)
+    notice.value = 'Changes are now saved through the mock server. Loaded version ' + latest.version + '.'
+  } else {
+    history.reset(tx.acceptedState.value)
+    notice.value = 'Changes are applied locally again, starting from the last saved plan.'
+  }
+})
+function describeOutcome(outcome: TransactionOutcome<PlanModel>): string {
+  if (outcome.status === 'accepted') return 'accepted by the server as version ' + outcome.version
+  if (outcome.status === 'invalid') return 'not sent: ' + outcome.reason
+  if (outcome.status === 'busy') return 'not sent: another save is in progress'
+  if (outcome.status === 'discarded') return 'the answer no longer matches the plan'
+  if (outcome.status === 'rejected') return 'rejected by the server (' + outcome.code + '); nothing changed'
+  if (outcome.status === 'conflict') return 'version conflict with ' + outcome.currentVersion + '; nothing changed'
+  return 'no answer; the save may or may not have been applied'
+}
+function reloadLatest() {
+  const latest = server.fetch()
+  tx.refresh(latest.state, latest.version)
+  proposal.value = undefined
+  notice.value = 'Loaded version ' + latest.version + ' from the server. Undo starts from here.'
+}
+function checkWithServer() {
+  const operationId = tx.pendingTransaction.value?.operationId
+  if (!operationId) return
+  const stored: SaveResult<PlanModel> = server.lookup(operationId) ?? { status: 'rejected', operationId, code: 'not-applied' }
+  const outcome = tx.reconcile(stored)
+  notice.value = stored.status === 'accepted' ? 'The server had applied the save: ' + describeOutcome(outcome) + '.' : 'The server never applied the save, so nothing changed.'
+}
+
+// ---- received proposals: what the parent got from the chart or the backlog, by pointer or keyboard ----
+type InputSource = 'pointer' | 'keyboard'
+const proposalLog = ref<string[]>([])
+function logProposal(source: InputSource, text: string) {
+  proposalLog.value = [...proposalLog.value.slice(-9), source + ': ' + text]
+}
+function logEdit(edit: TimelineEdit) {
+  const shown = projection.value.origins.get(edit.id)
+  if (!shown) return
+  const target = edit.row?.after ?? shown.resourceId
+  const reassigned = target !== shown.resourceId
+  const timed = edit.after.start !== edit.before.start || edit.after.end !== edit.before.end
+  const kind = edit.mode !== 'move' ? 'resize' : reassigned && timed ? 'reassign and reschedule' : reassigned ? 'reassign' : 'reschedule'
+  logProposal(edit.source, kind + ' ' + taskLabel(shown.taskId) + ' on ' + resourceLabel(target) + ' at ' + formatTime(edit.after.start) + '–' + formatTime(edit.after.end))
+}
 
 // ---- calculation: placement input, then scheduleTasks or levelResources, then load and diagnostics ----
 interface Calc {
@@ -108,17 +205,18 @@ const backlogItems = computed(() => unplannedIds.value.map(id => ({
   id, label: taskLabel(id),
   detail: (model.value.assignments.filter(item => item.taskId === id).map(item => resourceLabel(item.resourceId)).join(', ') || 'no resource') + ' · ' + (model.value.tasks.find(item => item.id === id)!.duration / hour) + ' h',
 })))
-const startTimes = Array.from({ length: 12 }, (_, index) => ({ value: origin + index * hour, label: formatTime(origin + index * hour) }))
+// The keyboard placement offers every snap step (the chart's default `snap` is 15 minutes), the same times a pointer drop can reach.
+const startTimes = Array.from({ length: (range.end - range.start) / quantum }, (_, index) => ({ value: range.start + index * quantum, label: formatTime(range.start + index * quantum) }))
 
 // ---- proposals: calculated and previewed, then applied as one history entry ----
-interface Proposal { title: string; changes: string[]; next: PlanModel; calc: Calc; focusBarId?: string }
+interface Proposal { title: string; changes: string[]; base: PlanModel; next: PlanModel; calc: Calc; focusBarId?: string; source?: InputSource }
 const proposal = shallowRef<Proposal>()
 const notice = ref('Move a bar (drag, or arrow keys; Up and Down change the resource), edit the inspector, or place an unplanned task.')
 function reject(reason: string) {
   proposal.value = undefined
   notice.value = 'Not applied: ' + reason
 }
-function propose(title: string, changes: string[], next: PlanModel, focusBarId?: string) {
+function propose(title: string, changes: string[], next: PlanModel, focusBarId?: string, source?: InputSource) {
   let calc: Calc
   try {
     calc = compute(next, policy.value)
@@ -136,7 +234,7 @@ function propose(title: string, changes: string[], next: PlanModel, focusBarId?:
     return reject('the capacity policy rejects changes that add overload (' + overloads(calc) + ' overloaded interval(s) instead of ' + overloads(current.value) + ').')
   }
   notice.value = 'Review the preview, then apply or discard it.'
-  proposal.value = { title, changes, next, calc, ...(focusBarId ? { focusBarId } : {}) }
+  proposal.value = { title, changes, base: model.value, next, calc, ...(focusBarId ? { focusBarId } : {}), ...(source ? { source } : {}) }
 }
 function describeDates(calc: Calc) {
   if (!calc.plan.ok || !current.value.plan.ok) return []
@@ -150,6 +248,8 @@ function describeDates(calc: Calc) {
 async function apply() {
   const pending = proposal.value
   if (!pending) return
+  if (pending.base !== model.value) return reject('the plan changed after the preview was calculated. Make the change again.')
+  if (serverBacked.value) return applyThroughServer(pending)
   history.commit(pending.next)
   proposal.value = undefined
   notice.value = 'Applied: ' + pending.title + '.'
@@ -157,15 +257,46 @@ async function apply() {
   // An assignment change gives the bar a new ID, so the keyboard focus is returned by the parent to the new bar.
   if (pending.focusBarId) void chart.value?.revealBar(pending.focusBarId, { focus: true })
 }
+async function applyThroughServer(pending: Proposal) {
+  // Only the parts this operation changed are sent, all in ONE transaction: never the dates without the assignment.
+  const changes: PlanChange[] = []
+  if (pending.next.tasks !== pending.base.tasks) changes.push({ type: 'tasks', tasks: pending.next.tasks })
+  if (pending.next.assignments !== pending.base.assignments) changes.push({ type: 'assignments', assignments: pending.next.assignments })
+  if (pending.next.placed !== pending.base.placed) changes.push({ type: 'placed', placed: pending.next.placed })
+  notice.value = 'Saving: ' + pending.title + '. The chart keeps the accepted plan until the server answers.'
+  const outcome = await tx.submit(changes, pending.source ? { source: pending.source } : {})
+  busy.value = outcome.status === 'busy'
+  if (outcome.status === 'busy') { notice.value = 'Not applied: ' + describeOutcome(outcome) + '.'; return }
+  if (proposal.value === pending) proposal.value = undefined
+  if (outcome.status !== 'accepted') { notice.value = 'Not applied: ' + pending.title + ' was ' + describeOutcome(outcome) + '.'; return }
+  notice.value = 'Applied: ' + pending.title + ' (version ' + outcome.version + ').'
+  await nextTick()
+  if (pending.focusBarId) void chart.value?.revealBar(pending.focusBarId, { focus: true })
+}
+async function undoRedoThroughServer(kind: 'undo' | 'redo') {
+  proposal.value = undefined
+  const outcome = await (kind === 'undo' ? tx.undo() : tx.redo())
+  busy.value = outcome.status === 'busy'
+  notice.value = outcome.status === 'accepted'
+    ? (kind === 'undo' ? 'Undid' : 'Redid') + ' the planning change through the server (version ' + outcome.version + ').'
+    : (kind === 'undo' ? 'Undo' : 'Redo') + ' not applied: ' + describeOutcome(outcome) + '.'
+}
 function discard() {
   proposal.value = undefined
   notice.value = 'Preview discarded. Nothing changed.'
 }
-function undo() { history.undo(); proposal.value = undefined; notice.value = 'Undid the last planning change.' }
-function redo() { history.redo(); proposal.value = undefined; notice.value = 'Redid the planning change.' }
+function undo() {
+  if (serverBacked.value) return undoRedoThroughServer('undo')
+  history.undo(); proposal.value = undefined; notice.value = 'Undid the last planning change.'
+}
+function redo() {
+  if (serverBacked.value) return undoRedoThroughServer('redo')
+  history.redo(); proposal.value = undefined; notice.value = 'Redid the planning change.'
+}
 
 // Vertical move = replace the assignment; horizontal move = change the task's schedule for every projection; both = one proposal.
 function onEdit(edit: TimelineEdit) {
+  logEdit(edit)
   const resolved = resolveResourceTimelineEdit(projection.value, edit)
   if (!resolved.ok) return reject(resolved.reason)
   const { scheduleChange, assignmentReplacement } = resolved
@@ -186,13 +317,14 @@ function onEdit(edit: TimelineEdit) {
   }
   if (!changes.length) return
   const taskId = (assignmentReplacement ?? scheduleChange)!.taskId
-  propose(taskLabel(taskId) + (assignmentReplacement ? ' reassigned' : ' rescheduled'), changes, next, focusBarId)
+  propose(taskLabel(taskId) + (assignmentReplacement ? ' reassigned' : ' rescheduled'), changes, next, focusBarId, edit.source)
 }
 function withoutFixed(item: ScheduleTask): ScheduleTask {
   const { fixedStart: _fixed, ...rest } = item
   return rest
 }
-function place(request: PlaceRequest) {
+function place(request: PlaceRequest, source: InputSource) {
+  logProposal(source, 'place ' + taskLabel(request.taskId) + ' on ' + resourceLabel(request.resourceId) + ' at ' + formatTime(request.time))
   const base = model.value
   if (base.placed.includes(request.taskId)) return reject(taskLabel(request.taskId) + ' is already placed.')
   let assignments = base.assignments
@@ -207,17 +339,18 @@ function place(request: PlaceRequest) {
     tasks: base.tasks.map(item => item.id === request.taskId ? withoutFixed({ ...item, startNoEarlierThan: request.time }) : item),
     assignments, placed: [...base.placed, request.taskId],
   }
-  propose('placed ' + taskLabel(request.taskId), changes, next, resourceTimelineBarId(request.taskId, request.resourceId))
+  propose('placed ' + taskLabel(request.taskId), changes, next, resourceTimelineBarId(request.taskId, request.resourceId), source)
 }
 function onDrop(drop: TimelineDrop) {
   const taskId = drop.dataTransfer?.getData(BACKLOG_MIME)
   if (!taskId) return reject('drop a task from the unplanned list.')
   if (!drop.rowId) return reject('drop the task on a resource row.')
-  place({ taskId, resourceId: drop.rowId, time: drop.time })
+  place({ taskId, resourceId: drop.rowId, time: drop.time }, 'pointer')
 }
 
 // ---- selection, inspector, assignments ----
 const chart = ref<InstanceType<typeof GanttChart>>()
+// Without `multiSelect` the chart reports a click only through `select`; the demo keeps that one selection.
 const selection = ref(new Set<string>())
 const selectedTaskId = ref<string>()
 watch(selection, ids => {
@@ -273,15 +406,27 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
             <option value="level">Level resources (levelResources)</option>
           </select>
         </label>
-        <button type="button" :disabled="!history.canUndo.value" @click="undo">Undo planning change</button>
-        <button type="button" :disabled="!history.canRedo.value" @click="redo">Redo planning change</button>
+        <button type="button" :disabled="!canUndo" @click="undo">Undo planning change</button>
+        <button type="button" :disabled="!canRedo" @click="redo">Redo planning change</button>
+        <label><input v-model="serverBacked" type="checkbox" :disabled="saving"> Save through the mock server</label>
       </div>
+    </div>
+    <div v-if="serverBacked" class="rp-server">
+      <fieldset class="server">
+        <legend>Mock server response</legend>
+        <label v-for="mode in ([['accept', 'Accept'], ['reject', 'Reject'], ['conflict', 'Version conflict'], ['uncertain', 'Result unknown']] as [ServerMode, string][])" :key="mode[0]">
+          <input v-model="server.info.mode" type="radio" name="plan-server-mode" :value="mode[0]"> {{ mode[1] }}
+        </label>
+        <p class="hint">Server version {{ server.info.version }} · {{ server.info.commits }} commits</p>
+      </fieldset>
+      <SaveStatus :status="tx.status.value" :pending="tx.pendingTransaction.value" :result="tx.result.value" :busy="busy" :version="tx.acceptedVersion.value"
+        @dismiss="tx.clearResult(); busy = false" @reload="reloadLatest" @reconcile="checkWithServer" />
     </div>
     <div class="rp-layout">
       <div class="rp-main">
         <GanttChart ref="chart" :rows="projection.rows" :bars="projection.bars" :dependencies="projection.dependencies" :lane-count="projection.laneCount" :range="range"
           :format-time="formatTime" :height="360" :pixels-per-unit="60 / hour" row-draggable droppable v-model:selected-ids="selection" :highlighted-bar-ids="highlighted"
-          :load-rows="loadRows" :load-segments="current.load" :labels="{ region: 'Resource plan', rows: 'Resource' }" @edit="onEdit" @bar-drop="onDrop"
+          :load-rows="loadRows" :load-segments="current.load" :labels="{ region: 'Resource plan', rows: 'Resource' }" @edit="onEdit" @bar-drop="onDrop" @select="id => selection = new Set([id])"
           @edit-rejected="(_edit, reason) => notice = reason">
           <template #row-heading>Resource</template>
           <template #legend><span class="hint">Left and Right move a task in time; Up and Down move it to another resource row. Both changes are previewed before they apply.</span></template>
@@ -296,13 +441,19 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
           <ul aria-label="Proposed changes"><li v-for="change in proposal.changes" :key="change">{{ change }}</li></ul>
           <ul v-if="describeDates(proposal.calc).length" aria-label="Resulting dates"><li v-for="line in describeDates(proposal.calc)" :key="line">{{ line }}</li></ul>
           <p>{{ capacitySummary(proposal.calc) }}</p>
-          <div class="options"><button type="button" @click="apply">Apply change</button><button type="button" @click="discard">Discard preview</button></div>
+          <p v-if="saving && tx.pendingTransaction.value">Saving to the server. The chart and the load still show the accepted plan.</p>
+          <div class="options"><button type="button" :disabled="saving" @click="apply">Apply change</button><button type="button" :disabled="saving" @click="discard">Discard preview</button></div>
         </section>
         <p class="status" role="status" aria-label="Planning notice">{{ notice }}</p>
+        <details class="proposal-log">
+          <summary>Received proposals</summary>
+          <ol aria-label="Received proposals"><li v-for="(entry, index) in proposalLog" :key="index">{{ entry }}</li></ol>
+          <p v-if="!proposalLog.length" class="hint">No proposal yet.</p>
+        </details>
         <PlanningDiagnostics :diagnostics="current.diagnostics" :trace="current.trace" :task-label="taskLabel" :resource-label="resourceLabel" :format-time="formatTime" @activate="reveal" />
       </div>
       <aside class="rp-side">
-        <PlanningBacklog :items="backlogItems" :rows="resourceRows" :times="startTimes" @place="place" />
+        <PlanningBacklog :items="backlogItems" :rows="resourceRows" :times="startTimes" @place="request => place(request, 'keyboard')" />
         <PlanningInspector :title="selectedTask ? 'Task ' + taskLabel(selectedTask.id) : 'Task inspector'" :item="selectedTask" :fields="inspectorFields" @edit="inspect" />
         <fieldset v-if="selectedTask" class="assign">
           <legend>Assignments of {{ taskLabel(selectedTask.id) }}</legend>
@@ -325,6 +476,11 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
 .preview ul { margin: 4px 0; padding-inline-start: 18px; }
 .preview .options { gap: 8px; }
 .assign { border: 1px solid var(--vw-border, #d9e4ec); border-radius: 8px; font-size: 12px; display: grid; gap: 6px; margin: 0; }
+.rp-server { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 10px; align-items: start; margin-bottom: 10px; }
+.server { border: 1px solid var(--vw-border, #d9e4ec); border-radius: 8px; font-size: 12px; margin: 0; display: grid; gap: 4px; }
+.server .hint { margin: 4px 0 0; }
+.proposal-log { font-size: 12px; }
+.proposal-log ol { margin: 4px 0; padding-inline-start: 22px; }
 .assign label { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-@media (max-width: 900px) { .rp-layout { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .rp-layout, .rp-server { grid-template-columns: 1fr; } }
 </style>

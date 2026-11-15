@@ -5459,3 +5459,228 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   }
   expect(errors).toEqual([])
 })
+
+// ---- F02: server-backed resource planning (examples/ResourcePlanningDemo.vue with the mock transaction server) ----
+type Locator = ReturnType<Page['locator']>
+
+async function openServerPlanning(page: Page) {
+  const context = await openResourcePlanning(page)
+  await page.getByRole('checkbox', { name: 'Save through the mock server', exact: true }).check()
+  const saveStatus = page.getByRole('status', { name: 'Save status', exact: true })
+  await expect(saveStatus).toContainText('Accepted version v1')
+  return {
+    ...context, saveStatus,
+    server: (label: string) => page.getByRole('radio', { name: label, exact: true }),
+    serverState: page.getByText(/^Server version v\d+ · \d+ commits$/),
+    undo: page.getByRole('button', { name: 'Undo planning change', exact: true }),
+    redo: page.getByRole('button', { name: 'Redo planning change', exact: true }),
+  }
+}
+
+/** Everything a planner sees of the accepted plan: every projected bar, every load segment and B's assignments. */
+async function planState(page: Page, chart: Locator) {
+  const names = (locator: Locator) => locator.evaluateAll(elements => elements.map(element => element.getAttribute('aria-label') ?? '').sort())
+  const assigned = page.getByRole('group', { name: 'Assignments of Mold B', exact: true }).getByRole('button', { name: /^Unassign / })
+  await expect(assigned.first()).toBeVisible()
+  return {
+    bars: await names(chart.getByRole('button', { name: / · (Press 1|Press 2|Crew) \d\d:\d\d–\d\d:\d\d/ })),
+    load: await names(chart.getByRole('img', { name: /: load \d/ })),
+    assignments: await assigned.allTextContents(),
+  }
+}
+
+const centreY = async (locator: Locator) => { const box = (await locator.boundingBox())!; return box.y + box.height / 2 }
+
+test('server-backed resource planning: a rejected or conflicting reassignment leaves bars, assignments and load unchanged', async ({ page }) => {
+  const { errors, chart, notice, saveStatus, server, serverState, undo } = await openServerPlanning(page)
+  const pressOne = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await pressOne.click()
+  const before = await planState(page, chart)
+  expect(before.bars).toContain('Mold B · Press 1 09:00–11:00')
+  expect(before.assignments).toEqual(['Unassign Press 1'])
+  expect(before.load.length).toBeGreaterThan(0)
+
+  await server('Reject').check()
+  await pressOne.press('ArrowDown')
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  // While the save is in flight the candidate exists only in the preview; the chart and load keep the accepted plan.
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(notice).toContainText('Not applied: Mold B reassigned was rejected by the server')
+  await expect(preview).toHaveCount(0)
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(serverState).toHaveText('Server version v1 · 0 commits')
+  await expect(undo).toBeDisabled()
+  await page.getByRole('button', { name: 'Dismiss save message', exact: true }).click()
+
+  // A version conflict: another planner lengthened Finish C first. Nothing of the reassignment is applied either.
+  await server('Version conflict').check()
+  await pressOne.press('ArrowDown')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(saveStatus).toContainText('Version conflict: the server is at version v2, not v1. Nothing changed')
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(undo).toBeDisabled()
+  // Loading the latest version brings the other planner's change, and still not the rejected reassignment.
+  await page.getByRole('button', { name: 'Load latest version', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Finish C · Press 2 11:00–14:00', exact: true })).toBeVisible()
+  await expect(pressOne).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Mold B · Press 2/ })).toHaveCount(0)
+  await expect(saveStatus).toContainText('Accepted version v2')
+  expect(errors).toEqual([])
+})
+
+test('server-backed resource planning: an accepted move commits schedule and assignment together and one undo restores both through the server', async ({ page }) => {
+  const { errors, chart, saveStatus, serverState, undo, redo } = await openServerPlanning(page)
+  const pressOne = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await pressOne.click()
+  const before = await planState(page, chart)
+
+  // One pointer drag changes the resource row and the time: one proposal, one transaction.
+  const box = (await pressOne.boundingBox())!
+  const perMinute = box.width / 120
+  const rowTwo = await centreY(chart.getByRole('button', { name: /^Finish C · Press 2 / }))
+  await dragBy(page, pressOne, 15 * perMinute + 2, rowTwo - (box.y + box.height / 2))
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await expect(preview).toContainText('Request Mold B at 09:15–11:15')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(saveStatus).toContainText('Saving changes based on version v1')
+  await expect(saveStatus).toContainText('Accepted version v2')
+  const moved = chart.getByRole('button', { name: 'Mold B · Press 2 09:15–11:15', exact: true })
+  await expect(moved).toBeVisible()
+  await expect(moved).toBeFocused()
+  await expect(pressOne).toHaveCount(0)
+  await expect(serverState).toHaveText('Server version v2 · 1 commits')
+  const after = await planState(page, chart)
+  expect(after.assignments).toEqual(['Unassign Press 2'])
+  expect(after.load).not.toEqual(before.load)
+
+  // One undo, saved as a restore: the dates, the assignment and the load all return together.
+  await undo.click()
+  await expect(saveStatus).toContainText('Accepted version v3')
+  await expect(pressOne).toBeVisible()
+  await expect(serverState).toHaveText('Server version v3 · 2 commits')
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(undo).toBeDisabled()
+  // Redo is a restore through the server as well.
+  await redo.click()
+  await expect(saveStatus).toContainText('Accepted version v4')
+  await expect(moved).toBeVisible()
+  expect(await planState(page, chart)).toEqual(after)
+  expect(errors).toEqual([])
+})
+
+test('resource planning: placement, reassignment and rescheduling propose the same operation by pointer and keyboard', async ({ page }) => {
+  const { errors, chart } = await openResourcePlanning(page)
+  await page.getByText('Received proposals', { exact: true }).click()
+  const log = page.getByRole('list', { name: 'Received proposals', exact: true })
+  const last = async () => (await log.getByRole('listitem').last().textContent())!.trim()
+  const operation = (entry: string) => entry.replace(/^(pointer|keyboard): /, '')
+  const previewChanges = () => page.getByRole('list', { name: 'Proposed changes', exact: true }).allTextContents()
+  const discard = () => page.getByRole('button', { name: 'Discard preview', exact: true }).click()
+  const moldB = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  const bBox = (await moldB.boundingBox())!
+  const perMinute = bBox.width / 120
+  const rowTwo = await centreY(chart.getByRole('button', { name: /^Finish C · Press 2 / }))
+
+  // 1. Placement from the backlog: a pointer drop at 10:15 on Press 2, then the keyboard form with the same choice.
+  const regionBox = (await chart.boundingBox())!
+  await page.getByRole('list', { name: 'Unplanned task list' }).getByRole('listitem').filter({ hasText: 'Rework D' })
+    .dragTo(chart, { targetPosition: { x: bBox.x + 75 * perMinute + 2 - regionBox.x, y: rowTwo - regionBox.y } })
+  await expect.poll(last).toBe('pointer: place Rework D on Press 2 at 10:15')
+  const pointerPlace = await previewChanges()
+  await discard()
+  await page.getByRole('button', { name: 'Place Rework D', exact: true }).press('Enter')
+  await page.getByLabel('Row for Rework D', { exact: true }).selectOption({ label: 'Press 2' })
+  await page.getByLabel('Start for Rework D', { exact: true }).selectOption({ label: '10:15' })
+  await page.getByRole('button', { name: 'Confirm placement of Rework D', exact: true }).press('Enter')
+  await expect.poll(last).toBe('keyboard: place Rework D on Press 2 at 10:15')
+  expect(await previewChanges()).toEqual(pointerPlace)
+  await expect(page.getByRole('region', { name: 'Preview: placed Rework D', exact: true })).toBeVisible()
+  await discard()
+
+  // 2. A vertical move replaces the assignment: Down arrow, then a vertical drag to the Press 2 row.
+  await moldB.press('ArrowDown')
+  await expect.poll(last).toBe('keyboard: reassign Mold B on Press 2 at 09:00–11:00')
+  const keyboardMove = await previewChanges()
+  await discard()
+  await dragBy(page, moldB, 0, rowTwo - (bBox.y + bBox.height / 2))
+  await expect.poll(last).toMatch(/^pointer: /)
+  expect(operation(await last())).toBe(operation('keyboard: reassign Mold B on Press 2 at 09:00–11:00'))
+  expect(await previewChanges()).toEqual(keyboardMove)
+  await discard()
+
+  // 3. A horizontal move changes the schedule: Right arrow (one snap step), then a drag by the same snapped distance.
+  const crew = chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })
+  await crew.press('ArrowRight')
+  await expect.poll(last).toBe('keyboard: reschedule Mold A on Crew at 08:15–11:15')
+  const keyboardShift = await previewChanges()
+  await discard()
+  await dragBy(page, crew, 15 * perMinute + 2, 0)
+  await expect.poll(last).toBe('pointer: reschedule Mold A on Crew at 08:15–11:15')
+  expect(await previewChanges()).toEqual(keyboardShift)
+  await discard()
+
+  // Nothing was applied by any of the six proposals.
+  await expect(moldB).toBeVisible()
+  await expect(crew).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Rework D/ })).toHaveCount(0)
+  await expect(log.getByRole('listitem')).toHaveCount(6)
+  expect(errors).toEqual([])
+})
+
+test('linked views: the context toolbar keeps its size and tracks the target rectangle at every zoom level', async ({ page }) => {
+  const { errors, demo, node } = await openLinkedDemo(page)
+  const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+  await node('Inspect').click()
+  await expect(toolbar).toBeVisible()
+  const measure = async () => {
+    const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+    const fontSize = await toolbar.evaluate(element => getComputedStyle(element).fontSize)
+    return { t: t!, n: n!, fontSize }
+  }
+  /** The toolbar is centred on the target and sits 8 px above it, or 8 px below when there is no room above. */
+  const tracks = ({ t, n }: { t: { x: number; y: number; width: number; height: number }; n: { x: number; y: number; width: number; height: number } }) =>
+    Math.abs(t.x + t.width / 2 - (n.x + n.width / 2)) < 3
+    && (Math.abs(t.y + t.height + 8 - n.y) < 3 || Math.abs(t.y - (n.y + n.height + 8)) < 3)
+  const initial = await measure()
+  expect(tracks(initial)).toBe(true)
+  const widths = [initial.n.width]
+  for (const step of ['Zoom in', 'Zoom in', 'Zoom out', 'Zoom out', 'Zoom out', 'Zoom out']) {
+    const previous = widths[widths.length - 1]!
+    await demo.getByRole('button', { name: step, exact: true }).first().click()
+    await expect.poll(async () => (await measure()).n.width).not.toBeCloseTo(previous, 0)
+    await expect.poll(async () => tracks(await measure())).toBe(true)
+    const now = await measure()
+    widths.push(now.n.width)
+    // Plain HTML over the graph: the text and the box keep their CSS pixel size while the node scales.
+    expect(now.fontSize).toBe(initial.fontSize)
+    expect(now.t.height).toBeCloseTo(initial.t.height, 1)
+    expect(now.t.width).toBeCloseTo(initial.t.width, 0)
+  }
+  // The node really was drawn at several scales.
+  expect(Math.max(...widths) / Math.min(...widths)).toBeGreaterThan(1.5)
+
+  // Panned out of the visible area by keyboard, the target has no visible rectangle and the toolbar goes away; it
+  // comes back, tracking again, once the target is visible.
+  const stage = demo.getByLabel('Linked network diagram', { exact: true })
+  const graphBox = (await stage.boundingBox())!
+  await stage.focus()
+  let presses = 0
+  while ((await node('Inspect').boundingBox())!.x < graphBox.x + graphBox.width + 10 && presses < 80) {
+    await stage.press('ArrowLeft')
+    presses++
+  }
+  await expect(toolbar).toBeHidden()
+  for (let i = 0; i < presses; i++) await stage.press('ArrowRight')
+  await expect(toolbar).toBeVisible()
+  await expect.poll(async () => tracks(await measure())).toBe(true)
+
+  // A target hidden inside a collapsed group (no rectangle at all) hides the toolbar too.
+  await node('Cut order A').click()
+  await expect(toolbar).toBeVisible()
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(toolbar).toBeHidden()
+  expect(errors).toEqual([])
+})
