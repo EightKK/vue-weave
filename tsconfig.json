@@ -19,6 +19,8 @@
     "src/**/*.ts",
     "src/**/*.vue",
     "examples/**/*.ts",
-    "examples/**/*.vue"
+    "examples/**/*.vue",
+    "test/types/**/*.ts",
+    "test/types/**/*.vue"
   ]
 }

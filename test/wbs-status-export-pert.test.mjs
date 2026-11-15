@@ -117,6 +117,83 @@ test('rescheduleFromStatusDate splits around calendar breaks and rounds done wor
   assert.equal(fixed.code, 'infeasible')
 })
 
+const finishLinked = (type, lag, extra = {}) => ({
+  range: { start: 0, end: 20 },
+  tasks: [{ id: 'a', duration: 6 }, { id: 'b', duration: 4, ...extra }],
+  dependencies: [{ id: 'ab', from: 'a', to: 'b', type, lag }],
+})
+
+test('rescheduleFromStatusDate keeps finish-to-finish links into started tasks and delays their remaining work', () => {
+  const input = finishLinked('FF')
+  assert.deepEqual(dates(scheduleTasks(input)).b, [2, 6, [[2, 6]]])
+  const snapshot = structuredClone(input)
+  // b is half done at the status date: its done half ends there, and its remaining half waits for a to finish.
+  const result = rescheduleFromStatusDate(input, 2, new Map([['b', 0.5]]))
+  assert.equal(result.ok, true)
+  assert.deepEqual(dates(result).a, [2, 8, [[2, 8]]])
+  assert.deepEqual(dates(result).b, [0, 8, [[0, 2], [6, 8]]])
+  assert.deepEqual(result.criticalDependencyIds, ['ab'])
+  assert.deepEqual(input, snapshot)
+  // The lag is honoured.
+  assert.deepEqual(dates(rescheduleFromStatusDate(finishLinked('FF', 3), 2, new Map([['b', 0.5]]))).b, [0, 11, [[0, 2], [9, 11]]])
+  // A link that the remaining work already satisfies changes nothing.
+  assert.deepEqual(dates(rescheduleFromStatusDate(finishLinked('FF', -6), 2, new Map([['b', 0.5]]))).b, [0, 4, [[0, 4]]])
+  // On a calendar, the remaining work resumes as late as needed and no later; delays carry along a chain.
+  const chain = rescheduleFromStatusDate({
+    range: { start: 0, end: 40 },
+    calendars: [{ id: 'shift', periods: [{ start: 0, end: 4 }, { start: 6, end: 40 }] }],
+    tasks: [{ id: 'a', duration: 3 }, { id: 'b', duration: 4, calendarId: 'shift' }, { id: 'c', duration: 4 }],
+    dependencies: [{ id: 'ab', from: 'a', to: 'b', type: 'FF', lag: 2 }, { id: 'bc', from: 'b', to: 'c', type: 'FF', lag: 1 }],
+  }, 2, new Map([['b', 0.5], ['c', 0.5]]))
+  assert.deepEqual(dates(chain).b, [0, 7, [[0, 2], [3, 4], [6, 7]]])
+  assert.deepEqual(dates(chain).c, [0, 8, [[0, 2], [6, 8]]])
+  assert.deepEqual(chain.criticalDependencyIds, ['ab', 'bc'])
+})
+
+test('rescheduleFromStatusDate keeps start-to-finish links into started tasks', () => {
+  // b must finish no earlier than 5 units after a starts, and a, not started, moves to the status date 2.
+  const result = rescheduleFromStatusDate(finishLinked('SF', 5), 2, new Map([['b', 0.5]]))
+  assert.equal(result.ok, true)
+  assert.deepEqual(dates(result).a, [2, 8, [[2, 8]]])
+  assert.deepEqual(dates(result).b, [0, 7, [[0, 2], [5, 7]]])
+})
+
+test('rescheduleFromStatusDate drops start links into started tasks and every link into completed tasks', () => {
+  for (const type of ['FS', 'SS']) {
+    const result = rescheduleFromStatusDate(finishLinked(type, 8), 2, new Map([['b', 0.5]]))
+    assert.equal(result.ok, true)
+    assert.deepEqual(dates(result).b, [0, 4, [[0, 4]]])
+    assert.deepEqual(result.criticalDependencyIds, [])
+  }
+  for (const type of ['FS', 'SS', 'FF', 'SF']) {
+    const input = finishLinked(type, 1)
+    const before = dates(scheduleTasks(input)).b
+    const result = rescheduleFromStatusDate(input, 2, new Map([['b', 1]]))
+    assert.equal(result.ok, true)
+    assert.deepEqual(dates(result).b, before)
+    assert.deepEqual(result.criticalDependencyIds, [])
+  }
+})
+
+test('rescheduleFromStatusDate reports a kept finish link that cannot be met as infeasible', () => {
+  // The link requires a finish at 8, after b's own finish bound 7.
+  assert.deepEqual(rescheduleFromStatusDate(finishLinked('FF', 0, { finishNoLaterThan: 7 }), 2, new Map([['b', 0.5]])),
+    { ok: false, code: 'infeasible', taskId: 'b', constraints: ['finishNoLaterThan'], dependencyIds: ['ab'] })
+  // The required finish 21 lies after the horizon.
+  assert.deepEqual(rescheduleFromStatusDate(finishLinked('FF', 13), 2, new Map([['b', 0.5]])),
+    { ok: false, code: 'infeasible', taskId: 'b', constraints: ['range'], dependencyIds: ['ab'] })
+  // The plan meets the deadline 9 with b at 2–6. At the status date 4, b is half done and a has not started, so a
+  // moves to 4–8, still before the deadline, and the kept link requires b to finish at 10, after it.
+  const deadlined = {
+    range: { start: 0, end: 20 }, deadline: 9,
+    tasks: [{ id: 'a', duration: 4 }, { id: 'b', duration: 4 }],
+    dependencies: [{ id: 'ab', from: 'a', to: 'b', type: 'FF', lag: 2 }],
+  }
+  assert.deepEqual(dates(scheduleTasks(deadlined)).b, [2, 6, [[2, 6]]])
+  assert.deepEqual(rescheduleFromStatusDate(deadlined, 4, new Map([['b', 0.5]])),
+    { ok: false, code: 'infeasible', taskId: 'b', constraints: ['deadline'], dependencyIds: ['ab'] })
+})
+
 test('rescheduleFromStatusDate validates the status date and progress', () => {
   for (const status of [Number.NaN, Infinity, -1, 101]) assert.throws(() => rescheduleFromStatusDate(plan, status, new Map()), RangeError)
   for (const value of [-0.1, 1.5, Number.NaN]) assert.throws(() => rescheduleFromStatusDate(plan, 15, new Map([['a', value]])), RangeError)
@@ -177,9 +254,30 @@ test('toMsProjectXml validates tasks, outline levels and dependencies', () => {
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, outlineLevel: 2 }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, percentComplete: 101 }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 'x' }] }), { name: 'Error', message: /Unknown dependency/ })
-  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', type: 'XX' }] }), { name: 'Error' })
-  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', lag: Infinity }] }), RangeError)
+  const other = { id: 'u', name: 'U', start: hour, end: 2 * hour }
+  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, other], dependencies: [{ from: 't', to: 'u', type: 'XX' }] }), {
+    name: 'Error', message: 'Invalid dependency type: XX',
+  })
+  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, other], dependencies: [{ from: 't', to: 'u', lag: Infinity }] }), RangeError)
   assertWellFormed(toMsProjectXml({ name: 'Empty', tasks: [] }))
+})
+
+test('toMsProjectXml rejects a task that is its own predecessor', () => {
+  const tasks = [{ id: 't', name: 'T', start: 0, end: hour }, { id: 'u', name: 'U', start: hour, end: 2 * hour }]
+  for (const type of ['FS', 'SS', 'FF', 'SF']) {
+    assert.throws(() => toMsProjectXml({ name: 'P', tasks, dependencies: [{ from: 't', to: 'u' }, { from: 'u', to: 'u', type }] }), {
+      name: 'Error', message: 'Dependency u → u links task u to itself',
+    })
+  }
+})
+
+test('toMsProjectXml rejects inherited property names as dependency types', () => {
+  const tasks = [{ id: 't', name: 'T', start: 0, end: hour }, { id: 'u', name: 'U', start: hour, end: 2 * hour }]
+  for (const type of ['toString', 'constructor', '__proto__', 'valueOf']) {
+    assert.throws(() => toMsProjectXml({ name: 'P', tasks, dependencies: [{ from: 't', to: 'u', type }] }), {
+      name: 'Error', message: 'Invalid dependency type: ' + type,
+    })
+  }
 })
 
 test('toICalendar writes CRLF lines, UTC times, escaped text and folds at 75 octets', () => {
@@ -260,6 +358,46 @@ test('scheduleToGraph builds a PERT network with early dates, float and critical
   assert.deepEqual(custom.nodes.map(node => node.tone), ['violet', 'violet', 'teal', 'violet'])
   assert.throws(() => scheduleToGraph(result, [{ id: 'x', from: 'a', to: 'missing' }]), { name: 'Error', message: /Unknown dependency endpoint/ })
   assert.throws(() => scheduleToGraph({ ok: false, code: 'cycle', cycles: [] }, []), /successful/)
+})
+
+test('scheduleToGraph rejects a dependency from a task to itself', () => {
+  const result = scheduleTasks({ range: { start: 0, end: 4 * hour }, quantum: hour, tasks: [{ id: 'a', duration: hour }, { id: 'b', duration: hour }] })
+  assert.equal(result.ok, true)
+  assert.throws(() => scheduleToGraph(result, [{ id: 'ab', from: 'a', to: 'b' }, { id: 'loop', from: 'b', to: 'b', type: 'SS' }]), {
+    name: 'Error', message: 'Dependency loop links task b to itself',
+  })
+})
+
+test('scheduleToGraph labels a non-zero dependency lag on its edge and keeps edges without lag unchanged', () => {
+  const tasks = [{ id: 'a', duration: 2 * hour }, { id: 'b', duration: 4 * hour }, { id: 'c', duration: hour }, { id: 'd', duration: hour }]
+  const plain = [
+    { id: 'ab', from: 'a', to: 'b' }, { id: 'ac', from: 'a', to: 'c', type: 'SS' }, { id: 'bd', from: 'b', to: 'd' }, { id: 'cd', from: 'c', to: 'd', type: 'FF' },
+  ]
+  const lagged = [
+    { ...plain[0], lag: 2 * hour }, { ...plain[1], lag: -hour / 2 }, { ...plain[2], lag: 0 }, plain[3],
+  ]
+  const result = scheduleTasks({ range: { start: 0, end: 20 * hour }, quantum: hour / 2, tasks, dependencies: lagged })
+  assert.equal(result.ok, true)
+  const graph = scheduleToGraph(result, lagged)
+  assert.deepEqual(graph.edges.map(edge => [edge.id, edge.label, edge.data]), [
+    ['ab', '+2 h', { type: 'FS', critical: true, lag: 2 * hour }],
+    ['ac', 'SS −0.5 h', { type: 'SS', critical: false, lag: -hour / 2 }],
+    ['bd', undefined, { type: 'FS', critical: true }],
+    ['cd', 'FF', { type: 'FF', critical: false }],
+  ])
+  // A zero or missing lag gives the same edges as before lags existed.
+  assert.deepEqual(scheduleToGraph(result, lagged.slice(2)).edges, scheduleToGraph(result, plain.slice(2)).edges)
+  assert.equal(Object.hasOwn(graph.edges[2], 'label'), false)
+  assert.equal(Object.hasOwn(graph.edges[2].data, 'lag'), false)
+
+  const calls = []
+  const custom = scheduleToGraph(result, lagged, { formatLag: lag => { calls.push(lag); return 'lag ' + lag / hour + 'h' } })
+  assert.deepEqual(custom.edges.map(edge => edge.label), ['lag 2h', 'SS lag -0.5h', undefined, 'FF'])
+  assert.deepEqual(calls, [2 * hour, -hour / 2])
+
+  for (const lag of [Number.NaN, Infinity, '2']) {
+    assert.throws(() => scheduleToGraph(result, [{ ...plain[0], lag }]), { name: 'RangeError', message: 'Dependency lag must be finite: ab' })
+  }
 })
 
 const chartRows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]

@@ -4,6 +4,80 @@
 
 No changes yet.
 
+## 0.2.0 - 2026-11-15
+
+### Breaking changes
+
+- The state and variant classes that `NetworkGraph` and `GanttChart` put on their elements now use the `vw-is-` prefix, so every class the components emit starts with `vw-` and host utility classes (for example Tailwind's `outline` or Bootstrap's `active`) no longer restyle chart elements. Rename them in custom stylesheets, test selectors and DOM queries:
+  `selected` → `vw-is-selected`, `related` → `vw-is-related`, `highlighted` → `vw-is-highlighted`, `active` → `vw-is-active`, `panning` → `vw-is-panning`, `draggable` → `vw-is-draggable`, `collapsed` → `vw-is-collapsed`, `solid` → `vw-is-solid`, `outline` → `vw-is-outline`, `editable` → `vw-is-editable`, `dragging` → `vw-is-dragging`, `milestone` → `vw-is-milestone`, `first` → `vw-is-first`, `last` → `vw-is-last`, `start` → `vw-is-start`, `finish` → `vw-is-finish`, `end` → `vw-is-end`, `overloaded` → `vw-is-overloaded`, `idle` → `vw-is-idle`. Tone (`vw-tone-*`), theme (`vw-theme-*`) and other `vw-` classes are unchanged. See "Class names" in docs/integration.md.
+- `rescheduleFromStatusDate` now drops only FS and SS dependencies into started tasks. FF and SF dependencies into a partly done task still apply, with their lag: when the remaining work would finish before a dependency allows, it resumes later and the task is split. A dependency that cannot be met returns an `infeasible` failure naming it. Completed tasks still ignore every incoming dependency.
+- `validateTimelineData` now throws an `Error` for a dependency from a bar to itself, naming the dependency and the bar. GanttChart reports such data through `validation-error` and renders its empty state, and `renderTimelineSvg` throws. `scheduleTasks` still reports a self-link as a `cycle` failure.
+- `scheduleToGraph` throws an Error for a dependency from a task to itself instead of returning a self-loop edge.
+- `toMsProjectXml` throws an Error for a dependency from a task to itself instead of writing the task as its own predecessor, which Microsoft Project rejects.
+
+### Added
+
+- `calendarBands` accepts an IANA `timeZone` option. Day, week, month and year bands start at local midnight and hour bands follow local hours across daylight-saving transitions, so GanttChart `headerBands` no longer drift by an hour. Combining it with `utcOffsetMinutes`, or passing an unknown zone, throws a RangeError.
+- The `calendarBands` `label` callback receives a third argument, `CalendarBandLocalTime`, with the local date, time, weekday and UTC offset of the band start.
+- GanttChart: optional `TimelineDependency.lag` (in chart time units; negative for a lead). A non-zero lag is drawn as a `vw-gantt-lag` label on the connector, added to the dependency's accessible description (`labels.lag`, default "Lag") and exported by `exportSvg`, `exportPng` and `renderTimelineSvg`. `formatLag` (new core helper `formatDependencyLag`, signed hours such as `+2 h`) formats it. `reconnect` proposals keep the lag (`TimelineConnection.lag`). `validateTimelineData` rejects a non-finite lag with a RangeError. Dependencies without a lag render exactly as before.
+- GanttChart: opt-in `wheelZoom` prop. Ctrl+wheel or Meta+wheel, including trackpad pinches, zooms the time axis between 65% and 300% around the pointer, with the same events as pinch zoom; a plain wheel keeps scrolling.
+- `NetworkNode`, `GraphEdge`, `TimelineRow` and `TimelineBar` take the type of their `data` as an optional type parameter (`NetworkNode<MyData>`); the default stays `unknown`.
+- `NetworkGraph` and `GanttChart` are generic over their item types, which are inferred from `nodes`/`edges`/`groups` and `rows`/`bars`. Slot props, `layout`, `columns` callbacks, `creatable` and the export label callbacks receive the typed items, including extra fields, without casts. Unannotated item arrays are now inferred precisely, so a comparison that the inferred `data` type rules out is reported by the type checker.
+- `TimelineColumn`, `NetworkNodeSlot`, `NetworkTooltipSlot`, `GraphLayoutFunction`, `GraphExportOptions`, `GanttExportOptions`, their PNG variants, `GraphSvgOptions` and `TimelineSvgOptions` take item type parameters. `renderGraphSvg`, `renderTimelineSvg` and `createTimelineRowTree` keep the caller's item types.
+- New types `NetworkGraphExposed` and `GanttChartExposed` for typed template refs, `NetworkGraphComponent` and `GanttChartComponent`, and `GraphCollapsedNode`, `GraphShownNode` and `GraphShownEdge` for the proxy nodes and merged edges of collapsed groups. `InstanceType<typeof NetworkGraph>` keeps working with the default item types.
+- Multiple baselines: `TimelineBar.baselines` (named `TimelineBaseline` sets such as `plan` and `rev1`) next to the single `baseline`, which is the set `timelineBaselineId`. GanttChart `baselineIds` selects up to three sets (`timelineBaselineLimit`) and their order, `baselineLabel` names them and `formatVariance` formats their variance; two or three sets are drawn as stacked 3 px strips (`vw-gantt-baseline-1/-2/-3`, `--vw-baseline`, `--vw-baseline-2`, `--vw-baseline-3`, `data-vw-baseline`) that the bars make room for, so row heights do not change. Each set and its variance is added to the strip title and the bar description (new `GanttLabels` `baselineStart`, `baselineFinish`, `baselineDuration`). Charts with only `baseline` render as before.
+- Core helpers `baselineVariance`, `timelineBaseline` and `timelineBaselineIds`; `renderTimelineSvg`, `exportSvg` and `exportPng` draw the selected sets (options `baselineIds`, `baselineLabel`, `formatVariance`, `varianceLabels`; theme `baseline2`, `baseline3`).
+- `toMsProjectXml` writes task baselines (`MsProjectTask.baselines`, `MsProjectBaseline` numbers 0–10) as MSPDI `Baseline` elements.
+- `scheduleToGraph` shows a non-zero dependency `lag` in the edge label (for example `+2 h` or `SS −0.5 h`), formatted by the new `formatLag` option (default `formatDependencyLag`), and returns it as `data.lag`. Links without lag are unchanged. A lag that is not a finite number now throws a RangeError.
+- Dependency lag labels are drawn in their own layer above marker, now and status-date lines (in GanttChart and `renderTimelineSvg`), so a line crossing a label does not cover its text.
+- GanttChart: scheduling constraints on bars (`TimelineBar.constraints`: `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, named as in `ScheduleTask`) are drawn as markers that show their kind, direction and a violated state, are added to the bar's description and are exported by `exportSvg`, `exportPng` and `renderTimelineSvg` (`--vw-constraint`, `--vw-constraint-violated`).
+- GanttChart: opt-in `constraintsEditable` turns the constraints of editable bars into slider handles that propose moves and removals by pointer or keyboard through `constraint-edit`, checked by `validateConstraintEdit`; a rejected change emits `constraint-edit-rejected`.
+- Core: `applyTimelineConstraintEdit`, `timelineConstraints`, `timelineConstraintViolated` and `timelineConstraintKinds`; `toMsProjectXml` writes a task's single constraint as `ConstraintType` and `ConstraintDate` (`MsProjectTask.constraints`).
+
+### Changed
+
+- **Behaviour change:** NetworkGraph keeps a camera the user or the API placed (pan, zoom, minimap, keyboard pan, auto-pan, pinch, `setViewport`, `focusNode`, `fit({ ids })`) when the parent applies a structural change such as `connect`, `delete`, paste, duplicate or a group collapse or expand. It still re-fits while the camera is in automatic fit mode, when the `layout` function or layout `options` change, and when the graph is replaced (it was or becomes empty, or none of the previous node IDs remain). If a smaller graph raises the minimum zoom, a kept camera is clamped to it.
+- `invertWorkPeriods` accepts finite non-integer periods and ranges. `normalizeWorkPeriods` and scheduling still require safe integers.
+- `buildWorkPeriods` accepts fixed UTC offsets up to ±1080 minutes (previously ±840), the same limit as `calendarBands` and `toMsProjectXml`.
+- `ResourceLoadSegment.taskIds` arrays are shared between segments with the same active tasks; treat them as read-only, as their type says.
+- NetworkGraph renders each node, edge, minimap rectangle, connection handle and group frame as a lightweight internal item and builds drag, resize and waypoint previews only for the changed nodes and their edges, group frames and port routes, so a drag re-renders the moved items instead of the whole graph (5,000 nodes: about 60 ms down to 0.1 ms per pointer move; with minimap, handles, groups and ports about 0.2 ms). Node and edge slots now re-run only when their slot props, the reactive state they read or the slot function change. Rendered markup is unchanged; the first render of a large graph is somewhat slower than in 0.1.0.
+
+### Fixed
+
+- A `contextmenu` event during a pointer gesture, such as a macOS Control-click, now cancels the gesture without a proposal in NetworkGraph and GanttChart, with or without `contextMenu`. Previously the native menu could swallow `pointerup` and the next click committed an unintended edit.
+- GanttChart reports invalid `columns`, `headerBands` (including a zoom preset's bands) and `markers` through `validation-error` and renders the empty state, instead of throwing during render.
+
+- `calendarBands` week and month bands with `step` > 1 follow a fixed grid counted from 1970-01-01 (respecting `utcOffsetMinutes` and `weekStartsOn`), so overlapping ranges share band boundaries and any month step is stable. Years 0 to 99 are no longer shifted to 1900 to 1999.
+- `intersectsWindow` counts a zero-duration range (milestone) at `window.end` as visible, so GanttChart now renders milestones at the end of the time axis and `renderTimelineSvg` exports milestones at the end of `timeRange`. Non-empty intervals stay half-open.
+- `graphEdgeEndpoint`, `applyGraphPositions` and `applyGraphSizes` throw a descriptive `Error` naming the edge and the missing node, instead of a `TypeError`, when an edge endpoint has no layout box.
+- `applyGraphPositions` validates positions for unknown node IDs the same way `applyGraphSizes` validates sizes, throwing `RangeError` for invalid values.
+- `cloneGraphElements` moves the waypoints (`points`) of copied edges by `offset`, along with the node positions.
+- `timelineFromCsvTable` treats a blank Row cell as no label, so the row takes a later record's label or its WBS code.
+- `renderGraphSvg` and `renderTimelineSvg` fall back to the blue tone for inherited property names such as `constructor`, and reject inherited names as theme keys.
+- `toMsProjectXml` rejects inherited property names such as `toString` as dependency types. `timelineCsvTable` and `timelineFromCsvTable` reject them as columns.
+- `layoutRadialGraph` no longer overflows the call stack on very large graphs (about 130,000 nodes and more).
+- `collapseGraphGroups` now runs in near-linear time for deeply nested or very many groups, with unchanged output and cycle errors. An unknown parent further up a parent chain now throws a descriptive `Unknown parent group` Error instead of a TypeError.
+- A port `side` other than `left`, `right`, `top` or `bottom` (including inherited names such as `constructor`) now throws a descriptive Error naming the node and port in `indexGraph`, `graphEdgeEndpoint`, `routeGraphPorts` and `routeGraphEdges`, and naming the port in `graphPortAnchor`, instead of a TypeError or a wrong anchor.
+- `graphPolylinePath` and `graphSmoothPath` throw a RangeError for non-finite points instead of returning path data with `NaN`.
+- Orthogonal routes in `routeGraphEdges` keep their 16-unit detour stub for layouts at negative coordinates instead of running to 0. Output for layouts at nonnegative coordinates is unchanged.
+- `scheduleToGraph` throws an Error for duplicate dependency IDs instead of returning duplicate edge IDs that NetworkGraph rejects.
+- `graphPathBounds` and `graphPathEndpoints` reject path data that does not begin with a moveto (`M` or `m`).
+- Documented that `layoutLayeredGraph` places every node of a cycle in one rank, so a large cycle becomes one long column.
+- `calculateResourceLoad` no longer copies the active task IDs into every segment, which greatly reduces memory and time for many overlapping tasks. Output values are unchanged.
+- `timeTicks` throws a RangeError instead of silently returning no ticks when the window is too far from the anchor.
+- `timeTicks`, `editTimeRange` and `moveTimeRanges` no longer accumulate floating-point drift with fractional steps (three steps of 0.1 give 0.3). Integer steps are unchanged.
+- `toMsProjectXml` and `toICalendar` round times to the nearest second, so start, finish and duration agree; an iCalendar event whose rounded end equals its start is written without DTEND.
+- `timelineFromCsvTable` lets a custom header take precedence over another column's default header whatever the column order, and throws when two custom headers are equal. It reads progress only in plain decimal notation (`0x1` and `1e0` are now rejected) and orders WBS parts of any length exactly.
+- `toMsProjectXml` and `toICalendar` throw an Error for a missing project or task name or event summary instead of writing "undefined".
+- `rescheduleFromStatusDate` throws a descriptive Error when `progress` is not a Map.
+- NetworkGraph compares `groups` and `labels` by value, so new but equal inline literals no longer rebuild the layout or cancel a node drag or pan when the parent re-renders. A real change still cancels the gesture.
+- GanttChart compares `range`, `editBounds` and `tickSteps` by value, so new but equal inline literals no longer re-run validation or cancel an in-flight drag. This also prevents an endless render loop when a parent updates state in its `validation-error` handler.
+- A second primary pointer of another type (for example a pen next to the mouse) can no longer start or take over a gesture in NetworkGraph or GanttChart while one is in flight. Two-finger pinch is unchanged.
+- GanttChart now measures its label column after mounting with invalid data or passing through an error state, so a later `labelWidth` or column change updates which bars are rendered.
+- With `cascade`, a change of `dependencies` during a bar drag cancels the drag without a proposal instead of proposing follow-on changes computed from the old dependencies.
+- Keyboard focus on a selected NetworkGraph node, or on a node rendered through the `node` slot, now shows a distinct accent outline (Highlight in forced-colours mode). Focused edge and dependency hit areas use an opaque dashed accent stroke with at least 3:1 contrast, distinct from the translucent active and selected bands.
+- With `dir="auto"`, NetworkGraph and GanttChart now follow a later change of an ancestor's `dir` attribute and cancel a gesture in flight when the direction changes.
+
 ## 0.1.0 - 2026-11-14
 
 First public release. The version restarts at 0.1.0; earlier version numbers were internal only. While the version is 0.x, minor releases can contain breaking changes, which are listed under "Breaking changes".

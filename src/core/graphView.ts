@@ -67,7 +67,8 @@ function isAsciiLetter(char: string): boolean {
  * control points, which always contain the curve. Elliptical arcs are bounded exactly: the end points plus the
  * horizontal and vertical extrema of the rotated ellipse that fall inside the swept angle, after the radius
  * correction of the SVG implementation notes. Stroke width is not included. Returns undefined when the path has
- * no coordinates. Throws when the path data is malformed or uses an unsupported command.
+ * no coordinates. Throws when the path data is malformed (including data that does not begin with a moveto) or uses
+ * an unsupported command.
  */
 export function graphPathBounds(path: string): GraphRect | undefined {
   return scanPath(path).bounds
@@ -122,6 +123,7 @@ function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?:
   // Last control point of the previous segment, used to reflect the implicit control point of S and T.
   let controlKind: 'C' | 'Q' | undefined
   let controlX = 0, controlY = 0
+  let started = false
 
   while (true) {
     skipSeparators()
@@ -133,6 +135,9 @@ function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?:
     const relative = token !== command
     const count = argumentCounts[command]
     if (count === undefined) throw new Error('Unsupported SVG path command: ' + token)
+    // Path data must begin with a moveto.
+    if (!started && command !== 'M') throw invalid()
+    started = true
     if (count === 0) {
       x = startX
       y = startY

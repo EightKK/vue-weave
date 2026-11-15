@@ -20,6 +20,8 @@
       const tickSteps = [1]
       const rows = shallowRef(validRows)
       const bars = shallowRef([{ id: 'bar', rowId: 'a', label: 'Editable bar', start: 1, end: 3, editable: true }])
+      // Extra display props; each button below makes one of them invalid.
+      const display = shallowRef({})
       const nodes = shallowRef([{ id: 'a', label: 'Node A' }])
       const direction = ref('LR')
       const validationMessages = ref([])
@@ -33,12 +35,16 @@
             control('Missing parent', () => { rows.value = [{ id: 'a', label: 'Row A', parentId: 'missing' }] }),
             control('Cyclic rows', () => { rows.value = [{ id: 'a', label: 'Row A', parentId: 'b' }, { id: 'b', label: 'Row B', parentId: 'a' }] }),
             control('Restore rows', () => { rows.value = [...validRows] }),
+            control('Duplicate markers', () => { display.value = { markers: [{ id: 'm', time: 2, label: 'M' }, { id: 'm', time: 4, label: 'M' }] } }),
+            control('Invalid column width', () => { display.value = { columns: [{ id: 'c', label: 'C', width: 0, value: () => '' }] } }),
+            control('Overlapping header bands', () => { display.value = { headerBands: [[{ start: 0, end: 4, label: 'X' }, { start: 2, end: 6, label: 'Y' }]] } }),
+            control('Restore display', () => { display.value = {} }),
             h('output', { role: 'status', 'aria-label': 'Validation reports' }, validationMessages.value.join('; ')),
             h('output', { role: 'status', 'aria-label': 'Accepted edits' }, String(edits.value)),
             h(GanttChart, {
               rows: rows.value, bars: bars.value, range,
               pixelsPerUnit: 100, tickSteps, snap: 1, formatTime: String,
-              height: 200, showControls: false, autoScroll: false,
+              height: 200, showControls: false, autoScroll: false, ...display.value,
               onValidationError: error => {
                 reportedErrors.add(error)
                 validationMessages.value.push(error.message)

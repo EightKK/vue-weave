@@ -32,9 +32,9 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ### GanttChart
 
-- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
+- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン（差異付きで最大3つの名前付きセット）、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
 - `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
-- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。
+- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。
 - 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。
 - 行の空いている部分のドラッグによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。
 - 移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）。
@@ -42,9 +42,10 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - ポインターやAltキーと矢印キーによる行の階層編集（`rowsReorderable`、`row-move`。`moveTimelineRow` で反映できます）。`timelineWbsCodes` はWBS列に使う行番号を求めます。
 - ポインターのドラッグや矢印キーによる列幅の変更（`columnsResizable`、`column-resize`、`labelWidth`）。
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
-- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）。
+- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
 - 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。
+- スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
 
 ### ヘッドレスコア（`vue-weave/core`）
 
@@ -63,19 +64,19 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ## 対応状況
 
-- **バージョン0.1.0、初の公開リリースです。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
+- **バージョン0.2.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
 - **Vue：** 3.5以降（peer dependency）。
-- **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。
+- **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
 - **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
 - **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](docs/architecture.md)を参照）。十分に対応していると想定しないでください。
 
 ## 組み込む
 
-npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.1.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.2.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./vue-weave-0.1.0.tgz
+npm install ./vue-weave-0.2.0.tgz
 ```
 
 Vue 3.5以降をpeer dependencyとしています。ES modules、TypeScriptの型定義、スタイルシートを提供します。CSSはアプリケーションで `import 'vue-weave/style.css'` により一度だけ読み込んでください。`vue-weave/core` はVueなしで動作し、TypeScriptの `NodeNext` による型解決にも対応しています。

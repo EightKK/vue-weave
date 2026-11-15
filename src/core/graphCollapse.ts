@@ -16,6 +16,25 @@ export interface GraphCollapsedNodeData {
   nodeIds: string[]
 }
 
+/** A proxy node made by `collapseGraphGroups`: it stands for a collapsed group and has its ID and label. */
+export type GraphCollapsedNode = NetworkNode<GraphCollapsedNodeData>
+
+/**
+ * A node that NetworkGraph draws and hands to its `node` and `tooltip` slots, its `layout` function and its export
+ * callbacks: an input node of type `N`, or, when the graph has groups (`G` is not `never`), a `GraphCollapsedNode`
+ * proxy of a collapsed group.
+ */
+export type GraphShownNode<N extends NetworkNode = NetworkNode, G extends NetworkGroup = NetworkGroup> =
+  N | ([G] extends [never] ? never : GraphCollapsedNode)
+
+/**
+ * An edge that NetworkGraph draws and hands to its `edge` and `tooltip` slots, its `layout` function and its export
+ * callbacks: an input edge of type `E`, or, when the graph has groups (`G` is not `never`), an edge that merges several
+ * edges re-attached to a collapsed group, which has no `data`.
+ */
+export type GraphShownEdge<E extends GraphEdge = GraphEdge, G extends NetworkGroup = NetworkGroup> =
+  E | ([G] extends [never] ? never : GraphEdge<never>)
+
 export interface GraphCollapseOptions {
   /** Detail text of a proxy node. Default "1 node" or "N nodes". Return undefined for no detail. */
   detail?: (group: GraphCollapsedGroup) => string | undefined
@@ -67,12 +86,28 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
       memberOf.set(id, group.id)
     }
   }
+  // Check every parent chain once: a chain stops at a root or at a group already known to reach one, so the whole
+  // hierarchy is checked in linear time. The first group in input order whose chain fails is reported.
+  const reachesRoot = new Set<string>()
+  const children = new Map<string, NetworkGroup[]>()
   for (const group of groups) {
-    if (group.parentId !== undefined && !byId.has(group.parentId)) throw new Error('Unknown parent group: ' + group.parentId + ' (group ' + group.id + ')')
-    let current = group, steps = 0
-    while (current.parentId !== undefined) {
-      current = byId.get(current.parentId)!
-      if (current === group || ++steps > groups.length) throw new Error('Graph group hierarchy contains a cycle at group: ' + group.id)
+    const chain: NetworkGroup[] = []
+    const onChain = new Set<string>()
+    let current: NetworkGroup = group
+    while (!reachesRoot.has(current.id)) {
+      if (onChain.has(current.id)) throw new Error('Graph group hierarchy contains a cycle at group: ' + group.id)
+      onChain.add(current.id)
+      chain.push(current)
+      if (current.parentId === undefined) break
+      const parent = byId.get(current.parentId)
+      if (!parent) throw new Error('Unknown parent group: ' + current.parentId + ' (group ' + current.id + ')')
+      current = parent
+    }
+    for (const item of chain) reachesRoot.add(item.id)
+    if (group.parentId !== undefined) {
+      const siblings = children.get(group.parentId)
+      if (siblings) siblings.push(group)
+      else children.set(group.parentId, [group])
     }
   }
   const collapsed = new Set<string>()
@@ -80,14 +115,22 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
     if (!byId.has(id)) throw new Error('Unknown collapsed group: ' + id)
     collapsed.add(id)
   }
-  // The outermost collapsed ancestor (or the group itself) of every group, found with a loop up the parent chain.
+  // The outermost collapsed ancestor (or the group itself) of every group. A loop climbs to the nearest group whose
+  // answer is known (or past the root) and fills in the answers on the way back down, so each group is resolved once.
   const outermost = new Map<string, string | undefined>()
   for (const group of groups) {
-    let found: string | undefined
-    for (let current: NetworkGroup | undefined = group; current; current = current.parentId === undefined ? undefined : byId.get(current.parentId)) {
-      if (collapsed.has(current.id)) found = current.id
+    const chain: NetworkGroup[] = []
+    let current: NetworkGroup | undefined = group
+    while (current && !outermost.has(current.id)) {
+      chain.push(current)
+      current = current.parentId === undefined ? undefined : byId.get(current.parentId)
     }
-    outermost.set(group.id, found)
+    let found = current ? outermost.get(current.id) : undefined
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const item = chain[i]!
+      if (found === undefined && collapsed.has(item.id)) found = item.id
+      outermost.set(item.id, found)
+    }
   }
   const owners = new Map<string, string>()
   const proxies = new Map<string, GraphCollapsedGroup>()
@@ -174,8 +217,8 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
   for (const group of groups) {
     if (outermost.get(group.id) !== undefined) continue
     const ids = group.nodeIds.filter(id => !owners.has(id))
-    for (const child of groups) {
-      if (child.parentId === group.id && proxies.has(child.id)) ids.push(child.id)
+    for (const child of children.get(group.id) ?? []) {
+      if (proxies.has(child.id)) ids.push(child.id)
     }
     shown.push({ ...group, nodeIds: ids })
   }

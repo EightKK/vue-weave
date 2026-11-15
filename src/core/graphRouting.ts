@@ -1,5 +1,6 @@
 import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphPoint, type GraphPort, type IdentifiedNode } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
+import { assertGraphPortSide } from './graphPortSide.js'
 
 /** How NetworkGraph and `routeGraphEdges` draw edges. `curve` is the layout's own routing. */
 export type GraphEdgeStyle = 'curve' | 'orthogonal' | 'straight'
@@ -68,6 +69,13 @@ function defaultSides(source: GraphBox, target: GraphBox, direction: GraphLayout
   return direction === 'TB' ? ['bottom', 'bottom'] : ['top', 'top']
 }
 
+// A detour coordinate along one axis. In a layout at nonnegative coordinates it stays at or above 0, inside the chart;
+// when either anchor lies at a negative coordinate (a caller-supplied layout) the chart does not start at 0 and the
+// detour keeps its full stub.
+function detour(value: number, a: number, b: number) {
+  return a < 0 || b < 0 ? value : Math.max(0, value)
+}
+
 // Axis-aligned route between two anchors without waypoints. `b.side` is the side the route enters.
 function connect(a: Anchor, b: Anchor): GraphPoint[] {
   const [ax, ay] = normals[a.side], [bx, by] = normals[b.side]
@@ -77,10 +85,10 @@ function connect(a: Anchor, b: Anchor): GraphPoint[] {
       return [a, { x, y: a.y }, { x, y: b.y }, b]
     }
     if (ax === bx) {
-      const x = Math.max(0, ax > 0 ? Math.max(a.x, b.x) + stub : Math.min(a.x, b.x) - stub)
+      const x = detour(ax > 0 ? Math.max(a.x, b.x) + stub : Math.min(a.x, b.x) - stub, a.x, b.x)
       return [a, { x, y: a.y }, { x, y: b.y }, b]
     }
-    const xa = Math.max(0, a.x + ax * stub), xb = Math.max(0, b.x + bx * stub), y = (a.y + b.y) / 2
+    const xa = detour(a.x + ax * stub, a.x, b.x), xb = detour(b.x + bx * stub, a.x, b.x), y = (a.y + b.y) / 2
     return [a, { x: xa, y: a.y }, { x: xa, y }, { x: xb, y }, { x: xb, y: b.y }, b]
   }
   if (!horizontal(a.side) && !horizontal(b.side)) {
@@ -89,21 +97,21 @@ function connect(a: Anchor, b: Anchor): GraphPoint[] {
       return [a, { x: a.x, y }, { x: b.x, y }, b]
     }
     if (ay === by) {
-      const y = Math.max(0, ay > 0 ? Math.max(a.y, b.y) + stub : Math.min(a.y, b.y) - stub)
+      const y = detour(ay > 0 ? Math.max(a.y, b.y) + stub : Math.min(a.y, b.y) - stub, a.y, b.y)
       return [a, { x: a.x, y }, { x: b.x, y }, b]
     }
-    const ya = Math.max(0, a.y + ay * stub), yb = Math.max(0, b.y + by * stub), x = (a.x + b.x) / 2
+    const ya = detour(a.y + ay * stub, a.y, b.y), yb = detour(b.y + by * stub, a.y, b.y), x = (a.x + b.x) / 2
     return [a, { x: a.x, y: ya }, { x, y: ya }, { x, y: yb }, { x: b.x, y: yb }, b]
   }
   if (horizontal(a.side)) {
     const corner = { x: b.x, y: a.y }
     if ((corner.x - a.x) * ax >= 0 && (corner.y - b.y) * by >= 0) return [a, corner, b]
-    const x = Math.max(0, a.x + ax * stub), y = Math.max(0, b.y + by * stub)
+    const x = detour(a.x + ax * stub, a.x, b.x), y = detour(b.y + by * stub, a.y, b.y)
     return [a, { x, y: a.y }, { x, y }, { x: b.x, y }, b]
   }
   const corner = { x: a.x, y: b.y }
   if ((corner.y - a.y) * ay >= 0 && (corner.x - b.x) * bx >= 0) return [a, corner, b]
-  const y = Math.max(0, a.y + ay * stub), x = Math.max(0, b.x + bx * stub)
+  const y = detour(a.y + ay * stub, a.y, b.y), x = detour(b.x + bx * stub, a.x, b.x)
   return [a, { x: a.x, y }, { x, y }, { x, y: b.y }, b]
 }
 
@@ -122,6 +130,12 @@ function connectThrough(a: Anchor, waypoints: readonly GraphPoint[], b: Anchor):
   return points
 }
 
+function assertFinitePoints(points: readonly GraphPoint[]) {
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError('Path points must have finite x and y')
+  }
+}
+
 function simplify(points: readonly GraphPoint[]): GraphPoint[] {
   const result: GraphPoint[] = []
   for (const point of points) {
@@ -137,10 +151,12 @@ function simplify(points: readonly GraphPoint[]): GraphPoint[] {
 
 /**
  * SVG path data of a polyline through `points`. A positive `cornerRadius` rounds each corner with a quadratic curve,
- * never cutting more than half of either adjoining segment.
+ * never cutting more than half of either adjoining segment. Throws RangeError for a non-finite point or a negative or
+ * non-finite corner radius.
  */
 export function graphPolylinePath(points: readonly GraphPoint[], cornerRadius = 0): string {
   if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
+  assertFinitePoints(points)
   if (!points.length) return ''
   const first = points[0]!
   let path = `M ${format(first.x)} ${format(first.y)}`
@@ -164,8 +180,12 @@ export function graphPolylinePath(points: readonly GraphPoint[], cornerRadius = 
   return path
 }
 
-/** SVG path data of a smooth curve through every point (a Catmull-Rom spline drawn with cubic Bézier segments). */
+/**
+ * SVG path data of a smooth curve through every point (a Catmull-Rom spline drawn with cubic Bézier segments). Throws
+ * RangeError for a non-finite point.
+ */
 export function graphSmoothPath(points: readonly GraphPoint[]): string {
+  assertFinitePoints(points)
   if (!points.length) return ''
   const at = (index: number) => points[Math.max(0, Math.min(points.length - 1, index))]!
   let path = `M ${format(points[0]!.x)} ${format(points[0]!.y)}`
@@ -220,6 +240,7 @@ function routeEdge(
   const port = (end: 'from' | 'to'): Anchor | undefined => {
     const id = end === 'from' ? edge.fromPort : edge.toPort
     const found = id === undefined ? undefined : nodes.get(edge[end])?.ports?.find(item => item.id === id)
+    if (found) assertGraphPortSide(edge[end], found)
     return found && { ...graphPortAnchor(end === 'from' ? source : target, found), side: found.side }
   }
   const fromPort = port('from'), toPort = port('to')

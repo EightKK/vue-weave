@@ -1,7 +1,11 @@
 import type {
-  CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
+  CalendarBandLocalTime, CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
   TimelineLoadSegment, TimelineRow, TimelineSummary,
 } from './types.js'
+import type { TimelineBaselineVariance } from './types.js'
+import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraints } from './types.js'
+import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
+import { maxUtcOffsetMinutes } from './workCalendar.js'
 
 export interface TimeRange {
   start: number
@@ -15,6 +19,127 @@ export type EditMode = 'move' | 'start' | 'end'
  * the ID of a `TimelineColumn` in a chart with `columnsResizable`.
  */
 export const timelineLabelColumnId = '$label'
+
+/**
+ * The baseline set ID of the single unnamed `TimelineBar.baseline`, for `baselineIds` and `baselineLabel`. A
+ * `TimelineBar.baselines` entry may not use it.
+ */
+export const timelineBaselineId = '$baseline'
+
+/** The most baseline sets GanttChart and `renderTimelineSvg` draw at once. */
+export const timelineBaselineLimit = 3
+
+/** Every `TimelineConstraintKind`, in the order GanttChart describes and draws them. */
+export const timelineConstraintKinds: readonly TimelineConstraintKind[] = Object.freeze([
+  'startNoEarlierThan', 'startNoLaterThan', 'finishNoEarlierThan', 'finishNoLaterThan', 'fixedStart',
+] as const)
+
+function checkConstraintKind(kind: unknown): asserts kind is TimelineConstraintKind {
+  if (!timelineConstraintKinds.includes(kind as TimelineConstraintKind)) throw new Error('Unknown constraint kind: ' + String(kind))
+}
+
+/**
+ * Whether the interval breaks the constraint `kind` at `time`: a start before `startNoEarlierThan` or after
+ * `startNoLaterThan`, a finish (`end`) before `finishNoEarlierThan` or after `finishNoLaterThan`, or a start other than
+ * `fixedStart`. GanttChart and `renderTimelineSvg` draw such a constraint as violated.
+ */
+export function timelineConstraintViolated(range: TimeRange, kind: TimelineConstraintKind, time: number): boolean {
+  checkConstraintKind(kind)
+  switch (kind) {
+    case 'startNoEarlierThan': return range.start < time
+    case 'startNoLaterThan': return range.start > time
+    case 'finishNoEarlierThan': return range.end < time
+    case 'finishNoLaterThan': return range.end > time
+    default: return range.start !== time
+  }
+}
+
+/**
+ * The constraint fields of any object, for example a `ScheduleTask`, as a new `TimelineConstraints` with only the
+ * kinds that are set, or undefined when none is. Use it to build `TimelineBar.constraints` from scheduler tasks; the
+ * other direction needs no helper, because `{ ...task, ...bar.constraints }` is a valid `ScheduleTask`.
+ */
+export function timelineConstraints(source: Readonly<TimelineConstraints> | undefined): TimelineConstraints | undefined {
+  let result: TimelineConstraints | undefined
+  for (const kind of timelineConstraintKinds) {
+    const time = source?.[kind]
+    if (time === undefined) continue
+    if (typeof time !== 'number' || !Number.isFinite(time)) throw new RangeError(`Constraint ${kind} must be a finite time`)
+    ;(result ??= {})[kind] = time
+  }
+  return result
+}
+
+/**
+ * Apply a GanttChart `constraint-edit` proposal: returns a new array in which the bar `change.id` is a copy with
+ * `constraints[change.kind]` set to `change.after`, or without it when `after` is undefined (the `constraints` field is
+ * left out once it is empty). Other bars are the same objects. The input is not modified. Throws an Error for an unknown
+ * bar or kind and a RangeError for an `after` that is not a finite time. `before` is not compared with the bar.
+ */
+export function applyTimelineConstraintEdit<B extends TimelineBar>(bars: readonly B[], change: TimelineConstraintEdit): B[] {
+  checkConstraintKind(change.kind)
+  const after = change.after
+  if (after !== undefined && (typeof after !== 'number' || !Number.isFinite(after))) {
+    throw new RangeError(`Constraint ${change.kind} must be a finite time`)
+  }
+  let found = false
+  const result = bars.map(bar => {
+    if (bar.id !== change.id) return bar
+    found = true
+    const constraints: TimelineConstraints = { ...bar.constraints }
+    if (after === undefined) delete constraints[change.kind]
+    else constraints[change.kind] = after
+    const { constraints: _previous, ...rest } = bar
+    return (Object.values(constraints).some(value => value !== undefined) ? { ...rest, constraints } : rest) as B
+  })
+  if (!found) throw new Error('Unknown bar: ' + change.id)
+  return result
+}
+
+/** A bar's interval in baseline set `id`: `bar.baseline` for `timelineBaselineId`, otherwise the matching `bar.baselines` entry. */
+export function timelineBaseline(bar: Pick<TimelineBar, 'baseline' | 'baselines'>, id: string): TimeRange | undefined {
+  if (id === timelineBaselineId) return bar.baseline
+  return bar.baselines?.find(item => item.id === id)
+}
+
+/**
+ * Every baseline set ID that occurs in `bars`: `timelineBaselineId` first when any bar has a `baseline`, then the
+ * `baselines` IDs in order of first appearance. GanttChart draws the first `timelineBaselineLimit` of them when
+ * `baselineIds` is omitted.
+ */
+export function timelineBaselineIds(bars: readonly Pick<TimelineBar, 'baseline' | 'baselines'>[]): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  if (bars.some(bar => bar.baseline)) {
+    ids.push(timelineBaselineId)
+    seen.add(timelineBaselineId)
+  }
+  for (const bar of bars) {
+    for (const item of bar.baselines ?? []) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      ids.push(item.id)
+    }
+  }
+  return ids
+}
+
+/**
+ * The variance of a bar against a baseline, in the units of the bar: `start` and `end` are the bar's dates minus the
+ * baseline's and `duration` is the bar's length minus the baseline's, so positive values mean later or longer. Throws a
+ * RangeError for non-finite times.
+ */
+export function baselineVariance(bar: TimeRange, baseline: TimeRange): TimelineBaselineVariance {
+  for (const value of [bar.start, bar.end, baseline.start, baseline.end]) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError('baselineVariance needs finite times')
+  }
+  const zero = (value: number) => value === 0 ? 0 : value
+  return {
+    start: zero(bar.start - baseline.start),
+    end: zero(bar.end - baseline.end),
+    duration: zero((bar.end - bar.start) - (baseline.end - baseline.start)),
+  }
+}
 
 /** A monotonic, continuous mapping. All components use the same coordinate space. */
 export interface TimeScale {
@@ -58,13 +183,64 @@ export function mirrorTimeScale(scale: TimeScale): TimeScale {
   }
 }
 
+/** Decimal places (at most 15) that represent a value exactly as a scaled safe integer, or undefined. */
+function decimalPlaces(value: number) {
+  for (let places = 0, scale = 1; places <= 15; places++, scale *= 10) {
+    const scaled = Math.round(value * scale)
+    if (!Number.isSafeInteger(scaled)) return undefined
+    if (scaled / scale === value) return places
+  }
+  return undefined
+}
+
+/**
+ * The power of ten that turns a fractional step and the other values of a snapped computation into exact safe
+ * integers, so that, for example, three steps of 0.1 give 0.3. Integer steps, and values without a short decimal
+ * form, return 1: they keep plain floating-point arithmetic.
+ */
+function decimalScale(step: number, values: readonly number[]) {
+  if (Number.isInteger(step)) return 1
+  let places = 0
+  for (const value of [step, ...values]) {
+    const own = decimalPlaces(value)
+    if (own === undefined) return 1
+    places = Math.max(places, own)
+  }
+  const scale = 10 ** places
+  return [step, ...values].every(value => {
+    const integer = Math.round(value * scale)
+    return Number.isSafeInteger(integer) && integer / scale === value
+  }) ? scale : 1
+}
+
+/** Values multiplied by a decimal scale, rounded to the integers they represent. A scale of 1 leaves them unchanged. */
+function scaled(scale: number, values: readonly number[]) {
+  return scale === 1 ? values.slice() : values.map(value => Math.round(value * scale))
+}
+
+/**
+ * Ticks at `anchor + k × step` inside the closed window. With a fractional step, tick values are computed in exact
+ * decimal arithmetic when the step and anchor have at most 15 decimal places, so ticks of 0.1 are 0.1, 0.2, 0.3 and
+ * not 0.30000000000000004. Integer steps use plain arithmetic.
+ */
 export function timeTicks(window: TimeRange, step: number, anchor = 0): number[] {
   checkRange(window, true)
   if (!Number.isFinite(anchor) || !Number.isFinite(step) || step <= 0) throw new RangeError('Invalid tick step or anchor')
   const first = Math.ceil((window.start - anchor) / step)
   const last = Math.floor((window.end - anchor) / step)
+  if (!Number.isFinite(first) || !Number.isFinite(last)) {
+    throw new RangeError('The tick window is too far from the anchor for this tick step')
+  }
   const count = Math.max(0, last - first + 1)
   if (count > 10000) throw new RangeError('Too many ticks; increase the tick step or reduce the visible window')
+  const scale = decimalScale(step, [anchor])
+  if (scale !== 1) {
+    const [unit, origin] = scaled(scale, [step, anchor]) as [number, number]
+    // Exact while every scaled tick is a safe integer; otherwise fall back to plain arithmetic.
+    if (Number.isSafeInteger(origin + first * unit) && Number.isSafeInteger(origin + last * unit)) {
+      return Array.from({ length: count }, (_, i) => (origin + (first + i) * unit) / scale)
+    }
+  }
   return Array.from({ length: count }, (_, i) => anchor + (first + i) * step)
 }
 
@@ -80,8 +256,13 @@ export function visibleRows(scrollTop: number, bodyHeight: number, rowHeight: nu
   }
 }
 
+/**
+ * Whether an interval overlaps a window. Intervals are half-open, so one that ends at `window.start` or starts at
+ * `window.end` does not overlap; a zero-duration interval (milestone) overlaps when it lies inside the closed window,
+ * so a milestone at either window edge counts.
+ */
 export function intersectsWindow(bar: TimeRange, window: TimeRange) {
-  if (bar.start === bar.end) return bar.start >= window.start && bar.start < window.end
+  if (bar.start === bar.end) return bar.start >= window.start && bar.start <= window.end
   return bar.end > window.start && bar.start < window.end
 }
 
@@ -96,16 +277,29 @@ export function editTimeRange(
   }
   if (!['move', 'start', 'end'].includes(mode)) throw new RangeError('Unknown edit mode')
   if (range.start < bounds.start || range.end > bounds.end) throw new RangeError('Editable intervals must fit inside editBounds')
-  const duration = range.end - range.start
-  if (mode !== 'move' && duration < minDuration) throw new RangeError('The interval is shorter than minDuration')
-  const snapped = Math.sign(delta) * Math.round(Math.abs(delta) / step) * step
+  if (mode !== 'move' && range.end - range.start < minDuration) throw new RangeError('The interval is shorter than minDuration')
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / step)
+  const values = [step, range.start, range.end, bounds.start, bounds.end, minDuration]
+  // A fractional step is computed on exact scaled integers, see decimalScale; integer steps keep plain arithmetic.
+  const scale = decimalScale(step, values.slice(1))
+  const exact = scale === 1 ? undefined : snapRange(scaled(scale, values), mode, steps, scale)
+  return exact ?? snapRange(values, mode, steps, 1)!
+}
+
+/** The snapped edit on (possibly scaled) values; undefined when scaled arithmetic would not stay exact. */
+function snapRange(values: readonly number[], mode: EditMode, steps: number, scale: number): TimeRange | undefined {
+  const [step, rangeStart, rangeEnd, boundsStart, boundsEnd, minDuration] = values as [number, number, number, number, number, number]
+  const duration = rangeEnd - rangeStart
+  const snapped = steps * step
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+  let start = rangeStart, end = rangeEnd
   if (mode === 'move') {
-    const start = clamp(range.start + snapped, bounds.start, bounds.end - duration)
-    return { start, end: start + duration }
-  }
-  if (mode === 'start') return { start: clamp(range.start + snapped, bounds.start, range.end - minDuration), end: range.end }
-  return { start: range.start, end: clamp(range.end + snapped, range.start + minDuration, bounds.end) }
+    start = clamp(rangeStart + snapped, boundsStart, boundsEnd - duration)
+    end = start + duration
+  } else if (mode === 'start') start = clamp(rangeStart + snapped, boundsStart, rangeEnd - minDuration)
+  else end = clamp(rangeEnd + snapped, rangeStart + minDuration, boundsEnd)
+  if (scale !== 1 && !(Number.isSafeInteger(snapped) && Number.isSafeInteger(start) && Number.isSafeInteger(end))) return undefined
+  return { start: start / scale, end: end / scale }
 }
 
 export function dependencyPath(x1: number, y1: number, x2: number, y2: number) {
@@ -138,7 +332,41 @@ function checkSegments(bar: TimelineBar) {
   }
 }
 
-/** Validate once per input change. IDs are unique across the entire chart. */
+function checkConstraints(bar: TimelineBar) {
+  const constraints: unknown = bar.constraints
+  if (!constraints || typeof constraints !== 'object' || Array.isArray(constraints)) throw new Error('constraints must be an object: ' + bar.id)
+  for (const kind of timelineConstraintKinds) {
+    const time = (constraints as TimelineConstraints)[kind]
+    if (time !== undefined && (typeof time !== 'number' || !Number.isFinite(time))) {
+      throw new RangeError(`Constraint ${kind} of bar ${bar.id} must be a finite time`)
+    }
+  }
+}
+
+function checkBaselines(bar: TimelineBar) {
+  const list: unknown = bar.baselines
+  if (!Array.isArray(list)) throw new Error('baselines must be an array: ' + bar.id)
+  const ids = new Set<string>()
+  for (const item of list as NonNullable<TimelineBar['baselines']>) {
+    if (!item || typeof item.id !== 'string' || !item.id) throw new Error('Invalid baseline set ID on bar: ' + bar.id)
+    if (item.id === timelineBaselineId) {
+      throw new Error(`The baseline set ID ${timelineBaselineId} is reserved for TimelineBar.baseline: ${bar.id}`)
+    }
+    if (ids.has(item.id)) throw new Error(`Duplicate baseline set ${item.id} on bar ${bar.id}`)
+    ids.add(item.id)
+    if (typeof item.start !== 'number' || typeof item.end !== 'number' || !Number.isFinite(item.start) || !Number.isFinite(item.end)
+      || item.end < item.start) {
+      throw new RangeError(`Baseline ${item.id} of bar ${bar.id} must have finite endpoints with start <= end`)
+    }
+  }
+}
+
+/**
+ * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
+ * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
+ * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.) Throws a RangeError for a
+ * dependency `lag` that is not a finite number.
+ */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
   dependencies: readonly TimelineDependency[] = [], laneCount = 1,
@@ -158,6 +386,7 @@ export function validateTimelineData(
   for (const bar of bars) {
     checkRange(bar, true)
     if (bar.baseline) checkRange(bar.baseline, true)
+    if (bar.baselines !== undefined) checkBaselines(bar)
     if (!rowIds.has(bar.rowId)) throw new Error('Unknown row for bar: ' + bar.id)
     const lane = bar.lane ?? 0
     if (!Number.isInteger(lane) || lane < 0 || lane >= laneCount) throw new RangeError('Invalid lane for bar: ' + bar.id)
@@ -169,20 +398,36 @@ export function validateTimelineData(
     }
     if (bar.deadline !== undefined && !Number.isFinite(bar.deadline)) throw new RangeError('deadline must be finite: ' + bar.id)
     if (bar.segments !== undefined) checkSegments(bar)
+    if (bar.constraints !== undefined) checkConstraints(bar)
   }
   for (const dependency of dependencies) {
     if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
+    if (dependency.from === dependency.to) {
+      throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
+    }
     if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type')
+    const lag = dependency.lag
+    if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) throw new RangeError('Dependency lag must be finite: ' + dependency.id)
   }
+}
+
+/**
+ * Default text of a dependency lag in GanttChart (`formatLag`) and `renderTimelineSvg`: a signed number of hours of a
+ * millisecond lag, rounded to two decimals, such as `+2 h`, `+0.5 h` or `−1.25 h` (a lead, with U+2212 MINUS SIGN).
+ * Charts in other time units should pass their own formatter. Throws a RangeError for a non-finite lag.
+ */
+export function formatDependencyLag(lag: number): string {
+  if (typeof lag !== 'number' || !Number.isFinite(lag)) throw new RangeError('lag must be finite')
+  return (lag < 0 ? '\u2212' : '+') + Math.round(Math.abs(lag) / 36_000) / 100 + ' h'
 }
 
 
 /** Build a stable preorder and validate that every row reaches a root. */
-export function createTimelineRowTree(rows: readonly TimelineRow[]) {
+export function createTimelineRowTree<R extends TimelineRow>(rows: readonly R[]) {
   const ids = new Set(rows.map(row => row.id))
   if (ids.size !== rows.length || ids.has('')) throw new Error('Invalid or duplicate row IDs')
-  const roots: TimelineRow[] = []
-  const children = new Map<string, TimelineRow[]>()
+  const roots: R[] = []
+  const children = new Map<string, R[]>()
   for (const row of rows) {
     if (row.parentId === undefined) {
       roots.push(row)
@@ -193,7 +438,7 @@ export function createTimelineRowTree(rows: readonly TimelineRow[]) {
     if (!group) children.set(row.parentId, group = [])
     group.push(row)
   }
-  const ordered: { row: TimelineRow; depth: number; hasChildren: boolean; afterSubtree: number }[] = []
+  const ordered: { row: R; depth: number; hasChildren: boolean; afterSubtree: number }[] = []
   const stack = roots.slice().reverse().map(row => ({ row, depth: 0 }))
   const ancestors: number[] = []
   while (stack.length) {
@@ -274,8 +519,24 @@ export function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step
     min = Math.max(min, bounds.start - range.start)
     max = Math.min(max, bounds.end - range.end)
   }
-  const snapped = Math.sign(delta) * Math.round(Math.abs(delta) / step) * step
-  const shift = ranges.length ? Math.max(min, Math.min(max, snapped)) : 0
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / step)
+  const shift = ranges.length ? Math.max(min, Math.min(max, steps * step)) : 0
+  // A fractional step is applied on exact scaled integers, see decimalScale; integer steps keep plain arithmetic.
+  const values = Number.isInteger(step) ? [] : [step, bounds.start, bounds.end, ...ranges.flatMap(range => [range.start, range.end])]
+  const scale = values.length ? decimalScale(step, values.slice(1)) : 1
+  if (scale !== 1) {
+    const [unit, low, high, ...ends] = scaled(scale, values) as number[]
+    let scaledMin = -Infinity, scaledMax = Infinity
+    for (let i = 0; i < ends.length; i += 2) {
+      scaledMin = Math.max(scaledMin, low! - ends[i]!)
+      scaledMax = Math.min(scaledMax, high! - ends[i + 1]!)
+    }
+    const scaledShift = Math.max(scaledMin, Math.min(scaledMax, steps * unit!))
+    const moved = ends.map(value => value + scaledShift)
+    if (Number.isSafeInteger(steps * unit!) && moved.every(Number.isSafeInteger)) {
+      return ranges.map((_, index) => ({ start: moved[2 * index]! / scale, end: moved[2 * index + 1]! / scale }))
+    }
+  }
   return ranges.map(range => ({ start: range.start + shift, end: range.end + shift }))
 }
 
@@ -405,40 +666,92 @@ function pad(value: number) {
   return String(value).padStart(2, '0')
 }
 
+const hourMs = 3_600_000
+const maxCalendarBands = 10000
+
+/** A band boundary: the instant and the local wall time there, expressed as if it were UTC. */
+interface BandBoundary {
+  instant: number
+  wall: number
+}
+
 /**
- * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset,
- * clipped to the range and labelled from their unclipped boundaries.
+ * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset or
+ * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries.
+ *
+ * With `timeZone`, day, week, month and year bands start at the first instant of their local date: local midnight,
+ * or the end of a daylight-saving gap that skips midnight. A local date that the zone skips entirely has no band.
+ * Hour bands start where local time reaches a multiple of `step` hours counted from local midnight, so a 23-hour day
+ * has 23 one-hour bands and a 25-hour day 25, with the repeated hour twice. A grid hour inside a gap starts its band at
+ * the end of the gap, so its band is shorter (and absent when the gap ends on the next grid hour).
  */
 export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options: CalendarBandOptions = {}): TimelineBand[] {
   checkRange(range)
-  const { utcOffsetMinutes = 0, step = 1, weekStartsOn = 1, label } = options
+  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label } = options
   if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
-  if (!Number.isInteger(utcOffsetMinutes) || Math.abs(utcOffsetMinutes) > 18 * 60) {
-    throw new RangeError('utcOffsetMinutes must be an integer between -1080 and 1080')
+  if (timeZone !== undefined && utcOffsetMinutes !== undefined) {
+    throw new RangeError('Specify either timeZone or utcOffsetMinutes, not both')
+  }
+  const fixedOffset = utcOffsetMinutes ?? 0
+  if (!Number.isInteger(fixedOffset) || Math.abs(fixedOffset) > maxUtcOffsetMinutes) {
+    throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
   }
   if (!Number.isSafeInteger(step) || step <= 0 || (unit === 'hour' && 24 % step !== 0)) {
     throw new RangeError('step must be a positive integer (a divisor of 24 for hours)')
   }
   if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
-  const offset = utcOffsetMinutes * minuteMs
-  // Civil fields are read with UTC getters from shifted instants.
-  const civil = (time: number) => new Date(time + offset)
-  const fromCivil = (year: number, month: number, day = 1, hour = 0) => Date.UTC(year, month, day, hour) - offset
+  const format = timeZone === undefined ? undefined : zoneFormat(timeZone)
+  const offset = fixedOffset * minuteMs
+  // Zone rules are looked up up to two days around an instant, so it must stay inside the Date range.
+  const checkZoneTime = (time: number) => {
+    if (!Number.isFinite(new Date(time - 2 * dayMs).getTime()) || !Number.isFinite(new Date(time + 2 * dayMs).getTime())) {
+      throw new RangeError('Calendar bands exceed the supported date range')
+    }
+  }
+  // Boundaries are computed as local wall times expressed as if they were UTC: civil fields are read and written with
+  // UTC getters and setters.
+  const toInstant = (wall: number) => {
+    if (!format) return wall - offset
+    checkZoneTime(wall)
+    return zonedInstant(format, wall)
+  }
+  const offsetAt = (instant: number) => format ? zoneOffset(format, instant) : offset
+  // setUTCFullYear keeps years 0 to 99 literal, unlike Date.UTC, and normalizes overflowing months, days and hours.
+  const fromCivil = (year: number, month: number, day = 1, hour = 0) => {
+    const date = new Date(0)
+    date.setUTCFullYear(year, month, day)
+    date.setUTCHours(hour, 0, 0, 0)
+    return date.getTime()
+  }
+  const modulo = (value: number) => ((value % step) + step) % step
+  if (format) {
+    checkZoneTime(range.start)
+    checkZoneTime(range.end)
+  }
+  const startWall = range.start + offsetAt(range.start)
+  // Multi-unit bands follow a fixed grid counted from the Unix epoch (days, weeks, months) or from year 0 (years), so
+  // overlapping ranges agree on their boundaries whatever their starts.
   function first(): number {
-    const date = civil(range.start)
+    const date = new Date(startWall)
     const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
     if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() - date.getUTCHours() % step)
     if (unit === 'day') {
       const midnight = fromCivil(year, month, day)
-      const index = Math.floor((midnight + offset) / dayMs)
-      return midnight - (((index % step) + step) % step) * dayMs
+      const index = Math.floor(midnight / dayMs)
+      return midnight - modulo(index) * dayMs
     }
-    if (unit === 'week') return fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
-    if (unit === 'month') return fromCivil(year, month - month % step)
-    return fromCivil(year - ((year % step) + step) % step, 0)
+    if (unit === 'week') {
+      const weekStart = fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
+      // Week 0 is the week containing 1970-01-01, a Thursday.
+      const epochWeekStart = -((4 - weekStartsOn + 7) % 7)
+      const index = Math.round((Math.round(weekStart / dayMs) - epochWeekStart) / 7)
+      return weekStart - modulo(index) * 7 * dayMs
+    }
+    if (unit === 'month') return fromCivil(year, month - modulo((year - 1970) * 12 + month))
+    return fromCivil(year - modulo(year), 0)
   }
-  function next(time: number): number {
-    const date = civil(time)
+  function next(wall: number): number {
+    const date = new Date(wall)
     const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
     if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() + step)
     if (unit === 'day') return fromCivil(year, month, day + step)
@@ -446,25 +759,87 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
     if (unit === 'month') return fromCivil(year, month + step)
     return fromCivil(year + step, 0)
   }
-  function defaultLabel(start: number) {
-    const date = civil(start)
+  function defaultLabel(wall: number) {
+    const date = new Date(wall)
     const ymd = String(date.getUTCFullYear()).padStart(4, '0') + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate())
     if (unit === 'hour') return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes())
     if (unit === 'month') return ymd.slice(0, 7)
     if (unit === 'year') return ymd.slice(0, 4)
     return ymd
   }
-  const bands: TimelineBand[] = []
-  for (let start = first(); start < range.end;) {
-    const end = next(start)
-    if (!Number.isFinite(end) || end <= start) throw new RangeError('Calendar bands exceed the supported date range')
-    if (end > range.start) {
-      if (bands.length >= 10000) throw new RangeError('Too many calendar bands; increase the unit or step')
-      bands.push({ start: Math.max(start, range.start), end: Math.min(end, range.end), label: label ? label(start, end) : defaultLabel(start) })
+  function localTime(start: BandBoundary): CalendarBandLocalTime {
+    const date = new Date(start.wall)
+    return {
+      year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(), weekday: date.getUTCDay(), utcOffsetMinutes: (start.wall - start.instant) / minuteMs, timeZone,
     }
+  }
+  const bands: TimelineBand[] = []
+  const push = (start: BandBoundary, end: number) => {
+    if (end <= range.start || end <= start.instant || start.instant >= range.end) return
+    if (bands.length >= maxCalendarBands) throw new RangeError('Too many calendar bands; increase the unit or step')
+    bands.push({
+      start: Math.max(start.instant, range.start), end: Math.min(end, range.end),
+      label: label ? label(start.instant, end, localTime(start)) : defaultLabel(start.wall),
+    })
+  }
+  if (format && unit === 'hour') {
+    zonedHourBands(format, Math.floor(startWall / dayMs) * dayMs, range.end, step, toInstant, push)
+    return bands
+  }
+  let wall = first()
+  for (let start = toInstant(wall); start < range.end;) {
+    const nextWall = next(wall)
+    const end = Number.isFinite(nextWall) ? toInstant(nextWall) : Number.NaN
+    if (!Number.isFinite(end) || end < start || (!format && end === start)) {
+      throw new RangeError('Calendar bands exceed the supported date range')
+    }
+    // With a time zone, the band starts at its first local instant, which differs from `wall` after a gap.
+    push({ instant: start, wall: format ? start + zoneOffset(format, start) : wall }, end)
+    wall = nextWall
     start = end
   }
   return bands
+}
+
+/**
+ * Hour bands in a time zone, one local date at a time from `dayWall`. Within a date the offset changes at most once,
+ * at `transition`: a grid wall time before it maps with the earlier offset, one after it with the later offset, both
+ * when it is repeated and to the transition when it is skipped.
+ */
+function zonedHourBands(
+  format: Intl.DateTimeFormat, dayWall: number, rangeEnd: number, step: number,
+  toInstant: (wall: number) => number, push: (start: BandBoundary, end: number) => void,
+) {
+  let dayStart = toInstant(dayWall)
+  let startOffset = zoneOffset(format, dayStart)
+  while (dayStart < rangeEnd) {
+    const nextWall = dayWall + dayMs
+    const nextStart = toInstant(nextWall)
+    const nextOffset = zoneOffset(format, nextStart)
+    const transition = nextOffset === startOffset ? Infinity : zoneTransition(format, dayStart, nextStart, startOffset)
+    const boundaries: BandBoundary[] = [{ instant: dayStart, wall: dayStart + startOffset }]
+    const add = (instant: number, zone: number) => {
+      if (instant >= dayStart && instant < nextStart) boundaries.push({ instant, wall: instant + zone })
+    }
+    for (let hour = step; hour < 24; hour += step) {
+      const wall = dayWall + hour * hourMs
+      const early = wall - startOffset, late = wall - nextOffset
+      const before = early < transition, after = late >= transition && transition !== Infinity
+      if (before) add(early, startOffset)
+      if (after) add(late, nextOffset)
+      if (!before && !after) add(transition, nextOffset)
+    }
+    boundaries.sort((a, b) => a.instant - b.instant)
+    for (let index = 0; index < boundaries.length; index++) {
+      const boundary = boundaries[index]!, following = boundaries[index + 1]
+      if (following && following.instant === boundary.instant) continue
+      push(boundary, following?.instant ?? nextStart)
+    }
+    dayWall = nextWall
+    dayStart = nextStart
+    startOffset = nextOffset
+  }
 }
 
 export interface ResourceLoadHistogram {

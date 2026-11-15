@@ -32,9 +32,9 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 ### GanttChart
 
-- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines, header bands and date markers; row and time-window virtualization.
+- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines (up to three named baseline sets with variance), header bands and date markers; row and time-window virtualization.
 - Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
-- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
+- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`), and lag or lead labels on dependencies (`lag`, `formatLag`) that the scheduler applies too.
 - Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
 - Drag to create bars (`creatable`, `create`), stacked without overlap by `assignLanes`.
 - Auto-scheduling previews (`cascade`) that show the bars a move would push and propose them with it as one `edits` batch.
@@ -42,9 +42,10 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Row hierarchy editing by pointer or Alt+arrow keys (`rowsReorderable`, `row-move`, accepted with `moveTimelineRow`), with `timelineWbsCodes` for a WBS column.
 - Column resizing by pointer or arrow keys (`columnsResizable`, `column-resize`, `labelWidth`).
 - A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
-- Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
+- Zoom presets (`zoomPresets`), a now marker (`showNow`), touch pinch zoom (`pinchZoom`) and Ctrl+wheel zoom around the pointer (`wheelZoom`).
 - A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
 - Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
+- Scheduling constraints (`TimelineBar.constraints`, named as in `ScheduleTask`) drawn as markers that show violations, with optional drag and keyboard handles (`constraintsEditable`, `constraint-edit`, accepted with `applyTimelineConstraintEdit`).
 
 ### Headless core (`vue-weave/core`)
 
@@ -63,19 +64,19 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 ## Status and support
 
-- **Version 0.1.0, the first public release.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
+- **Version 0.2.0.** While the version is 0.x, breaking changes can land in minor releases (0.x.0) and are listed under "Breaking changes" in the [changelog](CHANGELOG.md). Patch releases (0.x.y) contain only backwards-compatible fixes. Pin an exact version; installing a specific tarball does this for you.
 - **Vue:** 3.5 or later (peer dependency).
-- **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution.
+- **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `vue-weave/core` entry, server-side rendering and development.
 - **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](docs/architecture.md)), so do not assume full conformance.
 
 ## Install
 
-The package is not published to npm. Download the `vue-weave-0.1.0.tgz` tarball attached to a [GitHub Release](https://github.com/EightKK/vue-weave/releases), or [build a local package](CONTRIBUTING.md#build-a-local-package) from a checkout. Then install the tarball from your application's directory. Replace the example path with the actual tarball path.
+The package is not published to npm. Download the `vue-weave-0.2.0.tgz` tarball attached to a [GitHub Release](https://github.com/EightKK/vue-weave/releases), or [build a local package](CONTRIBUTING.md#build-a-local-package) from a checkout. Then install the tarball from your application's directory. Replace the example path with the actual tarball path.
 
 ```sh
-npm install ./vue-weave-0.1.0.tgz
+npm install ./vue-weave-0.2.0.tgz
 ```
 
 Vue 3.5+ is a peer dependency. The library ships ES modules, TypeScript declarations and one stylesheet. Import the stylesheet once in your application with `import 'vue-weave/style.css'`. The `vue-weave/core` entry runs without Vue and supports TypeScript `NodeNext` resolution.

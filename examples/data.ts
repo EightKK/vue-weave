@@ -9,7 +9,8 @@ export interface ExampleData {
   nodes: NetworkNode[]
   edges: GraphEdge[]
   rows: TimelineRow[]
-  bars: TimelineBar[]
+  /** A bar's `data` is the ID of the graph node it belongs to, so the chart and the graph select together. */
+  bars: TimelineBar<string>[]
   dependencies: TimelineDependency[]
 }
 

@@ -21,7 +21,9 @@ export type { GraphDeletion, GraphCloneOptions, GraphCloneResult } from './graph
 export { graphAlignmentGuides, snapGraphPoint } from './graphSnapping.js'
 export type { GraphAlignment, GraphAlignmentGuide } from './graphSnapping.js'
 export { collapseGraphGroups } from './graphCollapse.js'
-export type { GraphCollapsedGroup, GraphCollapsedNodeData, GraphCollapseOptions, GraphCollapseResult } from './graphCollapse.js'
+export type {
+  GraphCollapsedGroup, GraphCollapsedNode, GraphCollapsedNodeData, GraphCollapseOptions, GraphCollapseResult, GraphShownEdge, GraphShownNode,
+} from './graphCollapse.js'
 export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
 export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
 export * from './leveling.js'
@@ -32,7 +34,7 @@ export {
 export { rescheduleFromStatusDate } from './statusDate.js'
 export { toMsProjectXml, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchange.js'
 export type {
-  MsProjectTask, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
+  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
   TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'

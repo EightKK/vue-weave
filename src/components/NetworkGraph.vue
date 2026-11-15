@@ -1,11 +1,13 @@
-<script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+<script setup lang="ts" generic="N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge, G extends NetworkGroup = never">
+import { computed, h, nextTick, onMounted, onUnmounted, ref, shallowRef, useId, watch, withKeys, withModifiers, type FunctionalComponent, type ShallowRef, type VNode, createCommentVNode, renderSlot, toDisplayString } from 'vue'
+import { graphIncidentCurve, graphPortControls } from '../core/graphCurve.js'
+import type { GraphBox } from '../core/graph.js'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
 import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, NetworkTooltipSlot } from '../core/types.js'
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
-import { collapseGraphGroups } from '../core/graphCollapse.js'
+import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
 import { routeGraphEdges, type GraphEdgeStyle } from '../core/graphRouting.js'
 import { cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathEndpoints, graphViewportRect, type GraphRect } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
@@ -15,11 +17,14 @@ import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
+// The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
+type ShownNode = GraphShownNode<N, G>
+type ShownEdge = GraphShownEdge<E, G>
 const props = withDefaults(defineProps<{
   /** Nodes to draw. Each has an ID, label, optional detail, tone, shape and opaque data. Required. */
-  nodes: readonly NetworkNode[]
+  nodes: readonly N[]
   /** Edges between nodes. Each has an ID, `from` and `to` node IDs, and optional label, port names (`fromPort`, `toPort`), waypoints (`points`) and data. Required. */
-  edges: readonly GraphEdge[]
+  edges: readonly E[]
   /** Controlled selected node ID; supports `v-model:selected-id`. */
   selectedId?: string
   /** Controlled set of selected node IDs for multiple selection. Ctrl, Meta or Shift toggles membership; a plain selection replaces the set. */
@@ -35,7 +40,7 @@ const props = withDefaults(defineProps<{
   /** Enables Shift-drag box selection on the canvas; use with controlled `selectedIds`. Opt-in. Default: false. */
   boxSelect?: boolean
   /** Groups with an ID, label, direct member `nodeIds` and optional `parentId`. Their bounds follow the member nodes. */
-  groups?: readonly NetworkGroup[]
+  groups?: readonly G[]
   /** Synchronous check of a connection proposal; receives the existing edge ID when reconnecting. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
   /** Shows an overview minimap of the graph and viewport. Opt-in. Default: false. */
@@ -45,7 +50,7 @@ const props = withDefaults(defineProps<{
   /** Configuration of the built-in layered layout: direction, node size, gaps, padding and crossing reduction. Defaults: direction LR, 144 x 58 nodes, column gap 50, row gap 24, padding 20. */
   options?: GraphLayeredLayoutOptions
   /** Custom layout function that replaces the built-in layout. It must return positive finite dimensions plus a box for every node and a path for every edge. */
-  layout?: GraphLayoutFunction
+  layout?: GraphLayoutFunction<ShownNode, ShownEdge>
   /** Overrides for the English UI strings and accessible names; fields you omit keep their defaults. */
   labels?: Partial<GraphLabels>
   /** Height of the SVG viewport, as a number of pixels or a CSS length. Default: 220px. */
@@ -160,11 +165,31 @@ const emit = defineEmits<{
   'node-resize-rejected': [change: GraphNodeResize, reason: string]
 }>()
 const slots = defineSlots<{
-  node(props: NetworkNodeSlot): unknown
-  edge(props: { edge: GraphEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
+  node(props: NetworkNodeSlot<ShownNode>): unknown
+  edge(props: { edge: ShownEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
   empty(): unknown
-  tooltip?(props: NetworkTooltipSlot): unknown
+  tooltip?(props: NetworkTooltipSlot<ShownNode, ShownEdge>): unknown
 }>()
+// Plain values compared one level deep: equal primitives, or arrays with identical items.
+function sameValue(a: unknown, b: unknown) {
+  if (a === b) return true
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => item === b[i])
+}
+function sameRecord(a: object | undefined, b: object | undefined) {
+  if (a === b) return true
+  if (!a || !b) return false
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length
+    && keys.every(key => Object.hasOwn(b, key) && sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+// `labels` and `groups` are memoised by value like `options`, so inline literals in a parent template do not rebuild
+// the layout or cancel a gesture each time the parent renders.
+const labels = computed<Partial<GraphLabels> | undefined>(previous => sameRecord(previous, props.labels) ? previous : props.labels)
+const groups = computed<readonly NetworkGroup[] | undefined>((previous) => {
+  const next = props.groups
+  return previous === next || (previous && next && previous.length === next.length && previous.every((group, i) => sameRecord(group, next[i])))
+    ? previous : next
+})
 const messages = computed<GraphLabels>(() => ({
   region: 'Network graph', empty: 'No nodes to display', zoom: 'Graph zoom',
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fit: 'Fit to view',
@@ -174,11 +199,17 @@ const messages = computed<GraphLabels>(() => ({
   deleteRejected: 'This deletion was rejected.', collapseGroup: 'Collapse group', expandGroup: 'Expand group',
   collapsedNode: 'node', collapsedNodes: 'nodes', moveWaypoint: 'Move waypoint', addWaypoint: 'Add waypoint',
   reshapeRejected: 'This edge change was rejected.', resizeNode: 'Resize', topLeft: 'top left', topRight: 'top right',
-  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...props.labels,
+  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...labels.value,
 }))
-function isSelected(id: string) {
-  return props.selectedIds ? props.selectedIds.has(id) : props.selectedId === id
+// Tests that read the props once, for the loops over every node and edge.
+function selectionTest() {
+  const ids = props.selectedIds, single = props.selectedId
+  return (id: string) => ids ? ids.has(id) : single === id
 }
+function isSelected(id: string) {
+  return selectionTest()(id)
+}
+const selectedTest = computed(selectionTest)
 function select(id: string, event: MouseEvent | KeyboardEvent) {
   const toggle = event.ctrlKey || event.metaKey || event.shiftKey
   if (props.selectedIds) {
@@ -200,9 +231,23 @@ const tooltipId = marker + '-tooltip'
 // Right-to-left only affects chrome and label alignment; graph geometry stays as laid out.
 const inheritedRtl = ref(false)
 const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
+// With `dir="auto"`, a MutationObserver on the `dir` attributes of the ancestors detects the direction again when one
+// of them changes. A change of direction cancels a gesture in flight.
+let directionObserver: MutationObserver | undefined
 function detectDirection() {
   const element = root.value
   inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+  directionObserver?.disconnect()
+  directionObserver = undefined
+  if (props.dir !== 'auto' || !element || typeof MutationObserver === 'undefined') return
+  directionObserver = new MutationObserver(() => {
+    const before = inheritedRtl.value
+    inheritedRtl.value = props.dir === 'auto' && getComputedStyle(element).direction === 'rtl'
+    if (inheritedRtl.value !== before) cancelInteraction()
+  })
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    directionObserver.observe(ancestor, { attributes: true, attributeFilter: ['dir'] })
+  }
 }
 watch(() => props.dir, detectDirection, { flush: 'post' })
 const viewport = ref({ width: 1150, height: 270 })
@@ -220,20 +265,21 @@ const options = computed<GraphLayeredLayoutOptions>((previous) => {
 const localCollapsed = shallowRef<ReadonlySet<string>>(new Set())
 const collapsedIds = computed(() => props.collapsedGroupIds ?? (props.collapsibleGroups ? localCollapsed.value : undefined))
 const collapsedView = computed(() => {
-  const ids = collapsedIds.value, groups = props.groups
-  if (!ids?.size || !groups?.length) return undefined
+  const ids = collapsedIds.value, list = groups.value
+  if (!ids?.size || !list?.length) return undefined
   // IDs of groups that no longer exist are ignored, so deleting a collapsed group's nodes does not break rendering.
-  const known = new Set(groups.map(group => group.id))
+  const known = new Set(list.map(group => group.id))
   const active = [...ids].filter(id => known.has(id))
   if (!active.length) return undefined
   const { collapsedNode, collapsedNodes } = messages.value
-  return collapseGraphGroups(props.nodes, props.edges, groups, active, {
+  return collapseGraphGroups(props.nodes, props.edges, list, active, {
     detail: group => group.nodeIds.length + ' ' + (group.nodeIds.length === 1 ? collapsedNode : collapsedNodes),
   })
 })
-const viewNodes = computed<readonly NetworkNode[]>(() => collapsedView.value?.nodes ?? props.nodes)
-const viewEdges = computed<readonly GraphEdge[]>(() => collapsedView.value?.edges ?? props.edges)
-const viewGroups = computed(() => collapsedView.value?.groups ?? props.groups)
+// Collapsed views exist only with groups, so their proxies and merged edges are part of the shown types.
+const viewNodes = computed<readonly ShownNode[]>(() => (collapsedView.value?.nodes as ShownNode[] | undefined) ?? props.nodes)
+const viewEdges = computed<readonly ShownEdge[]>(() => (collapsedView.value?.edges as ShownEdge[] | undefined) ?? props.edges)
+const viewGroups = computed(() => collapsedView.value?.groups ?? groups.value)
 const realNodesById = computed(() => collapsedView.value ? new Map(props.nodes.map(node => [node.id, node])) : nodesById.value)
 const realEdgesById = computed(() => collapsedView.value ? new Map(props.edges.map(edge => [edge.id, edge])) : edgesById.value)
 const baseLayout = computed(() => {
@@ -293,30 +339,260 @@ function arrange(positions: ReadonlyMap<string, GraphPoint> | undefined, sizes: 
 }
 const routeOptions = computed(() => ({ style: props.edgeStyle, direction: direction.value, cornerRadius: props.edgeStyle === 'orthogonal' ? 6 : 0 }))
 // Ports first, then the edge style and waypoints. The default curve style without waypoints keeps the routed layout.
-function route(geometry: GraphLayout, edges: readonly GraphEdge[] = viewEdges.value) {
-  return routeGraphEdges(routeGraphPorts(geometry, nodesById.value, edges, direction.value), edges, nodesById.value, routeOptions.value)
-}
 const savedLayout = computed(() => arrange(viewPositions.value, props.sizes))
-const savedRouted = computed(() => route(savedLayout.value))
+const savedPorted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, viewEdges.value, direction.value))
+const savedRouted = computed(() => routeGraphEdges(savedPorted.value, viewEdges.value, nodesById.value, routeOptions.value))
+
+// Drag previews. A node drag, resize or waypoint drag changes a few nodes or one edge, so the preview layout shares the
+// saved layout's maps and recomputes only the edges that touch a changed node. The result equals arranging and routing
+// the whole graph with the previewed positions, sizes and waypoints, as the saved layout is computed.
+class LayeredMap<K, V> extends Map<K, V> {
+  private readonly base: ReadonlyMap<K, V>
+  // Changed entries; undefined removes an entry of the base.
+  private readonly changes: ReadonlyMap<K, V | undefined>
+  private readonly count: number
+  constructor(base: ReadonlyMap<K, V>, changes: ReadonlyMap<K, V | undefined>) {
+    super()
+    this.base = base
+    this.changes = changes
+    let count = base.size
+    for (const [key, value] of changes) count += (value !== undefined ? 1 : 0) - (base.has(key) ? 1 : 0)
+    this.count = count
+  }
+  override get(key: K) {
+    return this.changes.has(key) ? this.changes.get(key) : this.base.get(key)
+  }
+  override has(key: K) {
+    return this.changes.has(key) ? this.changes.get(key) !== undefined : this.base.has(key)
+  }
+  override get size() {
+    return this.count
+  }
+  override *entries(): MapIterator<[K, V]> {
+    for (const [key, value] of this.base) {
+      const next = this.changes.has(key) ? this.changes.get(key) : value
+      if (next !== undefined) yield [key, next]
+    }
+    for (const [key, value] of this.changes) if (value !== undefined && !this.base.has(key)) yield [key, value]
+  }
+  override [Symbol.iterator]() {
+    return this.entries()
+  }
+  override *keys(): MapIterator<K> {
+    for (const [key] of this.entries()) yield key
+  }
+  override *values(): MapIterator<V> {
+    for (const [, value] of this.entries()) yield value
+  }
+  override forEach(callback: (value: V, key: K, map: Map<K, V>) => void, thisArg?: unknown) {
+    for (const [key, value] of this.entries()) callback.call(thisArg, value, key, this)
+  }
+  override set(): this {
+    throw new TypeError('A preview layout is read-only')
+  }
+  override delete(): boolean {
+    throw new TypeError('A preview layout is read-only')
+  }
+  override clear() {
+    throw new TypeError('A preview layout is read-only')
+  }
+}
+type Extent = { id: string; width: number; height: number }
+type Extents = { byWidth: Extent[]; byHeight: Extent[] }
+function sortExtents(list: Extent[]): Extents {
+  return { byWidth: [...list].sort((a, b) => b.width - a.width), byHeight: list.sort((a, b) => b.height - a.height) }
+}
+// The largest width and height among the extents whose ID is not skipped.
+function largestExtent(extents: Extents, skip: { has(id: string): boolean }) {
+  let width = -Infinity, height = -Infinity
+  for (const item of extents.byWidth) {
+    if (skip.has(item.id)) continue
+    width = item.width
+    break
+  }
+  for (const item of extents.byHeight) {
+    if (skip.has(item.id)) continue
+    height = item.height
+    break
+  }
+  return { width, height }
+}
+// The box a saved or previewed position and size give a layout box, and how far it stretches the layout, as
+// applyGraphPositions and applyGraphSizes compute them. Undefined when the node keeps its layout box.
+function placeBox(box: GraphBox, point: GraphPoint | undefined, size: GraphNodeSize | undefined) {
+  const moved = point !== undefined && (point.x !== box.x || point.y !== box.y)
+  const resized = size !== undefined && (size.width !== box.width || size.height !== box.height)
+  if (!moved && !resized) return undefined
+  let next = box, width = -Infinity, height = -Infinity
+  if (moved) {
+    next = { ...box, x: point.x, y: point.y }
+    width = point.x + box.width + 32
+    height = point.y + box.height + 32
+  }
+  if (resized) {
+    next = { ...next, width: size.width, height: size.height }
+    width = Math.max(width, next.x + size.width + 32)
+    height = Math.max(height, next.y + size.height + 32)
+  }
+  return { box: next, width, height }
+}
+const savedExtents = computed(() => {
+  const boxes = baseLayout.value.boxes, positions = viewPositions.value, sizes = props.sizes
+  const list: Extent[] = []
+  for (const id of new Set([...positions?.keys() ?? [], ...sizes?.keys() ?? []])) {
+    const box = boxes.get(id)
+    const placed = box && placeBox(box, positions?.get(id), sizes?.get(id))
+    if (placed) list.push({ id, width: placed.width, height: placed.height })
+  }
+  return sortExtents(list)
+})
+function hasPorts(edge: GraphEdge) {
+  return edge.fromPort !== undefined || edge.toPort !== undefined
+}
+const portEdges = computed(() => viewEdges.value.filter(hasPorts))
+// How far right and down the port route of each port edge of the saved layout reaches before routeGraphPorts clamps
+// it to the layout size; a self-loop may reach 18 further. Computed once a preview changes the layout size.
+const savedPortReach = computed(() => {
+  const arranged = savedLayout.value, nodes = nodesById.value, dir = direction.value
+  const list: Extent[] = []
+  for (const edge of portEdges.value) {
+    const { a, b } = graphPortControls(graphEdgeEndpoint(arranged, nodes, edge, 'from', dir), graphEdgeEndpoint(arranged, nodes, edge, 'to', dir))
+    const loop = edge.from === edge.to ? 18 : 0
+    list.push({ id: edge.id, width: Math.max(0, a.x, b.x) + loop, height: Math.max(0, a.y, b.y) + loop })
+  }
+  return sortExtents(list)
+})
+const waypointEdgeIds = computed(() => viewEdges.value.filter(edge => edge.points?.length).map(edge => edge.id))
+// Whether routeGraphEdges draws an edge itself rather than keeping its ported path.
+function styled(edge: GraphEdge) {
+  return props.edgeStyle !== 'curve' || Boolean(edge.points?.length)
+}
+// One edge routed on its own; the extent is how far its route stretches the layout.
+function routeOne(boxes: Map<string, GraphBox>, edge: GraphEdge, path: string, label: GraphPoint | undefined) {
+  const single = routeGraphEdges({
+    boxes, paths: new Map([[edge.id, path]]), edgeLabels: new Map(label ? [[edge.id, label]] : []), width: 0, height: 0,
+  }, [edge], nodesById.value, routeOptions.value)
+  return { path: single.paths.get(edge.id)!, label: single.edgeLabels.get(edge.id), width: single.width, height: single.height }
+}
+// Route extents of the saved layout, computed once a preview needs them.
+const savedRouteExtents = computed(() => {
+  const ported = savedPorted.value
+  const list: Extent[] = []
+  for (const edge of viewEdges.value) {
+    if (!styled(edge)) continue
+    const route = routeOne(ported.boxes, edge, ported.paths.get(edge.id)!, ported.edgeLabels.get(edge.id))
+    list.push({ id: edge.id, width: route.width, height: route.height })
+  }
+  return sortExtents(list)
+})
+function previewLayout(
+  moving: ReadonlyMap<string, GraphPoint> | undefined, resizing: { id: string; box: GraphRect } | undefined,
+  reshaping: { id: string; points: GraphPoint[] } | undefined,
+): GraphLayout {
+  const base = baseLayout.value, arranged = savedLayout.value, saved = savedRouted.value
+  const positions = viewPositions.value, sizes = props.sizes, dir = direction.value
+  const pointOf = (id: string) => resizing?.id === id ? resizing.box : moving?.get(id) ?? positions?.get(id)
+  const sizeOf = (id: string) => resizing?.id === id ? resizing.box : sizes?.get(id)
+  // Changed nodes get the boxes the full arrangement would give them; every other box is the saved one.
+  const changed = new Map<string, GraphBox>()
+  let width = base.width, height = base.height
+  for (const id of [...moving?.keys() ?? [], ...resizing ? [resizing.id] : []]) {
+    const box = base.boxes.get(id)
+    if (!box) continue
+    const placed = placeBox(box, pointOf(id), sizeOf(id))
+    changed.set(id, placed?.box ?? box)
+    if (placed) {
+      width = Math.max(width, placed.width)
+      height = Math.max(height, placed.height)
+    }
+  }
+  const rest = largestExtent(savedExtents.value, changed)
+  width = Math.max(width, rest.width)
+  height = Math.max(height, rest.height)
+  const boxes = changed.size ? new LayeredMap(arranged.boxes, changed) : arranged.boxes
+  // A node whose box differs from the layout box, so that its edges are drawn as curves between the final boxes.
+  const placedNode = (id: string) => boxes.get(id) !== base.boxes.get(id)
+  // Edges that touch a changed node, plus the reshaped edge, in input order of discovery.
+  const ids = new Set<string>()
+  for (const id of changed.keys()) for (const edgeId of incidentEdges.value.get(id) ?? []) ids.add(edgeId)
+  if (reshaping) ids.add(reshaping.id)
+  const edges = [...ids].map(id => {
+    const edge = edgesById.value.get(id)!
+    return reshaping?.id === id ? { ...edge, points: reshaping.points } : edge
+  })
+  const paths = new Map<string, string>(), labels = new Map<string, GraphPoint | undefined>()
+  for (const edge of edges) {
+    if (placedNode(edge.from) || placedNode(edge.to)) {
+      const curve = graphIncidentCurve(boxes.get(edge.from)!, boxes.get(edge.to)!, edge.from === edge.to, dir)
+      paths.set(edge.id, curve.path)
+      labels.set(edge.id, curve.label)
+    } else {
+      paths.set(edge.id, base.paths.get(edge.id)!)
+      labels.set(edge.id, base.edgeLabels.get(edge.id))
+    }
+  }
+  // Ports. Their routes are clamped to the layout size, so a size change also reroutes the other port edges whose
+  // control points reach past the smaller of the two sizes; the routes of the rest stay as saved.
+  const ports = edges.filter(hasPorts)
+  if (width !== arranged.width || height !== arranged.height) {
+    const reach = savedPortReach.value, limitX = Math.min(width, arranged.width), limitY = Math.min(height, arranged.height)
+    const clamped = new Set<string>()
+    for (const item of reach.byWidth) {
+      if (item.width <= limitX) break
+      clamped.add(item.id)
+    }
+    for (const item of reach.byHeight) {
+      if (item.height <= limitY) break
+      clamped.add(item.id)
+    }
+    for (const id of clamped) if (!ids.has(id)) ports.push(edgesById.value.get(id)!)
+  }
+  if (ports.length) {
+    const arrangedPath = (id: string) => paths.has(id) ? paths.get(id)! : arranged.paths.get(id)!
+    const arrangedLabel = (id: string) => labels.has(id) ? labels.get(id) : arranged.edgeLabels.get(id)
+    const routed = routeGraphPorts({
+      boxes, width, height, paths: new Map(ports.map(edge => [edge.id, arrangedPath(edge.id)])),
+      edgeLabels: new Map(ports.flatMap(edge => {
+        const label = arrangedLabel(edge.id)
+        return label ? [[edge.id, label] as const] : []
+      })),
+    }, nodesById.value, ports, dir)
+    for (const edge of ports) {
+      paths.set(edge.id, routed.paths.get(edge.id)!)
+      labels.set(edge.id, routed.edgeLabels.get(edge.id))
+    }
+  }
+  // Edge styles and waypoints, as routeGraphEdges draws them after the ports.
+  if (props.edgeStyle !== 'curve' || edges.some(edge => edge.points?.length) || waypointEdgeIds.value.some(id => !ids.has(id))) {
+    const others = largestExtent(savedRouteExtents.value, ids)
+    width = Math.max(width, others.width)
+    height = Math.max(height, others.height)
+    for (const edge of edges) {
+      if (!styled(edge)) continue
+      const route = routeOne(boxes, edge, paths.get(edge.id)!, labels.get(edge.id))
+      paths.set(edge.id, route.path)
+      labels.set(edge.id, route.label)
+      width = Math.max(width, route.width)
+      height = Math.max(height, route.height)
+    }
+    // A styled edge outside the changed set keeps its saved route, whatever its port route became.
+    for (const id of [...paths.keys()]) {
+      if (ids.has(id) || !styled(edgesById.value.get(id)!)) continue
+      paths.delete(id)
+      labels.delete(id)
+    }
+  }
+  const preview = { boxes, paths: new LayeredMap(saved.paths, paths), edgeLabels: new LayeredMap(saved.edgeLabels, labels), width, height }
+  previewSources.set(preview, { saved, nodes: [...changed.keys()], edges: [...paths.keys()] })
+  return preview
+}
+// The saved layout a preview was made from, and the nodes and edges it changes.
+const previewSources = new WeakMap<GraphLayout, { saved: GraphLayout; nodes: readonly string[]; edges: readonly string[] }>()
 const layout = computed(() => {
   const moving = dragPreview.value, resizing = resizePreview.value, reshaping = reshapePreview.value
   if (!moving && !resizing && !reshaping) return savedRouted.value
-  let geometry = savedLayout.value
-  if (moving || resizing) {
-    const positions = new Map([...viewPositions.value ?? [], ...moving ?? []])
-    let sizes = props.sizes
-    if (resizing) {
-      const { id, box } = resizing
-      positions.set(id, { x: box.x, y: box.y })
-      sizes = new Map([...props.sizes ?? [], [id, { width: box.width, height: box.height }]])
-    }
-    geometry = arrange(positions, sizes)
-  }
-  const edges = reshaping ? viewEdges.value.map(edge => edge.id === reshaping.id ? { ...edge, points: reshaping.points } : edge) : viewEdges.value
-  return route(geometry, edges)
+  return previewLayout(moving, resizing, reshaping)
 })
-const positioned = computed(() => viewNodes.value.map(node => ({ ...node, box: layout.value.boxes.get(node.id)! })))
-
 type GroupShape = NetworkGroup & { members: string[]; depth: number; parentLabel?: string }
 const groupMembership = computed<GroupShape[]>(() => {
   const list = viewGroups.value ?? []
@@ -370,42 +646,115 @@ const groupMembership = computed<GroupShape[]>(() => {
     parentLabel: group.parentId === undefined ? undefined : byId.get(group.parentId)!.label,
   }))
 })
-const shownGroups = computed(() => {
-  const rects = new Map<string, { x: number; y: number; width: number; height: number }>()
-  const nested = new Set(groupMembership.value.flatMap(group => group.parentId === undefined ? [] : [group.parentId]))
-  const direct = (group: GroupShape) => {
-    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-    for (const id of nested.has(group.id) ? group.nodeIds : group.members) {
-      const box = layout.value.boxes.get(id)!
-      left = Math.min(left, box.x)
-      top = Math.min(top, box.y)
-      right = Math.max(right, box.x + box.width)
-      bottom = Math.max(bottom, box.y + box.height)
-    }
-    return { left, top, right, bottom }
+// The group hierarchy as lookups: position in the paint order, child groups in that order, and the group that lists a
+// node among its own `nodeIds`.
+const groupTree = computed(() => {
+  const list = groupMembership.value
+  const index = new Map<string, number>(), byId = new Map<string, GroupShape>()
+  const children = new Map<string, GroupShape[]>(), ofNode = new Map<string, string>()
+  list.forEach((group, i) => {
+    index.set(group.id, i)
+    byId.set(group.id, group)
+    for (const id of group.nodeIds) ofNode.set(id, group.id)
+    if (group.parentId === undefined) return
+    const siblings = children.get(group.parentId)
+    if (siblings) siblings.push(group)
+    else children.set(group.parentId, [group])
+  })
+  return { index, byId, children, ofNode }
+})
+type GroupBounds = { left: number; top: number; right: number; bottom: number }
+type GroupRect = { x: number; y: number; width: number; height: number }
+// The bounds of the nodes a group frames itself: all members, or for a parent only its own nodes.
+function groupBounds(group: GroupShape, boxes: ReadonlyMap<string, GraphBox>): GroupBounds {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+  for (const id of groupTree.value.children.has(group.id) ? group.nodeIds : group.members) {
+    const box = boxes.get(id)!
+    left = Math.min(left, box.x)
+    top = Math.min(top, box.y)
+    right = Math.max(right, box.x + box.width)
+    bottom = Math.max(bottom, box.y + box.height)
   }
+  return { left, top, right, bottom }
+}
+// A group frame: its nodes with padding and a label strip, clamped to the layout, and for a parent also its children.
+function groupRect(group: GroupShape, bounds: GroupBounds, width: number, height: number, rectOf: (id: string) => GroupRect): GroupRect {
+  const { left, top, right, bottom } = bounds
+  const x = Math.max(0, left - 10), y = Math.max(0, top - 23)
+  let x1 = Math.min(width, right + 10), y1 = Math.min(height, bottom + 10)
+  let x0 = x, y0 = y
+  const nested = groupTree.value.children.get(group.id)
+  if (nested) {
+    // A parent encloses its children, the label strip of each child and the padding around them.
+    if (left === Infinity) { x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity }
+    for (const child of nested) {
+      const rect = rectOf(child.id)
+      x0 = Math.min(x0, rect.x - 10)
+      y0 = Math.min(y0, rect.y - 23)
+      x1 = Math.max(x1, rect.x + rect.width + 10)
+      y1 = Math.max(y1, rect.y + rect.height + 10)
+    }
+  }
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+type ShownGroup = GroupShape & GroupRect
+// Group frames of the saved layout, with the bounds of each group's own nodes so a preview can tell which frames change.
+const savedGroups = computed(() => {
+  const geometry = savedRouted.value, list = groupMembership.value
+  const bounds = new Map<string, GroupBounds>(), rects = new Map<string, GroupRect>()
   // Children come after their parent in the list, so walking backwards sizes children first.
-  const reversed = [...groupMembership.value].reverse()
-  for (const group of reversed) {
-    const { left, top, right, bottom } = direct(group)
-    const x = Math.max(0, left - 10), y = Math.max(0, top - 23)
-    let x1 = Math.min(layout.value.width, right + 10), y1 = Math.min(layout.value.height, bottom + 10)
-    let x0 = x, y0 = y
-    if (nested.has(group.id)) {
-      // A parent encloses its children, the label strip of each child and the padding around them.
-      if (left === Infinity) { x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity }
-      for (const child of groupMembership.value) {
-        if (child.parentId !== group.id) continue
-        const rect = rects.get(child.id)!
-        x0 = Math.min(x0, rect.x - 10)
-        y0 = Math.min(y0, rect.y - 23)
-        x1 = Math.max(x1, rect.x + rect.width + 10)
-        y1 = Math.max(y1, rect.y + rect.height + 10)
-      }
-    }
-    rects.set(group.id, { x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
+  for (let i = list.length - 1; i >= 0; i--) {
+    const group = list[i]!
+    const own = groupBounds(group, geometry.boxes)
+    bounds.set(group.id, own)
+    rects.set(group.id, groupRect(group, own, geometry.width, geometry.height, id => rects.get(id)!))
   }
-  return groupMembership.value.map(group => ({ ...group, ...rects.get(group.id)! }))
+  const shown = list.map<ShownGroup>(group => ({ ...group, ...rects.get(group.id)! }))
+  // Groups whose own nodes reach furthest right and down first: a layout size change re-clamps only the first ones.
+  const byRight = list.map(group => group.id).sort((a, b) => bounds.get(b)!.right - bounds.get(a)!.right)
+  const byBottom = list.map(group => group.id).sort((a, b) => bounds.get(b)!.bottom - bounds.get(a)!.bottom)
+  return { geometry, shown, bounds, byRight, byBottom }
+})
+// Group frames of the current layout. A preview recomputes only the frames of groups holding a changed node, of groups
+// whose clamp to the layout size changes, and of their ancestors; the other frames are the saved ones.
+const shownGroups = computed<readonly ShownGroup[]>(() => {
+  const saved = savedGroups.value
+  if (!saved.shown.length) return saved.shown
+  const current = layout.value
+  if (current === saved.geometry) return saved.shown
+  const source = previewSources.get(current)
+  const { index, byId, ofNode } = groupTree.value
+  const affected = new Set<string>()
+  const affect = (id: string | undefined) => {
+    for (let group = id; group !== undefined && !affected.has(group); group = byId.get(group)!.parentId) affected.add(group)
+  }
+  if (source?.saved !== saved.geometry) for (const group of saved.shown) affected.add(group.id)
+  else for (const id of source.nodes) affect(ofNode.get(id))
+  if (current.width !== saved.geometry.width) {
+    const limit = Math.min(current.width, saved.geometry.width)
+    for (const id of saved.byRight) {
+      if (saved.bounds.get(id)!.right + 10 <= limit) break
+      affect(id)
+    }
+  }
+  if (current.height !== saved.geometry.height) {
+    const limit = Math.min(current.height, saved.geometry.height)
+    for (const id of saved.byBottom) {
+      if (saved.bounds.get(id)!.bottom + 10 <= limit) break
+      affect(id)
+    }
+  }
+  if (!affected.size) return saved.shown
+  const rects = new Map<string, GroupRect>()
+  const rectOf = (id: string) => rects.get(id) ?? saved.shown[index.get(id)!]!
+  for (const id of [...affected].sort((a, b) => index.get(b)! - index.get(a)!)) {
+    const group = byId.get(id)!
+    rects.set(id, groupRect(group, groupBounds(group, current.boxes), current.width, current.height, rectOf))
+  }
+  return saved.shown.map(group => {
+    const rect = rects.get(group.id)
+    return rect ? { ...byId.get(group.id)!, ...rect } : group
+  })
 })
 function groupName(group: GroupShape) {
   return messages.value.moveGroup + ' ' + group.label + (group.parentLabel === undefined ? '' : ' ' + messages.value.groupWithin + ' ' + group.parentLabel)
@@ -413,21 +762,48 @@ function groupName(group: GroupShape) {
 
 type PortRef = { node: string; port?: string }
 type PortHandle = PortRef & GraphPoint & { label: string; direction: NonNullable<GraphPort['direction']> }
-const handles = computed(() => positioned.value.flatMap<PortHandle>(node => {
-  if (!node.ports) return [{ node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: direction.value === 'RL' ? node.box.x + 10 : node.box.x + node.box.width - 10, y: node.box.y + 11 }]
-  return node.ports.map(port => ({
-    node: node.id, port: port.id, label: node.label + ' · ' + (port.label ?? port.id),
-    direction: port.direction ?? 'both', ...graphPortAnchor(node.box, port),
-  }))
-}))
-const handleIndex = computed(() => new Map(handles.value.map((handle, index) => [portKey(handle), index])))
+// The connection handle of a node, or of one of its ports, at a box: a node without ports has one handle in a top
+// corner, a node with ports one per port.
+function connectHandle(node: NetworkNode, port: GraphPort | undefined, box: GraphBox, rl: boolean): PortHandle {
+  return !port
+    ? { node: node.id, label: node.label, direction: 'both' as const, port: undefined, x: rl ? box.x + 10 : box.x + box.width - 10, y: box.y + 11 }
+    : {
+      node: node.id, port: port.id, label: node.label + ' · ' + (port.label ?? port.id),
+      direction: port.direction ?? 'both', ...graphPortAnchor(box, port),
+    }
+}
+// The handle a reference names in the current layout, or undefined when the node or port has none.
+function handleAt(ref: PortRef): PortHandle | undefined {
+  const node = nodesById.value.get(ref.node), box = layout.value.boxes.get(ref.node)
+  if (!node || !box || (ref.port === undefined) !== !node.ports) return undefined
+  // Like a lookup by key, the last port with a repeated ID wins.
+  let port: GraphPort | undefined
+  if (ref.port !== undefined) {
+    for (const item of node.ports!) if (item.id === ref.port) port = item
+    if (!port) return undefined
+  }
+  return connectHandle(node, port, box, direction.value === 'RL')
+}
 function portKey(ref: PortRef) {
   return JSON.stringify([ref.node, ref.port])
+}
+// The handle a `data-vw-port` key names.
+function handleFromKey(key: string) {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(key)
+  } catch {
+    return undefined
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2) return undefined
+  const ref: PortRef = { node: parsed[0], port: parsed[1] ?? undefined }
+  return portKey(ref) === key ? handleAt(ref) : undefined
 }
 
 // The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
 // the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
-const contentBounds = computed(() => {
+// The previous object while the bounds are equal, so a drag inside them does not re-render the minimap or the camera.
+const contentBounds = computed<{ left: number; top: number; right: number; bottom: number; width: number; height: number }>((previous) => {
   let left = 0, top = 0, right = layout.value.width, bottom = layout.value.height
   for (const group of shownGroups.value) {
     left = Math.min(left, group.x)
@@ -435,7 +811,8 @@ const contentBounds = computed(() => {
     right = Math.max(right, group.x + group.width)
     bottom = Math.max(bottom, group.y + group.height)
   }
-  return { left, top, right, bottom, width: right - left, height: bottom - top }
+  const next = { left, top, right, bottom, width: right - left, height: bottom - top }
+  return keep(previous, next)
 })
 
 // Scale at which the whole graph fits the viewport.
@@ -542,7 +919,7 @@ function onWheel(event: WheelEvent) {
 }
 
 function startPan(event: PointerEvent) {
-  if (!event.isPrimary || event.button !== 0 || !svg.value || nodeDrag || connectionDrag) return
+  if (!event.isPrimary || event.button !== 0 || !svg.value || pointerGestureActive()) return
   pan = {
     pointerId: event.pointerId,
     x: event.clientX,
@@ -690,7 +1067,7 @@ function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: numbe
 
 function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string) {
   suppressClick = undefined
-  if (!props.draggable || !event.isPrimary || event.button !== 0 || nodeDrag || pan || connectionDrag) return
+  if (!props.draggable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   if (node && nodesById.value.get(node)?.draggable === false) return
   const before = movablePositions(ids)
   if (!before.size) return
@@ -783,11 +1160,19 @@ const currentEdgeId = computed(() => {
   const id = activeEdgeId.value
   return id !== undefined && props.edgesSelectable && props.selectedEdgeIds && !props.selectedEdgeIds.has(id) ? undefined : id
 })
+function edgeSelectionTest() {
+  const ids = props.selectedEdgeIds, active = activeEdgeId.value
+  return (id: string) => ids ? ids.has(id) : active === id
+}
 function edgeSelected(id: string) {
-  return props.selectedEdgeIds ? props.selectedEdgeIds.has(id) : activeEdgeId.value === id
+  return edgeSelectionTest()(id)
+}
+function edgePressedTest() {
+  const selected = edgeSelectionTest(), active = activeEdgeId.value
+  return props.edgesSelectable ? selected : (id: string) => active === id
 }
 function edgePressed(id: string) {
-  return props.edgesSelectable ? edgeSelected(id) : activeEdgeId.value === id
+  return edgePressedTest()(id)
 }
 function selectedEdgeList() {
   if (!props.edgesSelectable) return []
@@ -839,9 +1224,7 @@ function worldPoint(clientX: number, clientY: number) {
 const connectionPath = computed(() => {
   const pending = draft.value, end = connectionPoint.value
   if (!pending || !end) return undefined
-  const index = handleIndex.value.get(portKey(pending.fixed))
-  const start = index === undefined ? undefined : handles.value[index]
-  const origin = start ?? (pending.edge && graphEdgeEndpoint(
+  const origin = handleAt(pending.fixed) ?? (pending.edge && graphEdgeEndpoint(
     layout.value, nodesById.value, pending.edge, pending.end === 'from' ? 'to' : 'from', direction.value,
   ))
   if (!origin) return undefined
@@ -856,12 +1239,12 @@ function captureConnection(event: PointerEvent) {
 }
 function startPort(event: PointerEvent, handle: PortHandle) {
   skipHandleClick = false
-  if (draft.value || !event.isPrimary || event.button !== 0 || handle.direction === 'target' || nodeDrag || pan) return
+  if (draft.value || !event.isPrimary || event.button !== 0 || handle.direction === 'target' || pointerGestureActive()) return
   draft.value = { fixed: handle, end: 'to' }
   captureConnection(event)
 }
 function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent) {
-  if (event && (!event.isPrimary || event.button !== 0 || nodeDrag || pan || connectionDrag)) return
+  if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
   skipHandleClick = false
   const fixed = end === 'from' ? { node: edge.to, port: edge.toPort } : { node: edge.from, port: edge.fromPort }
   draft.value = { fixed, end, edge }
@@ -898,8 +1281,8 @@ function finishConnection(event: PointerEvent) {
   skipHandleClick = true
   const element = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-vw-port]')
   const key = element && svg.value?.contains(element) ? element.getAttribute('data-vw-port') : null
-  const index = key === null ? undefined : handleIndex.value.get(key)
-  if (index !== undefined) completeConnection(handles.value[index]!)
+  const handle = key === null ? undefined : handleFromKey(key)
+  if (handle) completeConnection(handle)
   else draft.value = undefined
 }
 function activatePort(handle: PortHandle, event: MouseEvent | KeyboardEvent) {
@@ -934,9 +1317,6 @@ function completeConnection(handle: PortHandle) {
   } else {
     emit('connect', connection)
   }
-}
-function portPressed(handle: PortRef) {
-  return draft.value && portKey(draft.value.fixed) === portKey(handle)
 }
 function cancelInteraction() {
   stopAutoPan()
@@ -1329,11 +1709,12 @@ function finishHandle(event: PointerEvent) {
 // Level of detail. Below the threshold scale the default renderer hides node details and edge labels (CSS).
 const lodLow = computed(() => props.lodThreshold !== undefined && camera.value.scale < props.lodThreshold)
 
-function isDimmed(id: string) {
-  return Boolean(props.dimmedIds?.has(id) || (props.matchIds && !props.matchIds.has(id)))
+function dimTest() {
+  const dimmed = props.dimmedIds, matches = props.matchIds
+  return (id: string) => Boolean(dimmed?.has(id) || (matches && !matches.has(id)))
 }
-function edgeIsDimmed(edge: GraphEdge) {
-  return isDimmed(edge.from) || isDimmed(edge.to)
+function isDimmed(id: string) {
+  return dimTest()(id)
 }
 
 // Viewport culling. Before mount the viewport is the 1150 x 270 default with the initial fit camera, so the
@@ -1365,35 +1746,58 @@ const incidentEdges = computed(() => {
   }
   return index
 })
+// The nodes being dragged or resized and the edge being reshaped. They keep their identity while a gesture moves them,
+// so culling is not recomputed on every pointer move.
+const previewIds = computed<ReadonlySet<string>>((previous) => {
+  const ids = new Set<string>(dragPreview.value?.keys())
+  if (resizePreview.value) ids.add(resizePreview.value.id)
+  return previous && previous.size === ids.size && [...ids].every(id => previous.has(id)) ? previous : ids
+})
+const reshapeId = computed(() => reshapePreview.value?.id)
+const cullView = computed(() => layoutBounds.value && graphViewportRect(camera.value, viewport.value, Math.max(0, props.cullOverscan ?? 0)))
 const visible = computed(() => {
-  const bounds = layoutBounds.value
-  if (!bounds) return undefined
-  const view = graphViewportRect(camera.value, viewport.value, Math.max(0, props.cullOverscan ?? 0))
+  const bounds = layoutBounds.value, view = cullView.value
+  if (!bounds || !view) return undefined
   const nodes = new Set<string>(props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId]))
   for (const id of gestureIds.value) nodes.add(id)
   const edges = new Set<string>()
-  for (const id of [...dragPreview.value?.keys() ?? [], ...resizePreview.value ? [resizePreview.value.id] : []]) {
+  for (const id of previewIds.value) {
     nodes.add(id)
     for (const edgeId of incidentEdges.value.get(id) ?? []) edges.add(edgeId)
   }
-  if (reshapePreview.value) edges.add(reshapePreview.value.id)
+  if (reshapeId.value !== undefined) edges.add(reshapeId.value)
   if (draft.value) nodes.add(draft.value.fixed.node)
   if (focused.value?.node) nodes.add(focused.value.node)
   for (const id of [currentEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
   if (props.edgesSelectable) for (const id of props.selectedEdgeIds ?? []) edges.add(id)
-  const result = cullGraphElements(bounds, view, { nodes, edges })
+  return cullGraphElements(bounds, view, { nodes, edges })
+})
+// The groups that hold a node of the current gesture: the group listing it and that group's ancestors.
+const gestureGroups = computed(() => {
+  const { byId, ofNode } = groupTree.value
+  const ids = new Set<string>()
+  for (const id of gestureIds.value) {
+    for (let group = ofNode.get(id); group !== undefined && !ids.has(group); group = byId.get(group)!.parentId) ids.add(group)
+  }
+  return ids
+})
+// Groups near the view, focused or holding a node of the current gesture. Group frames follow a drag, so this is
+// kept apart from the node and edge culling above.
+const visibleGroups = computed<ReadonlySet<string> | undefined>((previous) => {
+  const view = cullView.value
+  if (!view) return undefined
   const groups = new Set<string>()
   for (const group of shownGroups.value) {
     const near = group.x <= view.x + view.width && group.x + group.width >= view.x
       && group.y <= view.y + view.height && group.y + group.height >= view.y
-    if (near || focused.value?.group === group.id || group.members.some(id => gestureIds.value.has(id) || dragPreview.value?.has(id))) groups.add(group.id)
+    if (near || focused.value?.group === group.id || gestureGroups.value.has(group.id)) groups.add(group.id)
   }
-  return { ...result, groups }
+  // The previous set while the same groups are near, so a drag inside the view does not render the group list again.
+  return previous && previous.size === groups.size && [...groups].every(id => previous.has(id)) ? previous : groups
 })
-const shownNodes = computed(() => visible.value ? positioned.value.filter(node => visible.value!.nodes.has(node.id)) : positioned.value)
+const visibleNodes = computed(() => visible.value ? viewNodes.value.filter(node => visible.value!.nodes.has(node.id)) : undefined)
 const shownEdges = computed(() => visible.value ? viewEdges.value.filter(edge => visible.value!.edges.has(edge.id)) : viewEdges.value)
-const renderedGroups = computed(() => visible.value ? shownGroups.value.filter(group => visible.value!.groups.has(group.id)) : shownGroups.value)
-const renderedHandles = computed(() => visible.value ? handles.value.filter(handle => visible.value!.nodes.has(handle.node)) : handles.value)
+const renderedGroups = computed(() => visibleGroups.value ? shownGroups.value.filter(group => visibleGroups.value!.has(group.id)) : shownGroups.value)
 
 // Two-finger pinch zoom and pan. Only touch pointers take part; mouse and pen input is unchanged.
 const touches = new Map<number, GraphPoint>()
@@ -1451,16 +1855,18 @@ function endTouch(event: PointerEvent) {
   if (pinch?.ids.includes(event.pointerId)) endPinch()
 }
 
-function edgeIsRelated(edge: GraphEdge) {
-  return Boolean(props.relatedIds?.has(edge.from) && props.relatedIds.has(edge.to))
-}
 
 // The node or edge an element in the stage stands for. Connection handles carry their node ID but are not nodes.
 function elementNode(element: Element) {
   return element.hasAttribute('data-vw-port') ? null : element.getAttribute('data-vw-node')
 }
+// A pointer owns a gesture. `isPrimary` is per pointer type, so a mouse and a pen (or touch) can both be primary;
+// every pointer gesture start checks this so a second pointer cannot start or overwrite a gesture.
+function pointerGestureActive() {
+  return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan)
+}
 function gestureInFlight() {
-  return Boolean(nodeDrag || connectionDrag || handleDrag || pinch || pan || draft.value)
+  return pointerGestureActive() || Boolean(draft.value)
 }
 // The stage itself or one of its own nodes, edges, group labels and handles. Keys pressed in focusable slot content,
 // such as an input in a custom node, keep their usual meaning.
@@ -1528,11 +1934,14 @@ function requestContextMenu(target: GraphContextMenuTarget, clientX: number, cli
   emit('context-menu', { target, point: worldPoint(clientX, clientY), clientX, clientY, source })
 }
 function openContextMenu(event: MouseEvent) {
+  // A menu opened mid-gesture (macOS Control-click) can swallow pointerup, so the gesture ends here without a proposal.
+  const dragging = Boolean(dragPreview.value || connectionPoint.value || boxPreview.value || pinch)
+  if (nodeDrag || connectionDrag || handleDrag || pinch || pan) cancelInteraction()
   if (!props.contextMenu || editable(event.target)) return
   event.preventDefault()
   // The browser may follow a handled ContextMenu key or Shift+F10 with its own event; it was already reported.
   if (event.button !== 2 && event.timeStamp - keyboardMenuAt < 1000) return
-  if (dragPreview.value || connectionPoint.value || boxPreview.value || pinch) return
+  if (dragging) return
   requestContextMenu(menuTarget(event.target instanceof Element ? event.target : null), event.clientX, event.clientY, 'pointer')
 }
 function contextMenuWithKeys(event: KeyboardEvent) {
@@ -1655,11 +2064,58 @@ const pattern = computed(() => {
   const area = { x: view.x - cell, y: view.y - cell, width: view.width + 2 * cell, height: view.height + 2 * cell }
   return { cell, dot: 1 / scale, area }
 })
-type GroupLayer = { key: string; group?: (typeof renderedGroups.value)[number] }
-const layers = computed(() => {
-  const groups = renderedGroups.value.map<GroupLayer>(group => ({ key: 'group:' + group.id, group }))
-  return pattern.value ? [{ key: 'background' }, ...groups] : groups
-})
+// The background and the group frames, one layer each below the edges. The optional background is the first layer, so
+// the markup without a background is unchanged. Each group layer reads the frame of its group from a shallow ref of
+// its own, so a drag preview re-renders only the frames it changes, and the list renders again only when the groups,
+// the rendered set, the direction, `draggable` or the background change.
+const frameRefs = new Map<string, ShallowRef<ShownGroup>>()
+watch(shownGroups, (list) => {
+  for (const group of list) {
+    const entry = frameRefs.get(group.id)
+    if (!entry) frameRefs.set(group.id, shallowRef(group))
+    else if (entry.value !== group) entry.value = group
+  }
+  if (frameRefs.size === list.length) return
+  const ids = new Set(list.map(group => group.id))
+  for (const id of [...frameRefs.keys()]) if (!ids.has(id)) frameRefs.delete(id)
+}, { immediate: true })
+type GroupLayerProps = { frame: ShallowRef<ShownGroup>; rtl: boolean; draggable: boolean; name?: string }
+const GroupLayer: FunctionalComponent<GroupLayerProps> = ({ frame, rtl, draggable, name }) => {
+  const group = frame.value
+  return h('g', { class: 'vw-network-group', 'aria-hidden': undefined }, [
+    h('rect', { x: group.x, y: group.y, width: group.width, height: group.height, rx: '10' }),
+    h('text', {
+      x: rtl ? group.x + group.width - 8 : group.x + 8, y: group.y + 15, role: draggable ? 'button' : undefined, 'data-vw-group': group.id,
+      tabindex: draggable ? 0 : undefined, 'aria-label': draggable ? name : undefined,
+      onPointerdown: withModifiers((event: Event) => startNodeDrag(event as PointerEvent, group.members), ['stop']),
+      onKeydown: (event: KeyboardEvent) => moveWithKeys(event, group.members),
+    }, toDisplayString(group.label)),
+  ])
+}
+GroupLayer.props = ['frame', 'rtl', 'draggable', 'name']
+const GroupLayers: FunctionalComponent = () => {
+  const layers: VNode[] = []
+  const area = pattern.value
+  if (area) {
+    const { cell, dot } = area
+    layers.push(h('g', { key: 'background', class: 'vw-network-backdrop', 'aria-hidden': 'true' }, [
+      h('pattern', { id: patternId, patternUnits: 'userSpaceOnUse', x: -cell / 2, y: -cell / 2, width: cell, height: cell }, [
+        props.background === 'dots'
+          ? h('circle', { class: 'vw-network-pattern', cx: cell / 2, cy: cell / 2, r: dot })
+          : h('path', { class: 'vw-network-pattern', 'stroke-width': dot, d: `M ${cell / 2} 0 V ${cell} M 0 ${cell / 2} H ${cell}` }),
+      ]),
+      h('rect', { class: 'vw-network-background', ...area.area, fill: `url(#${patternId})` }),
+    ]))
+  }
+  const shown = visibleGroups.value, draggable = props.draggable, right = rtl.value
+  for (const group of groupMembership.value) {
+    if (shown && !shown.has(group.id)) continue
+    layers.push(h(GroupLayer, {
+      key: 'group:' + group.id, frame: frameRefs.get(group.id)!, rtl: right, draggable, name: draggable ? groupName(group) : undefined,
+    }))
+  }
+  return layers
+}
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
 // in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
@@ -1760,7 +2216,7 @@ const tooltipView = computed(() => {
   const current = tooltip.value
   if (!current || !mounted.value || tooltipBlocked.value) return undefined
   const { x, y, scale } = camera.value
-  let target: NetworkTooltipSlot['target'], left: number, right: number, top: number, bottom: number
+  let target: NetworkTooltipSlot<ShownNode, ShownEdge>['target'], left: number, right: number, top: number, bottom: number
   if (current.kind === 'node') {
     const node = nodesById.value.get(current.id), box = layout.value.boxes.get(current.id)
     if (!node || !box || (visible.value && !visible.value.nodes.has(node.id))) return undefined
@@ -1799,8 +2255,259 @@ const tooltipView = computed(() => {
     },
   }
 })
-function describedBy(kind: TooltipState['kind'], id: string) {
-  return slots.tooltip && tooltipView.value && tooltip.value?.kind === kind && tooltip.value.id === id ? tooltipId : undefined
+// The element the shown tooltip describes (its `aria-describedby`). Unlike tooltipView, it does not change while the
+// camera moves.
+const described = computed(() => tooltipView.value && tooltip.value ? tooltip.value : undefined)
+
+// Nodes and edges are components of their own, so a drag or a pan re-renders only those whose props changed. The
+// lists render the same markup the template rendered inline. Handlers are shared and stable, so they never count as
+// a change. A slot is passed both as the slot and as a prop: a new slot function re-renders every item. The items are
+// functional components: they keep no state, and they mount faster than components with a setup.
+const nodeActions = {
+  hoverTooltip,
+  leaveTooltip,
+  startDrag: (event: PointerEvent, id: string) => startNodeDrag(event, movingIds(id), id),
+  click: clickNode,
+  moveWithKeys: (event: KeyboardEvent, id: string) => moveWithKeys(event, movingIds(id), id),
+  select,
+}
+const edgeActions = { hoverTooltip, leaveTooltip, select: selectEdge }
+
+// Item geometry. Each node and edge component reads its box or path from a shallow ref of its own, so a drag preview
+// updates the moved nodes and their edges without rendering the lists again. The refs follow `layout`: between a
+// layout and a preview of it only the refs of the changed nodes and edges are compared; any other change compares
+// every ref. A ref is only replaced when the value differs, so equal boxes from a recomputed layout render nothing.
+type EdgeGeometry = { path: string; labelX?: number; labelY?: number }
+const boxRefs = new Map<string, ShallowRef<GraphBox>>()
+const edgeRefs = new Map<string, ShallowRef<EdgeGeometry>>()
+function edgeGeometry(geometry: GraphLayout, id: string): EdgeGeometry | undefined {
+  const path = geometry.paths.get(id), label = geometry.edgeLabels.get(id)
+  return path === undefined ? undefined : { path, labelX: label?.x, labelY: label?.y }
+}
+function syncBox(id: string, geometry: GraphLayout) {
+  const box = geometry.boxes.get(id), entry = boxRefs.get(id)
+  if (!box) boxRefs.delete(id)
+  else if (!entry) boxRefs.set(id, shallowRef(box))
+  else if (entry.value !== box && !sameRecord(entry.value, box)) entry.value = box
+}
+function syncEdge(id: string, geometry: GraphLayout) {
+  const next = edgeGeometry(geometry, id), entry = edgeRefs.get(id)
+  if (!next) edgeRefs.delete(id)
+  else if (!entry) edgeRefs.set(id, shallowRef(next))
+  else if (!sameRecord(entry.value, next)) entry.value = next
+}
+watch(layout, (next, previous) => {
+  const before = previewSources.get(previous), after = previewSources.get(next)
+  if ((before?.saved ?? previous) !== (after?.saved ?? next)) {
+    for (const id of [...boxRefs.keys()]) syncBox(id, next)
+    for (const id of [...edgeRefs.keys()]) syncEdge(id, next)
+    return
+  }
+  for (const source of [before, after]) {
+    for (const id of source?.nodes ?? []) syncBox(id, next)
+    for (const id of source?.edges ?? []) syncEdge(id, next)
+  }
+})
+// Refs are created on first use. Without a ref, a node or edge is not part of the current preview (the watcher above
+// creates the refs of changed items), so the saved layout gives its value.
+function boxRef(id: string) {
+  let entry = boxRefs.get(id)
+  if (!entry) boxRefs.set(id, entry = shallowRef(savedRouted.value.boxes.get(id)!))
+  return entry
+}
+function edgeRef(id: string) {
+  let entry = edgeRefs.get(id)
+  if (!entry) edgeRefs.set(id, entry = shallowRef(edgeGeometry(savedRouted.value, id)!))
+  return entry
+}
+type NodeItemProps = {
+  node: NetworkNode
+  box: ShallowRef<GraphBox>
+  selected: boolean
+  draggable: boolean
+  related: boolean
+  dimmed: boolean
+  describedby?: string
+  /** Values shared by every node, in one object that keeps its identity while they do not change. */
+  shared: {
+    /** Renders the native `<title>`; false while a tooltip slot replaces it. */
+    title: boolean
+    rtl: boolean
+    /** The camera scale for the `node` slot; 0 without a slot, so zooming does not re-render default nodes. */
+    scale: number
+    /** The parent's `node` slot, so that a new slot function re-renders every node. */
+    slot?: unknown
+    actions: typeof nodeActions
+  }
+}
+// One node: a focusable group with a native title and the `node` slot, or the default box, label and detail.
+const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
+  const { node, shared } = item, box = item.box.value, actions = shared.actions
+  const selected = Boolean(item.selected), dimmed = Boolean(item.dimmed)
+  const select = (event: Event) => actions.select(node.id, event as KeyboardEvent)
+  return h('g', {
+    class: ['vw-network-node', [`vw-tone-${node.tone ?? 'blue'}`, {
+      'vw-is-selected': selected, 'vw-is-draggable': Boolean(item.draggable), 'vw-is-related': Boolean(item.related), 'vw-dimmed': dimmed,
+    }]],
+    'data-vw-node': node.id, transform: `translate(${box.x} ${box.y})`, role: 'button', tabindex: '0',
+    'aria-label': [node.label, node.detail].filter(Boolean).join(' '), 'aria-pressed': selected, 'aria-describedby': item.describedby,
+    onPointerenter: () => actions.hoverTooltip('node', node.id),
+    onPointerleave: () => actions.leaveTooltip(),
+    onPointerdown: withModifiers((event: Event) => actions.startDrag(event as PointerEvent, node.id), ['stop']),
+    onClick: (event: MouseEvent) => actions.click(node.id, event),
+    onKeydown: [
+      withModifiers((event: Event) => node.draggable !== false && actions.moveWithKeys(event as KeyboardEvent, node.id), ['self']),
+      withKeys(withModifiers(select, ['self', 'prevent']), ['enter']),
+      withKeys(withModifiers(select, ['self', 'prevent']), ['space']),
+    ],
+  }, [
+    shared.title ? h('title', null, toDisplayString(node.label) + ' ' + toDisplayString(node.detail)) : createCommentVNode('', true),
+    renderSlot(slots, 'node', { node: { ...node, box }, box, selected, dimmed, scale: shared.scale }, () => [
+      h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, [
+        h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8 }),
+        h('text', { x: shared.rtl ? box.width - 13 : 13, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
+        node.detail
+          ? h('text', { key: 0, x: shared.rtl ? box.width - 13 : 13, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
+          : createCommentVNode('', true),
+      ]),
+    ]),
+  ])
+}
+NodeItem.props = ['node', 'box', 'selected', 'draggable', 'related', 'dimmed', 'describedby', 'shared']
+type EdgeItemProps = {
+  edge: GraphEdge
+  /** The path and the label anchor; the anchor is undefined when the layout has none. */
+  geometry: ShallowRef<EdgeGeometry>
+  related: boolean
+  dimmed: boolean
+  /** Selected through `selectedEdgeIds` (only with `edgesSelectable`). */
+  selected: boolean
+  active: boolean
+  pressed: boolean
+  describedby?: string
+  /** Values shared by every edge, in one object that keeps its identity while they do not change. */
+  shared: {
+    /** Sets `data-vw-edge` on the group, for context menus. */
+    menu: boolean
+    /** Renders the focusable hit area. */
+    hit: boolean
+    /** The accessible name prefix of the hit area. */
+    name: string | undefined
+    marker: string
+    /** The camera scale for the `edge` slot; 0 without a slot, so zooming does not re-render default edges. */
+    scale: number
+    /** The parent's `edge` slot, so that a new slot function re-renders every edge. */
+    slot?: unknown
+    actions: typeof edgeActions
+  }
+}
+// One edge: the `edge` slot or the default path and label, and the focusable hit area when edges can be selected.
+const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
+  const { edge, shared } = item, { path, labelX, labelY } = item.geometry.value, actions = shared.actions
+  const related = Boolean(item.related), dimmed = Boolean(item.dimmed), selected = Boolean(item.selected)
+  const select = (event: Event) => actions.select(edge.id, event as MouseEvent | KeyboardEvent)
+  return h('g', {
+    class: { 'vw-dimmed': dimmed, 'vw-edge-selected': selected }, 'data-vw-edge': shared.menu ? edge.id : undefined,
+    onPointerenter: () => actions.hoverTooltip('edge', edge.id),
+    onPointerleave: () => actions.leaveTooltip(),
+  }, [
+    renderSlot(slots, 'edge', { edge, path, selected: related, dimmed, scale: shared.scale }, () => [
+      h('path', { class: ['vw-network-edge', { 'vw-is-related': related }], d: path, 'marker-end': `url(#${shared.marker})` }),
+      edge.label && labelX !== undefined
+        ? h('text', { key: 0, class: 'vw-edge-label', x: labelX, y: labelY }, toDisplayString(edge.label))
+        : createCommentVNode('', true),
+    ]),
+    shared.hit ? h('path', {
+      key: 0, class: ['vw-edge-hit', { 'vw-is-active': Boolean(item.active), 'vw-is-selected': selected }],
+      d: path, role: 'button', tabindex: '0', 'aria-label': shared.name + ' ' + (edge.label ?? edge.id),
+      'aria-pressed': Boolean(item.pressed), 'aria-describedby': item.describedby, 'data-vw-edge': edge.id,
+      onPointerdown: withModifiers(() => {}, ['stop']),
+      onClick: select,
+      onKeydown: [withKeys(withModifiers(select, ['prevent']), ['enter']), withKeys(withModifiers(select, ['prevent']), ['space'])],
+    }) : createCommentVNode('', true),
+  ])
+}
+EdgeItem.props = ['edge', 'geometry', 'related', 'dimmed', 'selected', 'active', 'pressed', 'describedby', 'shared']
+// Slots are not reactive, so the template passes them in: a slot that appears, disappears or is replaced (an inline
+// render function) re-renders the list, and a compiled slot keeps its identity.
+type ListProps<S> = { itemSlot?: S; tooltips: boolean }
+// The previous object while every value is the same, so the shared prop of the items keeps its identity.
+function keep<T extends object>(previous: T | undefined, next: T) {
+  return previous && sameRecord(previous, next) ? previous : next
+}
+let nodeShared: NodeItemProps['shared'] | undefined
+let edgeShared: EdgeItemProps['shared'] | undefined
+const NodeList: FunctionalComponent<ListProps<typeof slots.node>> = ({ itemSlot: nodeSlot, tooltips: tooltipSlot }) => {
+  const shown = tooltipSlot ? described.value : undefined
+  const shared = nodeShared = keep(nodeShared, {
+    title: !tooltipSlot, rtl: rtl.value, scale: nodeSlot ? camera.value.scale : 0, slot: nodeSlot, actions: nodeActions,
+  })
+  const draggable = props.draggable, related = props.relatedIds
+  const selected = selectionTest(), dimmed = dimTest()
+  return (visibleNodes.value ?? viewNodes.value).map(node => h(NodeItem, {
+    key: node.id, node, box: boxRef(node.id), selected: selected(node.id), draggable: draggable && node.draggable !== false,
+    related: Boolean(related?.has(node.id)), dimmed: dimmed(node.id),
+    describedby: shown?.kind === 'node' && shown.id === node.id ? tooltipId : undefined, shared,
+  }, nodeSlot ? { node: nodeSlot, $stable: true } : undefined))
+}
+const EdgeList: FunctionalComponent<ListProps<typeof slots.edge>> = ({ itemSlot: edgeSlot, tooltips: tooltipSlot }) => {
+  const shown = tooltipSlot ? described.value : undefined
+  const hit = Boolean(props.reconnectable || props.edgesSelectable || props.editableEdges)
+  const shared = edgeShared = keep(edgeShared, {
+    menu: props.contextMenu, hit, name: messages.value.selectEdge, marker, scale: edgeSlot ? camera.value.scale : 0,
+    slot: edgeSlot, actions: edgeActions,
+  })
+  const selectable = props.edgesSelectable, active = currentEdgeId.value, related = props.relatedIds
+  const dimmed = dimTest(), selected = edgeSelectionTest(), pressed = edgePressedTest()
+  return shownEdges.value.map(edge => h(EdgeItem, {
+    key: edge.id, edge, geometry: edgeRef(edge.id),
+    related: Boolean(related?.has(edge.from) && related.has(edge.to)), dimmed: dimmed(edge.from) || dimmed(edge.to),
+    selected: Boolean(selectable && selected(edge.id)), active: hit && active === edge.id, pressed: hit && pressed(edge.id),
+    describedby: shown?.kind === 'edge' && shown.id === edge.id ? tooltipId : undefined, shared,
+  }, edgeSlot ? { edge: edgeSlot, $stable: true } : undefined))
+}
+
+NodeList.props = EdgeList.props = ['itemSlot', 'tooltips']
+
+// The minimap rectangles and the connection handles are items of their own too. Each reads the box ref of its node,
+// so a drag preview re-renders the items of the moved nodes, and the lists render again only when the nodes, the
+// selection or the connection draft change.
+const MinimapNode: FunctionalComponent<{ box: ShallowRef<GraphBox>; selected: boolean }> = ({ box, selected }) => {
+  const { x, y, width, height } = box.value
+  return h('rect', { class: { 'vw-is-selected': selected }, x, y, width, height, rx: '3' })
+}
+MinimapNode.props = ['box', 'selected']
+const MinimapNodes: FunctionalComponent = () => {
+  const selected = selectedTest.value
+  return viewNodes.value.map(node => h(MinimapNode, { key: node.id, box: boxRef(node.id), selected: selected(node.id) }))
+}
+type HandleProps = { node: NetworkNode; port?: GraphPort; box: ShallowRef<GraphBox>; rl: boolean; pressed?: boolean; prefix?: string }
+const HandleCircle: FunctionalComponent<HandleProps> = ({ node, port, box, rl, pressed, prefix }) => {
+  const handle = connectHandle(node, port, box.value, rl)
+  const activate = (event: Event) => (props.connectable || draft.value) && activatePort(handle, event as MouseEvent | KeyboardEvent)
+  return h('circle', {
+    class: ['vw-connect-handle', { 'vw-is-active': pressed }], 'data-vw-node': handle.node, 'data-vw-port': portKey(handle),
+    cx: handle.x, cy: handle.y, r: '6', role: 'button', tabindex: '0', 'aria-label': `${prefix} ${handle.label}`,
+    'aria-pressed': Boolean(pressed),
+    onPointerdown: withModifiers((event: Event) => props.connectable && startPort(event as PointerEvent, handle), ['stop']),
+    onClick: withModifiers(activate, ['stop']),
+    onKeydown: [withKeys(withModifiers(activate, ['stop', 'prevent']), ['enter']), withKeys(withModifiers(activate, ['stop', 'prevent']), ['space'])],
+  })
+}
+HandleCircle.props = ['node', 'port', 'box', 'rl', 'pressed', 'prefix']
+const HandleNodes: FunctionalComponent = () => {
+  const rl = direction.value === 'RL', pending = draft.value, fixed = pending && portKey(pending.fixed)
+  const { connectTo, connectFrom } = messages.value
+  const list = []
+  for (const node of visibleNodes.value ?? viewNodes.value) {
+    const box = boxRef(node.id)
+    for (const port of node.ports ?? [undefined]) {
+      const key = portKey({ node: node.id, port: port?.id })
+      const pressed = pending && fixed === key
+      list.push(h(HandleCircle, { key, node, port, box, rl, pressed, prefix: pending && !pressed ? connectTo : connectFrom }))
+    }
+  }
+  return list
 }
 
 watch(camera, value => emit('viewport-change', { ...value }))
@@ -1820,7 +2527,7 @@ function focusNode(id: string, options?: NetworkFocusOptions) {
   camera.value = graphCameraAt({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, viewport.value, scale)
 }
 /** A standalone SVG document of the whole graph with the default rendering and the current theme colours. */
-function exportSvg(options: GraphExportOptions = {}) {
+function exportSvg(options: GraphExportOptions<ShownNode, ShownEdge> = {}) {
   const { includeSelection = true, theme, ...rest } = options
   const selection = !includeSelection ? [] : props.selectedIds ?? (props.selectedId === undefined ? [] : [props.selectedId])
   return renderGraphSvg(layout.value, viewNodes.value, viewEdges.value, {
@@ -1834,7 +2541,7 @@ function exportSvg(options: GraphExportOptions = {}) {
   })
 }
 /** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
-async function exportPng(options: GraphPngExportOptions = {}) {
+async function exportPng(options: GraphPngExportOptions<ShownNode, ShownEdge> = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }
@@ -1844,10 +2551,24 @@ defineExpose({
 
 watch(savedRouted, cancelInteraction)
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value, props.editableEdges, props.resizable], cancelInteraction)
-watch(baseLayout, () => {
+// A structural change (connect, delete, paste, collapse) keeps a camera the user or the API placed. The view re-fits
+// while the camera is still fitted automatically, when the layout function or options change, and when the graph is
+// replaced: it was or becomes empty, or none of its previous nodes remain.
+watch([baseLayout, () => props.layout, options, () => props.nodes], ([, layoutFn, layoutOptions, nodes], [, previousFn, previousOptions, previousNodes]) => {
   if (activeEdgeId.value && !edgesById.value.has(activeEdgeId.value)) activeEdgeId.value = undefined
-  fitMode.value = 'auto'
-  camera.value = fitCamera()
+  const remaining = new Set(nodes.map(node => node.id))
+  const replaced = layoutFn !== previousFn || layoutOptions !== previousOptions || !previousNodes.some(node => remaining.has(node.id))
+  if (fitMode.value !== 'manual' || replaced) {
+    fitMode.value = 'auto'
+    camera.value = fitCamera()
+    return
+  }
+  // A smaller graph can raise the lower zoom limit; keep the kept camera restorable by clamping around the centre.
+  const current = camera.value
+  const scale = clampScale(current.scale)
+  if (scale === current.scale) return
+  const { width, height } = viewport.value, ratio = scale / current.scale
+  camera.value = { x: width / 2 - (width / 2 - current.x) * ratio, y: height / 2 - (height / 2 - current.y) * ratio, scale }
 })
 watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()
@@ -1868,6 +2589,8 @@ onMounted(() => {
 onUnmounted(() => {
   cancelInteraction()
   observer?.disconnect()
+  directionObserver?.disconnect()
+  directionObserver = undefined
   hideTooltip()
   document.removeEventListener('keydown', dismissTooltip)
 })
@@ -1876,7 +2599,7 @@ onUnmounted(() => {
 <template>
   <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
-      ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ panning: isPanning }"
+      ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ 'vw-is-panning': isPanning }"
       :aria-label="messages.region" tabindex="0"
       @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event)" @focusout="releaseFocus($event); blurTooltip()"
@@ -1894,55 +2617,9 @@ onUnmounted(() => {
         </marker>
       </defs>
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
-        <!-- The optional background is the first item of the group list and each group element takes the first branch
-          of its conditional, so the markup without a background is unchanged. -->
-        <g v-for="layer in layers" :key="layer.key" :class="layer.group ? 'vw-network-group' : 'vw-network-backdrop'"
-          :aria-hidden="layer.group ? undefined : 'true'">
-          <rect v-if="layer.group" :x="layer.group.x" :y="layer.group.y" :width="layer.group.width" :height="layer.group.height" rx="10" />
-          <pattern v-else-if="pattern" :id="patternId" patternUnits="userSpaceOnUse" :x="-pattern.cell / 2" :y="-pattern.cell / 2"
-            :width="pattern.cell" :height="pattern.cell">
-            <circle v-if="background === 'dots'" class="vw-network-pattern" :cx="pattern.cell / 2" :cy="pattern.cell / 2" :r="pattern.dot" />
-            <path v-else class="vw-network-pattern" :stroke-width="pattern.dot"
-              :d="`M ${pattern.cell / 2} 0 V ${pattern.cell} M 0 ${pattern.cell / 2} H ${pattern.cell}`" />
-          </pattern>
-          <text v-if="layer.group" :x="rtl ? layer.group.x + layer.group.width - 8 : layer.group.x + 8" :y="layer.group.y + 15" :role="draggable ? 'button' : undefined" :data-vw-group="layer.group.id"
-            :tabindex="draggable ? 0 : undefined" :aria-label="draggable ? groupName(layer.group) : undefined"
-            @pointerdown.stop="startNodeDrag($event, layer.group!.members)" @keydown="moveWithKeys($event, layer.group!.members)">{{ layer.group.label }}</text>
-          <rect v-else-if="pattern" class="vw-network-background" v-bind="pattern.area" :fill="`url(#${patternId})`" />
-        </g>
-        <g v-for="edge in shownEdges" :key="edge.id" :class="{ 'vw-dimmed': edgeIsDimmed(edge), 'vw-edge-selected': edgesSelectable && edgeSelected(edge.id) }"
-          :data-vw-edge="contextMenu ? edge.id : undefined" @pointerenter="hoverTooltip('edge', edge.id)" @pointerleave="leaveTooltip">
-          <slot name="edge" :edge="edge" :path="layout.paths.get(edge.id)!" :selected="edgeIsRelated(edge)" :dimmed="edgeIsDimmed(edge)" :scale="camera.scale">
-            <path class="vw-network-edge" :class="{ related: edgeIsRelated(edge) }"
-              :d="layout.paths.get(edge.id)" :marker-end="`url(#${marker})`" />
-            <text v-if="edge.label && layout.edgeLabels.has(edge.id)" class="vw-edge-label"
-              :x="layout.edgeLabels.get(edge.id)!.x" :y="layout.edgeLabels.get(edge.id)!.y"
-            >{{ edge.label }}</text>
-          </slot>
-          <path v-if="reconnectable || edgesSelectable || editableEdges" class="vw-edge-hit" :class="{ active: currentEdgeId === edge.id, selected: edgesSelectable && edgeSelected(edge.id) }"
-            :d="layout.paths.get(edge.id)" role="button" tabindex="0" :aria-label="messages.selectEdge + ' ' + (edge.label ?? edge.id)"
-            :aria-pressed="edgePressed(edge.id)" :aria-describedby="describedBy('edge', edge.id)" :data-vw-edge="edge.id"
-            @pointerdown.stop @click="selectEdge(edge.id, $event)" @keydown.enter.prevent="selectEdge(edge.id, $event)" @keydown.space.prevent="selectEdge(edge.id, $event)" />
-        </g>
-        <g
-          v-for="node in shownNodes" :key="node.id" class="vw-network-node" :data-vw-node="node.id"
-          :class="[`vw-tone-${node.tone ?? 'blue'}`, { selected: isSelected(node.id), draggable: draggable && node.draggable !== false, related: relatedIds?.has(node.id), 'vw-dimmed': isDimmed(node.id) }]"
-          :transform="`translate(${node.box.x} ${node.box.y})`"
-          role="button" tabindex="0" :aria-label="[node.label, node.detail].filter(Boolean).join(' ')" :aria-pressed="isSelected(node.id)"
-          :aria-describedby="describedBy('node', node.id)" @pointerenter="hoverTooltip('node', node.id)" @pointerleave="leaveTooltip"
-          @pointerdown.stop="startNodeDrag($event, movingIds(node.id), node.id)" @click="clickNode(node.id, $event)"
-          @keydown.self="node.draggable !== false && moveWithKeys($event, movingIds(node.id), node.id)"
-          @keydown.enter.self.prevent="select(node.id, $event)" @keydown.space.self.prevent="select(node.id, $event)"
-        >
-          <title v-if="!$slots.tooltip">{{ node.label }} {{ node.detail }}</title>
-          <slot name="node" :node="node" :box="node.box" :selected="isSelected(node.id)" :dimmed="isDimmed(node.id)" :scale="camera.scale">
-          <svg :width="node.box.width" :height="node.box.height" overflow="hidden">
-          <rect x="2" y="2" :width="node.box.width - 4" :height="node.box.height - 4" :rx="node.shape === 'rounded' ? 19 : 8" />
-          <text :x="rtl ? node.box.width - 13 : 13" :y="node.detail ? 24 : 34" class="vw-node-title">{{ node.label }}</text>
-          <text v-if="node.detail" :x="rtl ? node.box.width - 13 : 13" y="43" class="vw-node-detail">{{ node.detail }}</text>
-          </svg>
-          </slot>
-        </g>
+        <GroupLayers />
+        <EdgeList :item-slot="$slots.edge" :tooltips="Boolean($slots.tooltip)" />
+        <NodeList :item-slot="$slots.node" :tooltips="Boolean($slots.tooltip)" />
         <path v-if="connectionPath && !overlay" class="vw-connection-preview" :d="connectionPath" />
         <!-- Guides only appear during a node drag, never with a connection preview, so they share its conditional. -->
         <g v-else-if="guideLines?.length && !overlay" class="vw-guides" aria-hidden="true">
@@ -1959,7 +2636,7 @@ onUnmounted(() => {
               :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
               :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
           </g>
-          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ collapsed: !toggle.expanded }"
+          <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ 'vw-is-collapsed': !toggle.expanded }"
             :transform="`translate(${toggle.x} ${toggle.y})`" role="button" tabindex="0" :aria-label="toggle.label"
             :aria-expanded="toggle.expanded" :data-vw-toggle="toggle.id"
             @pointerdown.stop @click.stop="toggleGroup(toggle)" @keydown.enter.stop.prevent="toggleGroup(toggle)" @keydown.space.stop.prevent="toggleGroup(toggle)">
@@ -1974,17 +2651,7 @@ onUnmounted(() => {
             @pointerdown.stop="startResizeDrag($event, handle.node, handle.corner)" @keydown="resizeKeys($event, handle.node, handle.corner)" />
         </g>
         <rect v-if="boxPreview" class="vw-box-selection" v-bind="boxPreview" />
-        <template v-if="connectable || draft?.edge">
-          <circle v-for="handle in renderedHandles" :key="portKey(handle)" class="vw-connect-handle" :data-vw-node="handle.node"
-            :class="{ active: portPressed(handle) }" :data-vw-port="portKey(handle)"
-            :cx="handle.x" :cy="handle.y" r="6" role="button" tabindex="0"
-            :aria-label="`${draft && !portPressed(handle) ? messages.connectTo : messages.connectFrom} ${handle.label}`"
-            :aria-pressed="Boolean(portPressed(handle))"
-            @pointerdown.stop="connectable && startPort($event, handle)"
-            @click.stop="(connectable || draft) && activatePort(handle, $event)"
-            @keydown.enter.stop.prevent="(connectable || draft) && activatePort(handle, $event)"
-            @keydown.space.stop.prevent="(connectable || draft) && activatePort(handle, $event)" />
-        </template>
+        <HandleNodes v-if="connectable || draft?.edge" />
         <circle v-for="item in reconnectHandles" :key="item.end" class="vw-reconnect-handle"
           :cx="item.x" :cy="item.y" r="6" role="button" tabindex="0" :aria-label="item.label"
           @pointerdown.stop="reconnectEdge(item.edge, item.end, $event)"
@@ -2002,8 +2669,7 @@ onUnmounted(() => {
     <button v-if="showMinimap && nodes.length" type="button" class="vw-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
       <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
-        <rect v-for="node in positioned" :key="node.id" :class="{ selected: isSelected(node.id) }"
-          :x="node.box.x" :y="node.box.y" :width="node.box.width" :height="node.box.height" rx="3" />
+        <MinimapNodes />
         <rect class="vw-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"
           :width="viewport.width / camera.scale" :height="viewport.height / camera.scale" />
       </svg>

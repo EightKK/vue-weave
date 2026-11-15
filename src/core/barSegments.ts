@@ -1,5 +1,6 @@
 // Internal geometry shared by GanttChart and renderTimelineSvg. Not part of the public entry points.
-import type { TimeRange } from './timeline.js'
+import { baselineVariance, timelineBaseline, timelineBaselineIds, timelineBaselineLimit, type TimeRange } from './timeline.js'
+import type { TimelineBar } from './types.js'
 
 export interface SegmentPiece extends TimeRange {
   /** Completed fraction of this piece, between 0 and 1. */
@@ -105,4 +106,92 @@ export function progressLinePoints(x: number, top: number, bottom: number, kinks
   }
   points.push([x, bottom])
   return points
+}
+
+/**
+ * Where the lag label of a dependency drawn by `dependencyPath(x1, y1, x2, y2)` goes, in the same inline-start
+ * coordinates. Between rows the label sits in the gap at the edge of the source row that faces the target, beside the
+ * connector's first vertical run and towards later times (`anchor: 'start'`); bars never reach into that gap. Within one
+ * row it is centred above the horizontal run (`anchor: 'middle'`). `sourceTop` is the top of the source row.
+ */
+export function lagLabelPoint(x1: number, y1: number, x2: number, y2: number, sourceTop: number, rowHeight: number) {
+  if (y1 === y2) return { x: (x1 + x2) / 2, y: x1 < x2 ? y1 - 7 : y1 + 23, anchor: 'middle' as const }
+  return { x: (x1 < x2 ? (x1 + x2) / 2 : x1 + 10) + 4, y: y2 > y1 ? sourceTop + rowHeight : sourceTop, anchor: 'start' as const }
+}
+
+/**
+ * The baseline sets to draw, in slot order. An explicit `baselineIds` is checked (nonempty, unique, at most
+ * `timelineBaselineLimit`) and used as given, also for IDs that no bar has, so a set keeps its slot while data changes.
+ * Without it, the first `timelineBaselineLimit` IDs of `timelineBaselineIds`. `described` is true when `baselineIds` is
+ * given or a bar has named `baselines`; only then do titles and descriptions carry the variance, so charts with only
+ * `TimelineBar.baseline` render as before.
+ */
+export function baselineSelection(bars: readonly TimelineBar[], baselineIds: readonly string[] | undefined) {
+  if (baselineIds === undefined) {
+    return { ids: timelineBaselineIds(bars).slice(0, timelineBaselineLimit), described: bars.some(bar => Boolean(bar.baselines?.length)) }
+  }
+  if (!Array.isArray(baselineIds)) throw new Error('baselineIds must be an array of baseline set IDs')
+  const seen = new Set<string>()
+  for (const id of baselineIds) {
+    if (typeof id !== 'string' || !id) throw new Error('Invalid baseline set ID in baselineIds: ' + String(id))
+    if (seen.has(id)) throw new Error('Duplicate baseline set ID in baselineIds: ' + id)
+    seen.add(id)
+  }
+  if (baselineIds.length > timelineBaselineLimit) {
+    throw new RangeError(`baselineIds can select at most ${timelineBaselineLimit} baseline sets`)
+  }
+  return { ids: [...baselineIds], described: true }
+}
+export type BaselineSelection = ReturnType<typeof baselineSelection>
+
+/**
+ * Vertical layout of `count` baseline strips below a bar, in pixels from the bar's bottom edge. One set keeps the
+ * original 4 px strip 1 px below the bar. Two or three sets are 3 px strips 1 px apart; the bar is drawn `reserve`
+ * pixels shorter so the strips fit in its lane (the row height never changes).
+ */
+export function baselineLayout(count: number) {
+  if (count <= 1) return { reserve: 0, height: 4, offset: (_slot: number) => 1 }
+  return { reserve: 4 * count - 5, height: 3, offset: (slot: number) => 1 + 4 * slot }
+}
+
+/** Words and formatters of baseline texts. */
+export interface BaselineTextOptions {
+  label: (id: string) => string
+  formatTime: (time: number) => string
+  formatVariance: (delta: number) => string
+  start: string
+  finish: string
+  duration: string
+}
+
+/** One drawn baseline strip of a bar, with its texts. */
+export interface BaselineStrip {
+  id: string
+  slot: number
+  range: TimeRange
+  /** The set label, from `BaselineTextOptions.label`. */
+  label: string
+  /** The formatted baseline dates, such as "09:00–11:00". */
+  dates: string
+  /** The variance, such as "start +1 h, finish +1 h, duration +0 h"; only when the selection is described. */
+  variance?: string
+}
+
+/** The selected baselines that one bar has, in slot order. `current` is the bar's interval as drawn. */
+export function baselineStrips(bar: TimelineBar, current: TimeRange, selection: BaselineSelection, text: BaselineTextOptions): BaselineStrip[] {
+  const strips: BaselineStrip[] = []
+  selection.ids.forEach((id, slot) => {
+    const range = timelineBaseline(bar, id)
+    if (!range) return
+    const label = text.label(id)
+    const dates = `${text.formatTime(range.start)}–${text.formatTime(range.end)}`
+    let variance: string | undefined
+    if (selection.described) {
+      const delta = baselineVariance(current, range)
+      variance = `${text.start} ${text.formatVariance(delta.start)}, ${text.finish} ${text.formatVariance(delta.end)}, `
+        + `${text.duration} ${text.formatVariance(delta.duration)}`
+    }
+    strips.push({ id, slot, range, label, dates, variance })
+  })
+  return strips
 }

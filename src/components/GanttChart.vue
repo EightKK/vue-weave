@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+<script setup lang="ts" generic="R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar">
+import { computed, h, nextTick, onBeforeUnmount, onMounted, onScopeDispose, onUnmounted, ref, shallowRef, useId, watch, type Slots } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
   BatchEditValidator, TimelineBarEnd, TimelineConnection, TimelineConnectionValidator, TimelineLoadRow, TimelineLoadSegment,
@@ -10,6 +10,7 @@ import {
   summarizeTimelineRows, timeTicks, timelineLabelColumnId, visibleRows, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
+import { formatDependencyLag } from '../core/timeline.js'
 import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
 import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
@@ -19,14 +20,18 @@ import type { RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
-import { progressLinePoints, progressLineTime } from '../core/barSegments.js'
+import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
+import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
+import { timelineBaselineId } from '../core/timeline.js'
+import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
+import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
   /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
-  rows: readonly TimelineRow[]
+  rows: readonly R[]
   /** Bars drawn on the rows. Each has an ID, `rowId`, label and numeric half-open `[start, end)` interval in the units of `range`; a zero-duration bar is a milestone. Required. */
-  bars: readonly TimelineBar[]
+  bars: readonly B[]
   /** Links between bars by ID, with an optional FS, SS, FF or SF type. They are drawn only; scheduling constraints are enforced by the application. Default: `[]`. */
   dependencies?: readonly TimelineDependency[]
   /** IDs of dependencies drawn with the highlight style. */
@@ -41,6 +46,8 @@ const props = withDefaults(defineProps<{
   snap?: number
   /** Formats a time for tick labels and accessible bar labels. Default: UTC `HH:mm`. */
   formatTime?: (time: number) => string
+  /** Formats a non-zero dependency `lag`, in the units of `range`, for its connector label and description. Default: `formatDependencyLag`, signed hours of milliseconds such as `+2 h`. */
+  formatLag?: (lag: number) => string
   /** Controlled set of selected bar IDs, highlighted in the chart. With `multiSelect`, clicks propose changes through `update:selectedIds`. */
   selectedIds?: ReadonlySet<string>
   /** Controlled set of collapsed row IDs. When omitted, the component keeps the collapsed set itself; changes are reported through `update:collapsedIds`. */
@@ -50,7 +57,7 @@ const props = withDefaults(defineProps<{
   /** Vertical markers with a unique ID, finite time and label, drawn inside the visible time window. */
   markers?: readonly TimelineMarker[]
   /** Extra sticky columns next to the row label, each with an ID, label, pixel width, `value(row, summary)` and optional `editable`. */
-  columns?: readonly TimelineColumn[]
+  columns?: readonly TimelineColumn<R>[]
   /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
   showSummaries?: boolean
   /** Synchronous check of a cell edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -107,6 +114,11 @@ const props = withDefaults(defineProps<{
   loadRowHeight?: number
   /** Zooms the time axis between 65% and 300% with a two-finger pinch. Opt-in. Default: false. */
   pinchZoom?: boolean
+  /**
+   * Zooms the time axis between 65% and 300% with Ctrl+wheel or Meta+wheel (and desktop trackpad pinches, which arrive
+   * as Ctrl+wheel), keeping the time under the pointer in place. A plain wheel still scrolls. Opt-in. Default: false.
+   */
+  wheelZoom?: boolean
   /** Text direction: `ltr`, `rtl` or `auto`. `rtl` places row headings on the right and runs time right to left. Default: `ltr`. */
   dir?: ChartDirection
   /** Half-open intervals shaded as non-working time behind the grid. They may overlap and need not be sorted. */
@@ -126,7 +138,7 @@ const props = withDefaults(defineProps<{
   /** Reports context menu requests through `context-menu` instead of opening the browser menu. The component renders no menu. Opt-in. Default: false. */
   contextMenu?: boolean
   /** Enables proposing new bars by dragging or clicking an empty part of a row, or via its add button. Pass `true` for every row or a predicate to choose rows. Default: false. */
-  creatable?: boolean | ((row: TimelineRow) => boolean)
+  creatable?: boolean | ((row: R) => boolean)
   /** Length in time units of a bar proposed by a click or the add button; finite and positive. Default: 4 times `snap`. */
   createDuration?: number
   /** Synchronous check of a new bar proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -151,6 +163,19 @@ const props = withDefaults(defineProps<{
   maxColumnWidth?: number
   /** Synchronous check of a column resize proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateColumnResize?: ColumnResizeValidator
+  /**
+   * Baseline sets drawn below the bars, in slot order: at most 3 unique IDs from `TimelineBar.baselines`, and
+   * `timelineBaselineId` for `TimelineBar.baseline`. `[]` draws none. Default: the first 3 of `timelineBaselineIds(bars)`.
+   */
+  baselineIds?: readonly string[]
+  /** Label of a baseline set in titles and descriptions. Default: `labels.baseline` for `timelineBaselineId`, otherwise the set ID. */
+  baselineLabel?: (id: string) => string
+  /** Formats a baseline variance (`baselineVariance`) in titles and descriptions. Default: `formatDependencyLag`, signed hours such as `+2 h`. */
+  formatVariance?: (delta: number) => string
+  /** Shows a slider handle at each `constraints` time of an editable bar, moved by drag or keys and proposed through `constraint-edit`. Opt-in. Default: false. */
+  constraintsEditable?: boolean
+  /** Synchronous check of a constraint edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
+  validateConstraintEdit?: ConstraintEditValidator
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -164,6 +189,8 @@ const props = withDefaults(defineProps<{
   tickSteps: () => [1_800_000, 3_600_000, 7_200_000, 14_400_000, 86_400_000],
   snap: 900_000,
   formatTime: (time: number) => new Date(time).toISOString().slice(11, 16),
+  formatLag: formatDependencyLag,
+  formatVariance: formatDependencyLag,
   loadRowHeight: 44,
 })
 const emit = defineEmits<{
@@ -225,25 +252,30 @@ const emit = defineEmits<{
   'column-resize': [change: TimelineColumnResize]
   /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
   'column-resize-rejected': [change: TimelineColumnResize, reason: string]
+  /** Proposal to move or remove a bar constraint; carries the bar ID, kind, `before`, `after` and source. Apply it with `applyTimelineConstraintEdit`. */
+  'constraint-edit': [change: TimelineConstraintEdit]
+  /** A constraint edit was rejected by `validateConstraintEdit`; carries the proposal and the reason. */
+  'constraint-edit-rejected': [change: TimelineConstraintEdit, reason: string]
 }>()
 
 const slots = defineSlots<{
   legend(): unknown
   'row-heading'(): unknown
-  row(props: { row: TimelineRow; index: number; depth: number; expanded: boolean }): unknown
-  cell(props: { row: TimelineRow; column: TimelineColumn; value: string | number; summary?: TimelineSummary }): unknown
-  bar(props: { bar: TimelineBar; range: TimeRange; selected: boolean }): unknown
+  row(props: { row: R; index: number; depth: number; expanded: boolean }): unknown
+  cell(props: { row: R; column: TimelineColumn<R>; value: string | number; summary?: TimelineSummary }): unknown
+  bar(props: { bar: B; range: TimeRange; selected: boolean }): unknown
   tick(props: { time: number; label: string }): unknown
   empty(): unknown
   'load-row'(props: { row: TimelineLoadRow; peak: number }): unknown
   'load-segment'(props: { segment: TimelineLoadSegment; row: TimelineLoadRow; peak: number; overload: number }): unknown
-  tooltip(props: { bar: TimelineBar; range: TimeRange; selected: boolean }): unknown
+  tooltip(props: { bar: B; range: TimeRange; selected: boolean }): unknown
 }>()
 const messages = computed<GanttLabels>(() => ({
   region: 'Gantt chart', rows: 'Rows', empty: 'No rows to display',
   zoom: 'Timeline zoom', zoomIn: 'Zoom in', zoomOut: 'Zoom out',
   editHint: 'Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.',
   expandRow: 'Expand', collapseRow: 'Collapse', baseline: 'Baseline',
+  baselineStart: 'start', baselineFinish: 'finish', baselineDuration: 'duration',
   rejected: 'This change was rejected.',
   connectFrom: 'Start dependency from', connectTo: 'Connect dependency to', startOf: 'start of', finishOf: 'finish of',
   selectDependency: 'Select dependency', reconnectSource: 'Reconnect source of', reconnectTarget: 'Reconnect target of',
@@ -254,14 +286,34 @@ const messages = computed<GanttLabels>(() => ({
   progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.',
   createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
   moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
-  resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.',
+  resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.', lag: 'Lag',
+  startNoEarlierThan: 'Start no earlier than', startNoLaterThan: 'Start no later than', finishNoEarlierThan: 'Finish no earlier than',
+  finishNoLaterThan: 'Finish no later than', fixedStart: 'Must start on', constraintViolated: 'violated',
+  constraintHint: 'Arrow keys move the constraint by one snap step, Shift+arrow and Page keys by one tick step. Delete removes it. Escape cancels a drag.',
+  constraintRejected: 'This constraint change was rejected.',
   // Indenting follows the visual direction: towards the row text, which is on the right in right-to-left charts.
   moveRowKeysHint: `Alt+Up and Alt+Down move the row among its siblings. Alt+Shift+${rtl.value ? 'Left' : 'Right'} indents it and `
     + `Alt+Shift+${rtl.value ? 'Right' : 'Left'} outdents it. Drag to move it; Escape cancels.`,
   ...props.labels,
 }))
 const notice = ref('')
-const bounds = computed(() => props.editBounds ?? props.range)
+// `range`, `editBounds` and `tickSteps` are compared by value, so inline literals in a parent template neither re-run
+// validation nor cancel an in-flight gesture each time the parent renders. A real change still does both.
+function sameRange(a: TimeRange | undefined, b: TimeRange | undefined) {
+  return a === b || (a !== undefined && b !== undefined && a.start === b.start && a.end === b.end)
+}
+const stableRange = computed<TimeRange>(previous => previous && sameRange(previous, props.range) ? previous : props.range)
+const stableEditBounds = computed<TimeRange | undefined>(previous => sameRange(previous, props.editBounds) ? previous : props.editBounds)
+const stableTickSteps = computed<readonly number[]>((previous) => {
+  const next = props.tickSteps
+  return previous && Array.isArray(next) && previous.length === next.length && previous.every((step, i) => step === next[i]) ? previous : next
+})
+// `baselineIds` is compared by value too, so an inline array in a parent template does not re-run validation.
+const stableBaselineIds = computed<readonly string[] | undefined>((previous) => {
+  const next = props.baselineIds
+  return previous && Array.isArray(next) && previous.length === next.length && previous.every((id, i) => id === next[i]) ? previous : next
+})
+const bounds = computed(() => stableEditBounds.value ?? stableRange.value)
 // Zoom presets replace the linear scale settings while they are active.
 const localPreset = ref<string>()
 const activePreset = computed(() => {
@@ -269,14 +321,14 @@ const activePreset = computed(() => {
   return id === undefined ? undefined : props.zoomPresets?.find(preset => preset.id === id)
 })
 const activePixelsPerUnit = computed(() => activePreset.value?.pixelsPerUnit ?? props.pixelsPerUnit)
-const activeTickSteps = computed(() => activePreset.value?.tickSteps ?? props.tickSteps)
+const activeTickSteps = computed(() => activePreset.value?.tickSteps ?? stableTickSteps.value)
 const activeBands = computed(() => activePreset.value?.headerBands ?? props.headerBands)
 const activeSnap = computed(() => activePreset.value?.snap ?? props.snap)
 const minimum = computed(() => props.minDuration ?? activeSnap.value)
 // Invalid input is reported through `validation-error` and never rendered. The error is rethrown so
 // development builds still surface it (production Vue logs it instead of rendering invalid data).
 const validationError = ref<Error>()
-const tree = shallowRef<ReturnType<typeof createTimelineRowTree>>([])
+const tree = shallowRef<ReturnType<typeof createTimelineRowTree<R>>>([])
 const loadHistogram = shallowRef<Map<string, ResourceLoadHistogram>>()
 function validateLoad() {
   if (!props.loadRows?.length) {
@@ -300,10 +352,35 @@ function validatePresets() {
   }
   if (props.zoomPreset !== undefined && !ids.has(props.zoomPreset)) throw new Error('Unknown zoom preset: ' + props.zoomPreset)
 }
+// Extra columns, header bands (including those of the active zoom preset) and markers.
+function validateDisplay() {
+  const columnIds = new Set<string>()
+  for (const column of props.columns ?? []) {
+    if (!column.id || columnIds.has(column.id) || !Number.isFinite(column.width) || column.width <= 0) {
+      throw new Error('Invalid timeline column: ' + column.id)
+    }
+    columnIds.add(column.id)
+  }
+  for (const level of activeBands.value ?? []) {
+    let previousEnd = -Infinity
+    for (const band of level) {
+      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
+        throw new Error('Timeline bands must be finite, ordered and nonoverlapping')
+      }
+      previousEnd = band.end
+    }
+  }
+  const markerIds = new Set<string>()
+  for (const item of props.markers ?? []) {
+    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
+    markerIds.add(item.id)
+  }
+  baselineSelection(props.bars, stableBaselineIds.value)
+}
 function validateProps() {
   validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount)
   validatePresets()
-  createTimeScale(props.range, activePixelsPerUnit.value)
+  createTimeScale(stableRange.value, activePixelsPerUnit.value)
   createTimeScale(bounds.value, 1)
   if (!Number.isFinite(props.rowHeight) || props.rowHeight < 8 + props.laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
   if (!Number.isFinite(activeSnap.value) || activeSnap.value <= 0 || !Number.isFinite(minimum.value) || minimum.value <= 0) throw new RangeError('Invalid snap or minDuration')
@@ -334,16 +411,18 @@ function validateProps() {
   if (props.columnsResizable && props.columns?.some(column => column.id === timelineLabelColumnId)) {
     throw new Error('The column ID is reserved for the row label column: ' + timelineLabelColumnId)
   }
+  validateDisplay()
   // Derive the hierarchy here so parent references and cycles use the same error boundary.
   return { tree: createTimelineRowTree(props.rows), load: validateLoad() }
 }
 // Controlled props are watched by reference. Pass new arrays and objects instead of mutating them in place.
 watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
-  () => props.range, () => props.editBounds, () => props.minDuration, () => props.tickSteps, () => props.pixelsPerUnit, () => props.scale,
+  () => stableRange.value, () => stableEditBounds.value, () => props.minDuration, () => stableTickSteps.value, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
+  () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value,
 ], () => {
   try {
     const result = validateProps()
@@ -362,6 +441,9 @@ watch([
 const marker = useId()
 const scroller = ref<HTMLElement>()
 const canvas = ref<HTMLElement>()
+// The label corner sets `viewport.labels`. It only exists while the data is valid, so it is (re)observed as it comes and goes.
+const cornerEl = ref<HTMLElement | null>()
+let observedCorner: HTMLElement | undefined
 const viewport = ref({ width: 1150, height: 321, left: 0, top: 0, labels: 154 })
 // Right-to-left: the time axis starts at the right edge. Internally, horizontal positions are measured from the
 // inline-start edge (`left` in LTR, `right` in RTL), so `viewport.left` and all axis math stay direction-independent.
@@ -369,9 +451,21 @@ const root = ref<HTMLElement>()
 const inheritedRtl = ref(false)
 const rtl = computed(() => props.dir === 'rtl' || (props.dir === 'auto' && inheritedRtl.value))
 const inlineSide = computed(() => rtl.value ? 'right' : 'left')
+// With `dir="auto"`, a MutationObserver on the `dir` attributes of the ancestors detects the direction again when one
+// of them changes; the `rtl` watcher below then cancels gestures and keeps the scroll position.
+let directionObserver: MutationObserver | undefined
 function detectDirection() {
   const element = root.value
   inheritedRtl.value = props.dir === 'auto' && element !== undefined && getComputedStyle(element).direction === 'rtl'
+  directionObserver?.disconnect()
+  directionObserver = undefined
+  if (props.dir !== 'auto' || !element || typeof MutationObserver === 'undefined') return
+  directionObserver = new MutationObserver(() => {
+    inheritedRtl.value = props.dir === 'auto' && getComputedStyle(element).direction === 'rtl'
+  })
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    directionObserver.observe(ancestor, { attributes: true, attributeFilter: ['dir'] })
+  }
 }
 /** Horizontal scroll distance from the inline start. RTL containers report zero or negative `scrollLeft`. */
 function scrollStart(el: HTMLElement) {
@@ -395,30 +489,23 @@ const collapsed = computed(() => props.collapsedIds ?? localCollapsed.value)
 const summaries = computed(() => validationError.value ? undefined : props.showSummaries || props.columns?.length
   ? summarizeTimelineRows(tree.value, props.bars) : undefined)
 const columnWidth = computed(() => {
-  const ids = new Set<string>()
   let width = 0
-  for (const column of props.columns ?? []) {
-    if (!column.id || ids.has(column.id) || !Number.isFinite(column.width) || column.width <= 0) {
-      throw new Error('Invalid timeline column: ' + column.id)
-    }
-    ids.add(column.id)
-    width += column.width
-  }
+  for (const column of props.columns ?? []) width += column.width
   return width
 })
-function canEditCell(row: TimelineRow, column: TimelineColumn) {
+function canEditCell(row: R, column: TimelineColumn<R>) {
   if (props.readonly) return false
   return typeof column.editable === 'function' ? column.editable(row) : Boolean(column.editable)
 }
-function cellValue(row: TimelineRow, column: TimelineColumn) {
+function cellValue(row: R, column: TimelineColumn<R>) {
   return column.value(row, summaries.value?.get(row.id))
 }
-function cancelCell(event: KeyboardEvent, row: TimelineRow, column: TimelineColumn) {
+function cancelCell(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   input.value = String(cellValue(row, column))
   input.blur()
 }
-function commitCell(event: Event, row: TimelineRow, column: TimelineColumn) {
+function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   const before = cellValue(row, column)
   const after = input.value
@@ -454,7 +541,7 @@ const zoom = ref(1)
 const minZoom = 0.65
 const maxZoom = 3
 const axis = computed<TimeScale>(() => {
-  const base = props.scale ?? createTimeScale(props.range, activePixelsPerUnit.value)
+  const base = props.scale ?? createTimeScale(stableRange.value, activePixelsPerUnit.value)
   if (!Number.isFinite(base.width) || base.width <= 0) throw new RangeError('Invalid time scale width')
   return { width: base.width * zoom.value, toX: time => base.toX(time) * zoom.value, toTime: x => base.toTime(x / zoom.value) }
 })
@@ -462,7 +549,7 @@ const axis = computed<TimeScale>(() => {
 // A custom scale can be piecewise, so the first interval does not represent the rest.
 function minTickGap(step: number) {
   const { start, end } = timeWindow.value
-  const anchor = props.range.start
+  const anchor = stableRange.value.start
   const first = Math.ceil((start - anchor) / step)
   const last = Math.floor((end - anchor) / step)
   if (last - first + 1 > 10000) return 0
@@ -481,7 +568,7 @@ const tickStep = computed(() => activeTickSteps.value.find(step => minTickGap(st
 const rowOrder = computed(() => new Map(displayedRows.value.map(({ row }, index) => [row.id, index])))
 const barById = computed(() => new Map((validationError.value ? [] : props.bars).map(bar => [bar.id, bar])))
 const barsByRow = computed(() => {
-  const groups = new Map<string, TimelineBar[]>()
+  const groups = new Map<string, B[]>()
   for (const bar of validationError.value ? [] : props.bars) {
     if (!groups.has(bar.rowId)) groups.set(bar.rowId, [])
     groups.get(bar.rowId)!.push(bar)
@@ -489,7 +576,10 @@ const barsByRow = computed(() => {
   return groups
 })
 const laneHeight = computed(() => (props.rowHeight - 8) / props.laneCount)
-const barHeight = computed(() => Math.max(1, laneHeight.value - 6))
+// Baseline sets drawn below the bars (`baselineIds`). Two or three sets take `reserve` pixels from the bar height.
+const baselineChoice = computed(() => validationError.value ? { ids: [], described: false } : baselineSelection(props.bars, stableBaselineIds.value))
+const baselineGeometry = computed(() => baselineLayout(baselineChoice.value.ids.length))
+const barHeight = computed(() => Math.max(1, laneHeight.value - 6 - baselineGeometry.value.reserve))
 const bodyHeight = computed(() => displayedRows.value.length * props.rowHeight)
 const xWindow = computed(() => ({
   left: Math.min(axis.value.width, Math.max(0, viewport.value.left - 80)),
@@ -505,34 +595,21 @@ const rowWindow = computed(() => visibleRows(
   props.rowHeight,
   displayedRows.value.length,
 ))
-const shownBands = computed(() => (activeBands.value ?? []).map(level => {
-  let previousEnd = -Infinity
-  return level.flatMap(band => {
-    if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-      throw new Error('Timeline bands must be finite, ordered and nonoverlapping')
-    }
-    previousEnd = band.end
-    const start = Math.max(band.start, props.range.start, timeWindow.value.start)
-    const end = Math.min(band.end, props.range.end, timeWindow.value.end)
-    if (end <= start) return []
-    return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
-  })
-}))
-const shownMarkers = computed(() => {
-  const ids = new Set<string>()
-  return (props.markers ?? []).filter(item => {
-    if (!item.id || ids.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
-    ids.add(item.id)
-    return item.time >= timeWindow.value.start && item.time < timeWindow.value.end
-  })
-})
+const shownBands = computed(() => (activeBands.value ?? []).map(level => level.flatMap(band => {
+  const start = Math.max(band.start, stableRange.value.start, timeWindow.value.start)
+  const end = Math.min(band.end, stableRange.value.end, timeWindow.value.end)
+  if (end <= start) return []
+  return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
+})))
+const shownMarkers = computed(() => (props.markers ?? [])
+  .filter(item => item.time >= timeWindow.value.start && item.time < timeWindow.value.end))
 // Markers, then the status date (`statusDate`), share one template element so a chart without a status date renders
 // exactly the markup it did before.
 const markerEntries = computed(() => {
   const entries: { key: string; time: number; label: string; className?: string; role?: string; name?: string }[] = shownMarkers.value
     .map(item => ({ key: 'marker:' + item.id, time: item.time, label: item.label }))
   const time = props.statusDate
-  if (time !== undefined && !validationError.value && time >= props.range.start && time <= props.range.end
+  if (time !== undefined && !validationError.value && time >= stableRange.value.start && time <= stableRange.value.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end) {
     const label = messages.value.statusDate!
     entries.push({ key: 'status', time, label, className: 'vw-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
@@ -570,14 +647,14 @@ watch(() => [props.showNow, props.now], syncClock)
 const nowTime = computed(() => {
   if (!props.showNow) return undefined
   const time = props.now ?? clientNow.value
-  return time !== undefined && Number.isFinite(time) && time >= props.range.start && time <= props.range.end
+  return time !== undefined && Number.isFinite(time) && time >= stableRange.value.start && time <= stableRange.value.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end ? time : undefined
 })
-const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, props.range.start))
+const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, stableRange.value.start))
 // Grid lines are drawn at each tick's own x (as exportSvg does), so non-linear scales stay aligned with the labels.
 const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
 // Kept for custom stylesheets that read --vw-grid-step; the built-in styles no longer use it.
-const gridStep = computed(() => axis.value.toX(props.range.start + tickStep.value) - axis.value.toX(props.range.start))
+const gridStep = computed(() => axis.value.toX(stableRange.value.start + tickStep.value) - axis.value.toX(stableRange.value.start))
 type BarPreview = { range: TimeRange; rowShift: number; mode: EditMode }
 const previews = shallowRef<ReadonlyMap<string, BarPreview>>()
 const focusedBarId = ref<string>()
@@ -623,14 +700,20 @@ const shownRows = computed(() => {
       reorderable: rowHandlesVisible.value,
       progress: progressSegment(item.row.id),
       summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
-      baselines: bars.filter(bar => bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)),
+      baselines: shownBaselines(bars),
       floats: bars.flatMap(bar => {
         const end = rangeOf(bar).end
         return bar.latestEnd !== undefined && bar.latestEnd > end && intersectsWindow({ start: end, end: bar.latestEnd }, timeWindow.value)
           ? [{ bar, style: floatStyle(bar, end, bar.latestEnd) }] : []
       }),
-      deadlines: bars.flatMap(bar => bar.deadline !== undefined && bar.deadline >= timeWindow.value.start && bar.deadline < timeWindow.value.end
-        ? [{ bar, late: rangeOf(bar).end > bar.deadline, style: deadlineStyle(bar, bar.deadline) }] : []),
+      decorations: [
+        ...bars.flatMap(bar => bar.deadline !== undefined && bar.deadline >= timeWindow.value.start && bar.deadline < timeWindow.value.end
+          ? [{ key: bar.id + ':deadline', className: rangeOf(bar).end > bar.deadline ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline', style: deadlineStyle(bar, bar.deadline) }]
+          : []),
+        // The constraints of a bar with handles (`constraintsEditable`) are drawn by its handles instead.
+        ...bars.flatMap(bar => bar.constraints && !(constraintHandlesVisible.value && canEditConstraints(bar) && shown.includes(bar))
+          ? constraintMarks(bar) : []),
+      ],
     }
   })
 })
@@ -643,14 +726,19 @@ type BarOverlay = {
 }
 const barIndex = computed(() => new Map((validationError.value ? [] : props.bars).map((bar, index) => [bar.id, index])))
 function barOverlay(bar: TimelineBar): BarOverlay | undefined {
-  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments) return undefined
   const range = rangeOf(bar)
+  // Named baseline sets (or `baselineIds`) add each selected baseline with its variance to the description.
+  const strips = baselineChoice.value.described ? baselineStrips(bar, range, baselineChoice.value, baselineText.value) : []
+  const constraints = barConstraints(bar)
+  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length && !constraints.length) return undefined
   const parts: string[] = []
   if (bar.critical) parts.push(messages.value.critical!)
   if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
   if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)
   const late = bar.deadline !== undefined && range.end > bar.deadline
   if (late) parts.push(messages.value.late!)
+  for (const item of constraints) parts.push(constraintText(item))
+  for (const strip of strips) parts.push(`${strip.label} ${strip.dates}: ${strip.variance}`)
   return { description: parts.length ? parts.join('. ') + '.' : undefined, late, segments: segmentGeometry(bar, range) }
 }
 /**
@@ -726,8 +814,8 @@ function deadlineStyle(bar: TimelineBar, deadline: number) {
 // Non-working time is drawn behind the grid over the task rows and inside each load row, clipped to the visible window.
 const shownNonWorking = computed(() => {
   if (validationError.value || !props.nonWorkingPeriods?.length) return []
-  const low = Math.max(props.range.start, timeWindow.value.start)
-  const high = Math.min(props.range.end, timeWindow.value.end)
+  const low = Math.max(stableRange.value.start, timeWindow.value.start)
+  const high = Math.min(stableRange.value.end, timeWindow.value.end)
   return props.nonWorkingPeriods.flatMap((period, index) => {
     const start = Math.max(period.start, low), end = Math.min(period.end, high)
     if (end <= start) return []
@@ -759,8 +847,64 @@ const shownLines = computed(() => {
     if (Math.max(x1, x2) + 10 < left || Math.min(x1, x2) - 10 > right) return []
     const y1 = sourceRow * props.rowHeight + laneTop(source) + barHeight.value / 2
     const y2 = targetRow * props.rowHeight + laneTop(target) + barHeight.value / 2
-    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2), x1, y1, x2, y2, dependency: dep }]
+    const lag = dep.lag ? lagLabel(dep, dep.lag, lagLabelPoint(x1, y1, x2, y2, sourceRow * props.rowHeight, props.rowHeight)) : undefined
+    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2), x1, y1, x2, y2, dependency: dep, lag }]
   })
+})
+// Lag labels (`TimelineDependency.lag`). A dependency without a lag, or with lag 0, draws exactly what it did before.
+const dependencyIndex = computed(() => new Map((validationError.value ? [] : props.dependencies).map((dep, index) => [dep.id, index])))
+function lagLabel(dep: TimelineDependency, lag: number, point: ReturnType<typeof lagLabelPoint>) {
+  const text = props.formatLag(lag)
+  return { ...point, text, id: `${marker}-lag-${dependencyIndex.value.get(dep.id)}`, description: `${messages.value.lag} ${text}` }
+}
+type LinkShapeProps = { tag: 'path' | 'text'; attrs: Record<string, unknown>; text?: string }
+/** One element of the dependency layer (a connector) or of the lag label layer above the marker lines (a lag label). */
+function LinkShape(shape: LinkShapeProps) {
+  return h(shape.tag, shape.attrs, shape.text)
+}
+const linkShapes = computed(() => {
+  const shapes: (LinkShapeProps & { key: string })[] = shownLines.value.map(line => ({
+    key: line.id,
+    tag: 'path',
+    attrs: {
+      class: {
+        'vw-is-related': props.selectedIds?.has(line.from) || props.selectedIds?.has(line.to),
+        'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id),
+        'vw-is-selected': dependencyTargets.value && activeDependencyId.value === line.id,
+      },
+      d: line.path,
+      'marker-end': `url(#${marker})`,
+    },
+  }))
+  return shapes
+})
+/**
+ * The dependency layer (default slot), followed by the lag label layer (`lag` slot) when a dependency has a lag. Without
+ * lags it renders the dependency layer alone, so such charts render exactly the markup they did before.
+ */
+function DependencyLayers(_props: Record<string, never>, { slots }: { slots: Slots }) {
+  const links = slots.default?.() ?? []
+  if (lagShapes.value.length) return [...links, ...(slots.lag?.() ?? [])]
+  return links.length === 1 ? links[0] : links
+}
+// Lag labels have their own layer, stacked above the marker, now and status-date lines (and the bars, whose gaps they
+// sit in), so a line crossing a label does not cover its text. A chart without lags renders no layer.
+const lagShapes = computed(() => {
+  const shapes: (LinkShapeProps & { key: string })[] = []
+  for (const line of shownLines.value) {
+    const label = line.lag
+    if (!label) continue
+    shapes.push({
+      key: 'lag:' + line.id,
+      tag: 'text',
+      attrs: {
+        id: label.id, class: { 'vw-gantt-lag': true, 'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id) },
+        x: label.x, y: label.y, 'text-anchor': label.anchor, 'aria-label': label.description,
+      },
+      text: label.text,
+    })
+  }
+  return shapes
 })
 
 function barBox(bar: TimelineBar) {
@@ -802,15 +946,44 @@ function summaryStyle(summary: TimelineSummary) {
   }
 }
 
-function baselineStyle(bar: TimelineBar) {
-  const baseline = bar.baseline!
+function baselineStyle(bar: TimelineBar, baseline: TimeRange, slot: number) {
   const left = axis.value.toX(baseline.start)
   const width = axis.value.toX(baseline.end) - left
   return {
     [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left - (width === 0 ? 1.5 : 0)}px)`,
     width: `${Math.max(3, width)}px`,
-    top: `${laneTop(bar) + barHeight.value + 1}px`,
+    top: `${laneTop(bar) + barHeight.value + baselineGeometry.value.offset(slot)}px`,
   }
+}
+const baselineText = computed<BaselineTextOptions>(() => ({
+  label: props.baselineLabel ?? (id => id === timelineBaselineId ? messages.value.baseline! : id),
+  formatTime: props.formatTime, formatVariance: props.formatVariance,
+  start: messages.value.baselineStart!, finish: messages.value.baselineFinish!, duration: messages.value.baselineDuration!,
+}))
+type ShownBaseline = { key: string; className: string; style: Record<string, string>; title: string; set?: string }
+/**
+ * The baseline strips of a row inside the visible time window. With only `TimelineBar.baseline` (no named sets and no
+ * `baselineIds`) each is drawn exactly as before; otherwise one strip per selected set, with its slot class, set ID and
+ * variance title.
+ */
+function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
+  const choice = baselineChoice.value
+  if (!choice.described) {
+    return bars.filter(bar => choice.ids.length && bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)).map(bar => ({
+      key: bar.id, className: 'vw-gantt-baseline', style: baselineStyle(bar, bar.baseline!, 0),
+      title: `${baselineText.value.label(timelineBaselineId)} · ${bar.label} ${props.formatTime(bar.baseline!.start)}–${props.formatTime(bar.baseline!.end)}`,
+    }))
+  }
+  const multiple = choice.ids.length > 1
+  return bars.flatMap(bar => baselineStrips(bar, rangeOf(bar), choice, baselineText.value)
+    .filter(strip => intersectsWindow(strip.range, timeWindow.value))
+    .map(strip => ({
+      key: bar.id + ':' + strip.id,
+      className: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline',
+      style: baselineStyle(bar, strip.range, strip.slot),
+      title: `${strip.label} · ${bar.label} ${strip.dates} · ${strip.variance}`,
+      set: strip.id,
+    })))
 }
 
 function syncViewport() {
@@ -885,13 +1058,21 @@ function cancelEdit() {
   cancelCreate()
   cancelRowDrag()
   cancelColumnResize()
+  cancelConstraint()
   clearCascade()
   pinch = undefined
 }
 
-/** Whether a gesture owns the pointer or keyboard: an edit drag, a progress drag, a connection, a create drag or a pinch. */
+/**
+ * Whether a pointer owns a gesture: an edit, progress, link, create, row or column drag, or a pinch. `isPrimary` is per
+ * pointer type, so a mouse and a pen (or touch) can both be primary; every pointer gesture start checks this.
+ */
+function pointerGestureActive() {
+  return Boolean(drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag || constraintDrag)
+}
+/** Whether a gesture owns the pointer or keyboard: a pointer gesture or an armed connection. */
 function gestureActive() {
-  return Boolean(drag || progressDrag || linkDrag || linkDraft.value || pinch || createDrag || rowDrag || columnDrag)
+  return pointerGestureActive() || Boolean(linkDraft.value)
 }
 
 function rejection(result: boolean | string | void) {
@@ -1036,7 +1217,7 @@ function buildChanges(group: readonly TimelineBar[], ranges: readonly TimeRange[
 
 function startEdit(event: PointerEvent, bar: TimelineBar) {
   suppressSelection = undefined
-  if (!editable(bar) || drag || pinch || !event.isPrimary || event.button !== 0 || linkDrag) return
+  if (!editable(bar) || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   const target = event.target as HTMLElement
   const mode = (target.closest<HTMLElement>('[data-edit-mode]')?.dataset.editMode ?? 'move') as EditMode
   if (mode !== 'move' && bar.end - bar.start < minimum.value) return
@@ -1230,9 +1411,11 @@ watch(() => props.bars, async () => {
   const id = pendingReveal
   const moved = pendingFocus
   const deleted = pendingDelete
+  const unconstrained = pendingConstraintFocus
   pendingReveal = undefined
   pendingFocus = undefined
   pendingDelete = false
+  pendingConstraintFocus = undefined
   if (focusedBarId.value !== undefined && !barById.value.has(focusedBarId.value)) focusedBarId.value = undefined
   if (deleted) {
     // A removed bar takes keyboard focus with it; keep focus in the chart region.
@@ -1240,6 +1423,12 @@ watch(() => props.bars, async () => {
     const el = scroller.value
     const active = document.activeElement
     if (el && (!active || active === document.body || !active.isConnected)) el.focus({ preventScroll: true })
+  }
+  if (unconstrained !== undefined) {
+    // A removed constraint takes its handle, and keyboard focus, with it; return focus to the bar.
+    await nextTick()
+    const active = document.activeElement
+    if (!active || active === document.body || !active.isConnected) focusBar(unconstrained)
   }
   if (id === undefined && moved === undefined) return
   await nextTick()
@@ -1471,7 +1660,7 @@ function captureLink(event: PointerEvent) {
 }
 function startLink(event: PointerEvent, bar: TimelineBar, end: TimelineBarEnd) {
   skipLinkClick = false
-  if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || drag || pinch) return
+  if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
   linkDraft.value = { fixed: { bar: bar.id, end }, role: 'to' }
   captureLink(event)
 }
@@ -1533,6 +1722,11 @@ function completeLink(target: LinkEnd) {
   const dependency = pending.dependency
   const before: TimelineConnection | undefined = dependency && { from: dependency.from, to: dependency.to, type: dependency.type ?? 'FS' }
   if (before && before.from === connection.from && before.to === connection.to && before.type === connection.type) return
+  // A reconnection keeps the dependency's lag; a new connection has none.
+  if (before && dependency?.lag) {
+    before.lag = dependency.lag
+    connection.lag = dependency.lag
+  }
   const result = props.validateConnection?.(connection, dependency?.id)
   if (result === false || typeof result === 'string') {
     notice.value = typeof result === 'string' ? result : messages.value.connectionRejected ?? messages.value.rejected
@@ -1572,7 +1766,7 @@ const reconnectHandles = computed(() => {
   ]
 })
 function reconnectDependency(dependency: TimelineDependency, end: 'from' | 'to', event?: PointerEvent) {
-  if (event && (!event.isPrimary || event.button !== 0 || drag || linkDrag || pinch)) return
+  if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
   skipLinkClick = false
   const ends = dependencyEndsForType(dependency.type)
   const fixed = end === 'from' ? { bar: dependency.to, end: ends.to } : { bar: dependency.from, end: ends.from }
@@ -1584,7 +1778,9 @@ function clickReconnect(dependency: TimelineDependency, end: 'from' | 'to') {
   else reconnectDependency(dependency, end)
 }
 watch(() => props.dependencies, () => {
-  cancelLink()
+  // A cascading bar drag previews follow-on changes computed from the old dependencies; it is stale source data.
+  if (drag && props.cascade) cancelEdit()
+  else cancelLink()
   if (localDependency.value !== undefined && !props.dependencies.some(dep => dep.id === localDependency.value)) localDependency.value = undefined
 })
 watch(() => [props.connectable, props.reconnectable], cancelLink)
@@ -1629,14 +1825,65 @@ function holdPinch(event: TouchEvent) {
   if (props.pinchZoom && event.touches.length >= 2 && event.cancelable) event.preventDefault()
 }
 
+// Ctrl+wheel and Meta+wheel (`wheelZoom`) zoom the time axis around the pointer. Desktop trackpad pinches arrive as
+// Ctrl+wheel with small deltas, so the factor follows deltaY and is clamped per event to one zoom button step. The
+// listener is non-passive, so it is attached only while the prop is set; a plain wheel is never prevented.
+const wheelStep = 1.35
+let wheelTarget: HTMLElement | undefined
+/** The time and anchor of a zoom whose scroll position is not applied yet; later events in the same tick build on it. */
+let wheelPending: { time: number; offset: number } | undefined
+function wheelDelta(event: WheelEvent, el: HTMLElement) {
+  if (event.deltaMode === 1) return event.deltaY * 16
+  if (event.deltaMode === 2) return event.deltaY * el.clientHeight
+  return event.deltaY
+}
+async function zoomWithWheel(event: WheelEvent) {
+  if (!(event.ctrlKey || event.metaKey) || !props.wheelZoom) return
+  const el = scroller.value
+  if (!el || validationError.value) return
+  // Keep the browser from zooming the page, also at the zoom limits.
+  if (event.cancelable) event.preventDefault()
+  const delta = wheelDelta(event, el)
+  if (!delta) return
+  // A zoom changes the coordinate system, as a pinch does: in-flight gestures end without a proposal.
+  if (gestureActive()) cancelEdit()
+  hideTooltip()
+  const factor = Math.max(1 / wheelStep, Math.min(wheelStep, Math.exp(-delta * Math.log(wheelStep) / 100)))
+  const next = Math.max(minZoom, Math.min(maxZoom, zoom.value * factor))
+  if (Math.abs(next - zoom.value) < 1e-6) return
+  const visible = Math.max(0, el.clientWidth - viewport.value.labels)
+  const offset = Math.max(0, Math.min(visible, timeAreaOffset(event.clientX, el.getBoundingClientRect())))
+  const pending = wheelPending
+  // Until a pending zoom has scrolled, its anchor time defines where the axis will be.
+  const time = pending
+    ? axis.value.toTime(axis.value.toX(pending.time) - pending.offset + offset)
+    : axis.value.toTime(scrollStart(el) + offset)
+  zoom.value = next
+  const mine = wheelPending = { time, offset }
+  await nextTick()
+  if (wheelPending !== mine) return
+  wheelPending = undefined
+  setScrollStart(el, axis.value.toX(time) - offset)
+  syncViewport()
+}
+function syncWheelListener() {
+  const el = props.wheelZoom && mounted ? scroller.value : undefined
+  if (el === wheelTarget) return
+  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
+  wheelTarget = el
+  wheelTarget?.addEventListener('wheel', zoomWithWheel, { passive: false })
+}
+watch(() => props.wheelZoom, syncWheelListener, { flush: 'post' })
+
 // A new source interval or coordinate system invalidates an in-flight gesture.
 watch([
-  () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => props.range,
-  () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => props.editBounds, () => props.minDuration,
-  () => props.rowHeight, () => props.laneCount, () => props.autoScroll,
+  () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => stableRange.value,
+  () => props.scale, () => props.pixelsPerUnit, () => props.snap, () => props.readonly, () => stableEditBounds.value, () => props.minDuration,
+  () => props.rowHeight, () => props.laneCount, () => props.autoScroll, () => barHeight.value,
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
   () => props.columnsResizable, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth,
+  () => props.constraintsEditable,
 ], cancelEdit)
 
 // Column resizing (`columnsResizable`). A separator at the inline-end edge of each header cell previews pointer
@@ -1656,7 +1903,7 @@ watch(() => props.columnsResizable, () => { if (mounted) measureLabelColumn() })
 function clampColumnWidth(width: number) {
   return Math.round(Math.max(minColumnSize.value, Math.min(maxColumnSize.value, width)))
 }
-function shownColumnWidth(column: TimelineColumn) {
+function shownColumnWidth(column: TimelineColumn<R>) {
   return columnResize.value?.id === column.id ? columnResize.value.width : column.width
 }
 /** Extra width of the columns while a column drag is previewed. */
@@ -1697,7 +1944,7 @@ function handleCell(handle: ResizeHandle): HeaderCell {
   const pointer = (event: Event) => event as PointerEvent
   return {
     key: '\u0000resize:' + handle.id,
-    className: columnResize.value?.id === handle.id ? 'vw-column-resize active' : 'vw-column-resize',
+    className: columnResize.value?.id === handle.id ? 'vw-column-resize vw-is-active' : 'vw-column-resize',
     style: { [inlineSide.value]: `calc(var(--vw-row-label-width) + ${handle.offset - 8}px)` },
     attrs: {
       role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': `${messages.value.resizeColumn} ${handle.label}`,
@@ -1795,19 +2042,26 @@ function canEditProgress(bar: TimelineBar) {
 }
 const progressHandlesVisible = computed(() => Boolean(props.progressEditable) && !props.readonly && !validationError.value)
 const linkEnds = ['start', 'finish'] as const
-type BarHandle = TimelineBarEnd | 'progress'
+type BarHandle = TimelineBarEnd | 'progress' | TimelineConstraintKind
+function isConstraintHandle(handle: BarHandle): handle is TimelineConstraintKind {
+  return handle !== 'start' && handle !== 'finish' && handle !== 'progress'
+}
 /**
- * The handles drawn beside a bar: its link handles, then its progress slider (a button with the slider role). They
- * share one template loop so that a chart without progress editing renders exactly the markup it did before.
+ * The handles drawn beside a bar: its link handles, then its progress slider and its constraint sliders (buttons with
+ * the slider role). They share one template loop so that a chart without these props renders exactly the markup it
+ * did before.
  */
 function barHandles(bar: TimelineBar): readonly BarHandle[] {
   const ends = linkHandlesVisible.value ? linkEnds : []
-  return progressHandlesVisible.value && canEditProgress(bar) ? [...ends, 'progress'] : ends
+  const progress = progressHandlesVisible.value && canEditProgress(bar)
+  const constraints = constraintHandlesVisible.value && canEditConstraints(bar) ? constraintHandleKinds(bar) : []
+  return progress || constraints.length ? [...ends, ...(progress ? ['progress' as const] : []), ...constraints] : ends
 }
 function handleAttrs(bar: TimelineBar, handle: BarHandle) {
+  if (isConstraintHandle(handle)) return constraintHandleAttrs(bar, handle)
   if (handle !== 'progress') {
     return {
-      class: ['vw-gantt-link-handle', handle, { active: linkPressed(bar, handle) }],
+      class: ['vw-gantt-link-handle', `vw-is-${handle}`, { 'vw-is-active': linkPressed(bar, handle) }],
       style: linkHandleStyle(bar, handle),
       'data-vw-link': linkKey({ bar: bar.id, end: handle }),
       'aria-label': linkHandleName(bar, handle),
@@ -1816,7 +2070,7 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   }
   const value = shownProgress(bar) ?? 0
   return {
-    class: ['vw-gantt-progress-handle', { dragging: progressPreview.value?.id === bar.id }],
+    class: ['vw-gantt-progress-handle', { 'vw-is-dragging': progressPreview.value?.id === bar.id }],
     style: progressHandleStyle(bar),
     'data-vw-progress': bar.id,
     role: 'slider',
@@ -1828,14 +2082,16 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   }
 }
 function pressHandle(event: PointerEvent, bar: TimelineBar, handle: BarHandle) {
-  if (handle === 'progress') startProgress(event, bar)
+  if (isConstraintHandle(handle)) startConstraint(event, bar, handle)
+  else if (handle === 'progress') startProgress(event, bar)
   else startLink(event, bar, handle)
 }
 function clickHandle(event: MouseEvent, bar: TimelineBar, handle: BarHandle) {
   event.stopPropagation()
-  if (handle !== 'progress') activateLink(bar, handle, event)
+  if (handle !== 'progress' && !isConstraintHandle(handle)) activateLink(bar, handle, event)
 }
 function handleKeys(event: KeyboardEvent, bar: TimelineBar, handle: BarHandle) {
+  if (isConstraintHandle(handle)) return constraintKeys(event, bar, handle)
   if (handle === 'progress') return progressKeys(event, bar)
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.stopPropagation()
@@ -1918,6 +2174,167 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
   proposeProgress({ id: bar.id, before: bar.progress, after: next, source: 'keyboard' })
 }
 
+// Constraint editing (`constraintsEditable`). Each constraint of an editable bar is a slider at its time: a pointer drag
+// previews the snapped time, keys propose steps, and the parent accepts `constraint-edit` by updating `constraints`.
+// The constraints of other bars, and of every bar without the prop, are decorative markers with the same glyph.
+type ShownConstraint = { kind: TimelineConstraintKind; time: number; violated: boolean }
+const constraintPreview = shallowRef<{ id: string; kind: TimelineConstraintKind; time: number }>()
+let constraintDrag: {
+  id: string; kind: TimelineConstraintKind; pointerId: number; target: HTMLElement; x: number; origin: number; before: number
+} | undefined
+let pendingConstraintFocus: string | undefined
+const constraintHandlesVisible = computed(() => Boolean(props.constraintsEditable) && !props.readonly && !validationError.value)
+function canEditConstraints(bar: TimelineBar) {
+  return Boolean(props.constraintsEditable) && !props.readonly && Boolean(bar.editable)
+}
+/** A constraint's time as drawn: the pointer preview of a constraint drag, otherwise the bar's own value. */
+function shownConstraint(bar: TimelineBar, kind: TimelineConstraintKind) {
+  const preview = constraintPreview.value
+  return preview?.id === bar.id && preview.kind === kind ? preview.time : bar.constraints?.[kind]
+}
+/** The constraints of a bar in `timelineConstraintKinds` order, checked against its interval as drawn. */
+function barConstraints(bar: TimelineBar): ShownConstraint[] {
+  if (!bar.constraints) return []
+  const range = rangeOf(bar)
+  return timelineConstraintKinds.flatMap(kind => {
+    const time = shownConstraint(bar, kind)
+    return time === undefined ? [] : [{ kind, time, violated: timelineConstraintViolated(range, kind, time) }]
+  })
+}
+function constraintText(item: ShownConstraint) {
+  const text = `${messages.value[item.kind]} ${props.formatTime(item.time)}`
+  return item.violated ? `${text}, ${messages.value.constraintViolated}` : text
+}
+function constraintVisible(time: number) {
+  return time >= timeWindow.value.start && time < timeWindow.value.end
+}
+function boundsStart(kind: TimelineConstraintKind) {
+  return kind === 'fixedStart' || kind.startsWith('start')
+}
+/** Classes of the glyph: the bar end it bounds (a flag at the top or bottom), its direction and its state. */
+function constraintClasses(bar: TimelineBar, item: ShownConstraint) {
+  const side = item.kind === 'fixedStart' ? 'vw-is-fixed' : item.kind.endsWith('NoEarlierThan') ? 'vw-is-lower' : 'vw-is-upper'
+  const preview = constraintPreview.value
+  const dragging = preview?.id === bar.id && preview.kind === item.kind
+  return ['vw-gantt-constraint', boundsStart(item.kind) ? 'vw-is-start' : 'vw-is-finish', side, item.violated ? 'vw-is-violated' : '',
+    dragging ? 'vw-is-dragging' : ''].filter(Boolean).join(' ')
+}
+/** A 26 px wide box centred on the time that holds the flag; the stem reaches across the lane (`--vw-constraint-reach`). */
+function constraintStyle(bar: TimelineBar, item: ShownConstraint) {
+  return {
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${axis.value.toX(item.time) - 13}px)`,
+    top: `${boundsStart(item.kind) ? laneTop(bar) - 5 : laneTop(bar) + barHeight.value - 9}px`,
+    '--vw-constraint-reach': `${barHeight.value + 10}px`,
+    ...rowShiftStyle(bar),
+  }
+}
+/** Decorative markers of the constraints of a bar inside the visible time window. */
+function constraintMarks(bar: TimelineBar) {
+  return barConstraints(bar).filter(item => constraintVisible(item.time)).map(item => ({
+    key: bar.id + ':' + item.kind, className: constraintClasses(bar, item), style: constraintStyle(bar, item),
+  }))
+}
+/** Kinds with a handle: the constraints inside the visible time window, and the one being dragged. */
+function constraintHandleKinds(bar: TimelineBar) {
+  const preview = constraintPreview.value
+  return barConstraints(bar)
+    .filter(item => constraintVisible(item.time) || (preview?.id === bar.id && preview.kind === item.kind))
+    .map(item => item.kind)
+}
+function constraintHandleAttrs(bar: TimelineBar, kind: TimelineConstraintKind) {
+  const item = barConstraints(bar).find(entry => entry.kind === kind)!
+  return {
+    class: constraintClasses(bar, item),
+    style: constraintStyle(bar, item),
+    'data-vw-constraint': bar.id,
+    'data-vw-constraint-kind': kind,
+    role: 'slider',
+    'aria-label': `${messages.value[kind]} · ${bar.label}`,
+    'aria-describedby': marker + '-constraint-hint',
+    'aria-valuemin': bounds.value.start,
+    'aria-valuemax': bounds.value.end,
+    'aria-valuenow': item.time,
+    'aria-valuetext': item.violated ? `${props.formatTime(item.time)}, ${messages.value.constraintViolated}` : props.formatTime(item.time),
+  }
+}
+/** `before` moved by a whole number of snap steps and kept inside `editBounds`. */
+function constraintTime(before: number, delta: number) {
+  const { start, end } = bounds.value
+  if (before >= start && before <= end) return editTimeRange({ start: before, end: before }, 'move', delta, activeSnap.value, bounds.value).start
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / activeSnap.value)
+  return Math.max(start, Math.min(end, before + steps * activeSnap.value))
+}
+function cancelConstraint() {
+  const previous = constraintDrag
+  constraintDrag = undefined
+  constraintPreview.value = undefined
+  if (previous?.target.hasPointerCapture(previous.pointerId)) previous.target.releasePointerCapture(previous.pointerId)
+}
+function proposeConstraint(change: TimelineConstraintEdit) {
+  if (change.after === change.before) return
+  const result = props.validateConstraintEdit?.(change)
+  const reason = result === false ? messages.value.constraintRejected! : typeof result === 'string' ? result : undefined
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('constraint-edit-rejected', change, reason)
+    return
+  }
+  notice.value = ''
+  if (change.after === undefined) pendingConstraintFocus = change.id
+  emit('constraint-edit', change)
+}
+function startConstraint(event: PointerEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
+  const before = bar.constraints?.[kind]
+  if (!canEditConstraints(bar) || before === undefined || gestureActive() || !event.isPrimary || event.button !== 0 || !canvas.value) return
+  const target = event.currentTarget as HTMLElement
+  hideTooltip()
+  target.focus({ preventScroll: true })
+  const origin = axis.value.toTime(timeAreaOffset(event.clientX, canvas.value.getBoundingClientRect()))
+  constraintDrag = { id: bar.id, kind, pointerId: event.pointerId, target, x: event.clientX, origin, before }
+  target.setPointerCapture(event.pointerId)
+}
+/** Move the constraint by the snapped time between the press and the pointer. */
+function moveConstraint(event: PointerEvent) {
+  const active = constraintDrag
+  if (!active || active.pointerId !== event.pointerId || !canvas.value) return
+  if (!constraintPreview.value && Math.abs(event.clientX - active.x) < 2) return
+  const time = axis.value.toTime(timeAreaOffset(event.clientX, canvas.value.getBoundingClientRect()))
+  constraintPreview.value = { id: active.id, kind: active.kind, time: constraintTime(active.before, time - active.origin) }
+}
+function finishConstraint(event: PointerEvent) {
+  const active = constraintDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelConstraint()
+  moveConstraint(event)
+  const preview = constraintPreview.value
+  cancelConstraint()
+  if (preview) proposeConstraint({ id: active.id, kind: active.kind, before: active.before, after: preview.time, source: 'pointer' })
+}
+function constraintKeys(event: KeyboardEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
+  if (event.key === 'Escape') return cancelEdit()
+  if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
+  const before = bar.constraints?.[kind]
+  if (!canEditConstraints(bar) || before === undefined || event.altKey || event.ctrlKey || event.metaKey) return
+  // Left and Right follow the visual direction, so ArrowLeft moves to later times in right-to-left charts. Up and Page Up
+  // move to later times, as they increase a slider.
+  const step = event.shiftKey ? tickStep.value : activeSnap.value
+  let after: number | undefined
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    after = constraintTime(before, (event.key === 'ArrowRight') !== rtl.value ? step : -step)
+  } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    after = constraintTime(before, event.key === 'ArrowUp' ? step : -step)
+  } else if (event.key === 'PageUp' || event.key === 'PageDown') {
+    after = constraintTime(before, event.key === 'PageUp' ? tickStep.value : -tickStep.value)
+  } else if (event.key === 'Home' || event.key === 'End') {
+    after = event.key === 'Home' ? bounds.value.start : bounds.value.end
+  } else if (event.key !== 'Delete' && event.key !== 'Backspace') {
+    return
+  }
+  event.preventDefault()
+  if (gestureActive()) return
+  proposeConstraint({ id: bar.id, kind, before, after, source: 'keyboard' })
+}
+
 // Drag to create (`creatable`). A press on the empty timeline area of a row previews a new bar while the pointer
 // moves; release (or a click) proposes it, and the parent adds the bar to accept it. The template adds the row's add
 // button in a `v-else-if` branch of the expand toggle, and the create and cascade previews in branches of the link
@@ -1925,14 +2342,14 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
 const createPreview = shallowRef<{ rowId: string; lane: number; range: TimeRange }>()
 let createDrag: { pointerId: number; rowId: string; time: number; x: number; moved: boolean } | undefined
 const createLength = computed(() => props.createDuration ?? 4 * activeSnap.value)
-function canCreateIn(row: TimelineRow) {
+function canCreateIn(row: R) {
   if (!props.creatable || props.readonly || validationError.value) return false
   return typeof props.creatable === 'function' ? Boolean(props.creatable(row)) : true
 }
 /** The nearest multiple of `snap` from the range start. */
 function snapTime(time: number) {
   const step = activeSnap.value
-  return props.range.start + Math.round((time - props.range.start) / step) * step
+  return stableRange.value.start + Math.round((time - stableRange.value.start) / step) * step
 }
 /** [start, start + length) moved inside editBounds, and shortened only when the bounds are shorter. */
 function placeInBounds(start: number, length: number): TimeRange {
@@ -1961,7 +2378,7 @@ function laneAt(rowId: string, clientY: number) {
   const offset = clientY - canvas.value.getBoundingClientRect().top - headerHeight.value - index * props.rowHeight - laneOffset(0)
   return Math.max(0, Math.min(props.laneCount - 1, Math.floor(offset / laneHeight.value)))
 }
-function pressRow(event: PointerEvent, row: TimelineRow) {
+function pressRow(event: PointerEvent, row: R) {
   // Bars, handles, cells and the heading column are descendants; only the row's own background is empty.
   const el = scroller.value, area = canvas.value
   if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !event.isPrimary || event.button !== 0 || gestureActive()) return
@@ -2012,12 +2429,12 @@ function finishCreate(event: PointerEvent) {
   if (row && canCreateIn(row)) proposeCreate({ rowId: row.id, lane, start: range.start, end: range.end, source: 'pointer' })
 }
 /** The add button of a row proposes `createDuration` from the first snapped time in view, in the lowest free lane. */
-function createFromButton(event: MouseEvent, row: TimelineRow) {
+function createFromButton(event: MouseEvent, row: R) {
   if (!canCreateIn(row) || gestureActive()) return
   const el = scroller.value
   const step = activeSnap.value
-  const visible = el ? axis.value.toTime(Math.min(axis.value.width, scrollStart(el))) : props.range.start
-  const range = placeInBounds(props.range.start + Math.ceil((visible - props.range.start) / step) * step, createLength.value)
+  const visible = el ? axis.value.toTime(Math.min(axis.value.width, scrollStart(el))) : stableRange.value.start
+  const range = placeInBounds(stableRange.value.start + Math.ceil((visible - stableRange.value.start) / step) * step, createLength.value)
   const busy = (barsByRow.value.get(row.id) ?? []).filter(bar => bar.start === bar.end
     ? bar.start >= range.start && bar.start < range.end : bar.start < range.end && range.start < bar.end)
   let lane = 0
@@ -2063,8 +2480,9 @@ function pressScroller(event: PointerEvent) {
   trackTouch(event)
 }
 function onContextMenu(event: MouseEvent) {
-  // A menu opened during a create drag (for example Control-click on macOS) ends the drag without a proposal.
-  if (createDrag) cancelCreate()
+  // A menu opened during a pointer gesture (for example Control-click on macOS) can swallow pointerup, so every
+  // gesture ends here without a proposal. An armed keyboard connection is kept.
+  if (pointerGestureActive()) cancelEdit()
   const el = scroller.value, area = canvas.value
   if (!props.contextMenu || !el || !area) return
   const element = event.target instanceof Element ? event.target : undefined
@@ -2094,11 +2512,11 @@ function onContextMenu(event: MouseEvent) {
   emit('context-menu', menu)
 }
 function contextTarget(element: Element | undefined): TimelineContextTarget | undefined {
-  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-link], [data-vw-dependency]')
+  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-constraint], [data-vw-link], [data-vw-dependency]')
   if (!owner || !scroller.value?.contains(owner)) return undefined
-  const { vwBar, vwProgress, vwLink, vwDependency } = owner.dataset
+  const { vwBar, vwProgress, vwConstraint, vwLink, vwDependency } = owner.dataset
   if (vwDependency !== undefined) return { kind: 'dependency', id: vwDependency }
-  const id = vwBar ?? vwProgress ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
+  const id = vwBar ?? vwProgress ?? vwConstraint ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
   return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
 }
 
@@ -2274,7 +2692,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   // The zoom factor scales the base scale linearly, so this also holds for a custom, non-linear scale.
   const span = (axis.value.toX(end) - axis.value.toX(start)) / zoom.value
   // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
-  if (drag || progressDrag || linkDrag || pinch || createDrag) cancelEdit()
+  if (drag || progressDrag || linkDrag || pinch || createDrag || constraintDrag) cancelEdit()
   hideTooltip()
   if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
   return nextTick().then(() => {
@@ -2337,7 +2755,7 @@ function rowLabelWidth() {
  * A standalone SVG document of the chart with the default rendering: every displayed row (respecting collapsed rows),
  * the whole range at the current zoom, header bands, ticks, markers, the now line and load rows. Slots are not used.
  */
-function exportSvg(options: GanttExportOptions = {}) {
+function exportSvg(options: GanttExportOptions<R, B> = {}) {
   if (validationError.value) throw validationError.value
   const { includeLoad = true, includeStatusDate = true, theme, ...rest } = options
   const time = props.now ?? clientNow.value
@@ -2352,11 +2770,16 @@ function exportSvg(options: GanttExportOptions = {}) {
     showSummaries: props.showSummaries,
     headerBands: activeBands.value,
     markers: props.markers,
-    now: props.showNow && time !== undefined && time >= props.range.start && time <= props.range.end ? time : undefined,
+    now: props.showNow && time !== undefined && time >= stableRange.value.start && time <= stableRange.value.end ? time : undefined,
     nowLabel: messages.value.now,
     tickStep: tickStep.value,
-    tickAnchor: props.range.start,
+    tickAnchor: stableRange.value.start,
     formatTime: props.formatTime,
+    formatLag: props.formatLag,
+    baselineIds: stableBaselineIds.value,
+    baselineLabel: baselineText.value.label,
+    formatVariance: props.formatVariance,
+    varianceLabels: { start: baselineText.value.start, finish: baselineText.value.finish, duration: baselineText.value.duration },
     rowHeading: rest.rowHeading ?? messages.value.rows,
     loadRows: includeLoad && loadHistogram.value ? props.loadRows : undefined,
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
@@ -2366,13 +2789,15 @@ function exportSvg(options: GanttExportOptions = {}) {
     statusDate: includeStatusDate ? props.statusDate : undefined,
     statusDateLabel: messages.value.statusDate,
     showProgressLine: props.showProgressLine,
+    constraintLabels: Object.fromEntries(timelineConstraintKinds.map(kind => [kind, messages.value[kind]!])),
+    constraintViolatedLabel: messages.value.constraintViolated,
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
   })
 }
 /** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
-async function exportPng(options: GanttPngExportOptions = {}) {
+async function exportPng(options: GanttPngExportOptions<R, B> = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }
@@ -2380,6 +2805,7 @@ defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng, fitT
 
 // Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
 watch(() => props.dir, detectDirection, { flush: 'post' })
+onScopeDispose(() => directionObserver?.disconnect())
 watch(rtl, async () => {
   cancelEdit()
   const start = viewport.value.left
@@ -2387,6 +2813,16 @@ watch(rtl, async () => {
   if (scroller.value) setScrollStart(scroller.value, start)
   syncViewport()
 })
+
+function observeCorner(element: HTMLElement | null | undefined) {
+  if (!observer || element === observedCorner) return
+  if (observedCorner) observer.unobserve(observedCorner)
+  observedCorner = element ?? undefined
+  // Observing reports the initial size, which runs syncViewport.
+  if (observedCorner) observer.observe(observedCorner)
+  else syncViewport()
+}
+watch(cornerEl, observeCorner, { flush: 'post' })
 
 onMounted(() => {
   mounted = true
@@ -2396,16 +2832,22 @@ onMounted(() => {
   syncViewport()
   observer = new ResizeObserver(syncViewport)
   observer.observe(scroller.value)
-  const corner = scroller.value.querySelector('.vw-gantt-corner')
-  if (corner) observer.observe(corner)
+  observeCorner(cornerEl.value)
   scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
+  syncWheelListener()
 })
-onBeforeUnmount(() => scroller.value?.removeEventListener('touchmove', holdPinch))
+onBeforeUnmount(() => {
+  scroller.value?.removeEventListener('touchmove', holdPinch)
+  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
+  wheelTarget = undefined
+})
 onUnmounted(() => {
   mounted = false
   cancelEdit()
   hideTooltip()
   observer?.disconnect()
+  observer = undefined
+  observedCorner = undefined
   if (nowTimer !== undefined) clearInterval(nowTimer)
 })
 </script>
@@ -2427,10 +2869,10 @@ onUnmounted(() => {
     <div
       ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
-      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event); moveRowDrag($event)"
-      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
-      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
-      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
+      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveConstraint($event); moveCreate($event); moveRowDrag($event)"
+      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
+      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
+      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
     >
       <div v-if="!validationError" ref="canvas" class="vw-gantt-canvas" :style="{
         width: `calc(var(--vw-label-area-width) + ${axis.width}px)`,
@@ -2442,14 +2884,14 @@ onUnmounted(() => {
         ...labelWidthStyle,
       }">
         <div class="vw-gantt-head">
-          <div class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
+          <div ref="cornerEl" class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
             <div class="vw-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
             <!-- Column headers and, with columnsResizable, their resize separators share one list so that the default markup stays unchanged. -->
             <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>
           </div>
           <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
             <span v-for="line in tickXs" :key="'line-' + line.tick" class="vw-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
-            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ end: tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ 'vw-is-end': tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
@@ -2526,13 +2968,13 @@ onUnmounted(() => {
             :title="`${row.row.label} · ${row.summary.count} · ${formatTime(row.summary.start)}–${formatTime(row.summary.end)}`">
             <span v-if="row.summary.progress !== undefined" :style="{ width: (row.summary.progress * 100) + '%' }"></span>
           </div>
-          <div v-for="bar in row.baselines" :key="bar.id" class="vw-gantt-baseline"
-            :style="baselineStyle(bar)" :title="`${messages.baseline} · ${bar.label} ${formatTime(bar.baseline!.start)}–${formatTime(bar.baseline!.end)}`"></div>
+          <div v-for="strip in row.baselines" :key="strip.key" :class="strip.className"
+            :style="strip.style" :title="strip.title" :data-vw-baseline="strip.set"></div>
           <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vw-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
             v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
-            :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'outline' : 'solid', {
-              selected: selectedIds?.has(bar.id), editable: editable(bar), dragging: previews?.has(bar.id), milestone: bar.start === bar.end,
+            :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'vw-is-outline' : 'vw-is-solid', {
+              'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': editable(bar), 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
               'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
             }]"
             :style="barStyle(bar)" :data-vw-bar="bar.id"
@@ -2554,20 +2996,20 @@ onUnmounted(() => {
             <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
               <span class="vw-bar-text">{{ bar.label }}</span>
             </slot>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle first" data-edit-mode="start" aria-hidden="true"></span>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle last" data-edit-mode="end" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-first" data-edit-mode="start" aria-hidden="true"></span>
+            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-last" data-edit-mode="end" aria-hidden="true"></span>
             <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
           </button>
-          <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vw-gantt-deadline" :class="{ 'vw-late': item.late }"
-            :style="item.style" aria-hidden="true"></div>
-          <template v-if="(linkHandlesVisible || progressHandlesVisible) && !row.progress">
+          <!-- Deadline indicators and the constraint markers of bars without handles share one list, so the default markup stays unchanged. -->
+          <div v-for="item in row.decorations" :key="item.key" :class="item.className" :style="item.style" aria-hidden="true"></div>
+          <template v-if="(linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible) && !row.progress">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
               <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                 @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
             </template>
           </template>
           <template v-else-if="row.progress">
-            <template v-if="linkHandlesVisible || progressHandlesVisible">
+            <template v-if="linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible">
               <template v-for="bar in row.bars" :key="bar.id + ':links'">
                 <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                   @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
@@ -2578,7 +3020,8 @@ onUnmounted(() => {
               :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
           </template>
         </div>
-        <svg v-if="shownLines.length" class="vw-gantt-links" aria-hidden="true"
+        <DependencyLayers v-if="shownLines.length">
+        <svg class="vw-gantt-links" aria-hidden="true"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
             [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
@@ -2591,11 +3034,19 @@ onUnmounted(() => {
               <path d="M 0 0 L 6 3 L 0 6 z" fill="context-stroke" />
             </marker>
           </defs>
-          <path v-for="line in shownLines" :key="line.id"
-            :class="{ related: selectedIds?.has(line.from) || selectedIds?.has(line.to), highlighted: highlightedDependencyIds?.has(line.id), selected: dependencyTargets && activeDependencyId === line.id }"
-            :d="line.path" :marker-end="`url(#${marker})`"
-          />
+          <LinkShape v-for="shape in linkShapes" :key="shape.key" :tag="shape.tag" :attrs="shape.attrs" :text="shape.text" />
         </svg>
+        <template #lag><svg class="vw-gantt-lag-layer" aria-hidden="true"
+          :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
+          :style="{
+            [inlineSide]: `calc(var(--vw-label-area-width) + ${xWindow.left}px)`,
+            top: `${headerHeight + rowWindow.first * rowHeight}px`,
+          }"
+          :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
+        >
+          <LinkShape v-for="shape in lagShapes" :key="shape.key" :tag="shape.tag" :attrs="shape.attrs" :text="shape.text" />
+        </svg></template>
+        </DependencyLayers>
         <svg v-if="dependencyTargets && shownLines.length" class="vw-gantt-link-hits"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
           :style="{
@@ -2604,9 +3055,10 @@ onUnmounted(() => {
           }"
           :viewBox="`${xWindow.left} ${rowWindow.first * rowHeight} ${xWindow.right - xWindow.left} ${(rowWindow.afterLast - rowWindow.first) * rowHeight}`"
         >
-          <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ active: activeDependencyId === line.id }"
+          <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ 'vw-is-active': activeDependencyId === line.id }"
             :d="line.path" role="button" tabindex="0" :data-vw-dependency="contextMenu ? line.id : undefined"
             :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
+            :aria-describedby="line.lag?.id"
             :aria-pressed="activeDependencyId === line.id"
             @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
         </svg>
@@ -2639,7 +3091,7 @@ onUnmounted(() => {
             </slot>
           </div>
           <div v-for="segment in item.segments" :key="segment.key" class="vw-gantt-load-segment"
-            :class="{ overloaded: segment.overload > 0, idle: segment.segment.load === 0 }" role="img"
+            :class="{ 'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0 }" role="img"
             :aria-label="segment.label" :title="segment.label"
             :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
             <slot name="load-segment" :segment="segment.segment" :row="item.row" :peak="item.peak" :overload="segment.overload">
@@ -2660,7 +3112,11 @@ onUnmounted(() => {
         <slot name="tooltip" :bar="tooltipBar" :range="rangeOf(tooltipBar)" :selected="Boolean(selectedIds?.has(tooltipBar.id))" />
       </div>
     </template>
-    <span :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+    <span v-if="!constraintHandlesVisible" :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+    <template v-else>
+      <span :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+      <span :id="marker + '-constraint-hint'" class="vw-sr-only">{{ messages.constraintHint }}</span>
+    </template>
     <span v-if="rowDraggable && !rowHandlesVisible" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>
     <template v-else-if="rowHandlesVisible">
       <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>

@@ -87,7 +87,7 @@ test('NetworkGraph renders selectable edges with their controlled selection on t
   assert.match(html, /aria-label="Select edge One"/)
   const selected = hits.filter(hit => hit.includes('aria-pressed="true"'))
   assert.equal(selected.length, 1)
-  assert.match(selected[0], /class="vw-edge-hit selected"/)
+  assert.match(selected[0], /class="vw-edge-hit vw-is-selected"/)
   assert.match(selected[0], /data-vw-edge="bc"/)
   assert.equal(html.match(/vw-edge-selected/g)?.length, 1)
   // Without edgesSelectable a reconnectable graph keeps its existing edge buttons and pressed state.

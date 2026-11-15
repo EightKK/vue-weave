@@ -54,6 +54,8 @@ const reorder = ref(false)
 const wbs = computed(() => timelineWbsCodes(model.value.rows))
 // "Resize columns" shows the WBS column too and adds a resize separator to each column header.
 const resizable = ref(false)
+// Ctrl+wheel (or Meta+wheel and trackpad pinches) zooms around the pointer when this is on; a plain wheel always scrolls.
+const wheel = ref(false)
 const columns = computed<TimelineColumn[] | undefined>(() => reorder.value || resizable.value
   ? [{ id: 'wbs', label: 'WBS', width: model.value.widths.wbs ?? 52, value: row => wbs.value.get(row.id) ?? '' }] : undefined)
 const labelWidth = computed(() => model.value.widths[timelineLabelColumnId])
@@ -323,7 +325,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
   <section class="planning-panel" aria-labelledby="editing-title">
     <div class="section-head">
       <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
+      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><label><input v-model="wheel" type="checkbox"> Ctrl+wheel zoom</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
     </div>
     <div class="options editing-actions" role="group" aria-label="History and fit">
       <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
@@ -333,7 +335,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       <label class="import-csv">Import CSV <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
     </div>
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
-      :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom show-now :now="origin + 3.5 * hour"
+      :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom :wheel-zoom="wheel" show-now :now="origin + 3.5 * hour"
       progress-editable deletable context-menu creatable :validate-create="validateCreate" :columns="columns"
       :columns-resizable="resizable" :label-width="labelWidth" :validate-column-resize="validateColumnResize"
       @column-resize="resizeColumn" @column-resize-rejected="(_change, reason) => status = reason"

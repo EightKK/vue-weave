@@ -147,6 +147,25 @@ test('cloneGraphElements moves saved positions by the offset', () => {
   assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: suffix, positions: new Map([['a', { x: Infinity, y: 0 }]]) }), RangeError)
 })
 
+test('cloneGraphElements moves edge waypoints by the offset without changing the input', () => {
+  const routed = edges.map(edge => edge.id === 'bc' ? { ...edge, points: [{ x: 100, y: 50 }, { x: 140, y: 80 }] } : edge)
+  const snapshot = structuredClone(routed)
+  const result = cloneGraphElements(nodes, routed, ['b', 'c'], { createId: suffix, offset: { x: 40, y: -5 } })
+  assert.deepEqual(result.edges.find(edge => edge.id === 'edge:bc').points, [{ x: 140, y: 45 }, { x: 180, y: 75 }])
+  // Edges without waypoints get none.
+  assert.equal('points' in result.edges.find(edge => edge.id === 'edge:bb'), false)
+  assert.deepEqual(routed, snapshot)
+  assert.notEqual(result.edges.find(edge => edge.id === 'edge:bc').points, routed[1].points)
+  // Without an offset the waypoints are equal copies.
+  const same = cloneGraphElements(nodes, routed, ['b', 'c'], { createId: suffix })
+  assert.deepEqual(same.edges.find(edge => edge.id === 'edge:bc').points, routed[1].points)
+  // A waypoint that overflows when moved is rejected.
+  const far = edges.map(edge => edge.id === 'bc' ? { ...edge, points: [{ x: Number.MAX_VALUE, y: 0 }] } : edge)
+  assert.throws(() => cloneGraphElements(nodes, far, ['b', 'c'], { createId: suffix, offset: { x: Number.MAX_VALUE, y: 0 } }), {
+    name: 'RangeError', message: 'Copied edge waypoints must be finite: bc',
+  })
+})
+
 test('cloneGraphElements rejects unknown, empty, repeated and colliding IDs', () => {
   assert.throws(() => cloneGraphElements(nodes, edges, ['zz'], { createId: suffix }), { name: 'Error', message: 'Unknown node in graph clone: zz' })
   assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => '' }), /empty node ID for: a/)
