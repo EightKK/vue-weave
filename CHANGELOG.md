@@ -16,6 +16,9 @@
 - `scheduleTasks` and `levelResources` take an optional second argument `{ explain: true }` that adds a `trace` (`ScheduleTrace`) of structured reasons for each task's dates: dependencies with their lag, constraints, project bounds, calendar time off, pauses and, for leveling, the resources, intervals and holding tasks that delayed or split a task. Overloads type `trace` only for `explain: true`. Results without the option are unchanged.
 - `collectScheduleReasons(trace, taskId, options?)` follows a task's reasons to their causes iteratively, visiting shared causes once.
 - `toPlanningDiagnostics(result, load?)` turns cycles, infeasible tasks, unresolved leveling and overloaded load segments into `PlanningDiagnostic` entries with language-independent IDs and codes and `EntityRef` targets.
+- `useAsyncGraphLayout` composable and `graphLayoutWorkerAdapter` for Worker or other asynchronous layouts of NetworkGraph: desired and display frames, request IDs and input keys that reject stale results, a cache by scope and input key, a `layout` function of stable identity, results deferred during gestures, provisional frames with temporary routes, and no requests during server rendering.
+- `buildGraphLayoutRequests`, `graphLayoutInputKey`, `validateGraphLayoutResponse`, `completeGraphLayout` and layout Worker message helpers (`graphLayoutToJson`, `graphLayoutFromJson`, `graphLayoutMessageToJson`, `graphLayoutMessageFromJson`, `parseGraphLayoutMessage`) in `vue-weave/core`.
+- Routing policy `'preserve'` for `routeGraphPorts` and `routeGraphEdges` (`policy` option), which keeps valid routes from the layout, including edges with named ports and in the orthogonal and straight styles, and `isGraphRouteValid`. `GraphLayout` gains an optional `routes` map of route metadata, carried through the positioning and routing functions. The default `'builtin'` policy is unchanged.
 
 ## 0.2.0 - 2026-11-15
 

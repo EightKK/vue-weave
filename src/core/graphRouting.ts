@@ -1,5 +1,9 @@
-import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphPoint, type GraphPort, type IdentifiedNode } from './graph.js'
+import {
+  graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphLayoutRoute, type GraphPoint, type GraphPort,
+  type IdentifiedNode,
+} from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
+import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 import { assertGraphPortSide } from './graphPortSide.js'
 
 /** How NetworkGraph and `routeGraphEdges` draw edges. `curve` is the layout's own routing. */
@@ -12,6 +16,12 @@ export interface GraphEdgeRouteOptions {
   direction?: GraphLayoutDirection
   /** Radius of the rounded corners of orthogonal routes, in chart units. Default 0 (sharp corners). */
   cornerRadius?: number
+  /**
+   * Default 'builtin'. 'preserve' keeps every path the layout drew while it still fits its nodes and ports (see
+   * `isGraphRouteValid`), whatever the style, and routes only the other edges: edges with `points`, edges of moved or
+   * resized nodes, edges whose port changed, and edges the port routing redrew.
+   */
+  policy?: GraphRoutingPolicy
 }
 
 type Side = GraphPort['side']
@@ -220,11 +230,15 @@ function onBorder(box: GraphBox, point: GraphPoint) {
     || ((near(point.y, box.y) || near(point.y, box.y + box.height)) && withinX)
 }
 
-/** One routed edge: its path, label anchor and the polyline (or curve control points) it was drawn through. */
+/**
+ * One routed edge: its path, label anchor and the polyline (or curve control points) it was drawn through, and its
+ * route metadata when it was drawn rather than kept.
+ */
 interface GraphEdgeRoute {
   path: string
   label: GraphPoint
   points: GraphPoint[]
+  route?: GraphLayoutRoute
 }
 
 function routeEdge(
@@ -277,10 +291,16 @@ function routeEdge(
     const b = toPort ?? clipToBorder(target, waypoints[waypoints.length - 1] ?? fromPort ?? centre(source))
     points = [a, ...waypoints, b]
   }
+  const start = points[0]!, end = points[points.length - 1]!
+  const sides = { from: (start as Partial<Anchor>).side, to: (end as Partial<Anchor>).side }
   points = simplify(points)
   const middle = halfway(points)
   const path = style === 'curve' ? graphSmoothPath(points) : graphPolylinePath(points, style === 'orthogonal' ? cornerRadius : 0)
-  return { path, label: { x: middle.x, y: middle.y - 6 }, points }
+  const route: GraphLayoutRoute = {
+    start: { x: start.x, y: start.y }, end: { x: end.x, y: end.y }, fromPort: edge.fromPort, toPort: edge.toPort,
+    fromSide: sides.from, toSide: sides.to, points: style === 'curve' ? waypoints.map(point => ({ x: point.x, y: point.y })) : points.slice(1, -1),
+  }
+  return { path, label: { x: middle.x, y: middle.y - 6 }, points, route }
 }
 
 /**
@@ -289,29 +309,39 @@ function routeEdge(
  * leave and enter along the layout direction and keeps a long-edge bypass lane the layout already drew between the
  * current boxes. Named ports keep their anchors and sides. An edge with `points` goes through its waypoints in every
  * style, smoothly in `curve`. With `curve`, edges without waypoints keep their paths, so the result is the input layout
- * when no edge has waypoints. Throws Error for an unknown endpoint, RangeError for a non-finite waypoint, an unknown
- * style or direction, or a bad corner radius. Boxes are kept; width and height grow to include the routes.
+ * when no edge has waypoints. With `policy: 'preserve'` every valid path from the layout is kept, whatever the style.
+ * Route metadata (`layout.routes`) is carried over when the layout has it, with the entries of redrawn edges replaced.
+ * Throws Error for an unknown endpoint, RangeError for a non-finite waypoint, an unknown style, direction or policy, or
+ * a bad corner radius. Boxes are kept; width and height grow to include the routes.
  */
 export function routeGraphEdges(
   layout: GraphLayout, edges: readonly GraphEdge[], nodes: ReadonlyMap<string, IdentifiedNode>, options: GraphEdgeRouteOptions = {},
 ): GraphLayout {
-  const { style = 'curve', direction = 'LR', cornerRadius = 0 } = options
+  const { style = 'curve', direction = 'LR', cornerRadius = 0, policy = 'builtin' } = options
   if (!['curve', 'orthogonal', 'straight'].includes(style)) throw new RangeError('Unknown edge style: ' + style)
+  if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
   if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
   if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
   if (style === 'curve' && !edges.some(edge => edge.points?.length)) return layout
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
+  const routes = layout.routes && new Map(layout.routes)
+  const redrawn: string[] = []
   let { width, height } = layout
   for (const edge of edges) {
+    if (policy === 'preserve' && isGraphRouteValid(layout, nodes, edge)) continue
     const route = routeEdge(layout, edge, nodes, style, direction, cornerRadius)
     if (!route) continue
     paths.set(edge.id, route.path)
     edgeLabels.set(edge.id, route.label)
+    if (route.route) {
+      routes?.set(edge.id, route.route)
+      redrawn.push(edge.id)
+    }
     for (const point of route.points) {
       width = Math.max(width, point.x + 8)
       height = Math.max(height, point.y + 8)
     }
   }
-  return { boxes: layout.boxes, paths, edgeLabels, width, height }
+  return markBuiltinRoutes({ boxes: layout.boxes, paths, edgeLabels, width, height, ...routes && { routes } }, layout, redrawn)
 }

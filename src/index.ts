@@ -65,3 +65,8 @@ export { useLinkedSelection } from './composables/useLinkedSelection.js'
 export type {
   LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions,
 } from './composables/useLinkedSelection.js'
+export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
+export type {
+  AsyncGraphLayoutAdapter, AsyncGraphFrame, AsyncGraphDisplayFrame, AsyncGraphLayoutError, UseAsyncGraphLayoutOptions, AsyncGraphLayout,
+  GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
+} from './composables/useAsyncGraphLayout.js'

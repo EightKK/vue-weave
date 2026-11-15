@@ -68,3 +68,14 @@ export type {
   ExplainedScheduleSuccess, ExplainedScheduleResult, ExplainedLevelResourcesSuccess, ExplainedLevelResourcesResult,
   CollectScheduleReasonsOptions,
 } from './scheduleTrace.js'
+export { isGraphRouteValid } from './graphGeometry.js'
+export type { GraphRoutingPolicy } from './graphGeometry.js'
+export {
+  graphLayoutInputKey, buildGraphLayoutRequests, validateGraphLayoutResponse, completeGraphLayout, graphLayoutToJson, graphLayoutFromJson,
+  graphLayoutMessageToJson, graphLayoutMessageFromJson, parseGraphLayoutMessage,
+} from './graphLayoutRequests.js'
+export type {
+  GraphLayoutScope, GraphLayoutRequestInput, GraphLayoutRequest, GraphLayoutResponse, GraphLayoutRequests, GraphLayoutKeyInput,
+  GraphLayoutCompletionOptions, GraphLayoutCompletion, GraphLayoutRequestMessage, GraphLayoutCancelMessage, GraphLayoutSuccessMessage,
+  GraphLayoutFailureMessage, GraphLayoutWorkerMessage, GraphLayoutJson, GraphLayoutRequestJson, GraphLayoutWorkerJsonMessage,
+} from './graphLayoutRequests.js'
