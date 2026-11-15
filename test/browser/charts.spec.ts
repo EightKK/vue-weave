@@ -880,6 +880,143 @@ test('dragging a node under culling emits one proposal and keeps the node render
   expect(errors).toEqual([])
 })
 
+test('highlighted nodes are display only: Delete removes the selection alone and culling does not keep them', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&delete=1&highlight=B&highlightedges=e1')
+  await expect(chainNode(page, 'B')).toHaveClass(/vw-is-highlighted/)
+  await expect(chainNode(page, 'B')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('g.vw-is-highlighted > path.vw-network-edge')).toHaveCount(1)
+  await chainNode(page, 'A').focus()
+  await page.keyboard.press('Enter')
+  await expect(chainNode(page, 'A')).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":["A"],"edgeIds":["e0"]}')
+
+  // A highlighted node far outside the view is not rendered; it is revealed on request.
+  await openNetworkFixture(page, '?nodes=600&cull=1&highlight=N0450')
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('target events report pointer and keyboard entry and activation of nodes, edges and groups', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&targets=1&edgeselect=1&draggable=1')
+  const log = page.getByRole('status', { name: 'Target events', exact: true })
+  await chainNode(page, 'A').focus()
+  await expect(log).toHaveText('enter node A keyboard')
+  await page.keyboard.press('Enter')
+  await expect(log).toHaveText('enter node A keyboard | activate node A keyboard')
+  await page.keyboard.press('Tab')
+  await expect(log).toContainText('leave node A keyboard | enter node B keyboard')
+  const edge = page.getByRole('button', { name: 'Select edge e0', exact: true })
+  await edge.focus()
+  await page.keyboard.press('Space')
+  await expect(log).toContainText('enter edge e0 keyboard | activate edge e0 keyboard')
+  await page.getByRole('button', { name: 'Move group Outer', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(log).toContainText('enter group outer keyboard | activate group outer keyboard')
+
+  await chainNode(page, 'C').hover()
+  await expect(log).toContainText('enter node C pointer')
+  await chainNode(page, 'C').click()
+  await expect(log).toContainText('activate node C pointer')
+  await page.mouse.move(2, 2)
+  await expect(log).toContainText('leave node C pointer')
+  expect(errors).toEqual([])
+})
+
+test('revealNode brings a culled node into view and focuses it, and reports collapsed and unknown nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1')
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('missing'))).toEqual({ status: 'unknown' })
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('N0450', { focus: true, scale: 1 }))).toEqual({ status: 'revealed' })
+  await expect(chainNode(page, 'N0450')).toBeFocused()
+  expect((await readCamera(page)).scale).toBe(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await chainNode(page, 'N0450').boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(2)
+
+  await openNetworkFixture(page, '?nodes=40&groups=chain&collapse=g1&highlight=N0013')
+  await expect(page.locator('[data-vw-node="g1"]')).toHaveClass(/vw-is-highlighted/)
+  const before = await readCamera(page)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('N0012', { focus: true })))
+    .toEqual({ status: 'hidden-by-collapse', proxyId: 'g1' })
+  expect(await readCamera(page)).toEqual(before)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('g1'))).toEqual({ status: 'revealed' })
+  expect(errors).toEqual([])
+})
+
+test('the preserve routing policy keeps an external port route while an unrelated node is dragged', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const paths = () => page.locator('[data-vw-edge]').evaluateAll(list => Object.fromEntries(list.map(item => [item.getAttribute('data-vw-edge'), item.getAttribute('d')])))
+  for (const policy of ['preserve', 'builtin']) {
+    await openNetworkFixture(page, `?preset=ports&draggable=1&edgeselect=1&style=orthogonal&policy=${policy}`)
+    const external = await page.evaluate(() => (window as any).__vw.external.path as string)
+    const initial = await paths()
+    if (policy === 'preserve') expect(initial.ab).toBe(external)
+    else expect(initial.ab).not.toBe(external)
+    // The drag preview updates the dragged node's edges locally; it must equal the full routing of the committed move.
+    for (const [name, count] of [['D', '1'], ['B', '2']] as const) {
+      const node = chainNode(page, name)
+      const box = (await node.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 70, { steps: 5 })
+      const preview = await paths()
+      if (name === 'D') {
+        expect(preview.ab).toBe(initial.ab)
+        expect(preview.e2).not.toBe(initial.e2)
+      } else expect(preview.ab).not.toBe(initial.ab)
+      await page.mouse.up()
+      await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText(count)
+      expect(await paths()).toEqual(preview)
+    }
+  }
+  expect(errors).toEqual([])
+})
+
+test('getTargetClientRect measures nodes, edges and groups and setViewportCenter restores a saved centre', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&edgeselect=1')
+  const rect = (target: unknown) => page.evaluate(value => {
+    const result = (window as any).__vw.graph().getTargetClientRect(value) as DOMRect | undefined
+    return result && { x: result.x, y: result.y, width: result.width, height: result.height }
+  }, target)
+  const close = (actual: { x: number; y: number; width: number; height: number } | undefined, expected: { x: number; y: number; width: number; height: number }) => {
+    expect(actual).toBeDefined()
+    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(actual![key] - expected[key])).toBeLessThan(1.5)
+  }
+  // The drawn node rectangle is inset by 2 chart units on every side of the layout box.
+  const nodeBox = async (name: string) => {
+    const [drawn, scale] = [(await chainNode(page, name).locator('rect').boundingBox())!, (await readCamera(page)).scale]
+    return { x: drawn.x - 2 * scale, y: drawn.y - 2 * scale, width: drawn.width + 4 * scale, height: drawn.height + 4 * scale }
+  }
+  close(await rect({ view: 'graph', kind: 'node', id: 'B' }), await nodeBox('B'))
+  close(await rect({ view: 'graph', kind: 'group', id: 'outer' }), (await page.locator('.vw-network-group', { hasText: 'Outer' }).locator('rect').boundingBox())!)
+  const edge = await rect({ view: 'graph', kind: 'edge', id: 'e0' })
+  expect(edge!.width).toBeGreaterThan(0)
+  expect(await rect({ view: 'graph', kind: 'node', id: 'missing' })).toBeUndefined()
+  expect(await rect({ view: 'timeline', kind: 'bar', id: 'B' })).toBeUndefined()
+
+  const saved = await page.evaluate(() => ({ center: (window as any).__vw.graph().getViewportCenter(), scale: (window as any).__vw.graph().getViewport().scale }))
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 0.5 }))
+  await page.evaluate(({ center, scale }) => (window as any).__vw.graph().setViewportCenter(center, scale), saved)
+  const restored = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
+  expect(restored.x).toBeCloseTo(saved.center.x, 6)
+  expect(restored.y).toBeCloseTo(saved.center.y, 6)
+  expect((await readCamera(page)).scale).toBe(saved.scale)
+  // Moving the camera moves the measured rectangle with it.
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ ...(window as any).__vw.graph().getViewport(), x: 10 }))
+  close(await rect({ view: 'graph', kind: 'node', id: 'B' }), await nodeBox('B'))
+  expect(errors).toEqual([])
+})
+
 type TouchPoint = { x: number; y: number; id: number }
 async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>, type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) {
   await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })

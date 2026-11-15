@@ -212,6 +212,12 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
   groups?: readonly GraphSvgGroup[]
   /** Node IDs drawn in the selected style. */
   selectedIds?: Iterable<string>
+  /** Node IDs whose box gets the highlight outline, like NetworkGraph `highlightedNodeIds`. Unknown IDs are ignored. */
+  highlightedNodeIds?: Iterable<string>
+  /** Edge IDs drawn as highlighted edges, like NetworkGraph `highlightedEdgeIds`. Unknown IDs are ignored. */
+  highlightedEdgeIds?: Iterable<string>
+  /** Colour of highlighted nodes and edges. Defaults to the theme's `dependencyHighlight`. */
+  highlightColor?: string
   /** Margin around the content, in pixels. Default 16. */
   padding?: number
   /** Node title text. Defaults to `node.label`. */
@@ -270,11 +276,21 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
+  const highlightedNodes = new Set(options.highlightedNodeIds ?? [])
+  const highlightedEdges = new Set(options.highlightedEdgeIds ?? [])
+  if (options.highlightColor !== undefined && (typeof options.highlightColor !== 'string' || !options.highlightColor.trim())) {
+    throw new Error('Invalid export highlight colour')
+  }
+  const highlight = options.highlightColor?.trim() || theme.dependencyHighlight
   const nodeLabel = options.nodeLabel ?? ((node: N) => node.label)
   const nodeDetail = options.nodeDetail ?? ((node: N) => node.detail)
-  const arrow = prefix + '-arrow'
+  const arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
+  // The highlight marker is only written when a drawn edge uses it, so an export without highlights is unchanged.
+  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id))
   const defs = tag('marker', { id: arrow, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
     tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: theme.edge }))
+    + (anyHighlightedEdge ? tag('marker', { id: arrowHighlight, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
+      tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: highlight })) : '')
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
@@ -288,8 +304,10 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     }, escapeXml(group.label))))
   }
   for (const edge of edges) {
+    const strong = highlightedEdges.has(edge.id)
     content.push(tag('path', {
-      d: layout.paths.get(edge.id)!, fill: 'none', stroke: theme.edge, 'stroke-width': 1.65, 'marker-end': `url(#${arrow})`,
+      d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,
+      'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
     }))
   }
   for (const edge of edges) {
@@ -308,9 +326,11 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     const active = selected.has(node.id)
     const label = nodeLabel(node), detail = nodeDetail(node)
     const ink = active ? theme.onSolid : colors.ink
+    const strong = highlightedNodes.has(node.id)
     const shape = tag('rect', {
       x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8,
-      fill: active ? colors.solid : colors.pale, stroke: active ? colors.ink : colors.line, 'stroke-width': active ? 2.8 : 1.25,
+      fill: active ? colors.solid : colors.pale, stroke: strong ? highlight : active ? colors.ink : colors.line,
+      'stroke-width': strong ? 3 : active ? 2.8 : 1.25,
     })
     const text = clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
       { text: label, y: detail ? 24 : 34, size: 15.5, weight: 700, fill: ink, inset: 13 },

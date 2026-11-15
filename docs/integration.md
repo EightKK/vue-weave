@@ -157,6 +157,8 @@ Tone-specific variables follow --vw-blue-ink, --vw-blue-line, --vw-blue-pale and
 
 `--vw-edge-selected` (default `--vw-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vw-surface`, `--vw-border` and `--vw-text`.
 
+`--vw-graph-highlight` (unset by default, falling back to `--vw-dependency-highlight`, `#a74f08`, and to its dark value in the dark themes) colours the display-only highlights of NetworkGraph: the outline of nodes in `highlightedNodeIds` (`.vw-network-node.vw-is-highlighted`) and the edges in `highlightedEdgeIds` (an edge group with `vw-is-highlighted`). The graph export methods read it as the highlight colour (`highlightColor` of `renderGraphSvg`). In forced-colors mode highlighted nodes get a dashed `Highlight` outline and highlighted edges a dashed `CanvasText` stroke.
+
 NetworkGraph editing aids add two variables, used only when the matching prop is set:
 
 | Variable | Default | Used for |
@@ -407,7 +409,7 @@ Notes:
 
 - The edge coordinates above are those of the root graph, which holds every node and edge of a flat graph. For compound graphs (`children` inside children), ELK reports positions relative to each parent; add the parent offsets, or set `org.eclipse.elk.json.edgeCoords` to `ROOT` and `org.eclipse.elk.json.shapeCoords` to `ROOT`.
 - NetworkGraph checks the result: every node needs a box with a positive size and every edge a path, and `width` and `height` must be positive. Give ELK the sizes you render, for example from the `sizes` prop.
-- Keep the default `edgeStyle` (`curve`) to draw ELK's routes. `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are always redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Saved `positions` move nodes after the layout and reroute their edges in the same way.
+- With the default `routingPolicy` (`'builtin'`), keep the default `edgeStyle` (`curve`) to draw ELK's routes: `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Set `routing-policy="preserve"` to keep ELK's sections for every edge, port edges and the orthogonal and straight styles included, while they still end at their ports and boxes; return `routes` metadata to have the ends checked against the ports and sides (see [Preserving external routes](#preserving-external-routes)). With either policy, saved `positions` and `sizes` move or resize nodes after the layout and reroute only the edges of those nodes.
 - With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
 - `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
 
@@ -508,6 +510,14 @@ A Worker receives `{ type: 'request', request }` and answers `{ type: 'success',
 ### Preserving external routes
 
 `routeGraphPorts` and `routeGraphEdges` take `policy: 'preserve'`. With it, a path the layout drew is kept, in every edge style and also for edges with named ports, while both ends still fit: at the port anchor for a named port, otherwise on the box border. A layout can return route metadata in `layout.routes` (start and end points, ports, the sides a route leaves and enters, bend points); it is then checked as well, and it is carried through `applyGraphPositions`, `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges`. Only these edges fall back to built-in routing: edges with `points` (explicit waypoints win), edges of a node that `positions` or `sizes` moved or resized, edges whose port or metadata no longer fits, and temporary routes. Note that with `preserve`, edges with named ports are no longer always rerouted. The default `'builtin'` policy is unchanged.
+
+NetworkGraph applies the policy with its `routingPolicy` prop:
+
+```vue
+<NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :layout="graph.layout" routing-policy="preserve" edge-style="orthogonal" />
+```
+
+A node drag keeps updating only the dragged nodes' edges and draws the same routes the committed move produces. A connection accepted before the engine answers is drawn with a temporary route (`completeGraphLayout`) instead of failing with `Missing layout path`, and is routed again when the new layout arrives. A new layout object with the same geometry for the same inputs does not cancel a drag in flight; a layout whose geometry changed still does, so pass `gesture` to `useAsyncGraphLayout` to hold results until the gesture ends.
 
 Direct core users get the routed layout that NetworkGraph draws, and that `renderGraphSvg` should receive, by running the same steps:
 

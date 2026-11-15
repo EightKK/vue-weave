@@ -670,6 +670,8 @@ export interface GraphExportOptions<N extends NetworkNode = NetworkNode, E exten
   theme?: SvgExportThemeInput
   /** Draw selected nodes in the selected style. Default true. */
   includeSelection?: boolean
+  /** Draw the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` in the highlighted style. Default true. */
+  includeHighlight?: boolean
   nodeLabel?: (node: N) => string
   nodeDetail?: (node: N) => string | undefined
   edgeLabel?: (edge: E) => string | undefined

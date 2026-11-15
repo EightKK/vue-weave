@@ -13,6 +13,7 @@ import {
   applyTimelineConstraintEdit, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit, type TimelineConstraintKind,
   type TimelineConstraints, type MsProjectTask,
   type FieldValue, type RevealResult, type TimelineDrop, type TimelineEditCancel, type TimelineFieldEdit, type ViewTargetEvent,
+  type GraphViewTarget, type GraphRoutingPolicy,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -93,6 +94,9 @@ const fieldColumns: TimelineColumn<TeamRow>[] = [{
 }]
 const validateFieldEdit = (change: TimelineFieldEdit<TeamRow>) => change.after !== null
 function fieldEdit(change: TimelineFieldEdit<TeamRow>): FieldValue { return change.after }
+// NetworkGraph target events carry graph targets only.
+function graphTargetEvent(event: ViewTargetEvent<GraphViewTarget>) { return event.target.kind + event.target.id + event.source }
+const policy: GraphRoutingPolicy = 'preserve'
 function targetEvent(event: ViewTargetEvent) { return event.target.view === 'load' ? event.target.resourceId : event.target.id }
 function drop(event: TimelineDrop) { return event.dataTransfer?.getData('text/plain') ?? event.rowId }
 function editCancel(event: TimelineEditCancel) { return event.reason + event.barIds.join() + (event.cell?.columnId ?? '') }
@@ -113,6 +117,13 @@ function useRefs() {
   chart.value?.exportSvg({ rowLabel: row => row.label + team(row.data), barLabel: bar => bar.label + cost(bar.data) })
   typedGraph.value?.exportSvg({ nodeLabel: node => owner(node.data) ?? '' })
   typedGraph.value?.focusNode('a')
+  const shown: Promise<RevealResult> | undefined = typedGraph.value?.revealNode('a', { focus: true, scale: 1 })
+  void shown?.then(result => result.proxyId ?? result.status)
+  const area: DOMRect | undefined = graph.value?.getTargetClientRect({ view: 'graph', kind: 'edge', id: 'e' })
+  graph.value?.setViewportCenter({ x: 1, y: 2 }, 1)
+  // @ts-expect-error revealNode takes a node ID.
+  void graph.value?.revealNode(1)
+  void area
   typedChart.value?.exportSvg({ barLabel: bar => String(cost(bar.data)) })
   void typedChart.value?.fitToBars(['b'])
   const revealed: Promise<RevealResult> | undefined = typedChart.value?.revealBar('b', { focus: true })
@@ -178,6 +189,10 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   </NetworkGraph>
   <!-- @vue-expect-error A layout for input nodes only does not accept proxy nodes. -->
   <NetworkGraph :nodes="nodes" :edges="edges" :groups="groups" :layout="typedLayout" />
+  <NetworkGraph :nodes="nodes" :edges="edges" :highlighted-node-ids="new Set(['a'])" :highlighted-edge-ids="new Set<string>()"
+    :routing-policy="policy" @target-enter="graphTargetEvent" @target-leave="graphTargetEvent" @target-activate="graphTargetEvent" />
+  <!-- @vue-expect-error The routing policy is 'builtin' or 'preserve'. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" routing-policy="keep" />
 
   <!-- Untyped items compile as before, with `unknown` data. -->
   <NetworkGraph :nodes="untypedNodes" :edges="untypedEdges" :groups="groups" @select="id => reason(id)">

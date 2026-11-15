@@ -138,6 +138,14 @@
 .vw-network.vw-network-patterned { background: var(--vw-surface-muted, #f6f9fb); }
 .vw-network-background { pointer-events: none; }
 .vw-network-pattern { fill: var(--vw-background-pattern, var(--vw-grid, #c7d6df)); stroke: none; }
+/* Display-only highlights of NetworkGraph (highlightedNodeIds, highlightedEdgeIds), placed after the hover and selected
+   strokes so a highlight stays visible on them. Dimming still applies. */
+.vw-network-node.vw-is-highlighted rect { stroke: var(--vw-graph-highlight, var(--vw-dependency-highlight, #a74f08)); stroke-width: 3px; }
+.vw-network .vw-is-highlighted .vw-network-edge { stroke: var(--vw-graph-highlight, var(--vw-dependency-highlight, #a74f08)); stroke-width: 2.6; }
+@media (forced-colors: active) {
+  .vw-network-node.vw-is-highlighted rect { stroke: Highlight; stroke-width: 4px; stroke-dasharray: 6 3; }
+  .vw-network .vw-is-highlighted .vw-network-edge { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
+}
 path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(--vw-grid, #c7d6df)); }
 .vw-guide { stroke: var(--vw-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Opt-in NetworkGraph group collapse toggles, waypoint and resize handles, and level of detail. */

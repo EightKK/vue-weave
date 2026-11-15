@@ -13,16 +13,23 @@ export type ViewTarget =
 /** How a target was reached: by pointer or keyboard. */
 export type ViewTargetSource = 'pointer' | 'keyboard'
 
-/** Payload of the `target-enter`, `target-leave` and `target-activate` component events. */
-export interface ViewTargetEvent {
-  target: ViewTarget
+/**
+ * Payload of the `target-enter`, `target-leave` and `target-activate` component events. `T` narrows the target to the
+ * targets of one view, for example `ViewTargetEvent<GraphViewTarget>` for NetworkGraph.
+ */
+export interface ViewTargetEvent<T extends ViewTarget = ViewTarget> {
+  target: T
   source: ViewTargetSource
 }
 
+/** The graph variant of `ViewTarget`: a node, an edge or a group of a NetworkGraph. */
+export type GraphViewTarget = Extract<ViewTarget, { view: 'graph' }>
+
 /**
- * Result of a reveal method (`GanttChart.revealBar`). `unknown`: no such item, nothing moved. `hidden-by-collapse`:
- * the item exists but a collapsed ancestor hides it; `proxyId` is the visible item that stands in for it (for a bar, the
- * nearest displayed ancestor row) and nothing moved. `revealed`: the view scrolled to the item.
+ * Result of a reveal method (`GanttChart.revealBar`, `NetworkGraph.revealNode`). `unknown`: no such item, nothing
+ * moved. `hidden-by-collapse`: the item exists but a collapsed ancestor hides it; `proxyId` is the visible item that
+ * stands in for it (for a bar, the nearest displayed ancestor row; for a node, the proxy of its outermost collapsed
+ * group) and nothing moved. `revealed`: the view scrolled or moved its camera to the item.
  */
 export type RevealStatus = 'revealed' | 'hidden-by-collapse' | 'unknown'
 
@@ -226,3 +233,4 @@ export function resolveLoadTargets<S extends LoadSegmentLike>(
   }
   return { segments: [...hit].sort((a, b) => a - b).map(i => segments[i]!), unknown: [...unknown.values()] }
 }
+
