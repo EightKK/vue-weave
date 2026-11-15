@@ -13,6 +13,9 @@
 - `buildPlacementInput` builds a computable schedule input for placed tasks only and reports unplaced predecessors as diagnostics.
 - `serializeWeaveSnapshot`, `parseWeaveSnapshot` and `restoreWeaveSnapshot` in `vue-weave/core`: a versioned JSON snapshot (`WeaveSnapshotV1`) for graph, timeline and planning data and the saved view, with validation, migrations passed as options, codecs for non-JSON data and registries for layouts and columns.
 - `WeaveSnapshotError`, `SnapshotCodec`, `SnapshotDiagnostic` and the snapshot input, stored and restored types.
+- `scheduleTasks` and `levelResources` take an optional second argument `{ explain: true }` that adds a `trace` (`ScheduleTrace`) of structured reasons for each task's dates: dependencies with their lag, constraints, project bounds, calendar time off, pauses and, for leveling, the resources, intervals and holding tasks that delayed or split a task. Overloads type `trace` only for `explain: true`. Results without the option are unchanged.
+- `collectScheduleReasons(trace, taskId, options?)` follows a task's reasons to their causes iteratively, visiting shared causes once.
+- `toPlanningDiagnostics(result, load?)` turns cycles, infeasible tasks, unresolved leveling and overloaded load segments into `PlanningDiagnostic` entries with language-independent IDs and codes and `EntityRef` targets.
 
 ## 0.2.0 - 2026-11-15
 

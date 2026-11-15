@@ -60,3 +60,11 @@ export { buildPlacementInput } from './placement.js'
 export type { PlacementInput, PlacementDiagnostic, PlacementResult } from './placement.js'
 
 export * from './snapshot.js'
+export { toPlanningDiagnostics } from './scheduleDiagnostics.js'
+export type { PlanningDiagnostic, PlanningDiagnosticCode, PlanningDiagnosticSeverity } from './scheduleDiagnostics.js'
+export { collectScheduleReasons } from './scheduleTrace.js'
+export type {
+  ScheduleReason, ScheduleReasonPhase, ScheduleReasonKind, ScheduleReasonBound, ScheduleTrace, ScheduleOptions,
+  ExplainedScheduleSuccess, ExplainedScheduleResult, ExplainedLevelResourcesSuccess, ExplainedLevelResourcesResult,
+  CollectScheduleReasonsOptions,
+} from './scheduleTrace.js'
