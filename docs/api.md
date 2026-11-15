@@ -193,3 +193,34 @@ All exported interfaces and component props are included in the declaration file
 Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
 
 Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+
+## Edit transactions and asynchronous saving
+
+`useEditTransaction(options)` (Vue entry) confirms edits with a server before committing them. Types and pure state transitions (`EditTransaction`, `SaveResult`, `TransactionOutcome`, `TransactionAdapter`, `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState`, `clearTransactionResult`) are exported from `vue-weave/core`.
+
+Options: `documentId`, `initialState`, `initialVersion`, `adapter`, optional `createOperationId()` (defaults to `crypto.randomUUID()`), `historyLimit` (default 100) and `onHistoryReset(reset)`. The adapter provides synchronous `validate(state, changes)` (return `false` or a reason string to reject), synchronous `apply(state, changes)` returning a new state, and `save(request, candidate)` returning `Promise<SaveResult>`. Versions are opaque and compared for equality only.
+
+A request is `{ operationId, documentId, baseVersion, source, kind: 'changes', changes }` or `{ ..., kind: 'restore', snapshot }`. `SaveResult` is `accepted` (with the server's normalised `state` and new `version`), `rejected` (`code`), `conflict` (`currentVersion`) or `uncertain`. A `save` that throws or rejects is treated as `uncertain`.
+
+| Name | Meaning |
+| --- | --- |
+| `acceptedState`, `acceptedVersion` | Last state and version the server accepted |
+| `candidateState` | State being saved, kept apart from the accepted state; `undefined` when not saving |
+| `status` | `idle`, `saving`, `rejected`, `conflict` or `uncertain` |
+| `pendingTransaction` | `{ operationId, kind, source, baseVersion }` while saving or uncertain |
+| `result` | Last rejected, conflict or uncertain result until cleared |
+| `canUndo`, `canRedo` | Whether history has a previous or next snapshot |
+| `submit(changes, { source }?)` | Validate, apply and save. Resolves to a `TransactionOutcome` |
+| `undo()`, `redo()` | Save the previous or next history snapshot as a `restore` transaction against the current `acceptedVersion` |
+| `refresh(state, version)` | Replace the accepted state, reset history and discard in-flight responses |
+| `historyReset` | `{ reason: 'refresh', version }` for the last reset, or `undefined` |
+| `reconcile(result)` | Settle an `uncertain` operation using a result fetched from the server |
+| `clearResult()` | Dismiss a rejected, conflict or uncertain result; the accepted input is unchanged |
+
+Outcomes add `busy` (another save for the document is in flight), `invalid` (failed synchronous validation, empty changes, or nothing to undo or redo) and `discarded` (a response that no longer matches the current operation or epoch, for example one that arrives after `refresh`). There is no `validating` status because validation is synchronous.
+
+Only an accepted response changes anything. It replaces the accepted state with the server's state and records one history entry; a repeated accepted response for the same operation is ignored. For undo and redo the history position moves only after acceptance, and the entry is replaced by the server-normalised state; the server version is never rolled back and the remaining redo entries stay valid. A rejected, conflicting or uncertain save leaves the accepted state, version and history position unchanged, and a new accepted edit discards the redo branch. An uncertain save is never resent automatically; call `reconcile` or `refresh`. Because restores send a whole snapshot, large documents send more data than a diff; an adapter may transmit a diff inside `save`, but acceptance is of the whole snapshot.
+
+`useEditHistory` additionally returns `peekUndo()`, `peekRedo()` (the adjacent snapshot or `undefined`, position unchanged) and `replaceCurrent(snapshot)` (replace the current entry, keeping the others).
+
+The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically. See [integration](integration.md).

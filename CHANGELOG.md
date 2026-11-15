@@ -5,6 +5,8 @@
 ### Added
 
 - `NetworkGraph` with LR/TB layouts, branches, merges, disconnected nodes, directed cycles, self-loops, edge labels and custom layout/rendering.
+- `useEditTransaction` and core edit-transaction types and transitions (`vue-weave/core`) for server-confirmed edits with `busy`, `rejected`, `conflict` and `uncertain` handling, stale-response discarding and snapshot-restore undo/redo.
+- `useEditHistory` gains `peekUndo`, `peekRedo` and `replaceCurrent`; existing methods are unchanged.
 - Controlled graph editing with named ports, drag and keyboard connections, endpoint reconnection, box selection, disjoint visual groups, batch movement and a navigable minimap.
 - `GanttChart` with controlled pointer and keyboard editing, validation, cancellation on source changes, lanes, milestones, progress and FS/SS/FF/SF dependencies.
 - Timeline row hierarchies, baselines, stacked time headers, markers, editable columns and descendant rollups, with row and time-window virtualization.
