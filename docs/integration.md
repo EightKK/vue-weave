@@ -207,7 +207,7 @@ Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) w
 
 Every class that the components emit and the stylesheet targets starts with `vw-`, so generic utility classes in the host page (for example Tailwind's `outline` or Bootstrap's `active`) cannot restyle chart elements. Element classes are named after the element (`vw-gantt-bar`, `vw-network-node`). State and variant modifiers use the `vw-is-*` form and are always combined with an element class, for example `.vw-gantt-bar.vw-is-selected` or `.vw-network-edge.vw-is-related`. Classes you add yourself, such as a `class` attribute on the component or the content of a slot, are passed through unchanged.
 
-In 0.1.0 these modifiers had no prefix. When you upgrade, rename them in custom stylesheets, test selectors and DOM queries:
+In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1.0, rename them in custom stylesheets, test selectors and DOM queries:
 
 | Old class | New class | Applied to |
 | --- | --- | --- |
