@@ -46,3 +46,15 @@ export * from './viewBindings.js'
 export * from './editTransaction.js'
 
 export * from './graphTraversal.js'
+export {
+  projectResourceTimeline, createResourceTimelineProjector, resourceTimelineBarId, resolveResourceTimelineEdit,
+  resolveResourceTimelineEdits, resourceTimelineCascade, proposeResourceAssignment,
+} from './resourceTimeline.js'
+export type {
+  ResourceTimelineResource, ResourceTimelineTask, ResourceTimelineInput, ResourceTimelineOptions, ResourceBarOrigin,
+  ResourceTimelineProjection, ResourceTimelineScheduleChange, ResourceAssignmentReplacement, ResourceTimelineRejectionCode,
+  ResourceTimelineRejection, ResourceTimelineEditsResolution, ResourceTimelineEditResolution, ResourceAssignmentState,
+  ResourceAssignmentRequest, ResourceAssignmentProposal,
+} from './resourceTimeline.js'
+export { buildPlacementInput } from './placement.js'
+export type { PlacementInput, PlacementDiagnostic, PlacementResult } from './placement.js'
