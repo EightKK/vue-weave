@@ -2,11 +2,12 @@
 import { computed, ref, shallowRef } from 'vue'
 import {
   GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate, scheduleTasks,
-  scheduleToGraph, scheduledBarFields, timelineConstraints, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
+  scheduleToGraph, scheduledBarFields, toPlanningDiagnostics, timelineConstraints, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
   type ResourceAssignment, type ScheduleConstraintName, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleTask,
   type TimelineBar, type TimelineColumn, type TimelineConstraintEdit, type TimelineEdit,
 } from '../src'
 import { download } from './download'
+import PlanningDiagnostics from './components/PlanningDiagnostics.vue'
 
 const hour = 3_600_000
 const local = (value: string) => Date.parse(value + '+09:00')
@@ -177,6 +178,14 @@ function applyConstraint(change: TimelineConstraintEdit) {
 }
 const load = computed(() => calculateResourceLoad(range, model.value.plan.tasks, resources, assignments))
 const overloads = computed(() => load.value.filter(segment => segment.overload > 0))
+// The same overloads as a structured diagnostic list; activating one shows its first operation in the chart above.
+const diagnostics = computed(() => toPlanningDiagnostics(model.value.plan, load.value))
+async function revealDiagnostic(diagnostic: { entities: readonly { kind: string; id: string }[] }) {
+  const task = diagnostic.entities.find(entity => entity.kind === 'task')
+  if (!task) return
+  const result = await chart.value?.revealBar(task.id)
+  notice.value = 'Showing ' + labels.get(task.id) + (result && result.status !== 'revealed' ? ' (' + result.status + ')' : '') + ' for the diagnostic.'
+}
 const overloadHours = computed(() => overloads.value.reduce((hours, segment) => hours + (segment.end - segment.start) / hour, 0))
 const loadBars = computed<TimelineBar[]>(() => load.value.filter(segment => segment.load > 0).map(segment => ({
   id: segment.resourceId + ':' + segment.start, rowId: segment.resourceId,
@@ -367,6 +376,8 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       </tr></tbody>
     </table>
     <p v-else class="status">No capacity conflicts in the current plan.</p>
+    <PlanningDiagnostics v-if="diagnostics.length" :diagnostics="diagnostics" :task-label="id => labels.get(id) ?? id"
+      :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :format-time="format" @activate="revealDiagnostic" />
   </section>
 </template>
 

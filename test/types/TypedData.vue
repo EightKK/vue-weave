@@ -12,6 +12,11 @@ import {
   type TimelineRowMove,
   applyTimelineConstraintEdit, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit, type TimelineConstraintKind,
   type TimelineConstraints, type MsProjectTask,
+  type FieldValue, type RevealResult, type TimelineDrop, type TimelineEditCancel, type TimelineFieldEdit, type ViewTargetEvent,
+  type GraphViewTarget, type GraphRoutingPolicy,
+  useTimelineView, useLinkedSelection, revealLinkedTarget, useAsyncGraphLayout, useEditTransaction, useEditHistory,
+  type LinkedRevealResult, type LoadViewTarget, type TransactionOutcome,
+  type AsyncGraphGestureListeners, type GraphGesture, type GraphGestureEnd, type GraphGestureKind,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -85,6 +90,32 @@ const creatable = (row: TeamRow) => team(row.data) === 'Core'
 const columns: TimelineColumn<TeamRow>[] = [
   { id: 'team', label: 'Team', width: 80, value: (row, summary) => (team(row.data) ?? '') + (summary?.count ?? ''), editable: row => row.data !== undefined },
 ]
+// Typed field columns: the field reads the application's row type.
+const fieldColumns: TimelineColumn<TeamRow>[] = [{
+  id: 'team', label: 'Team', width: 80, value: row => team(row.data) ?? '', editable: true,
+  field: { id: 'team', kind: 'text', get: row => team(row.data) ?? null },
+}]
+const validateFieldEdit = (change: TimelineFieldEdit<TeamRow>) => change.after !== null
+function fieldEdit(change: TimelineFieldEdit<TeamRow>): FieldValue { return change.after }
+// NetworkGraph target events carry graph targets only.
+function graphTargetEvent(event: ViewTargetEvent<GraphViewTarget>) { return event.target.kind + event.target.id + event.source }
+const policy: GraphRoutingPolicy = 'preserve'
+function targetEvent(event: ViewTargetEvent) { return event.target.view === 'load' ? event.target.resourceId : event.target.id }
+function drop(event: TimelineDrop) { return event.dataTransfer?.getData('text/plain') ?? event.rowId }
+function editCancel(event: TimelineEditCancel) { return event.reason + event.barIds.join() + (event.cell?.columnId ?? '') }
+// Gesture events and the async layout's ready-made listeners.
+function gestureStart(event: GraphGesture) { const kind: GraphGestureKind = event.kind; return kind + event.source }
+function gestureEnd(event: GraphGestureEnd) { return event.kind + event.source + (event.outcome === 'committed' ? 1 : 0) }
+// @ts-expect-error Camera zoom is not a reported gesture.
+const zoomGesture: GraphGestureKind = 'zoom'
+const asyncGraph = useAsyncGraphLayout({
+  input: { nodes, edges }, adapter: request => layoutLayeredGraph(request.nodes, request.edges), gesture: ref(false),
+})
+const gestureBinding: Readonly<AsyncGraphGestureListeners> = asyncGraph.gestureListeners
+const gesturing: boolean = asyncGraph.gesturing.value
+// @ts-expect-error The listeners are read-only.
+asyncGraph.gestureListeners.onGestureEnd = gestureEnd
+void [zoomGesture, gesturing, h(NetworkGraph, { nodes: untypedNodes, edges: untypedEdges, ...gestureBinding })]
 // @ts-expect-error A column of other rows does not fit these rows.
 const wrongColumns: TimelineColumn<TimelineRow<Cost>>[] = columns
 
@@ -102,14 +133,69 @@ function useRefs() {
   chart.value?.exportSvg({ rowLabel: row => row.label + team(row.data), barLabel: bar => bar.label + cost(bar.data) })
   typedGraph.value?.exportSvg({ nodeLabel: node => owner(node.data) ?? '' })
   typedGraph.value?.focusNode('a')
+  const shown: Promise<RevealResult> | undefined = typedGraph.value?.revealNode('a', { focus: true, scale: 1 })
+  void shown?.then(result => result.proxyId ?? result.status)
+  const area: DOMRect | undefined = graph.value?.getTargetClientRect({ view: 'graph', kind: 'edge', id: 'e' })
+  graph.value?.setViewportCenter({ x: 1, y: 2 }, 1)
+  // @ts-expect-error revealNode takes a node ID.
+  void graph.value?.revealNode(1)
+  void area
   typedChart.value?.exportSvg({ barLabel: bar => String(cost(bar.data)) })
   void typedChart.value?.fitToBars(['b'])
+  const revealed: Promise<RevealResult> | undefined = typedChart.value?.revealBar('b', { focus: true })
+  void revealed?.then(result => result.status === 'hidden-by-collapse' ? result.proxyId : result.status)
+  // @ts-expect-error revealBar takes a bar ID.
+  void chart.value?.revealBar(1)
   graphInstance.value?.zoom(2)
   void graphInstance.value?.$el
   chartInstance.value?.cancelEdit()
   // @ts-expect-error Methods that are not exposed are not on the ref.
   graph.value?.select('a')
 }
+
+// Composables keep the application's item and state types.
+function useComposables() {
+  const view = useTimelineView({ rows, bars, columns })
+  // `columns` is the array to pass to GanttChart, typed for the source rows.
+  const shownColumns: TimelineColumn<TeamRow>[] = view.columns.value
+  const shownRows: TeamRow[] = view.projection.value.rows
+  void [shownColumns, shownRows, view.diagnostics.value[0]?.code]
+  const linked = useLinkedSelection({ bindings: [] })
+  const loadTargets: readonly LoadViewTarget[] = linked.load.value.highlighted
+  const barIds: ReadonlySet<string> = linked.timeline.value.highlightedBarIds
+  void [loadTargets, barIds]
+  const shown: Promise<LinkedRevealResult> = revealLinkedTarget({
+    reveal: () => typedGraph.value?.revealNode('a', { focus: true }),
+    expand: (proxyId, result) => proxyId.length > 0 && result.status === 'hidden-by-collapse',
+  })
+  void shown.then(result => result.expandedIds.join() + String(result.declined))
+  // @ts-expect-error expand returns whether the application expanded the proxy.
+  void revealLinkedTarget({ reveal: () => undefined, expand: () => 'yes' })
+  const layout = useAsyncGraphLayout({
+    input: { nodes, edges, groups }, adapter: async request => layoutLayeredGraph(request.nodes, request.edges),
+  })
+  void layout.display.value?.nodes.map(node => priority(node.priority) + (owner(node.data) ?? ''))
+  void layout.display.value?.edges.map(edge => weight(edge.data))
+  interface Doc { title: string }
+  interface Change { title: string }
+  const transaction = useEditTransaction<Doc, Change>({
+    documentId: 'doc', initialState: { title: 'A' }, initialVersion: '1',
+    adapter: {
+      validate: (_state, changes) => changes.length > 0,
+      apply: (state, changes) => ({ ...state, title: changes.at(-1)?.title ?? state.title }),
+      save: async request => ({ status: 'accepted', operationId: request.operationId, version: '2', state: { title: 'B' } }),
+    },
+  })
+  const outcome: Promise<TransactionOutcome<Doc>> = transaction.submit([{ title: 'B' }])
+  void outcome
+  // @ts-expect-error Changes have the adapter's change type.
+  void transaction.submit([{ name: 'B' }])
+  const history = useEditHistory({ title: 'A' })
+  const previous: { title: string } | undefined = history.peekUndo()
+  history.replaceCurrent({ title: 'C' })
+  void previous
+}
+const loadFocus: LoadViewTarget[] = [{ view: 'load', resourceId: 'r', start: 0, end: 1 }]
 
 // Render functions and component registration keep working with the default item types.
 const vnodes = [
@@ -163,6 +249,13 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   </NetworkGraph>
   <!-- @vue-expect-error A layout for input nodes only does not accept proxy nodes. -->
   <NetworkGraph :nodes="nodes" :edges="edges" :groups="groups" :layout="typedLayout" />
+  <NetworkGraph :nodes="nodes" :edges="edges" :highlighted-node-ids="new Set(['a'])" :highlighted-edge-ids="new Set<string>()"
+    :routing-policy="policy" @target-enter="graphTargetEvent" @target-leave="graphTargetEvent" @target-activate="graphTargetEvent" />
+  <NetworkGraph :nodes="nodes" :edges="edges" v-bind="asyncGraph.gestureListeners" @gesture-start="gestureStart" @gesture-end="gestureEnd" />
+  <!-- @vue-expect-error A gesture-end payload is not a timeline edit cancellation. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" @gesture-end="editCancel" />
+  <!-- @vue-expect-error The routing policy is 'builtin' or 'preserve'. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" routing-policy="keep" />
 
   <!-- Untyped items compile as before, with `unknown` data. -->
   <NetworkGraph :nodes="untypedNodes" :edges="untypedEdges" :groups="groups" @select="id => reason(id)">
@@ -208,6 +301,23 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   </GanttChart>
   <!-- @vue-expect-error A constraint validator receives constraint edits, not bar edits. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :validate-constraint-edit="validateEdit" />
+
+  <GanttChart :rows="rows" :bars="bars" :range="range" :columns="fieldColumns" :highlighted-bar-ids="new Set(['b'])" load-selectable droppable
+    :validate-field-edit="validateFieldEdit" @field-edit="fieldEdit" @field-edit-rejected="(change, text) => fieldEdit(change) + reason(text)"
+    @target-enter="targetEvent" @target-leave="targetEvent" @target-activate="targetEvent" @bar-drop="drop" @edit-cancel="editCancel">
+    <template #cell-editor="{ row, column, field, value, draft, error, validation, commit, commitText, cancel }">
+      <input :value="String(draft ?? '')" :aria-label="column.label + team(row.data) + field.id + String(value)"
+        :aria-invalid="!validation.ok" :title="error" @change="commitText(($event.target as HTMLInputElement).value)"
+        @keydown.enter="commit(team(row.data) ?? null, 'keyboard')" @keydown.esc="cancel()">
+      <!-- @vue-expect-error The row data is not `any`. -->
+      {{ row.data?.missing }}
+    </template>
+  </GanttChart>
+  <GanttChart :rows="rows" :bars="bars" :range="range" :highlighted-load-targets="loadFocus" :selected-load-targets="loadFocus" />
+  <!-- @vue-expect-error Load targets are time ranges of a resource, not bar IDs. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :highlighted-load-targets="['b']" />
+  <!-- @vue-expect-error A field validator receives field edits, not bar edits. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :validate-field-edit="validateEdit" />
 
   <!-- @vue-expect-error Baseline set IDs are strings. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :baseline-ids="[1, 2]" />

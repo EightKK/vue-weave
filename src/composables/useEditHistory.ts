@@ -23,5 +23,22 @@ export function useEditHistory<T>(initial: T, limit = 100) {
   function reset(snapshot: T) {
     history.value = { entries: [snapshot], index: 0 }
   }
-  return { state, canUndo, canRedo, commit, undo, redo, reset }
+  /** The snapshot one step back, without moving the position. */
+  function peekUndo(): T | undefined {
+    const { entries, index } = history.value
+    return index > 0 ? entries[index - 1] : undefined
+  }
+  /** The snapshot one step forward, without moving the position. */
+  function peekRedo(): T | undefined {
+    const { entries, index } = history.value
+    return index + 1 < entries.length ? entries[index + 1] : undefined
+  }
+  /** Replace the entry at the current position. Other entries and the position are kept. */
+  function replaceCurrent(snapshot: T) {
+    const { entries, index } = history.value
+    const next = entries.slice()
+    next[index] = snapshot
+    history.value = { entries: next, index }
+  }
+  return { state, canUndo, canRedo, commit, undo, redo, reset, peekUndo, peekRedo, replaceCurrent }
 }

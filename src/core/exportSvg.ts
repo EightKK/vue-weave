@@ -212,6 +212,12 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
   groups?: readonly GraphSvgGroup[]
   /** Node IDs drawn in the selected style. */
   selectedIds?: Iterable<string>
+  /** Node IDs whose box gets the highlight outline, like NetworkGraph `highlightedNodeIds`. Unknown IDs are ignored. */
+  highlightedNodeIds?: Iterable<string>
+  /** Edge IDs drawn as highlighted edges, like NetworkGraph `highlightedEdgeIds`. Unknown IDs are ignored. */
+  highlightedEdgeIds?: Iterable<string>
+  /** Colour of highlighted nodes and edges. Defaults to the theme's `dependencyHighlight`. */
+  highlightColor?: string
   /** Margin around the content, in pixels. Default 16. */
   padding?: number
   /** Node title text. Defaults to `node.label`. */
@@ -270,11 +276,21 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
+  const highlightedNodes = new Set(options.highlightedNodeIds ?? [])
+  const highlightedEdges = new Set(options.highlightedEdgeIds ?? [])
+  if (options.highlightColor !== undefined && (typeof options.highlightColor !== 'string' || !options.highlightColor.trim())) {
+    throw new Error('Invalid export highlight colour')
+  }
+  const highlight = options.highlightColor?.trim() || theme.dependencyHighlight
   const nodeLabel = options.nodeLabel ?? ((node: N) => node.label)
   const nodeDetail = options.nodeDetail ?? ((node: N) => node.detail)
-  const arrow = prefix + '-arrow'
+  const arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
+  // The highlight marker is only written when a drawn edge uses it, so an export without highlights is unchanged.
+  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id))
   const defs = tag('marker', { id: arrow, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
     tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: theme.edge }))
+    + (anyHighlightedEdge ? tag('marker', { id: arrowHighlight, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
+      tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: highlight })) : '')
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
@@ -288,8 +304,10 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     }, escapeXml(group.label))))
   }
   for (const edge of edges) {
+    const strong = highlightedEdges.has(edge.id)
     content.push(tag('path', {
-      d: layout.paths.get(edge.id)!, fill: 'none', stroke: theme.edge, 'stroke-width': 1.65, 'marker-end': `url(#${arrow})`,
+      d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,
+      'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
     }))
   }
   for (const edge of edges) {
@@ -308,9 +326,11 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     const active = selected.has(node.id)
     const label = nodeLabel(node), detail = nodeDetail(node)
     const ink = active ? theme.onSolid : colors.ink
+    const strong = highlightedNodes.has(node.id)
     const shape = tag('rect', {
       x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8,
-      fill: active ? colors.solid : colors.pale, stroke: active ? colors.ink : colors.line, 'stroke-width': active ? 2.8 : 1.25,
+      fill: active ? colors.solid : colors.pale, stroke: strong ? highlight : active ? colors.ink : colors.line,
+      'stroke-width': strong ? 3 : active ? 2.8 : 1.25,
     })
     const text = clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
       { text: label, y: detail ? 24 : 34, size: 15.5, weight: 700, fill: ink, inset: 13 },
@@ -376,6 +396,11 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   /** Default 44. At least 16. */
   loadRowHeight?: number
   highlightedDependencyIds?: Iterable<string>
+  /**
+   * Bars drawn with the highlight outline and the `vw-is-highlighted` class, as GanttChart `highlightedBarIds`. The
+   * outline uses the `dependencyHighlight` theme colour.
+   */
+  highlightedBarIds?: Iterable<string>
   /** Half-open intervals shaded as non-working time behind the grid, over the task and load rows. May overlap. */
   nonWorkingPeriods?: readonly TimeRange[]
   /** Time of a status-date line. */
@@ -511,6 +536,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const barLabel = options.barLabel ?? ((bar: B) => bar.label)
   const rowLabel = options.rowLabel ?? ((row: R) => row.label)
   const highlighted = new Set(options.highlightedDependencyIds ?? [])
+  const highlightedBars = new Set(options.highlightedBarIds ?? [])
   const baselines = baselineSelection(bars, options.baselineIds)
   const stripLayout = baselineLayout(baselines.ids.length)
   const baselineText = {
@@ -652,10 +678,20 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       const label = barLabel(bar)
       const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
       const late = bar.deadline !== undefined && bar.end > bar.deadline
-      const marks = { class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : ''].filter(Boolean).join(' ') || undefined }
+      const strong = highlightedBars.has(bar.id)
+      const marks = {
+        class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : '', strong ? 'vw-is-highlighted' : ''].filter(Boolean).join(' ') || undefined,
+      }
+      // A highlighted bar gets an outline 3 px outside its box (or around the milestone diamond).
+      const outline = (box: { x: number; width: number }) => strong
+        ? tag('rect', {
+          class: 'vw-highlight', x: box.x - 3, y: y - 3, width: box.width + 6, height: barHeight + 6, rx: 7, fill: 'none',
+          stroke: theme.dependencyHighlight, 'stroke-width': 2,
+        })
+        : ''
       if (bar.start === bar.end) {
         const x = X(bar.start)
-        area.push(tag('g', marks, title + tag('polygon', {
+        area.push(tag('g', marks, title + outline({ x: x - 5, width: 10 }) + tag('polygon', {
           points: [[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]
             .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
           fill, stroke, 'stroke-width': strokeWidth,
@@ -663,7 +699,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
         continue
       }
       const box = { ...span(bar.start, bar.end), y, height: barHeight }
-      let shape = ''
+      let shape = outline(box)
       if (bar.segments) {
         // Work pieces with a connector across the gaps; progress fills the first part of the working time.
         const { pieces, gaps } = segmentPieces(bar, bar.segments, bar.progress)

@@ -6,8 +6,9 @@ import type { TimeRange } from './timeline.js'
 import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
 
 export type Limits = { startLower: number; endLower: number; startUpper: number; endUpper: number }
-type LimitKey = keyof Limits
-type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string }
+export type LimitKey = keyof Limits
+/** A bound without a constraint or dependency is a leveling horizon bound. */
+export type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string }
 export type Bounds = Record<LimitKey, Bound[]>
 export type Slot = TimeRange & { workStart: number }
 
@@ -111,6 +112,8 @@ export interface ModelTask {
   bounds: Bounds
   incoming: ScheduleLink[]
   outgoing: ScheduleLink[]
+  /** Only when explaining: the continuous clock, the task's calendar clock without its pauses, and the calendar's ID. */
+  calendar?: { continuous: WorkClock; clock: WorkClock; id: string | undefined }
 }
 
 export interface ScheduleModel {
@@ -122,8 +125,11 @@ export interface ScheduleModel {
   validateTime: (value: number | undefined) => void
 }
 
-/** Validate a scheduling input and index it. Throws for malformed input. */
-export function buildScheduleModel(input: ScheduleInput): ScheduleModel {
+/**
+ * Validate a scheduling input and index it. Throws for malformed input. With `explain`, each task also keeps its
+ * calendar clock without pauses, so that a trace can tell calendar time off from pauses.
+ */
+export function buildScheduleModel(input: ScheduleInput, explain = false): ScheduleModel {
   const { range, quantum = 1, deadline, dependencies = [] } = input
   assertScheduleRange(range)
   if (!Number.isSafeInteger(quantum) || quantum <= 0) throw new RangeError('Invalid scheduling quantum')
@@ -159,6 +165,7 @@ export function buildScheduleModel(input: ScheduleInput): ScheduleModel {
     const { startNoEarlierThan, startNoLaterThan, finishNoEarlierThan, finishNoLaterThan, fixedStart } = task
     for (const value of [startNoEarlierThan, startNoLaterThan, finishNoEarlierThan, finishNoLaterThan, fixedStart]) validateTime(value)
     let clock = task.calendarId === undefined ? defaultCalendar : calendarFor(task.calendarId)
+    const calendarClock = clock
     if (task.pauses !== undefined) {
       if (!Array.isArray(task.pauses)) throw new Error('Task pauses must be an array: ' + task.id)
       for (const pause of task.pauses) {
@@ -170,7 +177,7 @@ export function buildScheduleModel(input: ScheduleInput): ScheduleModel {
     }
     const bound = (value: number | undefined, constraint: ScheduleConstraintName) =>
       value === undefined ? [] : [{ value, constraint }]
-    tasks.set(task.id, {
+    const modelTask: ModelTask = {
       id: task.id, index, source: task, clock, duration: task.duration / quantum, alap: task.mode === 'alap',
       bounds: {
         startLower: [{ value: range.start, constraint: 'range' }, ...bound(startNoEarlierThan, 'startNoEarlierThan'), ...bound(fixedStart, 'fixedStart')],
@@ -179,7 +186,9 @@ export function buildScheduleModel(input: ScheduleInput): ScheduleModel {
         endUpper: [{ value: range.end, constraint: 'range' }, ...bound(deadline, 'deadline'), ...bound(finishNoLaterThan, 'finishNoLaterThan')],
       },
       incoming: [], outgoing: [],
-    })
+    }
+    if (explain) modelTask.calendar = { continuous, clock: calendarClock, id: task.calendarId ?? input.defaultCalendarId }
+    tasks.set(task.id, modelTask)
   })
   const linkIndex = new Map<string, number>()
   for (const link of dependencies) {
@@ -305,6 +314,34 @@ export function addUpperBounds(bounds: Bounds, task: ModelTask, placed: Readonly
   return bounds
 }
 
+/**
+ * The lower and upper limits that decide a slot. Ties are all kept. Lower and upper limits are compared in working
+ * time on the task's clock, the same way `slotFor` places the task; milestones compare elapsed values.
+ */
+export function bindingKeys(clock: WorkClock, duration: number, limits: Limits): { lower: LimitKey[]; upper: LimitKey[] } {
+  const { startLower, endLower, startUpper, endUpper } = limits
+  if (duration === 0) {
+    const lower = Math.max(startLower, endLower), upper = Math.min(startUpper, endUpper)
+    return {
+      lower: (['startLower', 'endLower'] as const).filter(key => limits[key] === lower),
+      upper: (['startUpper', 'endUpper'] as const).filter(key => limits[key] === upper),
+    }
+  }
+  const lower = { startLower: clock.workAt(startLower), endLower: clock.minFinishWork(endLower) - duration }
+  const upper = { startUpper: clock.maxStartWork(startUpper), endUpper: clock.workAt(endUpper) - duration }
+  const first = Math.max(lower.startLower, lower.endLower), last = Math.min(upper.startUpper, upper.endUpper)
+  return {
+    lower: (['startLower', 'endLower'] as const).filter(key => lower[key] === first),
+    upper: (['startUpper', 'endUpper'] as const).filter(key => upper[key] === last),
+  }
+}
+
+/** The bounds of one key at its limit. `range` is dropped when another bound has the same value. */
+export function bindingBounds(bounds: Bounds, limits: Limits, key: LimitKey): Bound[] {
+  const binding = bounds[key].filter(bound => bound.value === limits[key])
+  return binding.some(bound => bound.constraint !== 'range') ? binding.filter(bound => bound.constraint !== 'range') : binding
+}
+
 const constraintOrder: readonly ScheduleConstraintName[] = [
   'range', 'startNoEarlierThan', 'startNoLaterThan', 'finishNoEarlierThan', 'finishNoLaterThan',
   'fixedStart', 'deadline', 'projectFinish', 'calendar',
@@ -319,26 +356,13 @@ export function diagnose(model: ScheduleModel, task: ModelTask, bounds: Bounds):
   if (startLower > startUpper) keys = ['startLower', 'startUpper']
   else if (endLower > endUpper) keys = ['endLower', 'endUpper']
   else if (startLower > endUpper) keys = ['startLower', 'endUpper']
-  else if (duration === 0) {
-    const lower = Math.max(startLower, endLower), upper = Math.min(startUpper, endUpper)
-    keys = [
-      ...(['startLower', 'endLower'] as const).filter(key => limits[key] === lower),
-      ...(['startUpper', 'endUpper'] as const).filter(key => limits[key] === upper),
-    ]
-  } else {
-    const lower = { startLower: clock.workAt(startLower), endLower: clock.minFinishWork(endLower) - duration }
-    const upper = { startUpper: clock.maxStartWork(startUpper), endUpper: clock.workAt(endUpper) - duration }
-    const first = Math.max(lower.startLower, lower.endLower), last = Math.min(upper.startUpper, upper.endUpper)
-    keys = [
-      ...(['startLower', 'endLower'] as const).filter(key => lower[key] === first),
-      ...(['startUpper', 'endUpper'] as const).filter(key => upper[key] === last),
-    ]
+  else {
+    const binding = bindingKeys(clock, duration, limits)
+    keys = [...binding.lower, ...binding.upper]
   }
   const constraints = new Set<ScheduleConstraintName>(), dependencyIds = new Set<string>()
   for (const key of keys) {
-    const binding = bounds[key].filter(bound => bound.value === limits[key])
-    const named = binding.some(bound => bound.constraint !== 'range') ? binding.filter(bound => bound.constraint !== 'range') : binding
-    for (const bound of named) {
+    for (const bound of bindingBounds(bounds, limits, key)) {
       if (bound.constraint) constraints.add(bound.constraint)
       if (bound.dependencyId) dependencyIds.add(bound.dependencyId)
     }

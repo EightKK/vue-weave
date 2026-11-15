@@ -2,7 +2,65 @@
 
 ## Unreleased
 
-No changes yet.
+Everything below is additive and opt-in: without the new props, options and functions, rendering, accessible names, events and results are the same as in 0.2.0. There are no breaking changes.
+
+### Added
+
+#### Linked views
+
+- Core types `EntityRef`, `ViewTarget` (`GraphViewTarget`, `LoadViewTarget`) and `ViewBinding`, and helpers `buildViewBindingIndex`, `resolveViewTargets`, `resolveEntityRefs` and `resolveLoadTargets`. IDs are paired with their kind, so a task and a resource with the same ID never mix. Load targets are resource time ranges matched by overlap; a range that overlaps no current segment is reported as unknown, never moved to another segment.
+- Core `traverseGraph` (directional, hop-limited, iterative walk returning node and edge IDs and unknown start IDs) and `resolveCollapsedTargets` (maps node and edge IDs to the proxies and merged edges of a `collapseGraphGroups` result).
+- `useLinkedSelection` composable: the view the user acts in owns the selection, the other views get display-only highlight sets (graph, timeline and load), repeating a selection is a no-op so event wiring cannot loop, and hover enter and leave are tracked.
+- `revealLinkedTarget` (Vue entry): reveals an item and, when a collapsed group or row hides it, asks the application to expand it, waits for the render and reveals again; a declined expansion is never reported as revealed.
+- NetworkGraph `highlightedNodeIds` and `highlightedEdgeIds` and GanttChart `highlightedBarIds`: display-only highlights (`vw-is-highlighted`; `--vw-graph-highlight`, `--vw-bar-highlight`) that never join the selection, deletion, batch moves or copies and do not cancel gestures. Graph highlights resolve to proxies and merged edges of collapsed groups.
+- GanttChart `highlightedLoadTargets` and `selectedLoadTargets`: mark the load segments that overlap resource time ranges (`--vw-load-highlight`, `--vw-load-selected`; `aria-pressed` with `loadSelectable`).
+- GanttChart `loadSelectable`: load segments become focusable buttons with the same accessible names (`--vw-load-focus`).
+- `target-enter`, `target-leave` and `target-activate` events (`ViewTargetEvent`) on both components: nodes, edges and groups; bars, dependencies, rows and, with `loadSelectable`, load segments; by pointer and keyboard. Existing event payloads are unchanged.
+- NetworkGraph `revealNode(id, options?)` and GanttChart `revealBar(id, options?)`: move the camera or scroll to an item, then optionally focus it once it is rendered, resolving a `RevealResult` (`revealed`, `hidden-by-collapse` with the visible proxy, or `unknown`) without throwing. `focusNode`, `scrollToRow` and `fitToBars` are unchanged. Types `RevealStatus`, `RevealOptions`, `RevealResult`.
+- NetworkGraph `getTargetClientRect(target)` (on-screen rectangle of a node, edge or group) and `setViewportCenter(center, scale?)` (restores a camera saved with `getViewportCenter()` in a container of any size).
+- `renderGraphSvg` options `highlightedNodeIds`, `highlightedEdgeIds` and `highlightColor`, `renderTimelineSvg` option `highlightedBarIds`; the component export methods pass the current highlights (`includeHighlight`, default true).
+
+#### Resource timelines and unplanned tasks
+
+- `projectResourceTimeline`, `createResourceTimelineProjector` and `resourceTimelineBarId`: show a task once per assigned resource in GanttChart, with lanes, distinct labels, one chart link per task link and maps back to tasks and links. Load is computed from the tasks, so it is not multiplied by the number of rows.
+- `resolveResourceTimelineEdit` and `resolveResourceTimelineEdits` turn resource-row edits into one date change per task and assignment replacements, rejecting stale, conflicting and duplicate assignments; `resourceTimelineCascade` maps `propagateEdit` to every projection; `proposeResourceAssignment` checks adding, removing and replacing assignments.
+- `buildPlacementInput` builds a schedulable input from the placed tasks only and reports unplaced predecessors as diagnostics instead of throwing.
+- GanttChart `droppable` and `bar-drop` (`TimelineDrop`, Vue entry): external HTML drops reported with the row and snapped time as a proposal.
+
+#### Planning explanations
+
+- `scheduleTasks(input, { explain: true })` and `levelResources(input, { explain: true })` add a `trace` (`ScheduleTrace`) of structured reasons: dependencies with their lag, constraints, project bounds, calendar time off, pauses and, for leveling, the resources, intervals and holding tasks that delayed a task. Overloads type `trace` only for `explain: true`; results without the option are unchanged.
+- `collectScheduleReasons(trace, taskId, options?)` follows a task's reasons to their causes iteratively, visiting shared causes once.
+- `toPlanningDiagnostics(result, load?)` lists cycles, infeasible tasks, unresolved leveling and overloaded load segments as `PlanningDiagnostic` entries with language-independent IDs and codes and `EntityRef` targets.
+
+#### Asynchronous layouts and routing
+
+- `useAsyncGraphLayout` and `graphLayoutWorkerAdapter` (Vue entry): layouts from a Worker or any asynchronous engine, shown only as complete frames of one input; stale and superseded results are dropped, results wait while a gesture is in flight, the `layout` function keeps its identity, new edges are drawn with temporary routes until the engine answers, and nothing runs during server rendering.
+- NetworkGraph `gesture-start` and `gesture-end` events (`GraphGesture`, `GraphGestureEnd`, `GraphGestureKind`): one `gesture-end` for every `gesture-start`, after any proposal, with `outcome` `'committed'` or `'cancelled'`, for the gestures a new layout would cancel (node and multi-node drags, resize and waypoint drags, connections and reconnections from arming to completion, box selection, background pan and pinch). `useAsyncGraphLayout` returns `gestureListeners` to bind with `v-bind`, so results wait during a gesture without pointer listeners around the graph, and `gesturing`. The `gesture` option keeps working.
+- Core `buildGraphLayoutRequests`, `graphLayoutInputKey`, `validateGraphLayoutResponse`, `completeGraphLayout` and Worker message helpers (`parseGraphLayoutMessage`, `graphLayoutToJson`, `graphLayoutFromJson`, `graphLayoutMessageToJson`, `graphLayoutMessageFromJson`).
+- NetworkGraph `routingPolicy` (default `'builtin'`, unchanged) and the `policy` option of `routeGraphPorts` and `routeGraphEdges`: `'preserve'` keeps the layout's own routes, also for edges with named ports and in the orthogonal and straight styles, while they fit their boxes and ports (`isGraphRouteValid`). `GraphLayout` gains an optional `routes` map of route metadata, carried through the positioning and routing functions.
+
+#### Typed editing, search and saved views
+
+- `TimelineColumn.field` (`TimelineFieldSpec`): GanttChart columns with a field propose checked values through `field-edit` (validated by `validateFieldEdit`, rejected through `field-edit-rejected`), edited in the new `cell-editor` slot or a built-in input that parses with the field. Columns without `field` keep `cell-edit`, and a `cell` slot still owns the cell.
+- Core `parseFieldValue`, `validateFieldValue`, `formatFieldValue` and `fieldValuesEqual` for text, number, time (explicit time zone or offset), duration, select and checkbox fields.
+- GanttChart `edit-cancel` event (`TimelineEditCancel`): why an in-flight gesture, armed connection or cell editor was cancelled (`escape`, `pointer-cancel`, `source-changed`, `hidden`, `api`).
+- Core timeline views: `createTimelineViewState`, `parseTimelineViewState`, `reconcileTimelineViewColumns`, `resolveTimelineColumns` and `projectTimelineView` search, sort and arrange columns on a display copy that keeps ancestors, drops dependencies to hidden bars and keeps WBS codes from the original rows. `useTimelineView` wraps them reactively.
+
+#### Saving, history and snapshots
+
+- `useEditTransaction` (Vue entry) and core `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState` and `clearTransactionResult`: saves one document at a time through an application adapter, keeps the accepted state apart from the state being saved, distinguishes accepted, rejected, conflict, uncertain, busy, invalid and discarded outcomes, and sends undo and redo as snapshot restores that move the history only when accepted.
+- `useEditHistory` returns `peekUndo()`, `peekRedo()` and `replaceCurrent(snapshot)` in addition to its existing members.
+- `serializeWeaveSnapshot`, `parseWeaveSnapshot` and `restoreWeaveSnapshot`: a versioned JSON snapshot (`WeaveSnapshotV1`) of graph, timeline or planning data and the saved view, validated before anything is restored, with migrations passed as options, codecs for non-JSON data and registries for layouts, columns, editors and comparators. `WeaveSnapshotError`, `SnapshotCodec`, `SnapshotDiagnostic` and the input, stored and restored types.
+
+#### Examples
+
+- New demos: linked views, asynchronous layout, resource planning with unplanned tasks, and saved editing against a simulated server. The backlog, inspector, diagnostics list, context toolbar, typed cell editors and save-status display are reference implementations in `examples/components/` and are not part of the package.
+
+### Changed
+
+- NetworkGraph no longer cancels a gesture in flight when the `layout` function returns a new object with the same geometry (boxes, paths, label anchors, size and route metadata) for unchanged inputs. A layout whose geometry changed still cancels it.
+- The persistence guidance in docs/integration.md now serialises saves per document instead of per bar.
 
 ## 0.2.0 - 2026-11-15
 
@@ -85,6 +143,10 @@ First public release. The version restarts at 0.1.0; earlier version numbers wer
 ### Added
 
 - `NetworkGraph` with LR/TB layouts, branches, merges, disconnected nodes, directed cycles, self-loops, edge labels and custom layout/rendering.
+- Typed field specs on `TimelineColumn.field` with `parseFieldValue`, `validateFieldValue`, `formatFieldValue` and `fieldValuesEqual`. They separate empty, zero, negative and invalid input and use explicit time zones and duration units.
+- Declarative Gantt view state with `projectTimelineView`, `parseTimelineViewState`, `resolveTimelineColumns` and `useTimelineView`: search with ancestors, stable sibling sort, hidden dependency reporting and JSON-safe saved views.
+- `useEditTransaction` and core edit-transaction types and transitions (`vue-weave/core`) for server-confirmed edits with `busy`, `rejected`, `conflict` and `uncertain` handling, stale-response discarding and snapshot-restore undo/redo.
+- `useEditHistory` gains `peekUndo`, `peekRedo` and `replaceCurrent`; existing methods are unchanged.
 - Controlled graph editing with named ports, drag and keyboard connections, endpoint reconnection, box selection, disjoint visual groups, batch movement and a navigable minimap.
 - `GanttChart` with controlled pointer and keyboard editing, validation, cancellation on source changes, lanes, milestones, progress and FS/SS/FF/SF dependencies.
 - Timeline row hierarchies, baselines, stacked time headers, markers, editable columns and descendant rollups, with row and time-window virtualization.

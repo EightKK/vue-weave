@@ -6,6 +6,20 @@ The package has three boundaries.
 - src/components owns measurement, SVG/HTML rendering, local camera/scroll state and transient pointer previews. Persistent selection and accepted schedule data belong to the parent.
 - examples contains business data and validation. Components do not import examples.
 
+Planning screens around the components (an unplanned-task backlog, an inspector, a diagnostics list, a context toolbar, typed cell editors, save-status and conflict messages) are reference implementations in `examples/components/` and the planning demos. They are not part of the package: the library adds only core functions, composables and the props, events, slots and methods of the two components that such screens need, and the stylesheet styles only states the components draw themselves (highlights and selected load segments).
+
+## Three models
+
+Applications keep three kinds of data apart, and the APIs follow that split.
+
+| Model | Contents | Changes when |
+| --- | --- | --- |
+| Input | Tasks, dependencies, assignments, calendars, constraints; graph nodes, edges, groups, positions and sizes | An edit is accepted, the server sends an update, a snapshot is restored |
+| Computed | Schedules, work intervals, float, load, diagnostics and traces, layouts | A calculation of the current input succeeds |
+| Projection | What a view draws: resource rows and their bars (`projectResourceTimeline`), collapsed proxies, highlights, search and sort results (`projectTimelineView`), display frames (`useAsyncGraphLayout`) | The computed result or the view settings change |
+
+Edits, history (`useEditHistory`, `useEditTransaction`) and snapshots (`serializeWeaveSnapshot`) hold input only. A task shown on two resource rows is still one task; projected bar IDs map back through `origins` and are never saved as task IDs. Load, traces and layouts are recalculated from the input instead of being stored or undone. A view projection never feeds a calculation: schedules and load come from the full input, not from a filtered or sorted display.
+
 The ESM root exports Vue components and core functions. The separate core export supports headless use. Vite externalizes Vue. Declaration files preserve props, slots and exposed methods. Consumers load style.css explicitly.
 
 ## Graph layout
@@ -13,6 +27,22 @@ The ESM root exports Vue components and core functions. The separate core export
 An iterative Kosaraju traversal finds strongly connected components. The condensed graph supplies ranks; nodes in a component occupy the same rank. Input order determines the order within a column. Curves connect adjacent columns, bypass lanes route long edges, and same-rank edges use a side route. TB transposes the geometry while preserving node sizes.
 
 This is a deterministic layout baseline. Dense edge sets and cycles can produce overlapping routes or labels. Because all nodes of a strongly connected component share one rank, a large cycle becomes one long column (one row in TB and BT): a 5,000-node cycle is about 214 by 410,000 units with the default sizes. Callers that expect large cycles can break or filter them first with findGraphCycles, or use layoutForceGraph. By default crossings are not optimized; set crossingReduction to barycenter or median for opt-in sweeps that reorder nodes within each rank (long edges and same-rank edges are not part of the objective). RL and BT mirror the LR and TB geometry. layoutTreeGraph and layoutRadialGraph use a breadth-first spanning forest and route the remaining edges separately. layoutForceGraph runs a seeded, deterministic force simulation (link springs, Barnes–Hut repulsion over an iterative quadtree and gravity), removes box overlaps with grid-based passes and packs connected components in rows. By default all supplied nodes and edges are rendered; applications can use graphNeighborhood to narrow the input, or opt in to viewport culling with cullOffscreen, which renders only the elements that intersect the visible region plus an overscan margin (layout and the minimap still cover every node). Pan/zoom transforms one SVG group without rerunning layout. NetworkGraph builds its geometry in one pipeline: collapseGraphGroups (only with collapsed groups), the layout, the positions and sizes overlays, port routing and finally routeGraphEdges for the edge style and waypoints. Each step returns its input unchanged when it has nothing to do, so the default output is the layout's own. Previews of node drags, resizes and waypoint drags do not change props. They reuse the saved geometry and recompute only the boxes of the changed nodes and the routes of their edges, with the same results as rerunning the overlays and routing for the whole graph. Port routes are clamped to the layout size, so when a preview changes that size the other port edges whose control points reach past the smaller of the two sizes are rerouted too. Group frames are recomputed only for the groups that hold a changed node, the groups whose own nodes reach past the smaller size, and their ancestors. Each node, edge, minimap rectangle, connection handle and group frame is an internal functional component that reads its box, path or frame from a ref of its own, so a preview re-renders only the items of the changed nodes and edges; the item lists render again only when the rendered set, selection, dimming, the connection draft or other item props change. Still proportional to the graph per move: with groups, one pass over the group list (frame list, content bounds and, with culling, the near-view test), which grows with the number of groups but not with their members; with `alignmentGuides`, the guide search over the other node boxes; with waypoints, a check of the edges that have them; and any camera move during the drag (auto-pan), which culls and redraws as a pan does.
+
+### Asynchronous layouts
+
+The `layout` prop stays synchronous. `useAsyncGraphLayout` turns the input into the same requests NetworkGraph would make (`buildGraphLayoutRequests`: a `shown` request and, with collapsed groups, an `expanded` one), each identified by a request ID and an input key that covers nodes, edges, ports, sizes, positions, groups, the collapsed set, direction, settings and a caller revision. A display frame holds one input together with its layouts and changes only when every layout of that input is ready, so nodes are never drawn with another input's geometry; late, cancelled and superseded results are dropped. The `layout` function it returns reads the displayed frame and keeps its identity, so a new frame neither re-fits the camera nor, while NetworkGraph reports a gesture in flight (`gesture-start` and `gesture-end`, bound through `gestureListeners`), cancels it. Nothing is requested during server rendering; an optional synchronous `initialLayout` gives the server and the first client render the same frame.
+
+### Routing precedence
+
+For each edge NetworkGraph decides its path in this order:
+
+1. Explicit waypoints (`GraphEdge.points`) are routed through by the built-in router, whatever the policy.
+2. Edges of a node moved by `positions` or resized by `sizes` are rerouted; other edges keep their paths.
+3. With `routingPolicy: 'preserve'`, a path the layout drew is kept, also for named ports and in the orthogonal and straight styles, while its ends still fit the boxes, ports and route metadata (`isGraphRouteValid`). Paths drawn by the core routers themselves count as built-in.
+4. Otherwise (the default `'builtin'`), edges with named ports are redrawn from their anchors, and the orthogonal and straight styles redraw every edge; the curve style keeps the layout's other paths.
+5. An edge without any path, for example one just connected while an asynchronous layout is pending, gets a temporary built-in route under `'preserve'` (`completeGraphLayout`); under `'builtin'` it is an error.
+
+Drag previews apply the same rules to the moved nodes only, and the SVG export draws the routed paths, so screen, preview and export agree. Routing does not avoid obstacles; a layout engine that needs that owns its routes under `'preserve'`.
 
 ## Timeline rendering and editing
 
@@ -38,7 +68,7 @@ Graph movement applies an overlay of absolute coordinates over the base layout. 
 
 The default renderer handles text, SVG and HTML. Slot authors own content dimensions and accessibility of custom content. Keyboard selection and interval editing are included; assistive-technology testing with dedicated screen readers is still needed before claiming broad accessibility conformance.
 
-Scheduling and resource-load analysis are explicit core operations called by the application. The chart renders accepted results. Capacity conflicts are diagnostic. `levelResources` provides a baseline priority-based leveling heuristic; setup sequencing and optimization policies remain the application's concern. Calendar generation uses a fixed UTC offset or an IANA time zone with daylight-saving rules from `Intl`. See [Scheduling and resource load](scheduling.md).
+Scheduling and resource-load analysis are explicit core operations called by the application. The chart renders accepted results. Explanations (`scheduleTasks(input, { explain: true })`, `toPlanningDiagnostics`) are recorded by the same passes that compute the plan and change no result. Saving is the application's: `useEditTransaction` coordinates one document's saves with a server through an adapter, and snapshots are JSON text that the application stores where it likes. Capacity conflicts are diagnostic. `levelResources` provides a baseline priority-based leveling heuristic; setup sequencing and optimization policies remain the application's concern. Calendar generation uses a fixed UTC offset or an IANA time zone with daylight-saving rules from `Intl`. See [Scheduling and resource load](scheduling.md).
 
 ## Export
 

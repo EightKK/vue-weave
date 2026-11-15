@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "timeline",
+  "metadata": { "title": "Release plan" },
+  "data": {
+    "rows": [
+      { "id": "r2", "parentId": "r1", "label": "Build" },
+      { "id": "r1", "label": "Project" },
+      { "id": "r3", "parentId": "r1", "label": "Test", "data": { "lead": "kim" } }
+    ],
+    "bars": [
+      {
+        "id": "b2",
+        "rowId": "r2",
+        "label": "Build",
+        "start": 10,
+        "end": 40,
+        "baseline": { "start": 8, "end": 30 },
+        "baselines": [{ "id": "plan", "start": 5, "end": 25 }, { "id": "rev1", "start": 9, "end": 35 }],
+        "constraints": { "startNoEarlierThan": 10, "finishNoLaterThan": 50 },
+        "segments": [{ "start": 10, "end": 20 }, { "start": 25, "end": 40 }],
+        "progress": 0.5
+      },
+      { "id": "b1", "rowId": "r1", "label": "Kickoff", "start": 0, "end": 0 },
+      { "id": "b3", "rowId": "r3", "label": "Test", "start": 40, "end": 60, "lane": 1, "deadline": 70, "latestEnd": 65 }
+    ],
+    "dependencies": [
+      { "id": "d2", "from": "b2", "to": "b3", "type": "SS", "lag": 5 },
+      { "id": "d1", "from": "b1", "to": "b2" }
+    ],
+    "range": { "start": 0, "end": 100 },
+    "timeUnit": { "id": "day", "origin": 1767225600000 }
+  },
+  "view": {
+    "timeline": {
+      "window": { "start": 0, "end": 80 },
+      "scroll": { "time": 12, "rowId": "r2" },
+      "zoom": { "zoom": 2, "preset": "week" },
+      "columns": [
+        { "id": "owner", "visible": false, "width": 90 },
+        { "id": "$label", "width": 200 },
+        { "id": "cost", "registryId": "money", "editorId": "number" }
+      ],
+      "search": { "query": "build", "columnIds": ["$label", "owner"] },
+      "sort": [{ "columnId": "owner", "direction": "desc", "comparatorId": "natural" }],
+      "collapsedRowIds": ["r1"]
+    }
+  }
+}

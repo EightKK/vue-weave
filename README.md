@@ -56,6 +56,16 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
 - Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars.
 
+### Planning, linking and saving
+
+- Linked views: `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings; the view the user acts in keeps the selection and the others get display-only highlights (`highlightedNodeIds`, `highlightedEdgeIds`, `highlightedBarIds`, `highlightedLoadTargets`). `target-enter`, `target-leave` and `target-activate` events report what the user points at, and `revealNode`, `revealBar` and `revealLinkedTarget` move to it, also out of collapsed groups and rows.
+- Resource views: `projectResourceTimeline` shows a task once per assigned resource without counting its load twice, `resolveResourceTimelineEdit` turns a drag to another row into an assignment change, and `buildPlacementInput` keeps unplanned tasks out of the calculation. GanttChart accepts drops from your own lists (`droppable`, `bar-drop`).
+- Explanations: `scheduleTasks(input, { explain: true })` and `levelResources` return a trace of why each task starts when it does; `toPlanningDiagnostics` lists cycles, infeasible tasks, overloads and unresolved leveling with their tasks and resources.
+- Asynchronous layouts: `useAsyncGraphLayout` runs a layout in a Worker or any async engine and shows only complete, current frames; `routingPolicy="preserve"` keeps the engine's routes, port edges included.
+- Typed cells, search and saved views: columns with a `field` propose typed values (`field-edit`, `cell-editor` slot), and `useTimelineView` searches and sorts a display copy of the rows.
+- Saving: `useEditTransaction` saves one document at a time through your adapter and tells accepted, rejected, conflicting and unknown results apart, with undo and redo sent to the server; `serializeWeaveSnapshot` and `restoreWeaveSnapshot` store data and view settings as versioned, validated JSON.
+- The backlog, inspector, diagnostics list and toolbar of the demo are examples in `examples/components/`, not part of the package.
+
 ### Export, themes, RTL
 
 - `exportSvg(options)` and `exportPng(options)` on both components, and `renderGraphSvg` and `renderTimelineSvg` for server-side SVG.
@@ -160,6 +170,33 @@ function commit(change: TimelineEdit) {
 
 The component previews pointer edits, then emits a proposal. The parent commits it by replacing the affected interval. This supports application-specific validation, API persistence and asynchronous approval. A synchronous `validateEdit` hook can reject a proposal before the event is emitted. Intervals are half-open `[start, end)`, and a zero-duration bar is a milestone.
 
+### Linked views
+
+A minimal link between a graph and a Gantt chart: activating an item in either view selects it there and highlights its counterpart in the other.
+
+```vue
+<script setup lang="ts">
+import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+
+// nodes, edges, rows, bars and range as in the examples above; node and bar IDs are task IDs here.
+const bindings: ViewBinding[] = bars.value.flatMap(bar => [
+  { entity: { kind: 'task', id: bar.id }, target: { view: 'graph', kind: 'node', id: bar.id } },
+  { entity: { kind: 'task', id: bar.id }, target: { view: 'timeline', kind: 'bar', id: bar.id } },
+])
+const linked = useLinkedSelection({ bindings })
+const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
+</script>
+
+<template>
+  <NetworkGraph :nodes="nodes" :edges="edges" :selected-ids="linked.graph.value.selectedNodeIds"
+    :highlighted-node-ids="linked.graph.value.highlightedNodeIds" @target-activate="activate" />
+  <GanttChart :rows="rows" :bars="bars" :range="range" :selected-ids="linked.timeline.value.selectedBarIds"
+    :highlighted-bar-ids="linked.timeline.value.highlightedBarIds" @target-activate="activate" />
+</template>
+```
+
+See [Linking views](docs/integration.md#linking-views) for hover, load rows and moving to collapsed items, and [Saving through a server](docs/integration.md#saving-through-a-server) for `useEditTransaction`.
+
 ## Export, direction and themes
 
 Both components expose `exportSvg(options)` and `exportPng(options)` on their template ref, and `vue-weave/core` can build the same SVG on a server. Set `dir="rtl"` (or `auto`) for right-to-left layouts. Add `vw-theme-dark` to a component or an ancestor for the dark theme, or `vw-theme-auto` to follow `prefers-color-scheme`. See [integration](docs/integration.md).
@@ -179,7 +216,7 @@ npm run build:demo
 npm start
 ```
 
-The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. Edits remain in the demo's local state.
+The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. Edits remain in the demo's local state.
 
 If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
 

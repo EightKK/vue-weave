@@ -6,6 +6,8 @@ export { buildWorkPeriods, invertWorkPeriods, normalizeWorkPeriods } from './wor
 export type { WorkCalendar, WorkShift, WeeklyShift, WorkWeek } from './workCalendar.js'
 export * from './scheduling.js'
 export * from './resourceLoad.js'
+export * from './fieldEditing.js'
+export * from './timelineView.js'
 export { countGraphCrossings } from './graphCrossings.js'
 export { layoutTreeGraph, layoutRadialGraph } from './graphLayouts.js'
 export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions } from './graphLayouts.js'
@@ -39,3 +41,41 @@ export type {
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
+
+export * from './viewBindings.js'
+export * from './editTransaction.js'
+
+export * from './graphTraversal.js'
+export {
+  projectResourceTimeline, createResourceTimelineProjector, resourceTimelineBarId, resolveResourceTimelineEdit,
+  resolveResourceTimelineEdits, resourceTimelineCascade, proposeResourceAssignment,
+} from './resourceTimeline.js'
+export type {
+  ResourceTimelineResource, ResourceTimelineTask, ResourceTimelineInput, ResourceTimelineOptions, ResourceBarOrigin,
+  ResourceTimelineProjection, ResourceTimelineScheduleChange, ResourceAssignmentReplacement, ResourceTimelineRejectionCode,
+  ResourceTimelineRejection, ResourceTimelineEditsResolution, ResourceTimelineEditResolution, ResourceAssignmentState,
+  ResourceAssignmentRequest, ResourceAssignmentProposal,
+} from './resourceTimeline.js'
+export { buildPlacementInput } from './placement.js'
+export type { PlacementInput, PlacementDiagnostic, PlacementResult } from './placement.js'
+
+export * from './snapshot.js'
+export { toPlanningDiagnostics } from './scheduleDiagnostics.js'
+export type { PlanningDiagnostic, PlanningDiagnosticCode, PlanningDiagnosticSeverity } from './scheduleDiagnostics.js'
+export { collectScheduleReasons } from './scheduleTrace.js'
+export type {
+  ScheduleReason, ScheduleReasonPhase, ScheduleReasonKind, ScheduleReasonBound, ScheduleTrace, ScheduleOptions,
+  ExplainedScheduleSuccess, ExplainedScheduleResult, ExplainedLevelResourcesSuccess, ExplainedLevelResourcesResult,
+  CollectScheduleReasonsOptions,
+} from './scheduleTrace.js'
+export { isGraphRouteValid } from './graphGeometry.js'
+export type { GraphRoutingPolicy } from './graphGeometry.js'
+export {
+  graphLayoutInputKey, buildGraphLayoutRequests, validateGraphLayoutResponse, completeGraphLayout, graphLayoutToJson, graphLayoutFromJson,
+  graphLayoutMessageToJson, graphLayoutMessageFromJson, parseGraphLayoutMessage,
+} from './graphLayoutRequests.js'
+export type {
+  GraphLayoutScope, GraphLayoutRequestInput, GraphLayoutRequest, GraphLayoutResponse, GraphLayoutRequests, GraphLayoutKeyInput,
+  GraphLayoutCompletionOptions, GraphLayoutCompletion, GraphLayoutRequestMessage, GraphLayoutCancelMessage, GraphLayoutSuccessMessage,
+  GraphLayoutFailureMessage, GraphLayoutWorkerMessage, GraphLayoutJson, GraphLayoutRequestJson, GraphLayoutWorkerJsonMessage,
+} from './graphLayoutRequests.js'

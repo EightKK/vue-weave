@@ -25,7 +25,13 @@ import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOpt
 import { timelineBaselineId } from '../core/timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
 import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
+import type { TimelineEditCancel, TimelineEditCancelReason } from '../core/types.js'
+import type { LoadViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
+import { resolveLoadTargets } from '../core/viewBindings.js'
+import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from '../core/fieldEditing.js'
+import type { FieldCheck, FieldValue, TimelineFieldEdit, TimelineFieldSpec } from '../core/fieldEditing.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import type { TimelineDrop } from './types.js'
 
 const props = withDefaults(defineProps<{
   /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
@@ -176,6 +182,36 @@ const props = withDefaults(defineProps<{
   constraintsEditable?: boolean
   /** Synchronous check of a constraint edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConstraintEdit?: ConstraintEditValidator
+  /**
+   * IDs of bars drawn with the display-only highlight style (`vw-is-highlighted`), for example items linked from another
+   * view. Unlike `selectedIds`, they are never deleted or moved with the selection, do not mark dependencies and do not
+   * cancel gestures when they change. Highlighted bars outside the visible window are not kept rendered.
+   */
+  highlightedBarIds?: ReadonlySet<string>
+  /**
+   * Makes load segments focusable buttons that report `target-enter`, `target-leave` and `target-activate` with a load
+   * target. Without it, load segments keep their image role and accessible names. Opt-in. Default: false.
+   */
+  loadSelectable?: boolean
+  /**
+   * Load ranges drawn with the display-only highlight style (`vw-is-highlighted`), for example load linked from another
+   * view. A segment is highlighted when it belongs to the target's resource and overlaps its half-open range, so the
+   * targets stay valid when the load is recalculated and its segment boundaries move. Works with or without
+   * `loadSelectable` and never changes accessible names. Default: none.
+   */
+  highlightedLoadTargets?: readonly LoadViewTarget[]
+  /**
+   * Load ranges drawn as selected (`vw-is-selected`), matched like `highlightedLoadTargets`. With `loadSelectable`, the
+   * matching segment buttons also get `aria-pressed="true"`. The chart never changes this set itself. Default: none.
+   */
+  selectedLoadTargets?: readonly LoadViewTarget[]
+  /** Accepts HTML drag and drop on the chart and emits `bar-drop` with the row and time under the drop point. Opt-in. Default: false. */
+  droppable?: boolean
+  /**
+   * Synchronous check of a typed field edit proposal from a column with `field`. Return `true` or nothing to accept,
+   * `false` or a reason string to reject.
+   */
+  validateFieldEdit?: (change: TimelineFieldEdit<R>) => boolean | string | void
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -256,6 +292,20 @@ const emit = defineEmits<{
   'constraint-edit': [change: TimelineConstraintEdit]
   /** A constraint edit was rejected by `validateConstraintEdit`; carries the proposal and the reason. */
   'constraint-edit-rejected': [change: TimelineConstraintEdit, reason: string]
+  /** The pointer entered, or keyboard focus reached, a bar, dependency, row or (with `loadSelectable`) load segment. */
+  'target-enter': [event: ViewTargetEvent]
+  /** The pointer or keyboard focus left a target reported by `target-enter`. */
+  'target-leave': [event: ViewTargetEvent]
+  /** A bar, dependency, row heading or (with `loadSelectable`) load segment was activated by click, Enter or Space. */
+  'target-activate': [event: ViewTargetEvent]
+  /** Something was dropped on the chart; carries the snapped time, the row under the drop point and `dataTransfer`. Only with `droppable`. */
+  'bar-drop': [event: TimelineDrop]
+  /** Proposal to change a typed field of a column with `field`. Such columns never emit `cell-edit`. */
+  'field-edit': [change: TimelineFieldEdit<R>]
+  /** A field edit was rejected by `validateFieldEdit`; carries the proposal and the reason. */
+  'field-edit-rejected': [change: TimelineFieldEdit<R>, reason: string]
+  /** An in-flight edit was cancelled; carries the reason, the bars of the gesture and the cell of a cancelled `cell-editor`. */
+  'edit-cancel': [event: TimelineEditCancel]
 }>()
 
 const slots = defineSlots<{
@@ -269,6 +319,19 @@ const slots = defineSlots<{
   'load-row'(props: { row: TimelineLoadRow; peak: number }): unknown
   'load-segment'(props: { segment: TimelineLoadSegment; row: TimelineLoadRow; peak: number; overload: number }): unknown
   tooltip(props: { bar: B; range: TimeRange; selected: boolean }): unknown
+  /**
+   * Editor of a cell of a column with `field`, shown after the cell is activated (click, Enter, Space or F2). `commit`
+   * checks the value with the field spec and `validateFieldEdit`, emits `field-edit`, closes the editor and returns focus
+   * to the cell; on failure the editor stays open and `validation` holds the error. `commitText` parses text with the
+   * field first. `cancel` and Escape close it without a proposal. A `cell` slot takes precedence over this slot.
+   */
+  'cell-editor'(props: {
+    row: R; column: TimelineColumn<R>; field: TimelineFieldSpec<R>; value: FieldValue; draft: FieldValue
+    validation: FieldCheck; error: string | undefined; source: ViewTargetSource
+    commit: (value: FieldValue, source?: ViewTargetSource) => FieldCheck
+    commitText: (text: string, source?: ViewTargetSource) => FieldCheck
+    cancel: () => void
+  }): unknown
 }>()
 const messages = computed<GanttLabels>(() => ({
   region: 'Gantt chart', rows: 'Rows', empty: 'No rows to display',
@@ -521,6 +584,163 @@ function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
     emit('cell-edit', change)
   }
 }
+
+// Typed field editing (`TimelineColumn.field`). Such a column emits `field-edit` only, never `cell-edit`. A `cell` slot
+// owns the cell as before; otherwise the `cell-editor` slot edits it, or the built-in text input parses the text with
+// the field. Columns without `field` render and behave exactly as before.
+type CellEditorState = {
+  rowId: string; columnId: string; before: FieldValue; draft: FieldValue; validation: FieldCheck; source: ViewTargetSource
+}
+const cellEditor = shallowRef<CellEditorState>()
+/** The cell of the built-in field input whose text could not be read, with the reason. */
+const fieldInputError = shallowRef<{ key: string; error: string }>()
+function cellKey(row: TimelineRow, column: TimelineColumn<R>) {
+  return JSON.stringify([row.id, column.id])
+}
+function editingCell(row: TimelineRow, column: TimelineColumn<R>) {
+  const state = cellEditor.value
+  return state !== undefined && state.rowId === row.id && state.columnId === column.id
+}
+function fieldText(row: R, column: TimelineColumn<R>) {
+  return formatFieldValue(column.field!, column.field!.get(row))
+}
+function cellElement(selector: string, key: string) {
+  for (const element of scroller.value?.querySelectorAll<HTMLElement>(selector) ?? []) {
+    if (element.dataset.vwCell === key || element.dataset.vwCellEditor === key) return element
+  }
+  return undefined
+}
+/** Return focus to the cell of a closed editor, or to the chart region when the cell is gone. */
+async function focusCell(key: string) {
+  await nextTick()
+  const cell = cellElement('[data-vw-cell]', key)
+  if (cell) cell.focus({ preventScroll: true })
+  else scroller.value?.focus({ preventScroll: true })
+}
+async function startCellEditor(row: R, column: TimelineColumn<R>, source: ViewTargetSource) {
+  if (!column.field || !canEditCell(row, column)) return
+  // Opening another cell's editor cancels the open one, as Escape would, without moving focus back to it.
+  if (cellEditor.value) cancelCellEditor('escape', false)
+  const before = column.field.get(row)
+  cellEditor.value = { rowId: row.id, columnId: column.id, before, draft: before, validation: { ok: true }, source }
+  hideTooltip()
+  await nextTick()
+  const editor = cellElement('[data-vw-cell-editor]', cellKey(row, column))
+  const first = editor?.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"])')
+  ;(first ?? editor)?.focus({ preventScroll: true })
+}
+function closeCellEditor(returnFocus: boolean) {
+  const state = cellEditor.value
+  if (!state) return
+  const key = JSON.stringify([state.rowId, state.columnId])
+  const editor = cellElement('[data-vw-cell-editor]', key)
+  const focused = typeof document !== 'undefined' && editor?.contains(document.activeElement)
+  cellEditor.value = undefined
+  if (returnFocus || focused) void focusCell(key)
+}
+/** Close an open `cell-editor` without a proposal and report it through `edit-cancel`. */
+function cancelCellEditor(reason: TimelineEditCancelReason, returnFocus = reason === 'escape') {
+  const state = cellEditor.value
+  if (!state) return
+  closeCellEditor(returnFocus)
+  emit('edit-cancel', { reason, barIds: [], cell: { rowId: state.rowId, columnId: state.columnId } })
+}
+function editorTarget() {
+  const state = cellEditor.value
+  const row = state && rowById.value.get(state.rowId) as R | undefined
+  const column = state && props.columns?.find(item => item.id === state.columnId)
+  return state && row && column?.field && canEditCell(row, column) ? { state, row, column, field: column.field } : undefined
+}
+/** Propose `after` for a field cell. Shared by the `cell-editor` slot and the built-in field input. */
+function proposeField(row: R, column: TimelineColumn<R>, before: FieldValue, after: FieldValue, source: ViewTargetSource): FieldCheck {
+  const field = column.field!
+  const check = validateFieldValue(field, after)
+  if (!check.ok) {
+    notice.value = check.error
+    return check
+  }
+  if (fieldValuesEqual(before, after)) return check
+  const change: TimelineFieldEdit<R> = { rowId: row.id, columnId: column.id, fieldId: field.id, before, after, source }
+  const reason = rejection(props.validateFieldEdit?.(change))
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('field-edit-rejected', change, reason)
+    return { ok: false, code: 'custom', error: reason }
+  }
+  notice.value = ''
+  emit('field-edit', change)
+  return check
+}
+function commitCellEditor(value: FieldValue, source?: ViewTargetSource): FieldCheck {
+  const target = editorTarget()
+  if (!target) {
+    cancelCellEditor('source-changed')
+    return { ok: false, code: 'invalid', error: messages.value.rejected }
+  }
+  const { state, row, column } = target
+  const result = proposeField(row, column, state.before, value, source ?? state.source)
+  if (result.ok) closeCellEditor(true)
+  else cellEditor.value = { ...state, draft: value, validation: result }
+  return result
+}
+function commitCellEditorText(text: string, source?: ViewTargetSource): FieldCheck {
+  const target = editorTarget()
+  if (!target) return commitCellEditor(null, source)
+  const parsed = parseFieldValue(target.field, text)
+  if (parsed.ok) return commitCellEditor(parsed.value, source)
+  notice.value = parsed.error
+  cellEditor.value = { ...target.state, validation: parsed }
+  return parsed
+}
+function cellEditorProps(row: R, column: TimelineColumn<R>) {
+  const state = cellEditor.value!
+  return {
+    row, column, field: column.field!, value: state.before, draft: state.draft, validation: state.validation,
+    error: state.validation.ok ? undefined : state.validation.error, source: state.source,
+    commit: commitCellEditor, commitText: commitCellEditorText, cancel: () => cancelCellEditor('escape'),
+  }
+}
+function cellEditorKeys(event: KeyboardEvent) {
+  // The slot committed or cancelled on this key and focus is about to return to the cell button. Prevent the default
+  // action so that the same Enter or Space does not activate the button and open the editor again.
+  if (!cellEditor.value) return event.preventDefault()
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  event.preventDefault()
+  event.stopPropagation()
+  cancelCellEditor('escape')
+}
+/** The built-in field input: Enter or a change parses the text with the field and proposes the value. */
+function commitFieldInput(event: Event, row: R, column: TimelineColumn<R>) {
+  const input = event.currentTarget as HTMLInputElement
+  const field = column.field!
+  const before = field.get(row)
+  const key = cellKey(row, column)
+  if (!canEditCell(row, column)) {
+    input.value = formatFieldValue(field, before)
+    return
+  }
+  const parsed = parseFieldValue(field, input.value)
+  if (!parsed.ok) {
+    // Keep the text so it can be corrected; the reason is announced and the input is marked invalid.
+    fieldInputError.value = { key, error: parsed.error }
+    notice.value = parsed.error
+    return
+  }
+  if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+  input.value = formatFieldValue(field, before)
+  proposeField(row, column, before, parsed.value, 'keyboard')
+}
+function cancelFieldInput(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
+  const input = event.currentTarget as HTMLInputElement
+  input.value = fieldText(row, column)
+  if (fieldInputError.value?.key === cellKey(row, column)) fieldInputError.value = undefined
+}
+// New rows or columns, or a row hidden by collapsing, cancel an open cell editor.
+watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed], () => {
+  const state = cellEditor.value
+  if (!state) return
+  cancelCellEditor(rowById.value.has(state.rowId) && !rowOrder.value.has(state.rowId) ? 'hidden' : 'source-changed')
+})
 const displayedRows = computed(() => {
   const result: typeof tree.value = []
   for (let index = 0; index < tree.value.length;) {
@@ -1047,7 +1267,40 @@ function editable(bar: TimelineBar) {
   return !props.readonly && Boolean(bar.editable) && bar.start >= bounds.value.start && bar.end <= bounds.value.end
 }
 
-function cancelEdit() {
+/** The bars of the in-flight pointer gesture or armed connection, or undefined when none is in flight. */
+function gestureInFlight(): { barIds: string[]; rowId?: string } | undefined {
+  const ids = new Set<string>()
+  if (drag) for (const bar of drag.group) ids.add(bar.id)
+  if (progressDrag) ids.add(progressDrag.id)
+  if (constraintDrag) ids.add(constraintDrag.id)
+  if (linkDraft.value) ids.add(linkDraft.value.fixed.bar)
+  if (!ids.size && !createDrag && !rowDrag && !columnDrag) return undefined
+  return createDrag ? { barIds: [...ids], rowId: createDrag.rowId } : { barIds: [...ids] }
+}
+/** End every pointer gesture and armed connection, and report it through `edit-cancel` when one was in flight. */
+function cancelGestures(reason: TimelineEditCancelReason) {
+  const info = gestureInFlight()
+  resetGestures()
+  if (info) emit('edit-cancel', { reason, barIds: info.barIds })
+}
+/** Cancel everything in flight: gestures, an armed connection and an open cell editor. */
+function cancelEdit(reason: TimelineEditCancelReason = 'api') {
+  cancelGestures(reason)
+  cancelCellEditor(reason)
+}
+/** New source data or coordinates: `hidden` when the gesture's row is no longer displayed, otherwise `source-changed`. */
+function cancelForSource() {
+  const info = gestureInFlight()
+  if (!info) return resetGestures()
+  const hidden = info.barIds.some(id => {
+    const bar = barById.value.get(id)
+    return bar !== undefined && !rowOrder.value.has(bar.rowId)
+  }) || (info.rowId !== undefined && rowById.value.has(info.rowId) && !rowOrder.value.has(info.rowId))
+  cancelGestures(hidden ? 'hidden' : 'source-changed')
+}
+
+/** Reset every pointer gesture and armed connection without reporting it. */
+function resetGestures() {
   const previous = drag
   drag = undefined
   previews.value = undefined
@@ -1294,7 +1547,7 @@ function stopAutoScroll() {
 
 function finishEdit(event: PointerEvent) {
   if (!drag || drag.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelEdit()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   lastClientX = event.clientX
   lastClientY = event.clientY
   updatePreview()
@@ -1305,7 +1558,7 @@ function finishEdit(event: PointerEvent) {
   // The last preview step already asked `cascade` about exactly these changes.
   const cascaded = cascadeResult
   if (preview) suppressSelection = id
-  cancelEdit()
+  resetGestures()
   proposeEdits(changes, cascaded)
 }
 
@@ -1320,10 +1573,11 @@ function clickBar(bar: TimelineBar, event: MouseEvent) {
     emit('update:selectedIds', ids)
   }
   emit('select', bar.id)
+  if (!dragged) activateTarget(barTarget(bar.id), clickSource(event))
 }
 
 function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
-  if (event.key === 'Escape') return cancelEdit()
+  if (event.key === 'Escape') return cancelEdit('escape')
   if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
   if (props.deletable && (event.key === 'Delete' || event.key === 'Backspace')) return deleteFrom(event, bar)
   if (!editable(bar) || drag) return
@@ -1358,8 +1612,10 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
 function onBarFocus(event: FocusEvent, bar: TimelineBar) {
   focusedBarId.value = bar.id
   focusTooltip(event, bar)
+  focusTarget(event, barTarget(bar.id))
 }
 function onBarBlur(id: string) {
+  blurTarget(barTarget(id))
   if (focusedBarId.value === id) focusedBarId.value = undefined
   if (pendingReveal === id) pendingReveal = undefined
   blurTooltip(id)
@@ -1388,7 +1644,7 @@ function deleteFrom(event: KeyboardEvent, bar: TimelineBar) {
 }
 
 /** Scroll horizontally only when the bar lies outside the visible timeline area. */
-function revealBar(id: string) {
+function scrollBarIntoInlineView(id: string) {
   const el = scroller.value
   const bar = barById.value.get(id)
   if (!el || !bar) return
@@ -1447,7 +1703,7 @@ watch(() => props.bars, async () => {
       focusBar(moved)
     }
   }
-  if (id !== undefined && focusedBarId.value === id) revealBar(id)
+  if (id !== undefined && focusedBarId.value === id) scrollBarIntoInlineView(id)
 })
 
 // Row hierarchy moves (`rowsReorderable`). Each row heading gets a move handle: Alt+Up/Down move the row among its
@@ -1569,7 +1825,7 @@ function cancelRowDrag() {
 function finishRowDrag(event: PointerEvent) {
   const active = rowDrag
   if (!active || active.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelRowDrag()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveRowDrag(event)
   const drop = active.moved ? rowDrop.value : undefined
   const row = rowById.value.get(active.id)
@@ -1683,7 +1939,7 @@ function cancelLink() {
 }
 function finishLink(event: PointerEvent) {
   if (linkDrag?.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelLink()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveLink(event)
   const dragged = Boolean(linkPoint.value)
   clearLinkCapture()
@@ -1737,17 +1993,18 @@ function completeLink(target: LinkEnd) {
     emit('connect', connection)
   }
 }
-function selectDependency(id: string) {
+function selectDependency(id: string, source: ViewTargetSource = 'pointer') {
   localDependency.value = id
   emit('update:selectedDependencyId', id)
   emit('dependency-select', id)
+  activateTarget(dependencyTarget(id), source)
 }
 function dependencyKeys(event: KeyboardEvent, id: string) {
   if (props.contextMenu && isMenuKey(event)) {
     keyboardContextMenu(event, { kind: 'dependency', id })
   } else if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
-    selectDependency(id)
+    selectDependency(id, 'keyboard')
   } else if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
     // Selection stays possible when readonly, like bar selection; deleting is an edit proposal.
@@ -1779,11 +2036,17 @@ function clickReconnect(dependency: TimelineDependency, end: 'from' | 'to') {
 }
 watch(() => props.dependencies, () => {
   // A cascading bar drag previews follow-on changes computed from the old dependencies; it is stale source data.
-  if (drag && props.cascade) cancelEdit()
-  else cancelLink()
+  if (drag && props.cascade) cancelGestures('source-changed')
+  else cancelLinkDraft('source-changed')
   if (localDependency.value !== undefined && !props.dependencies.some(dep => dep.id === localDependency.value)) localDependency.value = undefined
 })
-watch(() => [props.connectable, props.reconnectable], cancelLink)
+watch(() => [props.connectable, props.reconnectable], () => cancelLinkDraft('source-changed'))
+/** Cancel a connection draft only, reporting it when one was armed or dragged. */
+function cancelLinkDraft(reason: TimelineEditCancelReason) {
+  const fixed = linkDraft.value?.fixed
+  cancelLink()
+  if (fixed) emit('edit-cancel', { reason, barIds: [fixed.bar] })
+}
 
 // Two-pointer touch pinch zooms the time axis around the midpoint. A second touch cancels any in-flight edit.
 const touches = new Map<number, { x: number; y: number }>()
@@ -1797,7 +2060,7 @@ function trackTouch(event: PointerEvent) {
   touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
   const el = scroller.value
   if (touches.size !== 2 || !el) return
-  cancelEdit()
+  cancelGestures('pointer-cancel')
   hideTooltip()
   const span = touchSpan()
   pinch = { distance: Math.max(1, span.distance), zoom: zoom.value, anchor: Math.max(0, timeAreaOffset(span.x, el.getBoundingClientRect())) }
@@ -1846,7 +2109,7 @@ async function zoomWithWheel(event: WheelEvent) {
   const delta = wheelDelta(event, el)
   if (!delta) return
   // A zoom changes the coordinate system, as a pinch does: in-flight gestures end without a proposal.
-  if (gestureActive()) cancelEdit()
+  if (gestureActive()) cancelGestures('source-changed')
   hideTooltip()
   const factor = Math.max(1 / wheelStep, Math.min(wheelStep, Math.exp(-delta * Math.log(wheelStep) / 100)))
   const next = Math.max(minZoom, Math.min(maxZoom, zoom.value * factor))
@@ -1884,7 +2147,7 @@ watch([
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
   () => props.columnsResizable, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth,
   () => props.constraintsEditable,
-], cancelEdit)
+], cancelForSource)
 
 // Column resizing (`columnsResizable`). A separator at the inline-end edge of each header cell previews pointer
 // drags and proposes keyboard steps; the parent accepts `column-resize` by setting the column width or `labelWidth`.
@@ -2011,7 +2274,7 @@ function cancelColumnResize() {
 function finishColumnResize(event: PointerEvent) {
   const active = columnDrag
   if (!active || active.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelColumnResize()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveColumnResize(event)
   const after = columnResize.value?.width ?? active.before
   cancelColumnResize()
@@ -2148,7 +2411,7 @@ function moveProgress(event: PointerEvent) {
 function finishProgress(event: PointerEvent) {
   const active = progressDrag
   if (!active || active.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelProgress()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveProgress(event)
   const preview = progressPreview.value
   const bar = barById.value.get(active.id)
@@ -2156,7 +2419,7 @@ function finishProgress(event: PointerEvent) {
   if (preview && bar) proposeProgress({ id: bar.id, before: bar.progress, after: preview.value, source: 'pointer' })
 }
 function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
-  if (event.key === 'Escape') return cancelEdit()
+  if (event.key === 'Escape') return cancelEdit('escape')
   if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
   if (!canEditProgress(bar) || gestureActive()) return
   const current = bar.progress ?? 0
@@ -2304,14 +2567,14 @@ function moveConstraint(event: PointerEvent) {
 function finishConstraint(event: PointerEvent) {
   const active = constraintDrag
   if (!active || active.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelConstraint()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveConstraint(event)
   const preview = constraintPreview.value
   cancelConstraint()
   if (preview) proposeConstraint({ id: active.id, kind: active.kind, before: active.before, after: preview.time, source: 'pointer' })
 }
 function constraintKeys(event: KeyboardEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
-  if (event.key === 'Escape') return cancelEdit()
+  if (event.key === 'Escape') return cancelEdit('escape')
   if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
   const before = bar.constraints?.[kind]
   if (!canEditConstraints(bar) || before === undefined || event.altKey || event.ctrlKey || event.metaKey) return
@@ -2419,7 +2682,7 @@ function cancelCreate() {
 function finishCreate(event: PointerEvent) {
   const active = createDrag
   if (!active || active.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelCreate()
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
   moveCreate(event)
   const row = displayedRows.value[rowOrder.value.get(active.rowId) ?? -1]?.row
   const lane = laneAt(active.rowId, event.clientY)
@@ -2482,7 +2745,7 @@ function pressScroller(event: PointerEvent) {
 function onContextMenu(event: MouseEvent) {
   // A menu opened during a pointer gesture (for example Control-click on macOS) can swallow pointerup, so every
   // gesture ends here without a proposal. An armed keyboard connection is kept.
-  if (pointerGestureActive()) cancelEdit()
+  if (pointerGestureActive()) cancelGestures('pointer-cancel')
   const el = scroller.value, area = canvas.value
   if (!props.contextMenu || !el || !area) return
   const element = event.target instanceof Element ? event.target : undefined
@@ -2518,6 +2781,76 @@ function contextTarget(element: Element | undefined): TimelineContextTarget | un
   if (vwDependency !== undefined) return { kind: 'dependency', id: vwDependency }
   const id = vwBar ?? vwProgress ?? vwConstraint ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
   return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
+}
+
+// Target events (`target-enter`, `target-leave`, `target-activate`) report bars, dependencies, rows and, with
+// `loadSelectable`, load segments as view targets. Keyboard focus counts as entering only when it is visible focus.
+function barTarget(id: string): ViewTarget {
+  return { view: 'timeline', kind: 'bar', id }
+}
+function dependencyTarget(id: string): ViewTarget {
+  return { view: 'timeline', kind: 'dependency', id }
+}
+function rowTarget(id: string): ViewTarget {
+  return { view: 'timeline', kind: 'row', id }
+}
+function loadTarget(resourceId: string, segment: TimelineLoadSegment): ViewTarget {
+  return { view: 'load', resourceId, start: segment.start, end: segment.end }
+}
+function visibleFocus(event: FocusEvent) {
+  try {
+    return (event.target as Element).matches(':focus-visible')
+  } catch {
+    return true
+  }
+}
+/** Targets entered by keyboard focus, keyed by their JSON, so that blur only leaves what focus entered. */
+const keyboardTargets = new Set<string>()
+function enterTarget(target: ViewTarget, source: ViewTargetSource) {
+  emit('target-enter', { target, source })
+}
+function leaveTarget(target: ViewTarget, source: ViewTargetSource) {
+  emit('target-leave', { target, source })
+}
+function activateTarget(target: ViewTarget, source: ViewTargetSource) {
+  emit('target-activate', { target, source })
+}
+function focusTarget(event: FocusEvent, target: ViewTarget) {
+  if (!visibleFocus(event)) return
+  keyboardTargets.add(JSON.stringify(target))
+  enterTarget(target, 'keyboard')
+}
+function blurTarget(target: ViewTarget) {
+  if (keyboardTargets.delete(JSON.stringify(target))) leaveTarget(target, 'keyboard')
+}
+function clickSource(event: MouseEvent): ViewTargetSource {
+  return event.detail === 0 ? 'keyboard' : 'pointer'
+}
+function loadSegmentKeys(event: KeyboardEvent, target: ViewTarget) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  activateTarget(target, 'keyboard')
+}
+
+// External drops (`droppable`). Only a droppable chart accepts an HTML drag, so other drags keep the browser's default
+// handling. The chart reports the row and time under the drop point and writes nothing.
+function acceptDrag(event: DragEvent) {
+  if (props.droppable && !validationError.value) event.preventDefault()
+}
+function dropOnChart(event: DragEvent) {
+  const el = scroller.value, area = canvas.value
+  if (!props.droppable || validationError.value || !el || !area) return
+  event.preventDefault()
+  const { clientX, clientY, dataTransfer } = event
+  const rect = area.getBoundingClientRect()
+  const y = clientY - rect.top - headerHeight.value
+  // The sticky header covers the scrolled content; the load rows follow the task rows.
+  const inHeader = clientY < rect.top + el.scrollTop + headerHeight.value
+  const row = !inHeader && y >= 0 && y < bodyHeight.value ? displayedRows.value[Math.floor(y / props.rowHeight)]?.row : undefined
+  const time = Math.max(stableRange.value.start, Math.min(stableRange.value.end, snapTime(timeAt(clientX))))
+  const drop: TimelineDrop = { time, clientX, clientY, dataTransfer }
+  if (row) drop.rowId = row.id
+  emit('bar-drop', drop)
 }
 
 // Tooltip slot. Shown next to a hovered bar after `tooltipDelay`, or at once next to a keyboard-focused bar, and never
@@ -2692,7 +3025,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   // The zoom factor scales the base scale linearly, so this also holds for a custom, non-linear scale.
   const span = (axis.value.toX(end) - axis.value.toX(start)) / zoom.value
   // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
-  if (drag || progressDrag || linkDrag || pinch || createDrag || constraintDrag) cancelEdit()
+  if (drag || progressDrag || linkDrag || pinch || createDrag || constraintDrag) cancelGestures('source-changed')
   hideTooltip()
   if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
   return nextTick().then(() => {
@@ -2705,8 +3038,16 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
 
 // Load histogram rows follow the task rows on the same scroll surface.
 const loadHeight = computed(() => loadHistogram.value ? (props.loadRows?.length ?? 0) * props.loadRowHeight : 0)
+// Load segments matched by `highlightedLoadTargets` and `selectedLoadTargets`, found again by range overlap.
+const loadSegmentMarks = computed(() => {
+  const segments = props.loadSegments ?? []
+  const marks = (targets: readonly LoadViewTarget[] | undefined) =>
+    new Set<TimelineLoadSegment>(targets?.length ? resolveLoadTargets(segments, targets).segments : [])
+  return { highlighted: marks(props.highlightedLoadTargets), selected: marks(props.selectedLoadTargets) }
+})
 const shownLoadRows = computed(() => {
   const histogram = loadHistogram.value
+  const marks = loadSegmentMarks.value
   if (!histogram || !props.loadRows?.length) return []
   const offset = Math.max(0, viewport.value.top - bodyHeight.value)
   const covered = Math.max(0, bodyHeight.value - viewport.value.top)
@@ -2723,6 +3064,7 @@ const shownLoadRows = computed(() => {
         return {
           segment, overload,
           key: segment.start,
+          highlighted: marks.highlighted.has(segment), selected: marks.selected.has(segment),
           left, width: axis.value.toX(segment.end) - left,
           fill: Math.min(segment.load, segment.capacity) / scale * 100,
           over: overload / scale * 100,
@@ -2785,6 +3127,7 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
     loadRowHeight: props.loadRowHeight,
     highlightedDependencyIds: props.highlightedDependencyIds,
+    highlightedBarIds: props.highlightedBarIds,
     nonWorkingPeriods: props.nonWorkingPeriods,
     statusDate: includeStatusDate ? props.statusDate : undefined,
     statusDateLabel: messages.value.statusDate,
@@ -2801,13 +3144,41 @@ async function exportPng(options: GanttPngExportOptions<R, B> = {}) {
   const { scale = 1, ...rest } = options
   return rasterizeSvg(exportSvg(rest), scale)
 }
-defineExpose({ scrollToTime, scrollToRow, cancelEdit, exportSvg, exportPng, fitToBars })
+/**
+ * Scroll a bar into view, vertically and horizontally, wait for it to render and, with `focus`, move DOM focus to it.
+ * Never throws for an ID: an unknown bar resolves `{ status: 'unknown' }`, and a bar whose row is hidden by a collapsed
+ * ancestor resolves `{ status: 'hidden-by-collapse', proxyId }` with the nearest displayed ancestor row; neither scrolls.
+ * Expanding the ancestors is up to the parent, which can call `revealBar` again after the rows are shown.
+ */
+async function revealBar(id: string, options: RevealOptions = {}): Promise<RevealResult> {
+  const bar = barById.value.get(id)
+  if (!bar) return { status: 'unknown' }
+  if (!rowOrder.value.has(bar.rowId)) {
+    let ancestor = rowById.value.get(bar.rowId)?.parentId
+    while (ancestor !== undefined && !rowOrder.value.has(ancestor)) ancestor = rowById.value.get(ancestor)?.parentId
+    return ancestor === undefined ? { status: 'unknown' } : { status: 'hidden-by-collapse', proxyId: ancestor }
+  }
+  const el = scroller.value
+  if (el) {
+    const index = rowOrder.value.get(bar.rowId)!
+    const top = index * props.rowHeight
+    const visible = Math.max(0, el.clientHeight - headerHeight.value)
+    if (top < el.scrollTop) el.scrollTop = top
+    else if (top + props.rowHeight > el.scrollTop + visible) el.scrollTop = Math.max(0, top + props.rowHeight - visible)
+    scrollBarIntoInlineView(id)
+  }
+  // The bar is rendered once the new viewport has been applied; focus it only then.
+  await nextTick()
+  if (options.focus && barById.value.has(id)) focusBar(id)
+  return { status: 'revealed' }
+}
+defineExpose({ scrollToTime, scrollToRow, cancelEdit: () => cancelEdit('api'), exportSvg, exportPng, fitToBars, revealBar })
 
 // Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
 watch(() => props.dir, detectDirection, { flush: 'post' })
 onScopeDispose(() => directionObserver?.disconnect())
 watch(rtl, async () => {
-  cancelEdit()
+  cancelGestures('source-changed')
   const start = viewport.value.left
   await nextTick()
   if (scroller.value) setScrollStart(scroller.value, start)
@@ -2843,7 +3214,7 @@ onBeforeUnmount(() => {
 })
 onUnmounted(() => {
   mounted = false
-  cancelEdit()
+  resetGestures()
   hideTooltip()
   observer?.disconnect()
   observer = undefined
@@ -2868,7 +3239,8 @@ onUnmounted(() => {
     </div>
     <div
       ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
-      @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
+      @keydown.esc="cancelEdit('escape')" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
+      @dragenter="acceptDrag" @dragover="acceptDrag" @drop="dropOnChart"
       @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveConstraint($event); moveCreate($event); moveRowDrag($event)"
       @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
       @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
@@ -2918,8 +3290,10 @@ onUnmounted(() => {
         <div v-for="row in shownRows" :key="row.row.id" class="vw-gantt-row"
           :style="{ top: `${headerHeight + row.index * rowHeight}px`, height: `${rowHeight}px` }"
           @pointerdown="pressRow($event, row.row)"
+          @pointerenter="enterTarget(rowTarget(row.row.id), 'pointer')" @pointerleave="leaveTarget(rowTarget(row.row.id), 'pointer')"
         >
           <div class="vw-gantt-row-label" :class="{ 'vw-column-group': columns?.length }"
+            @focusin="focusTarget($event, rowTarget(row.row.id))" @focusout="blurTarget(rowTarget(row.row.id))"
           >
             <div class="vw-name-column" :class="{ 'vw-tree-row': row.hasChildren || row.depth > 0, 'vw-creatable': row.creatable, 'vw-reorderable': row.reorderable }"
               :style="{ '--vw-row-depth': Math.min(row.depth, 5) }">
@@ -2946,7 +3320,7 @@ onUnmounted(() => {
               <button v-if="row.creatable" type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
                 @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
             </template>
-            <div class="vw-row-content">
+            <div class="vw-row-content" @click="activateTarget(rowTarget(row.row.id), 'pointer')">
               <slot name="row" :row="row.row" :index="row.index" :depth="row.depth" :expanded="!collapsed.has(row.row.id)">
                 <strong>{{ row.row.label }}</strong>
                 <small v-if="row.row.detail">{{ row.row.detail }}</small>
@@ -2955,7 +3329,23 @@ onUnmounted(() => {
             </div>
             <div v-for="column in columns" :key="column.id" class="vw-extra-column" :style="{ width: shownColumnWidth(column) + 'px' }">
               <slot name="cell" :row="row.row" :column="column" :value="cellValue(row.row, column)" :summary="summaries?.get(row.row.id)">
-                <input v-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
+                <template v-if="column.field && $slots['cell-editor'] && canEditCell(row.row, column)">
+                  <div v-if="editingCell(row.row, column)" class="vw-field-editor" :data-vw-cell-editor="cellKey(row.row, column)"
+                    @keydown="cellEditorKeys">
+                    <slot name="cell-editor" v-bind="cellEditorProps(row.row, column)" />
+                  </div>
+                  <button v-else type="button" class="vw-field-cell" :data-vw-cell="cellKey(row.row, column)"
+                    :aria-label="`${row.row.label} · ${column.label} ${cellValue(row.row, column)}`" :title="String(cellValue(row.row, column))"
+                    @click="startCellEditor(row.row, column, clickSource($event))"
+                    @keydown.f2.prevent="startCellEditor(row.row, column, 'keyboard')">{{ cellValue(row.row, column) }}</button>
+                </template>
+                <input v-else-if="column.field && canEditCell(row.row, column)" class="vw-cell-input vw-field-input" type="text"
+                  :data-vw-cell="cellKey(row.row, column)"
+                  :aria-label="row.row.label + ' · ' + column.label" :value="fieldText(row.row, column)"
+                  :aria-invalid="fieldInputError?.key === cellKey(row.row, column) ? 'true' : undefined"
+                  @change="commitFieldInput($event, row.row, column)" @keydown.enter.prevent="commitFieldInput($event, row.row, column)"
+                  @keydown.esc.stop.prevent="cancelFieldInput($event, row.row, column)">
+                <input v-else-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
                   :aria-label="row.row.label + ' · ' + column.label" :value="cellValue(row.row, column)"
                   @change="commitCell($event, row.row, column)" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                   @keydown.esc.stop.prevent="cancelCell($event, row.row, column)">
@@ -2976,6 +3366,7 @@ onUnmounted(() => {
             :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'vw-is-outline' : 'vw-is-solid', {
               'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': editable(bar), 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
               'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
+              'vw-is-highlighted': highlightedBarIds?.has(bar.id),
             }]"
             :style="barStyle(bar)" :data-vw-bar="bar.id"
             :title="barTitle(bar, row.overlays.get(bar.id))"
@@ -2984,7 +3375,7 @@ onUnmounted(() => {
             @keydown="editWithKeys($event, bar)" @focus="onBarFocus($event, bar)" @blur="onBarBlur(bar.id)"
             :aria-describedby="barDescribedBy(bar, row.overlays.get(bar.id))"
             @pointerdown="pressBar(bar); startEdit($event, bar)" @click="clickBar(bar, $event)"
-            @pointerenter="hoverBar(bar)" @pointerleave="leaveBar(bar)"
+            @pointerenter="hoverBar(bar); enterTarget(barTarget(bar.id), 'pointer')" @pointerleave="leaveBar(bar); leaveTarget(barTarget(bar.id), 'pointer')"
           >
             <template v-if="row.overlays.get(bar.id)?.segments">
               <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vw-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
@@ -3060,7 +3451,9 @@ onUnmounted(() => {
             :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
             :aria-describedby="line.lag?.id"
             :aria-pressed="activeDependencyId === line.id"
-            @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
+            @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)"
+            @pointerenter="enterTarget(dependencyTarget(line.id), 'pointer')" @pointerleave="leaveTarget(dependencyTarget(line.id), 'pointer')"
+            @focus="focusTarget($event, dependencyTarget(line.id))" @blur="blurTarget(dependencyTarget(line.id))" />
         </svg>
         <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vw-gantt-reconnect-handle"
           :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
@@ -3091,8 +3484,19 @@ onUnmounted(() => {
             </slot>
           </div>
           <div v-for="segment in item.segments" :key="segment.key" class="vw-gantt-load-segment"
-            :class="{ 'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0 }" role="img"
+            :class="{
+              'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0, 'vw-is-selectable': loadSelectable,
+              'vw-is-highlighted': segment.highlighted && !segment.selected, 'vw-is-selected': segment.selected,
+            }"
+            :role="loadSelectable ? 'button' : 'img'" :tabindex="loadSelectable ? 0 : undefined"
+            :aria-pressed="loadSelectable && selectedLoadTargets ? segment.selected : undefined"
             :aria-label="segment.label" :title="segment.label"
+            @pointerenter="loadSelectable && enterTarget(loadTarget(item.row.id, segment.segment), 'pointer')"
+            @pointerleave="loadSelectable && leaveTarget(loadTarget(item.row.id, segment.segment), 'pointer')"
+            @focus="loadSelectable && focusTarget($event, loadTarget(item.row.id, segment.segment))"
+            @blur="loadSelectable && blurTarget(loadTarget(item.row.id, segment.segment))"
+            @click="loadSelectable && activateTarget(loadTarget(item.row.id, segment.segment), 'pointer')"
+            @keydown="loadSelectable && loadSegmentKeys($event, loadTarget(item.row.id, segment.segment))"
             :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${segment.left}px)`, width: `${segment.width}px` }">
             <slot name="load-segment" :segment="segment.segment" :row="item.row" :peak="item.peak" :overload="segment.overload">
               <span class="vw-load-fill" :style="{ height: segment.fill + '%' }"></span>

@@ -1,6 +1,7 @@
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
+import type { TimelineFieldSpec } from './fieldEditing.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
 import type { GraphRect } from './graphView.js'
 
@@ -164,6 +165,8 @@ export interface TimelineColumn<R extends TimelineRow = TimelineRow> {
   width: number
   value: (row: R, summary?: TimelineSummary) => string | number
   editable?: boolean | ((row: R) => boolean)
+  /** Optional typed field definition. Leave it unset to keep the plain text cell behaviour. */
+  field?: TimelineFieldSpec<R>
 }
 
 export interface TimelineCellEdit {
@@ -171,6 +174,21 @@ export interface TimelineCellEdit {
   columnId: string
   before: string | number
   after: string
+}
+
+/** Why GanttChart cancelled an in-flight edit (`edit-cancel`). */
+export type TimelineEditCancelReason = 'escape' | 'source-changed' | 'api' | 'pointer-cancel' | 'hidden'
+
+/**
+ * Payload of the GanttChart `edit-cancel` event. It is emitted only when an edit was in flight: a pointer gesture
+ * (move, resize, progress, constraint, connection, create, row or column drag), an armed connection or an open
+ * `cell-editor`. `barIds` lists the bars of the gesture (empty for a create, row, column or cell edit); `cell` names
+ * the cell of a cancelled `cell-editor`.
+ */
+export interface TimelineEditCancel {
+  reason: TimelineEditCancelReason
+  barIds: readonly string[]
+  cell?: { rowId: string; columnId: string }
 }
 
 export interface TimelineBand extends TimeRange {
@@ -378,6 +396,33 @@ export interface GraphFitOptions {
   ids?: Iterable<string>
   /** Nonnegative margin in screen pixels kept around the fitted content. Default 0. */
   padding?: number
+}
+
+/**
+ * A NetworkGraph gesture that a new layout or other source change would cancel: a node drag (`node-drag` for one
+ * node, `nodes-drag` for several, including a group label drag), a resize handle drag (`node-resize`), a waypoint
+ * drag (`edge-reshape`), a connection or reconnection from arming to completion (`connect`, `reconnect`), a box
+ * selection (`box-select`), a background pan (`pan`) and a two-finger pinch (`pinch`).
+ */
+export type GraphGestureKind =
+  | 'node-drag' | 'nodes-drag' | 'node-resize' | 'edge-reshape' | 'connect' | 'reconnect' | 'box-select' | 'pan' | 'pinch'
+
+/** Payload of the NetworkGraph `gesture-start` event. */
+export interface GraphGesture {
+  kind: GraphGestureKind
+  /** 'keyboard' only for a connection or reconnection armed with Enter or Space. */
+  source: 'pointer' | 'keyboard'
+}
+
+/**
+ * Payload of the NetworkGraph `gesture-end` event. `outcome` is 'committed' when the user finished the gesture
+ * (released the pointer, or completed or dropped a connection); any proposal or `*-rejected` event it produced was
+ * emitted before. It is 'cancelled' when the gesture ended without a proposal: Escape, pointer cancellation or lost
+ * capture, a context menu, a second touch, a camera method, unmounting, or a change of source data, layout or
+ * coordinates.
+ */
+export interface GraphGestureEnd extends GraphGesture {
+  outcome: 'committed' | 'cancelled'
 }
 
 /** The element a NetworkGraph `context-menu` event refers to. */
@@ -652,6 +697,8 @@ export interface GraphExportOptions<N extends NetworkNode = NetworkNode, E exten
   theme?: SvgExportThemeInput
   /** Draw selected nodes in the selected style. Default true. */
   includeSelection?: boolean
+  /** Draw the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` in the highlighted style. Default true. */
+  includeHighlight?: boolean
   nodeLabel?: (node: N) => string
   nodeDetail?: (node: N) => string | undefined
   edgeLabel?: (edge: E) => string | undefined

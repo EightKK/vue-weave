@@ -880,6 +880,162 @@ test('dragging a node under culling emits one proposal and keeps the node render
   expect(errors).toEqual([])
 })
 
+test('highlighted nodes are display only: Delete removes the selection alone and culling does not keep them', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&delete=1&highlight=B&highlightedges=e1')
+  await expect(chainNode(page, 'B')).toHaveClass(/vw-is-highlighted/)
+  await expect(chainNode(page, 'B')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('g.vw-is-highlighted > path.vw-network-edge')).toHaveCount(1)
+  await chainNode(page, 'A').focus()
+  await page.keyboard.press('Enter')
+  await expect(chainNode(page, 'A')).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Delete')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('{"nodeIds":["A"],"edgeIds":["e0"]}')
+
+  // A highlighted node far outside the view is not rendered; it is revealed on request.
+  await openNetworkFixture(page, '?nodes=600&cull=1&highlight=N0450')
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('target events report pointer and keyboard entry and activation of nodes, edges and groups', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&targets=1&edgeselect=1&draggable=1')
+  const log = page.getByRole('status', { name: 'Target events', exact: true })
+  await chainNode(page, 'A').focus()
+  await expect(log).toHaveText('enter node A keyboard')
+  await page.keyboard.press('Enter')
+  await expect(log).toHaveText('enter node A keyboard | activate node A keyboard')
+  await page.keyboard.press('Tab')
+  await expect(log).toContainText('leave node A keyboard | enter node B keyboard')
+  const edge = page.getByRole('button', { name: 'Select edge e0', exact: true })
+  await edge.focus()
+  await page.keyboard.press('Space')
+  await expect(log).toContainText('enter edge e0 keyboard | activate edge e0 keyboard')
+  await page.getByRole('button', { name: 'Move group Outer', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(log).toContainText('enter group outer keyboard | activate group outer keyboard')
+
+  await chainNode(page, 'C').hover()
+  await expect(log).toContainText('enter node C pointer')
+  await chainNode(page, 'C').click()
+  await expect(log).toContainText('activate node C pointer')
+  await page.mouse.move(2, 2)
+  await expect(log).toContainText('leave node C pointer')
+  expect(errors).toEqual([])
+})
+
+test('revealNode brings a culled node into view and focuses it, and reports collapsed and unknown nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=600&cull=1')
+  await expect(chainNode(page, 'N0450')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('missing'))).toEqual({ status: 'unknown' })
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('N0450', { focus: true, scale: 1 }))).toEqual({ status: 'revealed' })
+  await expect(chainNode(page, 'N0450')).toBeFocused()
+  expect((await readCamera(page)).scale).toBe(1)
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const box = (await chainNode(page, 'N0450').boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - (stage.x + stage.width / 2))).toBeLessThan(2)
+
+  await openNetworkFixture(page, '?nodes=40&groups=chain&collapse=g1&highlight=N0013')
+  await expect(page.locator('[data-vw-node="g1"]')).toHaveClass(/vw-is-highlighted/)
+  const before = await readCamera(page)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('N0012', { focus: true })))
+    .toEqual({ status: 'hidden-by-collapse', proxyId: 'g1' })
+  expect(await readCamera(page)).toEqual(before)
+  expect(await page.evaluate(() => (window as any).__vw.graph().revealNode('g1'))).toEqual({ status: 'revealed' })
+  expect(errors).toEqual([])
+})
+
+test('the preserve routing policy keeps an external port route while an unrelated node is dragged', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const paths = () => page.locator('[data-vw-edge]').evaluateAll(list => Object.fromEntries(list.map(item => [item.getAttribute('data-vw-edge'), item.getAttribute('d')])))
+  for (const policy of ['preserve', 'builtin']) {
+    await openNetworkFixture(page, `?preset=ports&draggable=1&edgeselect=1&style=orthogonal&policy=${policy}`)
+    const external = await page.evaluate(() => (window as any).__vw.external.path as string)
+    const initial = await paths()
+    if (policy === 'preserve') expect(initial.ab).toBe(external)
+    else expect(initial.ab).not.toBe(external)
+    // The drag preview updates the dragged node's edges locally; it must equal the full routing of the committed move.
+    for (const [name, count] of [['D', '1'], ['B', '2']] as const) {
+      const node = chainNode(page, name)
+      const box = (await node.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 70, { steps: 5 })
+      const preview = await paths()
+      if (name === 'D') {
+        expect(preview.ab).toBe(initial.ab)
+        expect(preview.e2).not.toBe(initial.e2)
+      } else expect(preview.ab).not.toBe(initial.ab)
+      await page.mouse.up()
+      await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText(count)
+      expect(await paths()).toEqual(preview)
+    }
+    // The SVG export draws the same routes as the screen, preserved ones included.
+    const exported = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+    const exportedPaths = [...exported.matchAll(/<path d="([^"]+)"[^>]*marker-end=/g)].map(match => match[1]).sort()
+    expect(exportedPaths).toEqual(Object.values(await paths()).sort())
+  }
+  expect(errors).toEqual([])
+})
+
+test('getTargetClientRect measures nodes, edges and groups and setViewportCenter restores a saved centre', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?preset=groups&edgeselect=1')
+  const rect = (target: unknown) => page.evaluate(value => {
+    const result = (window as any).__vw.graph().getTargetClientRect(value) as DOMRect | undefined
+    return result && { x: result.x, y: result.y, width: result.width, height: result.height }
+  }, target)
+  const close = (actual: { x: number; y: number; width: number; height: number } | undefined, expected: { x: number; y: number; width: number; height: number }) => {
+    expect(actual).toBeDefined()
+    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(actual![key] - expected[key])).toBeLessThan(1.5)
+  }
+  // The drawn node rectangle is inset by 2 chart units on every side of the layout box.
+  const nodeBox = async (name: string) => {
+    const [drawn, scale] = [(await chainNode(page, name).locator('rect').boundingBox())!, (await readCamera(page)).scale]
+    return { x: drawn.x - 2 * scale, y: drawn.y - 2 * scale, width: drawn.width + 4 * scale, height: drawn.height + 4 * scale }
+  }
+  close(await rect({ view: 'graph', kind: 'node', id: 'B' }), await nodeBox('B'))
+  close(await rect({ view: 'graph', kind: 'group', id: 'outer' }), (await page.locator('.vw-network-group', { hasText: 'Outer' }).locator('rect').boundingBox())!)
+  const edge = await rect({ view: 'graph', kind: 'edge', id: 'e0' })
+  expect(edge!.width).toBeGreaterThan(0)
+  expect(await rect({ view: 'graph', kind: 'node', id: 'missing' })).toBeUndefined()
+  expect(await rect({ view: 'timeline', kind: 'bar', id: 'B' })).toBeUndefined()
+
+  const saved = await page.evaluate(() => ({ center: (window as any).__vw.graph().getViewportCenter(), scale: (window as any).__vw.graph().getViewport().scale }))
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 0.5 }))
+  await page.evaluate(({ center, scale }) => (window as any).__vw.graph().setViewportCenter(center, scale), saved)
+  const restored = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
+  expect(restored.x).toBeCloseTo(saved.center.x, 6)
+  expect(restored.y).toBeCloseTo(saved.center.y, 6)
+  expect((await readCamera(page)).scale).toBe(saved.scale)
+  // A saved centre and scale restore the same view in a container of another size (the translation differs).
+  const stageBefore = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const translation = await readCamera(page)
+  await page.setViewportSize({ width: 820, height: 640 })
+  await expect.poll(async () => (await page.getByLabel('Network graph', { exact: true }).boundingBox())!.width).not.toBe(stageBefore.width)
+  // Restore until the graph has measured its new size (ResizeObserver runs asynchronously); the translation then differs.
+  await expect.poll(async () => {
+    await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 0.5 }))
+    await page.evaluate(({ center, scale }) => (window as any).__vw.graph().setViewportCenter(center, scale), saved)
+    return (await readCamera(page)).x
+  }).not.toBe(translation.x)
+  const resized = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
+  expect(resized.x).toBeCloseTo(saved.center.x, 6)
+  expect(resized.y).toBeCloseTo(saved.center.y, 6)
+  expect((await readCamera(page)).scale).toBe(saved.scale)
+  // Moving the camera moves the measured rectangle with it.
+  await page.evaluate(() => (window as any).__vw.graph().setViewport({ ...(window as any).__vw.graph().getViewport(), x: 10 }))
+  close(await rect({ view: 'graph', kind: 'node', id: 'B' }), await nodeBox('B'))
+  expect(errors).toEqual([])
+})
+
 type TouchPoint = { x: number; y: number; id: number }
 async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>, type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) {
   await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
@@ -4440,4 +4596,1175 @@ test('gantt Ctrl+wheel does nothing without wheelZoom', async ({ page }) => {
   await expect(zoom).toHaveText('100%')
   await expect(out('Zoom events')).toHaveText('')
   expect(errors).toEqual([])
+})
+
+async function openLinkedGanttFixture(page: Page, search = '') {
+  await page.route('**/linked-gantt-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/linked-gantt-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/linked-gantt.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/linked-gantt-test/' + search)
+  const chart = page.getByRole('region', { name: 'Linked timeline', exact: true })
+  await expect(chart).toBeVisible()
+  const out = (name: string) => page.getByRole('status', { name, exact: true })
+  const json = async (name: string) => JSON.parse((await out(name).textContent()) || 'null')
+  return { chart, out, json }
+}
+type LinkedFixture = { replaceBars(): void; highlight(ids: string[]): void }
+
+test('gantt highlighted bars are display-only: not deleted with the selection and no gesture cancel', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const taskA = chart.getByRole('button', { name: 'Task A 2–6', exact: true })
+  const taskB = chart.getByRole('button', { name: 'Task B 8–12', exact: true })
+  await expect(taskB).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(taskB).toHaveAttribute('aria-pressed', 'false')
+  await expect(taskA).toHaveAttribute('aria-pressed', 'true')
+  await taskA.press('Delete')
+  await expect.poll(() => json('Last delete')).toEqual(['a'])
+
+  // Changing the highlight during a drag neither cancels it nor moves the highlighted bar.
+  const box = (await taskA.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.highlight(['a', 'b']))
+  // The accessible name follows the drag preview, so the dragged bar is found by its ID here.
+  const dragged = chart.locator('[data-vw-bar="a"]')
+  await expect(dragged).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(dragged).toHaveClass(/\bvw-is-dragging\b/)
+  await page.mouse.up()
+  await expect.poll(() => json('Last edit')).toMatchObject({ id: 'a', before: { start: 2, end: 6 }, after: { start: 4, end: 8 }, mode: 'move' })
+  await expect(out('Cancels')).toHaveText('0')
+  expect(errors).toEqual([])
+})
+
+test('gantt bars and selectable load segments report target events by pointer and keyboard', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).hover()
+  await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+
+  const segment = chart.getByRole('button', { name: 'Developers 2–6: load 2 / capacity 1, overloaded by 1', exact: true })
+  await segment.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(segment).toBeFocused()
+  await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await page.keyboard.press('Enter')
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await page.keyboard.press('Tab')
+  await expect.poll(() => json('Last target leave')).toEqual({ target: { view: 'load', resourceId: 'dev', start: 2, end: 6 }, source: 'keyboard' })
+  await expect.poll(() => json('Last target enter')).toMatchObject({ target: { view: 'load', start: 6, end: 12 }, source: 'keyboard' })
+
+  // Focusing the load rows scrolled the task rows out of the window; scroll back to the top.
+  await chart.evaluate(element => { element.scrollTop = 0 })
+  await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).click()
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+  expect(errors).toEqual([])
+})
+
+test('gantt revealBar scrolls to an off-screen bar and focuses it, and reports collapsed and unknown bars', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  const far = chart.getByRole('button', { name: 'Far task 180–186', exact: true })
+  await expect(far).toHaveCount(0)
+  await page.getByRole('button', { name: 'Reveal far task', exact: true }).click()
+  await expect(far).toBeFocused()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'revealed' })
+  await expect(far).toBeInViewport()
+
+  await page.getByRole('button', { name: 'Reveal hidden task', exact: true }).click()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'hidden-by-collapse', proxyId: 'P' })
+  await page.getByRole('button', { name: 'Reveal unknown task', exact: true }).click()
+  await expect.poll(() => json('Reveal result')).toEqual({ status: 'unknown' })
+  expect(errors).toEqual([])
+})
+
+test('gantt droppable reports external drops with row and time and writes nothing', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, json } = await openLinkedGanttFixture(page)
+  const box = (await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).boundingBox())!
+  const accepted = await chart.evaluate((element, point) => {
+    const target = document.elementFromPoint(point.x, point.y)!
+    const dataTransfer = new DataTransfer()
+    dataTransfer.setData('text/plain', 'backlog-7')
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, dataTransfer })
+    target.dispatchEvent(over)
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, dataTransfer }))
+    return over.defaultPrevented && element.contains(target)
+  }, { x: box.x + box.width + 40, y: box.y + box.height / 2 })
+  expect(accepted).toBe(true)
+  await expect.poll(() => json('Last drop')).toEqual({ time: 14, rowId: 'r2', text: 'backlog-7' })
+  await expect(chart.getByRole('button', { name: /backlog/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('gantt typed field cells edit through the cell-editor slot with keyboard commit, cancel and focus return', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const cell = chart.getByRole('button', { name: 'Row 1 · Effort 3', exact: true })
+  const editor = chart.getByRole('textbox', { name: 'Effort editor', exact: true })
+  await cell.focus()
+  await page.keyboard.press('Enter')
+  await expect(editor).toBeFocused()
+  await editor.fill('abc')
+  await editor.press('Enter')
+  await expect(chart.getByRole('alert')).toHaveText(/Not a number/)
+  await expect(editor).toBeFocused()
+  await editor.fill('13')
+  await editor.press('Enter')
+  await expect(chart.getByRole('alert')).toHaveText('Thirteen is not allowed')
+  await editor.fill('5')
+  await editor.press('Enter')
+  await expect(cell).toBeFocused()
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r1', columnId: 'effort', fieldId: 'effort', before: 3, after: 5, source: 'keyboard' })
+  await expect(out('Field edits')).toHaveText('1')
+
+  await page.keyboard.press('F2')
+  await expect(editor).toBeFocused()
+  await editor.fill('8')
+  await editor.press('Escape')
+  await expect(cell).toBeFocused()
+  await expect(out('Field edits')).toHaveText('1')
+  await expect.poll(() => json('Last cancel')).toEqual({ reason: 'escape', barIds: [], cell: { rowId: 'r1', columnId: 'effort' } })
+  expect(errors).toEqual([])
+})
+
+test('gantt built-in field input parses the text and emits field-edit only', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin')
+  const input = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await expect(input).toHaveValue('')
+  await input.fill('-1')
+  await input.press('Enter')
+  await expect(input).toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('0')
+  await input.press('Escape')
+  await expect(input).toHaveValue('')
+  await expect(input).not.toHaveAttribute('aria-invalid', 'true')
+  await input.fill('0')
+  await input.press('Enter')
+  await expect(input).toBeFocused()
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r2', columnId: 'effort', fieldId: 'effort', before: null, after: 0, source: 'keyboard' })
+  expect(errors).toEqual([])
+})
+
+test('gantt edit-cancel reports gestures and cell editors cancelled by new source data', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out, json } = await openLinkedGanttFixture(page)
+  const taskB = chart.getByRole('button', { name: 'Task B 8–12', exact: true })
+  const box = (await taskB.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  const dragged = chart.locator('[data-vw-bar="b"]')
+  await expect(dragged).toHaveClass(/\bvw-is-dragging\b/)
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.replaceBars())
+  await expect(out('Cancels')).toHaveText('1')
+  expect(await json('Last cancel')).toEqual({ reason: 'source-changed', barIds: ['b'] })
+  await page.mouse.up()
+  await expect(out('Edits')).toHaveText('0')
+
+  await chart.getByRole('button', { name: 'Row 1 · Effort 3', exact: true }).click()
+  await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: 'Replace rows', exact: true }).click()
+  await expect(out('Cancels')).toHaveText('2')
+  expect(await json('Last cancel')).toEqual({ reason: 'source-changed', barIds: [], cell: { rowId: 'r1', columnId: 'effort' } })
+  await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+// ---- reference planning and persistence demos (examples/ResourcePlanningDemo.vue, examples/PersistenceDemo.vue) ----
+async function openResourcePlanning(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Resource planning', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Resource plan', exact: true })
+  await expect(chart).toBeVisible()
+  return { errors, chart, notice: page.getByRole('status', { name: 'Planning notice', exact: true }), summary: page.getByRole('status', { name: 'Plan summary', exact: true }) }
+}
+
+test('resource planning places an unplanned task from the backlog by keyboard and refuses an unplaced predecessor', async ({ page }) => {
+  const { errors, chart, notice, summary } = await openResourcePlanning(page)
+  // Task A needs two resources: it has two bars, one set of dates.
+  await expect(chart.getByRole('button', { name: 'Mold A · Press 1 08:00–11:00', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })).toBeVisible()
+  await expect(summary).toContainText('Calculated with scheduleTasks')
+  await expect(summary).toContainText('overloaded interval')
+
+  // Inspect E depends on Rework D, which has no dates yet: refused as a diagnostic, never silently dropped.
+  await page.getByRole('button', { name: 'Place Inspect E', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirm placement of Inspect E', exact: true }).click()
+  await expect(notice).toContainText('Inspect E depends on Rework D, which is not placed yet')
+  await expect(page.getByRole('region', { name: /^Preview/ })).toHaveCount(0)
+
+  await page.getByRole('searchbox', { name: 'Search unplanned tasks', exact: true }).fill('rework')
+  await expect(page.getByRole('button', { name: 'Place Inspect E', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Place Rework D', exact: true }).click()
+  await page.getByLabel('Row for Rework D', { exact: true }).selectOption({ label: 'Press 2' })
+  await page.getByLabel('Start for Rework D', { exact: true }).selectOption({ label: '08:00' })
+  await page.getByRole('button', { name: 'Confirm placement of Rework D', exact: true }).click()
+  const preview = page.getByRole('region', { name: 'Preview: placed Rework D', exact: true })
+  await expect(preview).toContainText('Calculated with scheduleTasks')
+  await expect(chart.getByRole('button', { name: /^Rework D/ })).toHaveCount(0)
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Rework D · Press 2 08:00–10:00', exact: true })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Unplanned task list' }).getByText('Rework D')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('resource planning moves a bar to another resource as one change, undoes it once and reveals diagnostics', async ({ page }) => {
+  const { errors, chart, notice, summary } = await openResourcePlanning(page)
+  const before = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await before.press('ArrowDown')
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await expect(preview).toContainText('No overloaded interval')
+  // Nothing changes until the preview is applied.
+  await expect(before).toBeVisible()
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  const after = chart.getByRole('button', { name: 'Mold B · Press 2 09:00–11:00', exact: true })
+  await expect(after).toBeVisible()
+  await expect(after).toBeFocused()
+  await expect(before).toHaveCount(0)
+  await expect(summary).toContainText('No overloaded interval')
+
+  // One undo restores both the assignment and the load.
+  await page.getByRole('button', { name: 'Undo planning change', exact: true }).click()
+  await expect(before).toBeVisible()
+  await expect(after).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Undo planning change', exact: true })).toBeDisabled()
+  await expect(summary).toContainText('overloaded interval')
+
+  // A diagnostic highlights and reveals its bars.
+  await page.getByRole('button', { name: /Resource overload/ }).first().click()
+  await expect(notice).toContainText('Highlighted 3 bar(s)')
+  await expect(chart.locator('.vw-is-highlighted')).toHaveCount(3)
+
+  // A horizontal move changes the task's dates for every projection.
+  await chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true }).press('ArrowRight')
+  const horizontal = page.getByRole('region', { name: 'Preview: Mold A rescheduled', exact: true })
+  await expect(horizontal).toContainText('every row that shows it')
+  await horizontal.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Mold A · Press 1 08:15–11:15', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Mold A · Crew 08:15–11:15', exact: true })).toBeVisible()
+
+  // Leveling says which calculation ran and does not claim more than it did.
+  await page.getByRole('combobox', { name: 'Capacity policy' }).selectOption('level')
+  await expect(summary).toContainText('Calculated with levelResources')
+  await expect(summary).not.toContainText('Not resolved')
+  expect(errors).toEqual([])
+})
+
+async function openPersistence(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Saved editing', exact: true }).click()
+  const chart = page.getByRole('region', { name: 'Saved timeline', exact: true })
+  await expect(chart).toBeVisible()
+  return {
+    errors, chart, saveStatus: page.getByRole('status', { name: 'Save status', exact: true }),
+    server: (label: string) => page.getByRole('radio', { name: label, exact: true }),
+    weld: (time: string) => chart.getByRole('button', { name: 'Weld frames ' + time, exact: true }),
+  }
+}
+
+test('saved editing leaves the state unchanged when the server rejects a save', async ({ page }) => {
+  const { errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Reject').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo saved change', exact: true })).toBeDisabled()
+  await expect(page.getByText('Server version v1 · 0 commits')).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss save message', exact: true }).click()
+  await expect(saveStatus).toContainText('Accepted version v1')
+  expect(errors).toEqual([])
+})
+
+test('saved editing shows an unknown result and reconciles it with the server instead of resending', async ({ page }) => {
+  const { errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Result unknown').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Saving')
+  await expect(saveStatus).toContainText('Result unknown')
+  // The client neither commits nor resends: the accepted state is unchanged and the server holds one commit.
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByText('Server version v2 · 1 commits')).toBeVisible()
+  await page.getByRole('button', { name: 'Check with server', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'Last action', exact: true })).toContainText('The server had applied the save')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v2')
+  await expect(page.getByText('Server version v2 · 1 commits')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing detects a version conflict, reloads the latest version and restores snapshots through the server', async ({ page }) => {
+  const { chart, errors, saveStatus, server, weld } = await openPersistence(page)
+  await server('Version conflict').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(saveStatus).toContainText('Version conflict')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await page.getByRole('button', { name: 'Load latest version', exact: true }).click()
+  await expect(chart.getByText('Site survey (edited remotely)')).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Last action', exact: true })).toContainText('Loaded version')
+  await expect(page.getByRole('status', { name: 'History reset', exact: true })).toContainText('History was reset')
+
+  await server('Accept').check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  // Undo is a restore transaction: the server gets a new version, the history position moves back once.
+  await page.getByRole('button', { name: 'Undo saved change', exact: true }).click()
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo saved change', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Redo saved change', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Redo saved change', exact: true }).click()
+  await expect(weld('13:15–17:15')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing edits typed cells with number, select and checkbox editors', async ({ page }) => {
+  const { chart, errors, saveStatus } = await openPersistence(page)
+  await chart.getByRole('button', { name: /^Weld frames · Effort/ }).click()
+  const effort = chart.getByRole('textbox', { name: 'Effort editor', exact: true })
+  await expect(effort).toBeFocused()
+  await effort.fill('abc')
+  await effort.press('Enter')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await expect(chart.getByRole('alert')).toBeVisible()
+  await effort.fill('0')
+  await effort.press('Enter')
+  await expect(chart.getByRole('button', { name: 'Weld frames · Effort 0', exact: true })).toBeFocused()
+  await expect(saveStatus).toContainText('Accepted version v2')
+  await chart.getByRole('button', { name: 'Weld frames · Effort 0', exact: true }).click()
+  await chart.getByRole('textbox', { name: 'Effort editor', exact: true }).fill('7.25')
+  await chart.getByRole('textbox', { name: 'Effort editor', exact: true }).press('Enter')
+  // The server normalises the stored effort to one decimal.
+  await expect(chart.getByRole('button', { name: 'Weld frames · Effort 7.3', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v3')
+
+  await chart.getByRole('button', { name: /^Paint · Owner/ }).click()
+  await chart.getByRole('combobox', { name: 'Owner editor', exact: true }).selectOption({ label: 'Ben' })
+  await expect(chart.getByRole('button', { name: 'Paint · Owner Ben', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v4')
+  await chart.getByRole('button', { name: 'Paint · Done No', exact: true }).click()
+  await chart.getByRole('checkbox', { name: 'Done editor', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Paint · Done Yes', exact: true })).toBeVisible()
+  await expect(saveStatus).toContainText('Accepted version v5')
+  // The time field reads UTC text and moves the bar through the same transaction.
+  await chart.getByRole('button', { name: /^Paint · Start/ }).click()
+  await chart.getByRole('textbox', { name: 'Start editor', exact: true }).fill('2026-11-09 18:00')
+  await chart.getByRole('textbox', { name: 'Start editor', exact: true }).press('Enter')
+  await expect(chart.getByRole('button', { name: 'Paint 18:00–20:00', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('saved editing writes JSON and restores the same IDs, document and view settings', async ({ page }) => {
+  const { chart, errors, weld } = await openPersistence(page)
+  await page.getByRole('searchbox', { name: 'Search tasks', exact: true }).fill('Weld')
+  await expect(chart.getByRole('button', { name: /^Site survey/ })).toHaveCount(0)
+  await page.getByRole('combobox', { name: 'Sort by' }).selectOption('effort')
+  await page.getByRole('checkbox', { name: 'Show Done column' }).uncheck()
+  await page.getByRole('button', { name: 'Save JSON', exact: true }).click()
+  const json = page.getByRole('textbox', { name: 'Snapshot JSON', exact: true })
+  const text = await json.inputValue()
+  const saved = JSON.parse(text) as { schemaVersion: number; kind: string; data: { rows: { id: string }[]; bars: { id: string }[] }; view: { timeline: { search: { query: string }; sort: unknown[]; columns: { id: string; visible: boolean }[] } } }
+  expect(saved.schemaVersion).toBe(1)
+  expect(saved.data.rows.map(row => row.id)).toEqual(['survey', 'design', 'weld', 'paint', 'ship'])
+  expect(saved.view.timeline.search.query).toBe('Weld')
+  expect(saved.view.timeline.columns.find(column => column.id === 'done')?.visible).toBe(false)
+
+  // Change the document and the view, then load the JSON back.
+  await page.getByRole('searchbox', { name: 'Search tasks', exact: true }).fill('')
+  await page.getByRole('combobox', { name: 'Sort by' }).selectOption('')
+  await page.getByRole('checkbox', { name: 'Show Done column' }).check()
+  await weld('13:00–17:00').press('ArrowRight')
+  await expect(page.getByRole('status', { name: 'Save status', exact: true })).toContainText('Accepted version v2')
+  await expect(weld('13:15–17:15')).toBeVisible()
+  await json.fill(text)
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Loaded 5 tasks and the saved view')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  await expect(page.getByRole('searchbox', { name: 'Search tasks', exact: true })).toHaveValue('Weld')
+  await expect(page.getByRole('combobox', { name: 'Sort by' })).toHaveValue('effort')
+  await expect(page.getByRole('checkbox', { name: 'Show Done column' })).not.toBeChecked()
+  await expect(chart.getByRole('button', { name: /^Site survey/ })).toHaveCount(0)
+
+  // Broken JSON is reported and changes nothing.
+  await json.fill(text.replace('"schemaVersion": 1', '"schemaVersion": 7'))
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  // R10: a reference to an unknown row is found before anything is applied; the document and the view stay as they are.
+  const broken = JSON.parse(text) as { data: { bars: { rowId: string }[] }; view: { timeline: { search: { query: string } } } }
+  broken.data.bars[0]!.rowId = 'ghost'
+  broken.view.timeline.search.query = ''
+  await json.fill(JSON.stringify(broken))
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
+  await expect(page.getByRole('searchbox', { name: 'Search tasks', exact: true })).toHaveValue('Weld')
+  await expect(weld('13:00–17:00')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+async function openLinkedDemo(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Linked views', exact: true }).click()
+  const demo = page.locator('section[aria-labelledby="linked-title"]')
+  await expect(demo.getByRole('button', { name: /^Cut order A 10:00/ })).toBeVisible()
+  return {
+    errors, demo,
+    node: (label: string) => demo.getByRole('button', { name: new RegExp('^' + label + ' ES ') }),
+    bar: (label: string) => demo.getByRole('button', { name: new RegExp('^' + label + ' \\d\\d:\\d\\d') }),
+    summary: demo.getByRole('status', { name: 'Linked selection' }),
+    navigation: demo.getByRole('status', { name: 'Navigation message' }),
+  }
+}
+
+test('linked views: a graph selection highlights bars without selecting or deleting them', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  await node('Cut order B').click()
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  await expect(summary).toContainText('Selected in graph: Cut order B')
+  await expect(bar('Cut order B')).toHaveClass(/\bvw-is-highlighted\b/)
+  // The timeline owns no selection: the highlighted bar is not selected.
+  await expect(bar('Cut order B')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-selected\b/)
+  await expect(bar('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // The impact range adds the dependent tasks as highlights too.
+  await demo.getByRole('combobox', { name: 'Impact direction' }).selectOption('forward')
+  await demo.getByRole('combobox', { name: 'Impact hop limit' }).selectOption('1')
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('combobox', { name: 'Impact hop limit' }).selectOption('all')
+  await expect(bar('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'false')
+
+  // Delete on a highlighted bar proposes only that bar; the other highlighted bars and the selected node are not included.
+  await bar('Inspect').focus()
+  await page.keyboard.press('Delete')
+  await expect(demo.getByLabel('Delete proposals')).toHaveText(/Delete proposals: 1\b/)
+  await expect(demo.getByLabel('Delete proposals').locator('..')).toContainText('last: Inspect;')
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  await expect(bar('Inspect')).toHaveAttribute('aria-pressed', 'false')
+
+  // Selecting a bar moves the selection to the timeline and clears the graph's own selection: no ping-pong.
+  await bar('Pack').click()
+  await expect(summary).toContainText('Selected in timeline: Pack')
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'true')
+  await expect(node('Pack')).toHaveAttribute('aria-pressed', 'false')
+  await expect(node('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'false')
+  await page.keyboard.press('Escape')
+  await page.mouse.move(2, 2)
+  await expect(summary).toContainText('Nothing selected')
+  await expect(node('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: hover propagates to the other views and clears on leave', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  await bar('Cut order A').hover()
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(summary).toContainText('Hovering: Cut order A')
+  // Load linked by hover is highlighted through `highlightedLoadTargets`; the segments are matched by range overlap.
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted')).toHaveCount(2)
+  await expect(node('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('heading', { name: 'Linked planning views' }).hover()
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted, .vw-gantt-load-segment.vw-is-selected')).toHaveCount(0)
+  await expect(summary).toContainText('Nothing selected')
+
+  await node('Inspect').hover()
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Inspect')).toHaveAttribute('aria-pressed', 'false')
+  await page.mouse.move(2, 2)
+  await expect(bar('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: an overloaded load segment highlights the competing tasks', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  const overloaded = demo.getByRole('button', { name: 'CNC cell 10:00–12:00: load 2 / capacity 1, overloaded by 1' })
+  await overloaded.click()
+  await expect(summary).toContainText('Selected in load: Cut order A, Cut order B')
+  for (const label of ['Cut order A', 'Cut order B']) {
+    await expect(node(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(node(label)).toHaveAttribute('aria-pressed', 'false')
+    await expect(bar(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(bar(label)).toHaveAttribute('aria-pressed', 'false')
+  }
+  await expect(node('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-selected')).toHaveCount(1)
+  await expect(overloaded).toHaveClass(/\bvw-is-selected\b/)
+  await expect(overloaded).toHaveAttribute('aria-pressed', 'true')
+  // The segment after the overload belongs to cutting order A alone.
+  await page.mouse.move(2, 2)
+  const following = demo.getByRole('button', { name: 'CNC cell 12:00–13:00: load 1 / capacity 1' })
+  await following.focus()
+  await following.press('Enter')
+  await expect(summary).toHaveText(/^Selected in load: Cut order A(\.|$)/)
+  await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: the context toolbar follows the selected node and hides for hidden targets', async ({ page }) => {
+  const { errors, demo, node, summary } = await openLinkedDemo(page)
+  const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+  await expect(toolbar).toBeHidden()
+  await node('Inspect').click()
+  await expect(toolbar).toBeVisible()
+  const place = async () => {
+    const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+    return { t: t!, n: n! }
+  }
+  const before = await place()
+  expect(Math.abs(before.t.x + before.t.width / 2 - (before.n.x + before.n.width / 2))).toBeLessThan(6)
+  const fontSize = await toolbar.evaluate(element => getComputedStyle(element).fontSize)
+  // Zooming moves and scales the node, and the toolbar follows it without scaling its text.
+  await demo.getByRole('button', { name: 'Zoom out' }).first().click()
+  await expect.poll(async () => (await place()).n.width).toBeLessThan(before.n.width)
+  const after = await place()
+  expect(Math.abs(after.t.x + after.t.width / 2 - (after.n.x + after.n.width / 2))).toBeLessThan(6)
+  expect(after.t.width).toBeCloseTo(before.t.width, 0)
+  expect(await toolbar.evaluate(element => getComputedStyle(element).fontSize)).toBe(fontSize)
+  // The toolbar's own action goes to the counterpart in the timeline.
+  await toolbar.getByRole('button', { name: 'Show in timeline' }).click()
+  await expect(demo.getByRole('status', { name: 'Navigation message' })).toContainText('Showing Inspect in the timeline.')
+
+  // A node hidden by a collapsed group has no on-screen rectangle: the toolbar goes away.
+  await node('Cut order A').click()
+  await expect(toolbar).toBeVisible()
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(toolbar).toBeHidden()
+  await expect(summary).toContainText('Selected in graph: Cut order A')
+  expect(errors).toEqual([])
+})
+
+test('linked views: reveal handles collapsed groups, collapsed rows and unknown targets', async ({ page }) => {
+  const { errors, demo, node, bar, navigation } = await openLinkedDemo(page)
+  // Collapse the graph group, then select the bar of a hidden member in the timeline.
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(node('Cut order A')).toHaveCount(0)
+  await bar('Cut order A').click()
+  // The hidden node highlights its proxy.
+  await expect(demo.getByRole('button', { name: /^Cutting cell 2 nodes/ })).toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('button', { name: 'Go to graph' }).click()
+  await expect(navigation).toContainText('Cut order A is hidden inside the collapsed group “Cutting cell”.')
+  await expect(node('Cut order A')).toHaveCount(0)
+  await navigation.getByRole('button', { name: 'Expand and show' }).click()
+  await expect(navigation).toContainText('Showing Cut order A in the graph.')
+  await expect(node('Cut order A')).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'Collapse group Cutting cell' })).toBeVisible()
+  // Reaching the node by "go to" did not change the selection.
+  await expect(bar('Cut order A')).toHaveAttribute('aria-pressed', 'true')
+
+  // The same for a collapsed timeline row.
+  await demo.getByRole('button', { name: 'Collapse Cutting cell' }).click()
+  await expect(bar('Cut order B')).toHaveCount(0)
+  await node('Cut order B').click()
+  await demo.getByRole('button', { name: 'Go to timeline' }).click()
+  await expect(navigation).toContainText('Cut order B is hidden inside the collapsed row “Cutting cell”.')
+  await navigation.getByRole('button', { name: 'Expand and show' }).click()
+  await expect(navigation).toContainText('Showing Cut order B in the timeline.')
+  await expect(bar('Cut order B')).toBeVisible()
+
+  // An unknown task is reported and nothing moves or changes.
+  await demo.getByRole('combobox', { name: 'Task to go to' }).selectOption('retired')
+  await demo.getByRole('button', { name: 'Go to timeline' }).click()
+  await expect(navigation).toContainText('No timeline bar is known for “retired”.')
+  await expect(navigation.getByRole('button', { name: 'Expand and show' })).toHaveCount(0)
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+async function openAsyncDemo(page: Page) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Async layout', exact: true }).click()
+  const demo = page.locator('section[aria-labelledby="async-title"]')
+  await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
+  return {
+    errors, demo,
+    frame: demo.getByLabel('Displayed frame'),
+    status: demo.getByRole('status', { name: 'Layout status' }),
+    log: demo.getByRole('list', { name: 'Layout responses' }),
+  }
+}
+
+test('async layout: responses that arrive out of order never replace the newest frame', async ({ page }) => {
+  const { errors, demo, frame, status, log } = await openAsyncDemo(page)
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await expect(status).toContainText('Layout up to date')
+  // A manual camera: new frames must not re-fit it, because the layout function keeps its identity.
+  await demo.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  const camera = () => demo.locator('svg g[transform^="translate("]').first().getAttribute('transform')
+  const zoomed = await camera()
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('reverse')
+  // Request A (the shortcut link) is answered after request B (collapsing Intake); only B's frame may be shown.
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(status).toContainText('Computing layout')
+  await demo.getByRole('button', { name: 'Collapse group Intake' }).click()
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(log.getByRole('listitem').filter({ hasText: 'discarded (superseded)' })).toHaveCount(1, { timeout: 5000 })
+  await expect(status).toContainText('Layout up to date')
+  // The late, superseded response did not bring the 9-link frame back.
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(demo.getByRole('button', { name: /^Intake 3 nodes/ })).toBeVisible()
+  expect(await camera()).toBe(zoomed)
+  expect(errors).toEqual([])
+})
+
+test('async layout: toggling collapse while a layout is pending does not throw', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('button', { name: 'Collapse group Intake' }).click()
+  await expect(status).toContainText('Computing layout')
+  // The displayed frame is still the old one while the new input is pending.
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await demo.getByRole('button', { name: 'Expand all groups' }).click()
+  await demo.getByRole('button', { name: 'Collapse group Assembly' }).click()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(status).toContainText('Layout up to date', { timeout: 8000 })
+  await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
+  await expect(demo.getByRole('button', { name: /^Assembly 3 nodes/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('async layout: a failing service keeps the last consistent frame and recovers', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await demo.getByRole('checkbox', { name: 'Layout service fails' }).check()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByRole('alert')).toContainText('Showing the last consistent layout.')
+  // The new link is drawn at once on the previous boxes with a temporary route; the failed layout is not shown.
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
+  await demo.getByRole('checkbox', { name: 'Layout service fails' }).uncheck()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).uncheck()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(demo.getByRole('alert')).toHaveCount(0)
+  await expect(status).toContainText('Layout up to date')
+  expect(errors).toEqual([])
+})
+
+test('async layout: the preserve routing policy keeps the engine routes of ported edges, also in a Worker', async ({ page }) => {
+  const { errors, demo, frame } = await openAsyncDemo(page)
+  const paths = () => demo.locator('path.vw-network-edge').evaluateAll(list => list.map(path => path.getAttribute('d')).join('|'))
+  // Wait for the engine's frame: the synchronous initial frame is provisional and its paths are not the engine's.
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Layout up to date')
+  const builtin = await paths()
+  await demo.getByRole('combobox', { name: 'Routing policy' }).selectOption('preserve')
+  await expect.poll(paths).not.toBe(builtin)
+  const preserved = await paths()
+  // The engine draws elbows from port to port; under 'preserve' they are kept instead of the built-in curves.
+  expect(preserved.split('|').every(path => / H .* V .* H /.test(path))).toBe(true)
+  // A link connected while a layout is pending is drawn at once (temporary route) and the graph stays valid.
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Computing layout')
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Layout up to date', { timeout: 8000 })
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  // The same computation in a Web Worker gives the same routes.
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('fast')
+  await demo.getByRole('checkbox', { name: 'Compute in a Web Worker' }).check()
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).uncheck()
+  await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await expect.poll(paths).toBe(preserved)
+  expect(errors).toEqual([])
+})
+
+test('async layout: a result that arrives during a drag waits for the drag to end and does not cancel it (R11)', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  const box = (await demo.getByRole('button', { name: /^Ship/ }).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 10, { steps: 3 })
+  // The graph reported the drag through `gesture-start`; the demo binds no pointer listeners of its own, only the
+  // composable's `gestureListeners`.
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) in progress')
+  // The engine answers while the pointer is still down: the finished frame waits.
+  await expect(status).toContainText('Layout ready, shown after the gesture', { timeout: 5000 })
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 })
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) in progress')
+  await page.mouse.up()
+  // The drag was not cancelled by the new layout: it ended with a proposal and a committed `gesture-end`, then the
+  // waiting frame was shown.
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) committed')
+  await expect(demo.getByLabel('Last proposed move')).toHaveText(/^Ship by [1-9]\d*, [1-9]\d*$/)
+  await expect(status).toContainText('Layout up to date')
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  expect(errors).toEqual([])
+})
+
+test('graph gesture events: every gesture-start has exactly one gesture-end, on commit and on each cancellation', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=6&draggable=1&connectable=1&boxselect=1&resizable=1&gestures=1')
+  const log = page.getByRole('status', { name: 'Gesture events' })
+  const open = page.getByRole('status', { name: 'Open gestures' })
+  const all: string[] = []
+  // Checks the events since the last check, keeps them for the final pairing and clears the log.
+  async function expectEvents(expected: string[]) {
+    await expect(log).toHaveText(expected.join(' | '))
+    await expect(open).toHaveText('0')
+    all.push(...expected)
+    await page.evaluate(() => (window as any).__vw.clearGestureLog())
+  }
+  const center = async (name: string) => {
+    const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  async function pressAndMove(name: string) {
+    const { x, y } = await center(name)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 30, y + 12, { steps: 3 })
+  }
+  // The pointer ID of the last press, for synthetic cancellation events.
+  await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
+  const dispatch = (type: string) => page.evaluate((eventType) => {
+    const target = document.querySelector('.vw-network-stage')!
+    const event = eventType === 'contextmenu'
+      ? new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+      : new PointerEvent(eventType, { bubbles: true, pointerId: (window as any).__pointerId, isPrimary: true })
+    target.dispatchEvent(event)
+  }, type)
+
+  // A committed drag: the proposal comes before the end.
+  await pressAndMove('N0002')
+  await expect(log).toHaveText('start node-drag pointer')
+  await expect(open).toHaveText('1')
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
+
+  // Escape.
+  await pressAndMove('N0003')
+  await page.keyboard.press('Escape')
+  await expect(open).toHaveText('0')
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // New source data during the drag.
+  await pressAndMove('N0003')
+  await page.evaluate(() => (window as any).__vw.refresh())
+  await expect(open).toHaveText('0')
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // Pointer cancellation and a context menu during the drag.
+  for (const type of ['pointercancel', 'contextmenu']) {
+    await pressAndMove('N0004')
+    await dispatch(type)
+    await expect(open).toHaveText('0')
+    await page.mouse.up()
+    await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+  }
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
+
+  // A camera method during the drag.
+  await pressAndMove('N0004')
+  await page.evaluate(() => (window as any).__vw.graph().zoom(1.1))
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // Background pan and box selection.
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  await page.mouse.move(stage.x + 6, stage.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(stage.x + 40, stage.y + 30, { steps: 3 })
+  await page.mouse.up()
+  await expectEvents(['start pan pointer', 'end pan pointer committed'])
+  await page.keyboard.down('Shift')
+  await page.mouse.move(stage.x + 6, stage.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(stage.x + 60, stage.y + 50, { steps: 3 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expectEvents(['start box-select pointer', 'end box-select pointer committed'])
+
+  // A pointer connection dragged from one handle to another, and a keyboard connection armed and cancelled.
+  const from = await center('Start connection from N0000')
+  const to = await center('Start connection from N0005')
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 5 })
+  await expect(log).toHaveText('start connect pointer')
+  await page.mouse.up()
+  await expectEvents(['start connect pointer', 'end connect pointer committed'])
+  await page.getByRole('button', { name: 'Start connection from N0001', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(log).toHaveText('start connect keyboard')
+  await page.keyboard.press('Escape')
+  await expectEvents(['start connect keyboard', 'end connect keyboard cancelled'])
+
+  // Keyboard moves are single proposals, not gestures.
+  await page.getByRole('button', { name: 'N0001', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('2')
+  await expect(log).toHaveText('')
+
+  // A resize handle drag. Selecting the node first is a press without movement: a committed drag without a proposal.
+  await page.getByRole('button', { name: 'N0002', exact: true }).click()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
+  const corner = await center('Resize N0002 · bottom right')
+  await page.mouse.move(corner.x, corner.y)
+  await page.mouse.down()
+  await page.mouse.move(corner.x + 30, corner.y + 20, { steps: 3 })
+  await page.mouse.up()
+  await expectEvents(['start node-resize pointer', 'end node-resize pointer committed'])
+
+  // Over the whole session, each start is followed by exactly one end of the same gesture before the next start.
+  for (let i = 0; i < all.length; i += 2) {
+    expect(all[i]).toMatch(/^start /)
+    expect(all[i + 1]).toMatch(new RegExp('^end ' + all[i]!.slice('start '.length) + ' (committed|cancelled)$'))
+  }
+  expect(errors).toEqual([])
+})
+
+// ---- F02: server-backed resource planning (examples/ResourcePlanningDemo.vue with the mock transaction server) ----
+type Locator = ReturnType<Page['locator']>
+
+async function openServerPlanning(page: Page) {
+  const context = await openResourcePlanning(page)
+  await page.getByRole('checkbox', { name: 'Save through the mock server', exact: true }).check()
+  const saveStatus = page.getByRole('status', { name: 'Save status', exact: true })
+  await expect(saveStatus).toContainText('Accepted version v1')
+  return {
+    ...context, saveStatus,
+    server: (label: string) => page.getByRole('radio', { name: label, exact: true }),
+    serverState: page.getByText(/^Server version v\d+ · \d+ commits$/),
+    undo: page.getByRole('button', { name: 'Undo planning change', exact: true }),
+    redo: page.getByRole('button', { name: 'Redo planning change', exact: true }),
+  }
+}
+
+/** Everything a planner sees of the accepted plan: every projected bar, every load segment and B's assignments. */
+async function planState(page: Page, chart: Locator) {
+  const names = (locator: Locator) => locator.evaluateAll(elements => elements.map(element => element.getAttribute('aria-label') ?? '').sort())
+  const assigned = page.getByRole('group', { name: 'Assignments of Mold B', exact: true }).getByRole('button', { name: /^Unassign / })
+  await expect(assigned.first()).toBeVisible()
+  return {
+    bars: await names(chart.getByRole('button', { name: / · (Press 1|Press 2|Crew) \d\d:\d\d–\d\d:\d\d/ })),
+    load: await names(chart.getByRole('img', { name: /: load \d/ })),
+    assignments: await assigned.allTextContents(),
+  }
+}
+
+const centreY = async (locator: Locator) => { const box = (await locator.boundingBox())!; return box.y + box.height / 2 }
+
+test('server-backed resource planning: a rejected or conflicting reassignment leaves bars, assignments and load unchanged', async ({ page }) => {
+  const { errors, chart, notice, saveStatus, server, serverState, undo } = await openServerPlanning(page)
+  const pressOne = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await pressOne.click()
+  const before = await planState(page, chart)
+  expect(before.bars).toContain('Mold B · Press 1 09:00–11:00')
+  expect(before.assignments).toEqual(['Unassign Press 1'])
+  expect(before.load.length).toBeGreaterThan(0)
+
+  await server('Reject').check()
+  await pressOne.press('ArrowDown')
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  // While the save is in flight the candidate exists only in the preview; the chart and load keep the accepted plan.
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(notice).toContainText('Not applied: Mold B reassigned was rejected by the server')
+  await expect(preview).toHaveCount(0)
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(serverState).toHaveText('Server version v1 · 0 commits')
+  await expect(undo).toBeDisabled()
+  await page.getByRole('button', { name: 'Dismiss save message', exact: true }).click()
+
+  // A version conflict: another planner lengthened Finish C first. Nothing of the reassignment is applied either.
+  await server('Version conflict').check()
+  await pressOne.press('ArrowDown')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(saveStatus).toContainText('Version conflict: the server is at version v2, not v1. Nothing changed')
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(undo).toBeDisabled()
+  // Loading the latest version brings the other planner's change, and still not the rejected reassignment.
+  await page.getByRole('button', { name: 'Load latest version', exact: true }).click()
+  await expect(chart.getByRole('button', { name: 'Finish C · Press 2 11:00–14:00', exact: true })).toBeVisible()
+  await expect(pressOne).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Mold B · Press 2/ })).toHaveCount(0)
+  await expect(saveStatus).toContainText('Accepted version v2')
+  expect(errors).toEqual([])
+})
+
+test('server-backed resource planning: an accepted move commits schedule and assignment together and one undo restores both through the server', async ({ page }) => {
+  const { errors, chart, saveStatus, serverState, undo, redo } = await openServerPlanning(page)
+  const pressOne = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  await pressOne.click()
+  const before = await planState(page, chart)
+
+  // One pointer drag changes the resource row and the time: one proposal, one transaction.
+  const box = (await pressOne.boundingBox())!
+  const perMinute = box.width / 120
+  const rowTwo = await centreY(chart.getByRole('button', { name: /^Finish C · Press 2 / }))
+  await dragBy(page, pressOne, 15 * perMinute + 2, rowTwo - (box.y + box.height / 2))
+  const preview = page.getByRole('region', { name: 'Preview: Mold B reassigned', exact: true })
+  await expect(preview).toContainText('Replace Press 1 with Press 2 for Mold B')
+  await expect(preview).toContainText('Request Mold B at 09:15–11:15')
+  await preview.getByRole('button', { name: 'Apply change', exact: true }).click()
+  await expect(saveStatus).toContainText('Saving changes based on version v1')
+  await expect(saveStatus).toContainText('Accepted version v2')
+  const moved = chart.getByRole('button', { name: 'Mold B · Press 2 09:15–11:15', exact: true })
+  await expect(moved).toBeVisible()
+  await expect(moved).toBeFocused()
+  await expect(pressOne).toHaveCount(0)
+  await expect(serverState).toHaveText('Server version v2 · 1 commits')
+  const after = await planState(page, chart)
+  expect(after.assignments).toEqual(['Unassign Press 2'])
+  expect(after.load).not.toEqual(before.load)
+
+  // One undo, saved as a restore: the dates, the assignment and the load all return together.
+  await undo.click()
+  await expect(saveStatus).toContainText('Accepted version v3')
+  await expect(pressOne).toBeVisible()
+  await expect(serverState).toHaveText('Server version v3 · 2 commits')
+  expect(await planState(page, chart)).toEqual(before)
+  await expect(undo).toBeDisabled()
+  // Redo is a restore through the server as well.
+  await redo.click()
+  await expect(saveStatus).toContainText('Accepted version v4')
+  await expect(moved).toBeVisible()
+  expect(await planState(page, chart)).toEqual(after)
+  expect(errors).toEqual([])
+})
+
+test('resource planning: placement, reassignment and rescheduling propose the same operation by pointer and keyboard', async ({ page }) => {
+  const { errors, chart } = await openResourcePlanning(page)
+  await page.getByText('Received proposals', { exact: true }).click()
+  const log = page.getByRole('list', { name: 'Received proposals', exact: true })
+  const last = async () => (await log.getByRole('listitem').last().textContent())!.trim()
+  const operation = (entry: string) => entry.replace(/^(pointer|keyboard): /, '')
+  const previewChanges = () => page.getByRole('list', { name: 'Proposed changes', exact: true }).allTextContents()
+  const discard = () => page.getByRole('button', { name: 'Discard preview', exact: true }).click()
+  const moldB = chart.getByRole('button', { name: 'Mold B · Press 1 09:00–11:00', exact: true })
+  const bBox = (await moldB.boundingBox())!
+  const perMinute = bBox.width / 120
+  const rowTwo = await centreY(chart.getByRole('button', { name: /^Finish C · Press 2 / }))
+
+  // 1. Placement from the backlog: a pointer drop at 10:15 on Press 2, then the keyboard form with the same choice.
+  const regionBox = (await chart.boundingBox())!
+  await page.getByRole('list', { name: 'Unplanned task list' }).getByRole('listitem').filter({ hasText: 'Rework D' })
+    .dragTo(chart, { targetPosition: { x: bBox.x + 75 * perMinute + 2 - regionBox.x, y: rowTwo - regionBox.y } })
+  await expect.poll(last).toBe('pointer: place Rework D on Press 2 at 10:15')
+  const pointerPlace = await previewChanges()
+  await discard()
+  await page.getByRole('button', { name: 'Place Rework D', exact: true }).press('Enter')
+  await page.getByLabel('Row for Rework D', { exact: true }).selectOption({ label: 'Press 2' })
+  await page.getByLabel('Start for Rework D', { exact: true }).selectOption({ label: '10:15' })
+  await page.getByRole('button', { name: 'Confirm placement of Rework D', exact: true }).press('Enter')
+  await expect.poll(last).toBe('keyboard: place Rework D on Press 2 at 10:15')
+  expect(await previewChanges()).toEqual(pointerPlace)
+  await expect(page.getByRole('region', { name: 'Preview: placed Rework D', exact: true })).toBeVisible()
+  await discard()
+
+  // 2. A vertical move replaces the assignment: Down arrow, then a vertical drag to the Press 2 row.
+  await moldB.press('ArrowDown')
+  await expect.poll(last).toBe('keyboard: reassign Mold B on Press 2 at 09:00–11:00')
+  const keyboardMove = await previewChanges()
+  await discard()
+  await dragBy(page, moldB, 0, rowTwo - (bBox.y + bBox.height / 2))
+  await expect.poll(last).toMatch(/^pointer: /)
+  expect(operation(await last())).toBe(operation('keyboard: reassign Mold B on Press 2 at 09:00–11:00'))
+  expect(await previewChanges()).toEqual(keyboardMove)
+  await discard()
+
+  // 3. A horizontal move changes the schedule: Right arrow (one snap step), then a drag by the same snapped distance.
+  const crew = chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })
+  await crew.press('ArrowRight')
+  await expect.poll(last).toBe('keyboard: reschedule Mold A on Crew at 08:15–11:15')
+  const keyboardShift = await previewChanges()
+  await discard()
+  await dragBy(page, crew, 15 * perMinute + 2, 0)
+  await expect.poll(last).toBe('pointer: reschedule Mold A on Crew at 08:15–11:15')
+  expect(await previewChanges()).toEqual(keyboardShift)
+  await discard()
+
+  // Nothing was applied by any of the six proposals.
+  await expect(moldB).toBeVisible()
+  await expect(crew).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Rework D/ })).toHaveCount(0)
+  await expect(log.getByRole('listitem')).toHaveCount(6)
+  expect(errors).toEqual([])
+})
+
+test('linked views: the context toolbar keeps its size and tracks the target rectangle at every zoom level', async ({ page }) => {
+  const { errors, demo, node } = await openLinkedDemo(page)
+  const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+  await node('Inspect').click()
+  await expect(toolbar).toBeVisible()
+  const measure = async () => {
+    const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+    const fontSize = await toolbar.evaluate(element => getComputedStyle(element).fontSize)
+    return { t: t!, n: n!, fontSize }
+  }
+  /** The toolbar is centred on the target and sits 8 px above it, or 8 px below when there is no room above. */
+  const tracks = ({ t, n }: { t: { x: number; y: number; width: number; height: number }; n: { x: number; y: number; width: number; height: number } }) =>
+    Math.abs(t.x + t.width / 2 - (n.x + n.width / 2)) < 3
+    && (Math.abs(t.y + t.height + 8 - n.y) < 3 || Math.abs(t.y - (n.y + n.height + 8)) < 3)
+  const initial = await measure()
+  expect(tracks(initial)).toBe(true)
+  const widths = [initial.n.width]
+  for (const step of ['Zoom in', 'Zoom in', 'Zoom out', 'Zoom out', 'Zoom out', 'Zoom out']) {
+    const previous = widths[widths.length - 1]!
+    await demo.getByRole('button', { name: step, exact: true }).first().click()
+    await expect.poll(async () => (await measure()).n.width).not.toBeCloseTo(previous, 0)
+    await expect.poll(async () => tracks(await measure())).toBe(true)
+    const now = await measure()
+    widths.push(now.n.width)
+    // Plain HTML over the graph: the text and the box keep their CSS pixel size while the node scales.
+    expect(now.fontSize).toBe(initial.fontSize)
+    expect(now.t.height).toBeCloseTo(initial.t.height, 1)
+    expect(now.t.width).toBeCloseTo(initial.t.width, 0)
+  }
+  // The node really was drawn at several scales.
+  expect(Math.max(...widths) / Math.min(...widths)).toBeGreaterThan(1.5)
+
+  // Panned out of the visible area by keyboard, the target has no visible rectangle and the toolbar goes away; it
+  // comes back, tracking again, once the target is visible.
+  const stage = demo.getByLabel('Linked network diagram', { exact: true })
+  const graphBox = (await stage.boundingBox())!
+  await stage.focus()
+  let presses = 0
+  while ((await node('Inspect').boundingBox())!.x < graphBox.x + graphBox.width + 10 && presses < 80) {
+    await stage.press('ArrowLeft')
+    presses++
+  }
+  await expect(toolbar).toBeHidden()
+  for (let i = 0; i < presses; i++) await stage.press('ArrowRight')
+  await expect(toolbar).toBeVisible()
+  await expect.poll(async () => tracks(await measure())).toBe(true)
+
+  // A target hidden inside a collapsed group (no rectangle at all) hides the toolbar too.
+  await node('Cut order A').click()
+  await expect(toolbar).toBeVisible()
+  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  await expect(toolbar).toBeHidden()
+  expect(errors).toEqual([])
+})
+
+test.describe('linked views: the context toolbar and deletion', () => {
+  async function openToolbarDemo(page: Page) {
+    const opened = await openLinkedDemo(page)
+    const { demo } = opened
+    const toolbar = demo.getByRole('toolbar', { name: 'Selected graph item' })
+    const stage = demo.getByLabel('Linked network diagram', { exact: true })
+    const edge = (id: string) => demo.getByRole('button', { name: 'Select edge ' + id, exact: true })
+    // The toolbar is given the graph component; ask it for a target's rectangle the way the toolbar does.
+    // A role query skips a hidden toolbar, so the element is found by CSS here.
+    const rect = (target: unknown) => demo.locator('.linked-graph [role="toolbar"]').evaluate((element, value) => {
+      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree.
+      const find = (vnode: any, depth = 0): any => {
+        if (!vnode || typeof vnode !== 'object' || depth > 80) return undefined
+        if (vnode.component?.props?.graph) return vnode.component.props.graph
+        const children = [vnode.component?.subTree, ...(Array.isArray(vnode.children) ? vnode.children : [])]
+        for (const child of children) { const found = find(child, depth + 1); if (found) return found }
+        return undefined
+      }
+      const graph = find((document.querySelector('#app') as any)?._vnode)
+      const result = graph.getTargetClientRect(value) as DOMRect | undefined
+      return result && { width: result.width, height: result.height }
+    }, target)
+    const tasks = demo.getByRole('status', { name: 'Graph tasks', exact: true })
+    return { ...opened, toolbar, stage, edge, rect, tasks }
+  }
+
+  test('deleting the selected node hides the toolbar and it does not move to another item', async ({ page }) => {
+    const { errors, node, toolbar, stage, rect, tasks } = await openToolbarDemo(page)
+    await node('Inspect').click()
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Inspect')
+    expect(await rect({ view: 'graph', kind: 'node', id: 'inspect' })).toBeTruthy()
+    await expect(tasks).toHaveText('Graph tasks: 5')
+    await node('Inspect').press('Delete')
+    await expect(tasks).toHaveText('Graph tasks: 4')
+    await expect(node('Inspect')).toHaveCount(0)
+    await expect(toolbar).toBeHidden()
+    expect(await rect({ view: 'graph', kind: 'node', id: 'inspect' })).toBeUndefined()
+    // Nothing else is selected, so the toolbar stays away after later layout and camera changes.
+    await stage.focus()
+    await stage.press('ArrowLeft')
+    await stage.press('ArrowRight')
+    await expect(toolbar).toBeHidden()
+    await expect(node('Pack')).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test('deleting the selected edge hides the toolbar', async ({ page }) => {
+    const { errors, demo, edge, toolbar, rect, tasks } = await openToolbarDemo(page)
+    await edge('cutA-inspect').press('Enter')
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Cut order A to Inspect')
+    expect(await rect({ view: 'graph', kind: 'edge', id: 'cutA-inspect' })).toBeTruthy()
+    await edge('cutA-inspect').press('Delete')
+    await expect(edge('cutA-inspect')).toHaveCount(0)
+    await expect(toolbar).toBeHidden()
+    expect(await rect({ view: 'graph', kind: 'edge', id: 'cutA-inspect' })).toBeUndefined()
+    // Only the edge went; both tasks are still drawn.
+    await expect(tasks).toHaveText('Graph tasks: 5')
+    await expect(demo.getByRole('button', { name: /^Inspect ES / })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test('deleting another node keeps the toolbar on the selected target', async ({ page }) => {
+    const { errors, node, toolbar, tasks } = await openToolbarDemo(page)
+    await node('Inspect').click()
+    await expect(toolbar).toBeVisible()
+    const place = async () => {
+      const [t, n] = await Promise.all([toolbar.boundingBox(), node('Inspect').boundingBox()])
+      return Math.abs(t!.x + t!.width / 2 - (n!.x + n!.width / 2))
+    }
+    await expect.poll(place).toBeLessThan(6)
+    // Focus Pack without selecting it, then delete it: only that unselected node is proposed.
+    await node('Pack').focus()
+    await node('Pack').press('Delete')
+    await expect(tasks).toHaveText('Graph tasks: 4')
+    await expect(node('Pack')).toHaveCount(0)
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toContainText('Inspect')
+    await expect.poll(place).toBeLessThan(6)
+    expect(errors).toEqual([])
+  })
 })

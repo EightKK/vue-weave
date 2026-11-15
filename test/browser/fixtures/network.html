@@ -13,14 +13,19 @@
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref, shallowRef } from 'vue'
-      import { NetworkGraph } from 'vue-weave'
+      import { NetworkGraph, layoutLayeredGraph } from 'vue-weave'
 
       // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir,
       // edgeselect (controlled edge selection), delete, menu (context menu events), tooltip, snap (grid size),
       // guides, autopan, drop, clipboard, background (dots or lines), slots (counting node and edge slots), connectable,
-      // groups=chain (the chain in groups of ten, five to a parent group) and reads (counting reads of node fields).
+      // groups=chain (the chain in groups of ten, five to a parent group), reads (counting reads of node fields),
+      // highlight and highlightedges (comma-separated highlighted IDs), targets (logging target-* events), collapse
+      // (comma-separated controlled collapsed group IDs), preset=ports (A to D with named ports on A and B and an
+      // external route for edge ab), policy (routingPolicy), style (edgeStyle), gestures (logging gesture-* events),
+      // boxselect, editableedges and resizable.
       const query = new URLSearchParams(location.search)
-      const ids = query.get('preset') === 'groups'
+      const preset = query.get('preset')
+      const ids = preset === 'groups' || preset === 'ports'
         ? ['A', 'B', 'C', 'D']
         : Array.from({ length: Number(query.get('nodes') ?? 600) }, (_, i) => 'N' + String(i).padStart(4, '0'))
       const reads = { count: 0 }
@@ -28,6 +33,30 @@
         ? new Proxy({ id, label: id }, { get: (target, key) => { reads.count++; return target[key] } })
         : { id, label: id })
       const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+      if (preset === 'ports') {
+        nodes[0].ports = [{ id: 'out', side: 'right', offset: 0.25 }]
+        nodes[1].ports = [{ id: 'in', side: 'left' }]
+        edges[0] = { id: 'ab', from: 'A', to: 'B', fromPort: 'out', toPort: 'in' }
+      }
+      // An external engine's result: the layered layout with a polyline of its own between the ports of edge ab.
+      const external = { path: '' }
+      const portLayout = (shownNodes, shownEdges) => {
+        const base = layoutLayeredGraph(shownNodes, shownEdges)
+        const a = base.boxes.get('A'), b = base.boxes.get('B')
+        if (!a || !b || !shownEdges.some(edge => edge.id === 'ab')) return base
+        const from = { x: a.x + a.width, y: a.y + a.height * 0.25 }, to = { x: b.x, y: b.y + b.height / 2 }
+        const middle = (from.x + to.x) / 2
+        external.path = `M ${from.x} ${from.y} L ${middle} ${from.y} L ${middle} ${to.y} L ${to.x} ${to.y}`
+        return { ...base, paths: new Map(base.paths).set('ab', external.path) }
+      }
+      // Created once: a new collapsed set on every render would rebuild the layout and re-fit the camera each time.
+      const lists = {}
+      const list = name => query.has(name) ? (lists[name] ??= new Set(query.get(name).split(','))) : undefined
+      const targetLog = ref([])
+      const logTarget = type => event => {
+        const { target, source } = event
+        targetLog.value = [...targetLog.value, `${type} ${target.kind} ${target.id} ${source}`].slice(-8)
+      }
       const chainGroups = () => {
         const list = []
         for (let start = 0; start < ids.length; start += 10) {
@@ -42,6 +71,20 @@
         { id: 'outer', label: 'Outer', nodeIds: ['B'] },
       ] : query.get('groups') === 'chain' ? chainGroups() : undefined
       const matchIds = query.has('match') ? new Set(query.get('match').split(',')) : undefined
+
+      // gestures=1: every gesture-start and gesture-end in order, and the number of gestures still open.
+      const gestureLog = ref([])
+      const openGestures = ref(0)
+      const gestureListeners = query.get('gestures') === '1' ? {
+        onGestureStart: ({ kind, source }) => {
+          openGestures.value++
+          gestureLog.value = [...gestureLog.value, `start ${kind} ${source}`]
+        },
+        onGestureEnd: ({ kind, source, outcome }) => {
+          openGestures.value--
+          gestureLog.value = [...gestureLog.value, `end ${kind} ${source} ${outcome}`]
+        },
+      } : {}
 
       const graph = ref()
       const selectedId = ref('')
@@ -81,7 +124,14 @@
           return h('path', { class: 'vw-test-edge', d: path, 'data-edge': edge.id })
         },
       } : {}
-      window.__vw = { graph: () => graph.value, renders, reads }
+      // Moves the first node in the source positions, as a data refresh during a gesture would.
+      const refresh = () => {
+        const box = layoutLayeredGraph(nodes, edges).boxes.get(ids[0])
+        const current = positions.value.get(ids[0]) ?? { x: box.x, y: box.y }
+        positions.value = new Map(positions.value).set(ids[0], { x: current.x + 7, y: current.y + 3 })
+      }
+      const clearGestureLog = () => { gestureLog.value = [] }
+      window.__vw = { graph: () => graph.value, renders, reads, external, refresh, clearGestureLog }
 
       createApp({
         render: () => h('main', [
@@ -97,7 +147,19 @@
           h('output', { role: 'status', 'aria-label': 'Last paste' }, lastPaste.value),
           h('output', { role: 'status', 'aria-label': 'Last duplicate' }, lastDuplicate.value),
           h('output', { role: 'status', 'aria-label': 'Native events' }, nativeEvents.value),
+          h('output', { role: 'status', 'aria-label': 'Target events' }, targetLog.value.join(' | ')),
+          h('output', { role: 'status', 'aria-label': 'Gesture events' }, gestureLog.value.join(' | ')),
+          h('output', { role: 'status', 'aria-label': 'Open gestures' }, String(openGestures.value)),
           h(NetworkGraph, {
+            highlightedNodeIds: list('highlight'), highlightedEdgeIds: list('highlightedges'), collapsedGroupIds: list('collapse'),
+            routingPolicy: query.get('policy') ?? undefined, edgeStyle: query.get('style') ?? undefined,
+            layout: preset === 'ports' ? portLayout : undefined,
+            ...query.get('targets') === '1' ? {
+              onTargetEnter: logTarget('enter'), onTargetLeave: logTarget('leave'), onTargetActivate: logTarget('activate'),
+            } : {},
+            ...gestureListeners,
+            boxSelect: query.get('boxselect') === '1', editableEdges: query.get('editableedges') === '1',
+            resizable: query.get('resizable') === '1',
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
             draggable: query.get('draggable') === '1', connectable: query.get('connectable') === '1', positions: positions.value,

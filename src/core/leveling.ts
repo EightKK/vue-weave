@@ -3,6 +3,9 @@ import {
   addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, slotFor,
   topologicalOrder, type ModelTask, type Slot, type WorkClock,
 } from './scheduleModel.js'
+import {
+  explainOption, recordSlotReasons, ScheduleTraceRecorder, type ExplainedLevelResourcesResult, type ScheduleOptions,
+} from './scheduleTrace.js'
 import { scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleSuccess, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
@@ -37,6 +40,12 @@ export interface LevelResourcesSuccess extends ScheduleSuccess {
 }
 
 export type LevelResourcesResult = LevelResourcesSuccess | ScheduleFailure
+
+/** One reservation of a resource, kept only when explaining. */
+interface Holding extends TimeRange {
+  taskId: string
+  units: number
+}
 
 /** Remaining capacity as a step function over the horizon. Segment i is [times[i], times[i + 1] ?? range.end). */
 class Profile {
@@ -195,8 +204,16 @@ function withoutMode(task: ScheduleTask): ScheduleTask {
  * priority-based serial heuristic. Each task is placed as soon as dependencies, constraints,
  * calendars and remaining capacity allow; `mode` is ignored. The returned dates are those of
  * `scheduleTasks` applied to the returned `leveledTasks`.
+ *
+ * With `{ explain: true }`, a successful result also has a `trace`. It holds the `latest` reasons of the horizon that
+ * leveling may not pass and the `leveling` reasons recorded while capacity was reserved, including the resources,
+ * intervals and holding tasks that delayed or split a task. It does not explain the replayed `scheduleTasks` run.
  */
-export function levelResources(input: LevelResourcesInput): LevelResourcesResult {
+export function levelResources(input: LevelResourcesInput, options?: ScheduleOptions & { explain?: false }): LevelResourcesResult
+export function levelResources(input: LevelResourcesInput, options: ScheduleOptions & { explain: true }): ExplainedLevelResourcesResult
+export function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult
+export function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult {
+  const explain = explainOption(options)
   for (const task of input.tasks) {
     if (task.mode !== undefined && task.mode !== 'asap' && task.mode !== 'alap') throw new Error('Invalid scheduling mode: ' + task.id)
     if (task.priority !== undefined && !Number.isFinite(task.priority)) throw new RangeError('Invalid task priority: ' + task.id)
@@ -208,8 +225,10 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
   }
   const base = scheduleTasks(plain)
   if (!base.ok) return base
-  const model = buildScheduleModel(plain)
+  const model = buildScheduleModel(plain, explain)
   const { range, tasks } = model
+  const trace = explain ? new ScheduleTraceRecorder(plain.tasks.map(task => task.id)) : undefined
+  const holdings = explain ? new Map<string, Holding[]>() : undefined
 
   const profiles = new Map<string, Profile>()
   for (const resource of input.resources) {
@@ -221,7 +240,7 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
     }
     profiles.set(resource.id, new Profile(range, resource.capacity, normalizeWorkPeriods(resource.periods ?? [range], range)))
   }
-  const demands = new Map<string, { profile: Profile; units: number }[]>()
+  const demands = new Map<string, { profile: Profile; units: number; resourceId: string }[]>()
   const assigned = new Set<string>()
   for (const { resourceId, taskId, units = 1 } of input.assignments) {
     const profile = profiles.get(resourceId)
@@ -232,7 +251,7 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
     assigned.add(pair)
     let list = demands.get(taskId)
     if (!list) demands.set(taskId, list = [])
-    list.push({ profile, units })
+    list.push({ profile, units, resourceId })
   }
 
   // Latest dates that keep every successor feasible, without holding the unleveled finish.
@@ -242,8 +261,10 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
     const bounds = addUpperBounds(cloneBounds(task.bounds), task, horizon)
-    const slot = slotFor(task.clock, task.duration, limitsOf(bounds), true)
+    const limits = limitsOf(bounds)
+    const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)
+    if (trace) recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, { linkParents: link => trace.ids('latest', link.to) })
     horizon.set(task.id, slot)
   }
 
@@ -275,12 +296,19 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
     const limits = limitsOf(bounds)
     const early = slotFor(clock, duration, limits, false)
     if (!early) return diagnose(model, task, bounds)
+    if (trace) {
+      recordSlotReasons(trace, 'leveling', task, bounds, limits, early, false, {
+        linkParents: link => trace.ids('leveling', link.from), horizon: trace.ids('latest', task.id),
+      })
+    }
     let chunks: TimeRange[] = [{ start: early.workStart, end: early.workStart + duration }]
     const needs = demands.get(task.id) ?? []
+    let lastSlot: Slot | undefined
     if (duration > 0 && needs.length) {
       const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
       const free = freeWork(clock, blocked)
-      const lastStart = slotFor(clock, duration, limits, true)!.workStart
+      lastSlot = slotFor(clock, duration, limits, true)!
+      const lastStart = lastSlot.workStart
       const found = task.source.splittable
         ? interrupted(free, early.workStart, duration, lastStart, clock.workAt(limits.endUpper))
         : contiguous(free, early.workStart, duration, lastStart)
@@ -290,6 +318,43 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
     const slot = duration
       ? { start: clock.dateAt(chunks[0]!.start, false), end: clock.dateAt(chunks.at(-1)!.end, true), workStart: chunks[0]!.start }
       : early
+    if (trace && lastSlot && (slot.start > early.start || chunks.length > 1 || unresolved.has(task.id))) {
+      const stuck = unresolved.has(task.id)
+      // Capacity is reserved before this task, so each holding names a task that occupies the resource first.
+      const startMoved = slot.start > early.start || stuck
+      const window = { start: early.start, end: Math.max(slot.end, early.end) }
+      for (const need of needs) {
+        const { profile, units, resourceId } = need
+        const held = holdings!.get(resourceId) ?? []
+        const pieces: { start: number; end: number; capacity: number; taskIds: string[] }[] = []
+        for (let i = 0; i < profile.times.length; i++) {
+          if (profile.values[i]! >= units) continue
+          const start = Math.max(profile.times[i]!, window.start), end = Math.min(profile.times[i + 1] ?? range.end, window.end)
+          if (start >= end || !clock.slices({ start, end }).length) continue
+          const holders = held.filter(holding => holding.start < end && holding.end > start)
+          const capacity = holders.reduce((sum, holding) => sum + holding.units, profile.values[i]!)
+          const taskIds = [...new Set(holders.map(holding => holding.taskId))]
+          const previous = pieces.at(-1)
+          if (previous?.end === start && previous.capacity === capacity
+            && previous.taskIds.length === taskIds.length && previous.taskIds.every((id, k) => id === taskIds[k])) previous.end = end
+          else pieces.push({ start, end, capacity, taskIds })
+        }
+        for (const piece of pieces) {
+          trace.add({
+            taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
+            candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
+            resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: piece.taskIds,
+            range: { start: piece.start, end: piece.end },
+            parentReasonIds: [...new Set(piece.taskIds.flatMap(id => trace.ids('leveling', id)))],
+          })
+        }
+      }
+      if (stuck) {
+        recordSlotReasons(trace, 'leveling', task, bounds, limits, lastSlot, true, {
+          linkParents: () => [], horizon: trace.ids('latest', task.id),
+        })
+      }
+    }
     if (slot.start > early.start) raised.add(task.id)
     if (chunks.length > 1) {
       added.set(task.id, chunks.slice(1).map((chunk, i) => ({
@@ -300,7 +365,14 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
       const slices: TimeRange[] = []
       for (const chunk of chunks) {
         for (const slice of clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) })) {
-          for (const need of needs) need.profile.reserve(slice, need.units, range.end)
+          for (const need of needs) {
+            need.profile.reserve(slice, need.units, range.end)
+            if (holdings) {
+              let list = holdings.get(need.resourceId)
+              if (!list) holdings.set(need.resourceId, list = [])
+              list.push({ taskId: task.id, start: slice.start, end: slice.end, units: need.units })
+            }
+          }
           slices.push(slice)
         }
       }
@@ -345,8 +417,9 @@ export function levelResources(input: LevelResourcesInput): LevelResourcesResult
   })
   const overloads = calculateResourceLoad(range, leveled.tasks, input.resources, input.assignments)
     .filter(segment => segment.overload > 0)
-  return {
+  const success: LevelResourcesSuccess = {
     ...leveled, leveledTasks, delays, overloads,
     unresolvedTaskIds: plain.tasks.filter(task => unresolved.has(task.id)).map(task => task.id),
   }
+  return trace ? { ...success, trace: trace.trace() } : success
 }

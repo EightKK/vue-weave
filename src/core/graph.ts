@@ -3,6 +3,7 @@ import { reduceCrossings } from './graphCrossings.js'
 import { graphPathEndpoints } from './graphView.js'
 import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
 import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
+import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 
 export interface GraphPort {
   id: string
@@ -190,12 +191,40 @@ export interface GraphBox {
   rank: number
 }
 
+/**
+ * Optional metadata of one routed edge, which an external layout or router can return next to its SVG path. The
+ * `preserve` routing policy uses it to check that a kept route still starts and ends where the edge does: at the named
+ * port when the edge has one, on the given box side, and at the same points as the path.
+ */
+export interface GraphLayoutRoute {
+  /** First point of the route, on the source box border (at the source port when the edge has one). */
+  start: GraphPoint
+  /** Last point of the route, on the target box border (at the target port when the edge has one). */
+  end: GraphPoint
+  /** The source port the route leaves from; it must equal the edge's `fromPort`. */
+  fromPort?: string
+  /** The target port the route enters; it must equal the edge's `toPort`. */
+  toPort?: string
+  /** The side of the source box the route leaves through (its first direction of travel is away from it). */
+  fromSide?: GraphPort['side']
+  /** The side of the target box the route enters through (its last direction of travel is into it). */
+  toSide?: GraphPort['side']
+  /** Bend points between `start` and `end`, in order. */
+  points?: readonly GraphPoint[]
+}
+
 export interface GraphLayout {
   boxes: Map<string, GraphBox>
   paths: Map<string, string>
   edgeLabels: Map<string, { x: number; y: number }>
   width: number
   height: number
+  /**
+   * Optional route metadata by edge ID. The built-in layouts do not set it. When a layout has it, `applyGraphPositions`,
+   * `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges` carry it into their results: entries of edges that a
+   * moved or resized node rerouted are removed, and entries of edges that the port or style routing redrew are replaced.
+   */
+  routes?: Map<string, GraphLayoutRoute>
 }
 
 /** LR and TB are the defaults; RL and BT mirror them so ranks grow right-to-left or bottom-to-top. */
@@ -478,11 +507,31 @@ function edgeEndBox(boxes: ReadonlyMap<string, GraphBox>, edge: GraphConnection,
   throw new Error(`Graph edge ${name} references a node that is not in the layout: ${nodeId}`)
 }
 
-/** Route named endpoints after the node layout and any saved positions are applied. */
-export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: GraphLayoutDirection): GraphLayout {
+/** Options of `routeGraphPorts`. */
+export interface GraphPortRouteOptions {
+  /**
+   * Default 'builtin': every edge with a named port is redrawn as a curve between its port anchors. 'preserve' keeps the
+   * route of a port edge that the layout drew itself when it still starts and ends at its ports (see `isGraphRouteValid`),
+   * and redraws only the others, such as the edges of a moved or resized node or of a changed port.
+   */
+  policy?: GraphRoutingPolicy
+}
+
+/**
+ * Route named endpoints after the node layout and any saved positions are applied. With `policy: 'preserve'`, valid
+ * routes from the layout are kept. Throws RangeError for an unknown policy.
+ */
+export function routeGraphPorts(
+  layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edges: readonly GraphEdge[], direction: GraphLayoutDirection,
+  options: GraphPortRouteOptions = {},
+): GraphLayout {
+  const { policy = 'builtin' } = options
+  if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
   if (!edges.some(edge => edge.fromPort !== undefined || edge.toPort !== undefined)) return layout
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
+  const routes = layout.routes && new Map(layout.routes)
+  const redrawn: string[] = []
   // Control points stay inside the layout.
   const clamp = (point: GraphPoint): GraphPoint => ({
     x: Math.min(layout.width, Math.max(0, point.x)),
@@ -490,6 +539,7 @@ export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, 
   })
   for (const edge of edges) {
     if (edge.fromPort === undefined && edge.toPort === undefined) continue
+    if (policy === 'preserve' && isGraphRouteValid(layout, nodes, edge)) continue
     const from = graphEdgeEndpoint(layout, nodes, edge, 'from', direction)
     const to = graphEdgeEndpoint(layout, nodes, edge, 'to', direction)
     const controls = graphPortControls(from, to)
@@ -508,8 +558,13 @@ export function routeGraphPorts(layout: GraphLayout, nodes: ReadonlyMap<string, 
       x: (from.x + 3 * a.x + 3 * b.x + to.x) / 8,
       y: (from.y + 3 * a.y + 3 * b.y + to.y) / 8 - 6,
     })
+    routes?.set(edge.id, {
+      start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, fromPort: edge.fromPort, toPort: edge.toPort,
+      fromSide: from.side, toSide: to.side, points: [],
+    })
+    redrawn.push(edge.id)
   }
-  return { ...layout, paths, edgeLabels }
+  return markBuiltinRoutes({ ...layout, paths, edgeLabels, ...routes && { routes } }, layout, redrawn)
 }
 
 /** Apply saved positions without changing the original layout or untouched routes. */
@@ -536,7 +591,7 @@ export function applyGraphPositions(
     height = Math.max(height, point.y + box.height + 32)
   }
   if (!moved.size) return layout
-  return { ...rerouteIncidentEdges(layout, boxes, edges, moved, direction), width, height }
+  return rerouteIncidentEdges(layout, boxes, edges, moved, direction, width, height)
 }
 
 /** A node size for the `applyGraphSizes` overlay, in chart units. */
@@ -572,15 +627,19 @@ export function applyGraphSizes(
     height = Math.max(height, box.y + size.height + 32)
   }
   if (!changed.size) return layout
-  return { ...rerouteIncidentEdges(layout, boxes, edges, changed, direction), width, height }
+  return rerouteIncidentEdges(layout, boxes, edges, changed, direction, width, height)
 }
 
-// Curves for the edges that touch a moved or resized node; other routes are kept.
+// Curves for the edges that touch a moved or resized node; other routes are kept. Route metadata of a rerouted edge is
+// removed, and the rerouted edges are remembered as built-in routes for the `preserve` policy.
 function rerouteIncidentEdges(
   layout: GraphLayout, boxes: Map<string, GraphBox>, edges: readonly GraphEdge[], moved: ReadonlySet<string>, direction: GraphLayoutDirection,
+  width: number, height: number,
 ): GraphLayout {
   const paths = new Map(layout.paths)
   const edgeLabels = new Map(layout.edgeLabels)
+  const routes = layout.routes && new Map(layout.routes)
+  const rerouted: string[] = []
   for (const edge of edges) {
     if (!moved.has(edge.from) && !moved.has(edge.to)) continue
     const source = edgeEndBox(boxes, edge, edge.from)
@@ -588,6 +647,8 @@ function rerouteIncidentEdges(
     const { path, label } = graphIncidentCurve(source, target, edge.from === edge.to, direction)
     paths.set(edge.id, path)
     edgeLabels.set(edge.id, label)
+    routes?.delete(edge.id)
+    rerouted.push(edge.id)
   }
-  return { boxes, paths, edgeLabels, width: layout.width, height: layout.height }
+  return markBuiltinRoutes({ boxes, paths, edgeLabels, width, height, ...routes && { routes } }, layout, rerouted)
 }

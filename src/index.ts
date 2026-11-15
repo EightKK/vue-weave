@@ -53,7 +53,22 @@ export type GanttChartComponent = (new <R extends TimelineRow = TimelineRow, B e
 
 export const NetworkGraph = NetworkGraphVue as unknown as NetworkGraphComponent
 export const GanttChart = GanttChartVue as unknown as GanttChartComponent
-export type { GraphDrop } from './components/types.js'
+export type { GraphDrop, TimelineDrop } from './components/types.js'
 export * from './core/index.js'
 
 export { useEditHistory } from './composables/useEditHistory.js'
+export { useTimelineView } from './composables/useTimelineView.js'
+export { useEditTransaction } from './composables/useEditTransaction.js'
+export type { UseEditTransactionOptions, HistoryReset } from './composables/useEditTransaction.js'
+
+export { useLinkedSelection, revealLinkedTarget } from './composables/useLinkedSelection.js'
+export type {
+  LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions, RevealLinkedTargetOptions,
+  LinkedRevealResult,
+} from './composables/useLinkedSelection.js'
+export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
+export type {
+  AsyncGraphLayoutAdapter, AsyncGraphFrame, AsyncGraphDisplayFrame, AsyncGraphLayoutError, UseAsyncGraphLayoutOptions, AsyncGraphLayout,
+  AsyncGraphGestureListeners,
+  GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
+} from './composables/useAsyncGraphLayout.js'

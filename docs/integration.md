@@ -157,6 +157,8 @@ Tone-specific variables follow --vw-blue-ink, --vw-blue-line, --vw-blue-pale and
 
 `--vw-edge-selected` (default `--vw-accent`) colours the edges selected through `edgesSelectable`; the NetworkGraph tooltip uses `--vw-surface`, `--vw-border` and `--vw-text`.
 
+`--vw-graph-highlight` (unset by default, falling back to `--vw-dependency-highlight`, `#a74f08`, and to its dark value in the dark themes) colours the display-only highlights of NetworkGraph: the outline of nodes in `highlightedNodeIds` (`.vw-network-node.vw-is-highlighted`) and the edges in `highlightedEdgeIds` (an edge group with `vw-is-highlighted`). The graph export methods read it as the highlight colour (`highlightColor` of `renderGraphSvg`). In forced-colors mode highlighted nodes get a dashed `Highlight` outline and highlighted edges a dashed `CanvasText` stroke.
+
 NetworkGraph editing aids add two variables, used only when the matching prop is set:
 
 | Variable | Default | Used for |
@@ -165,6 +167,18 @@ NetworkGraph editing aids add two variables, used only when the matching prop is
 | `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
+
+Linked views and typed cells add five variables, used only when the matching prop is set:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-bar-highlight` | `--vw-dependency-highlight` (`#a74f08`) | Outline of bars in `highlightedBarIds` (`.vw-gantt-bar.vw-is-highlighted`) |
+| `--vw-load-focus` | `--vw-accent` (`#245e96`) | Focus outline of load segments with `loadSelectable` |
+| `--vw-load-highlight` | `--vw-dependency-highlight` (`#a74f08`) | Inset ring of load segments matched by `highlightedLoadTargets` (`.vw-gantt-load-segment.vw-is-highlighted`) |
+| `--vw-load-selected` | `--vw-accent` (`#245e96`) | Thicker inset ring of load segments matched by `selectedLoadTargets` (`.vw-gantt-load-segment.vw-is-selected`) |
+| `--vw-field-invalid` | `#c4161c` | Border of a built-in field input whose text could not be read (`aria-invalid`) |
+
+In forced-colors mode highlighted bars get a dashed `CanvasText` outline, focused load segments a `Highlight` outline, highlighted load segments a dashed `CanvasText` outline and selected load segments a solid `Highlight` outline.
 
 Scheduling overlays add four variables, used only when the matching input is set:
 
@@ -222,7 +236,7 @@ In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1
 | --- | --- | --- |
 | `selected` | `vw-is-selected` | Selected graph nodes, minimap nodes, selected edge hit areas, Gantt bars and the active dependency path |
 | `related` | `vw-is-related` | Graph nodes and edges next to the selection, and Gantt dependency paths that touch a selected bar |
-| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` |
+| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` (since this release also Gantt bars in `highlightedBarIds`) |
 | `active` | `vw-is-active` | Pressed connection handles, the active graph edge and Gantt dependency hit areas, pressed Gantt link handles and the column resize separator being dragged |
 | `panning` | `vw-is-panning` | The graph stage while it is panned |
 | `draggable` | `vw-is-draggable` | Graph nodes that can be dragged |
@@ -256,7 +270,50 @@ Supply partial labels objects to translate controls and accessible names. The ro
 
 The edit event carries the previous interval so your parent can detect a stale proposal. A synchronous local commit is shown in the README.
 
-For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize pending updates per bar or reject another edit while a save is pending. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
+For an API-backed application, retain a record version alongside the interval, compare change.before to current state, submit the proposal with that version, and replace bars after the server accepts it. Serialize saves per document, not per bar: tasks, dependencies, assignments and calendars share one document version, so concurrent saves of different bars can conflict or leave related records inconsistent. Reject another edit (`useEditTransaction` returns `busy`) while a save is pending. The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically; a client-generated ID alone cannot prevent a double update on retry, and without these server guarantees retries are not safe. Surface rejection in your application and retain the accepted state. The event is a proposal; ignoring it preserves the previous interval.
+
+### Saving through a server
+
+`useEditTransaction` keeps the accepted state and the state being saved apart, saves one transaction per document at a time and commits only what the server accepted. Give it a document ID, the state and version you loaded and an adapter:
+
+```ts
+import { useEditTransaction, type TransactionAdapter } from 'vue-weave'
+
+const adapter: TransactionAdapter<Plan, PlanChange> = {
+  validate: (plan, changes) => checkChanges(plan, changes), // synchronous: true, false or a reason
+  apply: (plan, changes) => applyChanges(plan, changes),    // returns a new plan; never mutate
+  save: async (request, candidate) => {
+    const response = await fetch(`/api/plans/${request.documentId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-match': request.baseVersion },
+      body: JSON.stringify({ operationId: request.operationId, request, candidate }),
+    }).catch(() => undefined)
+    if (!response) return { status: 'uncertain', operationId: request.operationId } // the request may have arrived
+    if (response.status === 409) return { status: 'conflict', operationId: request.operationId, currentVersion: response.headers.get('etag') ?? '' }
+    if (!response.ok) return { status: 'rejected', operationId: request.operationId, code: String(response.status) }
+    const body = await response.json()
+    return { status: 'accepted', operationId: request.operationId, version: body.version, state: body.plan }
+  },
+}
+const plan = useEditTransaction({ documentId: 'plan-1', initialState: loaded.plan, initialVersion: loaded.version, adapter })
+
+async function onEdit(change: TimelineEdit) {
+  const outcome = await plan.submit([toPlanChange(change)], { source: change.source })
+  if (outcome.status === 'busy') announce('A save is still in progress')
+}
+```
+
+Bind the chart to `plan.candidateState.value ?? plan.acceptedState.value` to show the change while it is saved, or to `acceptedState` to show only saved data. `undo()` and `redo()` send the previous or next history snapshot as a `restore` transaction and move the history only when the server accepts it. `refresh(state, version)` takes a state fetched from the server (after a conflict, or when another user changed the document), resets the history, sets `historyReset` and makes late responses `discarded`. After `uncertain`, fetch the operation's outcome by its ID and pass it to `reconcile(result)`; never resend the changes under a new operation ID.
+
+The server side of this contract:
+
+- Apply a save only when `baseVersion` is the current version (a conditional update, for example `If-Match`), otherwise answer `conflict` with the current version.
+- Store the `operationId` with the change and answer a repeated request with the original result instead of applying it twice.
+- Commit every record a transaction touches (tasks, dependencies, assignments, calendars) atomically, for `changes` and `restore` alike, and return the whole normalised document with its new version. The client replaces its accepted state with what you return, so server-assigned IDs and recalculated dates must be consistent within it.
+
+Without these guarantees a retry after a lost response can apply a change twice. The demo's `examples/adapters/transactionStore.ts` simulates such a server, including rejection, conflicts and lost responses.
+
+### Batches, row moves and other proposals
 
 Treat a Gantt `edits` batch as one transaction: apply every change or none, and commit it as one history entry. Row moves arrive as `change.row.after`. Dependency `connect`, `reconnect` and `dependency-delete` events are proposals as well; assign dependency IDs in the application or on the server, and check for cycles there if your scheduling rules forbid them. A `reconnect` of a dependency with a `lag` carries the lag in `before` and `after`, so `{ ...dependency, ...change.after }` keeps it; change a lag through your own UI and commit it like any other edit.
 
@@ -287,9 +344,69 @@ For example, a piecewise scale can give working hours more visual space while re
 
 ## Reusing calculations
 
-Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph currently takes a synchronous layout callback. For an asynchronously computed layout, store the returned result in application state and supply a synchronous callback that returns the current result. Update data and matching geometry together.
+Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph's `layout` callback is synchronous. For an asynchronously computed layout, use `useAsyncGraphLayout` (see [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)), or store the result in application state yourself and supply a synchronous callback that returns it. Either way, update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
+
+## Linking views
+
+To show one plan as a graph, a Gantt chart and load rows that follow each other, bind your entities to what each view draws and let `useLinkedSelection` work out what every view shows. The view the user acts in keeps the selection; the others only highlight, so a linked bar is never deleted, moved or used to cancel a drag in another view.
+
+```vue
+<script setup lang="ts">
+import { computed, useTemplateRef } from 'vue'
+import { GanttChart, NetworkGraph, revealLinkedTarget, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+
+const bindings = computed<ViewBinding[]>(() => tasks.value.flatMap(task => [
+  { entity: { kind: 'task', id: task.id }, target: { view: 'graph', kind: 'node', id: task.id } },
+  { entity: { kind: 'task', id: task.id }, target: { view: 'timeline', kind: 'bar', id: task.id } },
+  ...task.resourceId ? [{ entity: { kind: 'task', id: task.id }, target: { view: 'load', resourceId: task.resourceId, start: task.start, end: task.end } } as ViewBinding] : [],
+]))
+const linked = useLinkedSelection({ bindings })
+const graph = useTemplateRef('graph')
+
+// Only `target-activate` selects; the components' own `select` events are left unconnected, so one click is handled once.
+const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
+const enter = (event: ViewTargetEvent) => linked.hoverEnter(event.target.view, event.target)
+const leave = (event: ViewTargetEvent) => linked.hoverLeave(event.target.view, event.target)
+
+async function showInGraph(nodeId: string) {
+  const result = await revealLinkedTarget({
+    reveal: () => graph.value?.revealNode(nodeId, { focus: true }),
+    expand: groupId => {
+      collapsed.value = new Set([...collapsed.value].filter(id => id !== groupId))
+      return true // return false to keep the group collapsed; the result is then not 'revealed'
+    },
+  })
+  if (result.status !== 'revealed') explain(result) // unknown, or still hidden in a collapsed group
+}
+</script>
+
+<template>
+  <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :groups="groups" :collapsed-group-ids="collapsed"
+    :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
+    :highlighted-edge-ids="linked.graph.value.highlightedEdgeIds"
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+  <GanttChart :rows="rows" :bars="bars" :range="range" :load-rows="loadRows" :load-segments="loadSegments" load-selectable
+    multi-select :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"
+    :selected-load-targets="linked.load.value.selected" :highlighted-load-targets="linked.load.value.highlighted"
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+</template>
+```
+
+- IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities.
+- Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
+- Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
+- For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached, and `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
+- Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
+
+## Search, sort and saved views
+
+Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input.
+
+To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
+
+For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text. In GanttChart, a column with `field` emits `field-edit` instead of `cell-edit`: listen to `field-edit`, check it in `validateFieldEdit` and apply `change.after` to your row. Provide your own editor through the `cell-editor` slot (call `commit(value)` or `commitText(text)` and `cancel()`), or leave the slot out to use the built-in text input, which parses with the field. A `cell` slot still owns the whole cell.
 
 ## Use ELK.js for layout
 
@@ -390,7 +507,7 @@ Notes:
 
 - The edge coordinates above are those of the root graph, which holds every node and edge of a flat graph. For compound graphs (`children` inside children), ELK reports positions relative to each parent; add the parent offsets, or set `org.eclipse.elk.json.edgeCoords` to `ROOT` and `org.eclipse.elk.json.shapeCoords` to `ROOT`.
 - NetworkGraph checks the result: every node needs a box with a positive size and every edge a path, and `width` and `height` must be positive. Give ELK the sizes you render, for example from the `sizes` prop.
-- Keep the default `edgeStyle` (`curve`) to draw ELK's routes. `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are always redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Saved `positions` move nodes after the layout and reroute their edges in the same way.
+- With the default `routingPolicy` (`'builtin'`), keep the default `edgeStyle` (`curve`) to draw ELK's routes: `orthogonal` and `straight` reroute every edge with the built-in router, and edges with a `fromPort` or `toPort` are redrawn from their port anchors (`routeGraphPorts`), so ELK's sections are used for edges without named ports, while the ports still shape where ELK places the nodes. Set `routing-policy="preserve"` to keep ELK's sections for every edge, port edges and the orthogonal and straight styles included, while they still end at their ports and boxes; return `routes` metadata to have the ends checked against the ports and sides (see [Preserving external routes](#preserving-external-routes)). With either policy, saved `positions` and `sizes` move or resize nodes after the layout and reroute only the edges of those nodes.
 - With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
 - `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
 
@@ -423,3 +540,105 @@ The timeline then runs from right to left and its row headings sit on the right.
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
 The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+
+## Saving and restoring a view
+
+Use a snapshot to persist a chart's data and saved view as JSON (see "Versioned JSON snapshots" in [api.md](api.md)).
+
+```ts
+import { parseWeaveSnapshot, restoreWeaveSnapshot, serializeWeaveSnapshot } from 'vue-weave/core'
+
+// Save. Pass savedAt yourself; the same input and metadata give the same text.
+const text = serializeWeaveSnapshot({
+  kind: 'graph',
+  metadata: { title: 'Order flow', savedAt: new Date().toISOString() },
+  data: { nodes, edges, groups, positions, sizes }, // positions and sizes are Maps
+  view: { graph: { camera: { center, scale }, collapsedGroupIds } },
+}, { codecs: [dateCodec], space: 2 })
+
+// Restore. Nothing is applied until the whole snapshot is valid.
+const parsed = parseWeaveSnapshot(text)
+if (!parsed.ok) return showErrors(parsed.diagnostics)
+const restored = restoreWeaveSnapshot(parsed.snapshot, { codecs: [dateCodec], layouts })
+if (!restored.ok) return showErrors(restored.diagnostics) // the screen is unchanged
+```
+
+The restore procedure for a graph is: accept the restored `nodes`, `edges`, `groups`, `positions`, `sizes` and `view.collapsedGroupIds` into your state (`positions` and `sizes` are `Map` props, `collapsedGroupIds` is a `Set`), wait for the update with `nextTick`, then restore the camera. Replacing every node makes the chart fit itself to the new content, so a camera set earlier would be overwritten. In short: update nodes, `await nextTick()`, restore camera.
+
+The camera is stored as the graph point at the viewport center plus the scale, so the same snapshot looks the same in a container of any size. Read it with `getViewportCenter()` and `getViewport().scale`, and restore it with `setViewportCenter(view.camera.center, view.camera.scale)` after the `nextTick` above:
+
+```ts
+const snapshot = restored.snapshot // kind 'graph'
+nodes.value = snapshot.nodes
+edges.value = snapshot.edges
+positions.value = snapshot.positions
+collapsed.value = snapshot.view?.collapsedGroupIds ?? new Set()
+await nextTick()
+const camera = snapshot.view?.camera
+if (camera) graph.value?.setViewportCenter(camera.center, camera.scale)
+```
+
+Functions are never stored. Columns, layouts, sort comparators, editors and renderers are saved by name and resolved on restore from the registry you pass to `restoreWeaveSnapshot`: `{ codecs, layouts, columns, editors, renderers, comparators, onMissing }`. `columns` maps a column ID (or the saved `registryId`) to its label, `value` and other functions, `layouts` maps a layout ID to a factory that receives the saved options. A name that is not registered fails the restore, unless `onMissing: 'fallback'` turns it into a warning and the default display; a missing codec always fails. Keep registries in code and version them with your application, and record a codec `version` when its encoding changes.
+
+For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (or `restored.input` and `restored.schedule`) to your state first, then apply `view.window`, `view.collapsedRowIds` and the resolved `view.columns`. Reading a file never saves to a server by itself. To apply it to server data, fetch the server's current version and save the restored data as one change; `metadata.sourceVersion` is not that version.
+
+## Asynchronous layouts and preserved routes
+
+`NetworkGraph`'s `layout` prop stays synchronous. To compute layouts in a Worker or another asynchronous engine, use `useAsyncGraphLayout` and bind the frame it displays. The composable keeps the *desired* frame (the latest input, being computed) apart from the *display* frame (the last input whose layouts are all ready). Bind every field of `display` together, so new nodes are never drawn with old geometry, and pass the returned `layout` function, whose identity never changes, so a new result does not re-fit the camera:
+
+```vue
+<script setup lang="ts">
+import { computed, onBeforeUnmount } from 'vue'
+import { NetworkGraph, graphLayoutWorkerAdapter, layoutLayeredGraph, useAsyncGraphLayout } from 'vue-weave'
+
+const worker = typeof Worker === 'undefined' ? undefined : new Worker(new URL('./graphLayout.worker.ts', import.meta.url), { type: 'module' })
+const graph = useAsyncGraphLayout({
+  input: () => ({ nodes: nodes.value, edges: edges.value, groups, collapsedGroupIds: collapsed.value }),
+  adapter: worker ? graphLayoutWorkerAdapter(worker) : () => Promise.reject(new Error('Workers are not available')),
+  initialLayout: (shownNodes, shownEdges) => layoutLayeredGraph(shownNodes, shownEdges),
+})
+onBeforeUnmount(() => worker?.terminate())
+// `initialLayout` makes the first frame synchronous, so `display` is always set here.
+const frame = computed(() => graph.display.value!)
+</script>
+
+<template>
+  <NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :groups="frame.groups"
+    :collapsed-group-ids="frame.collapsedGroupIds" :layout="graph.layout" v-bind="graph.gestureListeners" />
+</template>
+```
+
+- Requests start when the component mounts, so nothing runs during server rendering. With `initialLayout` the server and the first client render show the same synchronous layout; without it `display` is undefined until the first result, so render a loading state in both.
+- Use the controlled `collapsedGroupIds` prop with the frame's value. With collapsed groups NetworkGraph lays out two inputs (the full graph, to place proxies, and the collapsed view); a frame is shown only when both layouts are ready. Uncontrolled `collapsibleGroups` would ask for a layout that has not been computed.
+- Every request carries a `requestId` and an `inputKey`. Only results for the current input are shown, whatever order they arrive in; results of cancelled or disposed requests are discarded. The key covers edges, ports, sizes and labels, not just node IDs; bump `revision` when node `data` or engine settings outside `settings` change the layout.
+- A finished frame waits while a gesture is in flight, so an ongoing drag is not cancelled; it is shown when the gesture ends. NetworkGraph reports every gesture a new layout would cancel through `gesture-start` and `gesture-end` (node drags, resize and waypoint drags, connections from arming to completion, box selection, pan and pinch), one end for every start and after the proposal, so the graph has emitted its `node-move` before the waiting frame is shown. `v-bind="graph.gestureListeners"` connects those events to the composable; `graph.gesturing` tells whether frames are being held. Your own `@gesture-start` and `@gesture-end` listeners can sit next to it. For gestures the application tracks itself (a drag in another component that edits the same data, for example), pass a boolean ref or getter as the `gesture` option; frames wait while either is active.
+- A failure keeps the last display and sets `error` with the revision and input key that failed. With the default `provisional: true` that display can be the provisional frame of the failed input (`display.source === 'provisional'`): consistent, with the previous boxes and temporary routes for the new edges. Show that the routes are temporary, or set `provisional: false` to keep the last frame the engine produced.
+- When only edges change (for example after a `connect` is accepted), the frame is shown at once with the previous boxes and temporary routes from `completeGraphLayout` (`source: 'provisional'`, `temporaryEdgeIds`) until the engine answers.
+
+A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
+
+### Preserving external routes
+
+`routeGraphPorts` and `routeGraphEdges` take `policy: 'preserve'`. With it, a path the layout drew is kept, in every edge style and also for edges with named ports, while both ends still fit: at the port anchor for a named port, otherwise on the box border. A layout can return route metadata in `layout.routes` (start and end points, ports, the sides a route leaves and enters, bend points); it is then checked as well, and it is carried through `applyGraphPositions`, `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges`. Only these edges fall back to built-in routing: edges with `points` (explicit waypoints win), edges of a node that `positions` or `sizes` moved or resized, edges whose port or metadata no longer fits, and temporary routes. Note that with `preserve`, edges with named ports are no longer always rerouted. The default `'builtin'` policy is unchanged.
+
+NetworkGraph applies the policy with its `routingPolicy` prop:
+
+```vue
+<NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :layout="graph.layout" routing-policy="preserve" edge-style="orthogonal" />
+```
+
+A node drag keeps updating only the dragged nodes' edges and draws the same routes the committed move produces. A connection accepted before the engine answers is drawn with a temporary route (`completeGraphLayout`) instead of failing with `Missing layout path`, and is routed again when the new layout arrives. A new layout object with the same geometry for the same inputs does not cancel a drag in flight; a layout whose geometry changed still does, so bind `gestureListeners` from `useAsyncGraphLayout` to hold results until the gesture ends.
+
+Direct core users get the routed layout that NetworkGraph draws, and that `renderGraphSvg` should receive, by running the same steps:
+
+```ts
+import { applyGraphPositions, applyGraphSizes, renderGraphSvg, routeGraphEdges, routeGraphPorts } from 'vue-weave/core'
+
+const nodesById = new Map(nodes.map(node => [node.id, node]))
+const placed = applyGraphSizes(applyGraphPositions(layout, edges, positions, direction), edges, sizes, direction)
+const ported = routeGraphPorts(placed, nodesById, edges, direction, { policy: 'preserve' })
+const routed = routeGraphEdges(ported, edges, nodesById, { style: 'orthogonal', direction, policy: 'preserve' })
+const svg = renderGraphSvg(routed, nodes, edges, { theme })
+```
+
+`renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.

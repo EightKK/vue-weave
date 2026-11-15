@@ -12,3 +12,18 @@ export interface GraphDrop {
   /** The data of the HTML drag, as the browser supplied it. */
   dataTransfer: DataTransfer | null
 }
+
+/**
+ * Payload of the GanttChart `bar-drop` event (`droppable`). Like `GraphDrop`, it refers to the DOM `DataTransfer`, so it
+ * is exported from the Vue entry only. The chart does not read the data; the application resolves what was dropped.
+ */
+export interface TimelineDrop {
+  /** Time under the drop point, snapped to the active `snap` and clamped to the time axis. */
+  time: number
+  /** The displayed task row under the drop point. Absent over the header and the load rows. */
+  rowId?: string
+  clientX: number
+  clientY: number
+  /** The data of the HTML drag, as the browser supplied it. */
+  dataTransfer: DataTransfer | null
+}

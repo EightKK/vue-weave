@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "planning",
+  "metadata": { "title": "Sprint", "savedAt": "2026-03-01T00:00:00.000Z" },
+  "data": {
+    "range": { "start": 0, "end": 100 },
+    "quantum": 1,
+    "tasks": [
+      { "id": "c", "duration": 15, "startNoEarlierThan": 40, "priority": 2 },
+      { "id": "a", "duration": 10 },
+      { "id": "b", "duration": 20, "splittable": true }
+    ],
+    "dependencies": [
+      { "id": "a-b", "from": "a", "to": "b", "type": "FS", "lag": 5 },
+      { "id": "a-c", "from": "a", "to": "c" }
+    ],
+    "resources": [
+      { "id": "r1", "capacity": 1 },
+      { "id": "r2", "capacity": 2 }
+    ],
+    "assignments": [
+      { "taskId": "a", "resourceId": "r1" },
+      { "taskId": "b", "resourceId": "r1" },
+      { "taskId": "c", "resourceId": "r2", "units": 2 }
+    ],
+    "placements": [{ "taskId": "b", "resourceId": "r1" }],
+    "display": [
+      { "taskId": "c", "label": "Cutover", "tone": "amber", "data": { "at": { "$codec": "date", "version": 1, "value": "2026-03-15T00:00:00.000Z" } } },
+      { "taskId": "a", "label": "Prepare" }
+    ]
+  },
+  "view": { "timeline": { "collapsedRowIds": ["r1"] } }
+}
