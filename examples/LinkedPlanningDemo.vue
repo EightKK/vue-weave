@@ -5,7 +5,7 @@
 // and handles collapsed groups and unknown targets with a visible message.
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import {
-  GanttChart, NetworkGraph, buildViewBindingIndex, calculateResourceLoad, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
+  GanttChart, NetworkGraph, buildViewBindingIndex, revealLinkedTarget, calculateResourceLoad, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
   scheduleTasks, scheduleToGraph, traverseGraph, useLinkedSelection,
   type EntityRef, type GraphViewTarget, type LoadViewTarget, type RevealResult, type ScheduleLink, type ScheduleTask,
   type TimelineBar, type TimelineLoadSegment, type ViewBinding, type ViewTarget, type ViewTargetEvent,
@@ -121,15 +121,8 @@ const highlightedBars = computed(() => merged(timelineSets.value.highlightedBarI
 const highlightedDependencies = computed(() => merged(timelineSets.value.highlightedDependencyIds, new Set(),
   t => t.view === 'timeline' && t.kind === 'dependency' ? t.id : undefined))
 
-// Load segments have no ID: current segments are found again from the load targets that overlap them.
-const segmentKey = (segment: TimelineLoadSegment) => segment.resourceId + ':' + segment.start
-const selectedSegments = computed(() => new Set(resolveLoadTargets(loadSegments, linked.load.value.selected).segments.map(segmentKey)))
-const highlightedSegments = computed(() => {
-  const targets = [...linked.load.value.highlighted, ...impactTargets.value.filter((t): t is LoadViewTarget => t.view === 'load')]
-  return new Set(resolveLoadTargets(loadSegments, targets).segments.map(segmentKey))
-})
-const markOf = (segment: TimelineLoadSegment) =>
-  selectedSegments.value.has(segmentKey(segment)) ? 'selected' : highlightedSegments.value.has(segmentKey(segment)) ? 'linked' : undefined
+// Load segments have no ID: the chart finds the current segments again from the load targets that overlap them.
+const highlightedLoad = computed(() => [...linked.load.value.highlighted, ...impactTargets.value.filter((t): t is LoadViewTarget => t.view === 'load')])
 
 const toolbarTarget = computed<GraphViewTarget | undefined>(() => {
   const [node] = graphSets.value.selectedNodeIds
@@ -224,15 +217,19 @@ async function expandAndShow() {
   const pending = offer.value
   if (!pending) return
   offer.value = undefined
-  // Expanding is the application's decision: update the controlled set, wait for the render, then reveal again.
-  if (pending.view === 'graph') setGraphCollapsed(new Set([...graphCollapsed.value].filter(id => id !== pending.proxyId)))
-  else rowsCollapsed.value = new Set([...rowsCollapsed.value].filter(id => id !== pending.proxyId))
-  await nextTick()
-  await nextTick()
-  const result = pending.view === 'graph'
-    ? await graph.value?.revealNode(pending.taskId, { focus: true })
-    : await gantt.value?.revealBar(pending.taskId, { focus: true })
-  if (result) reportReveal(result, pending.view, pending.taskId)
+  // Expanding is the application's decision: revealLinkedTarget asks `expand` for each collapsed ancestor, waits for the
+  // render after the controlled set changed, and reveals again. Returning false here would decline and keep it hidden.
+  const result = await revealLinkedTarget({
+    reveal: () => pending.view === 'graph'
+      ? graph.value?.revealNode(pending.taskId, { focus: true })
+      : gantt.value?.revealBar(pending.taskId, { focus: true }),
+    expand: proxyId => {
+      if (pending.view === 'graph') setGraphCollapsed(new Set([...graphCollapsed.value].filter(id => id !== proxyId)))
+      else rowsCollapsed.value = new Set([...rowsCollapsed.value].filter(id => id !== proxyId))
+      return true
+    },
+  })
+  reportReveal(result, pending.view, pending.taskId)
 }
 </script>
 
@@ -292,19 +289,13 @@ async function expandAndShow() {
 
     <GanttChart ref="gantt" :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :pixels-per-unit="64 / hour"
       :tick-steps="[hour, 2 * hour]" :row-height="46" :height="470" :load-rows="loadRows" :load-segments="loadSegments" load-selectable
+      :highlighted-load-targets="highlightedLoad" :selected-load-targets="linked.load.value.selected"
       deletable multi-select :selected-ids="timelineSets.selectedBarIds" :highlighted-bar-ids="highlightedBars"
       :highlighted-dependency-ids="highlightedDependencies" :collapsed-ids="rowsCollapsed"
       :labels="{ region: 'Linked timeline' }"
       @target-enter="enter" @target-leave="leave" @target-activate="activate"
       @bars-delete="onDelete" @update:collapsed-ids="setRowsCollapsed">
       <template #row-heading>Task</template>
-      <template #load-segment="{ segment, peak, overload }">
-        <span class="vw-load-fill" :style="{ height: Math.min(segment.load, segment.capacity) / Math.max(1e-9, peak) * 100 + '%' }"></span>
-        <span v-if="overload > 0" class="vw-load-over"
-          :style="{ bottom: segment.capacity / Math.max(1e-9, peak) * 100 + '%', height: overload / Math.max(1e-9, peak) * 100 + '%' }"></span>
-        <span class="vw-load-capacity" :style="{ bottom: segment.capacity / Math.max(1e-9, peak) * 100 + '%' }"></span>
-        <span v-if="markOf(segment)" class="linked-mark" :data-mark="markOf(segment)" aria-hidden="true"></span>
-      </template>
       <template #legend><span class="hint">Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks.</span></template>
     </GanttChart>
     <p class="hint">
@@ -318,6 +309,4 @@ async function expandAndShow() {
 .linked-options { flex-wrap: wrap; gap: 10px 16px; margin-bottom: 8px; }
 .linked-status { margin: 4px 0; display: flex; gap: 10px; align-items: center; }
 .linked-graph { position: relative; margin-bottom: 12px; }
-.linked-mark { position: absolute; inset: 1px; border: 2px dashed var(--vw-graph-highlight, var(--vw-accent, #245e96)); border-radius: 3px; pointer-events: none; }
-.linked-mark[data-mark="selected"] { border-style: solid; border-width: 3px; }
 </style>

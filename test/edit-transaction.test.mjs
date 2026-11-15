@@ -322,3 +322,32 @@ test('useEditHistory: existing behaviour is unchanged and the new methods are ad
   assert.equal(h.canUndo.value, false)
   assert.throws(() => useEditHistory('a', 0), RangeError)
 })
+
+test('a server that renames IDs is accepted as one consistent state, references included', async () => {
+  // A plan with a client-side temporary task ID; the server assigns the permanent ID and rewrites the dependency.
+  const saves = []
+  const tx = useEditTransaction({
+    documentId: 'plan', initialState: { tasks: [{ id: 'A' }], links: [] }, initialVersion: 'v1',
+    adapter: {
+      validate: () => true,
+      apply: (state, changes) => ({ tasks: [...state.tasks, ...changes.map(change => ({ id: change.id }))], links: [...state.links, ...changes.map(change => ({ from: 'A', to: change.id }))] }),
+      save: async (request, candidate) => {
+        saves.push(candidate)
+        const rename = id => (id === 'tmp-1' ? 'T-100' : id)
+        return {
+          status: 'accepted', operationId: request.operationId, version: 'v2',
+          state: { tasks: candidate.tasks.map(task => ({ id: rename(task.id) })), links: candidate.links.map(link => ({ from: rename(link.from), to: rename(link.to) })) },
+        }
+      },
+    },
+  })
+  const outcome = await tx.submit([{ id: 'tmp-1' }])
+  assert.equal(outcome.status, 'accepted')
+  assert.deepEqual(saves[0].tasks.map(task => task.id), ['A', 'tmp-1'])
+  // The accepted input is the server's state as a whole: no temporary ID survives in a task or a link.
+  assert.deepEqual(tx.acceptedState.value, { tasks: [{ id: 'A' }, { id: 'T-100' }], links: [{ from: 'A', to: 'T-100' }] })
+  assert.equal(tx.acceptedVersion.value, 'v2')
+  assert.equal(tx.candidateState.value, undefined)
+  // The history entry is the normalised state too, so undo and redo restore server IDs.
+  assert.equal(JSON.stringify(tx.acceptedState.value).includes('tmp-1'), false)
+})

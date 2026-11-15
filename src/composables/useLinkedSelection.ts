@@ -1,9 +1,9 @@
-import { computed, shallowRef, toValue } from 'vue'
+import { computed, nextTick, shallowRef, toValue } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
 import {
   buildViewBindingIndex, resolveEntityRefs, resolveViewTargets,
 } from '../core/viewBindings.js'
-import type { EntityRef, LoadViewTarget, ViewBinding, ViewTarget } from '../core/viewBindings.js'
+import type { EntityRef, LoadViewTarget, RevealResult, ViewBinding, ViewTarget } from '../core/viewBindings.js'
 
 export type LinkedViewName = ViewTarget['view']
 
@@ -177,4 +177,51 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     hoverEnter,
     hoverLeave,
   }
+}
+
+export interface RevealLinkedTargetOptions {
+  /**
+   * Calls the reveal method of the view, for example `() => graph.value?.revealNode(id, { focus: true })`. It is called
+   * again after each accepted expansion. Returning undefined (no mounted view) counts as `unknown`.
+   */
+  reveal: () => Promise<RevealResult> | RevealResult | undefined
+  /**
+   * Asked when the item is hidden by a collapsed group or row. Expand `proxyId` in the controlled `collapsedGroupIds`
+   * (graph) or `collapsedIds` (timeline) and return true, or return false to decline. Without it, nothing is expanded
+   * and the `hidden-by-collapse` result is returned.
+   */
+  expand?: (proxyId: string, result: RevealResult) => boolean | Promise<boolean>
+  /** The most expansions to try for nested collapses. Default 16. */
+  maxExpansions?: number
+}
+
+export interface LinkedRevealResult extends RevealResult {
+  /** The proxies that `expand` accepted, in order. */
+  expandedIds: string[]
+  /** True when `expand` declined, or accepted without the item becoming visible. The status is then not `revealed`. */
+  declined?: boolean
+}
+
+/**
+ * Reveals an item of a view and, when a collapsed ancestor hides it, offers the application to expand that ancestor:
+ * reveal, ask `expand(proxyId)`, wait for the render (`nextTick` twice: props, then layout and DOM), reveal again, until
+ * the item is shown, unknown, or the application declines. It never expands anything itself and never reports
+ * `revealed` unless the last reveal did. An expansion that is accepted but leaves the same proxy in place counts as
+ * declined, so an application that does not update the controlled set cannot loop.
+ */
+export async function revealLinkedTarget(options: RevealLinkedTargetOptions): Promise<LinkedRevealResult> {
+  const limit = options.maxExpansions ?? 16
+  if (!Number.isInteger(limit) || limit < 0) throw new RangeError('maxExpansions must be a non-negative integer')
+  const expandedIds: string[] = []
+  let result: RevealResult = (await options.reveal()) ?? { status: 'unknown' }
+  while (result.status === 'hidden-by-collapse' && result.proxyId !== undefined && options.expand && expandedIds.length < limit) {
+    const proxyId = result.proxyId
+    if (!(await options.expand(proxyId, result))) return { ...result, expandedIds, declined: true }
+    expandedIds.push(proxyId)
+    await nextTick()
+    await nextTick()
+    result = (await options.reveal()) ?? { status: 'unknown' }
+    if (result.status === 'hidden-by-collapse' && result.proxyId === proxyId) return { ...result, expandedIds, declined: true }
+  }
+  return { ...result, expandedIds }
 }

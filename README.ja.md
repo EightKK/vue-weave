@@ -56,6 +56,16 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
 - データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして読み込みます。
 
+### 計画・連動・保存
+
+- ビューの連動：`useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。利用者が操作したビューだけが選択を持ち、ほかのビューには表示専用の強調（`highlightedNodeIds`、`highlightedEdgeIds`、`highlightedBarIds`、`highlightedLoadTargets`）を渡します。`target-enter`、`target-leave`、`target-activate` イベントが指している対象を通知し、`revealNode`、`revealBar`、`revealLinkedTarget` が折り畳まれたグループや行の中も含めてその対象へ移動します。
+- リソースビュー：`projectResourceTimeline` は割り当てたリソースごとにタスクを表示し、負荷を二重に数えません。`resolveResourceTimelineEdit` は別の行へのドラッグを割当の変更に変換し、`buildPlacementInput` は未計画タスクを計算から除きます。GanttChart はアプリの一覧からのドロップを受け付けます（`droppable`、`bar-drop`）。
+- 理由の説明：`scheduleTasks(input, { explain: true })` と `levelResources` は各タスクの日程が決まった理由をトレースとして返します。`toPlanningDiagnostics` は循環、実行不能なタスク、負荷超過、平準化で解決できなかったタスクを、関係するタスクとリソースとともに一覧にします。
+- 非同期レイアウト：`useAsyncGraphLayout` はWorkerなど任意の非同期エンジンでレイアウトを計算し、そろった最新のフレームだけを表示します。`routingPolicy="preserve"` はポート付きの辺を含めてエンジンの配線を保持します。
+- 型付きセル・検索・保存ビュー：`field` を持つ列は型付きの値を提案し（`field-edit`、`cell-editor` スロット）、`useTimelineView` は行の表示用コピーを検索・並べ替えます。
+- 保存：`useEditTransaction` はアダプター経由で文書ごとに一つずつ保存し、受理・拒否・版競合・結果不明を区別します。Undo／Redo もサーバーへ送ります。`serializeWeaveSnapshot` と `restoreWeaveSnapshot` はデータと表示設定を版付きで検証されたJSONとして保存・復元します。
+- デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
+
 ### 書き出し・テーマ・RTL
 
 - どちらのコンポーネントも `exportSvg(options)` と `exportPng(options)` を提供し、サーバーでは `renderGraphSvg` と `renderTimelineSvg` がSVGを生成します。
@@ -160,6 +170,33 @@ function commit(change: TimelineEdit) {
 
 コンポーネントはドラッグ中のプレビューを表示し、`edit` イベントで変更案を渡します。呼び出し側が採用した内容を `bars` に反映します。アプリ固有の検証、API保存、非同期の承認処理を組み込めます。同期の `validateEdit` フックでイベント発行前に変更案を拒否することもできます。区間は半開区間 `[start, end)` で、長さ0のバーはマイルストーンです。
 
+### ビューの連動
+
+グラフとガントチャートを連動させる最小の例です。どちらかのビューで項目を選ぶと、そのビューで選択され、もう一方の対応する項目が強調されます。
+
+```vue
+<script setup lang="ts">
+import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+
+// nodes、edges、rows、bars、range は上の例と同じです。ここではノードIDとバーIDがタスクIDです。
+const bindings: ViewBinding[] = bars.value.flatMap(bar => [
+  { entity: { kind: 'task', id: bar.id }, target: { view: 'graph', kind: 'node', id: bar.id } },
+  { entity: { kind: 'task', id: bar.id }, target: { view: 'timeline', kind: 'bar', id: bar.id } },
+])
+const linked = useLinkedSelection({ bindings })
+const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
+</script>
+
+<template>
+  <NetworkGraph :nodes="nodes" :edges="edges" :selected-ids="linked.graph.value.selectedNodeIds"
+    :highlighted-node-ids="linked.graph.value.highlightedNodeIds" @target-activate="activate" />
+  <GanttChart :rows="rows" :bars="bars" :range="range" :selected-ids="linked.timeline.value.selectedBarIds"
+    :highlighted-bar-ids="linked.timeline.value.highlightedBarIds" @target-activate="activate" />
+</template>
+```
+
+ホバー、負荷行、折り畳まれた項目への移動は [Linking views](docs/integration.md#linking-views) を、`useEditTransaction` は [Saving through a server](docs/integration.md#saving-through-a-server) を参照してください。
+
 ## 書き出し・表示方向・テーマ
 
 どちらのコンポーネントも、テンプレートrefの `exportSvg(options)` と `exportPng(options)` でチャート全体を保存でき、サーバーでは `vue-weave/core` が同じSVGを生成します。右から左の表示には `dir="rtl"`（または `auto`）を指定します。コンポーネントまたはその祖先に `vw-theme-dark` を付けるとダークテーマ、`vw-theme-auto` を付けると `prefers-color-scheme` に従います。詳細は[組み込みガイド](docs/integration.md)を参照してください。
@@ -179,7 +216,7 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。編集結果はデモ画面内の状態として保持します。
 
 `preview/` を含むビルド済みデモのアーカイブ（リリースに添付されることがあります）を使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
 

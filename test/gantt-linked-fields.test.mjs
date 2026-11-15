@@ -25,6 +25,7 @@ test('GanttChart server markup is identical when the new props are unset or at t
   const plain = await render()
   assert.equal(await render({ loadSelectable: false, droppable: true, validateFieldEdit: () => true, highlightedBarIds: new Set() }), plain)
   assert.equal(await render({ highlightedBarIds: undefined, loadSelectable: undefined }), plain)
+  assert.equal(await render({ highlightedLoadTargets: [], selectedLoadTargets: [] }), plain)
   // A `cell-editor` slot changes nothing for a column without `field`.
   assert.equal(await render({}, { 'cell-editor': () => 'editor' }), plain)
   assert.doesNotMatch(plain, /vw-is-highlighted|vw-is-selectable|vw-field|data-vw-cell/)
@@ -45,6 +46,30 @@ test('highlightedBarIds marks bars only for display: no selection, no related de
 test('loadSelectable turns load segments into focusable buttons with the same accessible name', async () => {
   const html = await render({ loadSelectable: true })
   assert.match(html, /class="vw-gantt-load-segment vw-is-overloaded vw-is-selectable" role="button" tabindex="0" aria-label="Developers 01:00–03:00: load 2 \/ capacity 1, overloaded by 1"/)
+})
+
+test('load targets mark the overlapping load segments without changing their accessible names', async () => {
+  const segments = [
+    { resourceId: 'dev', start: hour, end: 3 * hour, load: 2, capacity: 1 },
+    { resourceId: 'dev', start: 3 * hour, end: 5 * hour, load: 1, capacity: 1 },
+  ]
+  const segmentTags = html => [...html.matchAll(/<div class="(vw-gantt-load-segment[^"]*)"[^>]*>/g)].map(match => match[0])
+  // A target from an older load calculation still finds the current segment it overlaps; [3h, 4h) does not touch [1h, 3h).
+  const marked = segmentTags(await render({
+    loadSegments: segments,
+    highlightedLoadTargets: [{ view: 'load', resourceId: 'dev', start: 2 * hour, end: 2.5 * hour }],
+    selectedLoadTargets: [{ view: 'load', resourceId: 'dev', start: 3 * hour, end: 4 * hour }, { view: 'load', resourceId: 'other', start: 0, end: hour }],
+  }))
+  assert.equal(marked.length, 2)
+  assert.match(marked[0], /class="vw-gantt-load-segment vw-is-overloaded vw-is-highlighted" role="img" aria-label="Developers 01:00–03:00: load 2 \/ capacity 1, overloaded by 1"/)
+  assert.doesNotMatch(marked[0], /aria-pressed|vw-is-selected/)
+  assert.match(marked[1], /class="vw-gantt-load-segment vw-is-selected" role="img" aria-label="Developers 03:00–05:00: load 1 \/ capacity 1"/)
+  // With loadSelectable, the selected segment button reports its pressed state.
+  const selectable = segmentTags(await render({
+    loadSegments: segments, loadSelectable: true, selectedLoadTargets: [{ view: 'load', resourceId: 'dev', start: 3 * hour, end: 4 * hour }],
+  }))
+  assert.match(selectable[0], /role="button" tabindex="0" aria-pressed="false" aria-label="Developers 01:00–03:00/)
+  assert.match(selectable[1], /vw-is-selected" role="button" tabindex="0" aria-pressed="true" aria-label="Developers 03:00–05:00/)
 })
 
 test('field columns use the cell slot first, then the cell-editor slot, then the built-in parsed input', async () => {

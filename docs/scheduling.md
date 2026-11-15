@@ -288,6 +288,7 @@ An unplanned task is a task without dates, not a missing task. Do not give it in
 ### Leveling previews
 
 `levelResources` ignores `mode`, so an ALAP task is previewed at its earliest leveled dates. When a placement or edit preview shows a plan, say whether it came from `scheduleTasks`, which does not resolve capacity, or from `levelResources`, and decide explicitly whether an overload is allowed, a warning or a reason to refuse.
+
 ## Explain a plan
 
 Pass `{ explain: true }` as the second argument of `scheduleTasks` or `levelResources` to get a `trace` with the reasons for each task's dates. The calculation is the same: the reasons are recorded where the normal passes place each task, and without the option no reason is created and the result is unchanged.

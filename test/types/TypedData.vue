@@ -14,6 +14,8 @@ import {
   type TimelineConstraints, type MsProjectTask,
   type FieldValue, type RevealResult, type TimelineDrop, type TimelineEditCancel, type TimelineFieldEdit, type ViewTargetEvent,
   type GraphViewTarget, type GraphRoutingPolicy,
+  useTimelineView, useLinkedSelection, revealLinkedTarget, useAsyncGraphLayout, useEditTransaction, useEditHistory,
+  type LinkedRevealResult, type LoadViewTarget, type TransactionOutcome,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -137,6 +139,50 @@ function useRefs() {
   graph.value?.select('a')
 }
 
+// Composables keep the application's item and state types.
+function useComposables() {
+  const view = useTimelineView({ rows, bars, columns })
+  // `columns` is the array to pass to GanttChart, typed for the source rows.
+  const shownColumns: TimelineColumn<TeamRow>[] = view.columns.value
+  const shownRows: TeamRow[] = view.projection.value.rows
+  void [shownColumns, shownRows, view.diagnostics.value[0]?.code]
+  const linked = useLinkedSelection({ bindings: [] })
+  const loadTargets: readonly LoadViewTarget[] = linked.load.value.highlighted
+  const barIds: ReadonlySet<string> = linked.timeline.value.highlightedBarIds
+  void [loadTargets, barIds]
+  const shown: Promise<LinkedRevealResult> = revealLinkedTarget({
+    reveal: () => typedGraph.value?.revealNode('a', { focus: true }),
+    expand: (proxyId, result) => proxyId.length > 0 && result.status === 'hidden-by-collapse',
+  })
+  void shown.then(result => result.expandedIds.join() + String(result.declined))
+  // @ts-expect-error expand returns whether the application expanded the proxy.
+  void revealLinkedTarget({ reveal: () => undefined, expand: () => 'yes' })
+  const layout = useAsyncGraphLayout({
+    input: { nodes, edges, groups }, adapter: async request => layoutLayeredGraph(request.nodes, request.edges),
+  })
+  void layout.display.value?.nodes.map(node => priority(node.priority) + (owner(node.data) ?? ''))
+  void layout.display.value?.edges.map(edge => weight(edge.data))
+  interface Doc { title: string }
+  interface Change { title: string }
+  const transaction = useEditTransaction<Doc, Change>({
+    documentId: 'doc', initialState: { title: 'A' }, initialVersion: '1',
+    adapter: {
+      validate: (_state, changes) => changes.length > 0,
+      apply: (state, changes) => ({ ...state, title: changes.at(-1)?.title ?? state.title }),
+      save: async request => ({ status: 'accepted', operationId: request.operationId, version: '2', state: { title: 'B' } }),
+    },
+  })
+  const outcome: Promise<TransactionOutcome<Doc>> = transaction.submit([{ title: 'B' }])
+  void outcome
+  // @ts-expect-error Changes have the adapter's change type.
+  void transaction.submit([{ name: 'B' }])
+  const history = useEditHistory({ title: 'A' })
+  const previous: { title: string } | undefined = history.peekUndo()
+  history.replaceCurrent({ title: 'C' })
+  void previous
+}
+const loadFocus: LoadViewTarget[] = [{ view: 'load', resourceId: 'r', start: 0, end: 1 }]
+
 // Render functions and component registration keep working with the default item types.
 const vnodes = [
   h(NetworkGraph, { nodes: untypedNodes, edges: untypedEdges }),
@@ -250,6 +296,9 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
       {{ row.data?.missing }}
     </template>
   </GanttChart>
+  <GanttChart :rows="rows" :bars="bars" :range="range" :highlighted-load-targets="loadFocus" :selected-load-targets="loadFocus" />
+  <!-- @vue-expect-error Load targets are time ranges of a resource, not bar IDs. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :highlighted-load-targets="['b']" />
   <!-- @vue-expect-error A field validator receives field edits, not bar edits. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :validate-field-edit="validateEdit" />
 

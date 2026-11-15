@@ -215,7 +215,7 @@ async function loadJson() {
     <SaveStatus :status="tx.status.value" :pending="tx.pendingTransaction.value" :result="tx.result.value" :busy="busy" :version="tx.acceptedVersion.value"
       @dismiss="tx.clearResult(); busy = false" @reload="reloadLatest" @reconcile="checkWithServer" />
     <GanttChart :rows="view.projection.value.rows" :bars="view.projection.value.bars" :dependencies="view.projection.value.dependencies" :range="range"
-      :columns="view.columns.value.columns" :format-time="formatTime" :height="300" :label-width="150" :pixels-per-unit="72 / hour"
+      :columns="view.columns.value" :format-time="formatTime" :height="300" :label-width="150" :pixels-per-unit="72 / hour"
       :labels="{ region: 'Saved timeline', rows: 'Task' }" @edit="move" @field-edit="editField">
       <template #row-heading>Task</template>
       <template #cell-editor="slot"><TypedCellEditor v-bind="slot" /></template>

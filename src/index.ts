@@ -61,9 +61,10 @@ export { useTimelineView } from './composables/useTimelineView.js'
 export { useEditTransaction } from './composables/useEditTransaction.js'
 export type { UseEditTransactionOptions, HistoryReset } from './composables/useEditTransaction.js'
 
-export { useLinkedSelection } from './composables/useLinkedSelection.js'
+export { useLinkedSelection, revealLinkedTarget } from './composables/useLinkedSelection.js'
 export type {
-  LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions,
+  LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions, RevealLinkedTargetOptions,
+  LinkedRevealResult,
 } from './composables/useLinkedSelection.js'
 export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
 export type {

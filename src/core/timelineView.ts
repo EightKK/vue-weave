@@ -59,7 +59,7 @@ export interface TimelineViewInput<R extends TimelineRow = TimelineRow, B extend
   bars: readonly B[]
   dependencies?: readonly D[]
   /** Needed to resolve column IDs in the state. */
-  columns?: readonly TimelineColumn[]
+  columns?: readonly TimelineColumn<R>[]
   /** Registered compare rules by ID. */
   sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>
   /** Same meaning as the `laneCount` prop. Default: the lanes the bars use. */
@@ -95,7 +95,7 @@ export interface TimelineViewProjection<R extends TimelineRow = TimelineRow, B e
 }
 
 /** A view that shows every column in declared order with no search, sort or collapsed rows. */
-export function createTimelineViewState(columns: readonly TimelineColumn[] = [], patch: Partial<Omit<TimelineViewState, 'version'>> = {}): TimelineViewState {
+export function createTimelineViewState(columns: readonly Pick<TimelineColumn, 'id'>[] = [], patch: Partial<Omit<TimelineViewState, 'version'>> = {}): TimelineViewState {
   return {
     version: 1,
     columns: columns.map(column => ({ id: column.id, visible: true })),
@@ -166,7 +166,7 @@ export function parseTimelineViewState(value: unknown): TimelineViewState {
  * Bad widths are dropped and reported. Does not change `state`.
  */
 export function reconcileTimelineViewColumns(
-  state: TimelineViewState, columns: readonly TimelineColumn[],
+  state: TimelineViewState, columns: readonly Pick<TimelineColumn, 'id'>[],
 ): { columns: TimelineViewColumn[]; diagnostics: TimelineViewDiagnostic[] } {
   const known = new Set(columns.map(column => column.id))
   const seen = new Set<string>()
@@ -199,7 +199,9 @@ export function reconcileTimelineViewColumns(
 }
 
 /** The columns to render: ordered, hidden ones removed, saved widths applied. Returns new column objects. */
-export function resolveTimelineColumns(state: TimelineViewState, columns: readonly TimelineColumn[]) {
+export function resolveTimelineColumns<C extends Pick<TimelineColumn, 'id' | 'width'>>(
+  state: TimelineViewState, columns: readonly C[],
+): { columns: C[]; diagnostics: TimelineViewDiagnostic[] } {
   const reconciled = reconcileTimelineViewColumns(state, columns)
   const byId = new Map(columns.map(column => [column.id, column]))
   const resolved = reconciled.columns.filter(entry => entry.visible)

@@ -43,7 +43,14 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
   - [Interchange exports](#interchange-exports)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
+- [Linked views](#linked-views)
+- [Resource timelines and unplanned tasks](#resource-timelines-and-unplanned-tasks)
+- [Planning diagnostics and schedule traces](#planning-diagnostics-and-schedule-traces)
+- [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)
+- [Typed fields and timeline views](#typed-fields-and-timeline-views)
 - [Application undo and redo](#application-undo-and-redo)
+  - [Edit transactions and asynchronous saving](#edit-transactions-and-asynchronous-saving)
+- [Versioned JSON snapshots](#versioned-json-snapshots)
 - [Export to SVG and PNG](#export-to-svg-and-png)
 - [Right-to-left layout](#right-to-left-layout)
 - [Typed data](#typed-data)
@@ -207,7 +214,7 @@ The background pattern is a pattern element with an ID from useId, inside an ari
 | collapsedGroupIds / update:collapsedGroupIds | ReadonlySet<string> / undefined. Controlled collapsed groups; supports v-model:collapsed-group-ids. It applies even without collapsibleGroups (then no toggles are drawn). IDs of groups that are not in groups are ignored. update:collapsedGroupIds is emitted with a new Set for every toggle. |
 | edgeStyle | 'curve' \| 'orthogonal' \| 'straight' / 'curve'. curve keeps today's routes. orthogonal draws right-angle routes with 6-unit rounded corners, straight draws straight lines clipped to the box borders. Any other value throws RangeError while rendering. |
 | GraphEdge.points | Optional waypoints in chart coordinates. The edge is drawn through them in every style: a polyline in straight and orthogonal, a smooth curve through the points in curve. |
-| routingPolicy | 'builtin' \| 'preserve' / 'builtin'. builtin is the routing described here: edges with named ports are redrawn from their port anchors, and orthogonal and straight redraw every edge. preserve keeps every path the layout drew, in every edge style and also for edges with named ports, while both ends still fit their boxes and ports (isGraphRouteValid); only edges with points, edges of moved or resized nodes, edges whose port or route metadata no longer fits and temporary routes are routed as above. With preserve, an edge the layout has no path for (such as an edge just connected while an external layout is recomputed) gets a temporary built-in route (completeGraphLayout) instead of the Missing layout path error. When preserve and edgeStyle disagree, preserve wins: a kept path is not restyled. Any other value throws RangeError while rendering. |
+| routingPolicy | 'builtin' \| 'preserve' / 'builtin'. builtin is the routing described here: edges with named ports are redrawn from their port anchors, and orthogonal and straight redraw every edge. preserve keeps every path the layout drew, in every edge style and also for edges with named ports, while both ends still fit their boxes and ports (isGraphRouteValid); only edges with points, edges of moved or resized nodes, edges whose port or route metadata no longer fits and temporary routes are routed as above. With preserve, an edge the layout has no path for (such as an edge just connected while an external layout is recomputed) gets a temporary built-in route (completeGraphLayout) instead of the Missing layout path error. When preserve and edgeStyle disagree, preserve wins: a kept path is not restyled. Only paths the layout itself drew are kept: a path that the core routing functions drew (the output of routeGraphPorts or routeGraphEdges, a rerouted edge of a moved or resized node, a temporary route) counts as built-in and is drawn again by the built-in router. Any other value throws RangeError while rendering. |
 | editableEdges | boolean / false. Gives every edge its focusable hit area (like edgesSelectable) and shows waypoint handles on the selected edge (the edge whose reconnect handles would show): a "Move waypoint N · edge" button per waypoint and an "Add waypoint N · edge" button in the middle of every segment between the edge ends and the waypoints. |
 | edge-reshape(change) | GraphEdgeReshape with id, before and after: the edge's whole waypoint list before and after. Set the edge's points to after (remove the field when it is empty). |
 | validateEdgeReshape / edge-reshape-rejected(change, reason) | Synchronous check; false rejects with labels.reshapeRejected, a string rejects with that reason, announced in the live region. |
@@ -221,7 +228,7 @@ The background pattern is a pattern element with an ID from useId, inside an ari
 
 Every input is opt-in. Without them, and with edgeStyle 'curve', no waypoints, no sizes and no collapsed groups, the server markup, routes, events and accessible names are unchanged. The toggles and handles are drawn in one vw-network-overlay group above the nodes, which then also holds the connection preview and alignment guides.
 
-Collapsing uses collapseGraphGroups before layout, so the layout, culling, the minimap, Fit to view, fit, focusNode and exportSvg all see the collapsed graph. Each outermost collapsed group becomes one proxy node whose ID is the group ID, with the group label, the detail "N nodes" (labels.collapsedNode and labels.collapsedNodes), the rounded shape and data { collapsedGroup, nodeIds }. Members are hidden; their edges are re-attached to the proxy, edges inside the group are dropped, and parallel re-attached edges merge into one edge that keeps the ID of the first original edge. Group IDs must therefore differ from node IDs. A collapsed child group becomes a member of its expanded parent. Hidden nodes cannot be focused, fitted or selected; fit and focusNode throw Error for their IDs, so map them to the proxy (the group ID). revealNode resolves { status: 'hidden-by-collapse', proxyId } for them instead; to show the node itself, expand its groups through a controlled collapsedGroupIds and call revealNode again after nextTick. Toggling moves keyboard focus to the replacement toggle.
+Collapsing uses collapseGraphGroups before layout, so the layout, culling, the minimap, Fit to view, fit, focusNode and exportSvg all see the collapsed graph. Each outermost collapsed group becomes one proxy node whose ID is the group ID, with the group label, the detail "N nodes" (labels.collapsedNode and labels.collapsedNodes), the rounded shape and data { collapsedGroup, nodeIds }. Members are hidden; their edges are re-attached to the proxy, edges inside the group are dropped, and parallel re-attached edges merge into one edge that keeps the ID of the first original edge. Group IDs must therefore differ from node IDs. A collapsed child group becomes a member of its expanded parent. Hidden nodes cannot be focused, fitted or selected; fit and focusNode throw Error for their IDs, so map them to the proxy (the group ID). revealNode resolves { status: 'hidden-by-collapse', proxyId } for them instead; to show the node itself, expand its groups through a controlled collapsedGroupIds and call revealNode again after the render, or let revealLinkedTarget do both (see [Linked views](#linked-views)). Toggling moves keyboard focus to the replacement toggle.
 
 Proposals that involve a proxy refer to the real data where they can:
 
@@ -278,6 +285,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vw-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
 | highlightedBarIds | ReadonlySet<string> / undefined | Display-only highlight of bars (`vw-is-highlighted`, `--vw-bar-highlight`), separate from `selectedIds`; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops) |
 | loadSelectable | boolean / false | Makes load segments focusable buttons that report target events; see the same section |
+| highlightedLoadTargets, selectedLoadTargets | readonly LoadViewTarget[] / undefined | Display-only highlight (`vw-is-highlighted`) and selected state (`vw-is-selected`) of the load segments that overlap these resource time ranges; see the same section |
 | droppable | boolean / false | Accepts HTML drag and drop and emits `bar-drop(TimelineDrop)`; see the same section |
 | validateFieldEdit | (change: TimelineFieldEdit<R>) => boolean \| string \| void / undefined | Synchronous check of a typed field proposal from a column with `field`; see [Timeline columns and rollups](#timeline-columns-and-rollups) |
 
@@ -432,7 +440,7 @@ A bar cannot link to itself, and reconnecting a dependency to its existing endpo
 | GanttLabels.lag | Description prefix, default "Lag". With `connectable` or `reconnectable`, the focusable dependency keeps its accessible name ("Select dependency Wireframes → Billing API FS") and is described by the label: "Lag +2 h". Without them the dependency layer is decorative, as before. |
 | reconnect | Keeps the lag, see [Dependency editing](#dependency-editing). |
 
-`exportSvg`, `exportPng` and `renderTimelineSvg` (option `formatLag`) draw the same label. `ScheduleLink` extends `TimelineDependency`, so the same dependency array can feed the chart and `scheduleTasks`, `propagateEdit` (and therefore a `cascade` callback) and `rescheduleFromStatusDate`, which all apply the lag; `toMsProjectXml` writes it as `LinkLag`. With epoch milliseconds the scheduler requires each lag to be a multiple of its `quantum`.
+`exportSvg`, `exportPng` and `renderTimelineSvg` (option `formatLag`) draw the same label. `ScheduleLink` extends `TimelineDependency`, so in a task chart (one bar per task, bar ID = task ID) the same dependency array can feed the chart and `scheduleTasks`, `propagateEdit` (and therefore a `cascade` callback) and `rescheduleFromStatusDate`, which all apply the lag; `toMsProjectXml` writes it as `LinkLag`. With epoch milliseconds the scheduler requires each lag to be a multiple of its `quantum`. A resource view built with `projectResourceTimeline` is different: its chart links connect bar IDs, so pass the task links to the projection and use its `dependencies` (see [Resource timelines and unplanned tasks](#resource-timelines-and-unplanned-tasks)).
 
 The chart does not edit lags. Change one through your own UI and replace the dependency, for example from the dependency selection or the context menu, whose events carry the dependency ID:
 
@@ -478,7 +486,7 @@ Presets apply to the built-in linear scale. A custom scale prop still controls t
 | load-row slot | Customize the label using row and peak. |
 | load-segment slot | Customize a segment using segment, row, peak and overload. The slot content is inside an element with role img and an accessible label. |
 
-Each segment is scaled to the row's peak load or capacity. The default rendering fills load up to capacity, highlights the overloaded part and draws a dashed capacity line. Segments carry an accessible label such as "CNC cell 09:00–10:00: load 2 / capacity 1, overloaded by 1", built from formatTime and the GanttLabels fields load, capacity and overload; the load row group is named with loadRegion. Invalid load data is reported through validation-error. With `loadSelectable`, each segment is a focusable element with role button (class `vw-is-selectable`) and the same accessible name; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops).
+Each segment is scaled to the row's peak load or capacity. The default rendering fills load up to capacity, highlights the overloaded part and draws a dashed capacity line. Segments carry an accessible label such as "CNC cell 09:00–10:00: load 2 / capacity 1, overloaded by 1", built from formatTime and the GanttLabels fields load, capacity and overload; the load row group is named with loadRegion. Invalid load data is reported through validation-error. With `loadSelectable`, each segment is a focusable element with role button (class `vw-is-selectable`) and the same accessible name, and `highlightedLoadTargets` and `selectedLoadTargets` mark segments by time range; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops).
 
 ### Linked views, reveal and external drops
 
@@ -489,7 +497,8 @@ These additions connect the chart to other views (for example through `useLinked
 | highlightedBarIds | Bars drawn with `vw-is-highlighted` (an outline in `--vw-bar-highlight`). Display only: they are not part of the selection, so Delete and multiple-selection moves never include them, they do not mark dependencies (use `highlightedDependencyIds`) and a change does not cancel a gesture. Like other bars, a highlighted bar outside the visible window is not rendered; use `revealBar` to move to it. `exportSvg` and `exportPng` pass the set to `renderTimelineSvg`. |
 | target-enter(event), target-leave(event), target-activate(event) | `ViewTargetEvent` `{ target, source }`, with `target` a `ViewTarget` and `source` `'pointer'` or `'keyboard'`. Bars report `{ view: 'timeline', kind: 'bar', id }`: enter and leave on pointer hover and on visible keyboard focus and blur, activate on click, Enter or Space (not after a drag), next to the existing `select`. Dependencies report `kind: 'dependency'` in the same way where they are focusable (`connectable` or `reconnectable`). Rows report `kind: 'row'`: enter and leave on hover of the row and on visible focus of controls in its heading, activate on a click of the heading text. With `loadSelectable`, load segments report `{ view: 'load', resourceId, start, end }` on hover, focus, click, Enter and Space. Hover never scrolls. The existing payload unions such as `TimelineContextTarget` are unchanged. |
 | loadSelectable | boolean / false. Segments become focusable (`tabindex="0"`, role button) with an outline in `--vw-load-focus` on focus. Segments outside the virtualized window are not rendered; resolve a stored load target against the current segments with `resolveLoadTargets`. |
-| revealBar(id, options?) | Exposed method returning `Promise<RevealResult>`. An unknown ID resolves `{ status: 'unknown' }` and a bar whose row is hidden by a collapsed ancestor resolves `{ status: 'hidden-by-collapse', proxyId }` with the nearest displayed ancestor row; neither throws or scrolls. Otherwise the chart scrolls the bar's row and interval into view, waits for the next render (`nextTick`) so the virtualized bar exists, then moves DOM focus to it when `options.focus` is true, and resolves `{ status: 'revealed' }`. Expanding collapsed rows is the parent's decision: update `collapsedIds`, then call `revealBar` again. After an accepted row change that gives a bar a new ID (for example a resource projection), call `revealBar(newId, { focus: true })`. |
+| highlightedLoadTargets / selectedLoadTargets | `readonly LoadViewTarget[]` / undefined. Load segments have no ID and their boundaries move when load is recalculated, so these props take resource time ranges (`{ view: 'load', resourceId, start, end }`, for example `useLinkedSelection().load.value.highlighted` and `.selected`) and mark every current segment of that resource whose half-open range overlaps one (the rule of `resolveLoadTargets`). Matching segments get `vw-is-highlighted` (an inset ring in `--vw-load-highlight`) or `vw-is-selected` (`--vw-load-selected`); with `loadSelectable` and `selectedLoadTargets` set, segment buttons also carry `aria-pressed`. Display only: the chart never changes them, they work with or without `loadSelectable`, and the accessible names stay the same. A target that is not a valid load target throws like `resolveLoadTargets`. |
+| revealBar(id, options?) | Exposed method returning `Promise<RevealResult>`. An unknown ID resolves `{ status: 'unknown' }` and a bar whose row is hidden by a collapsed ancestor resolves `{ status: 'hidden-by-collapse', proxyId }` with the nearest displayed ancestor row; neither throws or scrolls. Otherwise the chart scrolls the bar's row and interval into view, waits for the next render (`nextTick`) so the virtualized bar exists, then moves DOM focus to it when `options.focus` is true, and resolves `{ status: 'revealed' }`. Expanding collapsed rows is the parent's decision: update `collapsedIds`, then call `revealBar` again, or use `revealLinkedTarget` (see [Linked views](#linked-views)). After an accepted row change that gives a bar a new ID (for example a resource projection), call `revealBar(newId, { focus: true })`. |
 | droppable / bar-drop(event) | With `droppable`, the chart accepts HTML drag and drop (it calls `preventDefault` on `dragenter`, `dragover` and `drop`) and emits `TimelineDrop` with `time` (snapped to the active `snap` and kept inside `range`), `rowId` (the displayed task row under the point; absent over the header and load rows), `clientX`, `clientY` and `dataTransfer`. The chart neither reads the data nor adds anything: the parent resolves what was dropped, for example from an ID in the data, and proposes it. `TimelineDrop` is exported from the Vue entry only. |
 
 `RevealOptions` also has `scale`, which only graph reveals use. `ViewTargetEvent`, `RevealStatus`, `RevealOptions` and `RevealResult` are exported from both entries.
@@ -903,11 +912,120 @@ const imported = timelineFromCsvTable(parseCsv(await file.text()), { parseTime: 
 
 `relatedIds` highlights the critical tasks and the edges between them; use `criticalEdgeIds` with an `edge` slot to style exactly the controlling links.
 
-## Application undo and redo
+## Linked views
 
-Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
+Core helpers and a composable link entities (tasks, resources, anything the application defines) to what the graph, timeline and load views show. The application passes the results to the components: `selectedIds` for the view the user acts in and display-only highlights for the others (NetworkGraph `highlightedNodeIds` and `highlightedEdgeIds`, GanttChart `highlightedBarIds` and `highlightedDependencyIds`, or `relatedIds`, `matchIds` or its own handling). Both components report what the user points at or activates through `target-enter`, `target-leave` and `target-activate` (`ViewTargetEvent`; NetworkGraph narrows it to `ViewTargetEvent<GraphViewTarget>`), and `revealNode` and `revealBar` bring a linked item into view (`RevealResult`). Types: `GraphViewTarget`, `ViewTargetSource`, `ViewTargetEvent`, `RevealStatus`, `RevealOptions` and `RevealResult`.
 
-Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+```ts
+import { buildViewBindingIndex, resolveViewTargets, resolveEntityRefs } from 'vue-weave/core'
+
+const index = buildViewBindingIndex([
+  { entity: { kind: 'task', id: 'A' }, target: { view: 'graph', kind: 'node', id: 'n1' } },
+  { entity: { kind: 'task', id: 'A' }, target: { view: 'timeline', kind: 'bar', id: 'b1' } },
+])
+resolveViewTargets(index, [{ kind: 'task', id: 'A' }]) // { targets: [n1, b1], unknown: [] }
+resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { entities: [task A], unknown: [] }
+```
+
+| Export | Contract |
+| --- | --- |
+| `buildViewBindingIndex(bindings)` | Two-way index. Many-to-many links are allowed, identical bindings count once, inputs are not modified. Keys encode kind and ID as a JSON tuple, so a task `A` and a resource `A` never collide. Throws for an empty kind or ID, and `RangeError` for a load range that is not finite or ends before it starts. |
+| `resolveViewTargets(index, entities)` | `{ targets, unknown }`: targets without repeats; entities with no binding are listed in `unknown`. |
+| `resolveEntityRefs(index, targets)` | `{ entities, unknown }`. A load target matches bound load targets of the same resource whose half-open range overlaps it. |
+| `resolveLoadTargets(segments, targets)` | `{ segments, unknown }`: current segments that overlap a load target. A load segment has no ID and its boundaries change when load is recalculated, so a target that overlaps no current segment is reported in `unknown` and never replaced by another segment. |
+| `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. |
+| `resolveCollapsedTargets(collapse, { nodeIds, edgeIds }, edges)` | Resolves IDs of the full graph against a `collapseGraphGroups` result: hidden nodes to their proxy, edges merged into a re-attached edge to the merged edge, and edges dropped inside one collapsed group to that group's proxy node. `edges` are the edges given to `collapseGraphGroups`. Returns `{ nodeIds, edgeIds, unknownNodeIds, unknownEdgeIds }`. |
+| `useLinkedSelection({ bindings, onSelect })` | See below. |
+
+`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them.
+
+| View | Pass to the component |
+| --- | --- |
+| `graph` (`LinkedGraphSets`) | `selectedNodeIds` to NetworkGraph `selectedIds`; `highlightedNodeIds` and `highlightedEdgeIds` to the props of the same name; `highlightedGroupIds` to your own group rendering |
+| `timeline` (`LinkedTimelineSets`) | `selectedBarIds` to GanttChart `selectedIds`; `highlightedBarIds` and `highlightedDependencyIds` to the props of the same name; `highlightedRowIds` to your own row rendering |
+| `load` (`LinkedLoadSets`) | `selected` to GanttChart `selectedLoadTargets` and `highlighted` to `highlightedLoadTargets` |
+
+`revealLinkedTarget({ reveal, expand?, maxExpansions? })` (Vue entry) goes to a linked item that may be inside a collapsed group or row. It calls `reveal()` (for example `() => graph.value?.revealNode(id, { focus: true })`); when the result is `hidden-by-collapse` it asks `expand(proxyId, result)`, which expands that proxy in the controlled `collapsedGroupIds` or `collapsedIds` and returns true, or returns false to decline. After an accepted expansion it waits for the render (two `nextTick`s) and reveals again, up to `maxExpansions` (default 16) nested collapses. It resolves a `LinkedRevealResult`: the last `RevealResult` plus `expandedIds`, and `declined: true` when `expand` declined or accepted without the item becoming visible. It never expands anything itself, and it resolves `revealed` only when the last reveal did, so a refused expansion is never reported as a completed move. Without `expand` it returns the first result.
+
+## Resource timelines and unplanned tasks
+
+These `vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
+
+| Function | Returns |
+| --- | --- |
+| projectResourceTimeline(input, options?) | `ResourceTimelineProjection`: `{ rows, bars, dependencies, laneCount, origins, taskBarIds, dependencyOrigins, omittedDependencyIds, hiddenDependencyIds, unplannedTaskIds }` |
+| createResourceTimelineProjector() | A memoized `projectResourceTimeline` that returns the previous projection while the input fields and options are the same objects |
+| resourceTimelineBarId(taskId, resourceId) | The projected bar ID, the JSON tuple `[taskId, resourceId]` |
+| resolveResourceTimelineEdits(projection, edits) | `{ ok: true, scheduleChanges, assignmentReplacements }` or a `ResourceTimelineRejection` |
+| resolveResourceTimelineEdit(projection, edit) | `{ ok: true, scheduleChange?, assignmentReplacement? }` or a `ResourceTimelineRejection` |
+| resourceTimelineCascade(projection, input) | A `TimelineCascade` that runs `propagateEdit` on task IDs and returns edits of every affected projection |
+| proposeResourceAssignment(state, request) | `{ ok: true, assignments, added, removed }` or `{ ok: false, code: 'already-assigned' \| 'not-assigned', reason }` |
+| buildPlacementInput(input, placedTaskIds) | `PlacementResult`: `{ ok, input, diagnostics, unplacedTaskIds, excludedDependencyIds, excludedAssignments }` |
+
+`ResourceTimelineInput` has `resources` (`{ id, label, detail?, data? }`, one row each, with the resource ID as row ID), `tasks` (placed tasks: `TimelineBar` fields without `rowId` and `lane`, copied to each projection), `assignments` (`ResourceAssignment`), optional task-level `dependencies` and optional `unplannedTaskIds`. Bars are ordered by task and then by row, with lanes from `assignLanes`; pass `laneCount` to GanttChart. The default label is `task label · resource label`, so projections of one task have distinct accessible names; `options.barLabel(task, resource)` replaces it. Bar IDs come from the task and resource IDs and do not depend on input order. `origins` maps each bar ID to `{ taskId, resourceId }` and `taskBarIds` maps each placed task to its bar IDs in row order.
+
+Chart links use bar IDs, so the scheduler's `ScheduleLink` array cannot be passed to the chart unchanged. Each task link becomes at most one chart link, with the link's ID, between the first projection of each task in `options.preferredBarIds` (for example the selected bars) or else its first projection in row order. `dependencyOrigins` maps chart link IDs to task link IDs, `omittedDependencyIds` lists drawn links whose tasks have several projections, and `hiddenDependencyIds` lists links not drawn because a task has no bar. The projection throws an Error for duplicate IDs, unknown or duplicate assignments, unknown link endpoints, a link from a task to itself and a task that is both placed and unplanned. The input is not modified.
+
+`resolveResourceTimelineEdits` turns GanttChart edits, including several projections of one task from `edits` or a cascade, into one `ResourceTimelineScheduleChange` (`{ taskId, before, after, mode, source }`) per task whose dates change, and one `ResourceAssignmentReplacement` (`{ taskId, fromResourceId, toResourceId }`) per bar whose `row` changes. A diagonal move gives both; apply them as one change. Rejections carry `code` and the `barIds` involved: `stale` (the bar is not in the projection, or its dates or row differ from `before`), `already-assigned` (the task already has the target resource), `conflicting-schedule` (projections of one task with different new dates) and `conflicting-assignment` (one bar to two rows, or two projections of one task to one row). A target row that is not in the projection throws an Error.
+
+`proposeResourceAssignment(state, request)` takes `{ assignments, resourceIds?, taskIds? }` and one of `{ kind: 'add', taskId, resourceId, units? }`, `{ kind: 'remove', taskId, resourceId }` and `{ kind: 'replace', taskId, fromResourceId, toResourceId }`. A replacement keeps the position and units of the replaced assignment. Unknown tasks or resources (when the lists are given) and duplicate assignments in the state throw an Error, and units that are not a positive integer throw a RangeError.
+
+`buildPlacementInput(input, placedTaskIds)` takes a `ScheduleInput` with optional `assignments`, such as a `LevelResourcesInput`, and returns the same kind of input with only the placed tasks, the links between them and their assignments. A link from an unplaced task to a placed one is reported as `{ code: 'unplaced-predecessor', taskId, predecessorId, dependencyId }` and makes `ok` false. Duplicate or unknown IDs and duplicate assignments still throw an Error.
+
+## Planning diagnostics and schedule traces
+
+These core helpers explain a plan without changing it. They are pure and return data; wording, translation and the list UI are the application's concern.
+
+| Export | Contract |
+| --- | --- |
+| scheduleTasks(input, options?) | `options.explain` (default false) adds a `trace: ScheduleTrace` to a successful result. Overloads type `trace` only for `{ explain: true }` (`ExplainedScheduleResult`). Dates, floats, critical flags and `criticalDependencyIds` are the same with or without it; without it the result has no `trace` property. Failures never have a trace. Options that are not an object, or an `explain` that is not a boolean, throw an Error |
+| levelResources(input, options?) | The same option and overloads (`ExplainedLevelResourcesResult`). Dates, `leveledTasks`, `delays`, `overloads` and `unresolvedTaskIds` are unchanged |
+| collectScheduleReasons(trace, taskId, options?) | The task's reasons followed by all their ancestors, breadth first, each once. `options.phases` limits the starting reasons. Iterative, so long chains do not exhaust the call stack. Throws an Error for an unknown task or parent reason |
+| toPlanningDiagnostics(result, load?) | Turns a `scheduleTasks` or `levelResources` result into `PlanningDiagnostic[]`. `load` (for example `calculateResourceLoad` output) replaces the result's own `overloads`; only segments with `overload > 0` are listed. A segment with a non-finite date or overload throws a RangeError |
+
+`ScheduleTrace` has `reasons` (each after its parents) and `taskReasonIds` (a `ReadonlyMap` from task ID to its own reason IDs, in input task order). Do not store a trace in a snapshot; recalculate it. A `ScheduleReason` has an `id` unique within its trace, `taskId`, `phase` (`ScheduleReasonPhase`), `kind` (`ScheduleReasonKind`), `bound` (`startLower`, `endLower`, `startUpper` or `endUpper`), `candidateTime` and `placedTime`, `parentReasonIds`, and depending on its kind `dependencyId`, `constraint`, `calendarId`, `resourceId`, `demand`, `capacity`, `relatedTaskIds` and `range`.
+
+| kind | Meaning |
+| --- | --- |
+| `dependency` | A link sets the limit. `relatedTaskIds` is the other task and the parents are its reasons in the same pass |
+| `constraint` | `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan` or `fixedStart` |
+| `project-bound` | `range`, the input `deadline`, `projectFinish` (parents: the reasons of the tasks that finish the project) or, without a `constraint`, the latest dates that leveling may not pass (parents: that task's `latest` reasons) |
+| `calendar` | Calendar time off moved the side from `candidateTime` to `placedTime` |
+| `pause` | The task's own pauses moved it further |
+| `capacity` | In `leveling`: `resourceId` had less remaining capacity than `demand` in `range`; `capacity` is its capacity there and `relatedTaskIds` the tasks that held it first |
+
+Tied limits are all reported, compared in working time as the scheduler places tasks. `range` is left out when a named bound has the same value, as in `ScheduleFailure.constraints`.
+
+A `PlanningDiagnostic` has `id` (a JSON array of the code and identifying values, stable across recalculations), `code` (`PlanningDiagnosticCode`), `severity` (`PlanningDiagnosticSeverity`), `entities` (`EntityRef[]` of kinds `task`, `dependency` and `resource`), optional `range`, optional `constraints` (for `schedule-infeasible`) and `reasonIds` into the result's trace.
+
+| code | severity | Source |
+| --- | --- | --- |
+| `schedule-cycle` | error | One per entry of a `cycle` failure: its tasks and dependencies |
+| `schedule-infeasible` | error | An `infeasible` failure: the task, its binding dependencies and `constraints` |
+| `leveling-unresolved` | warning | Each of `unresolvedTaskIds`, with its dates; `reasonIds` are its `leveling` reasons |
+| `resource-overload` | warning | Each overloaded segment: the resource, then its tasks; `reasonIds` are the overlapping `capacity` reasons |
+
+The exported types are `PlanningDiagnostic`, `PlanningDiagnosticCode`, `PlanningDiagnosticSeverity`, `ScheduleReason`, `ScheduleReasonPhase`, `ScheduleReasonKind`, `ScheduleReasonBound`, `ScheduleTrace`, `ScheduleOptions`, `CollectScheduleReasonsOptions`, `ExplainedScheduleSuccess`, `ExplainedScheduleResult`, `ExplainedLevelResourcesSuccess` and `ExplainedLevelResourcesResult`. See [Explain a plan](scheduling.md#explain-a-plan).
+
+## Asynchronous layouts and preserved routes
+
+Core (`vue-weave/core`):
+
+- `graphLayoutInputKey(input: GraphLayoutKeyInput): string` identifies a layout input: scope, direction, `settings` (JSON text), `revision`, and in order the nodes (ID, label, detail, shape, ports), edges (ID, ends, ports, label, waypoints), groups, collapsed group IDs, and any `positions` and `sizes` given to the engine. Node and edge `data` is not read; change `revision` when it matters. Throws RangeError for an unknown scope or direction or settings that are not JSON-serializable.
+- `buildGraphLayoutRequests(input: GraphLayoutRequestInput<N, E, G>, requestId: string): GraphLayoutRequests<N, E, G>` makes the requests NetworkGraph's `layout` calls correspond to: one `shown` request (ID `requestId + ':shown'`) and, while a known group is collapsed, an `expanded` request (`requestId + ':expanded'`) for the full input plus the `collapse` result. Unknown collapsed IDs are dropped and proxy details use `labels.collapsedNode` / `labels.collapsedNodes`, as in NetworkGraph.
+- `validateGraphLayoutResponse(request, response): GraphLayout` checks that a response echoes `requestId`, `inputKey` and `scope`; every node needs a finite positive box; a `shown` layout also needs finite positive dimensions, a path for every edge and route metadata (when given) with finite points and the edge's ports.
+- `completeGraphLayout(layout, nodes, edges, options?: { direction? }): { layout, temporaryEdgeIds, unresolvedEdgeIds }` adds temporary built-in routes for edges without a path whose end boxes exist.
+- `isGraphRouteValid(layout, nodes: ReadonlyMap<string, IdentifiedNode>, edge): boolean` tells whether the `preserve` policy keeps an edge's path.
+- `graphLayoutToJson(layout)`, `graphLayoutFromJson(value)`, `graphLayoutMessageToJson(message)`, `graphLayoutMessageFromJson(value)` and `parseGraphLayoutMessage(value)` convert and check layout Worker messages (`request`, `cancel`, `success`, `failure`; each with `requestId` and `inputKey`) for JSON and structured-clone transport.
+- `routeGraphPorts(layout, nodes, edges, direction, options?: GraphPortRouteOptions)` and `routeGraphEdges(layout, edges, nodes, options)` accept `policy?: GraphRoutingPolicy` (`'builtin'` default, or `'preserve'`).
+- `GraphLayout` has an optional `routes?: Map<string, GraphLayoutRoute>`: `start`, `end`, `fromPort`, `toPort`, `fromSide`, `toSide` and bend `points` of each routed edge.
+- Types: `GraphLayoutScope`, `GraphLayoutRequestInput`, `GraphLayoutRequest`, `GraphLayoutResponse`, `GraphLayoutRequests`, `GraphLayoutKeyInput`, `GraphLayoutCompletionOptions`, `GraphLayoutCompletion`, `GraphLayoutRoute`, `GraphRoutingPolicy`, `GraphPortRouteOptions`, `GraphLayoutWorkerMessage` (and its four members), `GraphLayoutJson`, `GraphLayoutRequestJson`, `GraphLayoutWorkerJsonMessage`.
+
+Vue (`vue-weave`):
+
+- `useAsyncGraphLayout(options: UseAsyncGraphLayoutOptions<N, E, G>): AsyncGraphLayout<N, E, G>` with `input`, `adapter(request, signal)`, optional `initialLayout`, `gesture`, `provisional` (default true) and `cacheSize` (default 32). It returns `desired` and `display` frames, a `layout` function of stable identity, `pending`, `deferred`, `error`, `cancel()` and `dispose()`. `display.source` is `'initial'`, `'layout'` (every layout of the frame came from the adapter) or `'provisional'` (the previous boxes with temporary routes for `temporaryEdgeIds`, shown while the adapter computes a frame whose nodes all have boxes already). A failure sets `error` and keeps the display: the last adapter frame, or, with `provisional`, the provisional frame of the failed input, which is consistent (every node and edge has geometry) and says by its `source` that its new routes are temporary. Set `provisional: false` to keep showing only adapter frames. NetworkGraph does not report gestures; set `gesture` from pointer events around the graph, for example `@pointerdown.capture` to true and `@pointerup` and `@pointercancel` (bubbling, so the graph emits its proposal first) to false.
+- `graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options?: { transport?: 'clone' | 'json' })` makes an adapter that talks to a Worker the caller created.
+- Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.
 
 ## Typed fields and timeline views
 
@@ -926,7 +1044,76 @@ Timeline view state (`TimelineViewState`, version 1) is JSON-safe: column order,
 - `projectTimelineView(input, state)` takes `{ rows, bars, dependencies?, columns?, sortRules?, laneCount? }` and returns display copies plus `matchedRowIds`, `removedDependencyIds`, `removedDependencyCount`, `hiddenTargets` (hidden bars that a shown bar still depends on or feeds), `wbs`, `collapsedIds`, `window`, `zoom` and `diagnostics`. Matching rows keep their ancestors; siblings are sorted stably, with ties in the original order; dependencies to hidden bars are removed. The output passes `validateTimelineData`. The input is not changed. A sort `ruleId` is a registered compare rule or a column ID.
 - `projectTimelineView` computes `wbs` with `timelineWbsCodes` from the original, unfiltered rows.
 
-`useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state`, `projection`, `columns`, `diagnostics`, `setSearch`, `setSort`, `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.
+`useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state`, `projection` (pass its `rows`, `bars` and `dependencies` to GanttChart), `columns` (the visible `TimelineColumn<R>` array in saved order with saved widths, ready for the `columns` prop), `diagnostics` (saved-view problems, column problems included), `setSearch`, `setSort`, `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.
+
+## Application undo and redo
+
+Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
+
+Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshots are stored by reference, without cloning or freezing; do not mutate them after committing. Committing the current snapshot reference does nothing. A batch move or endpoint replacement can be one history entry. Committing after an undo discards the redo branch. `undo` and `redo` do nothing when unavailable; `reset(snapshot)` replaces the history and clears both branches. Persist accepted changes through the application storage layer.
+
+### Edit transactions and asynchronous saving
+
+`useEditTransaction(options)` (Vue entry) confirms edits with a server before committing them. Types and pure state transitions (`EditTransaction`, `SaveResult`, `TransactionOutcome`, `TransactionAdapter`, `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState`, `clearTransactionResult`) are exported from `vue-weave/core`.
+
+Options: `documentId`, `initialState`, `initialVersion`, `adapter`, optional `createOperationId()` (defaults to `crypto.randomUUID()`), `historyLimit` (default 100) and `onHistoryReset(reset)`. The adapter provides synchronous `validate(state, changes)` (return `false` or a reason string to reject), synchronous `apply(state, changes)` returning a new state, and `save(request, candidate)` returning `Promise<SaveResult>`. Versions are opaque and compared for equality only.
+
+A request is `{ operationId, documentId, baseVersion, source, kind: 'changes', changes }` or `{ ..., kind: 'restore', snapshot }`. `SaveResult` is `accepted` (with the server's normalised `state` and new `version`), `rejected` (`code`), `conflict` (`currentVersion`) or `uncertain`. A `save` that throws or rejects is treated as `uncertain`.
+
+| Name | Meaning |
+| --- | --- |
+| `acceptedState`, `acceptedVersion` | Last state and version the server accepted |
+| `candidateState` | State being saved, kept apart from the accepted state; `undefined` when not saving |
+| `status` | `idle`, `saving`, `rejected`, `conflict` or `uncertain` |
+| `pendingTransaction` | `{ operationId, kind, source, baseVersion }` while saving or uncertain |
+| `result` | Last rejected, conflict or uncertain result until cleared |
+| `canUndo`, `canRedo` | Whether history has a previous or next snapshot |
+| `submit(changes, { source }?)` | Validate, apply and save. Resolves to a `TransactionOutcome` |
+| `undo()`, `redo()` | Save the previous or next history snapshot as a `restore` transaction against the current `acceptedVersion` |
+| `refresh(state, version)` | Replace the accepted state, reset history and discard in-flight responses |
+| `historyReset` | `{ reason: 'refresh', version }` for the last reset, or `undefined` |
+| `reconcile(result)` | Settle an `uncertain` operation using a result fetched from the server |
+| `clearResult()` | Dismiss a rejected, conflict or uncertain result; the accepted input is unchanged |
+
+Outcomes add `busy` (another save for the document is in flight), `invalid` (failed synchronous validation, empty changes, or nothing to undo or redo) and `discarded` (a response that no longer matches the current operation or epoch, for example one that arrives after `refresh`). There is no `validating` status because validation is synchronous.
+
+Only an accepted response changes anything. It replaces the accepted state with the server's state and records one history entry; a repeated accepted response for the same operation is ignored. For undo and redo the history position moves only after acceptance, and the entry is replaced by the server-normalised state; the server version is never rolled back and the remaining redo entries stay valid. A rejected, conflicting or uncertain save leaves the accepted state, version and history position unchanged, and a new accepted edit discards the redo branch. An uncertain save is never resent automatically; call `reconcile` or `refresh`. Because restores send a whole snapshot, large documents send more data than a diff; an adapter may transmit a diff inside `save`, but acceptance is of the whole snapshot.
+
+`useEditHistory` additionally returns `peekUndo()`, `peekRedo()` (the adjacent snapshot or `undefined`, position unchanged) and `replaceCurrent(snapshot)` (replace the current entry, keeping the others).
+
+The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically. See [integration](integration.md).
+
+## Versioned JSON snapshots
+
+`vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
+
+| Function | Contract |
+| --- | --- |
+| `serializeWeaveSnapshot(input, options?)` | Converts a `WeaveSnapshotInput` (Maps and Sets) to the stored form, validates it and returns JSON text. Throws `WeaveSnapshotError` (with `diagnostics`) for anything that cannot be stored. |
+| `parseWeaveSnapshot(text, options?)` | Checks JSON syntax, version, structure and references and returns `{ ok: true, snapshot, diagnostics }` or `{ ok: false, diagnostics }`. `options.migrations` maps an old `schemaVersion` to a function that returns the next document. Never throws for bad input. |
+| `restoreWeaveSnapshot(snapshot, registry?)` | Builds live values (Maps, Sets, decoded data, resolved layouts and columns). All or nothing: on any error there is no `snapshot` in the result. |
+
+`WeaveSnapshotV1` is a union on `kind`:
+
+| `kind` | `data` | `view` |
+| --- | --- | --- |
+| `'graph'` | `nodes`, `edges`, optional `groups`, `positions` and `sizes` (as `[id, value]` entries) | `view.graph`: `camera` (`{ center, scale }` in graph coordinates, independent of the container size), `collapsedGroupIds`, `layout` (`{ id, options }`) |
+| `'timeline'` | `rows`, `bars`, optional `dependencies`, `range`, `timeUnit` (`{ id, origin? }`; omitted means epoch milliseconds) | `view.timeline` |
+| `'planning'` | The input of `levelResources` (`range`, `quantum`, `calendars`, `tasks`, `dependencies`, `resources`, `assignments`, ...), plus optional `placements` and `display` | `view.timeline` |
+
+`view.timeline` holds `window`, `scroll` (`{ time, rowId }`), `zoom` (`{ zoom, preset }`), `columns` (`id`, `registryId`, `visible`, `width`, `editorId`, `rendererId`, in display order), `search`, `sort` (`columnId`, `direction`, `comparatorId`) and `collapsedRowIds`. Functions are never stored: columns, comparators, layouts, editors and renderers are stored by name and resolved from the `registry` on restore. `extensions` holds your own JSON under names you choose. `metadata` takes `title`, `savedAt` and `sourceVersion`; `savedAt` is only what you pass, so fixed metadata gives identical text for identical input. `sourceVersion` is a reference to where the snapshot came from and is not the current version of any server.
+
+Rules the functions enforce:
+
+- NaN, Infinity, functions, symbols, class instances and other non-JSON values fail instead of being dropped or turned into `null`. Application data that is not JSON (Date, BigInt, Map) needs a `SnapshotCodec` (`{ id, version?, matches, encode, decode }`), stored as `{ "$codec", "version", "value" }`. The key `$codec` is reserved. A codec that is missing on restore fails the restore.
+- Map entries and Set members are checked before a Map or Set is built: a repeated node ID in `positions` or `sizes` is an error, not a last-one-wins merge. Entries must name existing nodes.
+- IDs must be unique per collection. Edges, ports, group members, parent rows, dependency endpoints, assignments and saved-view IDs must refer to existing items. Assignments have no ID; the pair `(taskId, resourceId)` must be unique. Use business task IDs, never the IDs of projected rows.
+- Planning input is validated by the same rules as `scheduleTasks`. A dependency cycle or an infeasible plan is not invalid JSON: it is returned as a `schedule-cycle` or `schedule-infeasible` warning, and `restored.schedule` is that result.
+- Unknown fields in the document, `data` and `view` objects are errors; put your own data in `extensions`. Unknown versions fail. Only `schemaVersion` 1 exists; migrations are for your own older documents.
+- `registry.onMissing: 'fallback'` turns a missing layout, column, editor, renderer or comparator from an error into a warning and uses the default display. The default is `'fail'`.
+
+`parseWeaveSnapshot` and `restoreWeaveSnapshot` report `SnapshotDiagnostic` items (`severity`, `code`, `path`, `message`). The graph and timeline types of the restored value are the ordinary `NetworkNode`, `GraphEdge`, `NetworkGroup`, `TimelineRow`, `TimelineBar` and `TimelineDependency`.
+
 ## Export to SVG and PNG
 
 Both components expose two export methods on their template ref. They need no dependencies and never change props or component state.
@@ -936,8 +1123,7 @@ Both components expose two export methods on their template ref. They need no de
 | exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
 | exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
 
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style, and the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` the highlight colour (`--vw-graph-highlight`). GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds`) and their lag labels, markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style. GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds`) and their lag labels, the `highlightedBarIds` outlines, markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
+The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style, and the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` the highlight colour (`--vw-graph-highlight`). GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds`) and their lag labels, the `highlightedBarIds` outlines, markers, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
 
 The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
 
@@ -957,8 +1143,6 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | Export | Purpose |
 | --- | --- |
 | renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions<N, E>` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `highlightedNodeIds` and `highlightedEdgeIds` (a 3-unit node outline and a 2.6-unit edge with its own arrowhead, in `highlightColor`, default the theme's `dependencyHighlight`; without highlighted items the output is unchanged), `padding` and the label callbacks, which receive the node and edge types of the arguments, to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `baselineIds`, `baselineLabel` (default "Baseline" for `timelineBaselineId`, otherwise the set ID), `formatVariance` (default `formatDependencyLag`) and `varianceLabels` (`start`, `finish`, `duration`; defaults "start", "finish" and "duration"), which draw baseline sets as described in [Baseline sets](#baseline-sets), `constraintLabels` (text of each `TimelineConstraintKind` in marker titles; defaults as `GanttLabels`) and `constraintViolatedLabel` (default "violated"), `barLabel` and `rowLabel`; `columns` and the label callbacks receive the row and bar types of the arguments (`TimelineSvgOptions<R, B>`). Bar fields `critical`, `latestEnd`, `deadline`, `segments` and `constraints` are drawn as on screen |
-| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions<N, E>` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks, which receive the node and edge types of the arguments, to the shared options |
 | renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `highlightedBarIds` (bars outlined in the `dependencyHighlight` theme colour, with the `vw-is-highlighted` class on their group), `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `baselineIds`, `baselineLabel` (default "Baseline" for `timelineBaselineId`, otherwise the set ID), `formatVariance` (default `formatDependencyLag`) and `varianceLabels` (`start`, `finish`, `duration`; defaults "start", "finish" and "duration"), which draw baseline sets as described in [Baseline sets](#baseline-sets), `constraintLabels` (text of each `TimelineConstraintKind` in marker titles; defaults as `GanttLabels`) and `constraintViolatedLabel` (default "violated"), `barLabel` and `rowLabel`; `columns` and the label callbacks receive the row and bar types of the arguments (`TimelineSvgOptions<R, B>`). Bar fields `critical`, `latestEnd`, `deadline`, `segments` and `constraints` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
@@ -1050,171 +1234,3 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
-## Edit transactions and asynchronous saving
-
-`useEditTransaction(options)` (Vue entry) confirms edits with a server before committing them. Types and pure state transitions (`EditTransaction`, `SaveResult`, `TransactionOutcome`, `TransactionAdapter`, `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState`, `clearTransactionResult`) are exported from `vue-weave/core`.
-
-Options: `documentId`, `initialState`, `initialVersion`, `adapter`, optional `createOperationId()` (defaults to `crypto.randomUUID()`), `historyLimit` (default 100) and `onHistoryReset(reset)`. The adapter provides synchronous `validate(state, changes)` (return `false` or a reason string to reject), synchronous `apply(state, changes)` returning a new state, and `save(request, candidate)` returning `Promise<SaveResult>`. Versions are opaque and compared for equality only.
-
-A request is `{ operationId, documentId, baseVersion, source, kind: 'changes', changes }` or `{ ..., kind: 'restore', snapshot }`. `SaveResult` is `accepted` (with the server's normalised `state` and new `version`), `rejected` (`code`), `conflict` (`currentVersion`) or `uncertain`. A `save` that throws or rejects is treated as `uncertain`.
-
-| Name | Meaning |
-| --- | --- |
-| `acceptedState`, `acceptedVersion` | Last state and version the server accepted |
-| `candidateState` | State being saved, kept apart from the accepted state; `undefined` when not saving |
-| `status` | `idle`, `saving`, `rejected`, `conflict` or `uncertain` |
-| `pendingTransaction` | `{ operationId, kind, source, baseVersion }` while saving or uncertain |
-| `result` | Last rejected, conflict or uncertain result until cleared |
-| `canUndo`, `canRedo` | Whether history has a previous or next snapshot |
-| `submit(changes, { source }?)` | Validate, apply and save. Resolves to a `TransactionOutcome` |
-| `undo()`, `redo()` | Save the previous or next history snapshot as a `restore` transaction against the current `acceptedVersion` |
-| `refresh(state, version)` | Replace the accepted state, reset history and discard in-flight responses |
-| `historyReset` | `{ reason: 'refresh', version }` for the last reset, or `undefined` |
-| `reconcile(result)` | Settle an `uncertain` operation using a result fetched from the server |
-| `clearResult()` | Dismiss a rejected, conflict or uncertain result; the accepted input is unchanged |
-
-Outcomes add `busy` (another save for the document is in flight), `invalid` (failed synchronous validation, empty changes, or nothing to undo or redo) and `discarded` (a response that no longer matches the current operation or epoch, for example one that arrives after `refresh`). There is no `validating` status because validation is synchronous.
-
-Only an accepted response changes anything. It replaces the accepted state with the server's state and records one history entry; a repeated accepted response for the same operation is ignored. For undo and redo the history position moves only after acceptance, and the entry is replaced by the server-normalised state; the server version is never rolled back and the remaining redo entries stay valid. A rejected, conflicting or uncertain save leaves the accepted state, version and history position unchanged, and a new accepted edit discards the redo branch. An uncertain save is never resent automatically; call `reconcile` or `refresh`. Because restores send a whole snapshot, large documents send more data than a diff; an adapter may transmit a diff inside `save`, but acceptance is of the whole snapshot.
-
-`useEditHistory` additionally returns `peekUndo()`, `peekRedo()` (the adjacent snapshot or `undefined`, position unchanged) and `replaceCurrent(snapshot)` (replace the current entry, keeping the others).
-
-The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically. See [integration](integration.md).
-
-## Linked views
-
-Core helpers and a composable link entities (tasks, resources, anything the application defines) to what the graph, timeline and load views show. The application passes the results to the components: `selectedIds` for the view the user acts in and display-only highlights for the others (NetworkGraph `highlightedNodeIds` and `highlightedEdgeIds`, GanttChart `highlightedBarIds` and `highlightedDependencyIds`, or `relatedIds`, `matchIds` or its own handling). Both components report what the user points at or activates through `target-enter`, `target-leave` and `target-activate` (`ViewTargetEvent`; NetworkGraph narrows it to `ViewTargetEvent<GraphViewTarget>`), and `revealNode` and `revealBar` bring a linked item into view (`RevealResult`). Types: `GraphViewTarget`, `ViewTargetSource`, `ViewTargetEvent`, `RevealStatus`, `RevealOptions` and `RevealResult`.
-
-```ts
-import { buildViewBindingIndex, resolveViewTargets, resolveEntityRefs } from 'vue-weave/core'
-
-const index = buildViewBindingIndex([
-  { entity: { kind: 'task', id: 'A' }, target: { view: 'graph', kind: 'node', id: 'n1' } },
-  { entity: { kind: 'task', id: 'A' }, target: { view: 'timeline', kind: 'bar', id: 'b1' } },
-])
-resolveViewTargets(index, [{ kind: 'task', id: 'A' }]) // { targets: [n1, b1], unknown: [] }
-resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { entities: [task A], unknown: [] }
-```
-
-| Export | Contract |
-| --- | --- |
-| `buildViewBindingIndex(bindings)` | Two-way index. Many-to-many links are allowed, identical bindings count once, inputs are not modified. Keys encode kind and ID as a JSON tuple, so a task `A` and a resource `A` never collide. Throws for an empty kind or ID, and `RangeError` for a load range that is not finite or ends before it starts. |
-| `resolveViewTargets(index, entities)` | `{ targets, unknown }`: targets without repeats; entities with no binding are listed in `unknown`. |
-| `resolveEntityRefs(index, targets)` | `{ entities, unknown }`. A load target matches bound load targets of the same resource whose half-open range overlaps it. |
-| `resolveLoadTargets(segments, targets)` | `{ segments, unknown }`: current segments that overlap a load target. A load segment has no ID and its boundaries change when load is recalculated, so a target that overlaps no current segment is reported in `unknown` and never replaced by another segment. |
-| `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. |
-| `resolveCollapsedTargets(collapse, { nodeIds, edgeIds }, edges)` | Resolves IDs of the full graph against a `collapseGraphGroups` result: hidden nodes to their proxy, edges merged into a re-attached edge to the merged edge, and edges dropped inside one collapsed group to that group's proxy node. `edges` are the edges given to `collapseGraphGroups`. Returns `{ nodeIds, edgeIds, unknownNodeIds, unknownEdgeIds }`. |
-| `useLinkedSelection({ bindings, onSelect })` | See below. |
-
-`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them.
-
-## Resource timelines and unplanned tasks
-
-These `vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
-
-| Function | Returns |
-| --- | --- |
-| projectResourceTimeline(input, options?) | `ResourceTimelineProjection`: `{ rows, bars, dependencies, laneCount, origins, taskBarIds, dependencyOrigins, omittedDependencyIds, hiddenDependencyIds, unplannedTaskIds }` |
-| createResourceTimelineProjector() | A memoized `projectResourceTimeline` that returns the previous projection while the input fields and options are the same objects |
-| resourceTimelineBarId(taskId, resourceId) | The projected bar ID, the JSON tuple `[taskId, resourceId]` |
-| resolveResourceTimelineEdits(projection, edits) | `{ ok: true, scheduleChanges, assignmentReplacements }` or a `ResourceTimelineRejection` |
-| resolveResourceTimelineEdit(projection, edit) | `{ ok: true, scheduleChange?, assignmentReplacement? }` or a `ResourceTimelineRejection` |
-| resourceTimelineCascade(projection, input) | A `TimelineCascade` that runs `propagateEdit` on task IDs and returns edits of every affected projection |
-| proposeResourceAssignment(state, request) | `{ ok: true, assignments, added, removed }` or `{ ok: false, code: 'already-assigned' \| 'not-assigned', reason }` |
-| buildPlacementInput(input, placedTaskIds) | `PlacementResult`: `{ ok, input, diagnostics, unplacedTaskIds, excludedDependencyIds, excludedAssignments }` |
-
-`ResourceTimelineInput` has `resources` (`{ id, label, detail?, data? }`, one row each, with the resource ID as row ID), `tasks` (placed tasks: `TimelineBar` fields without `rowId` and `lane`, copied to each projection), `assignments` (`ResourceAssignment`), optional task-level `dependencies` and optional `unplannedTaskIds`. Bars are ordered by task and then by row, with lanes from `assignLanes`; pass `laneCount` to GanttChart. The default label is `task label · resource label`, so projections of one task have distinct accessible names; `options.barLabel(task, resource)` replaces it. Bar IDs come from the task and resource IDs and do not depend on input order. `origins` maps each bar ID to `{ taskId, resourceId }` and `taskBarIds` maps each placed task to its bar IDs in row order.
-
-Chart links use bar IDs, so the scheduler's `ScheduleLink` array cannot be passed to the chart unchanged. Each task link becomes at most one chart link, with the link's ID, between the first projection of each task in `options.preferredBarIds` (for example the selected bars) or else its first projection in row order. `dependencyOrigins` maps chart link IDs to task link IDs, `omittedDependencyIds` lists drawn links whose tasks have several projections, and `hiddenDependencyIds` lists links not drawn because a task has no bar. The projection throws an Error for duplicate IDs, unknown or duplicate assignments, unknown link endpoints, a link from a task to itself and a task that is both placed and unplanned. The input is not modified.
-
-`resolveResourceTimelineEdits` turns GanttChart edits, including several projections of one task from `edits` or a cascade, into one `ResourceTimelineScheduleChange` (`{ taskId, before, after, mode, source }`) per task whose dates change, and one `ResourceAssignmentReplacement` (`{ taskId, fromResourceId, toResourceId }`) per bar whose `row` changes. A diagonal move gives both; apply them as one change. Rejections carry `code` and the `barIds` involved: `stale` (the bar is not in the projection, or its dates or row differ from `before`), `already-assigned` (the task already has the target resource), `conflicting-schedule` (projections of one task with different new dates) and `conflicting-assignment` (one bar to two rows, or two projections of one task to one row). A target row that is not in the projection throws an Error.
-
-`proposeResourceAssignment(state, request)` takes `{ assignments, resourceIds?, taskIds? }` and one of `{ kind: 'add', taskId, resourceId, units? }`, `{ kind: 'remove', taskId, resourceId }` and `{ kind: 'replace', taskId, fromResourceId, toResourceId }`. A replacement keeps the position and units of the replaced assignment. Unknown tasks or resources (when the lists are given) and duplicate assignments in the state throw an Error, and units that are not a positive integer throw a RangeError.
-
-`buildPlacementInput(input, placedTaskIds)` takes a `ScheduleInput` with optional `assignments`, such as a `LevelResourcesInput`, and returns the same kind of input with only the placed tasks, the links between them and their assignments. A link from an unplaced task to a placed one is reported as `{ code: 'unplaced-predecessor', taskId, predecessorId, dependencyId }` and makes `ok` false. Duplicate or unknown IDs and duplicate assignments still throw an Error.
-
-## Versioned JSON snapshots
-
-`vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
-
-| Function | Contract |
-| --- | --- |
-| `serializeWeaveSnapshot(input, options?)` | Converts a `WeaveSnapshotInput` (Maps and Sets) to the stored form, validates it and returns JSON text. Throws `WeaveSnapshotError` (with `diagnostics`) for anything that cannot be stored. |
-| `parseWeaveSnapshot(text, options?)` | Checks JSON syntax, version, structure and references and returns `{ ok: true, snapshot, diagnostics }` or `{ ok: false, diagnostics }`. `options.migrations` maps an old `schemaVersion` to a function that returns the next document. Never throws for bad input. |
-| `restoreWeaveSnapshot(snapshot, registry?)` | Builds live values (Maps, Sets, decoded data, resolved layouts and columns). All or nothing: on any error there is no `snapshot` in the result. |
-
-`WeaveSnapshotV1` is a union on `kind`:
-
-| `kind` | `data` | `view` |
-| --- | --- | --- |
-| `'graph'` | `nodes`, `edges`, optional `groups`, `positions` and `sizes` (as `[id, value]` entries) | `view.graph`: `camera` (`{ center, scale }` in graph coordinates, independent of the container size), `collapsedGroupIds`, `layout` (`{ id, options }`) |
-| `'timeline'` | `rows`, `bars`, optional `dependencies`, `range`, `timeUnit` (`{ id, origin? }`; omitted means epoch milliseconds) | `view.timeline` |
-| `'planning'` | The input of `levelResources` (`range`, `quantum`, `calendars`, `tasks`, `dependencies`, `resources`, `assignments`, ...), plus optional `placements` and `display` | `view.timeline` |
-
-`view.timeline` holds `window`, `scroll` (`{ time, rowId }`), `zoom` (`{ zoom, preset }`), `columns` (`id`, `registryId`, `visible`, `width`, `editorId`, `rendererId`, in display order), `search`, `sort` (`columnId`, `direction`, `comparatorId`) and `collapsedRowIds`. Functions are never stored: columns, comparators, layouts, editors and renderers are stored by name and resolved from the `registry` on restore. `extensions` holds your own JSON under names you choose. `metadata` takes `title`, `savedAt` and `sourceVersion`; `savedAt` is only what you pass, so fixed metadata gives identical text for identical input. `sourceVersion` is a reference to where the snapshot came from and is not the current version of any server.
-
-Rules the functions enforce:
-
-- NaN, Infinity, functions, symbols, class instances and other non-JSON values fail instead of being dropped or turned into `null`. Application data that is not JSON (Date, BigInt, Map) needs a `SnapshotCodec` (`{ id, version?, matches, encode, decode }`), stored as `{ "$codec", "version", "value" }`. The key `$codec` is reserved. A codec that is missing on restore fails the restore.
-- Map entries and Set members are checked before a Map or Set is built: a repeated node ID in `positions` or `sizes` is an error, not a last-one-wins merge. Entries must name existing nodes.
-- IDs must be unique per collection. Edges, ports, group members, parent rows, dependency endpoints, assignments and saved-view IDs must refer to existing items. Assignments have no ID; the pair `(taskId, resourceId)` must be unique. Use business task IDs, never the IDs of projected rows.
-- Planning input is validated by the same rules as `scheduleTasks`. A dependency cycle or an infeasible plan is not invalid JSON: it is returned as a `schedule-cycle` or `schedule-infeasible` warning, and `restored.schedule` is that result.
-- Unknown fields in the document, `data` and `view` objects are errors; put your own data in `extensions`. Unknown versions fail. Only `schemaVersion` 1 exists; migrations are for your own older documents.
-- `registry.onMissing: 'fallback'` turns a missing layout, column, editor, renderer or comparator from an error into a warning and uses the default display. The default is `'fail'`.
-
-`parseWeaveSnapshot` and `restoreWeaveSnapshot` report `SnapshotDiagnostic` items (`severity`, `code`, `path`, `message`). The graph and timeline types of the restored value are the ordinary `NetworkNode`, `GraphEdge`, `NetworkGroup`, `TimelineRow`, `TimelineBar` and `TimelineDependency`.
-
-## Planning diagnostics and schedule traces
-
-These core helpers explain a plan without changing it. They are pure and return data; wording, translation and the list UI are the application's concern.
-
-| Export | Contract |
-| --- | --- |
-| scheduleTasks(input, options?) | `options.explain` (default false) adds a `trace: ScheduleTrace` to a successful result. Overloads type `trace` only for `{ explain: true }` (`ExplainedScheduleResult`). Dates, floats, critical flags and `criticalDependencyIds` are the same with or without it; without it the result has no `trace` property. Failures never have a trace. Options that are not an object, or an `explain` that is not a boolean, throw an Error |
-| levelResources(input, options?) | The same option and overloads (`ExplainedLevelResourcesResult`). Dates, `leveledTasks`, `delays`, `overloads` and `unresolvedTaskIds` are unchanged |
-| collectScheduleReasons(trace, taskId, options?) | The task's reasons followed by all their ancestors, breadth first, each once. `options.phases` limits the starting reasons. Iterative, so long chains do not exhaust the call stack. Throws an Error for an unknown task or parent reason |
-| toPlanningDiagnostics(result, load?) | Turns a `scheduleTasks` or `levelResources` result into `PlanningDiagnostic[]`. `load` (for example `calculateResourceLoad` output) replaces the result's own `overloads`; only segments with `overload > 0` are listed. A segment with a non-finite date or overload throws a RangeError |
-
-`ScheduleTrace` has `reasons` (each after its parents) and `taskReasonIds` (a `ReadonlyMap` from task ID to its own reason IDs, in input task order). Do not store a trace in a snapshot; recalculate it. A `ScheduleReason` has an `id` unique within its trace, `taskId`, `phase` (`ScheduleReasonPhase`), `kind` (`ScheduleReasonKind`), `bound` (`startLower`, `endLower`, `startUpper` or `endUpper`), `candidateTime` and `placedTime`, `parentReasonIds`, and depending on its kind `dependencyId`, `constraint`, `calendarId`, `resourceId`, `demand`, `capacity`, `relatedTaskIds` and `range`.
-
-| kind | Meaning |
-| --- | --- |
-| `dependency` | A link sets the limit. `relatedTaskIds` is the other task and the parents are its reasons in the same pass |
-| `constraint` | `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan` or `fixedStart` |
-| `project-bound` | `range`, the input `deadline`, `projectFinish` (parents: the reasons of the tasks that finish the project) or, without a `constraint`, the latest dates that leveling may not pass (parents: that task's `latest` reasons) |
-| `calendar` | Calendar time off moved the side from `candidateTime` to `placedTime` |
-| `pause` | The task's own pauses moved it further |
-| `capacity` | In `leveling`: `resourceId` had less remaining capacity than `demand` in `range`; `capacity` is its capacity there and `relatedTaskIds` the tasks that held it first |
-
-Tied limits are all reported, compared in working time as the scheduler places tasks. `range` is left out when a named bound has the same value, as in `ScheduleFailure.constraints`.
-
-A `PlanningDiagnostic` has `id` (a JSON array of the code and identifying values, stable across recalculations), `code` (`PlanningDiagnosticCode`), `severity` (`PlanningDiagnosticSeverity`), `entities` (`EntityRef[]` of kinds `task`, `dependency` and `resource`), optional `range`, optional `constraints` (for `schedule-infeasible`) and `reasonIds` into the result's trace.
-
-| code | severity | Source |
-| --- | --- | --- |
-| `schedule-cycle` | error | One per entry of a `cycle` failure: its tasks and dependencies |
-| `schedule-infeasible` | error | An `infeasible` failure: the task, its binding dependencies and `constraints` |
-| `leveling-unresolved` | warning | Each of `unresolvedTaskIds`, with its dates; `reasonIds` are its `leveling` reasons |
-| `resource-overload` | warning | Each overloaded segment: the resource, then its tasks; `reasonIds` are the overlapping `capacity` reasons |
-
-The exported types are `PlanningDiagnostic`, `PlanningDiagnosticCode`, `PlanningDiagnosticSeverity`, `ScheduleReason`, `ScheduleReasonPhase`, `ScheduleReasonKind`, `ScheduleReasonBound`, `ScheduleTrace`, `ScheduleOptions`, `CollectScheduleReasonsOptions`, `ExplainedScheduleSuccess`, `ExplainedScheduleResult`, `ExplainedLevelResourcesSuccess` and `ExplainedLevelResourcesResult`. See [Explain a plan](scheduling.md#explain-a-plan).
-
-## Asynchronous layouts and preserved routes
-
-Core (`vue-weave/core`):
-
-- `graphLayoutInputKey(input: GraphLayoutKeyInput): string` identifies a layout input: scope, direction, `settings` (JSON text), `revision`, and in order the nodes (ID, label, detail, shape, ports), edges (ID, ends, ports, label, waypoints), groups, collapsed group IDs, and any `positions` and `sizes` given to the engine. Node and edge `data` is not read; change `revision` when it matters. Throws RangeError for an unknown scope or direction or settings that are not JSON-serializable.
-- `buildGraphLayoutRequests(input: GraphLayoutRequestInput<N, E, G>, requestId: string): GraphLayoutRequests<N, E, G>` makes the requests NetworkGraph's `layout` calls correspond to: one `shown` request (ID `requestId + ':shown'`) and, while a known group is collapsed, an `expanded` request (`requestId + ':expanded'`) for the full input plus the `collapse` result. Unknown collapsed IDs are dropped and proxy details use `labels.collapsedNode` / `labels.collapsedNodes`, as in NetworkGraph.
-- `validateGraphLayoutResponse(request, response): GraphLayout` checks that a response echoes `requestId`, `inputKey` and `scope`; every node needs a finite positive box; a `shown` layout also needs finite positive dimensions, a path for every edge and route metadata (when given) with finite points and the edge's ports.
-- `completeGraphLayout(layout, nodes, edges, options?: { direction? }): { layout, temporaryEdgeIds, unresolvedEdgeIds }` adds temporary built-in routes for edges without a path whose end boxes exist.
-- `isGraphRouteValid(layout, nodes: ReadonlyMap<string, IdentifiedNode>, edge): boolean` tells whether the `preserve` policy keeps an edge's path.
-- `graphLayoutToJson(layout)`, `graphLayoutFromJson(value)`, `graphLayoutMessageToJson(message)`, `graphLayoutMessageFromJson(value)` and `parseGraphLayoutMessage(value)` convert and check layout Worker messages (`request`, `cancel`, `success`, `failure`; each with `requestId` and `inputKey`) for JSON and structured-clone transport.
-- `routeGraphPorts(layout, nodes, edges, direction, options?: GraphPortRouteOptions)` and `routeGraphEdges(layout, edges, nodes, options)` accept `policy?: GraphRoutingPolicy` (`'builtin'` default, or `'preserve'`).
-- `GraphLayout` has an optional `routes?: Map<string, GraphLayoutRoute>`: `start`, `end`, `fromPort`, `toPort`, `fromSide`, `toSide` and bend `points` of each routed edge.
-- Types: `GraphLayoutScope`, `GraphLayoutRequestInput`, `GraphLayoutRequest`, `GraphLayoutResponse`, `GraphLayoutRequests`, `GraphLayoutKeyInput`, `GraphLayoutCompletionOptions`, `GraphLayoutCompletion`, `GraphLayoutRoute`, `GraphRoutingPolicy`, `GraphPortRouteOptions`, `GraphLayoutWorkerMessage` (and its four members), `GraphLayoutJson`, `GraphLayoutRequestJson`, `GraphLayoutWorkerJsonMessage`.
-
-Vue (`vue-weave`):
-
-- `useAsyncGraphLayout(options: UseAsyncGraphLayoutOptions<N, E, G>): AsyncGraphLayout<N, E, G>` with `input`, `adapter(request, signal)`, optional `initialLayout`, `gesture`, `provisional` (default true) and `cacheSize` (default 32). It returns `desired` and `display` frames, a `layout` function of stable identity, `pending`, `deferred`, `error`, `cancel()` and `dispose()`.
-- `graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options?: { transport?: 'clone' | 'json' })` makes an adapter that talks to a Worker the caller created.
-- Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.

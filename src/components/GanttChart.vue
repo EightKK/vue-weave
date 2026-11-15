@@ -26,7 +26,8 @@ import { timelineBaselineId } from '../core/timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
 import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
 import type { TimelineEditCancel, TimelineEditCancelReason } from '../core/types.js'
-import type { RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
+import type { LoadViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
+import { resolveLoadTargets } from '../core/viewBindings.js'
 import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from '../core/fieldEditing.js'
 import type { FieldCheck, FieldValue, TimelineFieldEdit, TimelineFieldSpec } from '../core/fieldEditing.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
@@ -192,6 +193,18 @@ const props = withDefaults(defineProps<{
    * target. Without it, load segments keep their image role and accessible names. Opt-in. Default: false.
    */
   loadSelectable?: boolean
+  /**
+   * Load ranges drawn with the display-only highlight style (`vw-is-highlighted`), for example load linked from another
+   * view. A segment is highlighted when it belongs to the target's resource and overlaps its half-open range, so the
+   * targets stay valid when the load is recalculated and its segment boundaries move. Works with or without
+   * `loadSelectable` and never changes accessible names. Default: none.
+   */
+  highlightedLoadTargets?: readonly LoadViewTarget[]
+  /**
+   * Load ranges drawn as selected (`vw-is-selected`), matched like `highlightedLoadTargets`. With `loadSelectable`, the
+   * matching segment buttons also get `aria-pressed="true"`. The chart never changes this set itself. Default: none.
+   */
+  selectedLoadTargets?: readonly LoadViewTarget[]
   /** Accepts HTML drag and drop on the chart and emits `bar-drop` with the row and time under the drop point. Opt-in. Default: false. */
   droppable?: boolean
   /**
@@ -3025,8 +3038,16 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
 
 // Load histogram rows follow the task rows on the same scroll surface.
 const loadHeight = computed(() => loadHistogram.value ? (props.loadRows?.length ?? 0) * props.loadRowHeight : 0)
+// Load segments matched by `highlightedLoadTargets` and `selectedLoadTargets`, found again by range overlap.
+const loadSegmentMarks = computed(() => {
+  const segments = props.loadSegments ?? []
+  const marks = (targets: readonly LoadViewTarget[] | undefined) =>
+    new Set<TimelineLoadSegment>(targets?.length ? resolveLoadTargets(segments, targets).segments : [])
+  return { highlighted: marks(props.highlightedLoadTargets), selected: marks(props.selectedLoadTargets) }
+})
 const shownLoadRows = computed(() => {
   const histogram = loadHistogram.value
+  const marks = loadSegmentMarks.value
   if (!histogram || !props.loadRows?.length) return []
   const offset = Math.max(0, viewport.value.top - bodyHeight.value)
   const covered = Math.max(0, bodyHeight.value - viewport.value.top)
@@ -3043,6 +3064,7 @@ const shownLoadRows = computed(() => {
         return {
           segment, overload,
           key: segment.start,
+          highlighted: marks.highlighted.has(segment), selected: marks.selected.has(segment),
           left, width: axis.value.toX(segment.end) - left,
           fill: Math.min(segment.load, segment.capacity) / scale * 100,
           over: overload / scale * 100,
@@ -3462,8 +3484,12 @@ onUnmounted(() => {
             </slot>
           </div>
           <div v-for="segment in item.segments" :key="segment.key" class="vw-gantt-load-segment"
-            :class="{ 'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0, 'vw-is-selectable': loadSelectable }"
+            :class="{
+              'vw-is-overloaded': segment.overload > 0, 'vw-is-idle': segment.segment.load === 0, 'vw-is-selectable': loadSelectable,
+              'vw-is-highlighted': segment.highlighted && !segment.selected, 'vw-is-selected': segment.selected,
+            }"
             :role="loadSelectable ? 'button' : 'img'" :tabindex="loadSelectable ? 0 : undefined"
+            :aria-pressed="loadSelectable && selectedLoadTargets ? segment.selected : undefined"
             :aria-label="segment.label" :title="segment.label"
             @pointerenter="loadSelectable && enterTarget(loadTarget(item.row.id, segment.segment), 'pointer')"
             @pointerleave="loadSelectable && leaveTarget(loadTarget(item.row.id, segment.segment), 'pointer')"

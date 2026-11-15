@@ -163,7 +163,7 @@ test('useTimelineView projects reactively without touching the source', () => {
   view.moveColumn('size', 0)
   view.setColumnVisible('name', false)
   view.setColumnWidth('size', 75)
-  assert.deepEqual(view.columns.value.columns.map(item => [item.id, item.width]), [['size', 75]])
+  assert.deepEqual(view.columns.value.map(item => [item.id, item.width]), [['size', 75]])
   view.toggleCollapsed('p1')
   view.setWindow({ start: 0, end: 10 }, 'day')
   assert.deepEqual(view.projection.value.collapsedIds, ['p1'])

@@ -5,7 +5,7 @@ import {
   buildViewBindingIndex, collapseGraphGroups, resolveCollapsedTargets, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
   traverseGraph,
 } from 'vue-weave/core'
-import { useLinkedSelection } from 'vue-weave'
+import { revealLinkedTarget, useLinkedSelection } from 'vue-weave'
 
 const task = id => ({ kind: 'task', id })
 const node = id => ({ view: 'graph', kind: 'node', id })
@@ -157,4 +157,50 @@ test('useLinkedSelection: hover enters and leaves, unbound targets and reactive 
   source.value = [...source.value, { entity: task('A'), target: node('n9') }]
   await nextTick()
   assert.deepEqual([...linked.timeline.value.highlightedBarIds], ['b1'])
+})
+
+test('revealLinkedTarget expands only what the application accepts and never reports a declined reveal as revealed', async () => {
+  // A fake view: `n` is hidden in group `inner`, which is hidden in collapsed group `outer`.
+  const collapsed = new Set(['outer', 'inner'])
+  const calls = []
+  const reveal = id => () => {
+    calls.push(id)
+    if (id === 'gone') return Promise.resolve({ status: 'unknown' })
+    if (collapsed.has('outer')) return Promise.resolve({ status: 'hidden-by-collapse', proxyId: 'outer' })
+    if (collapsed.has('inner')) return Promise.resolve({ status: 'hidden-by-collapse', proxyId: 'inner' })
+    return Promise.resolve({ status: 'revealed' })
+  }
+
+  // Without `expand`, the hidden result is returned and nothing changes.
+  assert.deepEqual(await revealLinkedTarget({ reveal: reveal('n') }), { status: 'hidden-by-collapse', proxyId: 'outer', expandedIds: [] })
+
+  // The application declines: no move is reported and the collapsed set is untouched.
+  const declined = await revealLinkedTarget({ reveal: reveal('n'), expand: () => false })
+  assert.deepEqual(declined, { status: 'hidden-by-collapse', proxyId: 'outer', expandedIds: [], declined: true })
+  assert.deepEqual([...collapsed], ['outer', 'inner'])
+
+  // Accepting without changing the controlled set does not loop.
+  const ignored = await revealLinkedTarget({ reveal: reveal('n'), expand: () => true })
+  assert.equal(ignored.status, 'hidden-by-collapse')
+  assert.equal(ignored.declined, true)
+
+  // Nested collapses are expanded one by one, each followed by a fresh reveal.
+  calls.length = 0
+  const asked = []
+  const shown = await revealLinkedTarget({
+    reveal: reveal('n'),
+    expand: async proxyId => {
+      asked.push(proxyId)
+      collapsed.delete(proxyId)
+      return true
+    },
+  })
+  assert.deepEqual(shown, { status: 'revealed', expandedIds: ['outer', 'inner'] })
+  assert.deepEqual(asked, ['outer', 'inner'])
+  assert.equal(calls.length, 3)
+
+  // Unknown items and unmounted views are unknown; nothing is expanded.
+  assert.deepEqual(await revealLinkedTarget({ reveal: reveal('gone'), expand: () => assert.fail('not asked') }), { status: 'unknown', expandedIds: [] })
+  assert.deepEqual(await revealLinkedTarget({ reveal: () => undefined }), { status: 'unknown', expandedIds: [] })
+  await assert.rejects(revealLinkedTarget({ reveal: reveal('n'), maxExpansions: -1 }), RangeError)
 })

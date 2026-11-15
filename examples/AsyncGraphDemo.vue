@@ -6,7 +6,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   NetworkGraph, layoutLayeredGraph, useAsyncGraphLayout,
-  type GraphEdge, type NetworkGroup, type NetworkNode, type GraphRoutingPolicy,
+  type GraphEdge, type GraphNodeMove, type NetworkGroup, type NetworkNode, type GraphRoutingPolicy,
 } from '../src'
 import { createControlledAdapter, createWorkerComputation, inThreadComputation } from './adapters/asyncLayout'
 
@@ -65,13 +65,21 @@ const adapter = createControlledAdapter(
   },
 )
 
+// A pointer gesture on the graph (drag, pan, connection) is in flight from pointerdown to pointerup or cancel. Results
+// that arrive meanwhile wait (`deferred`), because a new layout would cancel the gesture. The graph's pointer capture
+// keeps these events inside the wrapper. The start is caught in the capture phase; the end in the bubbling phase, after
+// the graph has handled pointerup and emitted its proposal, so the waiting frame cannot cancel the ending gesture.
+const gesture = ref(false)
+const lastMove = ref('')
+
 const layoutState = useAsyncGraphLayout({
   input: () => ({ nodes, edges: edges.value, groups, collapsedGroupIds: collapsed.value, direction: 'LR' as const, settings }),
   adapter,
+  gesture,
   // The first frame is synchronous, so server rendering and hydration agree and the graph is never empty.
   initialLayout: (shownNodes, shownEdges) => layoutLayeredGraph(shownNodes, shownEdges, settings),
 })
-const { display, layout, pending, error } = layoutState
+const { display, layout, pending, deferred, error } = layoutState
 
 const summary = computed(() => {
   const frame = display.value
@@ -82,6 +90,10 @@ const errorText = computed(() => {
   const failure = error.value
   return failure ? `Layout failed (${failure.scope}): ${failure.error instanceof Error ? failure.error.message : String(failure.error)}. Showing the last consistent layout.` : ''
 })
+// The demo reports node moves without applying them, so the layout input stays the same.
+function reportMove(change: GraphNodeMove) {
+  lastMove.value = `${labels[change.id] ?? change.id} by ${Math.round(change.after.x - change.before.x)}, ${Math.round(change.after.y - change.before.y)}`
+}
 function setCollapsed(ids: Set<string>) {
   collapsed.value = ids
 }
@@ -112,15 +124,18 @@ function setCollapsed(ids: Set<string>) {
       <button type="button" :disabled="!collapsed.size" @click="collapsed = new Set()">Expand all groups</button>
     </div>
     <p class="status" role="status" aria-label="Layout status">
-      <span>{{ pending ? 'Computing layout…' : 'Layout up to date' }}</span> ·
+      <span>{{ deferred ? 'Layout ready, shown after the gesture' : pending ? 'Computing layout…' : 'Layout up to date' }}</span> ·
       <output aria-label="Displayed frame">{{ summary }}</output> ·
       source <output aria-label="Frame source">{{ display?.source }}</output>
     </p>
     <p v-if="errorText" class="async-error" role="alert">{{ errorText }}</p>
-    <NetworkGraph v-if="display" :nodes="display.nodes" :edges="display.edges" :groups="display.groups"
-      :collapsed-group-ids="display.collapsedGroupIds" collapsible-groups :layout="layout" :routing-policy="routing"
-      :options="{ ...settings, direction: display.direction }" :height="340" :labels="{ region: 'Asynchronously laid out graph' }"
-      @update:collapsed-group-ids="setCollapsed" />
+    <div @pointerdown.capture="gesture = true" @pointerup="gesture = false" @pointercancel="gesture = false">
+      <NetworkGraph v-if="display" :nodes="display.nodes" :edges="display.edges" :groups="display.groups"
+        :collapsed-group-ids="display.collapsedGroupIds" collapsible-groups :layout="layout" :routing-policy="routing"
+        :options="{ ...settings, direction: display.direction }" :height="340" :labels="{ region: 'Asynchronously laid out graph' }"
+        draggable @node-move="reportMove" @update:collapsed-group-ids="setCollapsed" />
+    </div>
+    <p class="hint">Last proposed move (not applied): <output aria-label="Last proposed move">{{ lastMove || 'none' }}</output></p>
     <p class="hint">Responses so far (oldest first):</p>
     <ol class="async-log" aria-label="Layout responses">
       <li v-for="(entry, index) in log" :key="index">{{ entry }}</li>

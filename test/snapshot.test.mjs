@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
-  parseWeaveSnapshot, restoreWeaveSnapshot, scheduleTasks, serializeWeaveSnapshot, WeaveSnapshotError,
+  parseWeaveSnapshot, projectResourceTimeline, restoreWeaveSnapshot, scheduleTasks, serializeWeaveSnapshot, WeaveSnapshotError,
 } from 'vue-weave/core'
 
 const fixture = name => readFileSync(new URL('./fixtures/snapshots/v1/' + name + '.json', import.meta.url), 'utf8')
@@ -359,4 +359,31 @@ test('the graph camera is stored as a center and scale, independent of the conta
   const restored = restore(parse(text))
   assert.deepEqual(restored.view.camera, { center: { x: 10, y: -20 }, scale: 0.5 })
   assert.deepEqual(Object.keys(JSON.parse(text).view.graph.camera).sort(), ['center', 'scale'])
+})
+
+test('a planning snapshot keeps business task IDs, never the bar IDs of a resource projection', () => {
+  const input = JSON.parse(fixture('planning')).data
+  const schedule = scheduleTasks(input)
+  assert.equal(schedule.ok, true)
+  // Task a is shown on both resources: two display bars with tuple IDs, one input task.
+  const assignments = [...input.assignments, { taskId: 'a', resourceId: 'r2' }]
+  const projection = projectResourceTimeline({
+    resources: input.resources.map(resource => ({ id: resource.id, label: resource.id })),
+    tasks: schedule.tasks.map(task => ({ id: task.id, label: task.id, start: task.start, end: task.end })),
+    assignments,
+  })
+  const barIds = projection.bars.map(bar => bar.id)
+  assert.equal(barIds.filter(id => projection.origins.get(id).taskId === 'a').length, 2)
+  // Saved from the input model (origins map display bars back), the snapshot holds the task IDs only.
+  const placements = [{ taskId: projection.origins.get(barIds[0]).taskId, resourceId: projection.origins.get(barIds[0]).resourceId }]
+  const text = serializeWeaveSnapshot({ kind: 'planning', data: { ...input, assignments, placements, display: [] } })
+  for (const id of barIds) assert.equal(text.includes(JSON.stringify(id).slice(1, -1)), false, id)
+  const restored = restore(parse(text))
+  assert.deepEqual(restored.input.tasks.map(task => task.id), ['c', 'a', 'b'])
+  // A snapshot that names a projection bar instead of the task is rejected as an unknown reference, not restored.
+  const projected = JSON.parse(text)
+  projected.data.placements = [{ taskId: barIds[0], resourceId: 'r1' }]
+  const rejected = parseWeaveSnapshot(JSON.stringify(projected))
+  assert.equal(rejected.ok, false)
+  assert.deepEqual(codes(rejected), ['reference'])
 })

@@ -14,7 +14,9 @@ export function useTimelineView<R extends TimelineRow = TimelineRow, B extends T
 ) {
   const state = shallowRef<TimelineViewState>(initial ?? createTimelineViewState(toValue(source).columns))
   const projection = computed(() => projectTimelineView(toValue(source), state.value))
-  const columns = computed(() => resolveTimelineColumns(state.value, toValue(source).columns ?? []))
+  /** The visible columns in the saved order, with saved widths applied. Pass it to GanttChart's `columns`. */
+  const columns = computed(() => resolveTimelineColumns(state.value, toValue(source).columns ?? []).columns)
+  /** Saved-view problems (unknown or new columns, rows, sort rules); column problems included. */
   const diagnostics = computed(() => projection.value.diagnostics)
   const update = (patch: Partial<TimelineViewState>) => { state.value = { ...state.value, ...patch } }
 

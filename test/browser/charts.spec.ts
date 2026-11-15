@@ -976,6 +976,10 @@ test('the preserve routing policy keeps an external port route while an unrelate
       await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText(count)
       expect(await paths()).toEqual(preview)
     }
+    // The SVG export draws the same routes as the screen, preserved ones included.
+    const exported = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+    const exportedPaths = [...exported.matchAll(/<path d="([^"]+)"[^>]*marker-end=/g)].map(match => match[1]).sort()
+    expect(exportedPaths).toEqual(Object.values(await paths()).sort())
   }
   expect(errors).toEqual([])
 })
@@ -1010,6 +1014,21 @@ test('getTargetClientRect measures nodes, edges and groups and setViewportCenter
   const restored = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
   expect(restored.x).toBeCloseTo(saved.center.x, 6)
   expect(restored.y).toBeCloseTo(saved.center.y, 6)
+  expect((await readCamera(page)).scale).toBe(saved.scale)
+  // A saved centre and scale restore the same view in a container of another size (the translation differs).
+  const stageBefore = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  const translation = await readCamera(page)
+  await page.setViewportSize({ width: 820, height: 640 })
+  await expect.poll(async () => (await page.getByLabel('Network graph', { exact: true }).boundingBox())!.width).not.toBe(stageBefore.width)
+  // Restore until the graph has measured its new size (ResizeObserver runs asynchronously); the translation then differs.
+  await expect.poll(async () => {
+    await page.evaluate(() => (window as any).__vw.graph().setViewport({ x: 0, y: 0, scale: 0.5 }))
+    await page.evaluate(({ center, scale }) => (window as any).__vw.graph().setViewportCenter(center, scale), saved)
+    return (await readCamera(page)).x
+  }).not.toBe(translation.x)
+  const resized = await page.evaluate(() => (window as any).__vw.graph().getViewportCenter())
+  expect(resized.x).toBeCloseTo(saved.center.x, 6)
+  expect(resized.y).toBeCloseTo(saved.center.y, 6)
   expect((await readCamera(page)).scale).toBe(saved.scale)
   // Moving the camera moves the measured rectangle with it.
   await page.evaluate(() => (window as any).__vw.graph().setViewport({ ...(window as any).__vw.graph().getViewport(), x: 10 }))
@@ -4999,6 +5018,15 @@ test('saved editing writes JSON and restores the same IDs, document and view set
   await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
   await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
   await expect(weld('13:00–17:00')).toBeVisible()
+  // R10: a reference to an unknown row is found before anything is applied; the document and the view stay as they are.
+  const broken = JSON.parse(text) as { data: { bars: { rowId: string }[] }; view: { timeline: { search: { query: string } } } }
+  broken.data.bars[0]!.rowId = 'ghost'
+  broken.view.timeline.search.query = ''
+  await json.fill(JSON.stringify(broken))
+  await page.getByRole('button', { name: 'Load JSON', exact: true }).click()
+  await expect(page.getByRole('status', { name: 'JSON status', exact: true })).toContainText('Cannot load')
+  await expect(page.getByRole('searchbox', { name: 'Search tasks', exact: true })).toHaveValue('Weld')
+  await expect(weld('13:00–17:00')).toBeVisible()
   expect(errors).toEqual([])
 })
 
@@ -5065,11 +5093,12 @@ test('linked views: hover propagates to the other views and clears on leave', as
   await bar('Cut order A').hover()
   await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
   await expect(summary).toContainText('Hovering: Cut order A')
-  await expect(demo.locator('.linked-mark[data-mark="linked"]')).toHaveCount(2)
+  // Load linked by hover is highlighted through `highlightedLoadTargets`; the segments are matched by range overlap.
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted')).toHaveCount(2)
   await expect(node('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
   await demo.getByRole('heading', { name: 'Linked planning views' }).hover()
   await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
-  await expect(demo.locator('.linked-mark')).toHaveCount(0)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted, .vw-gantt-load-segment.vw-is-selected')).toHaveCount(0)
   await expect(summary).toContainText('Nothing selected')
 
   await node('Inspect').hover()
@@ -5092,7 +5121,9 @@ test('linked views: an overloaded load segment highlights the competing tasks', 
     await expect(bar(label)).toHaveAttribute('aria-pressed', 'false')
   }
   await expect(node('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
-  await expect(demo.locator('.linked-mark[data-mark="selected"]')).toHaveCount(1)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-selected')).toHaveCount(1)
+  await expect(overloaded).toHaveClass(/\bvw-is-selected\b/)
+  await expect(overloaded).toHaveAttribute('aria-pressed', 'true')
   // The segment after the overload belongs to cutting order A alone.
   await page.mouse.move(2, 2)
   const following = demo.getByRole('button', { name: 'CNC cell 12:00–13:00: load 1 / capacity 1' })
@@ -5192,6 +5223,11 @@ async function openAsyncDemo(page: Page) {
 test('async layout: responses that arrive out of order never replace the newest frame', async ({ page }) => {
   const { errors, demo, frame, status, log } = await openAsyncDemo(page)
   await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
+  await expect(status).toContainText('Layout up to date')
+  // A manual camera: new frames must not re-fit it, because the layout function keeps its identity.
+  await demo.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  const camera = () => demo.locator('svg g[transform^="translate("]').first().getAttribute('transform')
+  const zoomed = await camera()
   await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('reverse')
   // Request A (the shortcut link) is answered after request B (collapsing Intake); only B's frame may be shown.
   await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
@@ -5203,6 +5239,7 @@ test('async layout: responses that arrive out of order never replace the newest 
   // The late, superseded response did not bring the 9-link frame back.
   await expect(frame).toHaveText('8 nodes, 9 links, 1 collapsed group')
   await expect(demo.getByRole('button', { name: /^Intake 3 nodes/ })).toBeVisible()
+  expect(await camera()).toBe(zoomed)
   expect(errors).toEqual([])
 })
 
@@ -5244,10 +5281,15 @@ test('async layout: a failing service keeps the last consistent frame and recove
 test('async layout: the preserve routing policy keeps the engine routes of ported edges, also in a Worker', async ({ page }) => {
   const { errors, demo, frame } = await openAsyncDemo(page)
   const paths = () => demo.locator('path.vw-network-edge').evaluateAll(list => list.map(path => path.getAttribute('d')).join('|'))
+  // Wait for the engine's frame: the synchronous initial frame is provisional and its paths are not the engine's.
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(demo.getByRole('status', { name: 'Layout status' })).toContainText('Layout up to date')
   const builtin = await paths()
   await demo.getByRole('combobox', { name: 'Routing policy' }).selectOption('preserve')
   await expect.poll(paths).not.toBe(builtin)
   const preserved = await paths()
+  // The engine draws elbows from port to port; under 'preserve' they are kept instead of the built-in curves.
+  expect(preserved.split('|').every(path => / H .* V .* H /.test(path))).toBe(true)
   // A link connected while a layout is pending is drawn at once (temporary route) and the graph stays valid.
   await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
   await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
@@ -5260,5 +5302,28 @@ test('async layout: the preserve routing policy keeps the engine routes of porte
   await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).uncheck()
   await expect(frame).toHaveText('8 nodes, 8 links, 0 collapsed groups')
   await expect.poll(paths).toBe(preserved)
+  expect(errors).toEqual([])
+})
+
+test('async layout: a result that arrives during a drag waits for the drag to end and does not cancel it (R11)', async ({ page }) => {
+  const { errors, demo, frame, status } = await openAsyncDemo(page)
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await demo.getByRole('combobox', { name: 'Response timing' }).selectOption('slow')
+  await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  const box = (await demo.getByRole('button', { name: /^Ship/ }).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 10, { steps: 3 })
+  // The engine answers while the pointer is still down: the finished frame waits.
+  await expect(status).toContainText('Layout ready, shown after the gesture', { timeout: 5000 })
+  await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 })
+  await page.mouse.up()
+  // The drag was not cancelled by the new layout: it ended with a proposal, then the waiting frame was shown.
+  await expect(demo.getByLabel('Last proposed move')).toHaveText(/^Ship by [1-9]\d*, [1-9]\d*$/)
+  await expect(status).toContainText('Layout up to date')
+  await expect(demo.getByLabel('Frame source')).toHaveText('layout')
+  await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
   expect(errors).toEqual([])
 })
