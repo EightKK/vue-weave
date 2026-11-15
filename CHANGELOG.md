@@ -8,6 +8,13 @@
   `selected` → `vw-is-selected`, `related` → `vw-is-related`, `highlighted` → `vw-is-highlighted`, `active` → `vw-is-active`, `panning` → `vw-is-panning`, `draggable` → `vw-is-draggable`, `collapsed` → `vw-is-collapsed`, `solid` → `vw-is-solid`, `outline` → `vw-is-outline`, `editable` → `vw-is-editable`, `dragging` → `vw-is-dragging`, `milestone` → `vw-is-milestone`, `first` → `vw-is-first`, `last` → `vw-is-last`, `start` → `vw-is-start`, `finish` → `vw-is-finish`, `end` → `vw-is-end`, `overloaded` → `vw-is-overloaded`, `idle` → `vw-is-idle`. Tone (`vw-tone-*`), theme (`vw-theme-*`) and other `vw-` classes are unchanged. See "Class names" in docs/integration.md.
 - `rescheduleFromStatusDate` now drops only FS and SS dependencies into started tasks. FF and SF dependencies into a partly done task still apply, with their lag: when the remaining work would finish before a dependency allows, it resumes later and the task is split. A dependency that cannot be met returns an `infeasible` failure naming it. Completed tasks still ignore every incoming dependency.
 - `validateTimelineData` now throws an `Error` for a dependency from a bar to itself, naming the dependency and the bar. GanttChart reports such data through `validation-error` and renders its empty state, and `renderTimelineSvg` throws. `scheduleTasks` still reports a self-link as a `cycle` failure.
+- `scheduleToGraph` throws an Error for a dependency from a task to itself instead of returning a self-loop edge.
+- `toMsProjectXml` throws an Error for a dependency from a task to itself instead of writing the task as its own predecessor, which Microsoft Project rejects.
+
+### Added
+
+- `calendarBands` accepts an IANA `timeZone` option. Day, week, month and year bands start at local midnight and hour bands follow local hours across daylight-saving transitions, so GanttChart `headerBands` no longer drift by an hour. Combining it with `utcOffsetMinutes`, or passing an unknown zone, throws a RangeError.
+- The `calendarBands` `label` callback receives a third argument, `CalendarBandLocalTime`, with the local date, time, weekday and UTC offset of the band start.
 
 ### Changed
 

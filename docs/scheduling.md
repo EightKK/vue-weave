@@ -158,9 +158,17 @@ The sweep reports load, available capacity, excess units and active task IDs for
 - A wall time that occurs twice during a fall-back overlap resolves to its earlier occurrence. In New York on 1 November 2026, a 01:30–02:30 shift runs from 01:30 EDT to 02:30 EST, which is 2 hours.
 - A shift end of 1440 or later uses the next local midnight. The 3,661 civil date limit also applies.
 
+`calendarBands(range, unit, { timeZone })` uses the same rules for chart header bands: days, weeks, months and years start at local midnight (or at the end of a gap that skips it), and hour bands follow local hours, so a 23-hour day has 23 hour bands and a 25-hour day 25. Header bands built this way stay aligned with the working periods of the same zone. See [Timeline editing helpers](api.md#timeline-editing-helpers) for the details.
+
+```ts
+const zone = 'Europe/Berlin'
+const periods = buildWorkPeriods(range, { weekly, timeZone: zone })
+const headerBands = [calendarBands(range, 'day', { timeZone: zone }), calendarBands(range, 'hour', { timeZone: zone, step: 6 })]
+```
+
 ## Diagnose failures
 
-A `cycle` failure lists `cycles`. Each entry is a strongly connected group of tasks: `taskIds` in input order, and `dependencyIds`, the links between members, in input order. Every listed link lies on at least one cycle. A self-link (a link from a task to itself) forms a group with one task. `validateTimelineData` rejects such a link between bars with an Error, so it reaches `scheduleTasks` only when the links are built some other way. Tasks that only depend on a cycle are not listed. Entries are ordered by the input position of their first task. Detection is iterative, so long cycles do not exhaust the call stack.
+A `cycle` failure lists `cycles`. Each entry is a strongly connected group of tasks: `taskIds` in input order, and `dependencyIds`, the links between members, in input order. Every listed link lies on at least one cycle. A self-link (a link from a task to itself) forms a group with one task. `validateTimelineData` rejects such a link between bars with an Error, so it reaches `scheduleTasks` only when the links are built some other way; `scheduleToGraph` and `toMsProjectXml` also reject it with an Error. Tasks that only depend on a cycle are not listed. Entries are ordered by the input position of their first task. Detection is iterative, so long cycles do not exhaust the call stack.
 
 An `infeasible` failure names the first task without a feasible slot and the bounds that conflict. `constraints` holds the names of the binding bounds in this fixed order: `range`, `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, `deadline`, `projectFinish` and `calendar`. `dependencyIds` lists the binding links in input order. A bound is binding when it sets the effective lower or upper limit that cannot be met. The horizon (`range`) is listed only when no other bound sets the same limit. `calendar` is added when the numeric bounds could be met in continuous time but the task's working time, including its pauses, has no slot between them. For example, a 5-unit task with a deadline of 4 reports `['range', 'deadline']`, and a fixed start in a break reports `['fixedStart', 'calendar']`.
 

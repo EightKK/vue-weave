@@ -49,7 +49,8 @@ const defaultDuration = (duration: number) => Math.round(duration / 36_000) / 10
  * the dependency's ID. Critical tasks get `criticalTone` and are listed in `criticalNodeIds`; the result's
  * `criticalDependencyIds` are returned as `criticalEdgeIds`. Node and edge `data` carry the schedule values
  * (`ScheduleGraphNodeData`, `ScheduleGraphEdgeData`); edges of a type other than FS are labelled with their type.
- * Throws an Error for a dependency whose ends are not tasks of the result, or for a repeated dependency ID.
+ * Throws an Error for a dependency whose ends are not tasks of the result, a dependency from a task to itself, or a
+ * repeated dependency ID.
  */
 export function scheduleToGraph(
   result: ScheduleSuccess, dependencies: readonly TimelineDependency[], options: ScheduleGraphOptions = {},
@@ -79,6 +80,9 @@ export function scheduleToGraph(
   const edgeIds = new Set<string>()
   const edges = dependencies.map((dependency): GraphEdge => {
     if (!ids.has(dependency.from) || !ids.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
+    if (dependency.from === dependency.to) {
+      throw new Error(`Dependency ${dependency.id} links task ${dependency.from} to itself`)
+    }
     // Dependency IDs become edge IDs, which NetworkGraph requires to be unique.
     if (edgeIds.has(dependency.id)) throw new Error('Duplicate dependency ID: ' + dependency.id)
     edgeIds.add(dependency.id)

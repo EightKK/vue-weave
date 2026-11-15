@@ -1,7 +1,8 @@
 import type {
-  CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
+  CalendarBandLocalTime, CalendarBandOptions, CalendarBandUnit, TimelineBand, TimelineBar, TimelineBarEnd, TimelineDependency, TimelineDependencyType,
   TimelineLoadSegment, TimelineRow, TimelineSummary,
 } from './types.js'
+import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
 export interface TimeRange {
@@ -498,55 +499,92 @@ function pad(value: number) {
   return String(value).padStart(2, '0')
 }
 
+const hourMs = 3_600_000
+const maxCalendarBands = 10000
+
+/** A band boundary: the instant and the local wall time there, expressed as if it were UTC. */
+interface BandBoundary {
+  instant: number
+  wall: number
+}
+
 /**
- * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset,
- * clipped to the range and labelled from their unclipped boundaries.
+ * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset or
+ * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries.
+ *
+ * With `timeZone`, day, week, month and year bands start at the first instant of their local date: local midnight,
+ * or the end of a daylight-saving gap that skips midnight. A local date that the zone skips entirely has no band.
+ * Hour bands start where local time reaches a multiple of `step` hours counted from local midnight, so a 23-hour day
+ * has 23 one-hour bands and a 25-hour day 25, with the repeated hour twice. A grid hour inside a gap starts its band at
+ * the end of the gap, so its band is shorter (and absent when the gap ends on the next grid hour).
  */
 export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options: CalendarBandOptions = {}): TimelineBand[] {
   checkRange(range)
-  const { utcOffsetMinutes = 0, step = 1, weekStartsOn = 1, label } = options
+  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label } = options
   if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
-  if (!Number.isInteger(utcOffsetMinutes) || Math.abs(utcOffsetMinutes) > maxUtcOffsetMinutes) {
+  if (timeZone !== undefined && utcOffsetMinutes !== undefined) {
+    throw new RangeError('Specify either timeZone or utcOffsetMinutes, not both')
+  }
+  const fixedOffset = utcOffsetMinutes ?? 0
+  if (!Number.isInteger(fixedOffset) || Math.abs(fixedOffset) > maxUtcOffsetMinutes) {
     throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
   }
   if (!Number.isSafeInteger(step) || step <= 0 || (unit === 'hour' && 24 % step !== 0)) {
     throw new RangeError('step must be a positive integer (a divisor of 24 for hours)')
   }
   if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
-  const offset = utcOffsetMinutes * minuteMs
-  // Civil fields are read with UTC getters from shifted instants.
-  const civil = (time: number) => new Date(time + offset)
+  const format = timeZone === undefined ? undefined : zoneFormat(timeZone)
+  const offset = fixedOffset * minuteMs
+  // Zone rules are looked up up to two days around an instant, so it must stay inside the Date range.
+  const checkZoneTime = (time: number) => {
+    if (!Number.isFinite(new Date(time - 2 * dayMs).getTime()) || !Number.isFinite(new Date(time + 2 * dayMs).getTime())) {
+      throw new RangeError('Calendar bands exceed the supported date range')
+    }
+  }
+  // Boundaries are computed as local wall times expressed as if they were UTC: civil fields are read and written with
+  // UTC getters and setters.
+  const toInstant = (wall: number) => {
+    if (!format) return wall - offset
+    checkZoneTime(wall)
+    return zonedInstant(format, wall)
+  }
+  const offsetAt = (instant: number) => format ? zoneOffset(format, instant) : offset
   // setUTCFullYear keeps years 0 to 99 literal, unlike Date.UTC, and normalizes overflowing months, days and hours.
   const fromCivil = (year: number, month: number, day = 1, hour = 0) => {
     const date = new Date(0)
     date.setUTCFullYear(year, month, day)
     date.setUTCHours(hour, 0, 0, 0)
-    return date.getTime() - offset
+    return date.getTime()
   }
   const modulo = (value: number) => ((value % step) + step) % step
+  if (format) {
+    checkZoneTime(range.start)
+    checkZoneTime(range.end)
+  }
+  const startWall = range.start + offsetAt(range.start)
   // Multi-unit bands follow a fixed grid counted from the Unix epoch (days, weeks, months) or from year 0 (years), so
   // overlapping ranges agree on their boundaries whatever their starts.
   function first(): number {
-    const date = civil(range.start)
+    const date = new Date(startWall)
     const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
     if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() - date.getUTCHours() % step)
     if (unit === 'day') {
       const midnight = fromCivil(year, month, day)
-      const index = Math.floor((midnight + offset) / dayMs)
+      const index = Math.floor(midnight / dayMs)
       return midnight - modulo(index) * dayMs
     }
     if (unit === 'week') {
       const weekStart = fromCivil(year, month, day - ((date.getUTCDay() - weekStartsOn + 7) % 7))
       // Week 0 is the week containing 1970-01-01, a Thursday.
       const epochWeekStart = -((4 - weekStartsOn + 7) % 7)
-      const index = Math.round((Math.round((weekStart + offset) / dayMs) - epochWeekStart) / 7)
+      const index = Math.round((Math.round(weekStart / dayMs) - epochWeekStart) / 7)
       return weekStart - modulo(index) * 7 * dayMs
     }
     if (unit === 'month') return fromCivil(year, month - modulo((year - 1970) * 12 + month))
     return fromCivil(year - modulo(year), 0)
   }
-  function next(time: number): number {
-    const date = civil(time)
+  function next(wall: number): number {
+    const date = new Date(wall)
     const year = date.getUTCFullYear(), month = date.getUTCMonth(), day = date.getUTCDate()
     if (unit === 'hour') return fromCivil(year, month, day, date.getUTCHours() + step)
     if (unit === 'day') return fromCivil(year, month, day + step)
@@ -554,25 +592,87 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
     if (unit === 'month') return fromCivil(year, month + step)
     return fromCivil(year + step, 0)
   }
-  function defaultLabel(start: number) {
-    const date = civil(start)
+  function defaultLabel(wall: number) {
+    const date = new Date(wall)
     const ymd = String(date.getUTCFullYear()).padStart(4, '0') + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate())
     if (unit === 'hour') return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes())
     if (unit === 'month') return ymd.slice(0, 7)
     if (unit === 'year') return ymd.slice(0, 4)
     return ymd
   }
-  const bands: TimelineBand[] = []
-  for (let start = first(); start < range.end;) {
-    const end = next(start)
-    if (!Number.isFinite(end) || end <= start) throw new RangeError('Calendar bands exceed the supported date range')
-    if (end > range.start) {
-      if (bands.length >= 10000) throw new RangeError('Too many calendar bands; increase the unit or step')
-      bands.push({ start: Math.max(start, range.start), end: Math.min(end, range.end), label: label ? label(start, end) : defaultLabel(start) })
+  function localTime(start: BandBoundary): CalendarBandLocalTime {
+    const date = new Date(start.wall)
+    return {
+      year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(), weekday: date.getUTCDay(), utcOffsetMinutes: (start.wall - start.instant) / minuteMs, timeZone,
     }
+  }
+  const bands: TimelineBand[] = []
+  const push = (start: BandBoundary, end: number) => {
+    if (end <= range.start || end <= start.instant || start.instant >= range.end) return
+    if (bands.length >= maxCalendarBands) throw new RangeError('Too many calendar bands; increase the unit or step')
+    bands.push({
+      start: Math.max(start.instant, range.start), end: Math.min(end, range.end),
+      label: label ? label(start.instant, end, localTime(start)) : defaultLabel(start.wall),
+    })
+  }
+  if (format && unit === 'hour') {
+    zonedHourBands(format, Math.floor(startWall / dayMs) * dayMs, range.end, step, toInstant, push)
+    return bands
+  }
+  let wall = first()
+  for (let start = toInstant(wall); start < range.end;) {
+    const nextWall = next(wall)
+    const end = Number.isFinite(nextWall) ? toInstant(nextWall) : Number.NaN
+    if (!Number.isFinite(end) || end < start || (!format && end === start)) {
+      throw new RangeError('Calendar bands exceed the supported date range')
+    }
+    // With a time zone, the band starts at its first local instant, which differs from `wall` after a gap.
+    push({ instant: start, wall: format ? start + zoneOffset(format, start) : wall }, end)
+    wall = nextWall
     start = end
   }
   return bands
+}
+
+/**
+ * Hour bands in a time zone, one local date at a time from `dayWall`. Within a date the offset changes at most once,
+ * at `transition`: a grid wall time before it maps with the earlier offset, one after it with the later offset, both
+ * when it is repeated and to the transition when it is skipped.
+ */
+function zonedHourBands(
+  format: Intl.DateTimeFormat, dayWall: number, rangeEnd: number, step: number,
+  toInstant: (wall: number) => number, push: (start: BandBoundary, end: number) => void,
+) {
+  let dayStart = toInstant(dayWall)
+  let startOffset = zoneOffset(format, dayStart)
+  while (dayStart < rangeEnd) {
+    const nextWall = dayWall + dayMs
+    const nextStart = toInstant(nextWall)
+    const nextOffset = zoneOffset(format, nextStart)
+    const transition = nextOffset === startOffset ? Infinity : zoneTransition(format, dayStart, nextStart, startOffset)
+    const boundaries: BandBoundary[] = [{ instant: dayStart, wall: dayStart + startOffset }]
+    const add = (instant: number, zone: number) => {
+      if (instant >= dayStart && instant < nextStart) boundaries.push({ instant, wall: instant + zone })
+    }
+    for (let hour = step; hour < 24; hour += step) {
+      const wall = dayWall + hour * hourMs
+      const early = wall - startOffset, late = wall - nextOffset
+      const before = early < transition, after = late >= transition && transition !== Infinity
+      if (before) add(early, startOffset)
+      if (after) add(late, nextOffset)
+      if (!before && !after) add(transition, nextOffset)
+    }
+    boundaries.sort((a, b) => a.instant - b.instant)
+    for (let index = 0; index < boundaries.length; index++) {
+      const boundary = boundaries[index]!, following = boundaries[index + 1]
+      if (following && following.instant === boundary.instant) continue
+      push(boundary, following?.instant ?? nextStart)
+    }
+    dayWall = nextWall
+    dayStart = nextStart
+    startOffset = nextOffset
+  }
 }
 
 export interface ResourceLoadHistogram {

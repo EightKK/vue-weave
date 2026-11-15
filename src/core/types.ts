@@ -455,15 +455,37 @@ export interface TimelineLoadSegment extends TimeRange {
 
 export type CalendarBandUnit = 'hour' | 'day' | 'week' | 'month' | 'year'
 
+/** Local wall-clock fields of a band start, in the `timeZone` or fixed offset of `calendarBands`. */
+export interface CalendarBandLocalTime {
+  /** Astronomical year: 0 is 1 BC. */
+  year: number
+  /** 1 to 12. */
+  month: number
+  day: number
+  hour: number
+  minute: number
+  /** 0 = Sunday to 6 = Saturday. */
+  weekday: number
+  /** Local time minus UTC at the band start, in minutes. Can be fractional for historical local mean time. */
+  utcOffsetMinutes: number
+  /** The `timeZone` option, or undefined for a fixed offset. */
+  timeZone?: string
+}
+
 export interface CalendarBandOptions {
-  /** Fixed offset from UTC in minutes. Daylight-saving transitions are not applied. */
+  /** Fixed offset from UTC in minutes. Daylight-saving transitions are not applied. Cannot be combined with `timeZone`. */
   utcOffsetMinutes?: number
+  /**
+   * IANA time zone such as `Europe/Berlin`. Bands then follow local dates and hours with daylight-saving rules, so a
+   * day band can last 23 or 25 hours. Cannot be combined with `utcOffsetMinutes`.
+   */
+  timeZone?: string
   /** Number of units per band. Defaults to 1. */
   step?: number
   /** First day of a week, 0 = Sunday to 6 = Saturday. Defaults to 1 (Monday). */
   weekStartsOn?: number
-  /** Label for an unclipped band. Times are epoch milliseconds. */
-  label?: (start: number, end: number) => string
+  /** Label for an unclipped band. Times are epoch milliseconds; `local` holds the local fields of `start`. */
+  label?: (start: number, end: number, local: CalendarBandLocalTime) => string
 }
 
 /** Text direction of a component. `auto` follows the inherited CSS direction after mounting. */

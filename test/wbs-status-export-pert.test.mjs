@@ -182,6 +182,16 @@ test('rescheduleFromStatusDate reports a kept finish link that cannot be met as 
   // The required finish 21 lies after the horizon.
   assert.deepEqual(rescheduleFromStatusDate(finishLinked('FF', 13), 2, new Map([['b', 0.5]])),
     { ok: false, code: 'infeasible', taskId: 'b', constraints: ['range'], dependencyIds: ['ab'] })
+  // The plan meets the deadline 9 with b at 2–6. At the status date 4, b is half done and a has not started, so a
+  // moves to 4–8, still before the deadline, and the kept link requires b to finish at 10, after it.
+  const deadlined = {
+    range: { start: 0, end: 20 }, deadline: 9,
+    tasks: [{ id: 'a', duration: 4 }, { id: 'b', duration: 4 }],
+    dependencies: [{ id: 'ab', from: 'a', to: 'b', type: 'FF', lag: 2 }],
+  }
+  assert.deepEqual(dates(scheduleTasks(deadlined)).b, [2, 6, [[2, 6]]])
+  assert.deepEqual(rescheduleFromStatusDate(deadlined, 4, new Map([['b', 0.5]])),
+    { ok: false, code: 'infeasible', taskId: 'b', constraints: ['deadline'], dependencyIds: ['ab'] })
 })
 
 test('rescheduleFromStatusDate validates the status date and progress', () => {
@@ -244,15 +254,27 @@ test('toMsProjectXml validates tasks, outline levels and dependencies', () => {
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, outlineLevel: 2 }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, percentComplete: 101 }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 'x' }] }), { name: 'Error', message: /Unknown dependency/ })
-  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', type: 'XX' }] }), { name: 'Error' })
-  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', lag: Infinity }] }), RangeError)
+  const other = { id: 'u', name: 'U', start: hour, end: 2 * hour }
+  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, other], dependencies: [{ from: 't', to: 'u', type: 'XX' }] }), {
+    name: 'Error', message: 'Invalid dependency type: XX',
+  })
+  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, other], dependencies: [{ from: 't', to: 'u', lag: Infinity }] }), RangeError)
   assertWellFormed(toMsProjectXml({ name: 'Empty', tasks: [] }))
 })
 
+test('toMsProjectXml rejects a task that is its own predecessor', () => {
+  const tasks = [{ id: 't', name: 'T', start: 0, end: hour }, { id: 'u', name: 'U', start: hour, end: 2 * hour }]
+  for (const type of ['FS', 'SS', 'FF', 'SF']) {
+    assert.throws(() => toMsProjectXml({ name: 'P', tasks, dependencies: [{ from: 't', to: 'u' }, { from: 'u', to: 'u', type }] }), {
+      name: 'Error', message: 'Dependency u → u links task u to itself',
+    })
+  }
+})
+
 test('toMsProjectXml rejects inherited property names as dependency types', () => {
-  const task = { id: 't', name: 'T', start: 0, end: hour }
+  const tasks = [{ id: 't', name: 'T', start: 0, end: hour }, { id: 'u', name: 'U', start: hour, end: 2 * hour }]
   for (const type of ['toString', 'constructor', '__proto__', 'valueOf']) {
-    assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task], dependencies: [{ from: 't', to: 't', type }] }), {
+    assert.throws(() => toMsProjectXml({ name: 'P', tasks, dependencies: [{ from: 't', to: 'u', type }] }), {
       name: 'Error', message: 'Invalid dependency type: ' + type,
     })
   }
@@ -336,6 +358,14 @@ test('scheduleToGraph builds a PERT network with early dates, float and critical
   assert.deepEqual(custom.nodes.map(node => node.tone), ['violet', 'violet', 'teal', 'violet'])
   assert.throws(() => scheduleToGraph(result, [{ id: 'x', from: 'a', to: 'missing' }]), { name: 'Error', message: /Unknown dependency endpoint/ })
   assert.throws(() => scheduleToGraph({ ok: false, code: 'cycle', cycles: [] }, []), /successful/)
+})
+
+test('scheduleToGraph rejects a dependency from a task to itself', () => {
+  const result = scheduleTasks({ range: { start: 0, end: 4 * hour }, quantum: hour, tasks: [{ id: 'a', duration: hour }, { id: 'b', duration: hour }] })
+  assert.equal(result.ok, true)
+  assert.throws(() => scheduleToGraph(result, [{ id: 'ab', from: 'a', to: 'b' }, { id: 'loop', from: 'b', to: 'b', type: 'SS' }]), {
+    name: 'Error', message: 'Dependency loop links task b to itself',
+  })
 })
 
 const chartRows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]

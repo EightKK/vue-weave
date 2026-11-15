@@ -81,8 +81,8 @@ function isoDuration(ms: number) {
  * Not exported: calendars, resources, assignments, baselines, constraints, notes and custom fields. Task IDs of the
  * input are not written; the UIDs follow the input order.
  *
- * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends and unknown
- * link types, and a RangeError
+ * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
+ * dependency from a task to itself and unknown link types, and a RangeError
  * for non-finite or unordered dates, an invalid outline level, percent complete or lag.
  */
 export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
@@ -116,6 +116,8 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
   for (const dependency of project.dependencies ?? []) {
     const from = uids.get(dependency.from), to = uids.get(dependency.to)
     if (from === undefined || to === undefined) throw new Error(`Unknown dependency end: ${dependency.from} → ${dependency.to}`)
+    // MS Project rejects a task that is its own predecessor.
+    if (from === to) throw new Error(`Dependency ${dependency.from} → ${dependency.to} links task ${dependency.from} to itself`)
     const name = dependency.type ?? 'FS'
     const type = Object.hasOwn(linkTypes, name) ? linkTypes[name] : undefined
     if (type === undefined) throw new Error('Invalid dependency type: ' + dependency.type)
