@@ -69,6 +69,8 @@
 .vw-gantt-links marker path { fill: context-stroke; stroke: none; }
 .vw-gantt-links path.vw-is-related { stroke: var(--vw-accent, #245e96); stroke-width: 1.7px; }
 .vw-gantt-links path.vw-is-highlighted { stroke: var(--vw-dependency-highlight, #a74f08); stroke-width: 2px; }
+.vw-gantt-links .vw-gantt-lag { direction: ltr; fill: var(--vw-text, #172c3b); stroke: var(--vw-surface, #fff); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; font-size: 10px; font-weight: 650; dominant-baseline: central; }
+.vw-gantt-links .vw-gantt-lag.vw-is-highlighted { fill: var(--vw-dependency-highlight, #a74f08); }
 @media (max-width: 700px) {
   .vw-network-stage { height: 185px; }
   .vw-gantt { --vw-row-label-width: 106px; }
@@ -217,6 +219,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt.vw-rtl .vw-gantt-marker { border-left: 0; border-inline-start: 1px dashed var(--vw-marker, #a74f08); }
 .vw-gantt.vw-rtl .vw-gantt-now { border-left: 0; border-inline-start: 2px solid var(--vw-now, #c23b22); }
 .vw-gantt.vw-rtl .vw-gantt-links, .vw-gantt.vw-rtl .vw-gantt-link-hits, .vw-gantt.vw-rtl .vw-gantt-link-preview { transform: scaleX(-1); }
+/* The dependency layer is mirrored as a whole; each lag label is flipped back in place so its text reads normally. */
+.vw-gantt.vw-rtl .vw-gantt-lag { transform: scaleX(-1); transform-box: fill-box; transform-origin: center; }
 .vw-gantt.vw-rtl .vw-gantt-link-preview { left: auto; inset-inline-start: var(--vw-label-area-width); }
 .vw-gantt.vw-rtl .vw-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vw-surface, #fff); }
 .vw-gantt.vw-rtl .vw-extra-column { border-left: 0; border-inline-start: 1px solid var(--vw-border, #d8e2e9); }
@@ -304,6 +308,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-network-edge.vw-is-related, .vw-gantt-links path.vw-is-related { stroke: Highlight; stroke-width: 3px; }
   .vw-gantt-links path.vw-is-highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
   .vw-gantt-links path.vw-is-selected { stroke: Highlight; stroke-width: 3.5px; }
+  .vw-gantt-links .vw-gantt-lag { forced-color-adjust: none; fill: CanvasText; stroke: Canvas; }
   .vw-network-node rect, .vw-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
   .vw-network-node text, .vw-network-group text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
   .vw-network-node.vw-is-related rect { stroke: Highlight; stroke-width: 2.5px; }

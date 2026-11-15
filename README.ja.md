@@ -34,7 +34,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 - 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
 - `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
-- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。
+- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。
 - 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。
 - 行の空いている部分のドラッグによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。
 - 移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）。
@@ -42,7 +42,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - ポインターやAltキーと矢印キーによる行の階層編集（`rowsReorderable`、`row-move`。`moveTimelineRow` で反映できます）。`timelineWbsCodes` はWBS列に使う行番号を求めます。
 - ポインターのドラッグや矢印キーによる列幅の変更（`columnsResizable`、`column-resize`、`labelWidth`）。
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
-- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）。
+- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
 - 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。
 

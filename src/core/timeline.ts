@@ -212,7 +212,8 @@ function checkSegments(bar: TimelineBar) {
 /**
  * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
  * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
- * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.)
+ * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.) Throws a RangeError for a
+ * dependency `lag` that is not a finite number.
  */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
@@ -251,7 +252,19 @@ export function validateTimelineData(
       throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
     }
     if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type')
+    const lag = dependency.lag
+    if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) throw new RangeError('Dependency lag must be finite: ' + dependency.id)
   }
+}
+
+/**
+ * Default text of a dependency lag in GanttChart (`formatLag`) and `renderTimelineSvg`: a signed number of hours of a
+ * millisecond lag, rounded to two decimals, such as `+2 h`, `+0.5 h` or `−1.25 h` (a lead, with U+2212 MINUS SIGN).
+ * Charts in other time units should pass their own formatter. Throws a RangeError for a non-finite lag.
+ */
+export function formatDependencyLag(lag: number): string {
+  if (typeof lag !== 'number' || !Number.isFinite(lag)) throw new RangeError('lag must be finite')
+  return (lag < 0 ? '\u2212' : '+') + Math.round(Math.abs(lag) / 36_000) / 100 + ' h'
 }
 
 

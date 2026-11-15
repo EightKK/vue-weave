@@ -1,14 +1,14 @@
 import { indexGraph, type GraphEdge, type GraphLayout } from './graph.js'
 import { graphPathBounds } from './graphView.js'
 import {
-  createTimelineRowTree, dependencyPath, dependencyTimes, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
+  createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, validateTimelineData, type TimeRange, type TimeScale,
 } from './timeline.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineRow,
 } from './types.js'
-import { checkNonWorkingPeriods, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
+import { checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -339,6 +339,8 @@ export interface TimelineSvgOptions extends SvgExportOptions {
   tickAnchor?: number
   /** Tick and tooltip labels. Default UTC HH:mm. */
   formatTime?: (time: number) => string
+  /** Text of the label drawn on a dependency with a non-zero `lag`. Default `formatDependencyLag` (signed hours of milliseconds). */
+  formatLag?: (lag: number) => string
   /** Heading of the row column. Default "Rows". */
   rowHeading?: string
   /** Label of the now line. Default "Now". */
@@ -653,6 +655,8 @@ export function renderTimelineSvg(
   })
   // Dependency paths are computed from the window start and mirrored as a whole for right-to-left output.
   const paths: string[] = []
+  const lagLabels: string[] = []
+  const formatLag = options.formatLag ?? formatDependencyLag
   const barById = new Map(bars.map(bar => [bar.id, bar]))
   for (const dep of dependencies) {
     const source = barById.get(dep.from)!, target = barById.get(dep.to)!
@@ -667,10 +671,21 @@ export function renderTimelineSvg(
       stroke: strong ? theme.dependencyHighlight : theme.edge, 'stroke-width': strong ? 2 : 1.3,
       'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
     }))
+    if (dep.lag) {
+      // Placed as in GanttChart and mirrored point by point, so the text itself is never mirrored.
+      const point = lagLabelPoint(local.toX(ends.from), y1, local.toX(ends.to), y2, headerHeight + sourceIndex * rowHeight, rowHeight)
+      lagLabels.push(tag('text', {
+        class: 'vw-gantt-lag', x: rtl ? axisWidth - point.x : labelArea + point.x, y: point.y,
+        'text-anchor': point.anchor === 'middle' ? 'middle' : rtl ? 'end' : 'start', 'dominant-baseline': 'central',
+        'font-size': 10, 'font-weight': 650, fill: strong ? theme.dependencyHighlight : theme.text,
+        stroke: theme.surface, 'stroke-width': 3, 'stroke-linejoin': 'round', 'paint-order': 'stroke',
+      }, escapeXml(formatLag(dep.lag))))
+    }
   }
   if (paths.length) {
     area.push(tag('g', { transform: rtl ? `matrix(-1 0 0 1 ${num(axisWidth)} 0)` : `translate(${num(labelArea)} 0)` }, paths.join('')))
   }
+  area.push(...lagLabels)
   const flag = (x: number, text: string, color: string, strokeWidth: number, dashed: boolean) => {
     const flagWidth = 10 + 6 * Array.from(text).length
     return tag('line', {

@@ -32,9 +32,12 @@ const originalTasks: ScheduleTask[] = [
   { id: 'inspect', duration: 2 * hour },
   { id: 'pack', duration: 2 * hour },
 ]
+// The chart draws these links and the scheduler uses them unchanged, lag included: a ScheduleLink is a
+// TimelineDependency with a lag. Packing may overlap the last two hours of cutting order B (a lead, drawn as "−2 h").
 const dependencies: ScheduleLink[] = [
   { id: 'cut-inspect', from: 'cut-a', to: 'inspect', type: 'FS' },
   { id: 'inspect-pack', from: 'inspect', to: 'pack', type: 'FS' },
+  { id: 'cut-b-pack', from: 'cut-b', to: 'pack', type: 'FS', lag: -2 * hour },
 ]
 const resources = [
   { id: 'cnc', label: 'CNC cell', capacity: 1, periods: shifts },
@@ -248,7 +251,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vw-bar-text">{{ workHours.get(bar.id) }} h</span></template>
-      <template #legend><span class="hint">Drag a cutting order or use its arrow keys; dashed outlines preview the operations that move with it. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
+      <template #legend><span class="hint">Drag a cutting order or use its arrow keys; dashed outlines preview the operations that move with it. Link labels show lag; −2 h is a lead. Bar labels show work hours. Grey lines show the original plan. Split bars show work around breaks; red outlines mark the critical path, thin lines show float and the flag marks the dispatch cut-off.</span></template>
     </GanttChart>
     <p class="status" role="status">{{ notice }}</p>
     <NetworkGraph v-if="showNetwork" :nodes="network.nodes" :edges="network.edges" :related-ids="network.criticalNodeIds"

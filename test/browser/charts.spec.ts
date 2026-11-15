@@ -3180,7 +3180,9 @@ test('the scheduling demo exports Microsoft Project XML, iCalendar and CSV files
   expect(xml.text).toContain('<Name>Cut order A</Name>')
   expect(xml.text).toContain('<Start>2026-11-09T08:00:00</Start><Finish>2026-11-09T11:00:00</Finish>')
   expect(xml.text).toContain('<PercentComplete>100</PercentComplete>')
-  expect(xml.text.match(/<PredecessorLink>/g)).toHaveLength(2)
+  // Three links; the lead of cutting order B before packing is written in tenths of a minute.
+  expect(xml.text.match(/<PredecessorLink>/g)).toHaveLength(3)
+  expect(xml.text).toContain('<LinkLag>-1200</LinkLag>')
 
   const ics = await save('Export iCalendar')
   expect(ics.filename).toBe('schedule.ics')
@@ -3641,5 +3643,181 @@ test('keyboard focus on a selected node is visibly distinct from selection alone
   expect(focused.focused).toBe(true)
   expect(focused.outline).not.toBe(unfocused.outline)
   expect(focused.outline).toMatch(/^solid 2px/)
+  expect(errors).toEqual([])
+})
+
+test('gantt dependency lag is labelled between the bars, describes the dependency and survives a reconnect', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const rtl of [false, true]) {
+    const { chart, out } = await openGanttFixture(page, '?lag=1&interactions=1' + (rtl ? '&rtl=1' : ''))
+    const label = chart.locator('.vw-gantt-lag')
+    await expect(label).toHaveText('+2 u')
+    await expect(label).toBeVisible()
+    // The name is unchanged; the lag is the description.
+    const link = chart.getByRole('button', { name: 'Select dependency Task A → Task B FS', exact: true })
+    await expect(link).toHaveAccessibleDescription('Lag +2 u')
+    // The label sits between the two bars and overlaps neither, also when the layer is mirrored.
+    const [a, b, text] = await Promise.all([
+      chart.getByRole('button', { name: 'Task A 0–2', exact: true }).boundingBox(),
+      chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox(),
+      label.boundingBox(),
+    ])
+    const overlaps = (p: typeof a, q: typeof a) => p!.x < q!.x + q!.width && q!.x < p!.x + p!.width && p!.y < q!.y + q!.height && q!.y < p!.y + p!.height
+    expect(overlaps(text, a) || overlaps(text, b)).toBe(false)
+    if (rtl) expect(text!.x + text!.width).toBeLessThan(a!.x)
+    else expect(text!.x).toBeGreaterThan(a!.x + a!.width)
+    // The text is not mirrored: its glyphs advance in reading order on screen.
+    expect(await label.evaluate(element => {
+      const text = element as SVGTextElement
+      const first = text.getStartPositionOfChar(0), last = text.getStartPositionOfChar(text.getNumberOfChars() - 1)
+      const matrix = text.getScreenCTM()!
+      return new DOMPoint(last.x, last.y).matrixTransform(matrix).x - new DOMPoint(first.x, first.y).matrixTransform(matrix).x
+    })).toBeGreaterThan(0)
+    // The SVG export draws the same label.
+    expect(await page.evaluate(() => (window as any).ganttChart.value.exportSvg())).toMatch(/<text class="vw-gantt-lag"[^>]*>\+2 u<\/text>/)
+
+    // Reconnecting keeps the lag in both connections; a new dependency has none.
+    await link.press('Enter')
+    await chart.getByRole('button', { name: 'Reconnect target of Task A → Task B FS', exact: true }).press('Enter')
+    await chart.getByRole('button', { name: 'Connect dependency to finish of Task B', exact: true }).press('Enter')
+    expect(JSON.parse((await out('Last reconnect').textContent())!)).toEqual({
+      id: 'ab', before: { from: 'a', to: 'b', type: 'FS', lag: 2 }, after: { from: 'a', to: 'b', type: 'FF', lag: 2 },
+    })
+    await chart.getByRole('button', { name: 'Start dependency from finish of Task B', exact: true }).press('Enter')
+    await chart.getByRole('button', { name: 'Connect dependency to start of Task A', exact: true }).press('Enter')
+    expect(JSON.parse((await out('Last connection').textContent())!)).toEqual({ from: 'b', to: 'a', type: 'FS' })
+    // The app edits a lag through its own UI; the dependency events carry the ID to look it up.
+    await link.press('Shift+F10')
+    expect(JSON.parse((await out('Last context menu').textContent())!).target).toEqual({ kind: 'dependency', id: 'ab' })
+  }
+  expect(errors).toEqual([])
+})
+
+test('the scheduling demo labels a lead and its cascade preview and batch honour the lead', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
+  const other = plan.getByRole('button', { name: /^Cut order B \d\d Nov.*–/ })
+  const packing = plan.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
+  const ghosts = plan.locator('.vw-gantt-cascade-preview')
+  await expect(other).toHaveAttribute('aria-label', 'Cut order B 09 Nov 10:00–09 Nov 12:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 14:00–09 Nov 16:00')
+  const box = (await other.boundingBox())!
+  const pack = (await packing.boundingBox())!
+  const y = box.y + box.height / 2
+  // 90 px is five hours: cutting order B would end at 17:00, so with the two-hour lead packing starts at 15:00 the
+  // same day. Without the lead it would wait for 17:00 and move past the plant closure to 11 November.
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 90, y, { steps: 9 })
+  await expect(ghosts).toHaveCount(1)
+  const ghost = (await ghosts.first().boundingBox())!
+  expect(ghost.x - pack.x).toBeCloseTo(18, 0)
+  expect(ghost.width).toBeCloseTo(36, 0)
+  expect(ghost.y).toBeCloseTo(pack.y, 0)
+  await page.mouse.up()
+  await expect(page.getByRole('status').filter({ hasText: 'Plan recalculated. 1 other operation changed.' })).toBeVisible()
+  await expect(other).toHaveAttribute('aria-label', 'Cut order B 09 Nov 15:00–09 Nov 17:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 15:00–09 Nov 17:00')
+  expect(errors).toEqual([])
+})
+
+async function recordWheelDefaults(page: Page) {
+  await page.evaluate(() => {
+    const log: boolean[] = []
+    ;(window as any).__wheelPrevented = log
+    window.addEventListener('wheel', event => log.push(event.defaultPrevented))
+  })
+  return {
+    count: () => page.evaluate(() => (window as any).__wheelPrevented.length as number),
+    last: () => page.evaluate(() => (window as any).__wheelPrevented.at(-1) as boolean),
+  }
+}
+
+test('gantt Ctrl+wheel zooms around the pointer in both directions while a plain wheel still scrolls', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const rtl of [false, true]) {
+    const { chart, out } = await openGanttFixture(page, '?wheel=1' + (rtl ? '&rtl=1' : ''))
+    const wheelLog = await recordWheelDefaults(page)
+    const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+    const taskB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+    await expect(zoom).toHaveText('100%')
+    // The pointer rests 10 px after the start of Task B (time 4.2 at 50 px per unit).
+    const box = (await taskB.boundingBox())!
+    const x = rtl ? box.x + box.width - 10 : box.x + 10
+    const y = box.y + box.height / 2
+    const fromStart = async () => {
+      const current = (await taskB.boundingBox())!
+      return rtl ? current.x + current.width - x : x - current.x
+    }
+    const wheel = async (key: string, deltaY: number, times = 1) => {
+      await page.keyboard.down(key)
+      for (let i = 0; i < times; i++) await page.mouse.wheel(0, deltaY)
+      await page.keyboard.up(key)
+    }
+    await page.mouse.move(x, y)
+
+    // One wheel notch is one zoom button step, and the time under the pointer stays under it within a pixel.
+    await wheel('Control', -100)
+    await expect(zoom).toHaveText('135%')
+    await expect.poll(async () => Math.abs(await fromStart() - 13.5)).toBeLessThanOrEqual(1)
+    expect(await wheelLog.last()).toBe(true)
+    await expect(out('Zoom events')).toContainText('1.35/')
+    await wheel('Meta', 100)
+    await expect(zoom).toHaveText('100%')
+    await expect.poll(async () => Math.abs(await fromStart() - 10)).toBeLessThanOrEqual(1)
+    // Trackpad pinches arrive as many small Ctrl+wheel deltas and zoom proportionally.
+    await wheel('Control', -10, 5)
+    await expect(zoom).toHaveText('116%')
+    await expect.poll(async () => Math.abs(await fromStart() - 11.62)).toBeLessThanOrEqual(1)
+    // The limits clamp the zoom.
+    await wheel('Control', -100, 6)
+    await expect(zoom).toHaveText('300%')
+
+    // A plain wheel scrolls natively (towards later times, which lie to the left in right-to-left charts) and is not prevented.
+    const scrolled = () => chart.evaluate(element => Math.abs(element.scrollLeft))
+    const before = await scrolled()
+    await page.mouse.wheel(rtl ? -400 : 400, 0)
+    await expect.poll(scrolled).toBeGreaterThan(before)
+    expect(await wheelLog.last()).toBe(false)
+    await expect(zoom).toHaveText('300%')
+
+    // Like a pinch, a wheel zoom during a drag cancels the drag without a proposal.
+    const taskA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+    await chart.evaluate(element => { element.scrollLeft = 0 })
+    const a = (await taskA.boundingBox())!
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(a.x + a.width / 2 + (rtl ? -60 : 60), a.y + a.height / 2, { steps: 4 })
+    await expect(taskA).toHaveClass(/\bvw-is-dragging\b/)
+    await wheel('Control', 100)
+    await expect(zoom).toHaveText('222%')
+    await expect(taskA).not.toHaveClass(/\bvw-is-dragging\b/)
+    await page.mouse.up()
+    await expect(out('Last edit')).toHaveText('')
+  }
+  expect(errors).toEqual([])
+})
+
+test('gantt Ctrl+wheel does nothing without wheelZoom', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '')
+  const wheelLog = await recordWheelDefaults(page)
+  const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+  const box = (await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox())!
+  await page.mouse.move(box.x + 10, box.y + box.height / 2)
+  await page.keyboard.down('Control')
+  await page.mouse.wheel(0, -100)
+  await page.keyboard.up('Control')
+  await expect.poll(wheelLog.count).toBe(1)
+  expect(await wheelLog.last()).toBe(false)
+  await expect(zoom).toHaveText('100%')
+  await expect(out('Zoom events')).toHaveText('')
   expect(errors).toEqual([])
 })

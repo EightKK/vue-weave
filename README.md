@@ -34,7 +34,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 - Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines, header bands and date markers; row and time-window virtualization.
 - Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
-- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
+- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`), and lag or lead labels on dependencies (`lag`, `formatLag`) that the scheduler applies too.
 - Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
 - Drag to create bars (`creatable`, `create`), stacked without overlap by `assignLanes`.
 - Auto-scheduling previews (`cascade`) that show the bars a move would push and propose them with it as one `edits` batch.
@@ -42,7 +42,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Row hierarchy editing by pointer or Alt+arrow keys (`rowsReorderable`, `row-move`, accepted with `moveTimelineRow`), with `timelineWbsCodes` for a WBS column.
 - Column resizing by pointer or arrow keys (`columnsResizable`, `column-resize`, `labelWidth`).
 - A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
-- Zoom presets (`zoomPresets`), a now marker (`showNow`) and touch pinch zoom (`pinchZoom`).
+- Zoom presets (`zoomPresets`), a now marker (`showNow`), touch pinch zoom (`pinchZoom`) and Ctrl+wheel zoom around the pointer (`wheelZoom`).
 - A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
 - Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
 

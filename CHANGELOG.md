@@ -15,6 +15,8 @@
 
 - `calendarBands` accepts an IANA `timeZone` option. Day, week, month and year bands start at local midnight and hour bands follow local hours across daylight-saving transitions, so GanttChart `headerBands` no longer drift by an hour. Combining it with `utcOffsetMinutes`, or passing an unknown zone, throws a RangeError.
 - The `calendarBands` `label` callback receives a third argument, `CalendarBandLocalTime`, with the local date, time, weekday and UTC offset of the band start.
+- GanttChart: optional `TimelineDependency.lag` (in chart time units; negative for a lead). A non-zero lag is drawn as a `vw-gantt-lag` label on the connector, added to the dependency's accessible description (`labels.lag`, default "Lag") and exported by `exportSvg`, `exportPng` and `renderTimelineSvg`. `formatLag` (new core helper `formatDependencyLag`, signed hours such as `+2 h`) formats it. `reconnect` proposals keep the lag (`TimelineConnection.lag`). `validateTimelineData` rejects a non-finite lag with a RangeError. Dependencies without a lag render exactly as before.
+- GanttChart: opt-in `wheelZoom` prop. Ctrl+wheel or Meta+wheel, including trackpad pinches, zooms the time axis between 65% and 300% around the pointer, with the same events as pinch zoom; a plain wheel keeps scrolling.
 
 ### Changed
 

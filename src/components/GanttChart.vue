@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import type { TimelineBar, TimelineDependency, TimelineRow, TimelineEdit, GanttLabels, EditValidator, TimelineBand, TimelineMarker, TimelineColumn, TimelineCellEdit, TimelineSummary } from '../core/types.js'
 import type {
   BatchEditValidator, TimelineBarEnd, TimelineConnection, TimelineConnectionValidator, TimelineLoadRow, TimelineLoadSegment,
@@ -10,6 +10,7 @@ import {
   summarizeTimelineRows, timeTicks, timelineLabelColumnId, visibleRows, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
+import { formatDependencyLag } from '../core/timeline.js'
 import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
 import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
@@ -19,7 +20,7 @@ import type { RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
-import { progressLinePoints, progressLineTime } from '../core/barSegments.js'
+import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -41,6 +42,8 @@ const props = withDefaults(defineProps<{
   snap?: number
   /** Formats a time for tick labels and accessible bar labels. Default: UTC `HH:mm`. */
   formatTime?: (time: number) => string
+  /** Formats a non-zero dependency `lag`, in the units of `range`, for its connector label and description. Default: `formatDependencyLag`, signed hours of milliseconds such as `+2 h`. */
+  formatLag?: (lag: number) => string
   /** Controlled set of selected bar IDs, highlighted in the chart. With `multiSelect`, clicks propose changes through `update:selectedIds`. */
   selectedIds?: ReadonlySet<string>
   /** Controlled set of collapsed row IDs. When omitted, the component keeps the collapsed set itself; changes are reported through `update:collapsedIds`. */
@@ -107,6 +110,11 @@ const props = withDefaults(defineProps<{
   loadRowHeight?: number
   /** Zooms the time axis between 65% and 300% with a two-finger pinch. Opt-in. Default: false. */
   pinchZoom?: boolean
+  /**
+   * Zooms the time axis between 65% and 300% with Ctrl+wheel or Meta+wheel (and desktop trackpad pinches, which arrive
+   * as Ctrl+wheel), keeping the time under the pointer in place. A plain wheel still scrolls. Opt-in. Default: false.
+   */
+  wheelZoom?: boolean
   /** Text direction: `ltr`, `rtl` or `auto`. `rtl` places row headings on the right and runs time right to left. Default: `ltr`. */
   dir?: ChartDirection
   /** Half-open intervals shaded as non-working time behind the grid. They may overlap and need not be sorted. */
@@ -164,6 +172,7 @@ const props = withDefaults(defineProps<{
   tickSteps: () => [1_800_000, 3_600_000, 7_200_000, 14_400_000, 86_400_000],
   snap: 900_000,
   formatTime: (time: number) => new Date(time).toISOString().slice(11, 16),
+  formatLag: formatDependencyLag,
   loadRowHeight: 44,
 })
 const emit = defineEmits<{
@@ -254,7 +263,7 @@ const messages = computed<GanttLabels>(() => ({
   progressOf: 'Progress of', deleteHint: 'Delete or Backspace removes the bar.',
   createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
   moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
-  resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.',
+  resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.', lag: 'Lag',
   // Indenting follows the visual direction: towards the row text, which is on the right in right-to-left charts.
   moveRowKeysHint: `Alt+Up and Alt+Down move the row among its siblings. Alt+Shift+${rtl.value ? 'Left' : 'Right'} indents it and `
     + `Alt+Shift+${rtl.value ? 'Right' : 'Left'} outdents it. Drag to move it; Escape cancels.`,
@@ -779,8 +788,52 @@ const shownLines = computed(() => {
     if (Math.max(x1, x2) + 10 < left || Math.min(x1, x2) - 10 > right) return []
     const y1 = sourceRow * props.rowHeight + laneTop(source) + barHeight.value / 2
     const y2 = targetRow * props.rowHeight + laneTop(target) + barHeight.value / 2
-    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2), x1, y1, x2, y2, dependency: dep }]
+    const lag = dep.lag ? lagLabel(dep, dep.lag, lagLabelPoint(x1, y1, x2, y2, sourceRow * props.rowHeight, props.rowHeight)) : undefined
+    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2), x1, y1, x2, y2, dependency: dep, lag }]
   })
+})
+// Lag labels (`TimelineDependency.lag`). A dependency without a lag, or with lag 0, draws exactly what it did before.
+const dependencyIndex = computed(() => new Map((validationError.value ? [] : props.dependencies).map((dep, index) => [dep.id, index])))
+function lagLabel(dep: TimelineDependency, lag: number, point: ReturnType<typeof lagLabelPoint>) {
+  const text = props.formatLag(lag)
+  return { ...point, text, id: `${marker}-lag-${dependencyIndex.value.get(dep.id)}`, description: `${messages.value.lag} ${text}` }
+}
+type LinkShapeProps = { tag: 'path' | 'text'; attrs: Record<string, unknown>; text?: string }
+/**
+ * One element of the dependency layer: a connector or a lag label. Both come from one list so that a chart without lags
+ * renders exactly the markup it did before.
+ */
+function LinkShape(shape: LinkShapeProps) {
+  return h(shape.tag, shape.attrs, shape.text)
+}
+const linkShapes = computed(() => {
+  const shapes: (LinkShapeProps & { key: string })[] = shownLines.value.map(line => ({
+    key: line.id,
+    tag: 'path',
+    attrs: {
+      class: {
+        'vw-is-related': props.selectedIds?.has(line.from) || props.selectedIds?.has(line.to),
+        'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id),
+        'vw-is-selected': dependencyTargets.value && activeDependencyId.value === line.id,
+      },
+      d: line.path,
+      'marker-end': `url(#${marker})`,
+    },
+  }))
+  for (const line of shownLines.value) {
+    const label = line.lag
+    if (!label) continue
+    shapes.push({
+      key: 'lag:' + line.id,
+      tag: 'text',
+      attrs: {
+        id: label.id, class: { 'vw-gantt-lag': true, 'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id) },
+        x: label.x, y: label.y, 'text-anchor': label.anchor, 'aria-label': label.description,
+      },
+      text: label.text,
+    })
+  }
+  return shapes
 })
 
 function barBox(bar: TimelineBar) {
@@ -1560,6 +1613,11 @@ function completeLink(target: LinkEnd) {
   const dependency = pending.dependency
   const before: TimelineConnection | undefined = dependency && { from: dependency.from, to: dependency.to, type: dependency.type ?? 'FS' }
   if (before && before.from === connection.from && before.to === connection.to && before.type === connection.type) return
+  // A reconnection keeps the dependency's lag; a new connection has none.
+  if (before && dependency?.lag) {
+    before.lag = dependency.lag
+    connection.lag = dependency.lag
+  }
   const result = props.validateConnection?.(connection, dependency?.id)
   if (result === false || typeof result === 'string') {
     notice.value = typeof result === 'string' ? result : messages.value.connectionRejected ?? messages.value.rejected
@@ -1657,6 +1715,56 @@ watch(() => props.pinchZoom, () => {
 function holdPinch(event: TouchEvent) {
   if (props.pinchZoom && event.touches.length >= 2 && event.cancelable) event.preventDefault()
 }
+
+// Ctrl+wheel and Meta+wheel (`wheelZoom`) zoom the time axis around the pointer. Desktop trackpad pinches arrive as
+// Ctrl+wheel with small deltas, so the factor follows deltaY and is clamped per event to one zoom button step. The
+// listener is non-passive, so it is attached only while the prop is set; a plain wheel is never prevented.
+const wheelStep = 1.35
+let wheelTarget: HTMLElement | undefined
+/** The time and anchor of a zoom whose scroll position is not applied yet; later events in the same tick build on it. */
+let wheelPending: { time: number; offset: number } | undefined
+function wheelDelta(event: WheelEvent, el: HTMLElement) {
+  if (event.deltaMode === 1) return event.deltaY * 16
+  if (event.deltaMode === 2) return event.deltaY * el.clientHeight
+  return event.deltaY
+}
+async function zoomWithWheel(event: WheelEvent) {
+  if (!(event.ctrlKey || event.metaKey) || !props.wheelZoom) return
+  const el = scroller.value
+  if (!el || validationError.value) return
+  // Keep the browser from zooming the page, also at the zoom limits.
+  if (event.cancelable) event.preventDefault()
+  const delta = wheelDelta(event, el)
+  if (!delta) return
+  // A zoom changes the coordinate system, as a pinch does: in-flight gestures end without a proposal.
+  if (gestureActive()) cancelEdit()
+  hideTooltip()
+  const factor = Math.max(1 / wheelStep, Math.min(wheelStep, Math.exp(-delta * Math.log(wheelStep) / 100)))
+  const next = Math.max(minZoom, Math.min(maxZoom, zoom.value * factor))
+  if (Math.abs(next - zoom.value) < 1e-6) return
+  const visible = Math.max(0, el.clientWidth - viewport.value.labels)
+  const offset = Math.max(0, Math.min(visible, timeAreaOffset(event.clientX, el.getBoundingClientRect())))
+  const pending = wheelPending
+  // Until a pending zoom has scrolled, its anchor time defines where the axis will be.
+  const time = pending
+    ? axis.value.toTime(axis.value.toX(pending.time) - pending.offset + offset)
+    : axis.value.toTime(scrollStart(el) + offset)
+  zoom.value = next
+  const mine = wheelPending = { time, offset }
+  await nextTick()
+  if (wheelPending !== mine) return
+  wheelPending = undefined
+  setScrollStart(el, axis.value.toX(time) - offset)
+  syncViewport()
+}
+function syncWheelListener() {
+  const el = props.wheelZoom && mounted ? scroller.value : undefined
+  if (el === wheelTarget) return
+  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
+  wheelTarget = el
+  wheelTarget?.addEventListener('wheel', zoomWithWheel, { passive: false })
+}
+watch(() => props.wheelZoom, syncWheelListener, { flush: 'post' })
 
 // A new source interval or coordinate system invalidates an in-flight gesture.
 watch([
@@ -2387,6 +2495,7 @@ function exportSvg(options: GanttExportOptions = {}) {
     tickStep: tickStep.value,
     tickAnchor: stableRange.value.start,
     formatTime: props.formatTime,
+    formatLag: props.formatLag,
     rowHeading: rest.rowHeading ?? messages.value.rows,
     loadRows: includeLoad && loadHistogram.value ? props.loadRows : undefined,
     loadSegments: includeLoad && loadHistogram.value ? props.loadSegments : undefined,
@@ -2438,8 +2547,13 @@ onMounted(() => {
   observer.observe(scroller.value)
   observeCorner(cornerEl.value)
   scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
+  syncWheelListener()
 })
-onBeforeUnmount(() => scroller.value?.removeEventListener('touchmove', holdPinch))
+onBeforeUnmount(() => {
+  scroller.value?.removeEventListener('touchmove', holdPinch)
+  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
+  wheelTarget = undefined
+})
 onUnmounted(() => {
   mounted = false
   cancelEdit()
@@ -2632,10 +2746,7 @@ onUnmounted(() => {
               <path d="M 0 0 L 6 3 L 0 6 z" fill="context-stroke" />
             </marker>
           </defs>
-          <path v-for="line in shownLines" :key="line.id"
-            :class="{ 'vw-is-related': selectedIds?.has(line.from) || selectedIds?.has(line.to), 'vw-is-highlighted': highlightedDependencyIds?.has(line.id), 'vw-is-selected': dependencyTargets && activeDependencyId === line.id }"
-            :d="line.path" :marker-end="`url(#${marker})`"
-          />
+          <LinkShape v-for="shape in linkShapes" :key="shape.key" :tag="shape.tag" :attrs="shape.attrs" :text="shape.text" />
         </svg>
         <svg v-if="dependencyTargets && shownLines.length" class="vw-gantt-link-hits"
           :width="xWindow.right - xWindow.left" :height="(rowWindow.afterLast - rowWindow.first) * rowHeight"
@@ -2648,6 +2759,7 @@ onUnmounted(() => {
           <path v-for="line in shownLines" :key="line.id" class="vw-dependency-hit" :class="{ 'vw-is-active': activeDependencyId === line.id }"
             :d="line.path" role="button" tabindex="0" :data-vw-dependency="contextMenu ? line.id : undefined"
             :aria-label="`${messages.selectDependency} ${dependencyName(line.dependency)}`"
+            :aria-describedby="line.lag?.id"
             :aria-pressed="activeDependencyId === line.id"
             @click="selectDependency(line.id)" @keydown="dependencyKeys($event, line.id)" />
         </svg>

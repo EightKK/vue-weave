@@ -17,14 +17,15 @@
 
       // Query parameters pick the scenario: readonly, rowDraggable, rtl, piecewise (custom non-linear scale),
       // controlled (the parent ignores zoom preset updates), interactions (progress editing, bar deletion, context menu
-      // and a tooltip; the parent applies nothing).
+      // and a tooltip; the parent applies nothing), lag (the dependency has a lag of 2 units, drawn as "+2 u"), wheel
+      // (Ctrl+wheel zoom), dark (built-in dark theme).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
       const bars = [
         { id: 'a', rowId: 'r1', label: 'Task A', start: 0, end: 2, editable: true },
         { id: 'b', rowId: 'r2', label: 'Task B', start: 4, end: 6, editable: true },
       ]
-      const dependencies = [{ id: 'ab', from: 'a', to: 'b' }]
+      const dependencies = [query.has('lag') ? { id: 'ab', from: 'a', to: 'b', lag: 2 } : { id: 'ab', from: 'a', to: 'b' }]
       const range = { start: 0, end: 200 }
       const tickSteps = [1]
       const zoomPresets = [
@@ -36,6 +37,8 @@
       const deletes = ref(0)
       const selects = ref(0)
       const connects = ref(0)
+      const lastConnection = ref('')
+      const lastReconnect = ref('')
       const zoomEvents = ref([])
       const lastProgress = ref('')
       const lastDelete = ref('')
@@ -54,6 +57,8 @@
           output('Dependency deletes', deletes.value),
           output('Dependency selects', selects.value),
           output('Connections', connects.value),
+          output('Last connection', lastConnection.value),
+          output('Last reconnect', lastReconnect.value),
           output('Zoom events', zoomEvents.value.join(';')),
           output('Last progress edit', lastProgress.value),
           output('Last delete', lastDelete.value),
@@ -64,7 +69,9 @@
             rows, bars, dependencies, range, tickSteps, zoomPresets, pixelsPerUnit: 50, snap: 1, formatTime: String,
             height: 240, autoScroll: false, connectable: true, reconnectable: true,
             markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: 3, dir: query.has('rtl') ? 'rtl' : undefined,
-            readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'),
+            readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'), wheelZoom: query.has('wheel'),
+            class: query.has('dark') ? 'vw-theme-dark' : undefined,
+            ...(query.has('lag') ? { formatLag: lag => (lag > 0 ? '+' : '') + lag + ' u' } : {}),
             ...(controlled ? { zoomPreset: preset.value } : {}),
             // A piecewise scale: 0..50 at 10 px per unit, 50..100 at 1 px per unit.
             ...(query.has('piecewise') ? {
@@ -74,7 +81,11 @@
             onEdit: change => { lastEdit.value = JSON.stringify(change) },
             onDependencyDelete: () => { deletes.value++ },
             onDependencySelect: () => { selects.value++ },
-            onConnect: () => { connects.value++ },
+            onConnect: connection => {
+              connects.value++
+              lastConnection.value = JSON.stringify(connection)
+            },
+            onReconnect: change => { lastReconnect.value = JSON.stringify(change) },
             onZoomChange: change => { zoomEvents.value.push(change.zoom + '/' + (change.preset ?? '')) },
             ...(interactions ? {
               progressEditable: true, deletable: true, contextMenu: true,

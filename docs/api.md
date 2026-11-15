@@ -22,6 +22,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Timeline columns and rollups](#timeline-columns-and-rollups)
   - [Column resizing](#column-resizing)
   - [Dependency editing](#dependency-editing)
+  - [Dependency lag](#dependency-lag)
   - [Multiple selection, batch moves and row moves](#multiple-selection-batch-moves-and-row-moves)
   - [Zoom presets, now marker and touch zoom](#zoom-presets-now-marker-and-touch-zoom)
   - [Resource load histogram](#resource-load-histogram)
@@ -222,7 +223,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | rows | readonly TimelineRow[] / required | ID, label, optional detail and data |
 | bars | readonly TimelineBar[] / required | ID, rowId, label, numeric start/end and optional attributes |
 | range | TimeRange / required | Visible axis bounds; finite start < end |
-| dependencies | readonly TimelineDependency[] / [] | ID, from/to bar IDs, optional FS/SS/FF/SF type |
+| dependencies | readonly TimelineDependency[] / [] | ID, from/to bar IDs, optional FS/SS/FF/SF type and optional `lag` (see [Dependency lag](#dependency-lag)) |
 | highlightedDependencyIds | ReadonlySet<string> / undefined | Highlight link IDs using --vw-dependency-highlight |
 | selectedIds | ReadonlySet<string> / undefined | Controlled highlighted bars |
 | pixelsPerUnit | number / 80 per hour in milliseconds | Base linear time scale |
@@ -232,6 +233,7 @@ Waypoint and resize handles are focusable buttons. On a waypoint handle the arro
 | minDuration | number / snap | Minimum duration for resizing |
 | editBounds | TimeRange / range | Bounds for edit proposals |
 | formatTime | (number) => string / UTC HH:mm | Tick labels and accessible bar labels |
+| formatLag | (number) => string / `formatDependencyLag` | Text of a non-zero dependency `lag` on its connector and in its description; see [Dependency lag](#dependency-lag) |
 | rowHeight | number / 66 | Fixed row height, at least 8 + laneCount × 14 |
 | laneCount | integer / 1 | Lanes per row |
 | height | number or CSS string / 316px | Scroll viewport height |
@@ -335,14 +337,38 @@ function onColumnResize(change: TimelineColumnResize) {
 | connectable | Shows a link handle at the start and finish of every rendered bar. Drag from one handle to another handle or onto a bar body (the nearer end is used). Alternatively, activate two handles with click, tap, Enter or Space. |
 | reconnectable | Select a dependency, then drag its source or target endpoint handle to another bar end, or activate the endpoint handle and then a bar handle. |
 | validateConnection(connection, replacingDependencyId?) | Synchronous TimelineConnectionValidator. Accepts with true or undefined, rejects with false (default message "This dependency was rejected.") or a reason string. During reconnection it receives the existing dependency ID. |
-| connect(connection) | TimelineConnection with from, to and type. The type is derived from the joined ends: finish→start is FS, start→start SS, finish→finish FF and start→finish SF. The parent assigns an ID and updates dependencies. |
-| reconnect(change) | TimelineReconnect with id, before and after connections. The parent replaces from, to and type on the existing dependency. |
+| connect(connection) | TimelineConnection with from, to and type. The type is derived from the joined ends: finish→start is FS, start→start SS, finish→finish FF and start→finish SF. The parent assigns an ID and updates dependencies. A new connection never carries a `lag`. |
+| reconnect(change) | TimelineReconnect with id, before and after connections. The parent replaces from, to and type on the existing dependency. A dependency with a non-zero `lag` keeps it: both connections then carry `lag`, and `validateConnection` receives the `after` connection with it. |
 | connect-rejected(connection, reason) | Reports a rejected proposal. The reason is announced in the live region. |
 | selectedDependencyId / update:selectedDependencyId | Optional controlled dependency selection. The component tracks the selection locally when the prop is omitted. |
 | dependency-select(id) | A dependency path was activated by click, Enter or Space. Dependency paths are focusable only when connectable or reconnectable is set. |
 | dependency-delete(id) | Delete or Backspace was pressed on a focused dependency. The parent removes it from dependencies to accept. Not emitted when readonly is set. |
 
 A bar cannot link to itself, and reconnecting a dependency to its existing endpoints proposes nothing. Escape, pointer cancellation and loss of capture discard a pending connection. Changes to bars, rows, dependencies, the coordinate system or the connectable and reconnectable props cancel an in-flight connection, including one armed from the keyboard. Handles are hidden and no `connect`, `reconnect` or `dependency-delete` proposal is emitted when readonly is set; selecting a dependency (`dependency-select`) stays possible, like selecting a bar.
+
+### Dependency lag
+
+`TimelineDependency.lag` is optional: the elapsed time between the linked bar ends, in the units of `range` (milliseconds by default). A negative lag is a lead. The chart draws the dependency between the bar ends as before and does not enforce the lag; it is information for the reader, the export and your scheduler. A dependency without `lag`, or with `lag: 0`, renders exactly as before: server markup, accessible names and descriptions, event payloads and `renderTimelineSvg` output are byte-identical.
+
+| API | Behavior |
+| --- | --- |
+| TimelineDependency.lag | `number`, optional. A value that is not a finite number is reported through validation-error as a RangeError (`validateTimelineData`). |
+| formatLag | `(lag: number) => string`, default `formatDependencyLag`: signed hours of a millisecond lag rounded to two decimals, such as `+2 h`, `+0.5 h` or `−1.5 h` (U+2212 minus sign). It is called only for a non-zero lag. Charts in other units, or that want days or local wording, pass their own formatter, as they do with `formatTime`. |
+| `vw-gantt-lag` | The label: an SVG `text` element in the dependency layer, drawn in the gap at the edge of the source row that faces the target, beside the connector's first bend and towards later times; a link within one row is labelled above the connector. It uses `--vw-text` with a `--vw-surface` halo, and `--vw-dependency-highlight` (class `vw-is-highlighted`) for a dependency in `highlightedDependencyIds`. It is drawn whenever the connector is drawn and hidden with it (virtualized rows and time windows, collapsed rows). In a right-to-left chart the layer is mirrored as a whole and each label is turned back in place, so the text reads normally. |
+| GanttLabels.lag | Description prefix, default "Lag". With `connectable` or `reconnectable`, the focusable dependency keeps its accessible name ("Select dependency Wireframes → Billing API FS") and is described by the label: "Lag +2 h". Without them the dependency layer is decorative, as before. |
+| reconnect | Keeps the lag, see [Dependency editing](#dependency-editing). |
+
+`exportSvg`, `exportPng` and `renderTimelineSvg` (option `formatLag`) draw the same label. `ScheduleLink` extends `TimelineDependency`, so the same dependency array can feed the chart and `scheduleTasks`, `propagateEdit` (and therefore a `cascade` callback) and `rescheduleFromStatusDate`, which all apply the lag; `toMsProjectXml` writes it as `LinkLag`. With epoch milliseconds the scheduler requires each lag to be a multiple of its `quantum`.
+
+The chart does not edit lags. Change one through your own UI and replace the dependency, for example from the dependency selection or the context menu, whose events carry the dependency ID:
+
+```ts
+function editLag(id: string, hours: number) {
+  dependencies.value = dependencies.value.map(dep => dep.id === id ? { ...dep, lag: hours * 3_600_000 } : dep)
+}
+// <GanttChart ... connectable @dependency-select="id => (editing = id)"
+//   context-menu @context-menu="menu => menu.target.kind === 'dependency' && (editing = menu.target.id)" />
+```
 
 ### Multiple selection, batch moves and row moves
 
@@ -361,9 +387,10 @@ The application accepts a row move by replacing the bar's rowId with change.row.
 | --- | --- |
 | zoomPresets | TimelineZoomPreset[] with unique id, label, pixelsPerUnit and optional tickSteps, headerBands and snap. Renders a labelled button group (GanttLabels.zoomPresets, default "Zoom level"). The active preset replaces the corresponding props; omitted fields fall back to them. |
 | zoomPreset / update:zoomPreset | Optional controlled preset ID. An unknown ID is reported through validation-error. Choosing a preset resets the zoom factor to 100% and keeps the centered time in view. |
-| zoom-change(state) | TimelineZoomState with zoom factor and the active preset ID. Fires for zoom buttons, presets and pinch zoom. |
+| zoom-change(state) | TimelineZoomState with zoom factor and the active preset ID. Fires for zoom buttons, presets, pinch zoom and wheel zoom. |
 | showNow / now | Draws a "now" marker (GanttLabels.now). Supply now for deterministic and server-rendered output. Without now, the clock is read only after mounting and refreshed every 30 seconds, so server and client markup match. The marker appears only inside range. |
 | pinchZoom | Two touch pointers on the timeline zoom the time axis around their midpoint, between 65% and 300%. The second touch cancels an in-flight edit or connection. One-finger touches and mouse input are unchanged. The scroll area uses `touch-action: pan-x pan-y` so native scrolling continues while the browser's page zoom is suppressed there. |
+| wheelZoom | `boolean`, default false. Ctrl+wheel or Meta+wheel over the chart zooms the time axis between 65% and 300%, keeping the time under the pointer in place (the pointer is clamped to the visible time area). Desktop trackpad pinches arrive as Ctrl+wheel and zoom the same way. Each event scales the zoom by `1.35^(−deltaY / 100)` in pixels (lines count 16 px), clamped to one zoom button step, so one mouse wheel notch equals one button step and small trackpad deltas zoom smoothly. The event is cancelled so the browser does not zoom the page, also at the limits. Like the second touch of a pinch, it cancels an in-flight gesture or armed connection without a proposal, and it hides the tooltip. A plain wheel is never handled and keeps native scrolling. The non-passive `wheel` listener is attached after mounting only while the prop is set and removed when it is cleared or the chart unmounts; without the prop nothing changes. |
 
 Presets apply to the built-in linear scale. A custom scale prop still controls the mapping; only tick steps, header bands and snap come from the preset in that case. Use `calendarBands` from the core entry to build header levels for presets; pass its `timeZone` option to keep them on local midnights and hours across daylight-saving transitions.
 
@@ -556,7 +583,8 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | editTimeRange(interval, mode, delta, snap, bounds, minDuration = snap) | Immutable snapped proposal. With a fractional snap, the result is computed in exact decimal arithmetic when the snap, interval, bounds and minDuration have at most 15 decimal places (moving 0 by 3 × 0.1 gives 0.3); otherwise, and for integer snaps, plain floating-point arithmetic is used |
 | dependencyTimes(source, target, type = FS) | Endpoint times for dependency routing |
 | dependencyPath(x1, y1, x2, y2) | Orthogonal SVG path |
-| validateTimelineData(rows, bars, dependencies = [], laneCount = 1) | Validate references, lanes, durations and progress. IDs must be unique within each collection; a row and a bar may share an ID. A dependency from a bar to itself throws an Error that names the dependency and the bar, so GanttChart reports it through `validation-error` and renders its empty state, and `renderTimelineSvg` throws it. `scheduleTasks` takes its own links and reports a self-link as a `cycle` failure instead |
+| formatDependencyLag(lag) | Default text of a dependency lag: signed hours of milliseconds rounded to two decimals, such as `+2 h` or `−1.5 h` (U+2212). Throws RangeError for a non-finite lag |
+| validateTimelineData(rows, bars, dependencies = [], laneCount = 1) | Validate references, lanes, durations, progress and dependency lags (a lag that is not a finite number throws RangeError). IDs must be unique within each collection; a row and a bar may share an ID. A dependency from a bar to itself throws an Error that names the dependency and the bar, so GanttChart reports it through `validation-error` and renders its empty state, and `renderTimelineSvg` throws it. `scheduleTasks` takes its own links and reports a self-link as a `cycle` failure instead |
 | createTimelineRowTree(rows) | Validate row parents and cycles; produce stable preorder entries |
 | summarizeTimelineRows(tree, bars) | Roll up leaf-row intervals and progress into a summary Map |
 | normalizeWorkPeriods(periods, range) | Clip, sort and merge overlapping or touching work periods |
@@ -762,7 +790,7 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | Export | Purpose |
 | --- | --- |
 | renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `padding` and the label callbacks to the shared options |
-| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
+| renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `headerBands`, `markers`, `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `barLabel` and `rowLabel`. Bar fields `critical`, `latestEnd`, `deadline` and `segments` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
@@ -779,7 +807,7 @@ Both components take an opt-in `dir` prop of type `ChartDirection`.
 | `rtl` | Writes `dir="rtl"` on the component root and adds the `vw-rtl` class. Server rendering already produces right-to-left markup. |
 | `auto` | Writes no attribute and follows the CSS `direction` inherited by the component root, read after mounting and whenever `dir` changes. Server rendering and the first client render are left-to-right. |
 
-In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, the status-date and progress lines, dependency paths, link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
+In a right-to-left GanttChart the row heading column and `columns` sit on the right and time increases from right to left. Header bands, ticks, the grid, non-working shading, bars, progress, segments, float lines, deadline indicators, baselines, summaries, markers, the now line, the status-date and progress lines, dependency paths and lag label positions (the label text itself is not mirrored), link and reconnect handles and load histogram rows are mirrored. Positions are measured from the inline-start (right) edge, so `TimelineEdit` proposals, `validateEdit`, `scrollToTime(time)` (which puts `time` at the right edge of the time area), keeping the centered time on zoom and preset changes, pinch and wheel zoom anchoring, autoscroll near either edge and keyboard reveal all work in the same time units as in LTR. The scroll container uses the standard right-to-left convention in which `scrollLeft` is 0 at the start and negative after scrolling towards later times; browsers that report positive values are not supported. Switching direction cancels an in-flight gesture and keeps the time at the inline-start edge in view.
 
 Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused editable bar one `snap` later and ArrowRight one `snap` earlier. Shift with an arrow moves the end and Alt with an arrow moves the start, in the same visual direction (Shift+ArrowLeft makes the bar end later). Up and Down (with `rowDraggable`) are unchanged. Pointer drags follow the pointer: dragging left moves later. The start resize handle is on the right edge of a bar and the end handle on the left. When a dependency is dropped on a bar body, the right half picks the start and the left half the finish. The collapsed-row toggle shows ◂ instead of ▸.
 

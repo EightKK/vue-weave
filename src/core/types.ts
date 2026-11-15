@@ -102,6 +102,12 @@ export interface TimelineDependency {
   from: string
   to: string
   type?: 'FS' | 'SS' | 'FF' | 'SF'
+  /**
+   * Lag in the chart's time units (milliseconds by default): the elapsed time between the linked bar ends. A negative
+   * value is a lead. GanttChart draws a non-zero lag as a label on the connector and in the dependency's description;
+   * omitted or 0 draws nothing extra. `ScheduleLink` extends this type, so the lag reaches `scheduleTasks`.
+   */
+  lag?: number
 }
 
 export interface TimelineEdit {
@@ -214,6 +220,8 @@ export interface GanttLabels {
   resizeColumn?: string
   /** Announced when `validateColumnResize` returns false. Default "This column resize was rejected." */
   columnResizeRejected?: string
+  /** Description prefix of a dependency with a non-zero `lag`, before the formatted lag. Default "Lag". */
+  lag?: string
 }
 
 export interface NetworkNodeSlot {
@@ -310,6 +318,11 @@ export interface TimelineConnection {
   from: string
   to: string
   type: TimelineDependencyType
+  /**
+   * The dependency's lag. Present only in `reconnect` proposals (`before` and `after`) of a dependency with a non-zero
+   * lag, which a reconnection keeps. New `connect` proposals never carry one.
+   */
+  lag?: number
 }
 
 export interface TimelineReconnect {

@@ -106,3 +106,14 @@ export function progressLinePoints(x: number, top: number, bottom: number, kinks
   points.push([x, bottom])
   return points
 }
+
+/**
+ * Where the lag label of a dependency drawn by `dependencyPath(x1, y1, x2, y2)` goes, in the same inline-start
+ * coordinates. Between rows the label sits in the gap at the edge of the source row that faces the target, beside the
+ * connector's first vertical run and towards later times (`anchor: 'start'`); bars never reach into that gap. Within one
+ * row it is centred above the horizontal run (`anchor: 'middle'`). `sourceTop` is the top of the source row.
+ */
+export function lagLabelPoint(x1: number, y1: number, x2: number, y2: number, sourceTop: number, rowHeight: number) {
+  if (y1 === y2) return { x: (x1 + x2) / 2, y: x1 < x2 ? y1 - 7 : y1 + 23, anchor: 'middle' as const }
+  return { x: (x1 < x2 ? (x1 + x2) / 2 : x1 + 10) + 4, y: y2 > y1 ? sourceTop + rowHeight : sourceTop, anchor: 'start' as const }
+}
