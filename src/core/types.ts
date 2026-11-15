@@ -398,6 +398,33 @@ export interface GraphFitOptions {
   padding?: number
 }
 
+/**
+ * A NetworkGraph gesture that a new layout or other source change would cancel: a node drag (`node-drag` for one
+ * node, `nodes-drag` for several, including a group label drag), a resize handle drag (`node-resize`), a waypoint
+ * drag (`edge-reshape`), a connection or reconnection from arming to completion (`connect`, `reconnect`), a box
+ * selection (`box-select`), a background pan (`pan`) and a two-finger pinch (`pinch`).
+ */
+export type GraphGestureKind =
+  | 'node-drag' | 'nodes-drag' | 'node-resize' | 'edge-reshape' | 'connect' | 'reconnect' | 'box-select' | 'pan' | 'pinch'
+
+/** Payload of the NetworkGraph `gesture-start` event. */
+export interface GraphGesture {
+  kind: GraphGestureKind
+  /** 'keyboard' only for a connection or reconnection armed with Enter or Space. */
+  source: 'pointer' | 'keyboard'
+}
+
+/**
+ * Payload of the NetworkGraph `gesture-end` event. `outcome` is 'committed' when the user finished the gesture
+ * (released the pointer, or completed or dropped a connection); any proposal or `*-rejected` event it produced was
+ * emitted before. It is 'cancelled' when the gesture ended without a proposal: Escape, pointer cancellation or lost
+ * capture, a context menu, a second touch, a camera method, unmounting, or a change of source data, layout or
+ * coordinates.
+ */
+export interface GraphGestureEnd extends GraphGesture {
+  outcome: 'committed' | 'cancelled'
+}
+
 /** The element a NetworkGraph `context-menu` event refers to. */
 export type GraphContextMenuTarget =
   | { kind: 'node'; id: string }

@@ -16,6 +16,7 @@ import {
   type GraphViewTarget, type GraphRoutingPolicy,
   useTimelineView, useLinkedSelection, revealLinkedTarget, useAsyncGraphLayout, useEditTransaction, useEditHistory,
   type LinkedRevealResult, type LoadViewTarget, type TransactionOutcome,
+  type AsyncGraphGestureListeners, type GraphGesture, type GraphGestureEnd, type GraphGestureKind,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -102,6 +103,19 @@ const policy: GraphRoutingPolicy = 'preserve'
 function targetEvent(event: ViewTargetEvent) { return event.target.view === 'load' ? event.target.resourceId : event.target.id }
 function drop(event: TimelineDrop) { return event.dataTransfer?.getData('text/plain') ?? event.rowId }
 function editCancel(event: TimelineEditCancel) { return event.reason + event.barIds.join() + (event.cell?.columnId ?? '') }
+// Gesture events and the async layout's ready-made listeners.
+function gestureStart(event: GraphGesture) { const kind: GraphGestureKind = event.kind; return kind + event.source }
+function gestureEnd(event: GraphGestureEnd) { return event.kind + event.source + (event.outcome === 'committed' ? 1 : 0) }
+// @ts-expect-error Camera zoom is not a reported gesture.
+const zoomGesture: GraphGestureKind = 'zoom'
+const asyncGraph = useAsyncGraphLayout({
+  input: { nodes, edges }, adapter: request => layoutLayeredGraph(request.nodes, request.edges), gesture: ref(false),
+})
+const gestureBinding: Readonly<AsyncGraphGestureListeners> = asyncGraph.gestureListeners
+const gesturing: boolean = asyncGraph.gesturing.value
+// @ts-expect-error The listeners are read-only.
+asyncGraph.gestureListeners.onGestureEnd = gestureEnd
+void [zoomGesture, gesturing, h(NetworkGraph, { nodes: untypedNodes, edges: untypedEdges, ...gestureBinding })]
 // @ts-expect-error A column of other rows does not fit these rows.
 const wrongColumns: TimelineColumn<TimelineRow<Cost>>[] = columns
 
@@ -237,6 +251,9 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   <NetworkGraph :nodes="nodes" :edges="edges" :groups="groups" :layout="typedLayout" />
   <NetworkGraph :nodes="nodes" :edges="edges" :highlighted-node-ids="new Set(['a'])" :highlighted-edge-ids="new Set<string>()"
     :routing-policy="policy" @target-enter="graphTargetEvent" @target-leave="graphTargetEvent" @target-activate="graphTargetEvent" />
+  <NetworkGraph :nodes="nodes" :edges="edges" v-bind="asyncGraph.gestureListeners" @gesture-start="gestureStart" @gesture-end="gestureEnd" />
+  <!-- @vue-expect-error A gesture-end payload is not a timeline edit cancellation. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" @gesture-end="editCancel" />
   <!-- @vue-expect-error The routing policy is 'builtin' or 'preserve'. -->
   <NetworkGraph :nodes="nodes" :edges="edges" routing-policy="keep" />
 

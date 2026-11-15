@@ -5315,15 +5315,147 @@ test('async layout: a result that arrives during a drag waits for the drag to en
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
   await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 10, { steps: 3 })
+  // The graph reported the drag through `gesture-start`; the demo binds no pointer listeners of its own, only the
+  // composable's `gestureListeners`.
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) in progress')
   // The engine answers while the pointer is still down: the finished frame waits.
   await expect(status).toContainText('Layout ready, shown after the gesture', { timeout: 5000 })
   await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
   await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 })
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) in progress')
   await page.mouse.up()
-  // The drag was not cancelled by the new layout: it ended with a proposal, then the waiting frame was shown.
+  // The drag was not cancelled by the new layout: it ended with a proposal and a committed `gesture-end`, then the
+  // waiting frame was shown.
+  await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) committed')
   await expect(demo.getByLabel('Last proposed move')).toHaveText(/^Ship by [1-9]\d*, [1-9]\d*$/)
   await expect(status).toContainText('Layout up to date')
   await expect(demo.getByLabel('Frame source')).toHaveText('layout')
   await expect(frame).toHaveText('8 nodes, 9 links, 0 collapsed groups')
+  expect(errors).toEqual([])
+})
+
+test('graph gesture events: every gesture-start has exactly one gesture-end, on commit and on each cancellation', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=6&draggable=1&connectable=1&boxselect=1&resizable=1&gestures=1')
+  const log = page.getByRole('status', { name: 'Gesture events' })
+  const open = page.getByRole('status', { name: 'Open gestures' })
+  const all: string[] = []
+  // Checks the events since the last check, keeps them for the final pairing and clears the log.
+  async function expectEvents(expected: string[]) {
+    await expect(log).toHaveText(expected.join(' | '))
+    await expect(open).toHaveText('0')
+    all.push(...expected)
+    await page.evaluate(() => (window as any).__vw.clearGestureLog())
+  }
+  const center = async (name: string) => {
+    const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  async function pressAndMove(name: string) {
+    const { x, y } = await center(name)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 30, y + 12, { steps: 3 })
+  }
+  // The pointer ID of the last press, for synthetic cancellation events.
+  await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
+  const dispatch = (type: string) => page.evaluate((eventType) => {
+    const target = document.querySelector('.vw-network-stage')!
+    const event = eventType === 'contextmenu'
+      ? new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
+      : new PointerEvent(eventType, { bubbles: true, pointerId: (window as any).__pointerId, isPrimary: true })
+    target.dispatchEvent(event)
+  }, type)
+
+  // A committed drag: the proposal comes before the end.
+  await pressAndMove('N0002')
+  await expect(log).toHaveText('start node-drag pointer')
+  await expect(open).toHaveText('1')
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
+
+  // Escape.
+  await pressAndMove('N0003')
+  await page.keyboard.press('Escape')
+  await expect(open).toHaveText('0')
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // New source data during the drag.
+  await pressAndMove('N0003')
+  await page.evaluate(() => (window as any).__vw.refresh())
+  await expect(open).toHaveText('0')
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // Pointer cancellation and a context menu during the drag.
+  for (const type of ['pointercancel', 'contextmenu']) {
+    await pressAndMove('N0004')
+    await dispatch(type)
+    await expect(open).toHaveText('0')
+    await page.mouse.up()
+    await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+  }
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
+
+  // A camera method during the drag.
+  await pressAndMove('N0004')
+  await page.evaluate(() => (window as any).__vw.graph().zoom(1.1))
+  await page.mouse.up()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
+
+  // Background pan and box selection.
+  const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
+  await page.mouse.move(stage.x + 6, stage.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(stage.x + 40, stage.y + 30, { steps: 3 })
+  await page.mouse.up()
+  await expectEvents(['start pan pointer', 'end pan pointer committed'])
+  await page.keyboard.down('Shift')
+  await page.mouse.move(stage.x + 6, stage.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(stage.x + 60, stage.y + 50, { steps: 3 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expectEvents(['start box-select pointer', 'end box-select pointer committed'])
+
+  // A pointer connection dragged from one handle to another, and a keyboard connection armed and cancelled.
+  const from = await center('Start connection from N0000')
+  const to = await center('Start connection from N0005')
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 5 })
+  await expect(log).toHaveText('start connect pointer')
+  await page.mouse.up()
+  await expectEvents(['start connect pointer', 'end connect pointer committed'])
+  await page.getByRole('button', { name: 'Start connection from N0001', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(log).toHaveText('start connect keyboard')
+  await page.keyboard.press('Escape')
+  await expectEvents(['start connect keyboard', 'end connect keyboard cancelled'])
+
+  // Keyboard moves are single proposals, not gestures.
+  await page.getByRole('button', { name: 'N0001', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('2')
+  await expect(log).toHaveText('')
+
+  // A resize handle drag. Selecting the node first is a press without movement: a committed drag without a proposal.
+  await page.getByRole('button', { name: 'N0002', exact: true }).click()
+  await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
+  const corner = await center('Resize N0002 · bottom right')
+  await page.mouse.move(corner.x, corner.y)
+  await page.mouse.down()
+  await page.mouse.move(corner.x + 30, corner.y + 20, { steps: 3 })
+  await page.mouse.up()
+  await expectEvents(['start node-resize pointer', 'end node-resize pointer committed'])
+
+  // Over the whole session, each start is followed by exactly one end of the same gesture before the next start.
+  for (let i = 0; i < all.length; i += 2) {
+    expect(all[i]).toMatch(/^start /)
+    expect(all[i + 1]).toMatch(new RegExp('^end ' + all[i]!.slice('start '.length) + ' (committed|cancelled)$'))
+  }
   expect(errors).toEqual([])
 })

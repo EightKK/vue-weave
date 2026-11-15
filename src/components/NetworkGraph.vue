@@ -1,9 +1,9 @@
 <script setup lang="ts" generic="N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge, G extends NetworkGroup = never">
-import { computed, h, nextTick, onMounted, onUnmounted, ref, shallowRef, toRaw, useId, watch, withKeys, withModifiers, type FunctionalComponent, type ShallowRef, type VNode, createCommentVNode, renderSlot, toDisplayString } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, toRaw, useId, watch, withKeys, withModifiers, type FunctionalComponent, type ShallowRef, type VNode, createCommentVNode, renderSlot, toDisplayString } from 'vue'
 import { graphIncidentCurve, graphPortControls } from '../core/graphCurve.js'
 import type { GraphBox } from '../core/graph.js'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
-import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, NetworkTooltipSlot } from '../core/types.js'
+import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, GraphGesture, GraphGestureEnd, GraphGestureKind, NetworkTooltipSlot } from '../core/types.js'
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphLayoutRoute, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
@@ -181,6 +181,10 @@ const emit = defineEmits<{
   'target-leave': [event: ViewTargetEvent<GraphViewTarget>]
   /** A node, edge or group was activated by click, Enter or Space; carries the target and the source. */
   'target-activate': [event: ViewTargetEvent<GraphViewTarget>]
+  /** A gesture that a new layout would cancel started (drag, resize, reshape, connection, box selection, pan, pinch); carries its kind and source. */
+  'gesture-start': [gesture: GraphGesture]
+  /** The gesture ended, exactly once per `gesture-start`, after any proposal; carries its kind, source and whether it was committed or cancelled. */
+  'gesture-end': [gesture: GraphGestureEnd]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot<ShownNode>): unknown
@@ -941,6 +945,24 @@ let pan: { pointerId: number; x: number; y: number; cameraX: number; cameraY: nu
 const boxPreview = ref<{ x: number; y: number; width: number; height: number }>()
 let observer: ResizeObserver | undefined
 
+// Gesture notification. A pointer gesture (drag, resize, reshape, box selection, pan or pinch) and an armed connection
+// can be in flight at once, so each has its own slot. A slot emits `gesture-end` exactly once for its `gesture-start`;
+// a new start in an occupied slot first ends the previous gesture as cancelled.
+type GestureSlot = 'pointer' | 'connection'
+const gestures: Partial<Record<GestureSlot, GraphGesture>> = {}
+function beginGesture(slot: GestureSlot, kind: GraphGestureKind, source: GraphGesture['source'] = 'pointer') {
+  endGesture(slot, 'cancelled')
+  const gesture = { kind, source }
+  gestures[slot] = gesture
+  emit('gesture-start', { ...gesture })
+}
+function endGesture(slot: GestureSlot, outcome: GraphGestureEnd['outcome']) {
+  const gesture = gestures[slot]
+  if (!gesture) return
+  gestures[slot] = undefined
+  emit('gesture-end', { ...gesture, outcome })
+}
+
 /**
  * Without options, shows the whole graph. With `ids`, fits the combined boxes of those nodes at a scale between the
  * zoom minimum and 1.15, the largest scale Fit to view uses. `padding` keeps a screen margin around the content.
@@ -1005,6 +1027,7 @@ function startPan(event: PointerEvent) {
   isPanning.value = !pan.box
   svg.value.setPointerCapture(event.pointerId)
   if (pan.box) startAutoPan(event)
+  beginGesture('pointer', pan.box ? 'box-select' : 'pan')
 }
 
 // `camera` is the camera when the drag started; auto-pan moves the camera during the drag.
@@ -1156,6 +1179,7 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
   startAutoPan(event)
+  beginGesture('pointer', before.size > 1 ? 'nodes-drag' : 'node-drag')
 }
 
 function updateNodePreview(clientX: number, clientY: number) {
@@ -1185,12 +1209,17 @@ function cancelNodeDrag() {
 }
 function finishNodeDrag(event: PointerEvent) {
   if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelNodeDrag()
+  if (event.type !== 'pointerup') {
+    cancelNodeDrag()
+    endGesture('pointer', 'cancelled')
+    return
+  }
   moveNode(event)
   const { before } = nodeDrag
   const after = dragPreview.value
   cancelNodeDrag()
   if (after) emitMoves(before, after)
+  endGesture('pointer', 'committed')
 }
 function clickNode(id: string, event: MouseEvent) {
   if (suppressClick === id) {
@@ -1339,6 +1368,7 @@ function startPort(event: PointerEvent, handle: PortHandle) {
   if (draft.value || !event.isPrimary || event.button !== 0 || handle.direction === 'target' || pointerGestureActive()) return
   draft.value = { fixed: handle, end: 'to' }
   captureConnection(event)
+  beginGesture('connection', 'connect')
 }
 function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent) {
   if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
@@ -1346,6 +1376,7 @@ function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent
   const fixed = end === 'from' ? { node: edge.to, port: edge.toPort } : { node: edge.from, port: edge.fromPort }
   draft.value = { fixed, end, edge }
   if (event) captureConnection(event)
+  beginGesture('connection', 'reconnect', event ? 'pointer' : 'keyboard')
 }
 function moveConnection(event: PointerEvent) {
   if (connectionDrag?.pointerId !== event.pointerId) return
@@ -1365,6 +1396,7 @@ function finishConnection(event: PointerEvent) {
   if (event.type !== 'pointerup') {
     clearConnectionCapture()
     draft.value = undefined
+    endGesture('connection', 'cancelled')
     return
   }
   moveConnection(event)
@@ -1380,7 +1412,10 @@ function finishConnection(event: PointerEvent) {
   const key = element && svg.value?.contains(element) ? element.getAttribute('data-vw-port') : null
   const handle = key === null ? undefined : handleFromKey(key)
   if (handle) completeConnection(handle)
-  else draft.value = undefined
+  else {
+    draft.value = undefined
+    endGesture('connection', 'committed')
+  }
 }
 function activatePort(handle: PortHandle, event: MouseEvent | KeyboardEvent) {
   if (event.type === 'click' && skipHandleClick) {
@@ -1388,12 +1423,19 @@ function activatePort(handle: PortHandle, event: MouseEvent | KeyboardEvent) {
     return
   }
   if (draft.value) completeConnection(handle)
-  else if (handle.direction !== 'target') draft.value = { fixed: handle, end: 'to' }
+  else if (handle.direction !== 'target') {
+    draft.value = { fixed: handle, end: 'to' }
+    beginGesture('connection', 'connect', eventSource(event))
+  }
 }
 function completeConnection(handle: PortHandle) {
   const pending = draft.value
   draft.value = undefined
   notice.value = ''
+  proposeConnection(pending, handle)
+  endGesture('connection', 'committed')
+}
+function proposeConnection(pending: ConnectionDraft | undefined, handle: PortHandle) {
   if (!pending || pending.fixed.node === handle.node || handle.direction === (pending.end === 'from' ? 'target' : 'source')) return
   const [from, to] = pending.end === 'from' ? [handle, pending.fixed] : [pending.fixed, handle]
   const connection: GraphConnection = { from: from.node, to: to.node }
@@ -1428,6 +1470,8 @@ function cancelInteraction() {
   boxPreview.value = undefined
   isPanning.value = false
   if (previousPan && svg.value?.hasPointerCapture(previousPan.pointerId)) svg.value.releasePointerCapture(previousPan.pointerId)
+  endGesture('pointer', 'cancelled')
+  endGesture('connection', 'cancelled')
 }
 function navigateMinimap(event: MouseEvent) {
   const map = (event.currentTarget as HTMLButtonElement).querySelector('svg')
@@ -1485,6 +1529,7 @@ function stopPan(event: PointerEvent) {
   boxPreview.value = undefined
   pan = undefined
   isPanning.value = false
+  endGesture('pointer', event.type === 'pointerup' ? 'committed' : 'cancelled')
 }
 
 function panWithKeys(event: KeyboardEvent) {
@@ -1742,6 +1787,7 @@ function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId'
   handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY }, camera: { x: camera.value.x, y: camera.value.y } }
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
+  beginGesture('pointer', drag.kind === 'resize' ? 'node-resize' : 'edge-reshape')
 }
 function startWaypointDrag(event: PointerEvent, handle: WaypointHandle) {
   const edge = reshapeEdge.value
@@ -1784,10 +1830,18 @@ function cancelHandleDrag() {
 function finishHandle(event: PointerEvent) {
   const drag = handleDrag
   if (!drag || drag.pointerId !== event.pointerId) return
-  if (event.type !== 'pointerup') return cancelHandleDrag()
+  if (event.type !== 'pointerup') {
+    cancelHandleDrag()
+    endGesture('pointer', 'cancelled')
+    return
+  }
   moveHandle(event)
   const resized = resizePreview.value, reshaped = reshapePreview.value
   cancelHandleDrag()
+  commitHandle(drag, resized, reshaped)
+  endGesture('pointer', 'committed')
+}
+function commitHandle(drag: HandleDrag, resized: typeof resizePreview.value, reshaped: typeof reshapePreview.value) {
   if (drag.kind === 'resize') {
     if (resized) proposeResize(drag.id, drag.box!, resized.box)
     return
@@ -1955,6 +2009,7 @@ function startTouch(event: PointerEvent) {
     camera: { ...camera.value },
   }
   pinching.value = true
+  beginGesture('pointer', 'pinch')
 }
 function moveTouch(event: PointerEvent) {
   const point = touches.get(event.pointerId)
@@ -1980,7 +2035,9 @@ function moveTouch(event: PointerEvent) {
 }
 function endTouch(event: PointerEvent) {
   if (!touches.delete(event.pointerId)) return
-  if (pinch?.ids.includes(event.pointerId)) endPinch()
+  if (!pinch?.ids.includes(event.pointerId)) return
+  endPinch()
+  endGesture('pointer', event.type === 'pointerup' ? 'committed' : 'cancelled')
 }
 
 
@@ -2851,6 +2908,12 @@ onMounted(() => {
     } else if (fitMode.value !== 'manual') camera.value = fitCamera(fitMode.value === 'overview')
   })
   observer.observe(svg.value)
+})
+// A gesture in flight ends while the parent's listeners are still attached, so a parent counting gestures never
+// keeps one open after the graph is removed.
+onBeforeUnmount(() => {
+  endGesture('pointer', 'cancelled')
+  endGesture('connection', 'cancelled')
 })
 onUnmounted(() => {
   cancelInteraction()

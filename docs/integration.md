@@ -588,16 +588,14 @@ For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (o
 
 ```vue
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { NetworkGraph, graphLayoutWorkerAdapter, layoutLayeredGraph, useAsyncGraphLayout } from 'vue-weave'
 
 const worker = typeof Worker === 'undefined' ? undefined : new Worker(new URL('./graphLayout.worker.ts', import.meta.url), { type: 'module' })
-const dragging = ref(false)
 const graph = useAsyncGraphLayout({
   input: () => ({ nodes: nodes.value, edges: edges.value, groups, collapsedGroupIds: collapsed.value }),
   adapter: worker ? graphLayoutWorkerAdapter(worker) : () => Promise.reject(new Error('Workers are not available')),
   initialLayout: (shownNodes, shownEdges) => layoutLayeredGraph(shownNodes, shownEdges),
-  gesture: dragging,
 })
 onBeforeUnmount(() => worker?.terminate())
 // `initialLayout` makes the first frame synchronous, so `display` is always set here.
@@ -606,20 +604,14 @@ const frame = computed(() => graph.display.value!)
 
 <template>
   <NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :groups="frame.groups"
-    :collapsed-group-ids="frame.collapsedGroupIds" :layout="graph.layout" />
+    :collapsed-group-ids="frame.collapsedGroupIds" :layout="graph.layout" v-bind="graph.gestureListeners" />
 </template>
 ```
 
 - Requests start when the component mounts, so nothing runs during server rendering. With `initialLayout` the server and the first client render show the same synchronous layout; without it `display` is undefined until the first result, so render a loading state in both.
 - Use the controlled `collapsedGroupIds` prop with the frame's value. With collapsed groups NetworkGraph lays out two inputs (the full graph, to place proxies, and the collapsed view); a frame is shown only when both layouts are ready. Uncontrolled `collapsibleGroups` would ask for a layout that has not been computed.
 - Every request carries a `requestId` and an `inputKey`. Only results for the current input are shown, whatever order they arrive in; results of cancelled or disposed requests are discarded. The key covers edges, ports, sizes and labels, not just node IDs; bump `revision` when node `data` or engine settings outside `settings` change the layout.
-- While `gesture` is true a finished frame waits, so an ongoing drag is not cancelled; it is shown when the gesture ends. NetworkGraph does not report gestures, so derive the flag from pointer events on an element around the graph: set it in the capture phase of `pointerdown`, and clear it on `pointerup` and `pointercancel` in the bubbling phase, after the graph has handled the release and emitted its proposal:
-
-  ```vue
-  <div @pointerdown.capture="dragging = true" @pointerup="dragging = false" @pointercancel="dragging = false">
-    <NetworkGraph ... draggable />
-  </div>
-  ```
+- A finished frame waits while a gesture is in flight, so an ongoing drag is not cancelled; it is shown when the gesture ends. NetworkGraph reports every gesture a new layout would cancel through `gesture-start` and `gesture-end` (node drags, resize and waypoint drags, connections from arming to completion, box selection, pan and pinch), one end for every start and after the proposal, so the graph has emitted its `node-move` before the waiting frame is shown. `v-bind="graph.gestureListeners"` connects those events to the composable; `graph.gesturing` tells whether frames are being held. Your own `@gesture-start` and `@gesture-end` listeners can sit next to it. For gestures the application tracks itself (a drag in another component that edits the same data, for example), pass a boolean ref or getter as the `gesture` option; frames wait while either is active.
 - A failure keeps the last display and sets `error` with the revision and input key that failed. With the default `provisional: true` that display can be the provisional frame of the failed input (`display.source === 'provisional'`): consistent, with the previous boxes and temporary routes for the new edges. Show that the routes are temporary, or set `provisional: false` to keep the last frame the engine produced.
 - When only edges change (for example after a `connect` is accepted), the frame is shown at once with the previous boxes and temporary routes from `completeGraphLayout` (`source: 'provisional'`, `temporaryEdgeIds`) until the engine answers.
 
@@ -635,7 +627,7 @@ NetworkGraph applies the policy with its `routingPolicy` prop:
 <NetworkGraph :nodes="frame.nodes" :edges="frame.edges" :layout="graph.layout" routing-policy="preserve" edge-style="orthogonal" />
 ```
 
-A node drag keeps updating only the dragged nodes' edges and draws the same routes the committed move produces. A connection accepted before the engine answers is drawn with a temporary route (`completeGraphLayout`) instead of failing with `Missing layout path`, and is routed again when the new layout arrives. A new layout object with the same geometry for the same inputs does not cancel a drag in flight; a layout whose geometry changed still does, so pass `gesture` to `useAsyncGraphLayout` to hold results until the gesture ends.
+A node drag keeps updating only the dragged nodes' edges and draws the same routes the committed move produces. A connection accepted before the engine answers is drawn with a temporary route (`completeGraphLayout`) instead of failing with `Missing layout path`, and is routed again when the new layout arrives. A new layout object with the same geometry for the same inputs does not cancel a drag in flight; a layout whose geometry changed still does, so bind `gestureListeners` from `useAsyncGraphLayout` to hold results until the gesture ends.
 
 Direct core users get the routed layout that NetworkGraph draws, and that `renderGraphSvg` should receive, by running the same steps:
 

@@ -41,6 +41,7 @@ function manualAdapter() {
   }
   return { calls, adapter }
 }
+const layeredLayout = (shownNodes, shownEdges) => layoutLayeredGraph(shownNodes, shownEdges)
 const layoutFor = request => layoutLayeredGraph(request.nodes, request.edges, { direction: request.direction })
 const settle = async () => {
   for (let i = 0; i < 5; i++) await nextTick()
@@ -343,6 +344,79 @@ test('useAsyncGraphLayout keeps the last display on error, defers during gesture
   await settle()
   assert.equal(calls.length, 6)
   assert.equal(graph.display.value.revision, '4')
+})
+
+test('useAsyncGraphLayout gestureListeners defer frames until every reported gesture has ended', async () => {
+  const { calls, adapter } = manualAdapter()
+  const input = shallowRef({ nodes, edges, revision: '1' })
+  const gesture = shallowRef(false)
+  const graph = useAsyncGraphLayout({ input, adapter, gesture, provisional: false })
+  const { onGestureStart, onGestureEnd } = graph.gestureListeners
+  assert.equal(Object.isFrozen(graph.gestureListeners), true)
+  assert.equal(graph.gesturing.value, false)
+  calls[0].resolve(layoutFor(calls[0].request))
+  await settle()
+  const kept = graph.display.value
+  // Two gestures in flight at once (an armed connection and a pan): the frame waits until both have ended.
+  input.value = { nodes, edges, revision: '2' }
+  await settle()
+  onGestureStart({ kind: 'connect', source: 'keyboard' })
+  onGestureStart({ kind: 'pan', source: 'pointer' })
+  assert.equal(graph.gesturing.value, true)
+  calls[1].resolve(layoutFor(calls[1].request))
+  await settle()
+  assert.equal(graph.display.value, kept)
+  assert.equal(graph.deferred.value, true)
+  onGestureEnd({ kind: 'pan', source: 'pointer', outcome: 'committed' })
+  await settle()
+  assert.equal(graph.display.value, kept)
+  assert.equal(graph.deferred.value, true)
+  onGestureEnd({ kind: 'connect', source: 'keyboard', outcome: 'cancelled' })
+  await settle()
+  assert.equal(graph.display.value.revision, '2')
+  assert.equal(graph.deferred.value, false)
+  assert.equal(graph.gesturing.value, false)
+  // An unmatched end is ignored instead of hiding a later gesture.
+  onGestureEnd({ kind: 'pan', source: 'pointer', outcome: 'cancelled' })
+  onGestureStart({ kind: 'node-drag', source: 'pointer' })
+  assert.equal(graph.gesturing.value, true)
+  // The `gesture` option still holds frames on its own and together with the listeners.
+  gesture.value = true
+  onGestureEnd({ kind: 'node-drag', source: 'pointer', outcome: 'committed' })
+  input.value = { nodes, edges, revision: '3' }
+  await settle()
+  calls[2].resolve(layoutFor(calls[2].request))
+  await settle()
+  assert.equal(graph.display.value.revision, '2')
+  assert.equal(graph.deferred.value, true)
+  gesture.value = false
+  await settle()
+  assert.equal(graph.display.value.revision, '3')
+  // A gesture that ends in the same tick as a new input shows that input, not the stale waiting frame.
+  input.value = { nodes, edges, revision: '4' }
+  await settle()
+  onGestureStart({ kind: 'node-drag', source: 'pointer' })
+  calls[3].resolve(layoutFor(calls[3].request))
+  await settle()
+  assert.equal(graph.deferred.value, true)
+  input.value = { nodes, edges, revision: '5' }
+  onGestureEnd({ kind: 'node-drag', source: 'pointer', outcome: 'committed' })
+  await settle()
+  assert.equal(graph.display.value.revision, '3')
+  assert.equal(graph.deferred.value, false)
+  calls[4].resolve(layoutFor(calls[4].request))
+  await settle()
+  assert.equal(graph.display.value.revision, '5')
+  graph.dispose()
+})
+
+test('NetworkGraph server markup is the same with gesture listeners bound', async () => {
+  const graph = useAsyncGraphLayout({ input: { nodes, edges }, adapter: () => new Promise(() => {}), initialLayout: layeredLayout })
+  const render = listeners => renderToString(createSSRApp({
+    render: () => h(NetworkGraph, { nodes, edges, layout: graph.layout, draggable: true, connectable: true, ...listeners }),
+  }))
+  assert.equal(await render(graph.gestureListeners), await render({}))
+  graph.dispose()
 })
 
 test('useAsyncGraphLayout shows a new edge at once with a temporary route until its layout arrives', async () => {

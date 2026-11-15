@@ -69,5 +69,6 @@ export type {
 export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
 export type {
   AsyncGraphLayoutAdapter, AsyncGraphFrame, AsyncGraphDisplayFrame, AsyncGraphLayoutError, UseAsyncGraphLayoutOptions, AsyncGraphLayout,
+  AsyncGraphGestureListeners,
   GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
 } from './composables/useAsyncGraphLayout.js'

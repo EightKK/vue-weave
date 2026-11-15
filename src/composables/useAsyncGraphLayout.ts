@@ -1,5 +1,5 @@
 import {
-  getCurrentInstance, getCurrentScope, onMounted, onScopeDispose, ref, shallowReactive, shallowReadonly, shallowRef, toValue, watch,
+  computed, getCurrentInstance, getCurrentScope, onMounted, onScopeDispose, ref, shallowReactive, shallowReadonly, shallowRef, toValue, watch,
   type MaybeRefOrGetter, type Ref, type ShallowRef,
 } from 'vue'
 import type { GraphEdge, GraphLayout, GraphLayoutDirection, GraphNodeSize, GraphPoint } from '../core/graph.js'
@@ -9,7 +9,7 @@ import {
   validateGraphLayoutResponse, type GraphLayoutRequest, type GraphLayoutRequestInput, type GraphLayoutRequests, type GraphLayoutScope,
   type GraphLayoutWorkerMessage,
 } from '../core/graphLayoutRequests.js'
-import type { GraphLayoutFunction, NetworkGroup, NetworkNode } from '../core/types.js'
+import type { GraphGesture, GraphGestureEnd, GraphLayoutFunction, NetworkGroup, NetworkNode } from '../core/types.js'
 
 /**
  * Computes one layout request. It may return the layout or a promise of it. `signal` is aborted when the result is no
@@ -48,6 +48,15 @@ export interface AsyncGraphDisplayFrame<N extends NetworkNode = NetworkNode, E e
   temporaryEdgeIds: readonly string[]
 }
 
+/**
+ * NetworkGraph listeners for its `gesture-start` and `gesture-end` events. Bind them with `v-bind` (or spread them into
+ * `h(NetworkGraph, props)`); they can sit next to listeners of the application for the same events.
+ */
+export interface AsyncGraphGestureListeners {
+  onGestureStart: (gesture: GraphGesture) => void
+  onGestureEnd: (gesture: GraphGestureEnd) => void
+}
+
 /** A failed layout request of the desired frame. The display keeps the last consistent frame. */
 export interface AsyncGraphLayoutError {
   revision: string
@@ -68,7 +77,11 @@ export interface UseAsyncGraphLayoutOptions<N extends NetworkNode = NetworkNode,
    * result arrives (show a loading state in the meantime).
    */
   initialLayout?: (nodes: readonly GraphShownNode<N, G>[], edges: readonly GraphShownEdge<E, G>[]) => GraphLayout
-  /** While true, finished frames wait and are shown when it turns false, so an ongoing drag is not cancelled. */
+  /**
+   * While true, finished frames wait and are shown when it turns false, so an ongoing drag is not cancelled. Frames
+   * also wait while a gesture reported through `gestureListeners` is in flight; this option is for gestures the
+   * application tracks itself.
+   */
   gesture?: MaybeRefOrGetter<boolean>
   /**
    * Default true. When every node of the new input already has a box in the displayed layouts (for example after an
@@ -94,6 +107,13 @@ export interface AsyncGraphLayout<N extends NetworkNode = NetworkNode, E extends
   pending: Readonly<Ref<boolean>>
   /** True while a finished frame waits for the gesture to end. */
   deferred: Readonly<Ref<boolean>>
+  /**
+   * Listeners to bind to NetworkGraph (`v-bind="graph.gestureListeners"`). While a gesture they reported is in flight,
+   * finished frames wait as they do while `gesture` is true. Their identity never changes.
+   */
+  gestureListeners: Readonly<AsyncGraphGestureListeners>
+  /** True while a gesture reported through `gestureListeners` is in flight or the `gesture` option is true. */
+  gesturing: Readonly<Ref<boolean>>
   /** The last failure of the desired frame; cleared when the input changes. */
   error: Readonly<ShallowRef<AsyncGraphLayoutError | undefined>>
   /** Stops waiting for the requests in flight (aborting their signals) and discards their results. */
@@ -124,6 +144,13 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
   const pending = ref(false)
   const deferred = ref(false)
   const error = shallowRef<AsyncGraphLayoutError>()
+  // Gestures reported by NetworkGraph that have started and not ended yet. Every start is followed by one end.
+  const openGestures = ref(0)
+  const gesturing = computed(() => !!toValue(options.gesture) || openGestures.value > 0)
+  const gestureListeners: Readonly<AsyncGraphGestureListeners> = Object.freeze({
+    onGestureStart: () => { openGestures.value++ },
+    onGestureEnd: () => { openGestures.value = Math.max(0, openGestures.value - 1) },
+  })
   // Computed layouts by scope and input key, in least recently used order.
   const cache = shallowReactive(new Map<string, GraphLayout>())
   const inflight = new Map<string, { controller: AbortController }>()
@@ -147,7 +174,7 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
   }
 
   function show(frame: AsyncGraphDisplayFrame<N, E, G>) {
-    if (toValue(options.gesture)) {
+    if (gesturing.value) {
       waiting = frame
       deferred.value = true
       return
@@ -283,7 +310,7 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
 
   const scope = getCurrentScope()
   const stopInput = watch(() => toValue(options.input), update, { immediate: true })
-  const stopGesture = watch(() => !!toValue(options.gesture), (active) => {
+  const stopGesture = watch(gesturing, (active) => {
     if (active || !waiting) return
     const frame = waiting
     waiting = undefined
@@ -336,7 +363,8 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
 
   return {
     desired: shallowReadonly(desired), display: shallowReadonly(display), layout,
-    pending: shallowReadonly(pending), deferred: shallowReadonly(deferred), error: shallowReadonly(error), cancel, dispose,
+    pending: shallowReadonly(pending), deferred: shallowReadonly(deferred), error: shallowReadonly(error),
+    gestureListeners, gesturing, cancel, dispose,
   }
 }
 
