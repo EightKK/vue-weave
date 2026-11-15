@@ -4,10 +4,12 @@ import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type TimeRange, type TimeScale,
 } from './timeline.js'
+import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineRow,
 } from './types.js'
+import type { TimelineConstraintKind } from './types.js'
 import { checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
 
@@ -54,6 +56,10 @@ export interface SvgExportTheme {
   deadline?: string
   /** Status-date line and progress line (`--vw-status`). Defaults to `defaultSvgExportTheme.status`. */
   status?: string
+  /** Scheduling constraint markers (`--vw-constraint`). Defaults to `defaultSvgExportTheme.constraint`. */
+  constraint?: string
+  /** Violated constraint markers (`--vw-constraint-violated`). Defaults to `defaultSvgExportTheme.constraintViolated`. */
+  constraintViolated?: string
   tones: Record<ChartTone, SvgToneColors>
 }
 
@@ -68,7 +74,7 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
   edge: '#76929f', accent: '#245e96', onSolid: '#ffffff', markerInk: '#ffffff', baseline: '#718497', marker: '#a74f08', now: '#c23b22',
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
   nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08', status: '#1f7a4d',
-  baseline2: '#9a4c95', baseline3: '#23806f',
+  baseline2: '#9a4c95', baseline3: '#23806f', constraint: '#a1246e', constraintViolated: '#c4161c',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -378,6 +384,13 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   statusDateLabel?: string
   /** With `statusDate`, draw a progress line that kinks to the progress point of each bar that is behind or ahead. */
   showProgressLine?: boolean
+  /**
+   * Text of each constraint kind in the titles of constraint markers. Defaults "Start no earlier than", "Start no later
+   * than", "Finish no earlier than", "Finish no later than" and "Must start on".
+   */
+  constraintLabels?: Partial<Record<TimelineConstraintKind, string>>
+  /** Added to the title of a violated constraint marker. Default "violated". */
+  constraintViolatedLabel?: string
   /** Bar label text. Defaults to `bar.label`. */
   barLabel?: (bar: B) => string
   /** Row heading text. Defaults to `row.label`. */
@@ -385,6 +398,11 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
 }
 
 const defaultTickSteps = [1_800_000, 3_600_000, 7_200_000, 14_400_000, 86_400_000]
+/** Default text of each constraint kind, as in the GanttChart labels. */
+const defaultConstraintLabels: Readonly<Record<TimelineConstraintKind, string>> = Object.freeze({
+  startNoEarlierThan: 'Start no earlier than', startNoLaterThan: 'Start no later than',
+  finishNoEarlierThan: 'Finish no earlier than', finishNoLaterThan: 'Finish no later than', fixedStart: 'Must start on',
+})
 const defaultFormat = (time: number) => new Date(time).toISOString().slice(11, 16)
 const bandHeight = 26
 
@@ -502,6 +520,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     duration: options.varianceLabels?.duration ?? 'duration',
   }
   const stripFills = [theme.baseline, theme.baseline2, theme.baseline3]
+  const constraintLabels = options.constraintLabels ?? {}
+  const constraintViolatedLabel = options.constraintViolatedLabel ?? 'violated'
 
   // Geometry. `local` measures from the window start; `view` mirrors it for right-to-left output.
   const local: TimeScale = { width: axisWidth, toX: time => scale.toX(time) - offset, toTime: x => scale.toTime(x + offset) }
@@ -696,6 +716,44 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
           points: [[x - 5, y - 3], [x + 5, y - 3], [x, y + 3]].map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
           fill: theme.deadline,
         })))
+    }
+    // Constraint markers: a stem across the lane with a flag at the top (start) or bottom (finish) that points towards
+    // the allowed times, or an I-beam for a fixed start. GanttChart draws the same glyph with CSS.
+    for (const bar of own) {
+      if (!bar.constraints) continue
+      const y = top + laneTop(bar)
+      const upper = y - 5, lower = y + barHeight + 5
+      for (const kind of timelineConstraintKinds) {
+        const time = bar.constraints[kind]
+        if (time === undefined || time < window.start || time >= window.end) continue
+        const x = X(time)
+        const violated = timelineConstraintViolated(bar, kind, time)
+        const color = violated ? theme.constraintViolated : theme.constraint
+        const start = kind.startsWith('start') || kind === 'fixedStart'
+        const later = kind.endsWith('NoEarlierThan')
+        const label = constraintLabels[kind] ?? defaultConstraintLabels[kind]
+        let shape = tag('line', {
+          x1: x, y1: upper, x2: x, y2: lower, stroke: color, 'stroke-width': 2, 'stroke-dasharray': violated ? '3 2' : undefined,
+        })
+        if (kind === 'fixedStart') {
+          shape += tag('line', { x1: x - 8, y1: upper + 1.5, x2: x + 8, y2: upper + 1.5, stroke: color, 'stroke-width': 3 })
+            + tag('line', { x1: x - 8, y1: lower - 1.5, x2: x + 8, y2: lower - 1.5, stroke: color, 'stroke-width': 3 })
+        } else {
+          // Towards later times is right in left-to-right output and left in right-to-left output.
+          const side = later !== rtl ? 1 : -1
+          const flag = start ? upper + 1 : lower - 1
+          shape += tag('line', { x1: x, y1: flag, x2: x + side * 8, y2: flag, stroke: color, 'stroke-width': 2 })
+            + tag('polygon', {
+              points: [[x + side * 6, flag - 4.5], [x + side * 13, flag], [x + side * 6, flag + 4.5]]
+                .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
+              fill: color,
+            })
+        }
+        const classes = ['vw-gantt-constraint', start ? 'vw-is-start' : 'vw-is-finish',
+          kind === 'fixedStart' ? 'vw-is-fixed' : later ? 'vw-is-lower' : 'vw-is-upper', violated ? 'vw-is-violated' : '']
+        const title = `${label} · ${barLabel(bar)} ${format(time)}` + (violated ? ` · ${constraintViolatedLabel}` : '')
+        area.push(tag('g', { class: classes.filter(Boolean).join(' ') }, tag('title', {}, escapeXml(title)) + shape))
+      }
     }
   })
   // Dependency paths are computed from the window start and mirrored as a whole for right-to-left output.

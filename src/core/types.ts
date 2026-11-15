@@ -87,7 +87,54 @@ export interface TimelineBar<D = unknown> extends TimeRange {
    * Defaults to `editable`.
    */
   deletable?: boolean
+  /**
+   * Scheduling constraints, drawn as markers in the bar's lane and added to its description. The fields are named as in
+   * `ScheduleTask`, so they spread into a task unchanged. Each is a finite time in the chart's units. The chart does not
+   * move the bar to meet them; a constraint that the bar's dates break is drawn as violated.
+   */
+  constraints?: TimelineConstraints
 }
+
+/**
+ * The scheduling constraints of a bar, named as in `ScheduleTask`. Times are in the chart's units. Logically conflicting
+ * combinations are allowed; whether they can be met is decided by the scheduler.
+ */
+export interface TimelineConstraints {
+  /** The bar may not start before this time. */
+  startNoEarlierThan?: number
+  /** The bar may not start after this time. */
+  startNoLaterThan?: number
+  /** The bar may not finish before this time. */
+  finishNoEarlierThan?: number
+  /** The bar may not finish after this time. */
+  finishNoLaterThan?: number
+  /**
+   * The bar must start at this time. It is independent of the bar's own `start`: a bar that starts at another time is
+   * drawn with the constraint violated, as the scheduler would report it.
+   */
+  fixedStart?: number
+}
+
+/** The name of one scheduling constraint. See `timelineConstraintKinds`. */
+export type TimelineConstraintKind = keyof TimelineConstraints
+
+/**
+ * A constraint proposal from GanttChart (`constraintsEditable`). Apply it with `applyTimelineConstraintEdit`, or set
+ * the bar's `constraints[kind]` to `after` (remove it when `after` is undefined).
+ */
+export interface TimelineConstraintEdit {
+  /** The bar ID. */
+  id: string
+  kind: TimelineConstraintKind
+  /** The constraint's time before the edit, or undefined when the bar did not have it. */
+  before: number | undefined
+  /** The proposed time, snapped and kept inside `editBounds`, or undefined to remove the constraint. */
+  after: number | undefined
+  source: 'pointer' | 'keyboard'
+}
+
+/** Synchronous check of a `constraint-edit` proposal. Accept with true or undefined; reject with false or a reason. */
+export type ConstraintEditValidator = (change: TimelineConstraintEdit) => boolean | string | void
 
 /** A recorded interval of a bar in the baseline set `id`, for example `plan` or `rev1`. */
 export interface TimelineBaseline extends TimeRange {
@@ -268,6 +315,22 @@ export interface GanttLabels {
   columnResizeRejected?: string
   /** Description prefix of a dependency with a non-zero `lag`, before the formatted lag. Default "Lag". */
   lag?: string
+  /** Text of a `startNoEarlierThan` constraint in descriptions and handle names. Default "Start no earlier than". */
+  startNoEarlierThan?: string
+  /** Text of a `startNoLaterThan` constraint. Default "Start no later than". */
+  startNoLaterThan?: string
+  /** Text of a `finishNoEarlierThan` constraint. Default "Finish no earlier than". */
+  finishNoEarlierThan?: string
+  /** Text of a `finishNoLaterThan` constraint. Default "Finish no later than". */
+  finishNoLaterThan?: string
+  /** Text of a `fixedStart` constraint. Default "Must start on". */
+  fixedStart?: string
+  /** Added after a constraint that the bar's dates break, in descriptions and handle values. Default "violated". */
+  constraintViolated?: string
+  /** Description of the constraint handles (`constraintsEditable`). Default lists the keys. */
+  constraintHint?: string
+  /** Announced when `validateConstraintEdit` returns false. Default "This constraint change was rejected." */
+  constraintRejected?: string
 }
 
 /** Props of the NetworkGraph `node` slot. `N` types the node. */

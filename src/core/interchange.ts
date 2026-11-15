@@ -3,7 +3,8 @@ import { escapeXml } from './exportSvg.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import { createTimelineRowTree } from './timeline.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
-import type { TimelineBar, TimelineDependencyType, TimelineRow } from './types.js'
+import type { TimelineBar, TimelineConstraintKind, TimelineConstraints, TimelineDependencyType, TimelineRow } from './types.js'
+import { timelineConstraints } from './timeline.js'
 
 export interface MsProjectTask {
   id: string
@@ -20,6 +21,12 @@ export interface MsProjectTask {
   milestone?: boolean
   /** Saved baselines, written as `Baseline` elements; at most one per `number`. */
   baselines?: readonly MsProjectBaseline[]
+  /**
+   * Scheduling constraints in epoch milliseconds, for example `TimelineBar.constraints`. A Microsoft Project task holds
+   * one constraint, so exactly one set constraint is written as `ConstraintType` and `ConstraintDate`; with two or more
+   * none is written.
+   */
+  constraints?: TimelineConstraints
 }
 
 /**
@@ -58,6 +65,11 @@ export interface MsProjectXmlOptions {
 const minuteMs = 60_000
 const secondMs = 1000
 const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
+// MSPDI ConstraintType: 2 Must Start On, 4 Start No Earlier Than, 5 Start No Later Than, 6 Finish No Earlier Than and
+// 7 Finish No Later Than.
+const constraintTypes: Record<TimelineConstraintKind, number> = {
+  fixedStart: 2, startNoEarlierThan: 4, startNoLaterThan: 5, finishNoEarlierThan: 6, finishNoLaterThan: 7,
+}
 
 function checkTime(value: number, what: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 8.64e15) throw new RangeError(what + ' must be a finite time')
@@ -85,6 +97,14 @@ function isoDuration(ms: number) {
   return `PT${Math.floor(seconds / 3600)}H${Math.floor(seconds % 3600 / 60)}M${seconds % 60}S`
 }
 
+/** `ConstraintType` and `ConstraintDate` of a task with exactly one constraint; nothing otherwise. */
+function constraintElements(constraints: TimelineConstraints | undefined, offset: number) {
+  const set = Object.entries(timelineConstraints(constraints) ?? {}) as [TimelineConstraintKind, number][]
+  if (set.length !== 1) return ''
+  const [kind, time] = set[0]!
+  return `<ConstraintType>${constraintTypes[kind]}</ConstraintType><ConstraintDate>${localIso(toSecond(time), offset)}</ConstraintDate>`
+}
+
 /**
  * Build a Microsoft Project XML (MSPDI) document that Microsoft Project and compatible tools can open. Each task
  * becomes a manually scheduled task (so its dates are kept as given) with a UID and ID from 1 in input order, its
@@ -96,12 +116,17 @@ function isoDuration(ms: number) {
  * Task `baselines` become `Baseline` elements (after the predecessor links) with their number, start, finish and elapsed
  * duration, rounded like the task dates.
  *
- * Not exported: calendars, resources, assignments, constraints, notes, custom fields and baseline work or cost. Task
- * IDs of the input are not written; the UIDs follow the input order.
+ * A task with exactly one constraint in `constraints` gets `ConstraintType` (2 Must Start On for `fixedStart`, 4 to 7 for
+ * start no earlier, start no later, finish no earlier and finish no later than) and `ConstraintDate`, rounded like the
+ * task dates. A task can hold only one constraint in Microsoft Project, so a task with several gets none.
+ *
+ * Not exported: calendars, resources, assignments, a second constraint of a task, notes, custom fields and baseline
+ * work or cost. Task IDs of the input are not written; the UIDs follow the input order.
  *
  * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
  * dependency from a task to itself, unknown link types and a duplicate baseline number on a task, and a RangeError
- * for non-finite or unordered dates (also of baselines), an invalid outline level, percent complete, lag or baseline number.
+ * for non-finite or unordered dates (also of baselines), an invalid outline level, percent complete, lag, baseline number
+ * or constraint time.
  */
 export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
   const offset = options.utcOffsetMinutes ?? 0
@@ -141,6 +166,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
         if (baseline.end < baseline.start) throw new RangeError(`Baseline ${number} of task ${task.id} cannot end before it starts`)
       }
     }
+    for (const time of Object.values(timelineConstraints(task.constraints) ?? {})) checkTime(time, 'Constraint of task ' + task.id)
     uids.set(task.id, uids.size + 1)
     levels.push(level)
     previousLevel = level
@@ -186,6 +212,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
       + `<ManualStart>${start}</ManualStart><ManualFinish>${finish}</ManualFinish><ManualDuration>${duration}</ManualDuration>`
       + `<Milestone>${milestone ? 1 : 0}</Milestone><Summary>${summary ? 1 : 0}</Summary>`
       + `<PercentComplete>${Math.round(task.percentComplete ?? 0)}</PercentComplete>`
+      + constraintElements(task.constraints, offset)
       + (predecessors.get(task.id) ?? []).join('')
       + (task.baselines ?? []).map(baseline => {
         const baselineStart = toSecond(baseline.start), baselineFinish = toSecond(baseline.end)

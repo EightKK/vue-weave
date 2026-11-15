@@ -2,9 +2,9 @@
 import { computed, ref, shallowRef } from 'vue'
 import {
   GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate, scheduleTasks,
-  scheduleToGraph, scheduledBarFields, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
-  type ResourceAssignment, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleTask,
-  type TimelineBar, type TimelineColumn, type TimelineEdit,
+  scheduleToGraph, scheduledBarFields, timelineConstraints, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
+  type ResourceAssignment, type ScheduleConstraintName, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleTask,
+  type TimelineBar, type TimelineColumn, type TimelineConstraintEdit, type TimelineEdit,
 } from '../src'
 import { download } from './download'
 
@@ -126,8 +126,55 @@ const taskBars = computed<TimelineBar[]>(() => model.value.plan.tasks.map(task =
       : { baseline: originalDates.get(task.id) }),
     editable: task.id.startsWith('cut-'), tone: task.critical ? 'amber' : 'blue',
     ...(showCritical.value ? { critical, latestEnd, deadline: deadlines.get(task.id) } : {}),
+    ...(showConstraints.value ? { constraints: timelineConstraints(taskById.value.get(task.id)) } : {}),
   }
 }))
+// Scheduling constraints, off by default. Shown, packing must finish by the dispatch cut-off (a hard
+// `finishNoLaterThan` that the scheduler applies, unlike the display-only deadline), and the requested starts of the
+// cutting orders are `startNoEarlierThan` handles. Moving or deleting a handle reschedules the plan; a constraint that
+// cannot be met is not applied, and the scheduler's diagnostic says why.
+const showConstraints = ref(false)
+const taskById = computed(() => new Map(model.value.tasks.map(task => [task.id, task])))
+const constraintNames: Record<ScheduleConstraintName, string> = {
+  range: 'the planning horizon', startNoEarlierThan: 'its start no earlier than', startNoLaterThan: 'its start no later than',
+  finishNoEarlierThan: 'its finish no earlier than', finishNoLaterThan: 'its finish no later than', fixedStart: 'its fixed start',
+  deadline: 'the project deadline', projectFinish: 'the project finish', calendar: 'its working time',
+}
+function withConstraint(task: ScheduleTask, kind: TimelineConstraintEdit['kind'], time: number | undefined): ScheduleTask {
+  const { [kind]: _previous, ...rest } = task
+  return time === undefined ? rest : { ...rest, [kind]: time }
+}
+function infeasibility(plan: Exclude<ScheduleResult, { ok: true }>) {
+  if (plan.code === 'cycle') return 'A dependency cycle prevents scheduling.'
+  const links = plan.dependencyIds.map(id => dependencies.find(link => link.id === id)!)
+    .map(link => labels.get(link.from) + ' → ' + labels.get(link.to))
+  return `Infeasible: ${labels.get(plan.taskId)} cannot meet ${plan.constraints.map(name => constraintNames[name]).join(' and ')}`
+    + (links.length ? ' with the link ' + links.join(', ') : '') + '. The change was not applied.'
+}
+function toggleConstraints(event: Event) {
+  const input = event.target as HTMLInputElement
+  const tasks = model.value.tasks.map(task => task.id === 'pack' ? withConstraint(task, 'finishNoLaterThan', input.checked ? deadlines.get('pack') : undefined) : task)
+  const plan = propose(tasks)
+  if (!plan.ok) {
+    notice.value = infeasibility(plan)
+    input.checked = showConstraints.value
+    return
+  }
+  model.value = { tasks, plan }
+  showConstraints.value = input.checked
+}
+function applyConstraint(change: TimelineConstraintEdit) {
+  const tasks = model.value.tasks.map(task => task.id === change.id ? withConstraint(task, change.kind, change.after) : task)
+  const plan = propose(tasks)
+  if (!plan.ok) {
+    notice.value = infeasibility(plan)
+    return
+  }
+  model.value = { tasks, plan }
+  notice.value = change.after === undefined
+    ? `Constraint removed from ${labels.get(change.id)}. Plan recalculated.`
+    : `${labels.get(change.id)}: ${constraintNames[change.kind].replace('its ', '')} ${format(change.after)}. Plan recalculated.`
+}
 const load = computed(() => calculateResourceLoad(range, model.value.plan.tasks, resources, assignments))
 const overloads = computed(() => load.value.filter(segment => segment.overload > 0))
 const overloadHours = computed(() => overloads.value.reduce((hours, segment) => hours + (segment.end - segment.start) / hour, 0))
@@ -184,7 +231,12 @@ function exportSchedule() {
   notice.value = 'Exported schedule SVG (' + svg.length + ' characters).'
 }
 function reset() {
-  model.value = { tasks: originalTasks, plan: original as Extract<ScheduleResult, { ok: true }> }
+  // With constraints shown, packing keeps its cut-off; the original plan meets it, so the plan is the same.
+  const tasks = showConstraints.value
+    ? originalTasks.map(task => task.id === 'pack' ? withConstraint(task, 'finishNoLaterThan', deadlines.get('pack')) : task) : originalTasks
+  const plan = showConstraints.value ? propose(tasks) : original
+  if (!plan.ok) throw new Error('The demo schedule must be feasible')
+  model.value = { tasks, plan }
   selected.value = new Set()
   notice.value = 'Original plan restored.'
 }
@@ -218,6 +270,8 @@ function exportMsProject() {
       id: task.id, name: labels.get(task.id)!, start: task.start, end: task.end, percentComplete: (reported.get(task.id) ?? 0) * 100,
       // Microsoft Project numbers baselines: the original plan is Baseline (0) and the revision Baseline1.
       baselines: [{ number: 0, ...originalDates.get(task.id)! }, { number: 1, ...revisionDates.get(task.id)! }],
+      // A task with exactly one constraint gets its ConstraintType and ConstraintDate.
+      ...(showConstraints.value ? { constraints: timelineConstraints(taskById.value.get(task.id)) } : {}),
     })),
     dependencies: dependencies.map(link => ({ from: link.from, to: link.to, type: link.type, lag: link.lag })),
   }, { utcOffsetMinutes: 540 })
@@ -251,6 +305,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
         <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
         <label><input v-model="compareBaselines" type="checkbox"> Compare baseline sets</label>
+        <label><input type="checkbox" :checked="showConstraints" @change="toggleConstraints"> Show scheduling constraints</label>
         <button type="button" @click="exportSchedule">Export schedule SVG</button>
         <button type="button" @click="reset">Reset schedule</button>
       </div>
@@ -271,6 +326,8 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         {{ set.label }}</label>
       <span class="hint">Strips under each bar, in this order. Hover a strip, or read a bar's description, for its variance.</span>
     </div>
+    <p v-if="showConstraints" class="hint constraint-hint">Packing must finish by the 17:00 cut-off. Drag a cutting order's
+      start constraint, or focus it and use the arrow keys or Delete; the plan is rescheduled, and a constraint that cannot be met is reported.</p>
     <dl class="schedule-metrics">
       <div><dt>Projected finish</dt><dd data-testid="schedule-finish">{{ format(model.plan.finish) }}</dd></div>
       <div><dt>Zero-float tasks</dt><dd>{{ criticalCount }} / {{ rows.length }}</dd></div>
@@ -281,6 +338,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
       :status-date="statusDate" :show-progress-line="showProgressLine" :baseline-ids="baselineIds" :baseline-label="baselineLabel"
+      :constraints-editable="showConstraints" @constraint-edit="applyConstraint"
       @edit="applyEdit" @edits="applyEdits" @edit-rejected="(_change, reason) => notice = reason" @edits-rejected="(_changes, reason) => notice = reason">
       <template #row-heading>Operation</template>
       <template #bar="{ bar }"><span class="vw-bar-text">{{ workHours.get(bar.id) }} h</span></template>
@@ -316,5 +374,6 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
 .status-options { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .status-options input[type="range"] { vertical-align: middle; width: 180px; }
 /* Legend swatches in the colour of the slot each shown set is drawn in. */
+.constraint-hint { margin: 0 0 8px; }
 .baseline-key::after { content: ''; display: inline-block; width: 18px; height: 3px; border-radius: 1.5px; background: var(--baseline-key); }
 </style>

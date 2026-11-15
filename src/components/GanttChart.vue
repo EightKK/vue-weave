@@ -23,6 +23,8 @@ import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapPr
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
 import { timelineBaselineId } from '../core/timeline.js'
+import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
+import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const props = withDefaults(defineProps<{
@@ -170,6 +172,10 @@ const props = withDefaults(defineProps<{
   baselineLabel?: (id: string) => string
   /** Formats a baseline variance (`baselineVariance`) in titles and descriptions. Default: `formatDependencyLag`, signed hours such as `+2 h`. */
   formatVariance?: (delta: number) => string
+  /** Shows a slider handle at each `constraints` time of an editable bar, moved by drag or keys and proposed through `constraint-edit`. Opt-in. Default: false. */
+  constraintsEditable?: boolean
+  /** Synchronous check of a constraint edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
+  validateConstraintEdit?: ConstraintEditValidator
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -246,6 +252,10 @@ const emit = defineEmits<{
   'column-resize': [change: TimelineColumnResize]
   /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
   'column-resize-rejected': [change: TimelineColumnResize, reason: string]
+  /** Proposal to move or remove a bar constraint; carries the bar ID, kind, `before`, `after` and source. Apply it with `applyTimelineConstraintEdit`. */
+  'constraint-edit': [change: TimelineConstraintEdit]
+  /** A constraint edit was rejected by `validateConstraintEdit`; carries the proposal and the reason. */
+  'constraint-edit-rejected': [change: TimelineConstraintEdit, reason: string]
 }>()
 
 const slots = defineSlots<{
@@ -277,6 +287,10 @@ const messages = computed<GanttLabels>(() => ({
   createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
   moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
   resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.', lag: 'Lag',
+  startNoEarlierThan: 'Start no earlier than', startNoLaterThan: 'Start no later than', finishNoEarlierThan: 'Finish no earlier than',
+  finishNoLaterThan: 'Finish no later than', fixedStart: 'Must start on', constraintViolated: 'violated',
+  constraintHint: 'Arrow keys move the constraint by one snap step, Shift+arrow and Page keys by one tick step. Delete removes it. Escape cancels a drag.',
+  constraintRejected: 'This constraint change was rejected.',
   // Indenting follows the visual direction: towards the row text, which is on the right in right-to-left charts.
   moveRowKeysHint: `Alt+Up and Alt+Down move the row among its siblings. Alt+Shift+${rtl.value ? 'Left' : 'Right'} indents it and `
     + `Alt+Shift+${rtl.value ? 'Right' : 'Left'} outdents it. Drag to move it; Escape cancels.`,
@@ -692,8 +706,14 @@ const shownRows = computed(() => {
         return bar.latestEnd !== undefined && bar.latestEnd > end && intersectsWindow({ start: end, end: bar.latestEnd }, timeWindow.value)
           ? [{ bar, style: floatStyle(bar, end, bar.latestEnd) }] : []
       }),
-      deadlines: bars.flatMap(bar => bar.deadline !== undefined && bar.deadline >= timeWindow.value.start && bar.deadline < timeWindow.value.end
-        ? [{ bar, late: rangeOf(bar).end > bar.deadline, style: deadlineStyle(bar, bar.deadline) }] : []),
+      decorations: [
+        ...bars.flatMap(bar => bar.deadline !== undefined && bar.deadline >= timeWindow.value.start && bar.deadline < timeWindow.value.end
+          ? [{ key: bar.id + ':deadline', className: rangeOf(bar).end > bar.deadline ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline', style: deadlineStyle(bar, bar.deadline) }]
+          : []),
+        // The constraints of a bar with handles (`constraintsEditable`) are drawn by its handles instead.
+        ...bars.flatMap(bar => bar.constraints && !(constraintHandlesVisible.value && canEditConstraints(bar) && shown.includes(bar))
+          ? constraintMarks(bar) : []),
+      ],
     }
   })
 })
@@ -709,13 +729,15 @@ function barOverlay(bar: TimelineBar): BarOverlay | undefined {
   const range = rangeOf(bar)
   // Named baseline sets (or `baselineIds`) add each selected baseline with its variance to the description.
   const strips = baselineChoice.value.described ? baselineStrips(bar, range, baselineChoice.value, baselineText.value) : []
-  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length) return undefined
+  const constraints = barConstraints(bar)
+  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length && !constraints.length) return undefined
   const parts: string[] = []
   if (bar.critical) parts.push(messages.value.critical!)
   if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
   if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)
   const late = bar.deadline !== undefined && range.end > bar.deadline
   if (late) parts.push(messages.value.late!)
+  for (const item of constraints) parts.push(constraintText(item))
   for (const strip of strips) parts.push(`${strip.label} ${strip.dates}: ${strip.variance}`)
   return { description: parts.length ? parts.join('. ') + '.' : undefined, late, segments: segmentGeometry(bar, range) }
 }
@@ -1036,6 +1058,7 @@ function cancelEdit() {
   cancelCreate()
   cancelRowDrag()
   cancelColumnResize()
+  cancelConstraint()
   clearCascade()
   pinch = undefined
 }
@@ -1045,7 +1068,7 @@ function cancelEdit() {
  * pointer type, so a mouse and a pen (or touch) can both be primary; every pointer gesture start checks this.
  */
 function pointerGestureActive() {
-  return Boolean(drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag)
+  return Boolean(drag || progressDrag || linkDrag || pinch || createDrag || rowDrag || columnDrag || constraintDrag)
 }
 /** Whether a gesture owns the pointer or keyboard: a pointer gesture or an armed connection. */
 function gestureActive() {
@@ -1388,9 +1411,11 @@ watch(() => props.bars, async () => {
   const id = pendingReveal
   const moved = pendingFocus
   const deleted = pendingDelete
+  const unconstrained = pendingConstraintFocus
   pendingReveal = undefined
   pendingFocus = undefined
   pendingDelete = false
+  pendingConstraintFocus = undefined
   if (focusedBarId.value !== undefined && !barById.value.has(focusedBarId.value)) focusedBarId.value = undefined
   if (deleted) {
     // A removed bar takes keyboard focus with it; keep focus in the chart region.
@@ -1398,6 +1423,12 @@ watch(() => props.bars, async () => {
     const el = scroller.value
     const active = document.activeElement
     if (el && (!active || active === document.body || !active.isConnected)) el.focus({ preventScroll: true })
+  }
+  if (unconstrained !== undefined) {
+    // A removed constraint takes its handle, and keyboard focus, with it; return focus to the bar.
+    await nextTick()
+    const active = document.activeElement
+    if (!active || active === document.body || !active.isConnected) focusBar(unconstrained)
   }
   if (id === undefined && moved === undefined) return
   await nextTick()
@@ -1852,6 +1883,7 @@ watch([
   activePreset, () => props.multiSelect ? props.selectedIds : undefined, () => props.multiSelect, () => props.rowDraggable,
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
   () => props.columnsResizable, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth,
+  () => props.constraintsEditable,
 ], cancelEdit)
 
 // Column resizing (`columnsResizable`). A separator at the inline-end edge of each header cell previews pointer
@@ -2010,16 +2042,23 @@ function canEditProgress(bar: TimelineBar) {
 }
 const progressHandlesVisible = computed(() => Boolean(props.progressEditable) && !props.readonly && !validationError.value)
 const linkEnds = ['start', 'finish'] as const
-type BarHandle = TimelineBarEnd | 'progress'
+type BarHandle = TimelineBarEnd | 'progress' | TimelineConstraintKind
+function isConstraintHandle(handle: BarHandle): handle is TimelineConstraintKind {
+  return handle !== 'start' && handle !== 'finish' && handle !== 'progress'
+}
 /**
- * The handles drawn beside a bar: its link handles, then its progress slider (a button with the slider role). They
- * share one template loop so that a chart without progress editing renders exactly the markup it did before.
+ * The handles drawn beside a bar: its link handles, then its progress slider and its constraint sliders (buttons with
+ * the slider role). They share one template loop so that a chart without these props renders exactly the markup it
+ * did before.
  */
 function barHandles(bar: TimelineBar): readonly BarHandle[] {
   const ends = linkHandlesVisible.value ? linkEnds : []
-  return progressHandlesVisible.value && canEditProgress(bar) ? [...ends, 'progress'] : ends
+  const progress = progressHandlesVisible.value && canEditProgress(bar)
+  const constraints = constraintHandlesVisible.value && canEditConstraints(bar) ? constraintHandleKinds(bar) : []
+  return progress || constraints.length ? [...ends, ...(progress ? ['progress' as const] : []), ...constraints] : ends
 }
 function handleAttrs(bar: TimelineBar, handle: BarHandle) {
+  if (isConstraintHandle(handle)) return constraintHandleAttrs(bar, handle)
   if (handle !== 'progress') {
     return {
       class: ['vw-gantt-link-handle', `vw-is-${handle}`, { 'vw-is-active': linkPressed(bar, handle) }],
@@ -2043,14 +2082,16 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   }
 }
 function pressHandle(event: PointerEvent, bar: TimelineBar, handle: BarHandle) {
-  if (handle === 'progress') startProgress(event, bar)
+  if (isConstraintHandle(handle)) startConstraint(event, bar, handle)
+  else if (handle === 'progress') startProgress(event, bar)
   else startLink(event, bar, handle)
 }
 function clickHandle(event: MouseEvent, bar: TimelineBar, handle: BarHandle) {
   event.stopPropagation()
-  if (handle !== 'progress') activateLink(bar, handle, event)
+  if (handle !== 'progress' && !isConstraintHandle(handle)) activateLink(bar, handle, event)
 }
 function handleKeys(event: KeyboardEvent, bar: TimelineBar, handle: BarHandle) {
+  if (isConstraintHandle(handle)) return constraintKeys(event, bar, handle)
   if (handle === 'progress') return progressKeys(event, bar)
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.stopPropagation()
@@ -2131,6 +2172,167 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
   if (next === undefined) return
   event.preventDefault()
   proposeProgress({ id: bar.id, before: bar.progress, after: next, source: 'keyboard' })
+}
+
+// Constraint editing (`constraintsEditable`). Each constraint of an editable bar is a slider at its time: a pointer drag
+// previews the snapped time, keys propose steps, and the parent accepts `constraint-edit` by updating `constraints`.
+// The constraints of other bars, and of every bar without the prop, are decorative markers with the same glyph.
+type ShownConstraint = { kind: TimelineConstraintKind; time: number; violated: boolean }
+const constraintPreview = shallowRef<{ id: string; kind: TimelineConstraintKind; time: number }>()
+let constraintDrag: {
+  id: string; kind: TimelineConstraintKind; pointerId: number; target: HTMLElement; x: number; origin: number; before: number
+} | undefined
+let pendingConstraintFocus: string | undefined
+const constraintHandlesVisible = computed(() => Boolean(props.constraintsEditable) && !props.readonly && !validationError.value)
+function canEditConstraints(bar: TimelineBar) {
+  return Boolean(props.constraintsEditable) && !props.readonly && Boolean(bar.editable)
+}
+/** A constraint's time as drawn: the pointer preview of a constraint drag, otherwise the bar's own value. */
+function shownConstraint(bar: TimelineBar, kind: TimelineConstraintKind) {
+  const preview = constraintPreview.value
+  return preview?.id === bar.id && preview.kind === kind ? preview.time : bar.constraints?.[kind]
+}
+/** The constraints of a bar in `timelineConstraintKinds` order, checked against its interval as drawn. */
+function barConstraints(bar: TimelineBar): ShownConstraint[] {
+  if (!bar.constraints) return []
+  const range = rangeOf(bar)
+  return timelineConstraintKinds.flatMap(kind => {
+    const time = shownConstraint(bar, kind)
+    return time === undefined ? [] : [{ kind, time, violated: timelineConstraintViolated(range, kind, time) }]
+  })
+}
+function constraintText(item: ShownConstraint) {
+  const text = `${messages.value[item.kind]} ${props.formatTime(item.time)}`
+  return item.violated ? `${text}, ${messages.value.constraintViolated}` : text
+}
+function constraintVisible(time: number) {
+  return time >= timeWindow.value.start && time < timeWindow.value.end
+}
+function boundsStart(kind: TimelineConstraintKind) {
+  return kind === 'fixedStart' || kind.startsWith('start')
+}
+/** Classes of the glyph: the bar end it bounds (a flag at the top or bottom), its direction and its state. */
+function constraintClasses(bar: TimelineBar, item: ShownConstraint) {
+  const side = item.kind === 'fixedStart' ? 'vw-is-fixed' : item.kind.endsWith('NoEarlierThan') ? 'vw-is-lower' : 'vw-is-upper'
+  const preview = constraintPreview.value
+  const dragging = preview?.id === bar.id && preview.kind === item.kind
+  return ['vw-gantt-constraint', boundsStart(item.kind) ? 'vw-is-start' : 'vw-is-finish', side, item.violated ? 'vw-is-violated' : '',
+    dragging ? 'vw-is-dragging' : ''].filter(Boolean).join(' ')
+}
+/** A 26 px wide box centred on the time that holds the flag; the stem reaches across the lane (`--vw-constraint-reach`). */
+function constraintStyle(bar: TimelineBar, item: ShownConstraint) {
+  return {
+    [inlineSide.value]: `calc(var(--vw-label-area-width) + ${axis.value.toX(item.time) - 13}px)`,
+    top: `${boundsStart(item.kind) ? laneTop(bar) - 5 : laneTop(bar) + barHeight.value - 9}px`,
+    '--vw-constraint-reach': `${barHeight.value + 10}px`,
+    ...rowShiftStyle(bar),
+  }
+}
+/** Decorative markers of the constraints of a bar inside the visible time window. */
+function constraintMarks(bar: TimelineBar) {
+  return barConstraints(bar).filter(item => constraintVisible(item.time)).map(item => ({
+    key: bar.id + ':' + item.kind, className: constraintClasses(bar, item), style: constraintStyle(bar, item),
+  }))
+}
+/** Kinds with a handle: the constraints inside the visible time window, and the one being dragged. */
+function constraintHandleKinds(bar: TimelineBar) {
+  const preview = constraintPreview.value
+  return barConstraints(bar)
+    .filter(item => constraintVisible(item.time) || (preview?.id === bar.id && preview.kind === item.kind))
+    .map(item => item.kind)
+}
+function constraintHandleAttrs(bar: TimelineBar, kind: TimelineConstraintKind) {
+  const item = barConstraints(bar).find(entry => entry.kind === kind)!
+  return {
+    class: constraintClasses(bar, item),
+    style: constraintStyle(bar, item),
+    'data-vw-constraint': bar.id,
+    'data-vw-constraint-kind': kind,
+    role: 'slider',
+    'aria-label': `${messages.value[kind]} · ${bar.label}`,
+    'aria-describedby': marker + '-constraint-hint',
+    'aria-valuemin': bounds.value.start,
+    'aria-valuemax': bounds.value.end,
+    'aria-valuenow': item.time,
+    'aria-valuetext': item.violated ? `${props.formatTime(item.time)}, ${messages.value.constraintViolated}` : props.formatTime(item.time),
+  }
+}
+/** `before` moved by a whole number of snap steps and kept inside `editBounds`. */
+function constraintTime(before: number, delta: number) {
+  const { start, end } = bounds.value
+  if (before >= start && before <= end) return editTimeRange({ start: before, end: before }, 'move', delta, activeSnap.value, bounds.value).start
+  const steps = Math.sign(delta) * Math.round(Math.abs(delta) / activeSnap.value)
+  return Math.max(start, Math.min(end, before + steps * activeSnap.value))
+}
+function cancelConstraint() {
+  const previous = constraintDrag
+  constraintDrag = undefined
+  constraintPreview.value = undefined
+  if (previous?.target.hasPointerCapture(previous.pointerId)) previous.target.releasePointerCapture(previous.pointerId)
+}
+function proposeConstraint(change: TimelineConstraintEdit) {
+  if (change.after === change.before) return
+  const result = props.validateConstraintEdit?.(change)
+  const reason = result === false ? messages.value.constraintRejected! : typeof result === 'string' ? result : undefined
+  if (reason !== undefined) {
+    notice.value = reason
+    emit('constraint-edit-rejected', change, reason)
+    return
+  }
+  notice.value = ''
+  if (change.after === undefined) pendingConstraintFocus = change.id
+  emit('constraint-edit', change)
+}
+function startConstraint(event: PointerEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
+  const before = bar.constraints?.[kind]
+  if (!canEditConstraints(bar) || before === undefined || gestureActive() || !event.isPrimary || event.button !== 0 || !canvas.value) return
+  const target = event.currentTarget as HTMLElement
+  hideTooltip()
+  target.focus({ preventScroll: true })
+  const origin = axis.value.toTime(timeAreaOffset(event.clientX, canvas.value.getBoundingClientRect()))
+  constraintDrag = { id: bar.id, kind, pointerId: event.pointerId, target, x: event.clientX, origin, before }
+  target.setPointerCapture(event.pointerId)
+}
+/** Move the constraint by the snapped time between the press and the pointer. */
+function moveConstraint(event: PointerEvent) {
+  const active = constraintDrag
+  if (!active || active.pointerId !== event.pointerId || !canvas.value) return
+  if (!constraintPreview.value && Math.abs(event.clientX - active.x) < 2) return
+  const time = axis.value.toTime(timeAreaOffset(event.clientX, canvas.value.getBoundingClientRect()))
+  constraintPreview.value = { id: active.id, kind: active.kind, time: constraintTime(active.before, time - active.origin) }
+}
+function finishConstraint(event: PointerEvent) {
+  const active = constraintDrag
+  if (!active || active.pointerId !== event.pointerId) return
+  if (event.type !== 'pointerup') return cancelConstraint()
+  moveConstraint(event)
+  const preview = constraintPreview.value
+  cancelConstraint()
+  if (preview) proposeConstraint({ id: active.id, kind: active.kind, before: active.before, after: preview.time, source: 'pointer' })
+}
+function constraintKeys(event: KeyboardEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
+  if (event.key === 'Escape') return cancelEdit()
+  if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
+  const before = bar.constraints?.[kind]
+  if (!canEditConstraints(bar) || before === undefined || event.altKey || event.ctrlKey || event.metaKey) return
+  // Left and Right follow the visual direction, so ArrowLeft moves to later times in right-to-left charts. Up and Page Up
+  // move to later times, as they increase a slider.
+  const step = event.shiftKey ? tickStep.value : activeSnap.value
+  let after: number | undefined
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    after = constraintTime(before, (event.key === 'ArrowRight') !== rtl.value ? step : -step)
+  } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    after = constraintTime(before, event.key === 'ArrowUp' ? step : -step)
+  } else if (event.key === 'PageUp' || event.key === 'PageDown') {
+    after = constraintTime(before, event.key === 'PageUp' ? tickStep.value : -tickStep.value)
+  } else if (event.key === 'Home' || event.key === 'End') {
+    after = event.key === 'Home' ? bounds.value.start : bounds.value.end
+  } else if (event.key !== 'Delete' && event.key !== 'Backspace') {
+    return
+  }
+  event.preventDefault()
+  if (gestureActive()) return
+  proposeConstraint({ id: bar.id, kind, before, after, source: 'keyboard' })
 }
 
 // Drag to create (`creatable`). A press on the empty timeline area of a row previews a new bar while the pointer
@@ -2310,11 +2512,11 @@ function onContextMenu(event: MouseEvent) {
   emit('context-menu', menu)
 }
 function contextTarget(element: Element | undefined): TimelineContextTarget | undefined {
-  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-link], [data-vw-dependency]')
+  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-constraint], [data-vw-link], [data-vw-dependency]')
   if (!owner || !scroller.value?.contains(owner)) return undefined
-  const { vwBar, vwProgress, vwLink, vwDependency } = owner.dataset
+  const { vwBar, vwProgress, vwConstraint, vwLink, vwDependency } = owner.dataset
   if (vwDependency !== undefined) return { kind: 'dependency', id: vwDependency }
-  const id = vwBar ?? vwProgress ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
+  const id = vwBar ?? vwProgress ?? vwConstraint ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
   return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
 }
 
@@ -2490,7 +2692,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   // The zoom factor scales the base scale linearly, so this also holds for a custom, non-linear scale.
   const span = (axis.value.toX(end) - axis.value.toX(start)) / zoom.value
   // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
-  if (drag || progressDrag || linkDrag || pinch || createDrag) cancelEdit()
+  if (drag || progressDrag || linkDrag || pinch || createDrag || constraintDrag) cancelEdit()
   hideTooltip()
   if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
   return nextTick().then(() => {
@@ -2587,6 +2789,8 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     statusDate: includeStatusDate ? props.statusDate : undefined,
     statusDateLabel: messages.value.statusDate,
     showProgressLine: props.showProgressLine,
+    constraintLabels: Object.fromEntries(timelineConstraintKinds.map(kind => [kind, messages.value[kind]!])),
+    constraintViolatedLabel: messages.value.constraintViolated,
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
@@ -2665,10 +2869,10 @@ onUnmounted(() => {
     <div
       ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
-      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveCreate($event); moveRowDrag($event)"
-      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
-      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
-      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishCreate($event); finishRowDrag($event)"
+      @pointermove="moveTouch($event); moveEdit($event); moveLink($event); moveProgress($event); moveConstraint($event); moveCreate($event); moveRowDrag($event)"
+      @pointerup="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
+      @pointercancel="endTouch($event); finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
+      @lostpointercapture="finishEdit($event); finishLink($event); finishProgress($event); finishConstraint($event); finishCreate($event); finishRowDrag($event)"
     >
       <div v-if="!validationError" ref="canvas" class="vw-gantt-canvas" :style="{
         width: `calc(var(--vw-label-area-width) + ${axis.width}px)`,
@@ -2796,16 +3000,16 @@ onUnmounted(() => {
             <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-last" data-edit-mode="end" aria-hidden="true"></span>
             <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
           </button>
-          <div v-for="item in row.deadlines" :key="item.bar.id + ':deadline'" class="vw-gantt-deadline" :class="{ 'vw-late': item.late }"
-            :style="item.style" aria-hidden="true"></div>
-          <template v-if="(linkHandlesVisible || progressHandlesVisible) && !row.progress">
+          <!-- Deadline indicators and the constraint markers of bars without handles share one list, so the default markup stays unchanged. -->
+          <div v-for="item in row.decorations" :key="item.key" :class="item.className" :style="item.style" aria-hidden="true"></div>
+          <template v-if="(linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible) && !row.progress">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
               <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                 @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
             </template>
           </template>
           <template v-else-if="row.progress">
-            <template v-if="linkHandlesVisible || progressHandlesVisible">
+            <template v-if="linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible">
               <template v-for="bar in row.bars" :key="bar.id + ':links'">
                 <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                   @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
@@ -2908,7 +3112,11 @@ onUnmounted(() => {
         <slot name="tooltip" :bar="tooltipBar" :range="rangeOf(tooltipBar)" :selected="Boolean(selectedIds?.has(tooltipBar.id))" />
       </div>
     </template>
-    <span :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+    <span v-if="!constraintHandlesVisible" :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+    <template v-else>
+      <span :id="marker + '-hint'" class="vw-sr-only">{{ messages.editHint }}</span>
+      <span :id="marker + '-constraint-hint'" class="vw-sr-only">{{ messages.constraintHint }}</span>
+    </template>
     <span v-if="rowDraggable && !rowHandlesVisible" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>
     <template v-else-if="rowHandlesVisible">
       <span v-if="rowDraggable" :id="marker + '-row-hint'" class="vw-sr-only">{{ messages.moveRowHint }}</span>

@@ -3,6 +3,7 @@ import type {
   TimelineLoadSegment, TimelineRow, TimelineSummary,
 } from './types.js'
 import type { TimelineBaselineVariance } from './types.js'
+import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraints } from './types.js'
 import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
@@ -27,6 +28,73 @@ export const timelineBaselineId = '$baseline'
 
 /** The most baseline sets GanttChart and `renderTimelineSvg` draw at once. */
 export const timelineBaselineLimit = 3
+
+/** Every `TimelineConstraintKind`, in the order GanttChart describes and draws them. */
+export const timelineConstraintKinds: readonly TimelineConstraintKind[] = Object.freeze([
+  'startNoEarlierThan', 'startNoLaterThan', 'finishNoEarlierThan', 'finishNoLaterThan', 'fixedStart',
+] as const)
+
+function checkConstraintKind(kind: unknown): asserts kind is TimelineConstraintKind {
+  if (!timelineConstraintKinds.includes(kind as TimelineConstraintKind)) throw new Error('Unknown constraint kind: ' + String(kind))
+}
+
+/**
+ * Whether the interval breaks the constraint `kind` at `time`: a start before `startNoEarlierThan` or after
+ * `startNoLaterThan`, a finish (`end`) before `finishNoEarlierThan` or after `finishNoLaterThan`, or a start other than
+ * `fixedStart`. GanttChart and `renderTimelineSvg` draw such a constraint as violated.
+ */
+export function timelineConstraintViolated(range: TimeRange, kind: TimelineConstraintKind, time: number): boolean {
+  checkConstraintKind(kind)
+  switch (kind) {
+    case 'startNoEarlierThan': return range.start < time
+    case 'startNoLaterThan': return range.start > time
+    case 'finishNoEarlierThan': return range.end < time
+    case 'finishNoLaterThan': return range.end > time
+    default: return range.start !== time
+  }
+}
+
+/**
+ * The constraint fields of any object, for example a `ScheduleTask`, as a new `TimelineConstraints` with only the
+ * kinds that are set, or undefined when none is. Use it to build `TimelineBar.constraints` from scheduler tasks; the
+ * other direction needs no helper, because `{ ...task, ...bar.constraints }` is a valid `ScheduleTask`.
+ */
+export function timelineConstraints(source: Readonly<TimelineConstraints> | undefined): TimelineConstraints | undefined {
+  let result: TimelineConstraints | undefined
+  for (const kind of timelineConstraintKinds) {
+    const time = source?.[kind]
+    if (time === undefined) continue
+    if (typeof time !== 'number' || !Number.isFinite(time)) throw new RangeError(`Constraint ${kind} must be a finite time`)
+    ;(result ??= {})[kind] = time
+  }
+  return result
+}
+
+/**
+ * Apply a GanttChart `constraint-edit` proposal: returns a new array in which the bar `change.id` is a copy with
+ * `constraints[change.kind]` set to `change.after`, or without it when `after` is undefined (the `constraints` field is
+ * left out once it is empty). Other bars are the same objects. The input is not modified. Throws an Error for an unknown
+ * bar or kind and a RangeError for an `after` that is not a finite time. `before` is not compared with the bar.
+ */
+export function applyTimelineConstraintEdit<B extends TimelineBar>(bars: readonly B[], change: TimelineConstraintEdit): B[] {
+  checkConstraintKind(change.kind)
+  const after = change.after
+  if (after !== undefined && (typeof after !== 'number' || !Number.isFinite(after))) {
+    throw new RangeError(`Constraint ${change.kind} must be a finite time`)
+  }
+  let found = false
+  const result = bars.map(bar => {
+    if (bar.id !== change.id) return bar
+    found = true
+    const constraints: TimelineConstraints = { ...bar.constraints }
+    if (after === undefined) delete constraints[change.kind]
+    else constraints[change.kind] = after
+    const { constraints: _previous, ...rest } = bar
+    return (Object.values(constraints).some(value => value !== undefined) ? { ...rest, constraints } : rest) as B
+  })
+  if (!found) throw new Error('Unknown bar: ' + change.id)
+  return result
+}
 
 /** A bar's interval in baseline set `id`: `bar.baseline` for `timelineBaselineId`, otherwise the matching `bar.baselines` entry. */
 export function timelineBaseline(bar: Pick<TimelineBar, 'baseline' | 'baselines'>, id: string): TimeRange | undefined {
@@ -264,6 +332,17 @@ function checkSegments(bar: TimelineBar) {
   }
 }
 
+function checkConstraints(bar: TimelineBar) {
+  const constraints: unknown = bar.constraints
+  if (!constraints || typeof constraints !== 'object' || Array.isArray(constraints)) throw new Error('constraints must be an object: ' + bar.id)
+  for (const kind of timelineConstraintKinds) {
+    const time = (constraints as TimelineConstraints)[kind]
+    if (time !== undefined && (typeof time !== 'number' || !Number.isFinite(time))) {
+      throw new RangeError(`Constraint ${kind} of bar ${bar.id} must be a finite time`)
+    }
+  }
+}
+
 function checkBaselines(bar: TimelineBar) {
   const list: unknown = bar.baselines
   if (!Array.isArray(list)) throw new Error('baselines must be an array: ' + bar.id)
@@ -319,6 +398,7 @@ export function validateTimelineData(
     }
     if (bar.deadline !== undefined && !Number.isFinite(bar.deadline)) throw new RangeError('deadline must be finite: ' + bar.id)
     if (bar.segments !== undefined) checkSegments(bar)
+    if (bar.constraints !== undefined) checkConstraints(bar)
   }
   for (const dependency of dependencies) {
     if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)

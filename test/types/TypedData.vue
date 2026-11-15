@@ -10,6 +10,8 @@ import {
   type GraphLayoutFunction, type GraphNodeMove, type NetworkGraphExposed, type NetworkGroup, type NetworkNode,
   type TimelineBar, type TimelineCellEdit, type TimelineColumn, type TimelineEdit, type TimelineRow,
   type TimelineRowMove,
+  applyTimelineConstraintEdit, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit, type TimelineConstraintKind,
+  type TimelineConstraints, type MsProjectTask,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -41,6 +43,18 @@ const baselineSvg: string = renderTimelineSvg(rows, baselineBars, [], { width: 1
   barLabel: bar => String(cost(bar.data)),
 })
 function sets(bar: TimelineBar<Cost>) { return bar.baselines?.map(item => item.id).join() }
+// Constraints: bar constraints spread into a ScheduleTask and back, and applying a proposal keeps the bar type.
+const constrainedBars: TimelineBar<Cost>[] = [{ ...bars[0]!, constraints: { startNoEarlierThan: 0, fixedStart: 1 } }]
+const constrainedTask: ScheduleTask = { id: 'b', duration: 1, ...constrainedBars[0]!.constraints }
+const fromTask: TimelineConstraints | undefined = timelineConstraints(constrainedTask)
+const appliedBars: TimelineBar<Cost>[] = applyTimelineConstraintEdit(constrainedBars, { id: 'b', kind: 'fixedStart', before: 1, after: undefined, source: 'pointer' })
+const msConstrained: MsProjectTask = { id: 'b', name: 'B', start: 0, end: 1, constraints: constrainedBars[0]!.constraints }
+// @ts-expect-error The project deadline is not a bar constraint.
+const notAKind: TimelineConstraintKind = 'deadline'
+// @ts-expect-error Constraint times are numbers.
+const textConstraint: TimelineConstraints = { startNoEarlierThan: '1' }
+function constraintEdit(change: TimelineConstraintEdit) { return change.kind + (change.after ?? 'removed') }
+const validateConstraintEdit = (change: TimelineConstraintEdit) => change.after === undefined || change.after >= 0
 // Unannotated array literals: the slots still see the optional fields of the base types.
 const literalNodes = [{ id: 'x', label: 'X' }]
 const literalRows = [{ id: 'r', label: 'Row' }]
@@ -110,6 +124,7 @@ const moved: TeamRow[] = moveTimelineRow(rows, 'r', { index: 0 })
 const svg = renderGraphSvg(layoutLayeredGraph(nodes, edges), nodes, edges, { nodeLabel: node => node.label + priority(node.priority) })
 const layoutResult: GraphLayout = typedLayout(nodes, edges)
 void [useRefs, vnodes, registered, moved, svg, layoutResult, wrongColumns, variance, msBaseline, unnamed, baselineSvg]
+void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
 </script>
 
 <template>
@@ -187,6 +202,13 @@ void [useRefs, vnodes, registered, moved, svg, layoutResult, wrongColumns, varia
     :format-variance="delta => delta.toFixed(1)">
     <template #tooltip="{ bar }">{{ sets(bar) }} {{ cost(bar.data) }}</template>
   </GanttChart>
+  <GanttChart :rows="rows" :bars="constrainedBars" :range="range" constraints-editable :validate-constraint-edit="validateConstraintEdit"
+    @constraint-edit="constraintEdit" @constraint-edit-rejected="(change, text) => constraintEdit(change) + reason(text)">
+    <template #tooltip="{ bar }">{{ bar.constraints?.fixedStart }} {{ cost(bar.data) }}</template>
+  </GanttChart>
+  <!-- @vue-expect-error A constraint validator receives constraint edits, not bar edits. -->
+  <GanttChart :rows="rows" :bars="bars" :range="range" :validate-constraint-edit="validateEdit" />
+
   <!-- @vue-expect-error Baseline set IDs are strings. -->
   <GanttChart :rows="rows" :bars="bars" :range="range" :baseline-ids="[1, 2]" />
 

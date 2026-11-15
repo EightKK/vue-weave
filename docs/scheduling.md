@@ -73,6 +73,36 @@ const nonWorkingPeriods = invertWorkPeriods(periods, range)
 
 Critical bars get an outline, `latestEnd` draws a float line from the end of the bar, a `deadline` adds an indicator and marks a bar that ends after it as late, and `segments` draw the work pieces joined by a connector across each gap. The same information is added to each bar's accessible description. The chart still only proposes edits. A move preview shifts the segments with the bar, and a resize preview shows the plain interval. Turn the accepted `TimelineEdit` into a new constraint, for example `startNoEarlierThan`, call `scheduleTasks` again and pass the new bars, so segments, float and critical flags follow the recalculated plan. `scheduledBarFields` omits `segments` for a task with a single work segment and for milestones, which cannot have segments. ALAP tasks report their placed dates with the latest finish of the plan.
 
+### Scheduling constraints from the chart
+
+`TimelineBar.constraints` uses the names of the `ScheduleTask` bounds (`startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan` and `fixedStart`), so the two map one to one in both directions, and the chart can show and edit them. `timelineConstraints(task)` copies the constraint fields of a task (and nothing else) for a bar; a bar's constraints spread into a task unchanged. With `constraintsEditable`, the chart turns the constraints of editable bars into handles and proposes each move or removal through `constraint-edit`; it never changes the plan itself. Apply the proposal to your tasks, schedule again and show the diagnostic when the new bound cannot be met (see [Diagnose failures](#diagnose-failures)):
+
+```ts
+import {
+  scheduleTasks, scheduledBarFields, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit,
+} from 'vue-weave/core'
+
+const bars = computed(() => plan.value.tasks.map(task => ({
+  id: task.id, rowId: task.id, label: labels.get(task.id)!, editable: true,
+  ...scheduledBarFields(task),
+  constraints: timelineConstraints(tasks.value.find(item => item.id === task.id)),
+})))
+
+function onConstraintEdit(change: TimelineConstraintEdit) {
+  const next = tasks.value.map((task): ScheduleTask => {
+    if (task.id !== change.id) return task
+    const { [change.kind]: _previous, ...rest } = task
+    return change.after === undefined ? rest : { ...rest, [change.kind]: change.after }
+  })
+  const result = scheduleTasks({ ...input, tasks: next })
+  if (!result.ok) return report(result) // for example: 'pack' cannot meet ['finishNoLaterThan'] with link 'cut-b-pack'
+  tasks.value = next
+  plan.value = result
+}
+```
+
+If the bars themselves are your source of truth, apply the proposal with `applyTimelineConstraintEdit(bars, change)` and build the tasks with `{ id: bar.id, duration, ...bar.constraints }`. The chart does not check feasibility: conflicting constraints are valid chart data, and a constraint that the bar's dates break is drawn as violated, which is what a plan from `scheduleTasks` never shows. The project `deadline` and `mode` are not bar constraints; draw a due date with `TimelineBar.deadline`. `toMsProjectXml` writes a task's constraint when it has exactly one (`MsProjectTask.constraints`).
+
 ## Propagate an edit
 
 `propagateEdit(input, edit)` answers "what else moves if this task moves?". `edit` is a `ScheduleEdit` with the task `id`, a new `start` and an optional new `end`. The function schedules a copy of the plan in which the task has `fixedStart` at the new start, replacing any fixed start it had. With `end`, the task's working duration becomes the working time in `[start, end)` on its own calendar, after its pauses, so resizing a bar across a break keeps only the working hours. Every other bound of the task, every dependency, the horizon and the deadline still apply. The input is not modified.
@@ -220,5 +250,7 @@ Drag **Cut order A** two hours to the right with the pointer: while it is held, 
 The link from **Cut order B** to packing has a two-hour lead (`lag: -2 * hour`), labelled `−2 h`: packing may overlap the last two hours of cutting order B. It does not bind in the original plan. Drag **Cut order B** five hours later, to 15:00–17:00: the preview moves packing to 15:00, two hours before B finishes, and releasing it applies the same dates. Without the lead packing would wait for 17:00 and move past the closure.
 
 The demo shades breaks, nights and the closed date with `invertWorkPeriods` and builds its bars with `scheduledBarFields`. Inspection crosses the lunch break, so it is drawn as two work pieces. Critical tasks have a red outline, **Cut order B** shows its float as a thin line, and packing has a dispatch deadline at 17:00 on 9 November. After the second move, packing is split by the closure and marked late. Clear **Shade non-working time** or **Show critical path and float** to hide these layers, and use **Export schedule SVG** to save the chart with them.
+
+Check **Show scheduling constraints** (off by default) to give packing a hard `finishNoLaterThan` at the 17:00 cut-off, which the scheduler applies, unlike the display-only deadline, and to show the requested start of each cutting order as a `startNoEarlierThan` handle. Drag the handle of **Cut order B** from 10:00 to 13:00: the demo applies the `constraint-edit` proposal to its tasks and reschedules. Drag it three hours further: packing can no longer finish by 17:00, so the demo shows the scheduler's diagnostic, "Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A", and keeps the plan. Focus the handle to move it with the arrow keys or remove it with Delete. With the option on, **Export MS Project XML** writes packing's constraint as `ConstraintType` 7.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).

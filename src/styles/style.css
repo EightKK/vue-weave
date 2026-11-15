@@ -262,6 +262,26 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vw-border, #c3d2dc); }
 .vw-column-resize:hover::after, .vw-column-resize.vw-is-active::after { background: var(--vw-accent, #245e96); }
 .vw-column-resize:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
+/* Scheduling constraints (TimelineBar.constraints), and their handles with constraintsEditable. The 26 × 14 px box is
+   centred on the time and holds the flag: at the top for a start bound, at the bottom for a finish bound, pointing
+   towards the allowed times (vw-is-lower: later; vw-is-upper: earlier). A fixed start is an I-beam. The stem (::after)
+   reaches across the lane. Drawn left to right and mirrored as a whole in right-to-left charts. */
+.vw-gantt .vw-gantt-constraint { position: absolute; z-index: 4; box-sizing: border-box; width: 26px; height: 14px; padding: 0; border: 0; border-radius: 2px; color: var(--vw-constraint, #a1246e); background: linear-gradient(currentColor, currentColor) no-repeat; background-size: 8px 2px; filter: drop-shadow(0 0 1px var(--vw-surface, #fff)) drop-shadow(0 0 1px var(--vw-surface, #fff)); pointer-events: none; }
+.vw-gantt-constraint.vw-is-start { background-position: 13px 0; }
+.vw-gantt-constraint.vw-is-finish { background-position: 13px 12px; }
+.vw-gantt-constraint.vw-is-upper { background-position-x: 5px; }
+.vw-gantt-constraint::before { content: ""; position: absolute; left: 19px; top: -3.5px; border-block: 4.5px solid transparent; border-left: 7px solid currentColor; }
+.vw-gantt-constraint.vw-is-finish::before { top: auto; bottom: -3.5px; }
+.vw-gantt-constraint.vw-is-upper::before { left: 0; border-left: 0; border-right: 7px solid currentColor; }
+.vw-gantt-constraint::after { content: ""; position: absolute; left: 12px; top: 0; width: 2px; height: var(--vw-constraint-reach, 14px); background: currentColor; pointer-events: none; }
+.vw-gantt-constraint.vw-is-finish::after { top: auto; bottom: 0; }
+.vw-gantt-constraint.vw-is-fixed { background-size: 16px 3px; background-position: 5px 0; }
+.vw-gantt-constraint.vw-is-fixed::before { left: 5px; top: calc(var(--vw-constraint-reach, 14px) - 3px); width: 16px; height: 3px; border: 0; background: currentColor; }
+.vw-gantt .vw-gantt-constraint.vw-is-violated { color: var(--vw-constraint-violated, #c4161c); }
+.vw-gantt-constraint.vw-is-violated::after { background: repeating-linear-gradient(currentColor 0 3px, transparent 3px 5px); }
+.vw-gantt button.vw-gantt-constraint { pointer-events: auto; cursor: ew-resize; touch-action: none; }
+.vw-gantt button.vw-gantt-constraint:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-gantt.vw-rtl .vw-gantt-constraint { scale: -1 1; }
 
 /* Built-in dark theme. Opt in with `vw-theme-dark`, or follow the OS with `vw-theme-auto`; place the class on a component root or any ancestor. */
 .vw-theme-dark {
@@ -276,6 +296,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
   --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
   --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
   --vw-dimmed-opacity: .4;
   --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
 }
@@ -293,6 +314,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
     --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
     --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
     --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
     --vw-dimmed-opacity: .4;
     --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
   }
@@ -388,6 +410,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-row-drop { forced-color-adjust: none; background: Highlight; }
   .vw-gantt-status-date, .vw-gantt.vw-rtl .vw-gantt-status-date { border-left: 0; border-inline-start: 3px solid CanvasText; }
   .vw-gantt-progress-line polyline { stroke: CanvasText; stroke-dasharray: 6 2; }
+  .vw-gantt .vw-gantt-constraint, .vw-gantt .vw-gantt-constraint.vw-is-violated { forced-color-adjust: none; color: CanvasText; filter: drop-shadow(0 0 1px Canvas) drop-shadow(0 0 1px Canvas); }
+  .vw-gantt button.vw-gantt-constraint:focus-visible { outline: 3px solid Highlight; }
 }
 
 @media print {

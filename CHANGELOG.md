@@ -29,6 +29,9 @@ No changes yet.
 - Core helpers `baselineVariance`, `timelineBaseline` and `timelineBaselineIds`; `renderTimelineSvg`, `exportSvg` and `exportPng` draw the selected sets (options `baselineIds`, `baselineLabel`, `formatVariance`, `varianceLabels`; theme `baseline2`, `baseline3`).
 - `toMsProjectXml` writes task baselines (`MsProjectTask.baselines`, `MsProjectBaseline` numbers 0–10) as MSPDI `Baseline` elements.
 - Dependency lag labels are drawn in their own layer above marker, now and status-date lines (in GanttChart and `renderTimelineSvg`), so a line crossing a label does not cover its text.
+- GanttChart: scheduling constraints on bars (`TimelineBar.constraints`: `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, named as in `ScheduleTask`) are drawn as markers that show their kind, direction and a violated state, are added to the bar's description and are exported by `exportSvg`, `exportPng` and `renderTimelineSvg` (`--vw-constraint`, `--vw-constraint-violated`).
+- GanttChart: opt-in `constraintsEditable` turns the constraints of editable bars into slider handles that propose moves and removals by pointer or keyboard through `constraint-edit`, checked by `validateConstraintEdit`; a rejected change emits `constraint-edit-rejected`.
+- Core: `applyTimelineConstraintEdit`, `timelineConstraints`, `timelineConstraintViolated` and `timelineConstraintKinds`; `toMsProjectXml` writes a task's single constraint as `ConstraintType` and `ConstraintDate` (`MsProjectTask.constraints`).
 
 ### Changed
 

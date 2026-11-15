@@ -576,6 +576,78 @@ test('the scheduling demo shades non-working time and describes critical, float,
   expect(errors).toEqual([])
 })
 
+test('the scheduling demo shows scheduling constraints, reschedules when one moves and reports an infeasible one', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const finish = page.getByTestId('schedule-finish')
+  const toggle = page.getByRole('checkbox', { name: 'Show scheduling constraints', exact: true })
+  const packing = plan.getByRole('button', { name: 'Pack order A 09 Nov 14:00–09 Nov 16:00', exact: true })
+  // Off by default: no markers, no handles and the descriptions of before.
+  await expect(toggle).not.toBeChecked()
+  await expect(plan.locator('.vw-gantt-constraint')).toHaveCount(0)
+  await expect(packing).toHaveAccessibleDescription('Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00.')
+
+  await toggle.check()
+  await expect(finish).toHaveText('09 Nov 16:00')
+  // Packing is not editable, so its hard cut-off is a marker in its description; cutting order B gets a handle.
+  await expect(packing).toHaveAccessibleDescription('Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00. Finish no later than 09 Nov 17:00.')
+  await expect(plan.locator('.vw-gantt-constraint.vw-is-finish.vw-is-upper[aria-hidden="true"]')).toHaveCount(1)
+  const constraint = plan.getByRole('slider', { name: 'Start no earlier than · Cut order B', exact: true })
+  await expect(constraint).toHaveAttribute('aria-valuetext', '09 Nov 10:00')
+  await expect(plan.getByRole('slider')).toHaveCount(1)
+
+  // A drag of 3 hours (18 px each) proposes 13:00; the demo reschedules.
+  const status = page.getByRole('status').filter({ hasText: /Cut order B|Infeasible/ })
+  let box = (await constraint.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 54, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(status).toHaveText('Cut order B: start no earlier than 09 Nov 13:00. Plan recalculated.')
+  await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 13:00–09 Nov 15:00', exact: true })).toBeVisible()
+  await expect(constraint).toHaveAttribute('aria-valuetext', '09 Nov 13:00')
+
+  // Three more hours leave packing no room before the cut-off: the scheduler's diagnostic is shown and nothing changes.
+  box = (await constraint.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 54, box.y + box.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(status).toHaveText('Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A. The change was not applied.')
+  await expect(constraint).toHaveAttribute('aria-valuetext', '09 Nov 13:00')
+  await expect(finish).toHaveText('09 Nov 16:00')
+
+  // The keyboard: one hour later, then Delete removes the constraint and cutting order B starts at 08:00.
+  await constraint.press('ArrowRight')
+  await expect(status).toHaveText('Cut order B: start no earlier than 09 Nov 14:00. Plan recalculated.')
+  await constraint.press('Delete')
+  await expect(status).toHaveText('Constraint removed from Cut order B. Plan recalculated.')
+  await expect(constraint).toHaveCount(0)
+  await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 08:00–09 Nov 10:00', exact: true })).toBeFocused()
+
+  // The SVG export draws the marker; the MS Project export writes the single constraint of packing.
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export schedule SVG', exact: true }).click()
+  const { readFile } = await import('node:fs/promises')
+  const svg = (await readFile((await (await pending).path())!)).toString('utf8')
+  expect(svg).toContain('<g class="vw-gantt-constraint vw-is-finish vw-is-upper"><title>Finish no later than · Pack order A 09 Nov 17:00</title>')
+  const xmlDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export MS Project XML', exact: true }).click()
+  const xml = (await readFile((await (await xmlDownload).path())!)).toString('utf8')
+  expect(xml).toContain('<ConstraintType>7</ConstraintType><ConstraintDate>2026-11-09T17:00:00</ConstraintDate>')
+
+  // Turned off, the chart is as before.
+  await page.getByRole('button', { name: 'Reset schedule', exact: true }).click()
+  await toggle.uncheck()
+  await expect(plan.locator('.vw-gantt-constraint')).toHaveCount(0)
+  await expect(packing).toHaveAccessibleDescription('Critical. Float until 09 Nov 16:00. Deadline 09 Nov 17:00.')
+  await expect(finish).toHaveText('09 Nov 16:00')
+  expect(errors).toEqual([])
+})
+
 test('a move preview shifts the segments of a split bar and a resize preview draws it unsegmented', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -1475,6 +1547,159 @@ test('gantt progress slider edits by pointer and keyboard, cancels with Escape a
   expect(Math.abs(handle.x - (bar.x + bar.width * 0.7))).toBeLessThanOrEqual(1)
   await slider.press('ArrowRight')
   await expect(status('Billing API progress 25%.')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt constraint markers describe their bars and their handles drag, snap and propose without applying', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const { chart, out } = await openGanttFixture(page, '?constraints=1')
+  const json = async () => JSON.parse((await out('Last constraint edit').textContent()) || 'null')
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  const barB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+  // Constraints are added to the description; the accessible names stay as before.
+  await expect(barA).toHaveAccessibleDescription(/^Start no earlier than 0\. Finish no later than 3\. Arrow keys move/)
+  await expect(barB).toHaveAccessibleDescription(/^Start no later than 5\. Finish no earlier than 7, violated\. Must start on 4\. Arrow keys move/)
+  const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
+  const violated = chart.getByRole('slider', { name: 'Finish no earlier than · Task B', exact: true })
+  await expect(chart.getByRole('slider')).toHaveCount(5)
+  await expect(finish).toHaveAttribute('aria-valuetext', '3')
+  await expect(finish).toHaveAccessibleDescription(/^Arrow keys move the constraint by one snap step/)
+  await expect(violated).toHaveAttribute('aria-valuetext', '7, violated')
+  await expect(violated).toHaveClass(/vw-is-violated/)
+  await expect(finish).not.toHaveClass(/vw-is-violated/)
+
+  // The glyph is centred on its time: 50 px per unit from Task A's start.
+  const a = (await barA.boundingBox())!
+  const centre = async () => {
+    const box = (await finish.boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  let handle = await centre()
+  expect(Math.abs(handle.x - (a.x + 150))).toBeLessThanOrEqual(1)
+  // A drag previews the snapped time and proposes it once on release: 2.4 units snap to 2. Nothing is applied.
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 120, handle.y, { steps: 6 })
+  await expect(finish).toHaveAttribute('aria-valuetext', '5')
+  await expect(finish).toHaveClass(/vw-is-dragging/)
+  await expect(barA).toHaveAccessibleDescription(/Finish no later than 5\./)
+  await page.mouse.up()
+  expect(await json()).toEqual({ id: 'a', kind: 'finishNoLaterThan', before: 3, after: 5, source: 'pointer' })
+  await expect(out('Constraint edits')).toHaveText('1')
+  await expect(finish).toHaveAttribute('aria-valuetext', '3')
+  await expect(finish).toBeFocused()
+  // A drag is clamped to editBounds (here the range, from 0).
+  handle = await centre()
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x - 400, handle.y, { steps: 6 })
+  await page.mouse.up()
+  expect(await json()).toMatchObject({ after: 0, source: 'pointer' })
+
+  // Escape ends a drag without a proposal.
+  handle = await centre()
+  await page.mouse.move(handle.x, handle.y)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 120, handle.y, { steps: 6 })
+  await expect(finish).toHaveAttribute('aria-valuetext', '5')
+  await page.keyboard.press('Escape')
+  await expect(finish).toHaveAttribute('aria-valuetext', '3')
+  await page.mouse.up()
+  await expect(out('Constraint edits')).toHaveText('2')
+
+  // Keys propose one step each from the current value: arrows by snap, Shift and Page keys by the tick step, Home and
+  // End to the bounds, Delete removes the constraint. Alt is left to the page.
+  const keys: [string, number | undefined][] = [
+    ['ArrowRight', 4], ['ArrowLeft', 2], ['ArrowUp', 4], ['ArrowDown', 2], ['Shift+ArrowRight', 4], ['PageDown', 2],
+    ['Home', 0], ['End', 200], ['Delete', undefined],
+  ]
+  for (const [key, after] of keys) {
+    await finish.press(key)
+    expect(await json()).toEqual({ id: 'a', kind: 'finishNoLaterThan', before: 3, ...(after === undefined ? {} : { after }), source: 'keyboard' })
+  }
+  await expect(out('Constraint edits')).toHaveText(String(2 + keys.length))
+  await finish.press('Alt+ArrowRight')
+  await expect(out('Constraint edits')).toHaveText(String(2 + keys.length))
+
+  // Decorative markers without the prop, and nothing to focus in a readonly chart.
+  for (const search of ['?constraints=1&display=1', '?constraints=1&readonly=1']) {
+    const { chart } = await openGanttFixture(page, search)
+    await expect(chart.getByRole('slider')).toHaveCount(0)
+    await expect(chart.locator('.vw-gantt-constraint')).toHaveCount(5)
+    await expect(chart.locator('.vw-gantt-constraint[aria-hidden="true"]')).toHaveCount(5)
+    await expect(chart.locator('.vw-gantt-constraint.vw-is-violated')).toHaveCount(1)
+    await expect(chart.locator('.vw-gantt-constraint').first()).toBeVisible()
+  }
+  expect(errors).toEqual([])
+})
+
+test('gantt constraint edits are applied by the parent, rejected through the validator and mirrored right to left', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  // The validator rejects: the reason is announced and nothing is proposed.
+  let { chart, out } = await openGanttFixture(page, '?constraints=1&rejectConstraints=1')
+  const live = chart.locator('xpath=..').locator('[aria-live="polite"]')
+  const locked = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
+  await locked.press('ArrowRight')
+  await expect(live).toHaveText('Constraints are locked in this test.')
+  const box0 = (await locked.boundingBox())!
+  await page.mouse.move(box0.x + box0.width / 2, box0.y + box0.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box0.x + box0.width / 2 + 100, box0.y + box0.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(out('Constraint edits')).toHaveText('0')
+  await expect(locked).toHaveAttribute('aria-valuetext', '3')
+
+  // The parent applies each proposal with applyTimelineConstraintEdit.
+  ;({ chart, out } = await openGanttFixture(page, '?constraints=1&apply=1'))
+  const barB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+  const violated = chart.getByRole('slider', { name: 'Finish no earlier than · Task B', exact: true })
+  await violated.press('ArrowLeft')
+  await expect(violated).toHaveAttribute('aria-valuetext', '6')
+  await expect(violated).not.toHaveClass(/vw-is-violated/)
+  await expect(violated).toBeFocused()
+  await expect(barB).toHaveAccessibleDescription(/Finish no earlier than 6\. Must start on 4\./)
+  await violated.press('ArrowRight')
+  await expect(violated).toHaveAttribute('aria-valuetext', '7, violated')
+  // Delete removes it; focus returns to the bar.
+  await violated.press('Delete')
+  await expect(violated).toHaveCount(0)
+  await expect(barB).toBeFocused()
+  await expect(barB).toHaveAccessibleDescription(/^Start no later than 5\. Must start on 4\. Arrow keys move/)
+  // A pointer drag on the fixed start moves it; the bar itself stays where it is and the constraint is violated.
+  const fixed = chart.getByRole('slider', { name: 'Must start on · Task B', exact: true })
+  const box = (await fixed.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 52, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(fixed).toHaveAttribute('aria-valuetext', '5, violated')
+  await expect(barB).toBeVisible()
+
+  // Right to left: later times are to the left, for the pointer and for the arrow keys.
+  ;({ chart, out } = await openGanttFixture(page, '?constraints=1&rtl=1'))
+  const json = async () => JSON.parse((await out('Last constraint edit').textContent()) || 'null')
+  const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
+  const a = (await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).boundingBox())!
+  const handle = (await finish.boundingBox())!
+  expect(Math.abs(handle.x + handle.width / 2 - (a.x + a.width - 150))).toBeLessThanOrEqual(1)
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2 - 100, handle.y + handle.height / 2, { steps: 5 })
+  await page.mouse.up()
+  expect(await json()).toEqual({ id: 'a', kind: 'finishNoLaterThan', before: 3, after: 5, source: 'pointer' })
+  await finish.press('ArrowLeft')
+  expect(await json()).toMatchObject({ after: 4, source: 'keyboard' })
+  await finish.press('ArrowRight')
+  expect(await json()).toMatchObject({ after: 2, source: 'keyboard' })
+  // The flag of an upper bound points to earlier times: to the right in this chart.
+  const flag = await finish.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const head = getComputedStyle(element, '::before')
+    return { scale: getComputedStyle(element).scale, headLeft: parseFloat(head.left), width: box.width }
+  })
+  expect(flag).toEqual({ scale: '-1 1', headLeft: 0, width: 26 })
   expect(errors).toEqual([])
 })
 
@@ -3726,6 +3951,82 @@ test('a context menu during a gantt bar drag cancels the drag without an edit pr
     await page.mouse.up()
     await expect(out('Last edit')).not.toHaveText('')
     expect(JSON.parse((await out('Last edit').textContent())!)).toMatchObject({ id: 'a', mode: 'move', source: 'pointer' })
+  }
+  expect(errors).toEqual([])
+})
+
+test('a context menu, new bars, a second pointer, pointercancel or lost capture during a constraint drag cancel it without a proposal', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['?constraints=1', '?constraints=1&interactions=1&pinch=1']) {
+    const { chart, out } = await openGanttFixture(page, search)
+    await allowSyntheticCapture(page)
+    const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
+    const element = (await finish.elementHandle())!
+    const box = (await finish.boundingBox())!
+    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    /** Press the handle, drag 2 units to the right, run `interrupt`, then release. */
+    const drag = async (interrupt: () => Promise<unknown>) => {
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x + 100, y, { steps: 5 })
+      await expect(finish).toHaveAttribute('aria-valuetext', '5')
+      await interrupt()
+      await expect(finish).toHaveAttribute('aria-valuetext', '3')
+      await page.mouse.move(x + 150, y, { steps: 2 })
+      await page.mouse.up()
+      await expect(finish).toHaveAttribute('aria-valuetext', '3')
+    }
+    // macOS Control-click: the menu swallows pointerup.
+    await drag(() => element.dispatchEvent('contextmenu', { button: 0, clientX: x + 100, clientY: y }))
+    if (search.includes('interactions')) {
+      // The menu is still reported for the bar.
+      expect(JSON.parse((await out('Last context menu').textContent())!)).toMatchObject({ target: { kind: 'bar', id: 'a' }, source: 'pointer' })
+      // A right-click on a handle starts no drag and reports the bar, its row and the time under the pointer, from which
+      // an application can offer to add a constraint.
+      await page.mouse.click(x + 2, y, { button: 'right' })
+      const menu = JSON.parse((await out('Last context menu').textContent())!)
+      expect(menu).toMatchObject({ target: { kind: 'bar', id: 'a' }, rowId: 'r1', source: 'pointer' })
+      expect(menu.time).toBeCloseTo(3.04, 1)
+    }
+    // New bars from the parent, even equal ones, are new source data.
+    await drag(() => page.getByRole('button', { name: 'Replace bars', exact: true }).dispatchEvent('click'))
+    // The browser ends or takes the pointer.
+    await drag(() => element.dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    await drag(() => element.dispatchEvent('lostpointercapture', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    // Escape on the focused handle.
+    await drag(() => page.keyboard.press('Escape'))
+    await expect(out('Constraint edits')).toHaveText('0')
+
+    // A second primary pointer (a pen) cannot take over or start another constraint drag.
+    const fixed = (await chart.getByRole('slider', { name: 'Must start on · Task B', exact: true }).elementHandle())!
+    const other = (await fixed.boundingBox())!
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 100, y, { steps: 5 })
+    await pen(fixed, 'pointerdown', other.x + other.width / 2, other.y + other.height / 2)
+    await pen(fixed, 'pointermove', other.x + 200, other.y + other.height / 2)
+    await pen(fixed, 'pointerup', other.x + 200, other.y + other.height / 2)
+    await page.mouse.up()
+    await expect(out('Constraint edits')).toHaveText('1')
+    expect(JSON.parse((await out('Last constraint edit').textContent())!)).toEqual({ id: 'a', kind: 'finishNoLaterThan', before: 3, after: 5, source: 'pointer' })
+
+    if (search.includes('pinch')) {
+      // With pinchZoom a second touch starts a pinch, which cancels the constraint drag of the first touch.
+      const touch = (type: string, pointerId: number, clientX: number, target = element) => target.dispatchEvent(type, {
+        pointerId, pointerType: 'touch', isPrimary: pointerId === 11, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1,
+        clientX, clientY: y, bubbles: true, cancelable: true, composed: true,
+      })
+      await touch('pointerdown', 11, x)
+      await touch('pointermove', 11, x + 100)
+      await expect(finish).toHaveAttribute('aria-valuetext', '5')
+      await touch('pointerdown', 12, x + 300)
+      await expect(finish).toHaveAttribute('aria-valuetext', '3')
+      await touch('pointermove', 11, x + 150)
+      await touch('pointerup', 12, x + 300)
+      await touch('pointerup', 11, x + 150)
+      await expect(out('Constraint edits')).toHaveText('1')
+    }
   }
   expect(errors).toEqual([])
 })
