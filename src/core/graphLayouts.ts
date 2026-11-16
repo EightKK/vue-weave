@@ -278,7 +278,8 @@ export function layoutRadialGraph(
   }
 }
 
-export interface GraphCircularLayoutOptions {
+/** Options of `layoutCircularGraph`. `N` is the node type, so `sort` receives your own nodes. */
+export interface GraphCircularLayoutOptions<N extends IdentifiedNode = IdentifiedNode> {
   nodeWidth?: number
   nodeHeight?: number
   /** Free space between neighbouring boxes on the circle. */
@@ -291,7 +292,7 @@ export interface GraphCircularLayoutOptions {
   /** Place nodes clockwise on screen. Default true. */
   clockwise?: boolean
   /** Reorders the nodes before placement (a stable sort of a copy). Default: input order. */
-  sort?: (a: IdentifiedNode, b: IdentifiedNode) => number
+  sort?: (a: N, b: N) => number
 }
 
 export interface GraphGridLayoutOptions {
@@ -304,14 +305,15 @@ export interface GraphGridLayoutOptions {
   columns?: number
 }
 
-export interface GraphConcentricLayoutOptions {
+/** Options of `layoutConcentricGraph`. `N` is the node type, so `level` receives your own nodes. */
+export interface GraphConcentricLayoutOptions<N extends IdentifiedNode = IdentifiedNode> {
   nodeWidth?: number
   nodeHeight?: number
   /** Free space between neighbouring rings and between neighbouring nodes on one ring. */
   ringGap?: number
   padding?: number
   /** Ring metric. Higher values sit closer to the centre. `degree` is the number of incident edges, self-loops excluded. Default: the degree. Must return a finite number. */
-  level?: (node: IdentifiedNode, degree: number) => number
+  level?: (node: N, degree: number) => number
   /** Groups levels into rings: nodes share a ring when floor(level / levelWidth) is equal. Positive. Default: one ring per distinct level. */
   levelWidth?: number
   /** Angle of the first node of each ring in radians. Default: -Math.PI / 2 (top). */
@@ -366,10 +368,10 @@ function circleRadius(count: number, nodeWidth: number, nodeHeight: number, gap:
  * Circular layout: all nodes sit on one circle in input order (or in `sort` order). The radius grows linearly with the
  * node count so neighbouring boxes never overlap. Edges are straight lines between box borders; self-loops are small curves.
  */
-export function layoutCircularGraph(
-  nodes: readonly IdentifiedNode[],
+export function layoutCircularGraph<N extends IdentifiedNode>(
+  nodes: readonly N[],
   edges: readonly GraphEdge[],
-  options: GraphCircularLayoutOptions = {},
+  options: GraphCircularLayoutOptions<N> = {},
 ): GraphLayout {
   const { nodeWidth = 144, nodeHeight = 58, nodeGap = 40, padding = 20, radius, startAngle = -Math.PI / 2, clockwise = true, sort } = options
   checkNumbers({ nodeWidth, nodeHeight, nodeGap, padding }, ['nodeWidth', 'nodeHeight'])
@@ -422,10 +424,10 @@ export function layoutGridGraph(
  * one node diagonal plus `ringGap` apart, so boxes never overlap. Nodes keep input order within a ring. Sorting the
  * distinct levels makes the work O(n + e + k log k) for k rings.
  */
-export function layoutConcentricGraph(
-  nodes: readonly IdentifiedNode[],
+export function layoutConcentricGraph<N extends IdentifiedNode>(
+  nodes: readonly N[],
   edges: readonly GraphEdge[],
-  options: GraphConcentricLayoutOptions = {},
+  options: GraphConcentricLayoutOptions<N> = {},
 ): GraphLayout {
   const { nodeWidth = 144, nodeHeight = 58, ringGap = 40, padding = 20, level, levelWidth, startAngle = -Math.PI / 2 } = options
   checkNumbers({ nodeWidth, nodeHeight, ringGap, padding }, ['nodeWidth', 'nodeHeight'])
@@ -438,7 +440,7 @@ export function layoutConcentricGraph(
     degree.set(from, degree.get(from)! + 1)
     degree.set(to, degree.get(to)! + 1)
   }
-  const buckets = new Map<number, IdentifiedNode[]>()
+  const buckets = new Map<number, N[]>()
   for (const node of nodes) {
     const value = level ? level(node, degree.get(node.id)!) : degree.get(node.id)!
     if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError(`level must return a finite number (node ${node.id})`)
