@@ -4661,6 +4661,9 @@ test('gantt bars and selectable load segments report target events by pointer an
   const { chart, json } = await openLinkedGanttFixture(page)
   await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).hover()
   await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+  // Park the pointer outside the chart: keyboard focus scrolls the chart, and content moving under a resting pointer
+  // would report pointer entries in between the keyboard ones.
+  await page.mouse.move(0, 0)
 
   const segment = chart.getByRole('button', { name: 'Developers 2–6: load 2 / capacity 1, overloaded by 1', exact: true })
   await segment.focus()
