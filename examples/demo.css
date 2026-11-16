@@ -13,6 +13,9 @@ h1 { font-size: clamp(27px, 5vw, 38px); letter-spacing: -.04em; margin: 8px 0; }
 nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 16px; }
 button { border: 1px solid #c6d7e2; background: #fff; color: #24465b; padding: 7px 11px; border-radius: 6px; font-size: 12px; }
 nav button[aria-pressed=true] { background: #1d5169; color: #fff; border-color: #1d5169; }
+.gallery-nav { align-items: center; margin-top: -8px; }
+.gallery-label { margin-inline-end: 4px; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #17736c; }
+.dark .gallery-label { color: #b1c7d7; }
 section { background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d9e4ec); border-radius: 10px; margin-bottom: 16px; padding: 15px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 h2 { font-size: 17px; margin: 0 0 4px; }

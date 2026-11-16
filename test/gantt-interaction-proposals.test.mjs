@@ -63,7 +63,9 @@ test('GanttChart markup is unchanged without the new interaction props', async (
     const disabled = await render({
       ...extra, progressEditable: false, progressStep: 0.05, deletable: false, contextMenu: false, tooltipDelay: 400,
     }, { tooltip: () => 'never on the server' })
-    assert.equal(disabled, plain)
+    // The tooltip slot is never rendered on the server; it only replaces the bars' native titles.
+    assert.doesNotMatch(disabled, / title="/)
+    assert.equal(disabled, plain.replace(/ title="[^"]*"/g, ''))
     assert.doesNotMatch(plain, /role="slider"|vw-gantt-progress-handle|data-vw-progress|delete-hint|role="tooltip"|vw-gantt-tooltip|data-vw-dependency/)
   }
 })

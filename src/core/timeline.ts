@@ -302,13 +302,56 @@ function snapRange(values: readonly number[], mode: EditMode, steps: number, sca
   return { start: start / scale, end: end / scale }
 }
 
-export function dependencyPath(x1: number, y1: number, x2: number, y2: number) {
-  if (x1 < x2) {
-    const middle = (x1 + x2) / 2
-    return `M ${x1} ${y1} H ${middle} V ${y2} H ${x2}`
+/** Shape of a dependency connector: right angles (default), right angles with rounded corners, or a smooth curve. */
+export type DependencyPathStyle = 'orthogonal' | 'rounded' | 'curve'
+
+const dependencyPathStyles: readonly string[] = ['orthogonal', 'rounded', 'curve']
+const dependencyCornerRadius = 6
+const dependencyCurveReach = 30
+
+/**
+ * SVG path of a dependency connector from (x1, y1) to (x2, y2). It leaves the source and enters the target horizontally,
+ * and loops around through the middle when the target starts left of the source. Any other style throws RangeError.
+ */
+export function dependencyPath(x1: number, y1: number, x2: number, y2: number, style: DependencyPathStyle = 'orthogonal') {
+  if (!dependencyPathStyles.includes(style)) throw new RangeError('Unknown dependency path style: ' + String(style))
+  if (style === 'curve') {
+    if (x1 < x2) {
+      const middle = (x1 + x2) / 2
+      return `M ${x1} ${y1} C ${middle} ${y1} ${middle} ${y2} ${x2} ${y2}`
+    }
+    const middleY = (y1 + y2) / 2 + (y1 === y2 ? 14 : 0)
+    const reach = dependencyCurveReach
+    return `M ${x1} ${y1} C ${x1 + reach} ${y1} ${x1 + reach} ${middleY} ${(x1 + x2) / 2} ${middleY} S ${x2 - reach} ${y2} ${x2} ${y2}`
   }
-  const middleY = (y1 + y2) / 2 + (y1 === y2 ? 14 : 0)
-  return `M ${x1} ${y1} h 10 V ${middleY} H ${x2 - 10} V ${y2} H ${x2}`
+  const points: [number, number][] = x1 < x2
+    ? [[x1, y1], [(x1 + x2) / 2, y1], [(x1 + x2) / 2, y2], [x2, y2]]
+    : [[x1, y1], [x1 + 10, y1], [x1 + 10, (y1 + y2) / 2 + (y1 === y2 ? 14 : 0)],
+        [x2 - 10, (y1 + y2) / 2 + (y1 === y2 ? 14 : 0)], [x2 - 10, y2], [x2, y2]]
+  if (style === 'orthogonal') {
+    if (x1 < x2) return `M ${x1} ${y1} H ${points[1]![0]} V ${y2} H ${x2}`
+    return `M ${x1} ${y1} h 10 V ${points[2]![1]} H ${x2 - 10} V ${y2} H ${x2}`
+  }
+  return roundedPolyline(points, dependencyCornerRadius)
+}
+
+// A polyline whose corners are rounded with quadratic curves; a radius never exceeds half of either adjacent segment.
+function roundedPolyline(points: readonly (readonly [number, number])[], radius: number) {
+  let path = `M ${points[0]![0]} ${points[0]![1]}`
+  for (let i = 1; i < points.length - 1; i++) {
+    const [px, py] = points[i - 1]!, [x, y] = points[i]!, [nx, ny] = points[i + 1]!
+    const before = Math.hypot(x - px, y - py), after = Math.hypot(nx - x, ny - y)
+    const r = Math.min(radius, before / 2, after / 2)
+    if (r <= 0) {
+      path += ` L ${x} ${y}`
+      continue
+    }
+    const ax = x - (x - px) / before * r, ay = y - (y - py) / before * r
+    const bx = x + (nx - x) / after * r, by = y + (ny - y) / after * r
+    path += ` L ${ax} ${ay} Q ${x} ${y} ${bx} ${by}`
+  }
+  const [lx, ly] = points[points.length - 1]!
+  return path + ` L ${lx} ${ly}`
 }
 
 export function dependencyTimes(source: TimeRange, target: TimeRange, type: TimelineDependency['type'] = 'FS') {

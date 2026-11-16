@@ -10,13 +10,30 @@ import LinkedPlanningDemo from './LinkedPlanningDemo.vue'
 import AsyncGraphDemo from './AsyncGraphDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
+import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
+import SchemaShowcase from './showcase/SchemaShowcase.vue'
+import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
+import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
+import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
+import BookingShowcase from './showcase/BookingShowcase.vue'
 import { download, imageSize } from './download'
 
 const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
 
 const preset = ref('manufacturing')
+// The design gallery restyles both components with slots, CSS variables and the vw- classes only; each showcase keeps its own state.
+const showcases = [
+  { id: 'workflow', label: 'Workflow builder', component: WorkflowShowcase },
+  { id: 'schema', label: 'Database schema', component: SchemaShowcase },
+  { id: 'org', label: 'Org chart', component: OrgChartShowcase },
+  { id: 'roadmap', label: 'Product roadmap', component: RoadmapShowcase },
+  { id: 'sprint', label: 'Sprint plan', component: SprintGanttShowcase },
+  { id: 'booking', label: 'Room bookings', component: BookingShowcase },
+]
+const showcase = computed(() => showcases.find(item => item.id === preset.value))
 // Demos that keep their own state and ignore the graph and timeline controls of this page.
-const standalone = computed(() => ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async'].includes(preset.value))
+const standalone = computed(() => showcase.value !== undefined
+  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async'].includes(preset.value))
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -497,7 +514,12 @@ function commit(change: TimelineEdit) {
         <button v-if="!standalone" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="!standalone" type="button" :disabled="!canRedo" @click="redo">Redo</button>
       </nav>
-      <SchedulingDemo v-if="preset === 'scheduling'" />
+      <nav class="gallery-nav" aria-labelledby="gallery-nav-label">
+        <span id="gallery-nav-label" class="gallery-label">Design gallery</span>
+        <button v-for="item in showcases" :key="item.id" type="button" :aria-pressed="preset === item.id" @click="preset = item.id">{{ item.label }}</button>
+      </nav>
+      <component :is="showcase.component" v-if="showcase" />
+      <SchedulingDemo v-else-if="preset === 'scheduling'" />
       <GanttEditingDemo v-else-if="preset === 'editing'" />
       <LinkedPlanningDemo v-else-if="preset === 'linked'" />
       <AsyncGraphDemo v-else-if="preset === 'async'" />

@@ -4,6 +4,31 @@
 
 No changes yet.
 
+## 0.4.0 - 2026-11-16
+
+The edge slot change below is the only breaking change; everything else is additive or opt-in.
+
+### Breaking changes
+
+- NetworkGraph `edge` slot: `selected` is now the edge selection (`selectedEdgeIds` with `edgesSelectable`). It used to carry the related state; read the new `related` slot prop for that. Default edges, events and accessible names are unchanged.
+
+### Added
+
+- NetworkGraph `unstyledNodeSlots`: keeps the stylesheet's fill and stroke rules off the content of a `node` slot (`vw-is-unstyled`), so `fill` and `stroke` attributes in the slot take effect. Without the prop, rendering is unchanged.
+- NetworkGraph slot props `related` and `highlighted` on the `node` and `edge` slots, and the exported `NetworkEdgeSlot` type.
+- GanttChart `dependencyStyle` (`orthogonal`, `rounded`, `curve`), core `DependencyPathStyle`, a `style` argument of `dependencyPath` and a `dependencyStyle` option of `renderTimelineSvg`; the export methods follow the prop. The default output is unchanged.
+- GanttChart `stickyBandLabels`: header band labels stay in view while the timeline scrolls.
+- GanttChart `select` passes a second argument, `TimelineSelectDetail` with `dragged`, so a click that ends a drag can be told apart from a plain click. Existing one-argument handlers keep working.
+
+### Fixed
+
+- GanttChart no longer shows the native bar `title` next to the `tooltip` slot, as NetworkGraph already did.
+- GanttChart milestones with `bar` slot content draw their diamond behind the content (`vw-has-slot`) instead of clipping it.
+
+### Examples
+
+- New **Design gallery** in the demo: a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan and a room booking calendar, each with its own visual design built only from the existing slots, `--vw-*` theme variables and `vw-` classes. The showcases are in `examples/showcase/` and are not part of the package; they use the additions above.
+
 ## 0.3.0 - 2026-11-15
 
 Everything below is additive and opt-in: without the new props, options and functions, rendering, accessible names, events and results are the same as in 0.2.0. There are no breaking changes.

@@ -2234,6 +2234,8 @@ test('gantt create drag follows the visual direction in right-to-left charts and
   // Back to LTR in a narrow viewport: dragging towards the right edge scrolls and extends the new interval.
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).uncheck()
   await page.setViewportSize({ width: 640, height: 900 })
+  // The demo navigation wraps onto more lines at this width, so bring the chart on screen before measuring.
+  await chart.scrollIntoViewIfNeeded()
   const corner = (await chart.locator('.vw-gantt-corner').boundingBox())!
   const area = (await chart.boundingBox())!
   const y = (await editingGeometry(chart)).row(2)
@@ -4659,6 +4661,9 @@ test('gantt bars and selectable load segments report target events by pointer an
   const { chart, json } = await openLinkedGanttFixture(page)
   await chart.getByRole('button', { name: 'Task B 8–12', exact: true }).hover()
   await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'timeline', kind: 'bar', id: 'b' }, source: 'pointer' })
+  // Park the pointer outside the chart: keyboard focus scrolls the chart, and content moving under a resting pointer
+  // would report pointer entries in between the keyboard ones.
+  await page.mouse.move(0, 0)
 
   const segment = chart.getByRole('button', { name: 'Developers 2–6: load 2 / capacity 1, overloaded by 1', exact: true })
   await segment.focus()
@@ -5767,4 +5772,228 @@ test.describe('linked views: the context toolbar and deletion', () => {
     await expect.poll(place).toBeLessThan(6)
     expect(errors).toEqual([])
   })
+})
+
+test('the workflow builder showcase applies step moves and connections through the controlled API', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Workflow builder', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Workflow builder' })
+  // The zoom percentage is an <output>, which also has the status role.
+  const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
+
+  const summarize = showcase.getByRole('button', { name: 'Summarize order', exact: true })
+  const initial = await summarize.getAttribute('transform')
+  await summarize.press('ArrowDown')
+  await expect(summarize).not.toHaveAttribute('transform', initial!)
+  await expect(status('Moved Summarize order.')).toBeVisible()
+
+  const edges = showcase.locator('.sc-workflow-edge')
+  await expect(edges).toHaveCount(7)
+  await showcase.getByRole('button', { name: 'Start connection from Log skipped order · output', exact: true }).press('Enter')
+  await showcase.getByRole('button', { name: 'Connect to Notify team · input', exact: true }).press('Enter')
+  await expect(status('Connected Log skipped order to Notify team.')).toBeVisible()
+  await expect(edges).toHaveCount(8)
+  await showcase.getByRole('button', { name: 'Start connection from Summarize order · output', exact: true }).press('Enter')
+  await showcase.getByRole('button', { name: 'Connect to Look up customer · input', exact: true }).press('Enter')
+  await expect(status('Rejected: That connection would create a loop.')).toBeVisible()
+  await showcase.getByRole('button', { name: 'Start connection from Check payment · true', exact: true }).press('Enter')
+  await showcase.getByRole('button', { name: 'Connect to Summarize order · input', exact: true }).press('Enter')
+  await expect(status('Rejected: These steps are already connected.')).toBeVisible()
+  await expect(edges).toHaveCount(8)
+  expect(errors).toEqual([])
+})
+
+test('the database schema showcase traces relationships and keeps table moves controlled', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Database schema', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Database schema' })
+  const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
+
+  const tasks = showcase.getByRole('button', { name: 'tasks 7 columns', exact: true })
+  await tasks.click()
+  await expect(tasks).toHaveAttribute('aria-pressed', 'true')
+  await expect(status('tasks: references projects, users · referenced by comments, task_tags.')).toBeVisible()
+  await expect(showcase.locator('.vw-is-highlighted .sc-schema-edge')).toHaveCount(4)
+  await expect(showcase.locator('.vw-network-node.vw-dimmed')).toHaveCount(2)
+
+  // Two Shift+ArrowLeft presses move tags past the right edge of task_tags, so their relationship changes sides.
+  const tags = showcase.getByRole('button', { name: 'tags 3 columns', exact: true })
+  const initial = await tags.getAttribute('transform')
+  await tags.press('Shift+ArrowLeft')
+  await expect(tags).not.toHaveAttribute('transform', initial!)
+  await expect(status('Moved tags.')).toBeVisible()
+  await tags.press('Shift+ArrowLeft')
+  await expect(status('Moved tags; relationships switched sides.')).toBeVisible()
+  await expect(tags).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('org chart showcase traces a reporting line and folds a team', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Org chart', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Org chart', exact: true })
+  // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
+  const status = showcase.getByRole('status').last()
+  await expect(status).toHaveText('Amara Okafor, Chief Executive Officer (Executive) · 4 direct reports.')
+  await expect(showcase.getByRole('button', { name: 'Amara Okafor Chief Executive Officer', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await showcase.getByRole('button', { name: 'Hana Sato Backend Engineer', exact: true }).click()
+  await expect(status).toHaveText('Hana Sato, Backend Engineer (Engineering) · reports to Priya Raman → Lukas Brenner → Amara Okafor.')
+  const engineering = showcase.getByRole('button', { name: 'Engineering · 6', exact: true })
+  await expect(engineering).toHaveAttribute('aria-expanded', 'true')
+  await engineering.click()
+  await expect(engineering).toHaveAttribute('aria-expanded', 'false')
+  await expect(status).toHaveText('Engineering collapsed: 5 people below Lukas Brenner hidden.')
+  await expect(showcase.getByRole('button', { name: 'Hana Sato Backend Engineer', exact: true })).toHaveCount(0)
+  // The hidden selection moves to the department head.
+  await expect(showcase.getByRole('button', { name: 'Lukas Brenner VP Engineering', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await showcase.getByRole('button', { name: 'Expand all', exact: true }).click()
+  await expect(showcase.getByRole('button', { name: 'Hana Sato Backend Engineer', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('room bookings showcase moves stays and refuses an overlap', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Room bookings', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Room bookings', exact: true })
+  // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
+  const status = showcase.getByRole('status').last()
+  await showcase.getByRole('button', { name: 'Arjun Mehta Fri 27–Mon 30', exact: true }).press('ArrowRight')
+  await expect(showcase.getByRole('button', { name: 'Arjun Mehta Sat 28–Tue 1', exact: true })).toBeVisible()
+  await expect(status).toHaveText('Moved Arjun Mehta to Sat 28–Tue 1 (3 nights) in Room 101.')
+  // Down from Room 203 lands on the Floor 3 heading; the app continues to the first room of that floor.
+  await showcase.getByRole('button', { name: 'Daniel Kim Tue 1–Sat 5', exact: true }).press('ArrowDown')
+  await expect(status).toHaveText('Moved Daniel Kim to Room 301, Tue 1–Sat 5 (4 nights).')
+  const sara = showcase.getByRole('button', { name: 'Sara Haddad Thu 26–Sun 29', exact: true })
+  await sara.press('ArrowRight')
+  await expect(status).toHaveText('Room 302 is taken by Max Müller Sun 29–Wed 2.')
+  await expect(sara).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the product roadmap showcase moves projects through controlled edits and keeps shipped work fixed', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Product roadmap', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
+  await expect(showcase.getByRole('heading', { name: 'Product roadmap', exact: true })).toBeVisible()
+  await expect(showcase.getByRole('list', { name: 'Legend', exact: true })).toContainText('At risk')
+  const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
+  await setup.press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'Guided setup Jan 12–Feb 23', exact: true })).toBeFocused()
+  await expect(showcase.getByRole('status').filter({ hasText: 'Moved Guided setup to Jan 12 – Feb 23' })).toBeVisible()
+  // Shipped projects are not editable, so arrow keys propose nothing.
+  const shipped = page.getByRole('button', { name: 'Welcome emails Jan 4–Jan 29', exact: true })
+  await shipped.press('ArrowRight')
+  await expect(shipped).toBeVisible()
+  await page.getByRole('button', { name: 'Live cursors Jan 4–Feb 8', exact: true }).click()
+  await expect(showcase.getByRole('status').filter({ hasText: 'Live cursors · Done · 100% done · Jonas Weber and Leo Park' })).toBeVisible()
+  await page.getByRole('button', { name: 'Collapse Onboarding', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Guided setup / })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Expand Onboarding', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Guided setup Jan 12–Feb 23', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the sprint plan showcase rejects a move before a predecessor ends and accepts moves and progress edits', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Sprint plan', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Sprint plan', exact: true })
+  await expect(showcase.getByRole('heading', { name: 'Sprint plan', exact: true })).toBeVisible()
+  // Query rewriting starts exactly when Ranking signals ends, so one day earlier breaks the finish-to-start link.
+  const rewrite = page.getByRole('button', { name: 'Query rewriting Nov 24–Dec 2', exact: true })
+  await rewrite.press('ArrowLeft')
+  await expect(showcase.getByRole('status').filter({ hasText: 'Not moved: Query rewriting cannot start before Nov 24: it waits for Ranking signals.' })).toBeVisible()
+  await expect(rewrite).toBeVisible()
+  const address = page.getByRole('button', { name: 'Address autocomplete Nov 18–Nov 26', exact: true })
+  await address.press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'Address autocomplete Nov 19–Nov 27', exact: true })).toBeFocused()
+  await expect(showcase.getByRole('status').filter({ hasText: 'Moved Address autocomplete to Nov 19 – Nov 27 (6 days).' })).toBeVisible()
+  const progress = page.getByRole('slider', { name: 'Progress of Address autocomplete', exact: true })
+  await expect(progress).toHaveAttribute('aria-valuenow', '60')
+  await progress.press('ArrowRight')
+  await expect(progress).toHaveAttribute('aria-valuenow', '65')
+  await expect(showcase.getByRole('status').filter({ hasText: 'Address autocomplete is 65% done.' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('every design gallery showcase fits a phone-width page', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings']) {
+    await page.getByRole('button', { name, exact: true }).click()
+    await expect(page.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), name).toBe(390)
+  }
+  expect(errors).toEqual([])
+})
+
+test('gantt select reports drags, sticky band labels follow the scroll and rounded dependencies draw curves', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Product roadmap', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
+  // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
+  const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
+  const box = (await setup.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 28, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true })).toBeVisible()
+  await expect(showcase.getByRole('status').filter({ hasText: 'Moved Guided setup to Jan 13 – Feb 24' })).toBeVisible()
+  // A plain click still reports the project.
+  await page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true }).click()
+  await expect(showcase.getByRole('status').filter({ hasText: /^Guided setup · / })).toBeVisible()
+
+  // The quarter band starts before the visible part of the axis after scrolling; its label is indented into view.
+  const scroller = showcase.locator('.vw-gantt-scroll')
+  const quarter = showcase.locator('.vw-gantt-band', { hasText: 'Q1 2027' })
+  const indent = async () => parseFloat(await quarter.evaluate(el => getComputedStyle(el).textIndent))
+  expect(await indent()).toBe(0)
+  await scroller.evaluate(el => { el.scrollLeft = 500 })
+  await expect.poll(indent).toBeGreaterThan(0)
+  const label = (await quarter.boundingBox())!, area = (await scroller.boundingBox())!
+  const padding = parseFloat(await quarter.evaluate(el => getComputedStyle(el).paddingLeft))
+  expect(label.x + padding + await indent()).toBeGreaterThan(area.x)
+
+  await page.getByRole('button', { name: 'Sprint plan', exact: true }).click()
+  const links = page.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  expect(await links.count()).toBeGreaterThan(0)
+  for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
+  expect(errors).toEqual([])
+})
+
+test('unstyledNodeSlots keeps the library hover stroke off custom node content', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Workflow builder', exact: true }).click()
+  const card = page.getByRole('button', { name: 'Look up customer', exact: true })
+  await expect(card).toHaveClass(/vw-is-unstyled/)
+  const strokes = () => card.locator('rect').evaluateAll(rects => rects.map(rect => getComputedStyle(rect).strokeWidth))
+  const before = await strokes()
+  await card.hover()
+  expect(await strokes()).toEqual(before)
+  // Without the prop, the main demo's custom nodes still take the stylesheet's hover stroke.
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await page.getByLabel('Custom nodes').check()
+  const split = page.locator('.vw-network-node[data-vw-node="split"]')
+  await expect(split).not.toHaveClass(/vw-is-unstyled/)
+  await split.hover()
+  await expect(split.locator('rect').first()).toHaveCSS('stroke-width', '2.8px')
+  expect(errors).toEqual([])
 })

@@ -77,6 +77,7 @@ function edit(change: TimelineEdit) { return change.id }
 function rowMove(change: TimelineRowMove) { return change.id }
 function cellEdit(change: TimelineCellEdit) { return change.after }
 function reason(value: string) { return value }
+function flag(value: boolean) { return value ? 'y' : 'n' }
 
 // Validators, callbacks and layouts receive the typed items.
 const validateConnection = (change: GraphConnection, replacing?: string) => change.from !== replacing
@@ -219,15 +220,15 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
     @nodes-move="nodeMoves" @node-move="change => nodeMoves([change])" @connect="connection"
     @connect-rejected="(change, text) => connection(change) + reason(text)"
   >
-    <template #node="{ node, box, scale }">
-      <text>{{ owner(node.data) }} {{ priority(node.priority) }} {{ box.width * scale }}</text>
+    <template #node="{ node, box, scale, related, highlighted }">
+      <text>{{ owner(node.data) }} {{ priority(node.priority) }} {{ box.width * scale }} {{ flag(related) + flag(highlighted) }}</text>
       <text>
         <!-- @vue-expect-error The node data is not `any`. -->
         {{ node.data?.missing }}
       </text>
     </template>
-    <template #edge="{ edge, path }">
-      <path :d="path" :data-weight="weight(edge.data)" />
+    <template #edge="{ edge, path, selected, related, highlighted }">
+      <path :d="path" :data-weight="weight(edge.data)" :data-state="flag(selected) + flag(related) + flag(highlighted)" />
       <!-- @vue-expect-error The edge data is not `any`. -->
       <path :d="edge.data?.missing" />
     </template>
@@ -270,7 +271,8 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   <NetworkGraph :nodes="literalNodes" :edges="[]">
     <template #node="{ node }"><text>{{ text(node.detail) }} {{ node.tone }}</text></template>
   </NetworkGraph>
-  <GanttChart :rows="literalRows" :bars="literalBars" :range="range">
+  <GanttChart :rows="literalRows" :bars="literalBars" :range="range" dependency-style="curve" sticky-band-labels
+    @select="(id, detail) => reason(id) + flag(detail.dragged)">
     <template #row="{ row }">{{ text(row.parentId) }} {{ text(row.detail) }}</template>
     <template #bar="{ bar }">{{ bar.progress }} {{ bar.tone }}</template>
   </GanttChart>

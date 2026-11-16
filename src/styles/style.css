@@ -14,14 +14,15 @@
 .vw-tone-amber { --vw-item-ink: var(--vw-amber-ink, #764908); --vw-item-line: var(--vw-amber-line, #b58848); --vw-item-pale: var(--vw-amber-pale, #f9efdc); --vw-item-solid: var(--vw-amber-solid, #825411); }
 .vw-tone-violet { --vw-item-ink: var(--vw-violet-ink, #523b78); --vw-item-line: var(--vw-violet-line, #9983ba); --vw-item-pale: var(--vw-violet-pale, #efe7f8); --vw-item-solid: var(--vw-violet-solid, #624888); }
 .vw-network-node { cursor: pointer; outline: none; }
-.vw-network-node rect { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
-.vw-network-node.vw-is-related rect { stroke: var(--vw-item-ink); stroke-width: 1.7px; }
-.vw-network-node:hover rect, .vw-network-node:focus-visible rect, .vw-network-node.vw-is-selected rect { stroke: var(--vw-item-ink); stroke-width: 2.8px; }
+.vw-network-node:where(:not(.vw-is-unstyled)) rect { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-network-node.vw-is-related:where(:not(.vw-is-unstyled)) rect { stroke: var(--vw-item-ink); stroke-width: 1.7px; }
+.vw-network-node:hover:where(:not(.vw-is-unstyled)) rect, .vw-network-node:focus-visible:where(:not(.vw-is-unstyled)) rect, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) rect { stroke: var(--vw-item-ink); stroke-width: 2.8px; }
 /* Keyboard focus has its own ring outside the node, so it stays visible on selected nodes and on custom node slots. */
 .vw-network-node:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 3px; }
-.vw-network-node.vw-is-selected rect { fill: var(--vw-item-solid); }
-.vw-network-node text { user-select: none; pointer-events: none; fill: var(--vw-item-ink); }
-.vw-network-node.vw-is-selected text { fill: var(--vw-on-solid, #fff); }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) rect { fill: var(--vw-item-solid); }
+.vw-network-node text { user-select: none; pointer-events: none; }
+.vw-network-node:where(:not(.vw-is-unstyled)) text { fill: var(--vw-item-ink); }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text { fill: var(--vw-on-solid, #fff); }
 .vw-node-title { font-size: 15.5px; font-weight: 700; }
 .vw-node-detail { font-size: 12px; font-weight: 550; }
 .vw-network-empty { position: absolute; inset: 30% 0 auto; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; pointer-events: none; }
@@ -58,6 +59,13 @@
 .vw-gantt-bar.vw-is-dragging { cursor: grabbing; }
 .vw-gantt-bar.vw-is-milestone { padding: 0; clip-path: polygon(50% 10%, 100% 50%, 50% 90%, 0 50%); }
 .vw-gantt-bar.vw-is-milestone .vw-bar-text { visibility: hidden; }
+/* A milestone with `bar` slot content draws its diamond behind the content instead of clipping the button, so the slot can
+   show text or icons beside the diamond. */
+.vw-gantt-bar.vw-is-milestone.vw-has-slot { clip-path: none; overflow: visible; background: transparent; border-color: transparent; box-shadow: none; }
+.vw-gantt-bar.vw-is-milestone.vw-has-slot::before, .vw-gantt-bar.vw-is-milestone.vw-has-slot.vw-is-selected::after { content: ""; position: absolute; clip-path: polygon(50% 10%, 100% 50%, 50% 90%, 0 50%); pointer-events: none; }
+.vw-gantt-bar.vw-is-milestone.vw-has-slot::before { inset: 0; z-index: -1; background: var(--vw-item-solid); }
+.vw-gantt-bar.vw-is-milestone.vw-has-slot.vw-is-outline::before { background: var(--vw-item-line); }
+.vw-gantt-bar.vw-is-milestone.vw-has-slot.vw-is-selected::after { inset: -4px; z-index: -2; background: var(--vw-accent, #174878); }
 .vw-bar-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .vw-bar-handle { position: absolute; top: 0; bottom: 0; width: min(8px, 28%); cursor: ew-resize; }
 .vw-bar-handle.vw-is-first { left: 0; }
@@ -140,7 +148,7 @@
 .vw-network-pattern { fill: var(--vw-background-pattern, var(--vw-grid, #c7d6df)); stroke: none; }
 /* Display-only highlights of NetworkGraph (highlightedNodeIds, highlightedEdgeIds), placed after the hover and selected
    strokes so a highlight stays visible on them. Dimming still applies. */
-.vw-network-node.vw-is-highlighted rect { stroke: var(--vw-graph-highlight, var(--vw-dependency-highlight, #a74f08)); stroke-width: 3px; }
+.vw-network-node.vw-is-highlighted:where(:not(.vw-is-unstyled)) rect { stroke: var(--vw-graph-highlight, var(--vw-dependency-highlight, #a74f08)); stroke-width: 3px; }
 .vw-network .vw-is-highlighted .vw-network-edge { stroke: var(--vw-graph-highlight, var(--vw-dependency-highlight, #a74f08)); stroke-width: 2.6; }
 @media (forced-colors: active) {
   .vw-network-node.vw-is-highlighted rect { stroke: Highlight; stroke-width: 4px; stroke-dasharray: 6 3; }
@@ -357,6 +365,9 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-bar.vw-is-selected { border-width: 2px; outline: 3px solid Highlight; outline-offset: 2px; }
   .vw-gantt-bar:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
   .vw-gantt-bar.vw-is-milestone { background: CanvasText; }
+  .vw-gantt-bar.vw-is-milestone.vw-has-slot { background: transparent; }
+  .vw-gantt-bar.vw-is-milestone.vw-has-slot::before { forced-color-adjust: none; background: CanvasText; }
+  .vw-gantt-bar.vw-is-milestone.vw-has-slot.vw-is-selected::after { forced-color-adjust: none; background: Highlight; }
   .vw-bar-progress { inset-block: auto 0; height: 4px; background: Highlight; opacity: 1; }
   .vw-bar-handle::after { background: currentColor; }
   .vw-gantt-bar:hover .vw-bar-handle::after, .vw-gantt-bar.vw-is-selected .vw-bar-handle::after { opacity: 1; }
