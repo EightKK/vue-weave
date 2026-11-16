@@ -277,3 +277,191 @@ export function layoutRadialGraph(
     height: Math.max(1, maxY - minY + 2 * padding),
   }
 }
+
+export interface GraphCircularLayoutOptions {
+  nodeWidth?: number
+  nodeHeight?: number
+  /** Free space between neighbouring boxes on the circle. */
+  nodeGap?: number
+  padding?: number
+  /** Circle radius (distance from the circle centre to the box centres). Throws a RangeError when neighbouring boxes would overlap. Default: the smallest radius that keeps `nodeGap` between neighbours. */
+  radius?: number
+  /** Angle of the first node in radians, measured clockwise from the positive x axis in screen coordinates. Default: -Math.PI / 2 (top). */
+  startAngle?: number
+  /** Place nodes clockwise on screen. Default true. */
+  clockwise?: boolean
+  /** Reorders the nodes before placement (a stable sort of a copy). Default: input order. */
+  sort?: (a: IdentifiedNode, b: IdentifiedNode) => number
+}
+
+export interface GraphGridLayoutOptions {
+  nodeWidth?: number
+  nodeHeight?: number
+  columnGap?: number
+  rowGap?: number
+  padding?: number
+  /** Nodes per row, a positive integer. Default: Math.ceil(Math.sqrt(nodeCount)). */
+  columns?: number
+}
+
+export interface GraphConcentricLayoutOptions {
+  nodeWidth?: number
+  nodeHeight?: number
+  /** Free space between neighbouring rings and between neighbouring nodes on one ring. */
+  ringGap?: number
+  padding?: number
+  /** Ring metric. Higher values sit closer to the centre. `degree` is the number of incident edges, self-loops excluded. Default: the degree. Must return a finite number. */
+  level?: (node: IdentifiedNode, degree: number) => number
+  /** Groups levels into rings: nodes share a ring when floor(level / levelWidth) is equal. Positive. Default: one ring per distinct level. */
+  levelWidth?: number
+  /** Angle of the first node of each ring in radians. Default: -Math.PI / 2 (top). */
+  startAngle?: number
+}
+
+/** Boxes from centre points, then straight border-to-border edges (self-loops as a small curve on the right side). */
+function finishStraightLayout(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], centres: ReadonlyMap<string, { x: number; y: number }>, ranks: ReadonlyMap<string, number>, nodeWidth: number, nodeHeight: number, padding: number): GraphLayout {
+  if (!nodes.length) return { boxes: new Map(), paths: new Map(), edgeLabels: new Map(), width: Math.max(1, 2 * padding), height: Math.max(1, 2 * padding) }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const { id } of nodes) {
+    const point = centres.get(id)!
+    minX = Math.min(minX, point.x - nodeWidth / 2)
+    maxX = Math.max(maxX, point.x + nodeWidth / 2)
+    minY = Math.min(minY, point.y - nodeHeight / 2)
+    maxY = Math.max(maxY, point.y + nodeHeight / 2)
+  }
+  const boxes = new Map<string, GraphBox>()
+  for (const { id } of nodes) {
+    const point = centres.get(id)!
+    boxes.set(id, {
+      x: point.x - nodeWidth / 2 - minX + padding, y: point.y - nodeHeight / 2 - minY + padding,
+      width: nodeWidth, height: nodeHeight, rank: ranks.get(id)!,
+    })
+  }
+  const paths = new Map<string, string>()
+  const edgeLabels = new Map<string, { x: number; y: number }>()
+  let right = maxX - minX + padding
+  for (const edge of edges) {
+    const source = boxes.get(edge.from)!, target = boxes.get(edge.to)!
+    if (edge.from === edge.to) {
+      const x = source.x + source.width, y = source.y + source.height / 2
+      paths.set(edge.id, `M ${x} ${y} C ${x + 30} ${y + 18}, ${x + 30} ${y - 28}, ${x} ${y - 12}`)
+      edgeLabels.set(edge.id, { x: x + 21, y: y - 16 })
+      right = Math.max(right, x + 30)
+      continue
+    }
+    const from = borderPoint(source, { x: target.x + target.width / 2, y: target.y + target.height / 2 })
+    const to = borderPoint(target, { x: source.x + source.width / 2, y: source.y + source.height / 2 })
+    paths.set(edge.id, `M ${from.x} ${from.y} L ${to.x} ${to.y}`)
+    edgeLabels.set(edge.id, { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 - 6 })
+  }
+  return { boxes, paths, edgeLabels, width: Math.max(1, right + padding), height: Math.max(1, maxY - minY + 2 * padding) }
+}
+
+/** Smallest circle radius at which `count` boxes of the given size keep `gap` between neighbours (centre distance of at least the diagonal plus the gap). */
+function circleRadius(count: number, nodeWidth: number, nodeHeight: number, gap: number): number {
+  return count > 1 ? (Math.hypot(nodeWidth, nodeHeight) + gap) / (2 * Math.sin(Math.PI / count)) : 0
+}
+
+/**
+ * Circular layout: all nodes sit on one circle in input order (or in `sort` order). The radius grows linearly with the
+ * node count so neighbouring boxes never overlap. Edges are straight lines between box borders; self-loops are small curves.
+ */
+export function layoutCircularGraph(
+  nodes: readonly IdentifiedNode[],
+  edges: readonly GraphEdge[],
+  options: GraphCircularLayoutOptions = {},
+): GraphLayout {
+  const { nodeWidth = 144, nodeHeight = 58, nodeGap = 40, padding = 20, radius, startAngle = -Math.PI / 2, clockwise = true, sort } = options
+  checkNumbers({ nodeWidth, nodeHeight, nodeGap, padding }, ['nodeWidth', 'nodeHeight'])
+  if (!Number.isFinite(startAngle)) throw new RangeError('startAngle must be finite')
+  if (radius !== undefined && (!Number.isFinite(radius) || radius <= 0)) throw new RangeError('radius must be finite and positive')
+  indexGraph(nodes, edges)
+  const ordered = sort ? nodes.slice().sort(sort) : nodes
+  const count = ordered.length
+  const minimum = circleRadius(count, nodeWidth, nodeHeight, nodeGap)
+  if (radius !== undefined && count > 1 && radius < minimum - 1e-9) throw new RangeError(`radius is too small: ${count} nodes need at least ${minimum}`)
+  const r = radius === undefined ? minimum : count > 1 ? radius : 0
+  const centres = new Map<string, { x: number; y: number }>()
+  const ranks = new Map<string, number>()
+  const direction = clockwise ? 1 : -1
+  ordered.forEach((node, i) => {
+    const angle = startAngle + (direction * 2 * Math.PI * i) / count
+    centres.set(node.id, { x: r * Math.cos(angle), y: r * Math.sin(angle) })
+    ranks.set(node.id, 0)
+  })
+  return finishStraightLayout(nodes, edges, centres, ranks, nodeWidth, nodeHeight, padding)
+}
+
+/**
+ * Grid layout: nodes fill rows of `columns` in input order. `rank` is the row index. Edges are straight lines between
+ * box borders, so they can cross other boxes; self-loops are small curves.
+ */
+export function layoutGridGraph(
+  nodes: readonly IdentifiedNode[],
+  edges: readonly GraphEdge[],
+  options: GraphGridLayoutOptions = {},
+): GraphLayout {
+  const { nodeWidth = 144, nodeHeight = 58, columnGap = 40, rowGap = 24, padding = 20 } = options
+  checkNumbers({ nodeWidth, nodeHeight, columnGap, rowGap, padding }, ['nodeWidth', 'nodeHeight'])
+  const columns = options.columns ?? Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
+  if (!Number.isInteger(columns) || columns < 1) throw new RangeError('columns must be a positive integer')
+  indexGraph(nodes, edges)
+  const centres = new Map<string, { x: number; y: number }>()
+  const ranks = new Map<string, number>()
+  nodes.forEach((node, i) => {
+    const row = Math.floor(i / columns), column = i % columns
+    centres.set(node.id, { x: column * (nodeWidth + columnGap) + nodeWidth / 2, y: row * (nodeHeight + rowGap) + nodeHeight / 2 })
+    ranks.set(node.id, row)
+  })
+  return finishStraightLayout(nodes, edges, centres, ranks, nodeWidth, nodeHeight, padding)
+}
+
+/**
+ * Concentric layout: nodes sit on rings chosen by a metric (the degree by default). Higher levels are closer to the
+ * centre; `rank` is the ring index, 0 for the innermost. Each ring is large enough for its nodes and rings are at least
+ * one node diagonal plus `ringGap` apart, so boxes never overlap. Nodes keep input order within a ring. Sorting the
+ * distinct levels makes the work O(n + e + k log k) for k rings.
+ */
+export function layoutConcentricGraph(
+  nodes: readonly IdentifiedNode[],
+  edges: readonly GraphEdge[],
+  options: GraphConcentricLayoutOptions = {},
+): GraphLayout {
+  const { nodeWidth = 144, nodeHeight = 58, ringGap = 40, padding = 20, level, levelWidth, startAngle = -Math.PI / 2 } = options
+  checkNumbers({ nodeWidth, nodeHeight, ringGap, padding }, ['nodeWidth', 'nodeHeight'])
+  if (levelWidth !== undefined && (!Number.isFinite(levelWidth) || levelWidth <= 0)) throw new RangeError('levelWidth must be finite and positive')
+  if (!Number.isFinite(startAngle)) throw new RangeError('startAngle must be finite')
+  indexGraph(nodes, edges)
+  const degree = new Map<string, number>(nodes.map(node => [node.id, 0]))
+  for (const { from, to } of edges) {
+    if (from === to) continue
+    degree.set(from, degree.get(from)! + 1)
+    degree.set(to, degree.get(to)! + 1)
+  }
+  const buckets = new Map<number, IdentifiedNode[]>()
+  for (const node of nodes) {
+    const value = level ? level(node, degree.get(node.id)!) : degree.get(node.id)!
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError(`level must return a finite number (node ${node.id})`)
+    const key = levelWidth === undefined ? value : Math.floor(value / levelWidth)
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(node)
+    else buckets.set(key, [node])
+  }
+  const keys = [...buckets.keys()].sort((a, b) => b - a)
+  const step = Math.hypot(nodeWidth, nodeHeight) + ringGap
+  const centres = new Map<string, { x: number; y: number }>()
+  const ranks = new Map<string, number>()
+  let previous = -Infinity
+  keys.forEach((key, ring) => {
+    const members = buckets.get(key)!
+    const needed = circleRadius(members.length, nodeWidth, nodeHeight, ringGap)
+    const radius = ring === 0 ? needed : Math.max(previous + step, needed)
+    previous = radius
+    members.forEach((node, i) => {
+      const angle = startAngle + (2 * Math.PI * i) / members.length
+      centres.set(node.id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
+      ranks.set(node.id, ring)
+    })
+  })
+  return finishStraightLayout(nodes, edges, centres, ranks, nodeWidth, nodeHeight, padding)
+}

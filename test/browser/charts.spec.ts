@@ -2439,7 +2439,7 @@ test('network direction, crossing reduction and layout controls', async ({ page 
     await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
-  for (const layout of ['tree', 'radial', 'layered']) {
+  for (const layout of ['tree', 'radial', 'circular', 'grid', 'concentric', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
     await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
@@ -3450,6 +3450,42 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
       expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5).toBe(true)
     }
   }
+  expect(errors).toEqual([])
+})
+
+test('circular, grid and concentric graph layouts render selectable nodes without overlapping boxes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const nodes = page.locator('.vw-network-node')
+  await expect(nodes.first()).toBeVisible()
+  const count = await nodes.count()
+  await page.getByLabel('Edit graph').check()
+  const layout = page.getByLabel('Graph layout')
+  for (const kind of ['circular', 'grid', 'concentric']) {
+    await layout.selectOption(kind)
+    await expect(layout).toHaveValue(kind)
+    await expect(nodes).toHaveCount(count)
+    const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+    const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
+    await expect(split).toBeVisible()
+    await split.click()
+    await finish.click({ modifiers: ['Shift'] })
+    await expect(split).toHaveAttribute('aria-pressed', 'true')
+    await expect(finish).toHaveAttribute('aria-pressed', 'true')
+    const boxes = await nodes.evaluateAll(elements => elements.map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }))
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!, b = boxes[j]!
+        expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5).toBe(true)
+      }
+    }
+  }
+  await layout.selectOption('layered')
+  await expect(nodes).toHaveCount(count)
   expect(errors).toEqual([])
 })
 
