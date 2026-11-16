@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import {
-  GanttChart, assignLanes, calculateResourceLoad, calendarBands, moveTimelineRow, parseCsv, removeTimelineBars, timelineFromCsvTable,
-  timelineLabelColumnId, timelineWbsCodes, useEditHistory, type TimelineBar, type TimelineColumn, type TimelineColumnResize, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency,
+  GanttChart, assignLanes, calculateResourceLoad, calendarBands, fromMsProjectXml, moveTimelineRow, parseCsv, removeTimelineBars,
+  timelineFromCsvTable, timelineFromMsProject, timelineLabelColumnId, timelineWbsCodes, useEditHistory, type TimelineBar, type TimelineColumn, type TimelineColumnResize, type TimelineConnection, type TimelineContextMenu, type TimelineCreate, type TimelineDependency,
   type TimelineEdit, type TimelineProgressEdit, type TimelineReconnect, type TimelineRow, type TimelineRowMove, type TimelineZoomPreset,
   type TimelineZoomState,
 } from '../src'
@@ -59,8 +59,9 @@ const wheel = ref(false)
 const columns = computed<TimelineColumn[] | undefined>(() => reorder.value || resizable.value
   ? [{ id: 'wbs', label: 'WBS', width: model.value.widths.wbs ?? 52, value: row => wbs.value.get(row.id) ?? '' }] : undefined)
 const labelWidth = computed(() => model.value.widths[timelineLabelColumnId])
+// Milestones do no work, so an imported milestone takes no capacity.
 const load = computed(() => calculateResourceLoad(range,
-  model.value.bars.map(bar => ({ id: bar.id, work: [{ start: bar.start, end: bar.end }] })), resources,
+  model.value.bars.map(bar => ({ id: bar.id, work: bar.end > bar.start ? [{ start: bar.start, end: bar.end }] : [] })), resources,
   model.value.bars.flatMap(bar => {
     const resourceId = initialAssignments.get(bar.id) ?? rowResources.get(bar.rowId)
     return resourceId ? [{ resourceId, taskId: bar.id }] : []
@@ -208,6 +209,32 @@ async function importCsv(event: Event) {
     status.value = 'Import failed: ' + (error instanceof Error ? error.message : String(error))
   }
 }
+// "Import MS Project XML" reads a Microsoft Project XML (MSPDI) file whose wall-clock dates are UTC, like this demo, and
+// replaces the rows, bars and dependencies as one undoable step. Summary tasks become parent rows without bars, and what
+// the reader cannot import (such as links from unknown tasks or lags in percent) is counted as warnings.
+async function importMsProject(event: Event) {
+  const input = event.currentTarget as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const project = fromMsProjectXml(await file.text())
+    const timeline = timelineFromMsProject(project)
+    if (!timeline.bars.length) throw new Error('The file has no tasks.')
+    history.commit({
+      ...model.value,
+      rows: timeline.rows,
+      bars: timeline.bars.map(bar => ({ ...bar, editable: true })),
+      dependencies: timeline.dependencies,
+    })
+    selection.value = new Set()
+    selectedDependency.value = undefined
+    const warnings = project.warnings.length === 1 ? ' with 1 warning' : project.warnings.length ? ` with ${project.warnings.length} warnings` : ''
+    status.value = `Imported ${timeline.bars.length} tasks and ${timeline.dependencies.length} dependencies from ${file.name}${warnings}.`
+  } catch (error) {
+    status.value = 'Import failed: ' + (error instanceof Error ? error.message : String(error))
+  }
+}
 // "Auto-arrange lanes" stacks overlapping bars of a row. keepLanes keeps every bar that fits in its lane, so only a
 // new or moved bar that overlaps another one changes lane.
 const arrange = ref(false)
@@ -332,7 +359,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       <button type="button" :disabled="!canRedo" @click="redo">Redo timeline change</button>
       <button type="button" @click="fit()">Fit all bars</button>
       <button type="button" :disabled="!selection.size" @click="fit([...selection])">Fit selection</button>
-      <label class="import-csv">Import CSV <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
+      <label class="import-file">Import CSV <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
+      <label class="import-file">Import MS Project XML <input type="file" accept=".xml,application/xml,text/xml" @change="importMsProject"></label>
     </div>
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom :wheel-zoom="wheel" show-now :now="origin + 3.5 * hour"
@@ -366,8 +394,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 
 <style scoped>
 .editing-actions { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.import-csv { display: inline-flex; align-items: center; gap: 6px; }
-.import-csv input { max-width: 220px; }
+.import-file { display: inline-flex; align-items: center; gap: 6px; }
+.import-file input { max-width: 220px; }
 .context-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 4px; border: 1px solid var(--vw-border, #c6d7e2); border-radius: 7px; background: var(--vw-surface, #fff); box-shadow: 0 6px 18px rgb(0 0 0 / .18); }
 .context-menu button { border: 0; border-radius: 4px; background: transparent; color: var(--vw-text, #24465b); text-align: start; padding: 6px 10px; }
 .context-menu button:hover, .context-menu button:focus-visible { background: var(--vw-surface-hover, #edf5fa); outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
