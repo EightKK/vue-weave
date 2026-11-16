@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.4.0 - 2026-11-16
+
+The edge slot change below is the only breaking change; everything else is additive or opt-in.
+
 ### Breaking changes
 
 - NetworkGraph `edge` slot: `selected` is now the edge selection (`selectedEdgeIds` with `edgesSelectable`). It used to carry the related state; read the new `related` slot prop for that. Default edges, events and accessible names are unchanged.
