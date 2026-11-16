@@ -175,13 +175,13 @@ function cardView(id: string, box: GraphBox) {
     </div>
 
     <NetworkGraph
-      v-model:selected-id="selectedId" :nodes="nodes" :edges="edges" :layout="layoutOrg" :sizes="sizes"
+      v-model:selected-id="selectedId" unstyled-node-slots :nodes="nodes" :edges="edges" :layout="layoutOrg" :sizes="sizes"
       :positions="positions" :related-ids="related" :options="{ direction: 'TB' }" edge-style="orthogonal"
       height="clamp(440px, 54vw, 700px)"
       :labels="{ region: 'Organisation chart' }" @select="select"
     >
-      <template #edge="{ path, selected }">
-        <path class="sc-org-link" :class="{ 'sc-org-link-on': selected }" :d="path" />
+      <template #edge="{ path, related }">
+        <path class="sc-org-link" :class="{ 'sc-org-link-on': related }" :d="path" />
       </template>
       <template #node="{ node, box, selected }">
         <g v-for="c in [cardView(node.id, box)]" :key="c.person.id" class="sc-org-card"

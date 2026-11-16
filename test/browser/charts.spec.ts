@@ -5936,3 +5936,61 @@ test('every design gallery showcase fits a phone-width page', async ({ page }) =
   }
   expect(errors).toEqual([])
 })
+
+test('gantt select reports drags, sticky band labels follow the scroll and rounded dependencies draw curves', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Product roadmap', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
+  // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
+  const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
+  const box = (await setup.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 28, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect(page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true })).toBeVisible()
+  await expect(showcase.getByRole('status').filter({ hasText: 'Moved Guided setup to Jan 13 – Feb 24' })).toBeVisible()
+  // A plain click still reports the project.
+  await page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true }).click()
+  await expect(showcase.getByRole('status').filter({ hasText: /^Guided setup · / })).toBeVisible()
+
+  // The quarter band starts before the visible part of the axis after scrolling; its label is indented into view.
+  const scroller = showcase.locator('.vw-gantt-scroll')
+  const quarter = showcase.locator('.vw-gantt-band', { hasText: 'Q1 2027' })
+  const indent = async () => parseFloat(await quarter.evaluate(el => getComputedStyle(el).textIndent))
+  expect(await indent()).toBe(0)
+  await scroller.evaluate(el => { el.scrollLeft = 500 })
+  await expect.poll(indent).toBeGreaterThan(0)
+  const label = (await quarter.boundingBox())!, area = (await scroller.boundingBox())!
+  const padding = parseFloat(await quarter.evaluate(el => getComputedStyle(el).paddingLeft))
+  expect(label.x + padding + await indent()).toBeGreaterThan(area.x)
+
+  await page.getByRole('button', { name: 'Sprint plan', exact: true }).click()
+  const links = page.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  expect(await links.count()).toBeGreaterThan(0)
+  for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
+  expect(errors).toEqual([])
+})
+
+test('unstyledNodeSlots keeps the library hover stroke off custom node content', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Workflow builder', exact: true }).click()
+  const card = page.getByRole('button', { name: 'Look up customer', exact: true })
+  await expect(card).toHaveClass(/vw-is-unstyled/)
+  const strokes = () => card.locator('rect').evaluateAll(rects => rects.map(rect => getComputedStyle(rect).strokeWidth))
+  const before = await strokes()
+  await card.hover()
+  expect(await strokes()).toEqual(before)
+  // Without the prop, the main demo's custom nodes still take the stylesheet's hover stroke.
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await page.getByLabel('Custom nodes').check()
+  const split = page.locator('.vw-network-node[data-vw-node="split"]')
+  await expect(split).not.toHaveClass(/vw-is-unstyled/)
+  await split.hover()
+  await expect(split.locator('rect').first()).toHaveCSS('stroke-width', '2.8px')
+  expect(errors).toEqual([])
+})

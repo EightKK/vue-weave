@@ -7,7 +7,7 @@ import type {
 } from '../core/types.js'
 import {
   createTimeScale, createTimelineRowTree, dependencyPath, dependencyTimes, editTimeRange, intersectsWindow, validateTimelineData,
-  summarizeTimelineRows, timeTicks, timelineLabelColumnId, visibleRows, type EditMode, type TimeRange, type TimeScale,
+  summarizeTimelineRows, timeTicks, timelineLabelColumnId, visibleRows, type DependencyPathStyle, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
 import { formatDependencyLag } from '../core/timeline.js'
@@ -25,7 +25,7 @@ import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOpt
 import { timelineBaselineId } from '../core/timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
 import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
-import type { TimelineEditCancel, TimelineEditCancelReason } from '../core/types.js'
+import type { TimelineEditCancel, TimelineEditCancelReason, TimelineSelectDetail } from '../core/types.js'
 import type { LoadViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
 import { resolveLoadTargets } from '../core/viewBindings.js'
 import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from '../core/fieldEditing.js'
@@ -141,6 +141,10 @@ const props = withDefaults(defineProps<{
   validateBarsDelete?: BarsDeleteValidator
   /** Hover delay in milliseconds before the `tooltip` slot appears; finite and nonnegative. Default: 400. */
   tooltipDelay?: number
+  /** Shape of the dependency connectors: `orthogonal` (default), `rounded` (rounded corners) or `curve`. Opt-in. */
+  dependencyStyle?: DependencyPathStyle
+  /** Keeps each `headerBands` label inside the visible part of its band while the timeline scrolls. Opt-in. Default: false. */
+  stickyBandLabels?: boolean
   /** Reports context menu requests through `context-menu` instead of opening the browser menu. The component renders no menu. Opt-in. Default: false. */
   contextMenu?: boolean
   /** Enables proposing new bars by dragging or clicking an empty part of a row, or via its add button. Pass `true` for every row or a predicate to choose rows. Default: false. */
@@ -230,8 +234,11 @@ const props = withDefaults(defineProps<{
   loadRowHeight: 44,
 })
 const emit = defineEmits<{
-  /** A bar was activated by click or Enter/Space; carries its ID. Fires once per click, on release. */
-  select: [id: string]
+  /**
+   * A bar was activated by click or Enter/Space; carries its ID and whether the click ended a drag of that bar
+   * (`detail.dragged`, the release after a move or resize proposal). Fires once per click, on release.
+   */
+  select: [id: string, detail: TimelineSelectDetail]
   /** Invalid input data or props were detected; carries the error. The chart then renders its empty state. */
   'validation-error': [error: Error]
   /** Proposal to move or resize one bar. The parent applies it by updating the bar. */
@@ -456,6 +463,9 @@ function validateProps() {
     throw new RangeError('progressStep must be greater than 0 and at most 1')
   }
   if (!Number.isFinite(props.tooltipDelay) || props.tooltipDelay < 0) throw new RangeError('tooltipDelay must be finite and nonnegative')
+  if (props.dependencyStyle !== undefined && !['orthogonal', 'rounded', 'curve'].includes(props.dependencyStyle)) {
+    throw new RangeError('Unknown dependencyStyle: ' + String(props.dependencyStyle))
+  }
   if (props.createDuration !== undefined && (!Number.isFinite(props.createDuration) || props.createDuration <= 0)) {
     throw new RangeError('createDuration must be finite and positive')
   }
@@ -483,7 +493,7 @@ watch([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
   () => stableRange.value, () => stableEditBounds.value, () => props.minDuration, () => stableTickSteps.value, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
-  () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.createDuration,
+  () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.dependencyStyle, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
   () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value,
 ], () => {
@@ -821,6 +831,12 @@ const shownBands = computed(() => (activeBands.value ?? []).map(level => level.f
   if (end <= start) return []
   return [{ ...band, x: axis.value.toX(start), width: axis.value.toX(end) - axis.value.toX(start) }]
 })))
+// With `stickyBandLabels`, a band that starts before the visible part of the axis indents its label to the visible start.
+// The indent leaves the band's own padding, set by the stylesheet or a theme, unchanged.
+function stickyBandStyle(x: number) {
+  const offset = props.stickyBandLabels ? viewport.value.left - x : 0
+  return offset > 0 ? { textIndent: `${offset}px` } : {}
+}
 const shownMarkers = computed(() => (props.markers ?? [])
   .filter(item => item.time >= timeWindow.value.start && item.time < timeWindow.value.end))
 // Markers, then the status date (`statusDate`), share one template element so a chart without a status date renders
@@ -1068,7 +1084,7 @@ const shownLines = computed(() => {
     const y1 = sourceRow * props.rowHeight + laneTop(source) + barHeight.value / 2
     const y2 = targetRow * props.rowHeight + laneTop(target) + barHeight.value / 2
     const lag = dep.lag ? lagLabel(dep, dep.lag, lagLabelPoint(x1, y1, x2, y2, sourceRow * props.rowHeight, props.rowHeight)) : undefined
-    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2), x1, y1, x2, y2, dependency: dep, lag }]
+    return [{ ...dep, path: dependencyPath(x1, y1, x2, y2, props.dependencyStyle), x1, y1, x2, y2, dependency: dep, lag }]
   })
 })
 // Lag labels (`TimelineDependency.lag`). A dependency without a lag, or with lag 0, draws exactly what it did before.
@@ -1572,7 +1588,7 @@ function clickBar(bar: TimelineBar, event: MouseEvent) {
     else ids.add(bar.id)
     emit('update:selectedIds', ids)
   }
-  emit('select', bar.id)
+  emit('select', bar.id, { dragged })
   if (!dragged) activateTarget(barTarget(bar.id), clickSource(event))
 }
 
@@ -3111,6 +3127,7 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     columns: props.columns,
     showSummaries: props.showSummaries,
     headerBands: activeBands.value,
+    dependencyStyle: props.dependencyStyle,
     markers: props.markers,
     now: props.showNow && time !== undefined && time >= stableRange.value.start && time <= stableRange.value.end ? time : undefined,
     nowLabel: messages.value.now,
@@ -3268,7 +3285,7 @@ onUnmounted(() => {
           <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">
             <div v-for="band in level" :key="band.start" class="vw-gantt-band"
-              :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px' }">{{ band.label }}</div>
+              :style="{ [inlineSide]: band.x + 'px', width: band.width + 'px', ...stickyBandStyle(band.x) }">{{ band.label }}</div>
           </div>
         </div>
         <div v-if="shownNonWorking.length" class="vw-gantt-non-working-layer" aria-hidden="true">
@@ -3365,11 +3382,12 @@ onUnmounted(() => {
             v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
             :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'vw-is-outline' : 'vw-is-solid', {
               'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': editable(bar), 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
+              'vw-has-slot': bar.start === bar.end && Boolean($slots.bar),
               'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
               'vw-is-highlighted': highlightedBarIds?.has(bar.id),
             }]"
             :style="barStyle(bar)" :data-vw-bar="bar.id"
-            :title="barTitle(bar, row.overlays.get(bar.id))"
+            :title="$slots.tooltip ? undefined : barTitle(bar, row.overlays.get(bar.id))"
             :aria-label="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
             :aria-pressed="Boolean(selectedIds?.has(bar.id))"
             @keydown="editWithKeys($event, bar)" @focus="onBarFocus($event, bar)" @blur="onBarBlur(bar.id)"

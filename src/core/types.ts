@@ -351,13 +351,39 @@ export interface GanttLabels {
   constraintRejected?: string
 }
 
+/** Second argument of the GanttChart `select` event. */
+export interface TimelineSelectDetail {
+  /** True when the click ended a pointer drag of the bar, which proposed a move or resize through `edit`. */
+  dragged: boolean
+}
+
 /** Props of the NetworkGraph `node` slot. `N` types the node. */
 export interface NetworkNodeSlot<N extends NetworkNode = NetworkNode> {
   node: N
   box: GraphBox
   selected: boolean
   dimmed?: boolean
+  /** True when the node is in `relatedIds`. */
+  related: boolean
+  /** True when the node is in `highlightedNodeIds`. */
+  highlighted: boolean
   /** The current camera scale, for level-of-detail rendering in custom node slots. */
+  scale: number
+}
+
+/** Props of the NetworkGraph `edge` slot. `E` types the edge. */
+export interface NetworkEdgeSlot<E extends GraphEdge = GraphEdge> {
+  edge: E
+  /** The routed SVG path in chart coordinates. */
+  path: string
+  /** True when the edge is selected through `selectedEdgeIds` (only with `edgesSelectable`). Before 0.4.0 this was the related state. */
+  selected: boolean
+  /** True when both ends of the edge are in `relatedIds`. */
+  related: boolean
+  /** True when the edge is in `highlightedEdgeIds`. */
+  highlighted: boolean
+  dimmed?: boolean
+  /** The current camera scale, for level-of-detail rendering in custom edge slots. */
   scale: number
 }
 

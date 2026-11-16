@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import {
   GanttChart, calendarBands, type TimeRange, type TimelineBar, type TimelineEdit, type TimelineMarker, type TimelineRow,
-  type TimelineZoomState,
+  type TimelineSelectDetail, type TimelineZoomState,
 } from '../../src'
 
 // Fixed dates in UTC milliseconds keep the calendar deterministic. Day 0 is Monday 23 November 2026; stays run from
@@ -151,11 +151,6 @@ function applyEdit(change: TimelineEdit) {
   const room = bar && targetRoom(change, bar)
   if (!bar || !room) return
   stays.value = stays.value.map(item => item.id === bar.id ? { ...item, rowId: room, start: change.after.start, end: change.after.end } : item)
-  // The click that ends a pointer drag also emits `select`; it should not replace the message about the move.
-  if (change.source === 'pointer') {
-    draggedId = bar.id
-    setTimeout(() => { draggedId = undefined })
-  }
   const when = `${formatTime(change.after.start)}–${formatTime(change.after.end)} (${nightsText(nights(change.after))})`
   status.value = room !== bar.rowId ? `Moved ${bar.label} to Room ${roomNumber(room)}, ${when}.`
     : change.mode === 'move' ? `Moved ${bar.label} to ${when} in Room ${roomNumber(room)}.`
@@ -164,12 +159,12 @@ function applyEdit(change: TimelineEdit) {
 function reject(_change: TimelineEdit, reason: string) {
   status.value = reason
 }
-let draggedId: string | undefined
-function select(id: string) {
+// The click that ends a drag also emits select (detail.dragged); it keeps the message about the move.
+function select(id: string, selection: TimelineSelectDetail) {
   const bar = stays.value.find(item => item.id === id)
   if (!bar) return
   selectedIds.value = new Set([id])
-  if (id === draggedId) return
+  if (selection.dragged) return
   const info = infoOf(bar)
   const detail = info.status === 'blocked' ? info.note : `${nightsText(nights(bar))} · ${info.channel}`
   status.value = `${bar.label} · Room ${roomNumber(bar.rowId)} · ${formatTime(bar.start)}–${formatTime(bar.end)} · ${detail} · ${statusLabels[info.status]}.`
@@ -206,7 +201,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
       :header-bands="headerBands" :non-working-periods="weekends" :markers="markers" :selected-ids="selectedIds"
       :row-height="48" height="auto" row-draggable :validate-edit="validateEdit"
       :labels="{ region: 'Room booking calendar', rows: 'Rooms' }"
-      @edit="applyEdit" @edit-rejected="reject" @select="select" @zoom-change="onZoom"
+      sticky-band-labels @edit="applyEdit" @edit-rejected="reject" @select="select" @zoom-change="onZoom"
     >
       <template #legend>
         <ul class="sc-booking-legend" aria-label="Legend">

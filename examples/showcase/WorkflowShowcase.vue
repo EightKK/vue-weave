@@ -203,7 +203,7 @@ function commitReconnect(change: GraphReconnect) {
       </div>
     </div>
     <NetworkGraph
-      v-model:selected-id="selectedId" class="sc-workflow-graph" :nodes="steps" :edges="edges" :layout="layoutSteps" :positions="positions"
+      v-model:selected-id="selectedId" unstyled-node-slots class="sc-workflow-graph" :nodes="steps" :edges="edges" :layout="layoutSteps" :positions="positions"
       :height="'clamp(440px, 40vw, 520px)'" :edge-style="edgeStyle" background="dots" :snap-grid="grid"
       draggable connectable reconnectable show-minimap :labels="{ region: 'Workflow canvas' }"
       :validate-connection="validateConnection"

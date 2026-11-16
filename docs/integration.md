@@ -133,10 +133,10 @@ A collapsed group is drawn as a proxy node with the group's ID. Moves of the pro
 
 ## Custom content
 
-The graph node slot receives its node, measured layout box and the camera `scale`. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates.
+The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
 
 ```vue
-<NetworkGraph :nodes="nodes" :edges="edges">
+<NetworkGraph :nodes="nodes" :edges="edges" unstyled-node-slots>
   <template #node="{ node, box, selected }">
     <rect :width="box.width" :height="box.height" :rx="8"
       :fill="selected ? '#d8e9fb' : '#fff'" stroke="#365772" />
@@ -249,6 +249,8 @@ In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1
 | `start`, `finish` | `vw-is-start`, `vw-is-finish` | The start and finish link handles of a Gantt bar (`vw-gantt-link-handle`) |
 | `end` | `vw-is-end` | The tick label at the end of the Gantt range |
 | `overloaded`, `idle` | `vw-is-overloaded`, `vw-is-idle` | Gantt load segments above capacity or without load |
+
+Two newer modifiers exist only with opt-in content: `vw-is-unstyled` on graph node groups rendered by a `node` slot with `unstyledNodeSlots`, and `vw-has-slot` on Gantt milestones rendered with a `bar` slot.
 
 The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-auto`) and the other `vw-` classes, such as `vw-critical`, `vw-dimmed` and `vw-rtl`, keep their names.
 

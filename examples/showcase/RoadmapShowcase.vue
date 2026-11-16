@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { GanttChart, calendarBands, type TimelineBar, type TimelineEdit, type TimelineRow } from '../../src'
+import { GanttChart, calendarBands, type TimelineBar, type TimelineEdit, type TimelineRow, type TimelineSelectDetail } from '../../src'
 
 // A calm product roadmap: initiatives with their projects as child rows, pastel status pills and milestone diamonds.
 // Everything is restyled through slots, --vw-* variables and .sc-roadmap-scoped overrides of the vw- classes.
@@ -101,10 +101,7 @@ function piePath(progress: number) {
   return `M8 8V3A5 5 0 ${progress > 0.5 ? 1 : 0} 1 ${x.toFixed(2)} ${y.toFixed(2)}Z`
 }
 
-// The bar's select event fires after a drag too; it must not overwrite the "Moved …" message of that gesture.
-let edited = false
 function onEdit(change: TimelineEdit) {
-  edited = true
   const bar = bars.value.find(entry => entry.id === change.id)
   if (!bar) return
   bars.value = bars.value.map(entry => entry.id === change.id ? { ...entry, ...change.after } : entry)
@@ -112,10 +109,11 @@ function onEdit(change: TimelineEdit) {
     : `${formatTime(change.after.start)} – ${formatTime(change.after.end)}`
   status.value = `${change.mode === 'move' ? 'Moved' : 'Resized'} ${bar.label} to ${when}`
 }
-function onSelect(id: string) {
+// The click that ends a drag also emits select (detail.dragged); it keeps the "Moved …" message of that gesture.
+function onSelect(id: string, detail: TimelineSelectDetail) {
   selected.value = new Set([id])
   const bar = bars.value.find(entry => entry.id === id)
-  if (!bar || edited) return
+  if (!bar || detail.dragged) return
   const team = bar.data.people.map(person => person.name).join(' and ')
   status.value = bar.start === bar.end
     ? `${bar.label} · milestone on ${formatTime(bar.start)}`
@@ -135,8 +133,7 @@ function onSelect(id: string) {
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :markers="markers" :row-height="rowHeight"
       :height="chartHeight" :selected-ids="selected" :collapsed-ids="collapsed" show-summaries
       :labels="{ region: 'Product roadmap timeline', rows: 'Projects' }"
-      @update:collapsed-ids="collapsed = $event" @edit="onEdit" @select="onSelect"
-      @pointerdown.capture="edited = false" @keydown.capture="edited = false"
+      sticky-band-labels @update:collapsed-ids="collapsed = $event" @edit="onEdit" @select="onSelect"
     >
       <template #legend>
         <ul class="sc-roadmap-legend" aria-label="Legend">

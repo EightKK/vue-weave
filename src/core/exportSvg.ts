@@ -2,7 +2,7 @@ import { indexGraph, type GraphEdge, type GraphLayout } from './graph.js'
 import { graphPathBounds } from './graphView.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
-  summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type TimeRange, type TimeScale,
+  summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
 } from './timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
 import type {
@@ -396,6 +396,8 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   /** Default 44. At least 16. */
   loadRowHeight?: number
   highlightedDependencyIds?: Iterable<string>
+  /** Shape of the dependency connectors, as GanttChart `dependencyStyle`. Default `orthogonal`. */
+  dependencyStyle?: DependencyPathStyle
   /**
    * Bars drawn with the highlight outline and the `vw-is-highlighted` class, as GanttChart `highlightedBarIds`. The
    * outline uses the `dependencyHighlight` theme colour.
@@ -806,7 +808,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     const y2 = headerHeight + targetIndex * rowHeight + laneTop(target) + barHeight / 2
     const strong = highlighted.has(dep.id)
     paths.push(tag('path', {
-      d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2)), fill: 'none',
+      d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2), options.dependencyStyle), fill: 'none',
       stroke: strong ? theme.dependencyHighlight : theme.edge, 'stroke-width': strong ? 2 : 1.3,
       'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
     }))

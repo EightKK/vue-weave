@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   GanttChart, calendarBands, type TimelineBar, type TimelineColumn, type TimelineDependency, type TimelineEdit,
-  type TimelineProgressEdit, type TimelineRow, type TimeRange,
+  type TimelineProgressEdit, type TimelineRow, type TimelineSelectDetail, type TimeRange,
 } from '../../src'
 
 // A classic task Gantt for a four-week sprint: a task list with Start, Days and % columns, day columns with weekday
@@ -135,26 +135,24 @@ function validateEdit(change: TimelineEdit) {
     }
   }
 }
-let edited = false
 function onEdit(change: TimelineEdit) {
-  edited = true
   bars.value = bars.value.map(item => item.id === change.id ? { ...item, ...change.after } : item)
   const when = change.after.start === change.after.end ? formatTime(change.after.start)
     : `${formatTime(change.after.start)} – ${formatTime(change.after.end)} (${workingDays(change.after.start, change.after.end)} days)`
   status.value = `${change.mode === 'move' ? 'Moved' : 'Resized'} ${label(change.id)} to ${when}.`
 }
 function onRejected(_change: TimelineEdit, reason: string) {
-  edited = true
   status.value = 'Not moved: ' + reason
 }
 function onProgress(change: TimelineProgressEdit) {
   bars.value = bars.value.map(item => item.id === change.id ? { ...item, progress: change.after } : item)
   status.value = `${label(change.id)} is ${percent(change.after)} done.`
 }
-function onSelect(id: string) {
+// The click that ends a drag also emits select (detail.dragged); it keeps the message about that move or rejection.
+function onSelect(id: string, detail: TimelineSelectDetail) {
   selected.value = new Set([id])
   const item = barOf.value.get(id)
-  if (!item || edited) return
+  if (!item || detail.dragged) return
   status.value = item.start === item.end ? `${item.label} · milestone on ${formatTime(item.start)}.`
     : `${item.label} · ${formatTime(item.start)} – ${formatTime(item.end)} · ${percent(item.progress ?? 0)} done.`
 }
@@ -179,7 +177,7 @@ function taskState(row: SprintRow) {
       show-now :now="today" progress-editable :progress-step="0.05" :validate-edit="validateEdit"
       :labels="{ region: 'Sprint plan timeline', rows: 'Task name', now: 'Today' }"
       @update:collapsed-ids="collapsed = $event" @edit="onEdit" @edit-rejected="onRejected" @progress-edit="onProgress"
-      @select="onSelect" @pointerdown.capture="edited = false" @keydown.capture="edited = false"
+      dependency-style="rounded" sticky-band-labels @select="onSelect"
     >
       <template #legend>
         <ul class="sc-sprint-legend" aria-label="Legend">

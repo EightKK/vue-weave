@@ -236,7 +236,7 @@ function relationText(edge: Link) {
       </ul>
     </div>
     <NetworkGraph
-      v-model:selected-id="selectedId" class="sc-schema-graph" :nodes="tables" :edges="edges" :layout="layoutTables" :positions="positions"
+      v-model:selected-id="selectedId" unstyled-node-slots class="sc-schema-graph" :nodes="tables" :edges="edges" :layout="layoutTables" :positions="positions"
       :height="'clamp(440px, 44vw, 560px)'" edge-style="orthogonal" background="lines" :background-gap="24" draggable show-minimap
       :highlighted-edge-ids="focusEdges" :highlighted-node-ids="neighbourIds" :dimmed-ids="dimmedIds" :tooltip-delay="250"
       :labels="{ region: 'Schema diagram' }"

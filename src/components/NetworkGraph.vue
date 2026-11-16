@@ -2,7 +2,7 @@
 import { computed, h, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, shallowRef, toRaw, useId, watch, withKeys, withModifiers, type FunctionalComponent, type ShallowRef, type VNode, createCommentVNode, renderSlot, toDisplayString } from 'vue'
 import { graphIncidentCurve, graphPortControls } from '../core/graphCurve.js'
 import type { GraphBox } from '../core/graph.js'
-import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot } from '../core/types.js'
+import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot, NetworkEdgeSlot } from '../core/types.js'
 import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, GraphGesture, GraphGestureEnd, GraphGestureKind, NetworkTooltipSlot } from '../core/types.js'
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphLayoutRoute, type GraphNodeSize } from '../core/graph.js'
@@ -113,6 +113,8 @@ const props = withDefaults(defineProps<{
   validateEdgeReshape?: (change: GraphEdgeReshape) => boolean | string | void
   /** Camera scale below which node detail text and edge labels are hidden; greater than 0 and at most 3. */
   lodThreshold?: number
+  /** Leaves the content of the `node` slot unpainted: the stylesheet's fill and stroke rules for node rectangles and text apply to the default renderer only. Opt-in. Default: false. */
+  unstyledNodeSlots?: boolean
   /** Node sizes as a map of node ID to width and height, applied over the layout boxes and keeping each top-left corner. Sizes must be finite and positive; unknown IDs are ignored. */
   sizes?: ReadonlyMap<string, GraphNodeSize>
   /** Shows corner resize handles on the single selected node, proposed through `node-resize`. Opt-in. Default: false. */
@@ -188,7 +190,7 @@ const emit = defineEmits<{
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot<ShownNode>): unknown
-  edge(props: { edge: ShownEdge; path: string; selected: boolean; dimmed?: boolean; scale: number }): unknown
+  edge(props: NetworkEdgeSlot<ShownEdge>): unknown
   empty(): unknown
   tooltip?(props: NetworkTooltipSlot<ShownNode, ShownEdge>): unknown
 }>()
@@ -2543,6 +2545,8 @@ type NodeItemProps = {
   shared: {
     /** Renders the native `<title>`; false while a tooltip slot replaces it. */
     title: boolean
+    /** Marks the node group so the stylesheet leaves the content of the `node` slot unpainted (`unstyledNodeSlots`). */
+    unstyled: boolean
     rtl: boolean
     /** The camera scale for the `node` slot; 0 without a slot, so zooming does not re-render default nodes. */
     scale: number
@@ -2559,7 +2563,7 @@ const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
   return h('g', {
     class: ['vw-network-node', [`vw-tone-${node.tone ?? 'blue'}`, {
       'vw-is-selected': selected, 'vw-is-draggable': Boolean(item.draggable), 'vw-is-related': Boolean(item.related), 'vw-dimmed': dimmed,
-      'vw-is-highlighted': Boolean(item.highlighted),
+      'vw-is-highlighted': Boolean(item.highlighted), 'vw-is-unstyled': shared.unstyled,
     }]],
     'data-vw-node': node.id, transform: `translate(${box.x} ${box.y})`, role: 'button', tabindex: '0',
     'aria-label': [node.label, node.detail].filter(Boolean).join(' '), 'aria-pressed': selected, 'aria-describedby': item.describedby,
@@ -2574,7 +2578,9 @@ const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
     ],
   }, [
     shared.title ? h('title', null, toDisplayString(node.label) + ' ' + toDisplayString(node.detail)) : createCommentVNode('', true),
-    renderSlot(slots, 'node', { node: { ...node, box }, box, selected, dimmed, scale: shared.scale }, () => [
+    renderSlot(slots, 'node', {
+      node: { ...node, box }, box, selected, dimmed, related: Boolean(item.related), highlighted: Boolean(item.highlighted), scale: shared.scale,
+    }, () => [
       h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, [
         h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8 }),
         h('text', { x: shared.rtl ? box.width - 13 : 13, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
@@ -2625,7 +2631,7 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     onPointerenter: () => actions.enter(edge.id),
     onPointerleave: () => actions.leave(edge.id),
   }, [
-    renderSlot(slots, 'edge', { edge, path, selected: related, dimmed, scale: shared.scale }, () => [
+    renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale }, () => [
       h('path', { class: ['vw-network-edge', { 'vw-is-related': related }], d: path, 'marker-end': `url(#${shared.marker})` }),
       edge.label && labelX !== undefined
         ? h('text', { key: 0, class: 'vw-edge-label', x: labelX, y: labelY }, toDisplayString(edge.label))
@@ -2654,7 +2660,8 @@ let edgeShared: EdgeItemProps['shared'] | undefined
 const NodeList: FunctionalComponent<ListProps<typeof slots.node>> = ({ itemSlot: nodeSlot, tooltips: tooltipSlot }) => {
   const shown = tooltipSlot ? described.value : undefined
   const shared = nodeShared = keep(nodeShared, {
-    title: !tooltipSlot, rtl: rtl.value, scale: nodeSlot ? camera.value.scale : 0, slot: nodeSlot, actions: nodeActions,
+    title: !tooltipSlot, unstyled: Boolean(nodeSlot && props.unstyledNodeSlots), rtl: rtl.value, scale: nodeSlot ? camera.value.scale : 0,
+    slot: nodeSlot, actions: nodeActions,
   })
   const draggable = props.draggable, related = props.relatedIds, highlighted = highlights.value?.nodes
   const selected = selectionTest(), dimmed = dimTest()
