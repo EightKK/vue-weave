@@ -57,7 +57,8 @@ const defaultDuration = (duration: number) => Math.round(duration / 36_000) / 10
  * the dependency's ID. Critical tasks get `criticalTone` and are listed in `criticalNodeIds`; the result's
  * `criticalDependencyIds` are returned as `criticalEdgeIds`. Node and edge `data` carry the schedule values
  * (`ScheduleGraphNodeData`, `ScheduleGraphEdgeData`). An edge label shows the type when it is not FS and a non-zero
- * lag formatted by `formatLag`, such as `SS +2 h` or `+2 h`; an FS edge without lag has no label.
+ * lag formatted by `formatLag`, such as `SS +2 h` or `+2 h`; an FS edge without lag has no label. A dependency that
+ * touches a task of the result's `inactiveTaskIds` is left out, so the plan's full dependency list can be passed.
  * Throws an Error for a dependency whose ends are not tasks of the result, a dependency from a task to itself, or a
  * repeated dependency ID, and a RangeError for a lag that is not a finite number.
  */
@@ -88,7 +89,10 @@ export function scheduleToGraph(
   const criticalLinks = new Set(result.criticalDependencyIds)
   const criticalEdgeIds = new Set<string>()
   const edgeIds = new Set<string>()
-  const edges = dependencies.map((dependency): GraphEdge => {
+  const inactive = new Set(result.inactiveTaskIds ?? [])
+  const shown = inactive.size
+    ? dependencies.filter(dependency => !inactive.has(dependency.from) && !inactive.has(dependency.to)) : dependencies
+  const edges = shown.map((dependency): GraphEdge => {
     if (!ids.has(dependency.from) || !ids.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
     if (dependency.from === dependency.to) {
       throw new Error(`Dependency ${dependency.id} links task ${dependency.from} to itself`)

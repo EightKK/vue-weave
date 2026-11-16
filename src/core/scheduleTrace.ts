@@ -1,4 +1,6 @@
-import { bindingBounds, bindingKeys, type Bounds, type LimitKey, type Limits, type ModelTask, type WorkClock } from './scheduleModel.js'
+import {
+  allOutgoing, bindingBounds, bindingKeys, type Bounds, type LimitKey, type Limits, type ModelTask, type WorkClock,
+} from './scheduleModel.js'
 import type { LevelResourcesSuccess } from './leveling.js'
 import type { ScheduleConstraintName, ScheduleFailure, ScheduleLink, ScheduleSuccess } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
@@ -13,9 +15,10 @@ export type ScheduleReasonPhase = 'earliest' | 'latest' | 'placement' | 'levelin
  * What a reason is about. `dependency` is a predecessor or successor link, `constraint` a task constraint
  * (`startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`),
  * `project-bound` the scheduling range, the input `deadline`, the project finish or a leveling horizon, `calendar` time
- * off in the task's calendar, `pause` one of the task's pauses, and `capacity` a resource without enough capacity.
+ * off in the task's calendar, `pause` one of the task's pauses, `capacity` a resource without enough capacity, and
+ * `manual` the manually scheduled dates of a task with `manual`, which no other bound moves.
  */
-export type ScheduleReasonKind = 'dependency' | 'constraint' | 'calendar' | 'pause' | 'capacity' | 'project-bound'
+export type ScheduleReasonKind = 'dependency' | 'constraint' | 'calendar' | 'pause' | 'capacity' | 'project-bound' | 'manual'
 
 /** The limit of the task that a reason acts on. */
 export type ScheduleReasonBound = 'startLower' | 'endLower' | 'startUpper' | 'endUpper'
@@ -150,6 +153,13 @@ export class ScheduleTraceRecorder {
   }
 }
 
+/** Record the `manual` reason of a manual task in one phase: its start, which its manual dates fix. */
+export function recordManualReason(recorder: ScheduleTraceRecorder, phase: ScheduleReasonPhase, task: ModelTask): string {
+  const { start } = task.manual!
+  const bound = phase === 'latest' ? 'startUpper' : 'startLower'
+  return recorder.add({ taskId: task.id, phase, kind: 'manual', bound, candidateTime: start, placedTime: start, parentReasonIds: [] })
+}
+
 /** Where the reasons of a slot's binding bounds point to. */
 export interface SlotReasonContext {
   /** Parent reasons of a dependency bound: the other task's reasons in the relevant phase. */
@@ -192,7 +202,7 @@ export function recordSlotReasons(
     for (const bound of bindingBounds(bounds, limits, key)) {
       const base = { taskId: task.id, phase, bound: key, candidateTime, placedTime }
       if (bound.dependencyId !== undefined) {
-        const link = (latest ? task.outgoing : task.incoming).find(item => item.id === bound.dependencyId)!
+        const link = (latest ? allOutgoing(task) : task.incoming).find(item => item.id === bound.dependencyId)!
         boundIds.push(recorder.add({
           ...base, kind: 'dependency', dependencyId: link.id, relatedTaskIds: [latest ? link.to : link.from],
           parentReasonIds: context.linkParents(link, latest),
