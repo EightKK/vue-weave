@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Examples
+
+- New **Design gallery** in the demo: a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan and a room booking calendar, each with its own visual design built only from the existing slots, `--vw-*` theme variables and `vw-` classes. The showcases are in `examples/showcase/` and are not part of the package. No library changes.
 
 ## 0.3.0 - 2026-11-15
 

@@ -216,7 +216,7 @@ npm run build:demo
 npm start
 ```
 
-The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. Edits remain in the demo's local state.
+The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. The **Design gallery** row restyles the same two components as a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan and a room booking calendar, using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state.
 
 If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
 
