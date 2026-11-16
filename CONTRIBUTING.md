@@ -11,7 +11,9 @@ npm ci
 npm run dev
 ```
 
-The development demo is at http://127.0.0.1:5173. A fresh GitHub checkout or automatically generated GitHub source ZIP does not include `preview/`. To run the static demo, first run `npm run build:demo`, then `npm start`. A separately prepared demo archive can include `preview/` and run offline with Node.js; Windows users can launch it with `Start.cmd`.
+The development demo is at http://127.0.0.1:5173. A fresh GitHub checkout or automatically generated GitHub source ZIP does not include `preview/`. To run the static demo, first run `npm run build:demo`, then `npm start`. On Windows, `Start.cmd` does both: it rebuilds `preview/` when it is missing or was built from other sources (running `npm ci` first if `node_modules` does not match `package-lock.json`), then serves it. A separately prepared demo archive can include `preview/` and run offline with Node.js; Windows users can launch it with `Start.cmd`.
+
+`npm run build:demo` writes `preview/demo-build.json`, a hash of the demo sources listed in `demoInputs` in `scripts/demo-build.mjs`. `Start.cmd` runs `scripts/serve.mjs --build-if-stale`, which compares that hash with the current sources. If the demo starts reading a new file outside those inputs, add it to `demoInputs`.
 
 The development toolchain uses TypeScript 6.0.x. The current `vue-tsc` depends on the JavaScript compiler API; standard TypeScript 7.0 does not provide its required compiler entry point and fails before checking Vue files. See the [upstream compatibility discussion](https://github.com/vuejs/language-tools/issues/6156). Dependabot holds TypeScript 7 and later until upstream support, type checking, declaration generation and isolated package-consumer checks have been verified. This development-tool restriction does not set a TypeScript peer requirement for library consumers.
 

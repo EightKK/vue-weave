@@ -1,0 +1,122 @@
+import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+// The files that `npm run build:demo` turns into preview/. Changing any of them makes the built demo stale.
+export const demoInputs = ['examples', 'src', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.demo.config.ts']
+const stampFile = join('preview', 'demo-build.json')
+const stampFormat = 1
+
+async function listFiles(root, path) {
+  const filename = join(root, path)
+  if (!existsSync(filename)) return []
+  const entries = await readdir(filename, { withFileTypes: true }).catch(() => null)
+  if (!entries) return [path]
+  const files = []
+  // Hidden entries (.DS_Store, editor swap files) and installed packages are not demo sources.
+  for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'Thumbs.db') continue
+    const child = path + '/' + entry.name
+    if (entry.isDirectory()) files.push(...await listFiles(root, child))
+    else if (entry.isFile()) files.push(child)
+  }
+  return files
+}
+
+/** A SHA-256 over the paths and contents of the demo sources, with CRLF read as LF in text files. */
+export async function hashDemoInputs(root) {
+  const hash = createHash('sha256')
+  for (const input of demoInputs) {
+    const files = await listFiles(root, input)
+    if (files.length === 0) hash.update(input + '\0missing\n')
+    for (const file of files) {
+      let data = await readFile(join(root, file))
+      // A Windows editor or checkout can turn LF into CRLF without changing what Vite builds.
+      if (!data.includes(0)) data = Buffer.from(data.toString('latin1').replaceAll('\r\n', '\n'), 'latin1')
+      hash.update(file + '\0' + data.length + '\0').update(data)
+    }
+  }
+  return hash.digest('hex')
+}
+
+/** Records which sources preview/ was built from. The demo Vite config calls this after writing the bundle. */
+export async function writeDemoStamp(root, inputs) {
+  await writeFile(join(root, stampFile), JSON.stringify({ format: stampFormat, inputs }) + '\n')
+}
+
+/** Returns `missing` without preview/index.html, `current` when the stamp matches the sources, else `stale`. */
+export async function demoBuildState(root) {
+  if (!existsSync(join(root, 'preview', 'index.html'))) return 'missing'
+  let stamp
+  try {
+    stamp = JSON.parse(await readFile(join(root, stampFile), 'utf8'))
+  } catch {
+    return 'stale'
+  }
+  if (stamp?.format !== stampFormat || typeof stamp.inputs !== 'string') return 'stale'
+  return stamp.inputs === await hashDemoInputs(root) ? 'current' : 'stale'
+}
+
+/** Whether node_modules holds every package version in package-lock.json, read from npm's hidden lockfile. */
+export async function dependenciesInstalled(root) {
+  let wanted, installed
+  try {
+    wanted = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8')).packages
+    installed = JSON.parse(await readFile(join(root, 'node_modules', '.package-lock.json'), 'utf8')).packages
+  } catch {
+    return false
+  }
+  if (!wanted || !installed) return false
+  return Object.entries(wanted).every(([path, entry]) =>
+    // Optional packages are platform-specific builds that npm skips on other systems.
+    !path.startsWith('node_modules/') || entry.optional || installed[path]?.version === entry.version)
+}
+
+/** Runs `npm <args>` in `root` with the console attached and resolves whether it succeeded. */
+export function runNpm(args, root) {
+  const options = { cwd: root, stdio: 'inherit', windowsHide: true }
+  // npm is a .cmd file on Windows, which Node starts only through a shell. The arguments are fixed words.
+  const child = process.platform === 'win32'
+    ? spawn(['npm', ...args].join(' '), { ...options, shell: true })
+    : spawn('npm', args, options)
+  return new Promise(resolve => {
+    child.once('error', error => {
+      console.error(`Unable to run npm: ${error.message}`)
+      resolve(false)
+    })
+    child.once('close', code => resolve(code === 0))
+  })
+}
+
+/**
+ * Builds preview/ when it is missing or older than the demo sources, installing dependencies first if
+ * node_modules does not match package-lock.json. Resolves whether there is a demo to serve; after a failed
+ * rebuild that is the previous build, with a warning.
+ */
+export async function ensureDemoBuild(root, { npm = runNpm, log = console } = {}) {
+  // A copy without the sources (or without the lockfile that `npm ci` needs) can only serve what it has.
+  if (!existsSync(join(root, 'src')) || !existsSync(join(root, 'examples')) || !existsSync(join(root, 'package-lock.json'))) {
+    return existsSync(join(root, 'preview', 'index.html'))
+  }
+  const state = await demoBuildState(root)
+  if (state === 'current') return true
+
+  log.log(state === 'missing' ? 'The demo has not been built yet. Building it now.' : 'The demo sources have changed since the last build. Rebuilding the demo.')
+  let built = true
+  if (!await dependenciesInstalled(root)) {
+    log.log('Installing dependencies with npm ci. This needs an internet connection the first time.')
+    built = await npm(['ci'], root)
+  }
+  if (built) built = await npm(['run', 'build:demo'], root)
+  if (built) return true
+
+  // A build that failed while writing can leave preview/ emptied, so check again before falling back.
+  if (state === 'stale' && existsSync(join(root, 'preview', 'index.html'))) {
+    log.warn('The demo could not be rebuilt. Showing the previous build, which does not include the latest changes.')
+    return true
+  }
+  log.error('The demo could not be built. Fix the errors above, or run npm ci and npm run build:demo.')
+  return false
+}

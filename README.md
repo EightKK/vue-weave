@@ -218,7 +218,9 @@ npm start
 
 The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. The **Design gallery** row restyles the same two components as a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan and a room booking calendar, using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state.
 
-If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation.
+On Windows you can double-click `Start.cmd` instead. It serves `preview/` when it was built from the current sources, and otherwise builds it first, running `npm ci` beforehand if the installed dependencies do not match `package-lock.json`. `npm start` serves `preview/` as it is.
+
+If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation. If you change its sources, `Start.cmd` rebuilds it, which needs npm and an internet connection the first time.
 
 For development and verification commands, see [Contributing](CONTRIBUTING.md).
 

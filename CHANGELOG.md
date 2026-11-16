@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Examples
+
+- `Start.cmd` rebuilds the demo before serving it when `preview/` is missing or was built from other sources, and runs `npm ci` first when `node_modules` does not match `package-lock.json`. If a rebuild fails, it shows the previous build with a warning. `npm run build:demo` now writes `preview/demo-build.json` to record which sources the build came from; `npm start` and the browser tests still serve `preview/` as it is. Release preparation checks that the archived demo matches its archived sources.
 
 ## 0.4.0 - 2026-11-16
 

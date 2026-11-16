@@ -4,6 +4,12 @@ import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ensureDemoBuild } from './demo-build.mjs'
+
+// Start.cmd passes --build-if-stale. Without it (npm start, browser tests), the existing build is served as is.
+if (process.argv.includes('--build-if-stale') && !await ensureDemoBuild(fileURLToPath(new URL('../', import.meta.url)))) {
+  process.exit(1)
+}
 
 const root = fileURLToPath(new URL('../preview/', import.meta.url))
 if (!existsSync(resolve(root, 'index.html'))) {
