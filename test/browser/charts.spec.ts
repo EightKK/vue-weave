@@ -984,6 +984,146 @@ test('the preserve routing policy keeps an external port route while an unrelate
   expect(errors).toEqual([])
 })
 
+async function openStylesFixture(page: Page, search = '') {
+  await page.route('**/graph-styles-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/graph-styles-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/graph-styles.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/graph-styles-test/' + search)
+  await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
+}
+
+test('node shapes, edge markers, animated and parallel edges render, follow drags and reshapes and keep their names', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const paths = () => page.locator('.vw-edge-hit').evaluateAll(list => Object.fromEntries(list.map(item => [item.getAttribute('data-vw-edge'), item.getAttribute('d')])))
+  const style = (selector: string, property: string) => page.locator(selector).first().evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property)
+  await openStylesFixture(page)
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  // Accessible names are those of box nodes and plain edges. (The middle one of three parallel edges between two stacked
+  // nodes is a vertical line, which has no visible width.)
+  for (const name of ['Start', 'Check stock', 'Prepare', 'Ship']) await expect(button(name)).toBeVisible()
+  for (const name of ['order', 'retry', 'reject', 'ready', 'pack', 'loop', 'again']) await expect(button('Select edge ' + name)).toHaveCount(1)
+  // Shapes are painted like the node rectangle: tone colours, and the solid fill once selected.
+  await expect(page.locator('[data-vw-node="start"] ellipse.vw-node-shape')).toHaveCount(1)
+  await expect(page.locator('[data-vw-node="check"] polygon.vw-node-shape')).toHaveCount(1)
+  await expect(page.locator('[data-vw-node="prep"] polygon.vw-node-shape')).toHaveAttribute('points', /^(?:[\d.]+,[\d.]+ ){5}[\d.]+,[\d.]+$/)
+  await expect(page.locator('[data-vw-node="ship"] rect')).toHaveCount(1)
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe('rgb(225, 242, 238)')
+  expect(await style('[data-vw-node="ship"] rect', 'fill')).toBe('rgb(239, 231, 248)')
+  await expect(page.locator('[data-vw-node="check"] text').first()).toHaveAttribute('text-anchor', 'middle')
+  await button('Check stock').click()
+  await expect(button('Check stock')).toHaveAttribute('aria-pressed', 'true')
+  expect(await style('[data-vw-node="check"] polygon', 'fill')).toBe('rgb(130, 84, 17)')
+  expect(await style('[data-vw-node="check"] polygon', 'stroke-width')).toBe('2.8px')
+
+  // Markers: the default arrow plus one marker per other kind and end in use; hollow ones take the stage background.
+  const ids = await page.locator('marker').evaluateAll(list => list.map(item => item.id))
+  const base = ids[0]!
+  expect(ids.slice(1).sort()).toEqual(['bar', 'diamond', 'open-arrow', 'start-arrow', 'start-circle'].map(kind => base + '-' + kind).sort())
+  await expect(page.locator(`marker[id="${base}-start-circle"]`)).toHaveAttribute('orient', 'auto-start-reverse')
+  const edgePath = (label: string) => page.locator('.vw-network-edge').nth(['order', 'retry', 'reject', 'ready', 'pack', 'loop', 'again'].indexOf(label))
+  await expect(edgePath('reject')).toHaveAttribute('marker-start', `url(#${base}-start-circle)`)
+  await expect(edgePath('pack')).not.toHaveAttribute('marker-end', /./)
+  await expect(edgePath('order')).toHaveAttribute('marker-end', `url(#${base})`)
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(246, 249, 251)')
+
+  // The animated edge flows, except with reduced motion and in print.
+  await expect(edgePath('order')).toHaveClass('vw-network-edge vw-is-animated')
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('vw-edge-flow')
+  expect(await style('.vw-network-edge.vw-is-animated', 'stroke-dasharray')).toBe('6px, 4px')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('none')
+  await page.emulateMedia({ reducedMotion: null, media: 'print' })
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('none')
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(246, 249, 251)')
+  await page.emulateMedia({ media: null, forcedColors: 'active' })
+  const canvas = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'forced-color-adjust: none; background-color: Canvas'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe(canvas)
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe(canvas)
+  await page.emulateMedia({ forcedColors: null })
+
+  // Parallel edges are drawn apart; a drag preview of a shared node equals the committed move.
+  const initial = await paths()
+  expect(new Set([initial.sc1, initial.sc2, initial.cs]).size).toBe(3)
+  expect(initial.pp1).not.toBe(initial.pp2)
+  const node = button('Check stock')
+  const box = (await node.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 5 })
+  const dragged = await paths()
+  for (const id of ['sc1', 'sc2', 'cs', 'cp']) expect(dragged[id], id).not.toBe(initial[id])
+  expect(new Set([dragged.sc1, dragged.sc2, dragged.cs]).size).toBe(3)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('1')
+  expect(await paths()).toEqual(dragged)
+
+  // A waypoint added to one parallel edge takes it out of the group: the preview spreads the other two again, as the
+  // committed waypoint does.
+  await button('Select edge order').press('Enter')
+  const add = button('Add waypoint 1 · order')
+  await expect(add).toBeVisible()
+  const before = await paths()
+  let preview: Record<string, string | null> = {}
+  await dragBy(page, add, 0, -60, async () => {
+    preview = await paths()
+    expect(preview.sc1).not.toBe(before.sc1)
+    expect(preview.sc2).not.toBe(before.sc2)
+    expect(preview.cs).not.toBe(before.cs)
+    expect(preview.cp).toBe(before.cp)
+  })
+  await expect(page.getByRole('status', { name: 'Reshape events', exact: true })).toHaveText('1')
+  expect(await paths()).toEqual(preview)
+  // Only the dragged point became a waypoint: the spreading point is not one.
+  await expect(button('Move waypoint 1 · order')).toBeVisible()
+  await expect(button('Move waypoint 2 · order')).toHaveCount(0)
+
+  // The export draws the same paths, shapes and markers.
+  const exported = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+  expect(exported).toContain('orient="auto-start-reverse"')
+  expect(exported).toContain('stroke-dasharray="6 4"')
+  expect((exported.match(/<polygon /g) ?? []).length).toBe(2)
+  expect(exported).toContain('<ellipse ')
+  for (const path of Object.values(await paths())) expect(exported).toContain(`d="${path}"`)
+  expect(errors).toEqual([])
+})
+
+test('hollow edge markers and node shapes follow the dark theme', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openStylesFixture(page, '?theme=dark&style=straight')
+  const style = (selector: string, property: string) => page.locator(selector).first().evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property)
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(30, 51, 67)')
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe('rgb(32, 69, 63)')
+  expect(await style('[data-vw-node="check"] polygon', 'stroke')).toBe('rgb(181, 136, 72)')
+  // Straight edges end on the shape outlines and parallel straight edges bend apart.
+  const d = await page.locator('.vw-edge-hit[data-vw-edge="sc1"]').getAttribute('d')
+  expect(d).toMatch(/^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+ L [\d.]+ [\d.]+$/)
+  await expect(page.getByRole('button', { name: 'Check stock', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('getTargetClientRect measures nodes, edges and groups and setViewportCenter restores a saved centre', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
