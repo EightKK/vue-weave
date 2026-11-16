@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, shallowRef, watch } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGraph, layoutConcentricGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
@@ -52,7 +52,7 @@ const initialBars = ref(data.value.bars)
 const selected = ref('split')
 const direction = ref<GraphLayoutDirection>('LR')
 const crossingReduction = ref<GraphCrossingReduction>('none')
-const layoutKind = ref<'layered' | 'tree' | 'radial' | 'force'>('layered')
+const layoutKind = ref<'layered' | 'tree' | 'radial' | 'circular' | 'grid' | 'concentric' | 'force'>('layered')
 // The force simulation runs synchronously on the main thread and takes about a second for the 3,750-node large graph,
 // so the demo offers it for smaller graphs only and falls back to the layered layout.
 const forceNodeLimit = 1000
@@ -60,6 +60,9 @@ const forceAvailable = computed(() => data.value.nodes.length <= forceNodeLimit)
 const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
   ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
   : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e)
+    : layoutKind.value === 'circular' ? (n, e) => layoutCircularGraph(n, e)
+    : layoutKind.value === 'grid' ? (n, e) => layoutGridGraph(n, e)
+    : layoutKind.value === 'concentric' ? (n, e) => layoutConcentricGraph(n, e)
     : layoutKind.value === 'force' && forceAvailable.value ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
 const dark = ref(false)
 const builtInTheme = ref<'' | 'vw-theme-dark' | 'vw-theme-auto'>('')
@@ -528,7 +531,7 @@ function commit(change: TimelineEdit) {
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option :disabled="!forceAvailable">force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option>circular</option><option>grid</option><option>concentric</option><option :disabled="!forceAvailable">force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
         <div v-if="graphEditing" class="graph-tools">
           <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>
