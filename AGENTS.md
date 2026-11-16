@@ -37,11 +37,11 @@ Run `npm run check` before you consider a change done. Also run the browser test
 ## Project layout
 
 - `src/core/` contains pure TypeScript, grouped by area. `src/core/index.ts` exports the public parts as `vue-weave/core`.
-  - Graph: indexing, the default layered layout and ports (`graph.ts`); other layouts (`graphLayouts.ts`, `graphForce.ts`); algorithms, edge routing, collapsing, editing, snapping and viewport helpers (`graphAlgorithms.ts`, `graphRouting.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphSnapping.ts`, `graphView.ts`); crossing counts (`graphCrossings.ts`).
+  - Graph: indexing, the default layered layout and ports (`graph.ts`); other layouts (`graphLayouts.ts`, `graphForce.ts`); algorithms, analysis (components, centrality, communities), edge routing, collapsing, editing, snapping and viewport helpers (`graphAlgorithms.ts`, `graphAnalysis.ts`, `graphRouting.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphSnapping.ts`, `graphView.ts`); crossing counts (`graphCrossings.ts`).
   - Timeline: time scales and interval editing (`timeline.ts`) and row hierarchy moves (`rowHierarchy.ts`).
   - Scheduling: work calendars (`workCalendar.ts`), scheduling (`scheduling.ts`), resource leveling (`leveling.ts`), resource load (`resourceLoad.ts`), status-date rescheduling (`statusDate.ts`) and schedule-to-graph conversion (`pert.ts`).
   - Output: SVG export (`exportSvg.ts`) and MS Project, iCalendar and CSV interchange (`interchange.ts`).
-  - Shared types are in `types.ts`. `graphOrient.ts`, `graphCurve.ts`, `graphPortSide.ts`, `timeZone.ts`, `barSegments.ts` and `scheduleModel.ts` are internal helpers that `index.ts` does not export.
+  - Shared types are in `types.ts`. `graphOrient.ts`, `graphCurve.ts`, `graphPortSide.ts`, `graphShapes.ts`, `timeZone.ts`, `barSegments.ts` and `scheduleModel.ts` are internal helpers that `index.ts` does not export.
 - `src/components/`: `NetworkGraph.vue` and `GanttChart.vue` handle rendering, measurement, camera and scroll state, and temporary pointer previews. `NetworkGraph.vue` renders its nodes, edges, minimap rectangles, connection handles and group frames through internal functional item components, so a drag re-renders only the moved items. `exportImage.ts` holds browser-only helpers for the `exportPng` methods and for reading theme colours, and `types.ts` holds types that refer to browser APIs (`GraphDrop`), so they stay out of core.
 - `src/composables/useEditHistory.ts` provides undo and redo over immutable snapshots.
 - `src/styles/style.css` is the only stylesheet. The build emits it as `dist/style.css`.

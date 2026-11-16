@@ -19,11 +19,12 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 ### NetworkGraph
 
 - Built-in layout for branches, merges, disconnected nodes, directed cycles and self-loops, with `LR`, `TB`, `RL` or `BT` direction and `crossingReduction: 'barycenter'`.
-- Your own placement and routing through a `layout` function, for example `layoutTreeGraph`, `layoutRadialGraph`, the deterministic `layoutForceGraph`, or ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)).
+- Your own placement and routing through a `layout` function, for example `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, the deterministic `layoutForceGraph`, or ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)).
 - Custom SVG through the `node` and `edge` slots, plus a `tooltip` slot.
 - Node moves, connections, multiple selection and the minimap; edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`) and context-menu requests (`contextMenu`).
 - Nested groups (`parentId`), collapsing into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`) and node resizing (`sizes`, `resizable`).
-- Orthogonal or straight edges (`edgeStyle`) and waypoints (`GraphEdge.points`, edited with `editableEdges`).
+- Orthogonal or straight edges (`edgeStyle`, also per edge), waypoints (`GraphEdge.points`, edited with `editableEdges`), parallel edges spread apart (`parallelEdgeSpacing`), end markers (`markerStart`, `markerEnd`) and flowing edges (`animated`).
+- Diamond, ellipse and hexagon nodes besides boxes (`NetworkNode.shape`), also in exports.
 - Large graphs and touch: viewport culling (`cullOffscreen`), pinch zoom, and level of detail when zoomed out (`lodThreshold`).
 - Search highlighting (`matchIds`, `dimmedIds`) and the `focusNode(id)` and `fit({ ids })` methods.
 - Snap to grid (`snapGrid`) with a dotted or lined `background`, `alignmentGuides` and `autoPan`.
@@ -50,11 +51,12 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 ### Headless core (`vue-weave/core`)
 
 - Graph analysis: `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
+- Graph metrics: connected components (`graphComponents`), degree, betweenness and PageRank centrality, Louvain community detection (`detectGraphCommunities`) and `graphCommunityGroups`, which turns communities into `NetworkGraph` groups.
 - Graph geometry: `collapseGraphGroups`, `routeGraphEdges` and `applyGraphSizes` compute the same shapes as the component props.
-- Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses and IANA time-zone calendars (`WorkWeek.timeZone`).
+- Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses, manually scheduled (`manual`) and inactive (`inactive`) tasks, and IANA time-zone calendars (`WorkWeek.timeZone`).
 - Resource leveling with `levelResources`, and plan updates with `propagateEdit` (ready to return from `cascade`) and `rescheduleFromStatusDate`.
 - Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
-- Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars.
+- Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars, and `fromMsProjectXml` with `timelineFromMsProject` imports a Microsoft Project XML file as rows, bars, baselines and dependencies.
 
 ### Planning, linking and saving
 

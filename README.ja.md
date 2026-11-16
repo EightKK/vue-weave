@@ -19,11 +19,12 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 ### NetworkGraph
 
 - 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。
-- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
+- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、円形の `layoutCircularGraph`、格子状の `layoutGridGraph`、次数などで同心円に並べる `layoutConcentricGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
 - `node`・`edge` スロットでSVG描画を変更でき、`tooltip` スロットも使えます。
 - ノード移動、接続、複数選択、ミニマップ。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）。
 - 入れ子のグループ（`parentId`）、グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、ノードのサイズ変更（`sizes`・`resizable`）。
-- 辺の直角・直線表示（`edgeStyle`）と経由点（`GraphEdge.points`。`editableEdges` で編集）。
+- 辺の直角・直線表示（`edgeStyle`。辺ごとにも指定可）、経由点（`GraphEdge.points`。`editableEdges` で編集）、平行な辺の振り分け（`parallelEdgeSpacing`）、辺の端の記号（`markerStart`・`markerEnd`）、流れるアニメーション（`animated`）。
+- 箱形に加えて、ひし形・楕円・六角形のノード（`NetworkNode.shape`）。書き出しにも反映されます。
 - 大規模グラフとタッチ操作：表示範囲外の描画省略（`cullOffscreen`）、ピンチズーム、縮小時に詳細を隠す表示（`lodThreshold`）。
 - 検索結果の強調（`matchIds`・`dimmedIds`）と、`focusNode(id)`・`fit({ ids })` メソッド。
 - グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、`autoPan`。
@@ -50,11 +51,12 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 ### ヘッドレスコア（`vue-weave/core`）
 
 - グラフの解析：`topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`。
+- グラフの指標：連結成分（`graphComponents`）、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）、検出結果を `NetworkGraph` のグループに変換する `graphCommunityGroups`。
 - グラフの形状：`collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` は、コンポーネントのpropsと同じ形状を計算します。
-- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
+- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
 - `levelResources` による設備負荷の平準化と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
-- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして読み込みます。
+- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として読み込みます。
 
 ### 計画・連動・保存
 
