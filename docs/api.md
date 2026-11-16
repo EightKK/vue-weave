@@ -38,6 +38,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Graph routing](#graph-routing)
   - [Layout directions, crossing reduction and extra layouts](#layout-directions-crossing-reduction-and-extra-layouts)
   - [Graph algorithms](#graph-algorithms)
+  - [Graph analysis](#graph-analysis)
   - [Viewport helpers](#viewport-helpers)
   - [Row trees and summaries](#row-trees-and-summaries)
   - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
@@ -827,6 +828,26 @@ All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs a
 | shortestGraphPath(nodes, edges, fromId, toId, { directed = true, weight }) | `{ nodeIds, edgeIds, distance }` or `null` when unreachable. Breadth-first without `weight`, Dijkstra with it (weights must be finite and nonnegative, otherwise `RangeError`). Unknown IDs throw `Error`. |
 | searchGraphNodes(nodes, query, { fields }) | Case-insensitive substring match on `id` and `label` (both by default). An empty query matches every node. |
 | filterGraph(nodes, edges, match, { neighborhood = 0, fields }) | `match` is a predicate or a text query. Returns `{ nodes, edges }`: matching nodes plus everything within `neighborhood` hops (via `graphNeighborhood`) and the edges with both endpoints kept. |
+
+### Graph analysis
+
+Headless metrics for large graphs, exported from `vue-weave/core`. Like the algorithms above they validate input with `indexGraph` (unknown endpoints and duplicate IDs throw `Error`), are deterministic (no randomness), iterate instead of recursing and never mutate their arguments. Results are keyed by node ID in input order.
+
+| Export | Purpose |
+| --- | --- |
+| graphComponents(nodes, edges) | Weakly connected components as `string[][]`. Members follow input order, components are ordered by their first member, isolated nodes are single components. |
+| graphDegreeCentrality(nodes, edges, { direction = 'both', normalized = false }) | `Map` of degree per node. Every edge counts once, so parallel edges add up; a self-loop adds 1 to `'in'`, 1 to `'out'` and 2 to `'both'`. `normalized` divides by n − 1 (0 for fewer than two nodes), so values can exceed 1 with parallel edges or self-loops. |
+| graphBetweennessCentrality(nodes, edges, { directed = true, normalized = true, weight }) | Brandes' algorithm: breadth-first without `weight`, Dijkstra with a binary heap with it (weights finite and greater than 0, otherwise `RangeError`). O(V·E), so use it on graphs up to a few thousand nodes. Parallel edges are distinct shortest paths, self-loops are ignored, lengths within a relative 1e-12 are equal. Normalized by (n − 1)(n − 2) when directed and by (n − 1)(n − 2) / 2 when undirected (each unordered pair counted once); 0 for fewer than three nodes. |
+| graphPageRank(nodes, edges, { damping = 0.85, tolerance = 1e-6, maxIterations = 100, weight }) | `{ scores, iterations, converged }` by power iteration. Scores sum to 1; dangling nodes spread their score uniformly; parallel edges add their weights; self-loops are ordinary links. `damping` must be in [0, 1), `tolerance` finite and greater than 0, `maxIterations` a positive integer, weights finite and nonnegative, otherwise `RangeError`. `converged` is false when the iteration cap stopped the run. |
+| detectGraphCommunities(nodes, edges, { resolution = 1, weight }) | `{ communities, modularity }` by the Louvain method (local moving plus aggregation until no node moves). Edges are treated as undirected and weights (finite, greater than 0) add up. Communities are ordered by their first member's input position with members in input order; `modularity` uses the given resolution and is 0 without edges. |
+| graphCommunityGroups(communities, { idPrefix = 'community-', label, minSize = 2 }) | `GraphGroup[]` for the `NetworkGraph` `groups` prop. IDs are `idPrefix + (index + 1)` with the index taken from `communities`, so skipped communities leave gaps and the rest stay stable. `label(members, index)` defaults to `Community N`. Communities smaller than `minSize` produce no group. Group IDs must not collide with node IDs because collapsing uses the group ID for the proxy node; change `idPrefix` if needed. A node in two communities throws `Error`. |
+
+```ts
+import { detectGraphCommunities, graphCommunityGroups } from 'vue-weave/core'
+
+const { communities } = detectGraphCommunities(nodes, edges)
+const groups = graphCommunityGroups(communities, { label: members => `${members.length} nodes` })
+```
 
 ### Viewport helpers
 

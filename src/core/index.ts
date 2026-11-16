@@ -14,6 +14,13 @@ export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions } from './graphLa
 export { layoutForceGraph } from './graphForce.js'
 export type { GraphForceLayoutOptions } from './graphForce.js'
 export { topologicalOrder, findGraphCycles, shortestGraphPath, searchGraphNodes, filterGraph } from './graphAlgorithms.js'
+export {
+  graphComponents, graphDegreeCentrality, graphBetweennessCentrality, graphPageRank, detectGraphCommunities, graphCommunityGroups,
+} from './graphAnalysis.js'
+export type {
+  GraphDegreeCentralityOptions, GraphBetweennessOptions, GraphPageRankOptions, GraphPageRankResult,
+  GraphCommunityOptions, GraphCommunityResult, GraphCommunityGroupsOptions,
+} from './graphAnalysis.js'
 export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
