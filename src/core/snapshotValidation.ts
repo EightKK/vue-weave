@@ -443,6 +443,7 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
     const at = field(data, 'tasks', path) + '[' + i + ']'
     num(task, 'priority', at, report, 'finite')
     bool(task, 'splittable', at, report)
+    bool(task, 'inactive', at, report)
   })
   for (const key of ['quantum', 'deadline'] as const) num(data, key, path, report, 'finite')
   text(data, 'defaultCalendarId', path, report, false, true)

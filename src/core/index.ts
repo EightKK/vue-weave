@@ -41,10 +41,13 @@ export {
   timelineWbsCodes, timelineRowPosition, moveTimelineRow, indentTimelineRow, outdentTimelineRow,
 } from './rowHierarchy.js'
 export { rescheduleFromStatusDate } from './statusDate.js'
-export { toMsProjectXml, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchange.js'
+export {
+  toMsProjectXml, fromMsProjectXml, timelineFromMsProject, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable,
+} from './interchange.js'
 export type {
-  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
-  TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, MsProjectImport, MsProjectImportTask,
+  MsProjectImportWarning, MsProjectImportWarningCode, MsProjectTimelineOptions, MsProjectTimeline, ICalendarEvent, ICalendarOptions,
+  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'

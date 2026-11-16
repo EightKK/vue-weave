@@ -38,16 +38,21 @@ export interface PlacementResult<I extends PlacementInput = PlacementInput> {
  * Build a computable schedule input for the placed tasks only. Unplaced tasks keep no invented dates: they, their
  * links and their assignments are left out of the input. A link from an unplaced task to a placed one is reported as
  * an `unplaced-predecessor` diagnostic and makes the result not `ok`, instead of the scheduler throwing or the link
- * being dropped silently. A link from a placed task to an unplaced one is only excluded.
+ * being dropped silently. A link from a placed task to an unplaced one is only excluded. So is a link that the scheduler
+ * ignores anyway: one that touches an `inactive` task, or one into a placed task with `manual` dates.
  *
  * Malformed input still throws an Error: duplicate or empty task, link or placed IDs, a placed ID or a link or
  * assignment endpoint that is not an input task, and duplicate assignments. The input is not modified.
  */
 export function buildPlacementInput<I extends PlacementInput>(input: I, placedTaskIds: Iterable<string>): PlacementResult<I> {
   const taskIds = new Set<string>()
+  // Links that bind nothing in the scheduler: those touching an inactive task and those into a manual task.
+  const inactive = new Set<string>(), manual = new Set<string>()
   for (const task of input.tasks) {
     if (typeof task.id !== 'string' || !task.id || taskIds.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
     taskIds.add(task.id)
+    if (task.inactive === true) inactive.add(task.id)
+    if (task.manual !== undefined) manual.add(task.id)
   }
   const placed = new Set<string>()
   for (const id of placedTaskIds) {
@@ -69,7 +74,9 @@ export function buildPlacementInput<I extends PlacementInput>(input: I, placedTa
       continue
     }
     excludedDependencyIds.push(link.id)
-    if (toPlaced) diagnostics.push({ code: 'unplaced-predecessor', taskId: link.to, predecessorId: link.from, dependencyId: link.id })
+    if (toPlaced && !inactive.has(link.from) && !inactive.has(link.to) && !manual.has(link.to)) {
+      diagnostics.push({ code: 'unplaced-predecessor', taskId: link.to, predecessorId: link.from, dependencyId: link.id })
+    }
   }
 
   const pairs = new Set<string>()

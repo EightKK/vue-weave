@@ -4072,6 +4072,56 @@ test('the timeline editing demo imports a CSV file as one undoable step and repo
   expect(errors).toEqual([])
 })
 
+test('the timeline editing demo imports a Microsoft Project XML file as one undoable step and reports invalid files', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const input = page.getByLabel('Import MS Project XML', { exact: true })
+  await input.focus()
+  await expect(input).toBeFocused()
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project"><Name>Line retrofit</Name><Tasks>
+<Task><UID>0</UID><Name>Line retrofit</Name><OutlineLevel>0</OutlineLevel><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T13:00:00</Finish></Task>
+<Task><UID>1</UID><Name>Retrofit</Name><OutlineLevel>1</OutlineLevel><Summary>1</Summary><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T13:00:00</Finish></Task>
+<Task><UID>2</UID><Name>Strip &amp; clean</Name><OutlineLevel>2</OutlineLevel><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T11:00:00</Finish><PercentComplete>50</PercentComplete></Task>
+<Task><UID>3</UID><Name>Rewire</Name><OutlineLevel>2</OutlineLevel><Start>2026-11-09T11:00:00</Start><Finish>2026-11-09T13:00:00</Finish>
+  <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type></PredecessorLink>
+  <PredecessorLink><PredecessorUID>9</PredecessorUID><Type>1</Type></PredecessorLink></Task>
+<Task><UID>4</UID><Name>Handover</Name><OutlineLevel>1</OutlineLevel><Milestone>1</Milestone><Start>2026-11-09T13:00:00</Start><Finish>2026-11-09T13:00:00</Finish>
+  <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type></PredecessorLink></Task>
+</Tasks></Project>`
+  await input.setInputFiles({ name: 'retrofit.xml', mimeType: 'application/xml', buffer: Buffer.from(xml) })
+  await expect(status('Imported 3 tasks and 2 dependencies from retrofit.xml with 1 warning.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Strip & clean 09:00–11:00', exact: true })).toBeVisible()
+  const rewire = chart.getByRole('button', { name: 'Rewire 11:00–13:00', exact: true })
+  await expect(rewire).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Handover 13:00–13:00', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Wireframes / })).toHaveCount(0)
+  // The summary task is a parent row without a bar of its own.
+  await expect(chart.getByRole('button', { name: 'Collapse Retrofit', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Retrofit / })).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: 'Select dependency Strip & clean → Rewire FS', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Select dependency Rewire → Handover FS', exact: true })).toBeVisible()
+
+  // Imported bars are editable like the others.
+  await rewire.press('ArrowRight')
+  await expect(chart.getByRole('button', { name: 'Rewire 11:15–13:15', exact: true })).toBeVisible()
+
+  // An invalid file names the line and column and leaves the timeline unchanged.
+  await input.setInputFiles({ name: 'bad.xml', mimeType: 'application/xml', buffer: Buffer.from('<Project>\n<Name>Plan &nbsp;</Name></Project>') })
+  await expect(status('Import failed: Invalid XML at line 2, column 12: unknown or invalid entity &nbsp;')).toBeVisible()
+  await input.setInputFiles({ name: 'book.xml', mimeType: 'application/xml', buffer: Buffer.from('<Workbook/>') })
+  await expect(status('Import failed: Not a Microsoft Project XML document: the root element is Workbook')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Rewire 11:15–13:15', exact: true })).toBeVisible()
+
+  // Undo restores the edit and then the previous plan.
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await undo.click()
+  await expect(rewire).toBeVisible()
+  await undo.click()
+  await expect(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })).toBeVisible()
+  await expect(rewire).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test('invalid markers, columns and header bands report validation-error and render the empty state', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
