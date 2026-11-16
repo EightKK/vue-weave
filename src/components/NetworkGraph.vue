@@ -8,7 +8,11 @@ import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphLayoutRoute, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
-import { routeGraphEdges, type GraphEdgeStyle } from '../core/graphRouting.js'
+import { graphParallelSlots, routeGraphEdgesWithSlots, type GraphEdgeStyle, type GraphParallelSlot } from '../core/graphRouting.js'
+import {
+  graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText, graphPolygonPoints,
+} from '../core/graphShapes.js'
+import type { GraphEdgeMarker } from '../core/graph.js'
 import { isGraphRouteValid, type GraphRoutingPolicy } from '../core/graphGeometry.js'
 import { completeGraphLayout } from '../core/graphLayoutRequests.js'
 import { resolveCollapsedTargets } from '../core/graphTraversal.js'
@@ -105,8 +109,10 @@ const props = withDefaults(defineProps<{
   collapsibleGroups?: boolean
   /** Controlled set of collapsed group IDs; supports `v-model:collapsed-group-ids`. Unknown IDs are ignored. */
   collapsedGroupIds?: ReadonlySet<string>
-  /** Edge routing style: `curve`, `orthogonal` or `straight`. Default: `curve`. */
+  /** Edge routing style: `curve`, `orthogonal` or `straight`. An edge's own `edgeStyle` overrides it. Default: `curve`. */
   edgeStyle?: GraphEdgeStyle
+  /** Distance in chart units between parallel edges (between the same two nodes, in either direction, without waypoints or named ports); they are spread around the centre line, and self-loops of one node are nested. Positive and finite. Opt-in. */
+  parallelEdgeSpacing?: number
   /** Gives edges a focusable hit area and shows waypoint handles on the selected edge, proposed through `edge-reshape`. Opt-in. Default: false. */
   editableEdges?: boolean
   /** Synchronous check of a waypoint change proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -383,12 +389,23 @@ function arrange(positions: ReadonlyMap<string, GraphPoint> | undefined, sizes: 
   const placed = positions?.size ? applyGraphPositions(baseLayout.value, edges, positions, direction.value) : baseLayout.value
   return sizes?.size ? applyGraphSizes(placed, edges, sizes, direction.value) : placed
 }
-const routeOptions = computed(() => ({ style: props.edgeStyle, direction: direction.value, cornerRadius: props.edgeStyle === 'orthogonal' ? 6 : 0 }))
+const parallelSpacing = computed(() => {
+  const spacing = props.parallelEdgeSpacing
+  if (spacing !== undefined && !(Number.isFinite(spacing) && spacing > 0)) throw new RangeError('parallelEdgeSpacing must be a positive finite number of chart units')
+  return spacing
+})
+// The corner radius only applies to orthogonal routes, which an edge can also choose with its own edgeStyle.
+const routeOptions = computed(() => ({ style: props.edgeStyle, direction: direction.value, cornerRadius: 6, parallelSpacing: parallelSpacing.value }))
+// The places of parallel edges among the edges between the same two nodes, over the whole view, so that routing a few
+// edges of a preview spreads them as routing the whole graph does.
+const parallelSlots = computed(() => parallelSpacing.value === undefined ? undefined : graphParallelSlots(viewEdges.value))
 // Ports first, then the edge style and waypoints. The default curve style without waypoints keeps the routed layout.
 const savedLayout = computed(() => arrange(viewPositions.value, props.sizes))
 // With the preserve policy, the layout's own paths are kept while they fit (see isGraphRouteValid).
 const savedPorted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, viewEdges.value, direction.value, { policy: policy.value }))
-const savedRouted = computed(() => routeGraphEdges(savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }))
+const savedRouted = computed(() => routeGraphEdgesWithSlots(
+  savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value,
+))
 
 // Drag previews. A node drag, resize or waypoint drag changes a few nodes or one edge, so the preview layout shares the
 // saved layout's maps and recomputes only the edges that touch a changed node. The result equals arranging and routing
@@ -517,18 +534,22 @@ const savedPortReach = computed(() => {
   }
   return sortExtents(list)
 })
-const waypointEdgeIds = computed(() => viewEdges.value.filter(edge => edge.points?.length).map(edge => edge.id))
-// Whether routeGraphEdges draws an edge itself rather than keeping its ported path.
-function styled(edge: GraphEdge) {
-  return props.edgeStyle !== 'curve' || Boolean(edge.points?.length)
+type Slots = ReadonlyMap<string, GraphParallelSlot> | undefined
+// Whether routeGraphEdges draws an edge itself rather than keeping its ported path: in a style other than curve (its own
+// or the prop's), through waypoints, or spread among parallel edges.
+function styled(edge: GraphEdge, slots: Slots = parallelSlots.value) {
+  return (edge.edgeStyle ?? props.edgeStyle) !== 'curve' || Boolean(edge.points?.length) || Boolean(slots?.has(edge.id))
 }
+const styledEdgeIds = computed(() => viewEdges.value.filter(edge => styled(edge)).map(edge => edge.id))
 // One edge routed on its own; the extent is how far its route stretches the layout. With `routes`, the route metadata
 // routeGraphEdges records is returned too.
-function routeOne(boxes: Map<string, GraphBox>, edge: GraphEdge, path: string, label: GraphPoint | undefined, routes?: boolean) {
-  const single = routeGraphEdges({
+function routeOne(
+  boxes: Map<string, GraphBox>, edge: GraphEdge, path: string, label: GraphPoint | undefined, routes?: boolean, slots: Slots = parallelSlots.value,
+) {
+  const single = routeGraphEdgesWithSlots({
     boxes, paths: new Map([[edge.id, path]]), edgeLabels: new Map(label ? [[edge.id, label]] : []), width: 0, height: 0,
     ...routes && { routes: new Map() },
-  }, [edge], nodesById.value, routeOptions.value)
+  }, [edge], nodesById.value, routeOptions.value, slots)
   return {
     path: single.paths.get(edge.id)!, label: single.edgeLabels.get(edge.id), width: single.width, height: single.height,
     route: single.routes?.get(edge.id),
@@ -577,6 +598,24 @@ function previewLayout(
   const ids = new Set<string>()
   for (const id of changed.keys()) for (const edgeId of incidentEdges.value.get(id) ?? []) ids.add(edgeId)
   if (reshaping) ids.add(reshaping.id)
+  // With parallel spacing, an edge that gains waypoints leaves the parallel edges between its nodes, which spreads the
+  // others again. Only the edges between the same two nodes can change their places.
+  let slots = parallelSlots.value
+  if (reshaping && slots) {
+    const reshaped = edgesById.value.get(reshaping.id)!
+    const pair = (incidentEdges.value.get(reshaped.from) ?? []).map(id => edgesById.value.get(id)!)
+      .filter(edge => (edge.from === reshaped.from && edge.to === reshaped.to) || (edge.from === reshaped.to && edge.to === reshaped.from))
+    const regrouped = graphParallelSlots(pair.map(edge => edge.id === reshaped.id ? { ...edge, points: reshaping.points } : edge))
+    const moved = new Map<string, GraphParallelSlot | undefined>()
+    for (const edge of pair) {
+      const before = slots.get(edge.id), after = regrouped.get(edge.id)
+      if (before?.index !== after?.index || before?.count !== after?.count) moved.set(edge.id, after)
+    }
+    if (moved.size) {
+      slots = new LayeredMap(slots, moved)
+      for (const id of moved.keys()) ids.add(id)
+    }
+  }
   const edges = [...ids].map(id => {
     const edge = edgesById.value.get(id)!
     return reshaping?.id === id ? { ...edge, points: reshaping.points } : edge
@@ -636,15 +675,15 @@ function previewLayout(
       routes?.set(edge.id, routed.routes?.get(edge.id))
     }
   }
-  // Edge styles and waypoints, as routeGraphEdges draws them after the ports. A redrawn port route is a built-in route,
-  // so the preserve policy routes it again like any styled edge.
-  if (props.edgeStyle !== 'curve' || edges.some(edge => edge.points?.length) || waypointEdgeIds.value.some(id => !ids.has(id))) {
+  // Edge styles, waypoints and parallel edges, as routeGraphEdges draws them after the ports. A redrawn port route is a
+  // built-in route, so the preserve policy routes it again like any styled edge.
+  if (edges.some(edge => styled(edge, slots)) || styledEdgeIds.value.some(id => !ids.has(id))) {
     const others = largestExtent(savedRouteExtents.value, ids)
     width = Math.max(width, others.width)
     height = Math.max(height, others.height)
     for (const edge of edges) {
-      if (!styled(edge) || kept.has(edge.id)) continue
-      const route = routeOne(boxes, edge, paths.get(edge.id)!, labels.get(edge.id), Boolean(routes))
+      if (!styled(edge, slots) || kept.has(edge.id)) continue
+      const route = routeOne(boxes, edge, paths.get(edge.id)!, labels.get(edge.id), Boolean(routes), slots)
       paths.set(edge.id, route.path)
       labels.set(edge.id, route.label)
       routes?.set(edge.id, route.route)
@@ -2580,16 +2619,33 @@ const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
     shared.title ? h('title', null, toDisplayString(node.label) + ' ' + toDisplayString(node.detail)) : createCommentVNode('', true),
     renderSlot(slots, 'node', {
       node: { ...node, box }, box, selected, dimmed, related: Boolean(item.related), highlighted: Boolean(item.highlighted), scale: shared.scale,
-    }, () => [
-      h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, [
-        h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8 }),
-        h('text', { x: shared.rtl ? box.width - 13 : 13, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
-        node.detail
-          ? h('text', { key: 0, x: shared.rtl ? box.width - 13 : 13, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
-          : createCommentVNode('', true),
-      ]),
-    ]),
+    }, () => [h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, defaultNode(node, box, shared.rtl))]),
   ])
+}
+// The default content of a node: a rectangle with text from the inline start edge, or a diamond, ellipse or hexagon
+// (class vw-node-shape) inside the box with centred text.
+function defaultNode(node: NetworkNode, box: GraphBox, rtl: boolean) {
+  const outline = graphOutlineShape(node)
+  if (!outline) {
+    return [
+      h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8 }),
+      h('text', { x: rtl ? box.width - 13 : 13, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
+      node.detail
+        ? h('text', { key: 0, x: rtl ? box.width - 13 : 13, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
+        : createCommentVNode('', true),
+    ]
+  }
+  const shape = graphOutlineElement(outline, box.width, box.height)
+  const text = graphOutlineText(box.width, box.height, Boolean(node.detail))
+  return [
+    shape.tag === 'ellipse'
+      ? h('ellipse', { class: 'vw-node-shape', cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry })
+      : h('polygon', { class: 'vw-node-shape', points: graphPolygonPoints(shape.points) }),
+    h('text', { x: text.x, y: text.title, 'text-anchor': 'middle', class: 'vw-node-title' }, toDisplayString(node.label)),
+    node.detail
+      ? h('text', { key: 0, x: text.x, y: text.detail, 'text-anchor': 'middle', class: 'vw-node-detail' }, toDisplayString(node.detail))
+      : createCommentVNode('', true),
+  ]
 }
 NodeItem.props = ['node', 'box', 'selected', 'draggable', 'related', 'dimmed', 'highlighted', 'describedby', 'shared']
 type EdgeItemProps = {
@@ -2632,7 +2688,10 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     onPointerleave: () => actions.leave(edge.id),
   }, [
     renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale }, () => [
-      h('path', { class: ['vw-network-edge', { 'vw-is-related': related }], d: path, 'marker-end': `url(#${shared.marker})` }),
+      h('path', {
+        class: ['vw-network-edge', { 'vw-is-related': related, 'vw-is-animated': Boolean(edge.animated) }], d: path,
+        'marker-start': markerUrl(shared.marker, edge, 'start'), 'marker-end': markerUrl(shared.marker, edge, 'end'),
+      }),
       edge.label && labelX !== undefined
         ? h('text', { key: 0, class: 'vw-edge-label', x: labelX, y: labelY }, toDisplayString(edge.label))
         : createCommentVNode('', true),
@@ -2648,6 +2707,40 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
   ])
 }
 EdgeItem.props = ['edge', 'geometry', 'related', 'dimmed', 'highlighted', 'selected', 'active', 'pressed', 'describedby', 'shared']
+// Edge markers. The default end arrow is the marker in the template's defs; every other marker gets an ID derived from
+// it and is only rendered while an edge uses it, so the markup without other markers is unchanged.
+type MarkerKind = Exclude<GraphEdgeMarker, 'none'>
+function markerId(base: string, kind: MarkerKind, end: 'start' | 'end') {
+  return kind === 'arrow' && end === 'end' ? base : base + (end === 'start' ? '-start-' : '-') + kind
+}
+function markerUrl(base: string, edge: GraphEdge, end: 'start' | 'end') {
+  const kind = graphEdgeMarker(edge, end)
+  return kind === 'none' ? undefined : `url(#${markerId(base, kind, end)})`
+}
+// The markers the edges use besides the default end arrow, in order of first use. Unknown markers throw RangeError.
+const extraMarkers = computed(() => {
+  const used = new Map<string, { kind: MarkerKind; end: 'start' | 'end' }>()
+  for (const edge of viewEdges.value) {
+    for (const end of ['start', 'end'] as const) {
+      const kind = graphEdgeMarker(edge, end)
+      if (kind !== 'none' && (kind !== 'arrow' || end === 'start')) used.set(markerId(marker, kind, end), { kind, end })
+    }
+  }
+  return [...used]
+})
+// A marker drawn in the colour of the edge that uses it (context-stroke). A hollow marker is filled with the stage
+// background through the vw-edge-marker-hollow class.
+function markerNode(id: string, kind: MarkerKind, end: 'start' | 'end') {
+  const { refX, paint, strokeWidth, element } = graphMarkerDrawing(kind)
+  const colors = paint === 'fill' ? { fill: 'context-stroke' } : {
+    ...paint === 'hollow' && { class: 'vw-edge-marker-hollow' }, fill: 'none', stroke: 'context-stroke', 'stroke-width': strokeWidth,
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  }
+  return h('marker', { key: id, id, markerWidth: '7', markerHeight: '7', refX, refY: '3.5', orient: end === 'start' ? 'auto-start-reverse' : 'auto' }, [
+    element.tag === 'path' ? h('path', { d: element.d, ...colors }) : h('circle', { cx: element.cx, cy: element.cy, r: element.r, ...colors }),
+  ])
+}
+const markersKey = Symbol('markers')
 // Slots are not reactive, so the template passes them in: a slot that appears, disappears or is replaced (an inline
 // render function) re-renders the list, and a compiled slot keeps its identity.
 type ListProps<S> = { itemSlot?: S; tooltips: boolean }
@@ -2680,13 +2773,16 @@ const EdgeList: FunctionalComponent<ListProps<typeof slots.edge>> = ({ itemSlot:
   })
   const selectable = props.edgesSelectable, active = currentEdgeId.value, related = props.relatedIds, highlighted = highlights.value?.edges
   const dimmed = dimTest(), selected = edgeSelectionTest(), pressed = edgePressedTest()
-  return shownEdges.value.map(edge => h(EdgeItem, {
+  const markers = extraMarkers.value
+  const items = shownEdges.value.map(edge => h(EdgeItem, {
     key: edge.id, edge, geometry: edgeRef(edge.id),
     related: Boolean(related?.has(edge.from) && related.has(edge.to)), dimmed: dimmed(edge.from) || dimmed(edge.to),
     highlighted: Boolean(highlighted?.has(edge.id)),
     selected: Boolean(selectable && selected(edge.id)), active: hit && active === edge.id, pressed: hit && pressed(edge.id),
     describedby: shown?.kind === 'edge' && shown.id === edge.id ? tooltipId : undefined, shared,
   }, edgeSlot ? { edge: edgeSlot, $stable: true } : undefined))
+  // An edge slot draws its own edges, so the markers are only written for the default renderer.
+  return markers.length && !edgeSlot ? [h('defs', { key: markersKey }, markers.map(([id, { kind, end }]) => markerNode(id, kind, end))), ...items] : items
 }
 
 NodeList.props = EdgeList.props = ['itemSlot', 'tooltips']

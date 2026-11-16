@@ -4,6 +4,7 @@ import { graphPathEndpoints } from './graphView.js'
 import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
 import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import type { GraphEdgeStyle } from './graphRouting.js'
 
 export interface GraphPort {
   id: string
@@ -29,7 +30,25 @@ export interface GraphEdge<D = unknown> extends GraphConnection {
    * polyline in the straight and orthogonal styles and a smooth curve through the points in the curve style.
    */
   points?: readonly GraphPoint[]
+  /** Routing style of this edge. Overrides the NetworkGraph `edgeStyle` prop and the `style` option of `routeGraphEdges`. */
+  edgeStyle?: GraphEdgeStyle
+  /** Decoration at the target end, drawn by NetworkGraph and `renderGraphSvg`. Default `'arrow'`. */
+  markerEnd?: GraphEdgeMarker
+  /** Decoration at the source end, drawn by NetworkGraph and `renderGraphSvg`. Default `'none'`. */
+  markerStart?: GraphEdgeMarker
+  /**
+   * Draws the default NetworkGraph edge with a dash pattern that flows from source to target (class `vw-is-animated`),
+   * still under `prefers-reduced-motion: reduce` and in print. `renderGraphSvg` draws it dashed without motion.
+   */
+  animated?: boolean
 }
+
+/**
+ * A decoration at one end of an edge. `arrow` is the filled arrowhead NetworkGraph has always drawn, `open-arrow` a
+ * line arrowhead, `circle` and `diamond` hollow shapes filled with the graph background, `bar` a line across the edge
+ * and `none` no decoration.
+ */
+export type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'circle' | 'diamond' | 'bar' | 'none'
 
 export interface GraphIndex {
   incoming: Map<string, string[]>

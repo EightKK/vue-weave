@@ -18,12 +18,19 @@ export interface NetworkNode<D = unknown> extends IdentifiedNode {
   draggable?: boolean
   /** False keeps the node out of NetworkGraph deletion proposals (`deletable`). */
   deletable?: boolean
-  shape?: 'box' | 'rounded'
+  /** Outline drawn by the default renderer and `renderGraphSvg`. Default `'box'`. */
+  shape?: NetworkNodeShape
   /** False hides the NetworkGraph resize handles of this node (`resizable`). */
   resizable?: boolean
   /** Application data. The components pass it through untouched. */
   data?: D
 }
+
+/**
+ * The outline of a node in its layout box. `box` (the default) and `rounded` are rectangles with small and large corner
+ * radii; `diamond`, `ellipse` and `hexagon` are drawn inside the box and centre the label and detail text.
+ */
+export type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon'
 
 /**
  * A custom NetworkGraph layout. `N` and `E` type the nodes and edges it receives; with collapsed groups they include
