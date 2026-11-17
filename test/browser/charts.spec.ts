@@ -6243,14 +6243,15 @@ test('the diagram demo draws shapes and markers, spreads parallel edges, animate
   await expect(spread).toBeChecked()
   const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
   const spreadPaths = await paths()
-  expect(spreadPaths).toHaveLength(14)
+  expect(spreadPaths).toHaveLength(13)
   await spread.uncheck()
   const plainPaths = await paths()
-  // The two request/response pairs (edges 11 to 14) are drawn differently; the other edges are not.
+  // The request/response pair (edges 11 and 12) is drawn differently; the other edges are not.
   expect(plainPaths.slice(0, 10)).toEqual(spreadPaths.slice(0, 10))
-  for (let index = 10; index < 14; index++) expect(plainPaths[index]).not.toEqual(spreadPaths[index])
+  for (let index = 10; index < 12; index++) expect(plainPaths[index]).not.toEqual(spreadPaths[index])
+  expect(plainPaths[12]).toEqual(spreadPaths[12])
   await spread.check()
-  await page.getByLabel('Parallel edge spacing').selectOption('34')
+  await page.getByLabel('Parallel edge spacing').selectOption('56')
   expect(await paths()).not.toEqual(spreadPaths)
 
   const animated = page.locator('.vw-network-edge.vw-is-animated')
