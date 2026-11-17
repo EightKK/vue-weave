@@ -209,7 +209,8 @@ test('leveling reserves manual tasks first without moving them and ignores inact
   assert.deepEqual([capacity.range, capacity.relatedTaskIds, capacity.placedTime], [{ start: 4, end: 5 }, ['m'], 4])
   assert.deepEqual(result.trace.reasons.filter(reason => reason.kind === 'manual' && reason.phase === 'leveling').map(reason => reason.taskId), ['m', 'm2'])
   assert.equal(JSON.stringify(input), original)
-  assert.throws(() => levelResources({ ...input, assignments: [{ resourceId: 'r', taskId: 'zz' }] }), /Unknown task or resource in assignment/)
+  assert.throws(() => levelResources({ ...input, assignments: [{ resourceId: 'r', taskId: 'zz' }] }), /Unknown task in assignment: zz$/)
+  assert.throws(() => levelResources({ ...input, assignments: [{ resourceId: 'nope', taskId: 'm' }] }), /Unknown resource in assignment: nope$/)
 })
 
 test('rescheduling from a status date keeps manual dates and accepts progress of inactive tasks', () => {
@@ -229,11 +230,12 @@ test('resource load, placement and network diagrams leave inactive tasks out', (
   const tasks = [{ id: 'a', work: [{ start: 0, end: 2 }] }]
   const resources = [{ id: 'r', capacity: 1 }]
   const assignments = [{ resourceId: 'r', taskId: 'a' }, { resourceId: 'r', taskId: 'x' }]
-  assert.throws(() => calculateResourceLoad(range, tasks, resources, assignments), /Unknown task or resource in assignment/)
+  assert.throws(() => calculateResourceLoad(range, tasks, resources, assignments),
+    /Unknown task in assignment: x\. Tasks left out of a schedule result as inactive must be listed in options\.inactiveTaskIds/)
   const load = calculateResourceLoad(range, tasks, resources, assignments, { inactiveTaskIds: ['x'] })
   assert.deepEqual(load, calculateResourceLoad(range, tasks, resources, [assignments[0]]))
   assert.throws(() => calculateResourceLoad(range, tasks, resources, assignments, { inactiveTaskIds: ['a', 'x'] }), /An inactive task cannot have workload: a/)
-  assert.throws(() => calculateResourceLoad(range, tasks, resources, [{ resourceId: 'zz', taskId: 'x' }], { inactiveTaskIds: ['x'] }), /Unknown task or resource/)
+  assert.throws(() => calculateResourceLoad(range, tasks, resources, [{ resourceId: 'zz', taskId: 'x' }], { inactiveTaskIds: ['x'] }), /Unknown resource in assignment: zz$/)
 
   const input = {
     range,

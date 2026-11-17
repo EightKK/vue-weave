@@ -258,7 +258,8 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const assigned = new Set<string>()
   for (const { resourceId, taskId, units = 1 } of input.assignments) {
     const profile = profiles.get(resourceId)
-    if (!profile || (!tasks.has(taskId) && !model.inactive.has(taskId))) throw new Error('Unknown task or resource in assignment')
+    if (!profile) throw new Error('Unknown resource in assignment: ' + resourceId)
+    if (!tasks.has(taskId) && !model.inactive.has(taskId)) throw new Error('Unknown task in assignment: ' + taskId)
     if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
     const pair = JSON.stringify([resourceId, taskId])
     if (assigned.has(pair)) throw new Error('Duplicate resource assignment for task: ' + taskId)

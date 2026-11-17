@@ -88,7 +88,10 @@ export function calculateResourceLoad(
   const assigned = new Map<string, Set<string>>()
   for (const { resourceId, taskId, units = 1 } of assignments) {
     const events = byResource.get(resourceId), work = taskPeriods.get(taskId)
-    if (!events || (!work && !inactive.has(taskId))) throw new Error('Unknown task or resource in assignment')
+    if (!events) throw new Error('Unknown resource in assignment: ' + resourceId)
+    if (!work && !inactive.has(taskId)) {
+      throw new Error('Unknown task in assignment: ' + taskId + '. Tasks left out of a schedule result as inactive must be listed in options.inactiveTaskIds')
+    }
     if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
     let seen = assigned.get(resourceId)
     if (!seen) assigned.set(resourceId, seen = new Set())
