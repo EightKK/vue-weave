@@ -25,6 +25,14 @@ export interface ResourceLoadSegment extends TimeRange {
   taskIds: readonly string[]
 }
 
+export interface ResourceLoadOptions {
+  /**
+   * Tasks whose assignments are ignored, for example a schedule's `inactiveTaskIds`. Their assignments still need a
+   * known resource, positive integer units and no duplicate; the tasks must not be in `tasks`.
+   */
+  inactiveTaskIds?: Iterable<string>
+}
+
 /** A set of active tasks in insertion order, with memoized successor states keyed by the change applied to it. */
 interface ActiveTasks {
   ids: readonly string[]
@@ -37,18 +45,27 @@ interface LoadEvent {
   capacity?: number
 }
 
-/** Compare scheduled work to capacity over half-open intervals. */
+/**
+ * Compare scheduled work to capacity over half-open intervals. With `options.inactiveTaskIds`, the assignments of those
+ * tasks take no capacity, so the full assignment list of a plan with inactive tasks can be passed unchanged.
+ */
 export function calculateResourceLoad(
   range: TimeRange,
   tasks: readonly Pick<ScheduledTask, 'id' | 'work'>[],
   resources: readonly ResourceCapacity[],
   assignments: readonly ResourceAssignment[],
+  options: ResourceLoadOptions = {},
 ): ResourceLoadSegment[] {
   assertScheduleRange(range)
   const taskPeriods = new Map<string, TimeRange[]>()
   for (const task of tasks) {
     if (!task.id || taskPeriods.has(task.id)) throw new Error('Invalid or duplicate workload task: ' + task.id)
     taskPeriods.set(task.id, normalizeWorkPeriods(task.work, range))
+  }
+  const inactive = new Set<string>()
+  for (const id of options.inactiveTaskIds ?? []) {
+    if (taskPeriods.has(id)) throw new Error('An inactive task cannot have workload: ' + id)
+    inactive.add(id)
   }
   const byResource = new Map<string, Map<number, LoadEvent>>()
   function eventAt(events: Map<number, LoadEvent>, time: number) {
@@ -71,13 +88,16 @@ export function calculateResourceLoad(
   const assigned = new Map<string, Set<string>>()
   for (const { resourceId, taskId, units = 1 } of assignments) {
     const events = byResource.get(resourceId), work = taskPeriods.get(taskId)
-    if (!events || !work) throw new Error('Unknown task or resource in assignment')
+    if (!events) throw new Error('Unknown resource in assignment: ' + resourceId)
+    if (!work && !inactive.has(taskId)) {
+      throw new Error('Unknown task in assignment: ' + taskId + '. Tasks left out of a schedule result as inactive must be listed in options.inactiveTaskIds')
+    }
     if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
     let seen = assigned.get(resourceId)
     if (!seen) assigned.set(resourceId, seen = new Set())
     if (seen.has(taskId)) throw new Error('Duplicate resource assignment for task: ' + taskId)
     seen.add(taskId)
-    for (const period of work) {
+    for (const period of work ?? []) {
       eventAt(events, period.start).starts.push({ taskId, units })
       eventAt(events, period.end).ends.push({ taskId, units })
     }

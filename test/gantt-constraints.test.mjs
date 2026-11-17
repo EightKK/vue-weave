@@ -157,6 +157,11 @@ test('toMsProjectXml writes a single constraint as ConstraintType and Constraint
   assert.doesNotMatch(plain, /Constraint/)
   assert.equal(xml({}), plain)
   assert.equal(xml({ startNoEarlierThan: 0, finishNoLaterThan: hour }), plain)
+  assert.equal(xml({ finishNoEarlierThan: 0, finishNoLaterThan: hour }), plain)
+  assert.equal(xml({ fixedStart: hour, finishNoEarlierThan: hour, finishNoLaterThan: hour }), plain)
+  // The finish pair at one time is Must Finish On (3).
+  assert.match(xml({ finishNoEarlierThan: 2 * hour + 400, finishNoLaterThan: 2 * hour + 400 }),
+    /<PercentComplete>10<\/PercentComplete><ConstraintType>3<\/ConstraintType><ConstraintDate>1970-01-01T03:00:00<\/ConstraintDate><\/Task>/)
   assert.throws(() => xml({ fixedStart: Infinity }), RangeError)
   assert.throws(() => xml({ fixedStart: 9e15 }), { name: 'RangeError', message: 'Constraint of task a must be a finite time' })
   // Before the predecessor links, as the MSPDI schema orders the elements.

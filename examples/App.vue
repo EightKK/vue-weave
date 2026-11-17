@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, shallowRef, watch } from 'vue'
-import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
+import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGraph, layoutConcentricGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
@@ -8,6 +8,8 @@ import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
 import LinkedPlanningDemo from './LinkedPlanningDemo.vue'
 import AsyncGraphDemo from './AsyncGraphDemo.vue'
+import DiagramStylesDemo from './DiagramStylesDemo.vue'
+import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
@@ -33,7 +35,7 @@ const showcases = [
 const showcase = computed(() => showcases.find(item => item.id === preset.value))
 // Demos that keep their own state and ignore the graph and timeline controls of this page.
 const standalone = computed(() => showcase.value !== undefined
-  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async'].includes(preset.value))
+  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis'].includes(preset.value))
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -52,14 +54,19 @@ const initialBars = ref(data.value.bars)
 const selected = ref('split')
 const direction = ref<GraphLayoutDirection>('LR')
 const crossingReduction = ref<GraphCrossingReduction>('none')
-const layoutKind = ref<'layered' | 'tree' | 'radial' | 'force'>('layered')
+const layoutKind = ref<'layered' | 'tree' | 'radial' | 'circular' | 'grid' | 'concentric' | 'force'>('layered')
 // The force simulation runs synchronously on the main thread and takes about a second for the 3,750-node large graph,
-// so the demo offers it for smaller graphs only and falls back to the layered layout.
+// and the circular and concentric layouts become very large for thousands of nodes, so the demo offers these layouts
+// for smaller graphs only and falls back to the layered layout. The grid layout stays available.
 const forceNodeLimit = 1000
 const forceAvailable = computed(() => data.value.nodes.length <= forceNodeLimit)
+const limitedLayouts = ['force', 'circular', 'concentric']
 const graphLayout = computed<GraphLayoutFunction | undefined>(() => layoutKind.value === 'tree'
   ? (n, e) => layoutTreeGraph(n, e, { direction: direction.value })
   : layoutKind.value === 'radial' ? (n, e) => layoutRadialGraph(n, e)
+    : layoutKind.value === 'circular' && forceAvailable.value ? (n, e) => layoutCircularGraph(n, e)
+    : layoutKind.value === 'grid' ? (n, e) => layoutGridGraph(n, e)
+    : layoutKind.value === 'concentric' && forceAvailable.value ? (n, e) => layoutConcentricGraph(n, e)
     : layoutKind.value === 'force' && forceAvailable.value ? (n, e) => layoutForceGraph(n, e, { seed: 1 }) : undefined)
 const dark = ref(false)
 const builtInTheme = ref<'' | 'vw-theme-dark' | 'vw-theme-auto'>('')
@@ -140,9 +147,10 @@ const timeline = ref<InstanceType<typeof GanttChart>>()
 const selectedBars = computed(() => new Set(data.value.bars.filter(bar => (bar.data ?? bar.id) === selected.value).map(bar => bar.id)))
 
 watch(forceAvailable, available => {
-  if (available || layoutKind.value !== 'force') return
+  if (available || !limitedLayouts.includes(layoutKind.value)) return
+  const name = layoutKind.value
   layoutKind.value = 'layered'
-  status.value = `The force layout is offered for up to ${forceNodeLimit.toLocaleString('en-US')} nodes; switched to the layered layout.`
+  status.value = `The ${name} layout is offered for up to ${forceNodeLimit.toLocaleString('en-US')} nodes; switched to the layered layout.`
 })
 function reset() {
   const example = makeExample(preset.value)
@@ -508,6 +516,8 @@ function commit(change: TimelineEdit) {
         <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
         <button type="button" :aria-pressed="preset === 'linked'" @click="preset = 'linked'">Linked views</button>
         <button type="button" :aria-pressed="preset === 'async'" @click="preset = 'async'">Async layout</button>
+        <button type="button" :aria-pressed="preset === 'diagram'" @click="preset = 'diagram'">Diagram styles</button>
+        <button type="button" :aria-pressed="preset === 'analysis'" @click="preset = 'analysis'">Graph analysis</button>
         <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
         <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
@@ -523,12 +533,14 @@ function commit(change: TimelineEdit) {
       <GanttEditingDemo v-else-if="preset === 'editing'" />
       <LinkedPlanningDemo v-else-if="preset === 'linked'" />
       <AsyncGraphDemo v-else-if="preset === 'async'" />
+      <DiagramStylesDemo v-else-if="preset === 'diagram'" />
+      <GraphAnalysisDemo v-else-if="preset === 'analysis'" />
       <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
       <PersistenceDemo v-else-if="preset === 'persistence'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
-          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option :disabled="!forceAvailable">force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
+          <div class="options"><label>Direction <select v-model="direction"><option>LR</option><option>TB</option><option>RL</option><option>BT</option></select></label><label>Crossing reduction <select v-model="crossingReduction"><option>none</option><option>barycenter</option><option>median</option></select></label><label>Graph layout <select v-model="layoutKind"><option>layered</option><option>tree</option><option>radial</option><option :disabled="!forceAvailable">circular</option><option>grid</option><option :disabled="!forceAvailable">concentric</option><option :disabled="!forceAvailable">force</option></select></label><label><input v-model="custom" type="checkbox"> Custom nodes</label><label><input v-model="graphEditing" type="checkbox"> Edit graph</label><label v-if="graphEditing && preset === 'manufacturing'"><input v-model="nestedGroups" type="checkbox"> Nested groups</label><button v-if="graphEditing" type="button" :disabled="!canFitSelection" @click="fitSelection()">Fit selection</button><label>Search nodes <input v-model="query" type="search" @keydown.enter="findFirstMatch"></label></div>
         </div>
         <div v-if="graphEditing" class="graph-tools">
           <label><input v-model="snapToGrid" type="checkbox"> Snap to grid</label>

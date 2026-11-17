@@ -29,6 +29,9 @@ import type { TimeRange } from './timeline.js'
  * infeasible, which is returned as such. Returns the result of scheduling the adjusted plan; the dependencies that
  * no longer apply are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
  *
+ * Manual tasks keep their manual dates whatever their progress, and inactive tasks stay inactive; progress entries of
+ * both are accepted and have no effect.
+ *
  * Throws a RangeError for a status date that is not finite, outside `input.range` or not aligned with the quantum,
  * a progress value outside 0..1 or a done share that does not fit before the status date, and an Error for a progress
  * that is not a Map and a progress entry of an unknown task.
@@ -44,7 +47,7 @@ export function rescheduleFromStatusDate(
     throw new Error('Progress must be a Map from task ID to the completed share, such as new Map([[\'a\', 0.5]])')
   }
   for (const [id, value] of progress) {
-    if (!model.tasks.has(id)) throw new Error('Unknown task in progress: ' + id)
+    if (!model.tasks.has(id) && !model.inactive.has(id)) throw new Error('Unknown task in progress: ' + id)
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
       throw new RangeError('Progress must be between zero and one: ' + id)
     }
@@ -55,8 +58,9 @@ export function rescheduleFromStatusDate(
   const completed = new Set<string>()
   const resumes = new Map<string, Resume>()
   const tasks = input.tasks.map((task): ScheduleTask => {
+    const modelled = model.tasks.get(task.id)
+    if (!modelled || modelled.manual) return task
     const value = progress.get(task.id) ?? 0
-    const modelled = model.tasks.get(task.id)!
     const { startNoEarlierThan, startNoLaterThan, fixedStart: _fixed, mode: _mode, ...rest } = task
     if (value === 1) {
       completed.add(task.id)
@@ -113,6 +117,10 @@ function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string
   const earliest = new Map<string, TimeRange>()
   for (const id of sorted.order) {
     const task = model.tasks.get(id)!
+    if (task.manual) {
+      earliest.set(id, task.manual)
+      continue
+    }
     const bounds = lowerBounds(task, earliest)
     const pinned = resumes.get(id)
     if (pinned && task.incoming.length) {

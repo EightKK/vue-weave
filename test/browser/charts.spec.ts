@@ -984,6 +984,146 @@ test('the preserve routing policy keeps an external port route while an unrelate
   expect(errors).toEqual([])
 })
 
+async function openStylesFixture(page: Page, search = '') {
+  await page.route('**/graph-styles-test/**', async route => {
+    const filename = new URL(route.request().url()).pathname.slice('/graph-styles-test/'.length)
+    if (filename === '') return route.fulfill({ path: fileURLToPath(new URL('./fixtures/graph-styles.html', import.meta.url)) })
+    if (filename === 'vue.js') {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../node_modules/vue/dist/vue.esm-browser.prod.js', import.meta.url)),
+        contentType: 'text/javascript',
+      })
+    }
+    if (/^[\w-]+\.(?:js|css)$/.test(filename)) {
+      return route.fulfill({
+        path: fileURLToPath(new URL('../../dist/' + filename, import.meta.url)),
+        contentType: filename.endsWith('.css') ? 'text/css' : 'text/javascript',
+      })
+    }
+    return route.fulfill({ status: 404, body: 'Not found' })
+  })
+  await page.goto('/graph-styles-test/' + search)
+  await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
+}
+
+test('node shapes, edge markers, animated and parallel edges render, follow drags and reshapes and keep their names', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  const paths = () => page.locator('.vw-edge-hit').evaluateAll(list => Object.fromEntries(list.map(item => [item.getAttribute('data-vw-edge'), item.getAttribute('d')])))
+  const style = (selector: string, property: string) => page.locator(selector).first().evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property)
+  await openStylesFixture(page)
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  // Accessible names are those of box nodes and plain edges. (The middle one of three parallel edges between two stacked
+  // nodes is a vertical line, which has no visible width.)
+  for (const name of ['Start', 'Check stock', 'Prepare', 'Ship']) await expect(button(name)).toBeVisible()
+  for (const name of ['order', 'retry', 'reject', 'ready', 'pack', 'loop', 'again']) await expect(button('Select edge ' + name)).toHaveCount(1)
+  // Shapes are painted like the node rectangle: tone colours, and the solid fill once selected.
+  await expect(page.locator('[data-vw-node="start"] ellipse.vw-node-shape')).toHaveCount(1)
+  await expect(page.locator('[data-vw-node="check"] polygon.vw-node-shape')).toHaveCount(1)
+  await expect(page.locator('[data-vw-node="prep"] polygon.vw-node-shape')).toHaveAttribute('points', /^(?:[\d.]+,[\d.]+ ){5}[\d.]+,[\d.]+$/)
+  await expect(page.locator('[data-vw-node="ship"] rect')).toHaveCount(1)
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe('rgb(225, 242, 238)')
+  expect(await style('[data-vw-node="ship"] rect', 'fill')).toBe('rgb(239, 231, 248)')
+  await expect(page.locator('[data-vw-node="check"] text').first()).toHaveAttribute('text-anchor', 'middle')
+  await button('Check stock').click()
+  await expect(button('Check stock')).toHaveAttribute('aria-pressed', 'true')
+  expect(await style('[data-vw-node="check"] polygon', 'fill')).toBe('rgb(130, 84, 17)')
+  expect(await style('[data-vw-node="check"] polygon', 'stroke-width')).toBe('2.8px')
+
+  // Markers: the default arrow plus one marker per other kind and end in use; hollow ones take the stage background.
+  const ids = await page.locator('marker').evaluateAll(list => list.map(item => item.id))
+  const base = ids[0]!
+  expect(ids.slice(1).sort()).toEqual(['bar', 'diamond', 'open-arrow', 'start-arrow', 'start-circle'].map(kind => base + '-' + kind).sort())
+  await expect(page.locator(`marker[id="${base}-start-circle"]`)).toHaveAttribute('orient', 'auto-start-reverse')
+  const edgePath = (label: string) => page.locator('.vw-network-edge').nth(['order', 'retry', 'reject', 'ready', 'pack', 'loop', 'again'].indexOf(label))
+  await expect(edgePath('reject')).toHaveAttribute('marker-start', `url(#${base}-start-circle)`)
+  await expect(edgePath('pack')).not.toHaveAttribute('marker-end', /./)
+  await expect(edgePath('order')).toHaveAttribute('marker-end', `url(#${base})`)
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(246, 249, 251)')
+
+  // The animated edge flows, except with reduced motion and in print.
+  await expect(edgePath('order')).toHaveClass('vw-network-edge vw-is-animated')
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('vw-edge-flow')
+  expect(await style('.vw-network-edge.vw-is-animated', 'stroke-dasharray')).toBe('6px, 4px')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('none')
+  await page.emulateMedia({ reducedMotion: null, media: 'print' })
+  expect(await style('.vw-network-edge.vw-is-animated', 'animation-name')).toBe('none')
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(246, 249, 251)')
+  await page.emulateMedia({ media: null, forcedColors: 'active' })
+  const canvas = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'forced-color-adjust: none; background-color: Canvas'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe(canvas)
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe(canvas)
+  await page.emulateMedia({ forcedColors: null })
+
+  // Parallel edges are drawn apart; a drag preview of a shared node equals the committed move.
+  const initial = await paths()
+  expect(new Set([initial.sc1, initial.sc2, initial.cs]).size).toBe(3)
+  expect(initial.pp1).not.toBe(initial.pp2)
+  const node = button('Check stock')
+  const box = (await node.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 5 })
+  const dragged = await paths()
+  for (const id of ['sc1', 'sc2', 'cs', 'cp']) expect(dragged[id], id).not.toBe(initial[id])
+  expect(new Set([dragged.sc1, dragged.sc2, dragged.cs]).size).toBe(3)
+  await page.mouse.up()
+  await expect(page.getByRole('status', { name: 'Move events', exact: true })).toHaveText('1')
+  expect(await paths()).toEqual(dragged)
+
+  // A waypoint added to one parallel edge takes it out of the group: the preview spreads the other two again, as the
+  // committed waypoint does.
+  await button('Select edge order').press('Enter')
+  const add = button('Add waypoint 1 · order')
+  await expect(add).toBeVisible()
+  const before = await paths()
+  let preview: Record<string, string | null> = {}
+  await dragBy(page, add, 0, -60, async () => {
+    preview = await paths()
+    expect(preview.sc1).not.toBe(before.sc1)
+    expect(preview.sc2).not.toBe(before.sc2)
+    expect(preview.cs).not.toBe(before.cs)
+    expect(preview.cp).toBe(before.cp)
+  })
+  await expect(page.getByRole('status', { name: 'Reshape events', exact: true })).toHaveText('1')
+  expect(await paths()).toEqual(preview)
+  // Only the dragged point became a waypoint: the spreading point is not one.
+  await expect(button('Move waypoint 1 · order')).toBeVisible()
+  await expect(button('Move waypoint 2 · order')).toHaveCount(0)
+
+  // The export draws the same paths, shapes and markers.
+  const exported = await page.evaluate(() => (window as any).__vw.graph().exportSvg() as string)
+  expect(exported).toContain('orient="auto-start-reverse"')
+  expect(exported).toContain('stroke-dasharray="6 4"')
+  expect((exported.match(/<polygon /g) ?? []).length).toBe(2)
+  expect(exported).toContain('<ellipse ')
+  for (const path of Object.values(await paths())) expect(exported).toContain(`d="${path}"`)
+  expect(errors).toEqual([])
+})
+
+test('hollow edge markers and node shapes follow the dark theme', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openStylesFixture(page, '?theme=dark&style=straight')
+  const style = (selector: string, property: string) => page.locator(selector).first().evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property)
+  expect(await style('.vw-edge-marker-hollow', 'fill')).toBe('rgb(30, 51, 67)')
+  expect(await style('[data-vw-node="start"] ellipse', 'fill')).toBe('rgb(32, 69, 63)')
+  expect(await style('[data-vw-node="check"] polygon', 'stroke')).toBe('rgb(181, 136, 72)')
+  // Straight edges end on the shape outlines and parallel straight edges bend apart.
+  const d = await page.locator('.vw-edge-hit[data-vw-edge="sc1"]').getAttribute('d')
+  expect(d).toMatch(/^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+ L [\d.]+ [\d.]+$/)
+  await expect(page.getByRole('button', { name: 'Check stock', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('getTargetClientRect measures nodes, edges and groups and setViewportCenter restores a saved centre', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -2439,7 +2579,7 @@ test('network direction, crossing reduction and layout controls', async ({ page 
     await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
-  for (const layout of ['tree', 'radial', 'layered']) {
+  for (const layout of ['tree', 'radial', 'circular', 'grid', 'concentric', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
     await expect(page.locator('.vw-network-node').first()).toBeVisible()
   }
@@ -3453,6 +3593,42 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
   expect(errors).toEqual([])
 })
 
+test('circular, grid and concentric graph layouts render selectable nodes without overlapping boxes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const nodes = page.locator('.vw-network-node')
+  await expect(nodes.first()).toBeVisible()
+  const count = await nodes.count()
+  await page.getByLabel('Edit graph').check()
+  const layout = page.getByLabel('Graph layout')
+  for (const kind of ['circular', 'grid', 'concentric']) {
+    await layout.selectOption(kind)
+    await expect(layout).toHaveValue(kind)
+    await expect(nodes).toHaveCount(count)
+    const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+    const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
+    await expect(split).toBeVisible()
+    await split.click()
+    await finish.click({ modifiers: ['Shift'] })
+    await expect(split).toHaveAttribute('aria-pressed', 'true')
+    await expect(finish).toHaveAttribute('aria-pressed', 'true')
+    const boxes = await nodes.evaluateAll(elements => elements.map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }))
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!, b = boxes[j]!
+        expect(a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5).toBe(true)
+      }
+    }
+  }
+  await layout.selectOption('layered')
+  await expect(nodes).toHaveCount(count)
+  expect(errors).toEqual([])
+})
+
 test('the demo offers the force layout up to 1,000 nodes and falls back to layered for the large graph', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -3925,6 +4101,129 @@ test('the scheduling demo shows the plan as a network diagram with critical task
   expect(errors).toEqual([])
 })
 
+test('the scheduling demo pins inspection manually, lists manual conflicts and leaves an inactive order out of the plan', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
+  const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
+  const other = plan.getByRole('button', { name: /^Cut order B \d\d Nov.*–/ })
+  const inspection = plan.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
+  const packing = plan.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
+  const manual = page.getByRole('checkbox', { name: 'Schedule inspection manually', exact: true })
+  const cancel = page.getByRole('checkbox', { name: 'Cancel order B (inactive)', exact: true })
+  const conflicts = page.getByRole('region', { name: 'Manual date conflicts', exact: true })
+  const status = page.getByRole('status').filter({ hasText: /Inspect order A|Cut order B|Plan recalculated|Rescheduled|Original plan/ })
+  const editHint = 'Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.'
+
+  // Off by default: inspection is scheduled automatically, critical and not editable.
+  await expect(manual).not.toBeChecked()
+  await expect(cancel).not.toBeChecked()
+  await expect(conflicts).toHaveCount(0)
+  await expect(plan.getByText('Inspection station', { exact: true })).toBeVisible()
+  await expect(inspection).toHaveAccessibleDescription('Critical. Float until 09 Nov 14:00.')
+
+  // Manual: pinned at its planned dates, violet, editable, without float or critical overlay.
+  await manual.check()
+  await expect(status).toHaveText('Inspect order A is scheduled manually at 09 Nov 11:00–09 Nov 14:00. Its links no longer move it; move or resize its bar.')
+  await expect(plan.getByText('Inspection · manual', { exact: true })).toBeVisible()
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(inspection).toHaveClass(/vw-tone-violet/)
+  await expect(inspection).not.toHaveClass(/vw-critical/)
+  // TimelineBar.description comes first in the accessible description; the name stays the same.
+  await expect(inspection).toHaveAccessibleDescription('Manually scheduled: its links do not move it. ' + editHint)
+  await expect(inspection).toHaveAttribute('title', 'Inspect order A 09 Nov 11:00–09 Nov 14:00 · Manually scheduled: its links do not move it.')
+  await expect(conflicts).toContainText('None: the manual dates meet every link into them.')
+
+  // Cutting order A one hour later finishes after the pinned inspection starts: the inspection stays and the broken link is listed.
+  await cutting.press('ArrowRight')
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 09:00–09 Nov 12:00')
+  await expect(status).toHaveText('Plan recalculated. 0 other operations changed. 1 manual date conflict.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(conflicts.getByRole('listitem')).toHaveText(['Inspect order A starts before Cut order A finishes (link Cut order A → Inspect order A)'])
+
+  // Dragging the manual bar one hour later previews packing, then moves the manual dates; packing follows and the conflict is resolved.
+  const ghosts = plan.locator('.vw-gantt-cascade-preview')
+  const box = (await inspection.boundingBox())!
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 18, y, { steps: 6 })
+  await expect(ghosts).toHaveCount(1)
+  await page.mouse.up()
+  await expect(status).toHaveText('Plan recalculated. 1 other operation changed.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 12:00–09 Nov 15:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 15:00–09 Nov 17:00')
+  await expect(conflicts.getByRole('listitem')).toHaveCount(0)
+  await expect(conflicts).toContainText('None')
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 17:00')
+
+  // Inactive: cutting order B keeps a placeholder bar but leaves the load view, the network diagram and the chart links.
+  await page.getByRole('checkbox', { name: 'Network diagram', exact: true }).check()
+  const diagram = page.getByLabel('Schedule network diagram', { exact: true })
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(4)
+  await expect(diagram.locator('.vw-network-edge')).toHaveCount(3)
+  const doubleLoad = equipment.getByRole('button', { name: '2 / 1 09 Nov 10:00–09 Nov 12:00', exact: true })
+  await expect(doubleLoad).toBeVisible()
+  await expect(page.getByTestId('schedule-overload')).toHaveText('2 resource-hours')
+  await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
+  await cancel.check()
+  await expect(status).toHaveText('Cut order B is inactive: it no longer drives packing or loads the CNC cell. Plan recalculated.')
+  await expect(plan.getByText('CNC cell · inactive', { exact: true })).toBeVisible()
+  await expect(other).toHaveAttribute('aria-label', 'Cut order B 09 Nov 10:00–09 Nov 12:00')
+  await expect(other).toHaveClass(/vw-is-outline/)
+  await expect(other).not.toHaveClass(/vw-is-editable/)
+  await expect(other).toHaveAccessibleDescription('Inactive: takes no part in the plan.')
+  await expect(plan.locator('.vw-gantt-lag')).toHaveCount(0)
+  await expect(doubleLoad).toHaveCount(0)
+  await expect(equipment.getByRole('button', { name: '1 / 1 09 Nov 09:00–09 Nov 12:00', exact: true })).toBeVisible()
+  await expect(page.getByTestId('schedule-overload')).toHaveText('0 resource-hours')
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(3)
+  await expect(diagram.locator('.vw-network-edge')).toHaveCount(2)
+  await expect(diagram.getByRole('button', { name: /^Cut order B / })).toHaveCount(0)
+
+  // Exports: Microsoft Project marks the inactive task, iCalendar leaves it out and the CSV says how each task is scheduled.
+  const { readFile } = await import('node:fs/promises')
+  async function save(name: string) {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    return (await readFile((await (await pending).path())!)).toString('utf8')
+  }
+  const xml = await save('Export MS Project XML')
+  expect(xml).toContain('<Name>Cut order B</Name><Active>0</Active>')
+  expect(xml).toContain('<Name>Inspect order A</Name><Active>1</Active><Manual>1</Manual>')
+  expect(xml.match(/<PredecessorLink>/g)).toHaveLength(3)
+  const ics = await save('Export iCalendar')
+  expect(ics).not.toContain('SUMMARY:Cut order B')
+  expect(ics).toContain('DESCRIPTION:Inspection · manual\r\n')
+  const csv = (await save('Export CSV')).split('\r\n')
+  expect(csv[0]).toBe('Operation,WBS,Task,Start,End,Progress,Scheduling')
+  expect(csv[2]).toBe('Cut order B,2,Cut order B,09 Nov 10:00,09 Nov 12:00,0.5,Inactive')
+  expect(csv[3]).toBe('Inspect order A,3,Inspect order A,09 Nov 12:00,09 Nov 15:00,0.25,Manual')
+
+  // Rescheduling from the status date keeps the manual dates and ignores the inactive order.
+  await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
+  await expect(status).toHaveText('Rescheduled from status date 09 Nov 12:00. 0 operations moved.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 12:00–09 Nov 15:00')
+
+  // Reset turns both options off and restores the original plan.
+  await page.getByRole('button', { name: 'Reset schedule', exact: true }).click()
+  await expect(status).toHaveText('Original plan restored.')
+  await expect(manual).not.toBeChecked()
+  await expect(cancel).not.toBeChecked()
+  await expect(conflicts).toHaveCount(0)
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(inspection).not.toHaveClass(/vw-tone-violet/)
+  await expect(other).not.toHaveClass(/vw-is-outline/)
+  await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(4)
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
+  await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
+  expect(errors).toEqual([])
+})
+
 test('gantt columns resize by pointer and keyboard with validation, Escape, undo and right-to-left keys', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
   await expect(chart.getByRole('separator')).toHaveCount(0)
@@ -4033,6 +4332,56 @@ test('the timeline editing demo imports a CSV file as one undoable step and repo
   await undo.click()
   await expect(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })).toBeVisible()
   await expect(primer).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the timeline editing demo imports a Microsoft Project XML file as one undoable step and reports invalid files', async ({ page }) => {
+  const { errors, chart, status } = await openTimelineEditing(page)
+  const input = page.getByLabel('Import MS Project XML', { exact: true })
+  await input.focus()
+  await expect(input).toBeFocused()
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project"><Name>Line retrofit</Name><Tasks>
+<Task><UID>0</UID><Name>Line retrofit</Name><OutlineLevel>0</OutlineLevel><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T13:00:00</Finish></Task>
+<Task><UID>1</UID><Name>Retrofit</Name><OutlineLevel>1</OutlineLevel><Summary>1</Summary><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T13:00:00</Finish></Task>
+<Task><UID>2</UID><Name>Strip &amp; clean</Name><OutlineLevel>2</OutlineLevel><Start>2026-11-09T09:00:00</Start><Finish>2026-11-09T11:00:00</Finish><PercentComplete>50</PercentComplete></Task>
+<Task><UID>3</UID><Name>Rewire</Name><OutlineLevel>2</OutlineLevel><Start>2026-11-09T11:00:00</Start><Finish>2026-11-09T13:00:00</Finish>
+  <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type></PredecessorLink>
+  <PredecessorLink><PredecessorUID>9</PredecessorUID><Type>1</Type></PredecessorLink></Task>
+<Task><UID>4</UID><Name>Handover</Name><OutlineLevel>1</OutlineLevel><Milestone>1</Milestone><Start>2026-11-09T13:00:00</Start><Finish>2026-11-09T13:00:00</Finish>
+  <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type></PredecessorLink></Task>
+</Tasks></Project>`
+  await input.setInputFiles({ name: 'retrofit.xml', mimeType: 'application/xml', buffer: Buffer.from(xml) })
+  await expect(status('Imported 3 tasks and 2 dependencies from retrofit.xml with 1 warning.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Strip & clean 09:00–11:00', exact: true })).toBeVisible()
+  const rewire = chart.getByRole('button', { name: 'Rewire 11:00–13:00', exact: true })
+  await expect(rewire).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Handover 13:00–13:00', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Wireframes / })).toHaveCount(0)
+  // The summary task is a parent row without a bar of its own.
+  await expect(chart.getByRole('button', { name: 'Collapse Retrofit', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: /^Retrofit / })).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: 'Select dependency Strip & clean → Rewire FS', exact: true })).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Select dependency Rewire → Handover FS', exact: true })).toBeVisible()
+
+  // Imported bars are editable like the others.
+  await rewire.press('ArrowRight')
+  await expect(chart.getByRole('button', { name: 'Rewire 11:15–13:15', exact: true })).toBeVisible()
+
+  // An invalid file names the line and column and leaves the timeline unchanged.
+  await input.setInputFiles({ name: 'bad.xml', mimeType: 'application/xml', buffer: Buffer.from('<Project>\n<Name>Plan &nbsp;</Name></Project>') })
+  await expect(status('Import failed: Invalid XML at line 2, column 12: unknown or invalid entity &nbsp;')).toBeVisible()
+  await input.setInputFiles({ name: 'book.xml', mimeType: 'application/xml', buffer: Buffer.from('<Workbook/>') })
+  await expect(status('Import failed: Not a Microsoft Project XML document: the root element is Workbook')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Rewire 11:15–13:15', exact: true })).toBeVisible()
+
+  // Undo restores the edit and then the previous plan.
+  const undo = page.getByRole('button', { name: 'Undo timeline change', exact: true })
+  await undo.click()
+  await expect(rewire).toBeVisible()
+  await undo.click()
+  await expect(chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })).toBeVisible()
+  await expect(rewire).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -5995,5 +6344,116 @@ test('unstyledNodeSlots keeps the library hover stroke off custom node content',
   await expect(split).not.toHaveClass(/vw-is-unstyled/)
   await split.hover()
   await expect(split.locator('rect').first()).toHaveCSS('stroke-width', '2.8px')
+  expect(errors).toEqual([])
+})
+
+test('the diagram demo draws shapes and markers, spreads parallel edges, animates the main path and exports', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Diagram styles', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  for (const name of ['Order placed', 'In stock?', 'Inventory data store', 'Validate order', 'Delivered']) {
+    await expect(page.getByRole('button', { name })).toBeVisible()
+  }
+  await expect(page.locator('.vw-network-node')).toHaveCount(11)
+  // Shapes: decisions are diamonds and terminals ellipses.
+  await expect(page.getByRole('button', { name: 'In stock?' }).locator('polygon, path').first()).toBeAttached()
+  await expect(page.getByRole('button', { name: 'Order placed' }).locator('ellipse')).toHaveCount(1)
+
+  const spread = page.getByLabel('Spread parallel edges')
+  await expect(spread).toBeChecked()
+  const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
+  const spreadPaths = await paths()
+  expect(spreadPaths).toHaveLength(13)
+  await spread.uncheck()
+  const plainPaths = await paths()
+  // The request/response pair (edges 11 and 12) is drawn differently; the other edges are not.
+  expect(plainPaths.slice(0, 10)).toEqual(spreadPaths.slice(0, 10))
+  for (let index = 10; index < 12; index++) expect(plainPaths[index]).not.toEqual(spreadPaths[index])
+  expect(plainPaths[12]).toEqual(spreadPaths[12])
+  await spread.check()
+  await page.getByLabel('Parallel edge spacing').selectOption('56')
+  expect(await paths()).not.toEqual(spreadPaths)
+
+  const animated = page.locator('.vw-network-edge.vw-is-animated')
+  await expect(animated).toHaveCount(6)
+  await page.getByLabel('Animate main path').uncheck()
+  await expect(animated).toHaveCount(0)
+  await page.getByLabel('Animate main path').check()
+  await expect(animated).toHaveCount(6)
+
+  await page.getByLabel('Edge style').selectOption('straight')
+  expect((await paths())[0]).not.toContain('C')
+  await page.getByLabel('Edge style').selectOption('curve')
+
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+  const file = await pending
+  expect(file.suggestedFilename()).toBe('order-fulfilment.svg')
+  const text = (await readFile((await file.path())!)).toString('utf8')
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  expect(text).toContain('>In stock?<')
+  await expect(page.getByRole('status', { name: 'Diagram status' })).toContainText('Exported SVG (')
+  const png = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export PNG', exact: true }).click()
+  expect((await png).suggestedFilename()).toBe('order-fulfilment.png')
+  await expect(page.getByRole('status', { name: 'Diagram status' })).toContainText('Exported PNG')
+  expect(errors).toEqual([])
+})
+
+test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Graph analysis', exact: true }).click()
+  const summary = page.getByLabel('Network summary')
+  await expect(summary).toHaveText(/^\d+ nodes, \d+ edges, 3 components, \d+ communities, modularity 0\.\d\d$/)
+  const communityCount = Number((await summary.textContent())!.match(/(\d+) communities/)![1])
+  const nodeCount = Number((await summary.textContent())!.match(/^(\d+) nodes/)![1])
+  expect(communityCount).toBeGreaterThanOrEqual(8)
+  const frames = page.locator('.vw-network-group')
+  await expect(frames).toHaveCount(0)
+  await page.getByLabel('Group communities').check()
+  await expect(frames).not.toHaveCount(0)
+  await expect(page.getByText(/^Community \d+ · \d+ nodes$/).first()).toBeAttached()
+  await page.getByRole('button', { name: 'Collapse all', exact: true }).click()
+  await expect(page.locator('.vw-network-node')).toHaveCount(communityCount)
+  expect(communityCount).toBeLessThan(nodeCount)
+  await page.getByRole('button', { name: 'Expand all', exact: true }).click()
+  await expect(page.locator('.vw-network-node')).toHaveCount(nodeCount)
+
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(0)
+  await page.getByLabel('Rank by').selectOption('pagerank')
+  const ranking = page.getByRole('list', { name: 'Top ranked nodes' })
+  await expect(ranking.getByRole('listitem')).toHaveCount(5)
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(5)
+  await ranking.getByRole('button').first().click()
+  await expect(page.getByRole('status', { name: 'Analysis status' })).toContainText('Centered on')
+  await page.getByLabel('Rank by').selectOption('none')
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the demo falls back to layered for the circular and concentric layouts of the large graph', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const layout = page.getByLabel('Graph layout')
+  for (const name of ['circular', 'concentric']) {
+    await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+    await layout.selectOption(name)
+    await expect(layout.locator('option', { hasText: name })).toBeEnabled()
+    await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+    await expect(layout).toHaveValue('layered')
+    await expect(layout.locator('option', { hasText: name })).toBeDisabled()
+    await expect(page.getByRole('status').filter({ hasText: `The ${name} layout is offered for up to 1,000 nodes; switched to the layered layout.` })).toBeVisible()
+  }
+  await expect(layout.locator('option', { hasText: 'grid' })).toBeEnabled()
+  await layout.selectOption('grid')
+  await expect(page.locator('.vw-network-node').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await expect(layout.locator('option', { hasText: 'circular' })).toBeEnabled()
   expect(errors).toEqual([])
 })

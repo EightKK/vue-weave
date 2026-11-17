@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { demoBuildState } from './demo-build.mjs'
 
 // Prepare verified local candidates only. Publishing and repository administration remain separate actions.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -53,6 +54,8 @@ async function inventory(directory, paths) {
 }
 
 async function verifyDemo(directory) {
+  // Start.cmd would otherwise try to rebuild the archived demo, which needs npm ci and a network connection.
+  assert.equal(await demoBuildState(directory), 'current', 'The archived demo was not built from the archived sources')
   const child = spawn(process.execPath, ['scripts/serve.mjs'], {
     cwd: directory, windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'],
   })
@@ -84,7 +87,7 @@ async function verifyDemo(directory) {
       ['', 'POST', 405], ['%00', 'GET', 400], ['%5c', 'GET', 400],
       ['%ZZ', 'GET', 400], ['..%2fpackage.json', 'GET', 403], ['missing.js', 'GET', 404],
     ]) assert.equal((await fetch(base + path, { method })).status, expected, 'Unexpected response: ' + path)
-    return { passed: true, assets: assets.length, installedDependencies: false }
+    return { passed: true, assets: assets.length, installedDependencies: false, matchesSources: true }
   } finally {
     if (child.exitCode === null) child.kill()
     await exited

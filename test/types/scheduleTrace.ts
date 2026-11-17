@@ -1,6 +1,6 @@
 // Type-level checks for the explain overloads of scheduleTasks and levelResources. Checked by `npm run typecheck`.
 import {
-  levelResources, scheduleTasks, toPlanningDiagnostics, type LevelResourcesInput, type PlanningDiagnostic,
+  levelResources, scheduleTasks, toPlanningDiagnostics, type LevelResourcesInput, type PlanningDiagnostic, type PlanningDiagnosticCode,
   type ScheduleInput, type ScheduleTrace,
 } from '../../src/core/index'
 
@@ -44,3 +44,10 @@ if (explainedLeveling.ok) {
 
 const diagnostics: PlanningDiagnostic[] = toPlanningDiagnostics(explainedLeveling)
 void diagnostics
+
+// The manual-conflict code is a member of PlanningDiagnosticCode.
+const conflictCode: PlanningDiagnosticCode = 'manual-conflict'
+void conflictCode
+// @ts-expect-error unknown codes are not members
+const unknownCode: PlanningDiagnosticCode = 'manual-conflicts'
+void unknownCode

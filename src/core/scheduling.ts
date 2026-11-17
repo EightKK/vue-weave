@@ -1,9 +1,9 @@
 import {
-  addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, slotFor, sourceFinish, targetFinish,
-  topologicalOrder, type Slot,
+  addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot, slotFor, sourceFinish,
+  targetFinish, topologicalOrder, type Slot,
 } from './scheduleModel.js'
 import {
-  explainOption, recordSlotReasons, ScheduleTraceRecorder, type ExplainedScheduleResult, type ScheduleOptions,
+  explainOption, recordManualReason, recordSlotReasons, ScheduleTraceRecorder, type ExplainedScheduleResult, type ScheduleOptions,
 } from './scheduleTrace.js'
 import type { WorkCalendar } from './workCalendar.js'
 import type { TimeRange } from './timeline.js'
@@ -29,6 +29,18 @@ export interface ScheduleTask {
   splittable?: boolean
   /** Leveling priority; higher values are placed first. `scheduleTasks` ignores it. Defaults to 0. */
   priority?: number
+  /**
+   * Manually scheduled dates, like a manually scheduled task in Microsoft Project: the task stays at exactly
+   * `[manual.start, manual.end)` in elapsed time. Its predecessors, own bounds, `mode` and calendar do not move it, and
+   * `duration` is ignored; successors still follow it through their links. Both dates must align with the horizon and
+   * quantum and lie inside `range`, with `end >= start`; equal dates make a milestone.
+   */
+  manual?: TimeRange
+  /**
+   * Leaves the task out of the calculation, like an inactive task in Microsoft Project: it, every dependency that
+   * touches it and its resource assignments are ignored, and it is not in the result's `tasks`. It is still validated.
+   */
+  inactive?: boolean
 }
 
 export interface ScheduleLink extends TimelineDependency {
@@ -59,6 +71,18 @@ export interface ScheduledTask extends TimeRange {
   earliestStart?: number
   /** Present only for `mode: 'alap'` tasks: the earliest finish. */
   earliestEnd?: number
+  /**
+   * Present (true) only for tasks with `manual` dates. Their latest dates are their own dates, their float is 0 and
+   * they are never critical.
+   */
+  manual?: true
+}
+
+/** A link into a manual task that the task's manual dates violate. */
+export interface ScheduleManualConflict {
+  /** The manual task. */
+  taskId: string
+  dependencyId: string
 }
 
 /** Names of the bounds that can make a task infeasible. `calendar` covers the task's working time after pauses. */
@@ -75,8 +99,16 @@ export interface ScheduleCycle {
 export interface ScheduleSuccess {
   ok: true
   finish: number
+  /** One entry per task in input order, without inactive tasks. */
   tasks: readonly ScheduledTask[]
   criticalDependencyIds: readonly string[]
+  /**
+   * Links into manual tasks whose manual dates violate them, measured against the predecessor's dates in `tasks`, in
+   * link order. Present only when not empty.
+   */
+  manualConflicts?: readonly ScheduleManualConflict[]
+  /** IDs of the inactive tasks of the input, in input order. Present only when not empty. */
+  inactiveTaskIds?: readonly string[]
 }
 
 export type ScheduleFailure =
@@ -96,6 +128,10 @@ export type ScheduleResult = ScheduleSuccess | ScheduleFailure
 /**
  * Calculate earliest and latest feasible dates without changing the supplied plan. With `{ explain: true }`, a
  * successful result also has a `trace` of why each task got its dates; the dates themselves do not change.
+ *
+ * A task with `manual` dates keeps them in every pass; links into it bind nothing (they still count for cycles), and
+ * each one its dates violate is listed in `manualConflicts`. A manual task that ends after the `deadline` makes the plan
+ * infeasible. An `inactive` task, its links and its result entry are left out.
  */
 export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions & { explain?: false }): ScheduleResult
 export function scheduleTasks(input: ScheduleInput, options: ScheduleOptions & { explain: true }): ExplainedScheduleResult
@@ -108,12 +144,24 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
   const sorted = topologicalOrder(model)
   if ('cycles' in sorted) return { ok: false, code: 'cycle', cycles: sorted.cycles }
   const { order } = sorted
-  const trace = explain ? new ScheduleTraceRecorder(input.tasks.map(task => task.id)) : undefined
+  const active = input.tasks.filter(task => tasks.has(task.id))
+  const trace = explain ? new ScheduleTraceRecorder(active.map(task => task.id)) : undefined
 
   const earliest = new Map<string, Slot>()
   let finish = range.start
   for (const id of order) {
     const task = tasks.get(id)!
+    if (task.manual) {
+      // Manual dates are kept as given; only the project deadline can make them infeasible.
+      if (input.deadline !== undefined && task.manual.end > input.deadline) {
+        return { ok: false, code: 'infeasible', taskId: id, constraints: ['deadline'], dependencyIds: [] }
+      }
+      if (trace) recordManualReason(trace, 'earliest', task)
+      const slot = manualSlot(task)
+      earliest.set(id, slot)
+      finish = Math.max(finish, slot.end)
+      continue
+    }
     const bounds = lowerBounds(task, earliest)
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, false)
@@ -129,12 +177,17 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
 
   let finishers: { parents: string[]; taskIds: string[] } | undefined
   if (trace) {
-    const taskIds = input.tasks.filter(task => earliest.get(task.id)!.end === finish).map(task => task.id)
+    const taskIds = active.filter(task => earliest.get(task.id)!.end === finish).map(task => task.id)
     finishers = { taskIds, parents: taskIds.flatMap(id => trace.ids('earliest', id)) }
   }
   const latest = new Map<string, Slot>()
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
+    if (task.manual) {
+      if (trace) recordManualReason(trace, 'latest', task)
+      latest.set(task.id, manualSlot(task))
+      continue
+    }
     const bounds = addUpperBounds(cloneBounds(task.bounds), task, latest, finish)
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, true)
@@ -147,12 +200,20 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
     latest.set(task.id, slot)
   }
 
-  // ALAP tasks consume only the float that moves no other task: successors keep their placed dates.
+  // ALAP tasks consume only the float that moves no other task: successors keep their placed dates. A link into a
+  // manual task holds an ALAP task back only when its earliest dates already meet it, so placement adds no conflict.
   const placed = new Map(earliest)
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
     if (!task.alap) continue
     const bounds = addUpperBounds(lowerBounds(task, earliest), task, placed, finish)
+    const own = earliest.get(task.id)!
+    for (const link of task.manualOutgoing) {
+      const manual = tasks.get(link.to)!.manual!
+      const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
+      if ((sourceFinish(link) ? own.end : own.start) > value) continue
+      ;(sourceFinish(link) ? bounds.endUpper : bounds.startUpper).push({ value, dependencyId: link.id })
+    }
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)
@@ -164,8 +225,16 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
     placed.set(task.id, slot)
   }
 
-  const result = input.tasks.map(({ id }) => {
+  const result = active.map(({ id }) => {
     const task = tasks.get(id)!
+    if (task.manual) {
+      const { start, end } = task.manual
+      const manual: ScheduledTask = {
+        id, start, end, work: start < end ? task.clock.slices(task.manual) : [],
+        latestStart: start, latestEnd: end, totalFloat: 0, workFloat: 0, critical: false, manual: true,
+      }
+      return manual
+    }
     const early = earliest.get(id)!, late = latest.get(id)!, plan = placed.get(id)!
     const totalFloat = task.duration === 0 ? late.start - early.start : (late.workStart - early.workStart) * quantum
     const workFloat = task.duration === 0
@@ -194,6 +263,16 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
     return task.clock.dateAt(work, end) === endpoint
   }).map(link => link.id)
   const success: ScheduleSuccess = { ok: true, finish, tasks: result, criticalDependencyIds }
+  const manualConflicts: ScheduleManualConflict[] = []
+  for (const link of dependencies) {
+    const manual = tasks.get(link.to)?.manual
+    if (!manual || !tasks.has(link.from)) continue
+    const from = placed.get(link.from)!
+    const required = (sourceFinish(link) ? from.end : from.start) + (link.lag ?? 0)
+    if ((targetFinish(link) ? manual.end : manual.start) < required) manualConflicts.push({ taskId: link.to, dependencyId: link.id })
+  }
+  if (manualConflicts.length) success.manualConflicts = manualConflicts
+  if (model.inactive.size) success.inactiveTaskIds = input.tasks.filter(task => model.inactive.has(task.id)).map(task => task.id)
   return trace ? { ...success, trace: trace.trace() } : success
 }
 
@@ -201,7 +280,10 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
 export interface ScheduleEdit {
   id: string
   start: number
-  /** When supplied, the task's working duration becomes the working time in [start, end) on its calendar. */
+  /**
+   * When supplied, the task's working duration becomes the working time in [start, end) on its calendar. For a manual
+   * task, it is the new end of its manual dates.
+   */
   end?: number
 }
 
@@ -226,22 +308,32 @@ export type PropagateEditResult = PropagateEditSuccess | ScheduleFailure
  * Reschedule a plan after one task is moved or resized, for example to preview or apply a GanttChart edit together
  * with its downstream effects. The edited task gets `fixedStart` at the new start (replacing any fixed start it had)
  * and, with `end`, the working duration of [start, end) on its calendar; every other bound and dependency still
- * applies. Returns the new schedule and the tasks whose dates changed, or the failure of the edited plan (or of the
- * unedited plan when only that fails). The input is not modified.
+ * applies. A manual task gets new manual dates instead: the new start and `end`, or the new start and its previous
+ * elapsed length; dates outside the range make the edited plan infeasible (`range`). Returns the new schedule and the
+ * tasks whose dates changed, or the failure of the edited plan (or of the unedited plan when only that fails). Editing
+ * an inactive or unknown task throws an Error. The input is not modified.
  */
 export function propagateEdit(input: ScheduleInput, edit: ScheduleEdit): PropagateEditResult {
   const model = buildScheduleModel(input)
   const task = model.tasks.get(edit.id)
-  if (!task) throw new Error('Unknown task: ' + edit.id)
+  if (!task) throw new Error((model.inactive.has(edit.id) ? 'Cannot edit an inactive task: ' : 'Unknown task: ') + edit.id)
   if (typeof edit.start !== 'number') throw new RangeError('An edited task needs a numeric start: ' + edit.id)
   model.validateTime(edit.start)
   let duration = task.source.duration
   if (edit.end !== undefined) {
     model.validateTime(edit.end)
     if (edit.end < edit.start) throw new RangeError('An edited task cannot end before it starts: ' + edit.id)
-    duration = (task.clock.workAt(edit.end) - task.clock.workAt(edit.start)) * model.quantum
+    if (!task.manual) duration = (task.clock.workAt(edit.end) - task.clock.workAt(edit.start)) * model.quantum
   }
-  const tasks = input.tasks.map(item => item.id === edit.id ? { ...item, fixedStart: edit.start, duration } : item)
+  let edited: (item: ScheduleTask) => ScheduleTask = item => ({ ...item, fixedStart: edit.start, duration })
+  if (task.manual) {
+    const manual = { start: edit.start, end: edit.end ?? edit.start + task.manual.end - task.manual.start }
+    if (manual.start < model.range.start || manual.end > model.range.end) {
+      return { ok: false, code: 'infeasible', taskId: edit.id, constraints: ['range'], dependencyIds: [] }
+    }
+    edited = item => ({ ...item, manual })
+  }
+  const tasks = input.tasks.map(item => item.id === edit.id ? edited(item) : item)
   const schedule = scheduleTasks({ ...input, tasks })
   if (!schedule.ok) return schedule
   const base = scheduleTasks(input)

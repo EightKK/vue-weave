@@ -19,11 +19,12 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 ### NetworkGraph
 
 - 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。
-- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
+- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、円形の `layoutCircularGraph`、格子状の `layoutGridGraph`、次数などで同心円に並べる `layoutConcentricGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
 - `node`・`edge` スロットでSVG描画を変更でき、`tooltip` スロットも使えます。
 - ノード移動、接続、複数選択、ミニマップ。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）。
 - 入れ子のグループ（`parentId`）、グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、ノードのサイズ変更（`sizes`・`resizable`）。
-- 辺の直角・直線表示（`edgeStyle`）と経由点（`GraphEdge.points`。`editableEdges` で編集）。
+- 辺の直角・直線表示（`edgeStyle`。辺ごとにも指定可）、経由点（`GraphEdge.points`。`editableEdges` で編集）、平行な辺の振り分け（`parallelEdgeSpacing`）、辺の端の記号（`markerStart`・`markerEnd`）、流れるアニメーション（`animated`）。
+- 箱形に加えて、ひし形・楕円・六角形のノード（`NetworkNode.shape`）。書き出しにも反映されます。
 - 大規模グラフとタッチ操作：表示範囲外の描画省略（`cullOffscreen`）、ピンチズーム、縮小時に詳細を隠す表示（`lodThreshold`）。
 - 検索結果の強調（`matchIds`・`dimmedIds`）と、`focusNode(id)`・`fit({ ids })` メソッド。
 - グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、`autoPan`。
@@ -44,17 +45,18 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
 - ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
-- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。
+- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。「手動スケジュール」のような独自の補足も、`TimelineBar.description` でこの説明とツールチップに加えられます。
 - スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
 
 ### ヘッドレスコア（`vue-weave/core`）
 
 - グラフの解析：`topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`。
+- グラフの指標：連結成分（`graphComponents`）、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）、検出結果を `NetworkGraph` のグループに変換する `graphCommunityGroups`。
 - グラフの形状：`collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` は、コンポーネントのpropsと同じ形状を計算します。
-- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
+- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
 - `levelResources` による設備負荷の平準化と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
-- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして読み込みます。
+- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として読み込みます。
 
 ### 計画・連動・保存
 
@@ -74,7 +76,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ## 対応状況
 
-- **バージョン0.4.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
+- **バージョン0.5.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
 - **Vue：** 3.5以降（peer dependency）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
@@ -83,10 +85,10 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ## 組み込む
 
-npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.4.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.5.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./vue-weave-0.4.0.tgz
+npm install ./vue-weave-0.5.0.tgz
 ```
 
 Vue 3.5以降をpeer dependencyとしています。ES modules、TypeScriptの型定義、スタイルシートを提供します。CSSはアプリケーションで `import 'vue-weave/style.css'` により一度だけ読み込んでください。`vue-weave/core` はVueなしで動作し、TypeScriptの `NodeNext` による型解決にも対応しています。
@@ -216,9 +218,11 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけでワークフロービルダー、データベーススキーマ図、組織図、プロダクトロードマップ、スプリント計画、客室予約カレンダーの見た目に作り替えています。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、ダイアグラム表現（ノード形状、エッジ端の記号、アニメーションと平行エッジ）、グラフ分析（連結成分、コミュニティ、中心性の順位）、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけでワークフロービルダー、データベーススキーマ図、組織図、プロダクトロードマップ、スプリント計画、客室予約カレンダーの見た目に作り替えています。編集結果はデモ画面内の状態として保持します。
 
-`preview/` を含むビルド済みデモのアーカイブ（リリースに添付されることがあります）を使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。
+Windowsでは代わりに `Start.cmd` をダブルクリックしても起動できます。`preview/` が現在のソースからビルドされたものであればそのまま表示し、そうでなければ先にビルドします。インストール済みの依存関係が `package-lock.json` と一致しない場合は、ビルドの前に `npm ci` も実行します。`npm start` は `preview/` をそのまま表示します。
+
+`preview/` を含むビルド済みデモのアーカイブ（リリースに添付されることがあります）を使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。ソースを変更した場合は `Start.cmd` がデモをビルドし直します。初回はnpmとインターネット接続が必要です。
 
 開発・検証コマンドは[Contributing](CONTRIBUTING.md)を参照してください。
 

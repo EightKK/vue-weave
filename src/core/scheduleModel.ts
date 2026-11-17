@@ -110,8 +110,16 @@ export interface ModelTask {
   duration: number
   alap: boolean
   bounds: Bounds
+  /** Links that bind this task: every link into it, unless the task is manual. */
   incoming: ScheduleLink[]
+  /** Links to tasks that are not manual. */
   outgoing: ScheduleLink[]
+  /** For a manual task: the links into it, which no pass applies. They still count for cycle detection. */
+  manualIncoming: ScheduleLink[]
+  /** Links to manual tasks. No pass applies them, except an ALAP placement that already meets them. */
+  manualOutgoing: ScheduleLink[]
+  /** The manually scheduled dates of a manual task. */
+  manual?: TimeRange
   /** Only when explaining: the continuous clock, the task's calendar clock without its pauses, and the calendar's ID. */
   calendar?: { continuous: WorkClock; clock: WorkClock; id: string | undefined }
 }
@@ -123,6 +131,8 @@ export interface ScheduleModel {
   continuous: WorkClock
   linkIndex: Map<string, number>
   validateTime: (value: number | undefined) => void
+  /** IDs of inactive tasks. They are validated but are not in `tasks`, and their links are attached to no task. */
+  inactive: ReadonlySet<string>
 }
 
 /**
@@ -158,8 +168,10 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   }
   const defaultCalendar = calendarFor(input.defaultCalendarId)
   const tasks = new Map<string, ModelTask>()
+  const ids = new Set<string>(), inactive = new Set<string>()
   input.tasks.forEach((task, index) => {
-    if (!task.id || tasks.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
+    if (!task.id || ids.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
+    ids.add(task.id)
     if (!Number.isSafeInteger(task.duration) || task.duration < 0 || task.duration % quantum !== 0) throw new RangeError('Invalid task duration: ' + task.id)
     if (task.mode !== undefined && task.mode !== 'asap' && task.mode !== 'alap') throw new Error('Invalid scheduling mode: ' + task.id)
     const { startNoEarlierThan, startNoLaterThan, finishNoEarlierThan, finishNoLaterThan, fixedStart } = task
@@ -175,42 +187,80 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
       const pauses = normalizeWorkPeriods(task.pauses, range)
       if (pauses.length) clock = workClock(subtractPeriods(clock.periods, pauses), quantum)
     }
+    if (task.inactive !== undefined && typeof task.inactive !== 'boolean') throw new Error('Invalid inactive flag: ' + task.id)
+    let manual: TimeRange | undefined
+    if (task.manual !== undefined) {
+      if (typeof task.manual !== 'object' || task.manual === null) throw new Error('Manual dates must be an object with a start and an end: ' + task.id)
+      const { start, end } = task.manual
+      if (typeof start !== 'number' || typeof end !== 'number') throw new RangeError('Manual dates must be numbers: ' + task.id)
+      validateTime(start)
+      validateTime(end)
+      if (end < start) throw new RangeError('Manual dates cannot end before they start: ' + task.id)
+      if (start < range.start || end > range.end) throw new RangeError('Manual dates must lie inside the schedule range: ' + task.id)
+      manual = { start, end }
+    }
+    if (task.inactive) {
+      inactive.add(task.id)
+      return
+    }
     const bound = (value: number | undefined, constraint: ScheduleConstraintName) =>
       value === undefined ? [] : [{ value, constraint }]
     const modelTask: ModelTask = {
-      id: task.id, index, source: task, clock, duration: task.duration / quantum, alap: task.mode === 'alap',
+      id: task.id, index, source: task, clock, duration: task.duration / quantum, alap: task.mode === 'alap' && !manual,
       bounds: {
         startLower: [{ value: range.start, constraint: 'range' }, ...bound(startNoEarlierThan, 'startNoEarlierThan'), ...bound(fixedStart, 'fixedStart')],
         endLower: [{ value: range.start, constraint: 'range' }, ...bound(finishNoEarlierThan, 'finishNoEarlierThan')],
         startUpper: [{ value: range.end, constraint: 'range' }, ...bound(startNoLaterThan, 'startNoLaterThan'), ...bound(fixedStart, 'fixedStart')],
         endUpper: [{ value: range.end, constraint: 'range' }, ...bound(deadline, 'deadline'), ...bound(finishNoLaterThan, 'finishNoLaterThan')],
       },
-      incoming: [], outgoing: [],
+      incoming: [], outgoing: [], manualIncoming: [], manualOutgoing: [],
     }
+    if (manual) modelTask.manual = manual
     if (explain) modelTask.calendar = { continuous, clock: calendarClock, id: task.calendarId ?? input.defaultCalendarId }
     tasks.set(task.id, modelTask)
   })
   const linkIndex = new Map<string, number>()
   for (const link of dependencies) {
-    const from = tasks.get(link.from), to = tasks.get(link.to)
-    if (!link.id || linkIndex.has(link.id) || !from || !to) throw new Error('Invalid or duplicate schedule dependency: ' + link.id)
+    if (!link.id || linkIndex.has(link.id) || !ids.has(link.from) || !ids.has(link.to)) {
+      throw new Error('Invalid or duplicate schedule dependency: ' + link.id)
+    }
     if (!['FS', 'SS', 'FF', 'SF'].includes(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
     const lag = link.lag ?? 0
     if (!Number.isSafeInteger(lag) || lag % quantum !== 0) throw new RangeError('Invalid schedule dependency lag: ' + link.id)
     linkIndex.set(link.id, linkIndex.size)
-    from.outgoing.push(link)
-    to.incoming.push(link)
+    // A link that touches an inactive task takes no part; a link into a manual task binds nothing.
+    const from = tasks.get(link.from), to = tasks.get(link.to)
+    if (!from || !to) continue
+    if (to.manual) {
+      from.manualOutgoing.push(link)
+      to.manualIncoming.push(link)
+    } else {
+      from.outgoing.push(link)
+      to.incoming.push(link)
+    }
   }
-  return { range, quantum, tasks, continuous, linkIndex, validateTime }
+  return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive }
+}
+
+/** The slot of a manual task: its manual dates. */
+export function manualSlot(task: ModelTask): Slot {
+  const { start, end } = task.manual!
+  return { start, end, workStart: task.clock.workAt(start) }
+}
+
+/** Every outgoing link of a task, including those to manual tasks. */
+export function allOutgoing(task: ModelTask): ScheduleLink[] {
+  return task.manualOutgoing.length ? [...task.outgoing, ...task.manualOutgoing] : task.outgoing
 }
 
 /** Kahn order, or the strongly connected components that block it. */
 export function topologicalOrder(model: ScheduleModel): { order: string[] } | { cycles: ScheduleCycle[] } {
   const { tasks } = model
-  const remaining = new Map([...tasks].map(([id, task]) => [id, task.incoming.length]))
+  // Links into manual tasks bind nothing, but a cycle through them is still a cycle.
+  const remaining = new Map([...tasks].map(([id, task]) => [id, task.incoming.length + task.manualIncoming.length]))
   const order = [...remaining].filter(([, count]) => count === 0).map(([id]) => id)
   for (let i = 0; i < order.length; i++) {
-    for (const link of tasks.get(order[i]!)!.outgoing) {
+    for (const link of allOutgoing(tasks.get(order[i]!)!)) {
       const count = remaining.get(link.to)! - 1
       remaining.set(link.to, count)
       if (!count) order.push(link.to)
@@ -236,16 +286,16 @@ function findCycles(tasks: Map<string, ModelTask>, linkIndex: ReadonlyMap<string
   for (const root of candidates) {
     if (index.has(root)) continue
     visit(root)
-    const frames = [{ id: root, edge: 0 }]
+    const frames = [{ id: root, edge: 0, outgoing: allOutgoing(tasks.get(root)!) }]
     while (frames.length) {
       const frame = frames.at(-1)!
-      const outgoing = tasks.get(frame.id)!.outgoing
+      const outgoing = frame.outgoing
       if (frame.edge < outgoing.length) {
         const next = outgoing[frame.edge++]!.to
         if (!allowed.has(next)) continue
         if (!index.has(next)) {
           visit(next)
-          frames.push({ id: next, edge: 0 })
+          frames.push({ id: next, edge: 0, outgoing: allOutgoing(tasks.get(next)!) })
         } else if (onStack.has(next)) low.set(frame.id, Math.min(low.get(frame.id)!, index.get(next)!))
         continue
       }
@@ -270,7 +320,7 @@ function findCycles(tasks: Map<string, ModelTask>, linkIndex: ReadonlyMap<string
     const members = new Set(component)
     const dependencyIds: string[] = []
     for (const id of component) {
-      for (const link of tasks.get(id)!.outgoing) if (members.has(link.to)) dependencyIds.push(link.id)
+      for (const link of allOutgoing(tasks.get(id)!)) if (members.has(link.to)) dependencyIds.push(link.id)
     }
     if (!dependencyIds.length) continue
     const taskIds = component.sort((a, b) => position(a) - position(b))

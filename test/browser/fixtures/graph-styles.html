@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Graph shapes and edge decorations fixture</title>
+    <link rel="stylesheet" href="/graph-styles-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/graph-styles-test/vue.js", "vue-weave": "/graph-styles-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { NetworkGraph } from 'vue-weave'
+
+      // Query parameters: theme=dark wraps the graph in vw-theme-dark, style sets edgeStyle.
+      const query = new URLSearchParams(location.search)
+      const nodes = [
+        { id: 'start', label: 'Start', shape: 'ellipse', tone: 'teal' },
+        { id: 'check', label: 'Check', detail: 'stock', shape: 'diamond', tone: 'amber' },
+        { id: 'prep', label: 'Prepare', shape: 'hexagon' },
+        { id: 'ship', label: 'Ship', tone: 'violet' },
+      ]
+      // Three parallel edges between Start and Check (two forward, one back), two self-loops on Prepare and every marker.
+      const edges = shallowRef([
+        { id: 'sc1', from: 'start', to: 'check', label: 'order', animated: true },
+        { id: 'sc2', from: 'start', to: 'check', label: 'retry', markerEnd: 'open-arrow' },
+        { id: 'cs', from: 'check', to: 'start', label: 'reject', markerStart: 'circle', markerEnd: 'diamond' },
+        { id: 'cp', from: 'check', to: 'prep', label: 'ready', markerEnd: 'bar', edgeStyle: 'orthogonal' },
+        { id: 'ps', from: 'prep', to: 'ship', label: 'pack', markerStart: 'arrow', markerEnd: 'none' },
+        { id: 'pp1', from: 'prep', to: 'prep', label: 'loop' },
+        { id: 'pp2', from: 'prep', to: 'prep', label: 'again' },
+      ])
+      const positions = shallowRef(new Map())
+      const selectedId = ref('')
+      const moveEvents = ref(0)
+      const reshapeEvents = ref(0)
+      const graph = ref()
+      function applyMoves(changes) {
+        const next = new Map(positions.value)
+        for (const change of changes) next.set(change.id, change.after)
+        positions.value = next
+        moveEvents.value++
+      }
+      function reshape({ id, after }) {
+        edges.value = edges.value.map(edge => {
+          if (edge.id !== id) return edge
+          const { points: _, ...rest } = edge
+          return after.length ? { ...rest, points: after } : rest
+        })
+        reshapeEvents.value++
+      }
+      window.__vw = { graph: () => graph.value }
+
+      createApp({
+        render: () => h('main', [
+          h('output', { role: 'status', 'aria-label': 'Move events' }, String(moveEvents.value)),
+          h('output', { role: 'status', 'aria-label': 'Reshape events' }, String(reshapeEvents.value)),
+          h('div', { class: query.get('theme') === 'dark' ? 'vw-theme-dark' : undefined }, [
+            h(NetworkGraph, {
+              ref: graph, nodes, edges: edges.value, height: 420, parallelEdgeSpacing: 16, edgeStyle: query.get('style') ?? undefined,
+              draggable: true, editableEdges: true, positions: positions.value,
+              selectedId: selectedId.value, 'onUpdate:selectedId': id => { selectedId.value = id },
+              onNodeMove: change => applyMoves([change]), onNodesMove: applyMoves, onEdgeReshape: reshape,
+            }),
+          ]),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

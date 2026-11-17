@@ -10,9 +10,11 @@ export type PlanningDiagnosticSeverity = 'info' | 'warning' | 'error'
 /**
  * `schedule-cycle`: dependencies form a cycle. `schedule-infeasible`: a task has no date that meets its bounds.
  * `resource-overload`: a resource has more load than capacity in `range`. `leveling-unresolved`: leveling found no
- * capacity-feasible placement for a task.
+ * capacity-feasible placement for a task. `manual-conflict`: a link into a manually scheduled task is violated by its
+ * manual dates (an entry of `manualConflicts`); the plan is still valid, so it is a warning.
  */
-export type PlanningDiagnosticCode = 'schedule-cycle' | 'schedule-infeasible' | 'resource-overload' | 'leveling-unresolved'
+export type PlanningDiagnosticCode =
+  | 'schedule-cycle' | 'schedule-infeasible' | 'resource-overload' | 'leveling-unresolved' | 'manual-conflict'
 
 /**
  * One problem of a calculated plan, as data for an application's own list. Entities use the kinds `task`,
@@ -43,8 +45,9 @@ function isOverload(segment: ResourceLoadSegment) {
 }
 
 /**
- * Turn the failures, cycles, overloads and unresolved tasks of a `scheduleTasks` or `levelResources` result into one
- * list. `load` (for example from `calculateResourceLoad`) supplies the overloads and then replaces the result's own
+ * Turn the failures, cycles, manual conflicts, overloads and unresolved tasks of a `scheduleTasks` or `levelResources`
+ * result into one list. A success lists its manual conflicts first (in `manualConflicts` order), then unresolved tasks,
+ * then overloads. `load` (for example from `calculateResourceLoad`) supplies the overloads and then replaces the result's own
  * `overloads`; only segments with `overload > 0` become diagnostics. A failure yields only its own diagnostics, never
  * the overloads of an earlier plan. The arguments are not modified.
  */
@@ -71,6 +74,14 @@ export function toPlanningDiagnostics(
   for (const reason of trace?.reasons ?? []) reasons.set(reason.id, reason)
   const taskReasons = (taskId: string) => (trace?.taskReasonIds.get(taskId) ?? []).map(id => reasons.get(id)!).filter(Boolean)
   const diagnostics: PlanningDiagnostic[] = []
+  // Manual conflicts come first: they belong to the schedule itself, before the resource problems of leveling.
+  for (const { taskId, dependencyId } of result.manualConflicts ?? []) {
+    diagnostics.push({
+      id: JSON.stringify(['manual-conflict', taskId, dependencyId]), code: 'manual-conflict', severity: 'warning',
+      entities: [taskRef(taskId), dependencyRef(dependencyId)],
+      reasonIds: taskReasons(taskId).filter(reason => reason.kind === 'manual' && reason.phase === 'earliest').map(reason => reason.id),
+    })
+  }
   const unresolved = 'unresolvedTaskIds' in result ? result.unresolvedTaskIds : []
   for (const taskId of unresolved) {
     const task = result.tasks.find(item => item.id === taskId)

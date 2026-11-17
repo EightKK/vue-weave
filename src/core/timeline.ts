@@ -440,6 +440,7 @@ export function validateTimelineData(
       throw new RangeError('latestEnd must be finite and not before the end: ' + bar.id)
     }
     if (bar.deadline !== undefined && !Number.isFinite(bar.deadline)) throw new RangeError('deadline must be finite: ' + bar.id)
+    if (bar.description !== undefined && typeof bar.description !== 'string') throw new Error('description must be a string: ' + bar.id)
     if (bar.segments !== undefined) checkSegments(bar)
     if (bar.constraints !== undefined) checkConstraints(bar)
   }

@@ -4,6 +4,62 @@
 
 No changes yet.
 
+## 0.5.0 - 2026-11-17
+
+This is a minor release because of the two type changes under "Breaking changes": TypeScript code that lists every value of `ScheduleReasonKind` or `PlanningDiagnosticCode` needs a new case. Code that runs today behaves the same, since the new values only appear once a plan uses manual tasks. Everything else is additive and opt-in: without the new fields, props and options, results, server markup, routes, exports and accessible names are the same as in 0.4.0.
+
+### Breaking changes
+
+- `ScheduleReasonKind` gains `'manual'`, used in traces (`{ explain: true }`) for the dates of manual tasks.
+- `PlanningDiagnosticCode` gains `'manual-conflict'`. `toPlanningDiagnostics` lists each entry of `manualConflicts` as a warning with the task and the link, before unresolved tasks and overloads; with `explain`, its `reasonIds` name the task's `manual` reason. A result without manual conflicts gives the same list as before.
+
+A `switch` or `Record` over every value of either union needs an entry for the new value.
+
+### Added
+
+#### NetworkGraph
+
+- Node shapes: `NetworkNode.shape` accepts `'diamond'`, `'ellipse'` and `'hexagon'` besides `'box'` and `'rounded'` (exported `NetworkNodeShape`). They are drawn inside the node box (class `vw-node-shape`) with centred text and painted like the node rectangle in every state, in the dark theme and in forced colors; `exportSvg`, `exportPng` and `renderGraphSvg` draw them too. Straight edges, and edges routed through waypoints or spread as parallel edges, end on the outline; ports, layout paths and connection handles stay on the box sides.
+- Edge markers: `GraphEdge.markerEnd` (default `'arrow'`, unchanged) and `GraphEdge.markerStart` (default `'none'`) take a `GraphEdgeMarker`: `'arrow'`, `'open-arrow'`, hollow `'circle'` and `'diamond'`, `'bar'` or `'none'`. They follow the edge colour, also on highlighted edges and in exports, and their definitions are written only when an edge uses them. Hollow markers are filled with `--vw-surface-muted`.
+- `GraphEdge.animated`: a dash pattern that flows toward the target (class `vw-is-animated`, speed `--vw-edge-animation-duration`, default `1s`). It stands still under `prefers-reduced-motion: reduce` and in print; exports draw it dashed.
+- `GraphEdge.edgeStyle` overrides the `edgeStyle` prop and the `style` option of `routeGraphEdges` for one edge.
+- `parallelEdgeSpacing` (NetworkGraph) and `parallelSpacing` (`routeGraphEdges`): edges between the same two nodes, in either direction, without waypoints or named ports, are spread around the centre line in every edge style, and several self-loops of one node are nested. With `routingPolicy: 'preserve'`, kept layout paths are not spread. Invalid spacing throws `RangeError`.
+- `collapseGraphGroups` (and so collapsed groups in NetworkGraph) keeps `edgeStyle`, `markerStart`, `markerEnd` and `animated` on an edge that merges several edges when all of them have the same value, as it already did for the label.
+- `layoutCircularGraph`, `layoutGridGraph` and `layoutConcentricGraph` (with `GraphCircularLayoutOptions`, `GraphGridLayoutOptions` and `GraphConcentricLayoutOptions`) for the `layout` prop. Circular places nodes on one circle in input or `sort` order with a radius that keeps `nodeGap` between neighbours; grid fills rows of `columns`; concentric places nodes on rings by `level(node, degree)` (the degree by default, higher levels inside, optional `levelWidth` buckets). They are deterministic and linear apart from the ring sort, draw straight edges and never let boxes overlap. `sort` and `level` receive the caller's node type.
+
+#### GanttChart
+
+- `TimelineBar.description`: your own text about a bar, for example "Manually scheduled" or "Inactive". It comes first in the bar's accessible description, before the critical, float, deadline, constraint and baseline facts, and after the dates in its native `title`; `exportSvg`, `exportPng` and `renderTimelineSvg` add it to the bar's `<title>`. The accessible name is unchanged, blank text is ignored, and a value that is not a string is reported through `validation-error`. The scheduling demo uses it for its manual and inactive bars.
+
+#### Graph analysis (`vue-weave/core`)
+
+- `graphComponents` (weakly connected components), `graphDegreeCentrality`, `graphBetweennessCentrality` (Brandes, optional edge lengths), `graphPageRank` (returns `{ scores, iterations, converged }`) and `detectGraphCommunities` (deterministic Louvain with modularity and a `resolution`). `graphCommunityGroups` turns communities into `NetworkGraph` `groups`. All validate input like the other graph helpers, iterate instead of recursing and never mutate their arguments.
+
+#### Scheduling
+
+- `ScheduleTask.manual`: manually scheduled dates, as in Microsoft Project. `scheduleTasks`, `levelResources` (which reserves their capacity first and never moves them), `rescheduleFromStatusDate` and `propagateEdit` (where an edit moves the dates) keep them. Links into a manual task bind nothing but still count for cycles; each link its dates violate is listed in `ScheduleSuccess.manualConflicts` (`ScheduleManualConflict`). Results mark these tasks with `ScheduledTask.manual`; they have no float and are never critical. A manual task that ends after `deadline` makes the plan infeasible.
+- `ScheduleTask.inactive`: the task, its links and its resource assignments take no part in any calculation; it is left out of the result's `tasks` and listed in `ScheduleSuccess.inactiveTaskIds`. `calculateResourceLoad` accepts `{ inactiveTaskIds }` (`ResourceLoadOptions`), and `scheduleToGraph` and `buildPlacementInput` skip links that the scheduler ignores.
+
+#### Interchange
+
+- `fromMsProjectXml` reads Microsoft Project XML (MSPDI): tasks with outline levels, percent complete, milestones, summary, manual and active flags, durations, constraints and baselines, and links with their types and lags. It uses a small loop-based reader without a DOM that skips a DOCTYPE, never expands declared entities and throws with the line and column of malformed XML; what it cannot import (calendars, resources, assignments, unknown constraint types, percentage lags) is reported in `warnings`. Working-time lags are read as elapsed time, with a warning.
+- `timelineFromMsProject` turns a plan into GanttChart rows, bars, named baselines and dependencies; summary tasks become parent rows without bars.
+- Must Finish On (`ConstraintType` 3) is imported as `finishNoEarlierThan` plus `finishNoLaterThan` at its date, and `toMsProjectXml` writes that pair at one time as `ConstraintType` 3, so it survives a round trip. Other combinations of two or more constraints are still not written.
+- `MsProjectTask.inactive` and `MsProjectTask.manual` write `Active` 0 and `Manual` 0. The default export is unchanged, and `toMsProjectXml(fromMsProjectXml(toMsProjectXml(plan)))` reproduces the document.
+
+### Fixed
+
+- `calculateResourceLoad` and `levelResources` name the unknown resource or task in an assignment instead of throwing "Unknown task or resource in assignment"; the load error also points to `options.inactiveTaskIds` for tasks that a schedule result leaves out as inactive. Code that matched the old message text must change.
+
+### Examples
+
+- New **Diagram styles** demo: an order-fulfilment diagram placed with `positions` that uses every node shape and edge marker, an animated main path, a loop-back with its own `edgeStyle` and a request/response pair spread by `parallelEdgeSpacing`, with **Spread parallel edges**, spacing, **Animate main path** and **Edge style** controls, SVG and PNG export and a legend.
+- New **Graph analysis** demo: a seeded 142-node supplier network laid out with `layoutForceGraph`, with a summary of components, communities and modularity, **Group communities** with **Collapse all** and **Expand all**, and **Rank by** degree, betweenness or PageRank, which highlights the top five nodes and lists them to focus.
+- The scheduling demo gains **Schedule inspection manually**, which pins inspection with `manual` dates, moves them through `propagateEdit` and lists broken links under **Manual date conflicts**, and **Cancel order B (inactive)**, which keeps a placeholder bar while the order's links, load and network-diagram node drop out; the Microsoft Project export writes it with `Active` 0 and iCalendar leaves it out.
+- The graph demo's **Graph layout** select offers `circular`, `grid` and `concentric`. Like `force`, circular and concentric are offered for up to 1,000 nodes; the large graph falls back to the layered layout.
+- The timeline editing demo gains **Import MS Project XML** next to **Import CSV**, replacing the plan as one undoable step. Milestones no longer make the demo's resource load throw.
+- `Start.cmd` rebuilds the demo before serving it when `preview/` is missing or was built from other sources, and runs `npm ci` first when `node_modules` does not match `package-lock.json`. If a rebuild fails, it shows the previous build with a warning. `npm run build:demo` now writes `preview/demo-build.json` to record which sources the build came from; `npm start` and the browser tests still serve `preview/` as it is. Release preparation checks that the archived demo matches its archived sources.
+
 ## 0.4.0 - 2026-11-16
 
 The edge slot change below is the only breaking change; everything else is additive or opt-in.

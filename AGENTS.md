@@ -12,7 +12,8 @@ Requires Node.js >= 22.18 and npm. CI runs Node 22 and 24 on Ubuntu and Windows.
 | --- | --- |
 | Install dependencies | `npm ci` |
 | Demo dev server (`examples/`, http://127.0.0.1:5173) | `npm run dev` |
-| Serve the prebuilt demo without installing | `npm start` (or `Start.cmd` on Windows) |
+| Serve the prebuilt demo without installing | `npm start` |
+| Serve the demo on Windows, rebuilding it first if its sources changed | `Start.cmd` |
 | Type-check library and examples | `npm run typecheck` |
 | Build the library into `dist/` | `npm run build` |
 | Core + SSR tests (builds first) | `npm test` |
@@ -30,22 +31,22 @@ Run `npm run check` before you consider a change done. Also run the browser test
 
 - Tests import the package by its own name (`vue-weave`, `vue-weave/core`). The `package.json` `exports` map resolves those names to `dist/`. If you run `node --test` without a fresh `npm run build`, the tests run against stale output. `npm test` runs the build for you.
 - `test:e2e` doesn't build anything. It serves the existing `preview/` directory on `127.0.0.1:4173` through `scripts/serve.mjs`; regression fixtures also load the public entries from `dist/`. After a source change, run `npm run build` and `npm run build:demo` first, or the browser tests run old code. `npm run check` builds both. Port 4173 must be free. Install the browser once with `npx playwright install chromium`. If the `CHROMIUM_PATH` environment variable is set, `playwright.config.ts` launches that executable instead of Playwright's own browser, with `--no-sandbox --no-zygote --disable-gpu`; otherwise Playwright resolves its installed Chromium.
-- `dist/` and `preview/` are generated and gitignored. Never edit them by hand. A prebuilt demo archive can include `preview/` so that `Start.cmd` works offline; a GitHub source ZIP requires a demo build. To update it, run `npm run build:demo`.
+- `dist/` and `preview/` are generated and gitignored. Never edit them by hand. A prebuilt demo archive can include `preview/` so that `Start.cmd` works offline; a GitHub source ZIP requires a demo build. To update it, run `npm run build:demo`. That build writes `preview/demo-build.json`, a hash of the inputs in `demoInputs` (`scripts/demo-build.mjs`); `Start.cmd` rebuilds (and runs `npm ci` if needed) when the hash no longer matches. If the demo starts reading a file outside those inputs, add it to `demoInputs`.
 - Browser tests find elements by role and accessible name, for example `Split · plan 09:00–11:00`. These changes can break them: labels, `aria-*` attributes, the default `formatTime`, and demo data in `examples/`. Update `test/browser/charts.spec.ts` in the same change.
 
 ## Project layout
 
 - `src/core/` contains pure TypeScript, grouped by area. `src/core/index.ts` exports the public parts as `vue-weave/core`.
-  - Graph: indexing, the default layered layout and ports (`graph.ts`); other layouts (`graphLayouts.ts`, `graphForce.ts`); algorithms, edge routing, collapsing, editing, snapping and viewport helpers (`graphAlgorithms.ts`, `graphRouting.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphSnapping.ts`, `graphView.ts`); crossing counts (`graphCrossings.ts`).
+  - Graph: indexing, the default layered layout and ports (`graph.ts`); other layouts (`graphLayouts.ts`, `graphForce.ts`); algorithms, analysis (components, centrality, communities), edge routing, collapsing, editing, snapping and viewport helpers (`graphAlgorithms.ts`, `graphAnalysis.ts`, `graphRouting.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphSnapping.ts`, `graphView.ts`); crossing counts (`graphCrossings.ts`).
   - Timeline: time scales and interval editing (`timeline.ts`) and row hierarchy moves (`rowHierarchy.ts`).
   - Scheduling: work calendars (`workCalendar.ts`), scheduling (`scheduling.ts`), resource leveling (`leveling.ts`), resource load (`resourceLoad.ts`), status-date rescheduling (`statusDate.ts`) and schedule-to-graph conversion (`pert.ts`).
   - Output: SVG export (`exportSvg.ts`) and MS Project, iCalendar and CSV interchange (`interchange.ts`).
-  - Shared types are in `types.ts`. `graphOrient.ts`, `graphCurve.ts`, `graphPortSide.ts`, `timeZone.ts`, `barSegments.ts` and `scheduleModel.ts` are internal helpers that `index.ts` does not export.
+  - Shared types are in `types.ts`. `graphOrient.ts`, `graphCurve.ts`, `graphPortSide.ts`, `graphShapes.ts`, `timeZone.ts`, `barSegments.ts` and `scheduleModel.ts` are internal helpers that `index.ts` does not export.
 - `src/components/`: `NetworkGraph.vue` and `GanttChart.vue` handle rendering, measurement, camera and scroll state, and temporary pointer previews. `NetworkGraph.vue` renders its nodes, edges, minimap rectangles, connection handles and group frames through internal functional item components, so a drag re-renders only the moved items. `exportImage.ts` holds browser-only helpers for the `exportPng` methods and for reading theme colours, and `types.ts` holds types that refer to browser APIs (`GraphDrop`), so they stay out of core.
 - `src/composables/useEditHistory.ts` provides undo and redo over immutable snapshots.
 - `src/styles/style.css` is the only stylesheet. The build emits it as `dist/style.css`.
 - `src/index.ts` is the Vue entry. It exports the components, the composable and all of core. `NetworkGraph.vue` and `GanttChart.vue` are generic SFCs; `src/index.ts` gives them their public types (`NetworkGraphComponent`, `GanttChartComponent`), which let templates infer the item types and keep `InstanceType<typeof NetworkGraph>` working.
-- `scripts/` holds Node scripts: `serve.mjs` serves `preview/`, `finalize-declarations.mjs` runs at the end of `build`, `check-package.mjs` backs `test:package`, and `prepare-release.mjs` backs `prepare:release`.
+- `scripts/` holds Node scripts: `serve.mjs` serves `preview/` (with `--build-if-stale`, as `Start.cmd` runs it, it first rebuilds through `demo-build.mjs`), `finalize-declarations.mjs` runs at the end of `build`, `check-package.mjs` backs `test:package`, and `prepare-release.mjs` backs `prepare:release`.
 - `examples/` holds the demo app and its business data and validation. It is the dev server root.
 - `test/*.test.mjs` are `node:test` core and SSR tests. `test/browser/` holds Playwright specs that run against the built demo. `test/types/` holds type-level tests that `npm run typecheck` checks.
 - `docs/` covers API contracts, integration, architecture and scheduling. It is included in the npm package.

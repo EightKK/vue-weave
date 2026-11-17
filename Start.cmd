@@ -9,7 +9,8 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-node.exe "scripts\serve.mjs" --open
+rem Rebuilds preview\ first when it is missing or older than the sources (see scripts\demo-build.mjs).
+node.exe "scripts\serve.mjs" --build-if-stale --open
 set "DEMO_EXIT=%errorlevel%"
 popd
 if not "%DEMO_EXIT%"=="0" pause

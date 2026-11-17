@@ -1,10 +1,11 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
 import {
-  addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, slotFor,
+  addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, manualSlot, slotFor,
   topologicalOrder, type ModelTask, type Slot, type WorkClock,
 } from './scheduleModel.js'
 import {
-  explainOption, recordSlotReasons, ScheduleTraceRecorder, type ExplainedLevelResourcesResult, type ScheduleOptions,
+  explainOption, recordManualReason, recordSlotReasons, ScheduleTraceRecorder, type ExplainedLevelResourcesResult,
+  type ScheduleOptions,
 } from './scheduleTrace.js'
 import { scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleSuccess, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
@@ -181,6 +182,16 @@ class Heap<T> {
   }
 }
 
+/** Whether two sorted lists of disjoint half-open ranges overlap anywhere. */
+function overlapping(a: readonly TimeRange[], b: readonly TimeRange[]): boolean {
+  let j = 0
+  for (const range of a) {
+    while (j < b.length && b[j]!.end <= range.start) j++
+    if (j < b.length && b[j]!.start < range.end) return true
+  }
+  return false
+}
+
 /** Sorted ranges with touching neighbours joined. */
 function mergeRanges(ranges: readonly TimeRange[]): TimeRange[] {
   const result: TimeRange[] = []
@@ -205,6 +216,9 @@ function withoutMode(task: ScheduleTask): ScheduleTask {
  * calendars and remaining capacity allow; `mode` is ignored. The returned dates are those of
  * `scheduleTasks` applied to the returned `leveledTasks`.
  *
+ * Manual tasks are never moved: their capacity is reserved first, at their manual dates, and one that finds too little
+ * capacity there is listed in `unresolvedTaskIds`. Inactive tasks and their assignments are ignored.
+ *
  * With `{ explain: true }`, a successful result also has a `trace`. It holds the `latest` reasons of the horizon that
  * leveling may not pass and the `leveling` reasons recorded while capacity was reserved, including the resources,
  * intervals and holding tasks that delayed or split a task. It does not explain the replayed `scheduleTasks` run.
@@ -227,7 +241,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   if (!base.ok) return base
   const model = buildScheduleModel(plain, explain)
   const { range, tasks } = model
-  const trace = explain ? new ScheduleTraceRecorder(plain.tasks.map(task => task.id)) : undefined
+  const trace = explain ? new ScheduleTraceRecorder(plain.tasks.filter(task => tasks.has(task.id)).map(task => task.id)) : undefined
   const holdings = explain ? new Map<string, Holding[]>() : undefined
 
   const profiles = new Map<string, Profile>()
@@ -244,11 +258,13 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const assigned = new Set<string>()
   for (const { resourceId, taskId, units = 1 } of input.assignments) {
     const profile = profiles.get(resourceId)
-    if (!profile || !tasks.has(taskId)) throw new Error('Unknown task or resource in assignment')
+    if (!profile) throw new Error('Unknown resource in assignment: ' + resourceId)
+    if (!tasks.has(taskId) && !model.inactive.has(taskId)) throw new Error('Unknown task in assignment: ' + taskId)
     if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
     const pair = JSON.stringify([resourceId, taskId])
     if (assigned.has(pair)) throw new Error('Duplicate resource assignment for task: ' + taskId)
     assigned.add(pair)
+    if (model.inactive.has(taskId)) continue
     let list = demands.get(taskId)
     if (!list) demands.set(taskId, list = [])
     list.push({ profile, units, resourceId })
@@ -260,6 +276,11 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const horizon = new Map<string, Slot>()
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
+    if (task.manual) {
+      if (trace) recordManualReason(trace, 'latest', task)
+      horizon.set(task.id, manualSlot(task))
+      continue
+    }
     const bounds = addUpperBounds(cloneBounds(task.bounds), task, horizon)
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, true)
@@ -268,15 +289,17 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     horizon.set(task.id, slot)
   }
 
-  // Priority: explicit priority (higher first), total float, early start, then ID in code-unit order.
+  // Priority: manual tasks (which never move) first, then explicit priority (higher first), total float, early start,
+  // then ID in code-unit order. Manual tasks wait for no predecessor, so they are all placed before any other task.
   const unleveled = new Map(base.tasks.map(task => [task.id, task]))
   const entry = (task: ModelTask) => {
     const { totalFloat, start } = unleveled.get(task.id)!
-    return { task, priority: task.source.priority ?? 0, totalFloat, start }
+    return { task, manual: Boolean(task.manual), priority: task.source.priority ?? 0, totalFloat, start }
   }
-  const queue = new Heap<ReturnType<typeof entry>>((a, b) => a.priority !== b.priority ? a.priority > b.priority
-    : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
-      : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
+  const queue = new Heap<ReturnType<typeof entry>>((a, b) => a.manual !== b.manual ? a.manual
+    : a.priority !== b.priority ? a.priority > b.priority
+      : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
+        : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
   const waiting = new Map<string, number>()
   for (const task of tasks.values()) {
     waiting.set(task.id, task.incoming.length)
@@ -286,9 +309,84 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const placed = new Map<string, Slot>()
   const raised = new Set<string>(), unresolved = new Set<string>(), added = new Map<string, TimeRange[]>()
   const reserved = new Map<string, TimeRange[]>()
+  type Need = { profile: Profile; units: number; resourceId: string }
+  /**
+   * Record the shortages of every resource the task needs in `window` as `capacity` reasons. Capacity is reserved
+   * before this task, so each holding names a task that occupies the resource first.
+   */
+  const recordCapacity = (
+    recorder: ScheduleTraceRecorder, task: ModelTask, needs: readonly Need[], window: TimeRange, startMoved: boolean,
+    early: TimeRange, slot: TimeRange,
+  ) => {
+    for (const need of needs) {
+      const { profile, units, resourceId } = need
+      const held = holdings!.get(resourceId) ?? []
+      const pieces: { start: number; end: number; capacity: number; taskIds: string[] }[] = []
+      for (let i = 0; i < profile.times.length; i++) {
+        if (profile.values[i]! >= units) continue
+        const start = Math.max(profile.times[i]!, window.start), end = Math.min(profile.times[i + 1] ?? range.end, window.end)
+        if (start >= end || !task.clock.slices({ start, end }).length) continue
+        const holders = held.filter(holding => holding.start < end && holding.end > start)
+        const capacity = holders.reduce((sum, holding) => sum + holding.units, profile.values[i]!)
+        const taskIds = [...new Set(holders.map(holding => holding.taskId))]
+        const previous = pieces.at(-1)
+        if (previous?.end === start && previous.capacity === capacity
+          && previous.taskIds.length === taskIds.length && previous.taskIds.every((id, k) => id === taskIds[k])) previous.end = end
+        else pieces.push({ start, end, capacity, taskIds })
+      }
+      for (const piece of pieces) {
+        recorder.add({
+          taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
+          candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
+          resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: piece.taskIds,
+          range: { start: piece.start, end: piece.end },
+          parentReasonIds: [...new Set(piece.taskIds.flatMap(id => recorder.ids('leveling', id)))],
+        })
+      }
+    }
+  }
+  /** Reserve the work slices of a task on every resource it needs. */
+  const reserve = (task: ModelTask, needs: readonly Need[], slices: readonly TimeRange[]) => {
+    for (const slice of slices) {
+      for (const need of needs) {
+        need.profile.reserve(slice, need.units, range.end)
+        if (holdings) {
+          let list = holdings.get(need.resourceId)
+          if (!list) holdings.set(need.resourceId, list = [])
+          list.push({ taskId: task.id, start: slice.start, end: slice.end, units: need.units })
+        }
+      }
+    }
+    if (needs.length) reserved.set(task.id, mergeRanges(slices))
+  }
+  const release = (task: ModelTask) => {
+    for (const link of task.outgoing) {
+      const count = waiting.get(link.to)! - 1
+      waiting.set(link.to, count)
+      if (!count) queue.push(entry(tasks.get(link.to)!))
+    }
+  }
   while (queue.size) {
     const { task } = queue.pop()
     const { clock, duration } = task
+    const needs = demands.get(task.id) ?? []
+    if (task.manual) {
+      // A manual task stays at its dates. Its work takes capacity even where too little remains.
+      const slot = manualSlot(task)
+      if (trace) recordManualReason(trace, 'leveling', task)
+      const slices = slot.start < slot.end ? clock.slices(slot) : []
+      if (needs.length && slices.length) {
+        const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
+        if (overlapping(slices, blocked)) {
+          unresolved.add(task.id)
+          if (trace) recordCapacity(trace, task, needs, slot, true, slot, slot)
+        }
+        reserve(task, needs, slices)
+      }
+      placed.set(task.id, slot)
+      release(task)
+      continue
+    }
     const late = horizon.get(task.id)!
     const bounds = lowerBounds(task, placed)
     bounds.startUpper.push({ value: late.start })
@@ -302,7 +400,6 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       })
     }
     let chunks: TimeRange[] = [{ start: early.workStart, end: early.workStart + duration }]
-    const needs = demands.get(task.id) ?? []
     let lastSlot: Slot | undefined
     if (duration > 0 && needs.length) {
       const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
@@ -320,35 +417,8 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       : early
     if (trace && lastSlot && (slot.start > early.start || chunks.length > 1 || unresolved.has(task.id))) {
       const stuck = unresolved.has(task.id)
-      // Capacity is reserved before this task, so each holding names a task that occupies the resource first.
-      const startMoved = slot.start > early.start || stuck
       const window = { start: early.start, end: Math.max(slot.end, early.end) }
-      for (const need of needs) {
-        const { profile, units, resourceId } = need
-        const held = holdings!.get(resourceId) ?? []
-        const pieces: { start: number; end: number; capacity: number; taskIds: string[] }[] = []
-        for (let i = 0; i < profile.times.length; i++) {
-          if (profile.values[i]! >= units) continue
-          const start = Math.max(profile.times[i]!, window.start), end = Math.min(profile.times[i + 1] ?? range.end, window.end)
-          if (start >= end || !clock.slices({ start, end }).length) continue
-          const holders = held.filter(holding => holding.start < end && holding.end > start)
-          const capacity = holders.reduce((sum, holding) => sum + holding.units, profile.values[i]!)
-          const taskIds = [...new Set(holders.map(holding => holding.taskId))]
-          const previous = pieces.at(-1)
-          if (previous?.end === start && previous.capacity === capacity
-            && previous.taskIds.length === taskIds.length && previous.taskIds.every((id, k) => id === taskIds[k])) previous.end = end
-          else pieces.push({ start, end, capacity, taskIds })
-        }
-        for (const piece of pieces) {
-          trace.add({
-            taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
-            candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
-            resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: piece.taskIds,
-            range: { start: piece.start, end: piece.end },
-            parentReasonIds: [...new Set(piece.taskIds.flatMap(id => trace.ids('leveling', id)))],
-          })
-        }
-      }
+      recordCapacity(trace, task, needs, window, slot.start > early.start || stuck, early, slot)
       if (stuck) {
         recordSlotReasons(trace, 'leveling', task, bounds, limits, lastSlot, true, {
           linkParents: () => [], horizon: trace.ids('latest', task.id),
@@ -362,28 +432,11 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       })))
     }
     if (duration) {
-      const slices: TimeRange[] = []
-      for (const chunk of chunks) {
-        for (const slice of clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) })) {
-          for (const need of needs) {
-            need.profile.reserve(slice, need.units, range.end)
-            if (holdings) {
-              let list = holdings.get(need.resourceId)
-              if (!list) holdings.set(need.resourceId, list = [])
-              list.push({ taskId: task.id, start: slice.start, end: slice.end, units: need.units })
-            }
-          }
-          slices.push(slice)
-        }
-      }
-      if (needs.length) reserved.set(task.id, mergeRanges(slices))
+      reserve(task, needs, chunks.flatMap(chunk =>
+        clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) })))
     }
     placed.set(task.id, slot)
-    for (const link of task.outgoing) {
-      const count = waiting.get(link.to)! - 1
-      waiting.set(link.to, count)
-      if (!count) queue.push(entry(tasks.get(link.to)!))
-    }
+    release(task)
   }
 
   // `raised` explains a delay; the pinned start keeps the reserved placement. A split task is pinned even when it
@@ -415,8 +468,8 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       delay: after.start - before.start, cause: raised.has(after.id) || pauses.length ? 'capacity' : 'predecessor', pauses,
     })
   })
-  const overloads = calculateResourceLoad(range, leveled.tasks, input.resources, input.assignments)
-    .filter(segment => segment.overload > 0)
+  const overloads = calculateResourceLoad(range, leveled.tasks, input.resources, input.assignments,
+    { inactiveTaskIds: model.inactive }).filter(segment => segment.overload > 0)
   const success: LevelResourcesSuccess = {
     ...leveled, leveledTasks, delays, overloads,
     unresolvedTaskIds: plain.tasks.filter(task => unresolved.has(task.id)).map(task => task.id),

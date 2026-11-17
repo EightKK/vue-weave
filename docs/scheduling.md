@@ -47,6 +47,7 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 - `calendarId` overrides the default calendar. If neither is supplied, the horizon is continuously working. Zero-duration milestones can occur in a break and have an empty `work` array.
 - The four links constrain the named successor endpoint to be at or after the predecessor endpoint plus `lag`. FS connects finish to start. SS connects start to start. FF connects finish to finish. SF connects start to finish. A positive lag is elapsed waiting time, and a negative lag permits overlap. A start at the end of a shift advances to the next available start. A finish lower bound that falls in a break advances to the next feasible completion tick.
 - Bounds are `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, and the project `deadline`. A fixed start for positive work must be in a working period. The deadline is a hard upper bound.
+- Tasks with `manual` dates stay where they are and `inactive` tasks take no part; see [Manual and inactive tasks](#manual-and-inactive-tasks). `tasks` in a result is in input order without inactive tasks.
 - Invalid references or values throw. Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
 - The forward pass finds earliest dates. The backward pass holds the earliest project finish as its upper limit and finds latest dates. Total float is the task's own working time between those starts, or elapsed time for a milestone. workFloat is always working time on the task's calendar: it equals totalFloat for tasks and, for a milestone, the calendar's working time between its earliest and latest points. Use workFloat to compare milestones with tasks. A zero-float task is critical. A critical link binds two critical tasks after projecting the dependency endpoint onto the successor calendar. The result can contain multiple controlling chains and individually constrained critical tasks.
 
@@ -101,7 +102,7 @@ function onConstraintEdit(change: TimelineConstraintEdit) {
 }
 ```
 
-If the bars themselves are your source of truth, apply the proposal with `applyTimelineConstraintEdit(bars, change)` and build the tasks with `{ id: bar.id, duration, ...bar.constraints }`. The chart does not check feasibility: conflicting constraints are valid chart data, and a constraint that the bar's dates break is drawn as violated, which is what a plan from `scheduleTasks` never shows. The project `deadline` and `mode` are not bar constraints; draw a due date with `TimelineBar.deadline`. `toMsProjectXml` writes a task's constraint when it has exactly one (`MsProjectTask.constraints`).
+If the bars themselves are your source of truth, apply the proposal with `applyTimelineConstraintEdit(bars, change)` and build the tasks with `{ id: bar.id, duration, ...bar.constraints }`. The chart does not check feasibility: conflicting constraints are valid chart data, and a constraint that the bar's dates break is drawn as violated, which is what a plan from `scheduleTasks` never shows. The project `deadline` and `mode` are not bar constraints; draw a due date with `TimelineBar.deadline`. `toMsProjectXml` writes a task's constraint when it has exactly one, or exactly the finish pair at one time as Must Finish On (`MsProjectTask.constraints`).
 
 ## Propagate an edit
 
@@ -122,6 +123,7 @@ With the plan of [Calculate a plan](#calculate-a-plan), moving cutting to 1 give
 - The new start follows the `fixedStart` rule: it must align with the horizon and quantum (otherwise a `RangeError` is thrown, like `scheduleTasks`) and, for positive work, lie in a working period. A start in a break is infeasible; move it to the next working time first if the application wants that. `end` must also be aligned and not before `start`.
 - An unknown task ID throws an `Error`; malformed input throws as in `scheduleTasks`.
 - When the edited plan fails, its `ScheduleFailure` (`cycle` or `infeasible`, with `constraints` such as `fixedStart` and the binding `dependencyIds`) is returned unchanged. When only the unedited plan fails, there is nothing to compare with and its failure is returned.
+- Editing a task with `manual` dates moves those dates instead of adding `fixedStart`: they become `[start, end)`, or the new start and the previous elapsed length without `end`. Its calendar does not change them. New dates outside the range are returned as an `infeasible` failure with `['range']`. Editing an `inactive` task throws an Error, like an unknown one.
 
 ### Cascade previews in GanttChart
 
@@ -167,6 +169,8 @@ const result = rescheduleFromStatusDate(input, 15, new Map([['a', 1], ['b', 0.3]
 // a (6 units) →FF→ b (4 units); b is half done at status date 2, a has not started and now runs [2, 8).
 // b keeps its done half at [0, 2) and does the other half at [6, 8), so it finishes with a: work [[0, 2], [6, 8]].
 ```
+
+Tasks with `manual` dates keep them whatever their progress; their outgoing links still apply. Progress entries of `inactive` tasks are accepted and ignored.
 
 The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
 
@@ -214,6 +218,55 @@ Set `mode: 'alap'` on a task to place it as late as possible. The default is `'a
 4. `start`, `end` and `work` report the placed dates. ALAP tasks also report `earliestStart` and `earliestEnd`. Float stays measured from the earliest dates. ASAP tasks have no extra fields.
 5. Lower bounds still apply. `fixedStart` keeps the task fixed. `startNoLaterThan`, `finishNoLaterThan` and the deadline cap the placement. On a calendar, the latest slot ends on a working tick and can span breaks.
 
+## Manual and inactive tasks
+
+Two task fields mirror Microsoft Project. They are opt-in: a plan without them is scheduled exactly as before, and its result has neither `manualConflicts` nor `inactiveTaskIds`.
+
+```ts
+const plan = scheduleTasks({
+  range: { start: 0, end: 30 },
+  tasks: [
+    { id: 'order', duration: 5 },
+    { id: 'install', duration: 4, manual: { start: 3, end: 8 } },
+    { id: 'test', duration: 2 },
+    { id: 'option', duration: 6, inactive: true },
+  ],
+  dependencies: [
+    { id: 'order-install', from: 'order', to: 'install' },
+    { id: 'install-test', from: 'install', to: 'test' },
+    { id: 'option-test', from: 'option', to: 'test' },
+  ],
+})
+// install stays at [3, 8) although order finishes at 5: manualConflicts is [{ taskId: 'install', dependencyId: 'order-install' }].
+// test follows install to [8, 10). option and its link take no part, and inactiveTaskIds is ['option'].
+```
+
+**Manually scheduled tasks.** `manual: { start, end }` is a `TimeRange` of manually scheduled dates in elapsed time, like a manually scheduled task in Microsoft Project:
+
+1. The task stays at exactly `[manual.start, manual.end)`. Its predecessors, its own bounds (`startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`), `mode` and its calendar do not move it, and `duration` is ignored. Equal dates make a milestone. Both dates must align with the horizon and quantum and lie inside `range`, with `end >= start`; otherwise a `RangeError` is thrown. A value that is not an object throws an Error.
+2. Its `work` is the working time of its calendar, after its pauses, inside its dates. Dates in time off give an empty `work`, which takes no capacity.
+3. Links into it bind nothing in the forward pass, the backward pass or ALAP placement, so a manual task never makes a predecessor infeasible or limits its float. They still count for cycle detection. Each link into it that its dates violate is listed in the result's `manualConflicts` as a `ScheduleManualConflict` (`{ taskId, dependencyId }`), in link order. A link is violated when the manual start (SS, FS) or finish (FF, SF) is before the predecessor's start or finish in the result plus the lag, compared in elapsed time. An ALAP predecessor stops at a link into a manual task when its earliest dates already meet that link, so its placement adds no conflict; otherwise the link is ignored for it too.
+4. Links from it bind its successors like any other link, and the project `finish` includes its end, which gives other tasks float.
+5. Its result entry has `manual: true`, its own dates as `latestStart` and `latestEnd`, `totalFloat` and `workFloat` 0 and `critical: false`, so links that touch it are never in `criticalDependencyIds`. `scheduledBarFields` turns it into a bar without a float line.
+6. A manual task that ends after the input `deadline` makes the plan `infeasible`, with `constraints: ['deadline']` and no dependencies.
+7. With `{ explain: true }`, the trace has one `manual` reason per phase (`earliest`, `latest` and, in `levelResources`, `leveling`). Successors' dependency reasons point to it as their parent.
+
+**Inactive tasks.** `inactive: true` leaves a task out of the calculation, like an inactive task in Microsoft Project. The task, every link that touches it (in either direction) and its resource assignments are ignored, and it is not in the result's `tasks`; the result lists it in `inactiveTaskIds`. It is still validated like any task, its ID still counts for duplicates, and links and assignments may name it without an unknown-task error. A cycle through an inactive task is no cycle. The flag must be a boolean (Error).
+
+| Function | Manual tasks | Inactive tasks |
+| --- | --- | --- |
+| `scheduleTasks` | Kept at their dates; violated links in `manualConflicts` | Left out, with their links; listed in `inactiveTaskIds` |
+| `propagateEdit` | An edit moves the manual dates (see [Propagate an edit](#propagate-an-edit)) | Editing one throws an Error |
+| `levelResources` | Never moved. Their capacity is reserved first, before any other task; one that finds too little capacity at its dates keeps them and is listed in `unresolvedTaskIds`, with its overload in `overloads` | Left out with their assignments |
+| `rescheduleFromStatusDate` | Keep their dates whatever their progress | Progress entries are accepted and ignored |
+| `calculateResourceLoad` | Their `work` counts like any other | Pass `{ inactiveTaskIds: result.inactiveTaskIds }` so their assignments take no capacity instead of throwing |
+| `buildPlacementInput` | A link from an unplaced task into a placed manual task is excluded without a diagnostic | Links that touch them are excluded without a diagnostic |
+| `scheduleToGraph` | A node with zero float, never critical | Left out with the links that touch them |
+| `toPlanningDiagnostics` | Each conflict is a `manual-conflict` warning, listed first | Not listed |
+| Snapshots | Stored and restored as they are | `inactive` must be a boolean |
+
+`fromMsProjectXml` reads both flags from Microsoft Project files (`Manual` 1 and `Active` 0). Its tasks have `manual: true` rather than dates, so pass `{ start: task.start, end: task.end }` as `ScheduleTask.manual`; see [Microsoft Project import](api.md#microsoft-project-import).
+
 ## Split work
 
 Work on a calendar is already split at non-working time. The result's `work` array lists each worked segment, while `start` and `end` cover the elapsed span. To interrupt a single task, give it `pauses`: elapsed half-open intervals in which that task does no work. Pauses are removed from the task's working time on its calendar. They must align with the quantum, can overlap breaks or one another, and are clipped to the horizon. A task with `duration: 4` and a pause `[2, 3)` works `[0, 2)` and `[3, 5)`. Its FS successors start at 5. A fixed start inside a pause is infeasible.
@@ -229,6 +282,8 @@ Work on a calendar is already split at non-working time. The result's `work` arr
 3. It places tasks one at a time. The next task is the highest-ranked task whose predecessors are all placed. The rank uses the higher `priority` first (default 0), then the smaller unleveled `totalFloat`, then the earlier unleveled start, then the task ID in code-unit order.
 4. Each task gets the earliest start that its placed predecessors, own bounds and calendar allow and at which its assigned resources have enough remaining capacity for all of its work. A `splittable` task instead takes the earliest working units that have capacity and can pause in between. Milestones and tasks without assignments do not wait for capacity.
 5. A task with no capacity-feasible placement before its latest dates stays at its earliest dates. It is listed in `unresolvedTaskIds`, and its overload remains.
+
+Manual tasks are placed before every other task, at their manual dates, and never move; a manual task whose dates lack capacity is listed in `unresolvedTaskIds`. Inactive tasks and their assignments are ignored.
 
 The result has the fields of a successful `scheduleTasks` result for the leveled plan, plus:
 
@@ -252,6 +307,8 @@ The link from **Cut order B** to packing has a two-hour lead (`lag: -2 * hour`),
 The demo shades breaks, nights and the closed date with `invertWorkPeriods` and builds its bars with `scheduledBarFields`. Inspection crosses the lunch break, so it is drawn as two work pieces. Critical tasks have a red outline, **Cut order B** shows its float as a thin line, and packing has a dispatch deadline at 17:00 on 9 November. After the second move, packing is split by the closure and marked late. Clear **Shade non-working time** or **Show critical path and float** to hide these layers, and use **Export schedule SVG** to save the chart with them.
 
 Check **Show scheduling constraints** (off by default) to give packing a hard `finishNoLaterThan` at the 17:00 cut-off, which the scheduler applies, unlike the display-only deadline, and to show the requested start of each cutting order as a `startNoEarlierThan` handle. Drag the handle of **Cut order B** from 10:00 to 13:00: the demo applies the `constraint-edit` proposal to its tasks and reschedules. Drag it three hours further: packing can no longer finish by 17:00, so the demo shows the scheduler's diagnostic, "Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A", and keeps the plan. Focus the handle to move it with the arrow keys or remove it with Delete. With the option on, **Export MS Project XML** writes packing's constraint as `ConstraintType` 7.
+
+Check **Schedule inspection manually** to give inspection `manual` dates at its current plan. Its bar turns violet, shows no float and is never critical, and the Float column reads "manual". Move **Cut order A** later: inspection stays where it is, and the **Manual date conflicts** list names the link it now breaks (`manualConflicts`). Drag or resize the inspection bar instead: `propagateEdit` moves its manual dates, packing follows, and the conflict clears once the link is met again. A manual task keeps its elapsed length when moved, so moving it across the lunch break changes its work hours. Check **Cancel order B (inactive)** to make cutting order B `inactive`: its bar stays as a pale placeholder at its last dates, its links leave the chart and the network diagram, its CNC load leaves the load view (`calculateResourceLoad` with `inactiveTaskIds`), **Export MS Project XML** writes it with `Active` 0, and iCalendar leaves it out. **Reset schedule** turns both options off.
 
 Terminology references include [Microsoft Project dependency types](https://support.microsoft.com/en-us/project/predecessors-task-field) and [critical-path guidance](https://support.microsoft.com/en-gb/project/manage-your-project-s-critical-path?nochrome=true).
 
@@ -283,7 +340,7 @@ Edits arrive as ordinary `edit` events. `resolveResourceTimelineEdit` turns a ho
 
 ### Unplanned tasks
 
-An unplanned task is a task without dates, not a missing task. Do not give it invented dates. Pass its ID in `unplannedTaskIds`, where its assignments and links are accepted but not drawn, and leave it out of the scheduler with `buildPlacementInput(input, placedTaskIds)`. The scheduler and `calculateResourceLoad` throw for links and assignments to tasks they do not have; `buildPlacementInput` removes the unplaced tasks, their links and their assignments, so unplanned work does not count towards the load. A placed task whose predecessor is unplaced is reported as an `unplaced-predecessor` diagnostic and the result is not `ok`: refuse the placement, or place the predecessor too, instead of showing a plan that ignores the link.
+An unplanned task is a task without dates, not a missing task. Do not give it invented dates. Pass its ID in `unplannedTaskIds`, where its assignments and links are accepted but not drawn, and leave it out of the scheduler with `buildPlacementInput(input, placedTaskIds)`. (A task that has dates but should not count is an `inactive` task instead; see [Manual and inactive tasks](#manual-and-inactive-tasks).) The scheduler and `calculateResourceLoad` throw for links and assignments to tasks they do not have; `buildPlacementInput` removes the unplaced tasks, their links and their assignments, so unplanned work does not count towards the load. A placed task whose predecessor is unplaced is reported as an `unplaced-predecessor` diagnostic and the result is not `ok`: refuse the placement, or place the predecessor too, instead of showing a plan that ignores the link.
 
 ### Leveling previews
 
@@ -303,7 +360,7 @@ if (plan.ok) {
 const problems = toPlanningDiagnostics(plan)
 ```
 
-Each reason belongs to a phase. `earliest` is the forward pass and records the lower limits that set each task's earliest start or finish. `latest` is the backward pass and records the upper limits from successors, the project finish and the task's own bounds. `placement` records why an ALAP task was placed where it is. `leveling` records the limits and the capacity shortages met while `levelResources` reserved capacity; its `latest` reasons are those of the leveling horizon, which ignores the project finish.
+A task with `manual` dates has a `manual` reason in each phase instead of bounds, because nothing else places it. Each reason belongs to a phase. `earliest` is the forward pass and records the lower limits that set each task's earliest start or finish. `latest` is the backward pass and records the upper limits from successors, the project finish and the task's own bounds. `placement` records why an ALAP task was placed where it is. `leveling` records the limits and the capacity shortages met while `levelResources` reserved capacity; its `latest` reasons are those of the leveling horizon, which ignores the project finish.
 
 For example, with A and B of duration 2, an FS link with lag 1 and a calendar with working time [0, 3) and [5, 12), B's candidate start is 3. Time 3 is not working time, because [0, 3) is half-open, so B starts at 5. The trace holds a `dependency` reason (candidate 3, placed 5, parent: A's reason) and a `calendar` reason (3 to 5). A pause that moves the task further is a separate `pause` reason, so calendar time off and the task's own pauses can be told apart. Lag is elapsed time, so the candidate is the predecessor's end plus the lag before any calendar applies.
 
@@ -317,4 +374,4 @@ Keep the three kinds of deadline apart:
 - `ScheduleTask.finishNoLaterThan` is a hard limit on one task, reported as a `constraint` reason.
 - `TimelineBar.deadline` is only drawn by GanttChart and never takes part in scheduling.
 
-`toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.
+`toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. Each entry of `manualConflicts` becomes a `manual-conflict` warning (the task, then the link), listed before the unresolved tasks and overloads; the plan is still valid, so it is not an error. Its `reasonIds` hold the task's `manual` reason of the `earliest` phase when the result was calculated with `explain`. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.

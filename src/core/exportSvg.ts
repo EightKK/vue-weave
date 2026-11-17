@@ -1,4 +1,5 @@
-import { indexGraph, type GraphEdge, type GraphLayout } from './graph.js'
+import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } from './graph.js'
+import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
@@ -177,16 +178,20 @@ function svgDocument(width: number, height: number, options: SvgExportOptions, f
   }, (title ? tag('title', {}, escapeXml(title)) : '') + (defs ? '<defs>' + defs + '</defs>' : '') + body)
 }
 
-/** A text run clipped to a box. `inset` is measured from the inline start edge of the box. */
+/**
+ * A text run clipped to a box. `inset` is measured from the inline start edge of the box; a `centred` line is centred
+ * in the box instead.
+ */
 function clippedText(
   box: { x: number; y: number; width: number; height: number }, rtl: boolean,
-  lines: readonly { text: string; y: number; size: number; fill: string; weight?: number; inset?: number; halo?: string }[],
+  lines: readonly { text: string; y: number; size: number; fill: string; weight?: number; inset?: number; halo?: string; centred?: boolean }[],
 ) {
   if (box.width <= 0 || box.height <= 0) return ''
   const content = lines.filter(line => line.text !== '').map(line => {
     const inset = line.inset ?? 0
     return tag('text', {
-      x: rtl ? box.width - inset : inset, y: line.y, 'font-size': line.size, 'font-weight': line.weight, fill: line.fill,
+      x: line.centred ? box.width / 2 : rtl ? box.width - inset : inset, y: line.y, 'text-anchor': line.centred ? 'middle' : undefined,
+      'font-size': line.size, 'font-weight': line.weight, fill: line.fill,
       direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
       stroke: line.halo, 'stroke-width': line.halo ? 3 : undefined, 'stroke-linejoin': line.halo ? 'round' : undefined,
       'paint-order': line.halo ? 'stroke' : undefined,
@@ -230,7 +235,9 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
 
 /**
  * Build a standalone SVG document of a whole graph with the default node rendering. Every node, edge, label and
- * group is included regardless of any camera or culling. Runs without a DOM.
+ * group is included regardless of any camera or culling. Node shapes and edge markers are drawn like NetworkGraph draws
+ * them; hollow markers are filled with the theme's `surfaceMuted`, and animated edges are dashed without motion. Throws
+ * RangeError for an unknown edge marker. Runs without a DOM.
  */
 export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   layout: GraphLayout, nodes: readonly N[], edges: readonly E[], options: GraphSvgOptions<N, E> = {},
@@ -287,10 +294,33 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
   // The highlight marker is only written when a drawn edge uses it, so an export without highlights is unchanged.
   const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id))
+  // Other markers, and start markers, are also only written when an edge uses them.
+  type Marker = Exclude<GraphEdgeMarker, 'none'>
+  const markerId = (kind: Marker, end: 'start' | 'end', strong: boolean) => kind === 'arrow' && end === 'end'
+    ? strong ? arrowHighlight : arrow
+    : prefix + (end === 'start' ? '-start-' : '-') + kind + (strong ? '-highlight' : '')
+  const markers = new Map<string, { kind: Marker; end: 'start' | 'end'; strong: boolean }>()
+  for (const edge of edges) {
+    const strong = highlightedEdges.has(edge.id)
+    for (const end of ['start', 'end'] as const) {
+      const kind = graphEdgeMarker(edge, end)
+      if (kind !== 'none' && (kind !== 'arrow' || end === 'start')) markers.set(markerId(kind, end, strong), { kind, end, strong })
+    }
+  }
+  const markerTag = (id: string, kind: Marker, end: 'start' | 'end', color: string) => {
+    const { refX, paint, strokeWidth, element } = graphMarkerDrawing(kind)
+    const colors = paint === 'fill' ? { fill: color } : {
+      fill: paint === 'hollow' ? theme.surfaceMuted : 'none', stroke: color, 'stroke-width': strokeWidth,
+      'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    }
+    return tag('marker', { id, markerWidth: 7, markerHeight: 7, refX, refY: 3.5, orient: end === 'start' ? 'auto-start-reverse' : 'auto' },
+      element.tag === 'path' ? tag('path', { d: element.d, ...colors }) : tag('circle', { cx: element.cx, cy: element.cy, r: element.r, ...colors }))
+  }
   const defs = tag('marker', { id: arrow, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
     tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: theme.edge }))
     + (anyHighlightedEdge ? tag('marker', { id: arrowHighlight, markerWidth: 7, markerHeight: 7, refX: 6, refY: 3.5, orient: 'auto' },
       tag('path', { d: 'M 0 0 L 7 3.5 L 0 7 z', fill: highlight })) : '')
+    + [...markers].map(([id, { kind, end, strong }]) => markerTag(id, kind, end, strong ? highlight : theme.edge)).join('')
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
@@ -305,9 +335,12 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   }
   for (const edge of edges) {
     const strong = highlightedEdges.has(edge.id)
+    const start = graphEdgeMarker(edge, 'start'), end = graphEdgeMarker(edge, 'end')
     content.push(tag('path', {
       d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,
-      'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
+      'stroke-dasharray': edge.animated ? '6 4' : undefined,
+      'marker-start': start === 'none' ? undefined : `url(#${markerId(start, 'start', strong)})`,
+      'marker-end': end === 'none' ? undefined : `url(#${markerId(end, 'end', strong)})`,
     }))
   }
   for (const edge of edges) {
@@ -327,14 +360,29 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     const label = nodeLabel(node), detail = nodeDetail(node)
     const ink = active ? theme.onSolid : colors.ink
     const strong = highlightedNodes.has(node.id)
-    const shape = tag('rect', {
-      x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8,
+    const paint = {
       fill: active ? colors.solid : colors.pale, stroke: strong ? highlight : active ? colors.ink : colors.line,
       'stroke-width': strong ? 3 : active ? 2.8 : 1.25,
-    })
+    }
+    // Diamonds, ellipses and hexagons are drawn inside the box, with centred text.
+    const outline = graphOutlineShape(node)
+    let shape: string, lines: { title: number; detail: number; inset: number; centred?: boolean }
+    if (outline) {
+      const element = graphOutlineElement(outline, box.width, box.height)
+      const anchors = graphOutlineText(box.width, box.height, Boolean(detail))
+      shape = element.tag === 'ellipse'
+        ? tag('ellipse', { cx: element.cx, cy: element.cy, rx: element.rx, ry: element.ry, ...paint })
+        : tag('polygon', { points: element.points.map(point => num(point.x) + ',' + num(point.y)).join(' '), ...paint, 'stroke-linejoin': 'round' })
+      lines = { title: anchors.title, detail: anchors.detail, inset: 0, centred: true }
+    } else {
+      shape = tag('rect', {
+        x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8, ...paint,
+      })
+      lines = { title: detail ? 24 : 34, detail: 43, inset: 13 }
+    }
     const text = clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
-      { text: label, y: detail ? 24 : 34, size: 15.5, weight: 700, fill: ink, inset: 13 },
-      { text: detail ?? '', y: 43, size: 12, weight: 550, fill: ink, inset: 13 },
+      { text: label, y: lines.title, size: 15.5, weight: 700, fill: ink, inset: lines.inset, centred: lines.centred },
+      { text: detail ?? '', y: lines.detail, size: 12, weight: 550, fill: ink, inset: lines.inset, centred: lines.centred },
     ])
     content.push(tag('g', { transform: `translate(${num(box.x)} ${num(box.y)})` },
       tag('title', {}, escapeXml([label, detail].filter(Boolean).join(' ')))
@@ -678,7 +726,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       const ink = solid ? theme.onSolid : colors.ink
       const y = top + laneTop(bar)
       const label = barLabel(bar)
-      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
+      const note = bar.description?.trim()
+      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}${note ? ' · ' + note : ''}`))
       const late = bar.deadline !== undefined && bar.end > bar.deadline
       const strong = highlightedBars.has(bar.id)
       const marks = {

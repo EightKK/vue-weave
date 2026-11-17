@@ -966,8 +966,11 @@ function barOverlay(bar: TimelineBar): BarOverlay | undefined {
   // Named baseline sets (or `baselineIds`) add each selected baseline with its variance to the description.
   const strips = baselineChoice.value.described ? baselineStrips(bar, range, baselineChoice.value, baselineText.value) : []
   const constraints = barConstraints(bar)
-  if (!bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length && !constraints.length) return undefined
+  const note = bar.description?.trim()
+  if (!note && !bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length && !constraints.length) return undefined
   const parts: string[] = []
+  // The application's own text comes first; a trailing full stop is dropped because the parts are joined with '. '.
+  if (note) parts.push(note.replace(/\.+$/, ''))
   if (bar.critical) parts.push(messages.value.critical!)
   if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
   if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)

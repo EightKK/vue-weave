@@ -9,11 +9,18 @@ export * from './resourceLoad.js'
 export * from './fieldEditing.js'
 export * from './timelineView.js'
 export { countGraphCrossings } from './graphCrossings.js'
-export { layoutTreeGraph, layoutRadialGraph } from './graphLayouts.js'
-export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions } from './graphLayouts.js'
+export { layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGraph, layoutConcentricGraph } from './graphLayouts.js'
+export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions, GraphCircularLayoutOptions, GraphGridLayoutOptions, GraphConcentricLayoutOptions } from './graphLayouts.js'
 export { layoutForceGraph } from './graphForce.js'
 export type { GraphForceLayoutOptions } from './graphForce.js'
 export { topologicalOrder, findGraphCycles, shortestGraphPath, searchGraphNodes, filterGraph } from './graphAlgorithms.js'
+export {
+  graphComponents, graphDegreeCentrality, graphBetweennessCentrality, graphPageRank, detectGraphCommunities, graphCommunityGroups,
+} from './graphAnalysis.js'
+export type {
+  GraphDegreeCentralityOptions, GraphBetweennessOptions, GraphPageRankOptions, GraphPageRankResult,
+  GraphCommunityOptions, GraphCommunityResult, GraphCommunityGroupsOptions,
+} from './graphAnalysis.js'
 export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
@@ -34,10 +41,13 @@ export {
   timelineWbsCodes, timelineRowPosition, moveTimelineRow, indentTimelineRow, outdentTimelineRow,
 } from './rowHierarchy.js'
 export { rescheduleFromStatusDate } from './statusDate.js'
-export { toMsProjectXml, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchange.js'
+export {
+  toMsProjectXml, fromMsProjectXml, timelineFromMsProject, toICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable,
+} from './interchange.js'
 export type {
-  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, ICalendarEvent, ICalendarOptions, CsvCell,
-  TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, MsProjectImport, MsProjectImportTask,
+  MsProjectImportWarning, MsProjectImportWarningCode, MsProjectTimelineOptions, MsProjectTimeline, ICalendarEvent, ICalendarOptions,
+  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'

@@ -26,6 +26,7 @@ const titles: Record<PlanningDiagnostic['code'], string> = {
   'schedule-infeasible': 'Constraints cannot be met',
   'resource-overload': 'Resource overload',
   'leveling-unresolved': 'Not resolved by leveling',
+  'manual-conflict': 'Manual dates break a link',
 }
 const constraintNames: Record<string, string> = {
   range: 'the planning horizon', startNoEarlierThan: 'start no earlier than', startNoLaterThan: 'start no later than',

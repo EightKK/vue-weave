@@ -18,12 +18,19 @@ export interface NetworkNode<D = unknown> extends IdentifiedNode {
   draggable?: boolean
   /** False keeps the node out of NetworkGraph deletion proposals (`deletable`). */
   deletable?: boolean
-  shape?: 'box' | 'rounded'
+  /** Outline drawn by the default renderer and `renderGraphSvg`. Default `'box'`. */
+  shape?: NetworkNodeShape
   /** False hides the NetworkGraph resize handles of this node (`resizable`). */
   resizable?: boolean
   /** Application data. The components pass it through untouched. */
   data?: D
 }
+
+/**
+ * The outline of a node in its layout box. `box` (the default) and `rounded` are rectangles with small and large corner
+ * radii; `diamond`, `ellipse` and `hexagon` are drawn inside the box and centre the label and detail text.
+ */
+export type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon'
 
 /**
  * A custom NetworkGraph layout. `N` and `E` type the nodes and edges it receives; with collapsed groups they include
@@ -78,6 +85,13 @@ export interface TimelineBar<D = unknown> extends TimeRange {
   latestEnd?: number
   /** A due time, drawn as an indicator in the bar's lane. A bar whose `end` is after it is marked late. */
   deadline?: number
+  /**
+   * Extra text about the bar for assistive technology and the native tooltip, for example "Manually scheduled". GanttChart
+   * puts it first in the bar's accessible description, before the critical, float, deadline, constraint and baseline
+   * facts, and after the dates in its `title`; `renderTimelineSvg` adds it to the bar's `<title>`. The accessible name is
+   * unchanged. Must be a string; blank text is ignored.
+   */
+  description?: string
   /**
    * Worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. The gaps are
    * drawn as a thin connector. Not allowed on milestones.
