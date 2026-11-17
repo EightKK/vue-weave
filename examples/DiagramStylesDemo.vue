@@ -3,7 +3,7 @@
 // node shapes tell steps, decisions, data stores and terminals apart; edge markers tell control flow from data flow;
 // request/response pairs show what `parallelEdgeSpacing` does; one loop-back edge routes itself orthogonally.
 import { computed, ref } from 'vue'
-import { NetworkGraph, type GraphEdge, type GraphEdgeStyle, type NetworkNode } from '../src'
+import { NetworkGraph, type GraphEdge, type GraphEdgeStyle, type GraphNodeSize, type GraphPoint, type NetworkNode } from '../src'
 import { download, imageSize } from './download'
 
 const nodes: NetworkNode[] = [
@@ -20,8 +20,18 @@ const nodes: NetworkNode[] = [
   { id: 'cancelled', label: 'Cancelled', shape: 'ellipse', tone: 'violet' },
 ]
 
+// Placed by hand, like a drawn diagram: the main flow runs left to right, the data stores sit above the steps they talk
+// to (the request/response pair with Inventory runs straight up and down, spread apart) and the exceptions branch below.
+const positions: ReadonlyMap<string, GraphPoint> = new Map([
+  ['start', { x: 20, y: 265 }], ['validate', { x: 230, y: 265 }], ['stock', { x: 440, y: 250 }],
+  ['reserve', { x: 710, y: 265 }], ['pay', { x: 920, y: 265 }], ['ship', { x: 1130, y: 265 }], ['done', { x: 1340, y: 265 }],
+  ['inventory', { x: 440, y: 20 }],
+  ['backorder', { x: 440, y: 430 }], ['cancelled', { x: 920, y: 430 }], ['package', { x: 1130, y: 430 }],
+])
+const sizes: ReadonlyMap<string, GraphNodeSize> = new Map([['stock', { width: 160, height: 90 }]])
+
 const spread = ref(true)
-const spacing = ref(22)
+const spacing = ref(40)
 const animate = ref(true)
 const edgeStyle = ref<GraphEdgeStyle>('curve')
 const graph = ref<InstanceType<typeof NetworkGraph>>()
@@ -46,10 +56,9 @@ const edges = computed<GraphEdge[]>(() => {
     // Aggregation: a shipment contains packages.
     { id: 'ship-package', from: 'ship', to: 'package', label: 'contains', markerStart: 'diamond', markerEnd: 'none' },
     // Request/response pairs between the same two nodes, in both directions.
-    { id: 'stock-inventory-request', from: 'stock', to: 'inventory', label: 'check', markerEnd: 'open-arrow' },
-    { id: 'inventory-stock-response', from: 'inventory', to: 'stock', label: 'quantity', markerEnd: 'open-arrow' },
-    { id: 'reserve-inventory-request', from: 'reserve', to: 'inventory', label: 'reserve', markerEnd: 'open-arrow' },
-    { id: 'inventory-reserve-response', from: 'inventory', to: 'reserve', label: 'confirm', markerEnd: 'open-arrow' },
+    { id: 'stock-inventory-request', from: 'stock', to: 'inventory', label: 'ask', markerEnd: 'open-arrow' },
+    { id: 'inventory-stock-response', from: 'inventory', to: 'stock', label: 'qty', markerEnd: 'open-arrow' },
+    { id: 'reserve-inventory', from: 'reserve', to: 'inventory', label: 'reserve', markerEnd: 'open-arrow' },
   ]
 })
 
@@ -80,7 +89,7 @@ async function exportPng() {
       <label><input v-model="spread" type="checkbox"> Spread parallel edges</label>
       <label>Spacing
         <select v-model.number="spacing" aria-label="Parallel edge spacing" :disabled="!spread">
-          <option :value="12">12</option><option :value="22">22</option><option :value="34">34</option>
+          <option :value="24">24</option><option :value="40">40</option><option :value="56">56</option>
         </select>
       </label>
       <label><input v-model="animate" type="checkbox"> Animate main path</label>
@@ -93,8 +102,8 @@ async function exportPng() {
       <button type="button" @click="exportPng">Export PNG</button>
     </div>
     <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :edge-style="edgeStyle"
-      :parallel-edge-spacing="spread ? spacing : undefined" :options="{ direction: 'LR', nodeWidth: 136, nodeHeight: 60 }"
-      :height="460" :labels="{ region: 'Order fulfilment diagram' }" />
+      :parallel-edge-spacing="spread ? spacing : undefined" :positions="positions" :sizes="sizes"
+      :options="{ direction: 'LR', nodeWidth: 160, nodeHeight: 60 }" :height="500" :labels="{ region: 'Order fulfilment diagram' }" />
     <p class="status" role="status" aria-label="Diagram status">{{ status }}</p>
     <ul class="diagram-legend" aria-label="Legend">
       <li><strong>Shapes</strong> ellipse: start and end, diamond: decision, hexagon: data store, box: step</li>
