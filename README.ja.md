@@ -76,7 +76,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ## 対応状況
 
-- **バージョン0.4.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
+- **バージョン0.5.0です。** 0.x の間は、破壊的変更がマイナーリリース（0.x.0）に含まれることがあり、[変更履歴](CHANGELOG.md)の「Breaking changes」に記載します。パッチリリース（0.x.y）には後方互換の修正だけを含めます。バージョンを固定して利用してください。特定のtarballをインストールすれば自然に固定されます。
 - **Vue：** 3.5以降（peer dependency）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
@@ -85,10 +85,10 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ## 組み込む
 
-npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.4.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+npmでは公開していません。[GitHub Release](https://github.com/EightKK/vue-weave/releases) に添付された `vue-weave-0.5.0.tgz` をダウンロードするか、チェックアウトから[ローカルパッケージを作成](CONTRIBUTING.md#build-a-local-package)してください。そのtarballを、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./vue-weave-0.4.0.tgz
+npm install ./vue-weave-0.5.0.tgz
 ```
 
 Vue 3.5以降をpeer dependencyとしています。ES modules、TypeScriptの型定義、スタイルシートを提供します。CSSはアプリケーションで `import 'vue-weave/style.css'` により一度だけ読み込んでください。`vue-weave/core` はVueなしで動作し、TypeScriptの `NodeNext` による型解決にも対応しています。
