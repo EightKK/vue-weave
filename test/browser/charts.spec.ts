@@ -6223,3 +6223,113 @@ test('unstyledNodeSlots keeps the library hover stroke off custom node content',
   await expect(split.locator('rect').first()).toHaveCSS('stroke-width', '2.8px')
   expect(errors).toEqual([])
 })
+
+test('the diagram demo draws shapes and markers, spreads parallel edges, animates the main path and exports', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises')
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Diagram styles', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  for (const name of ['Order placed', 'In stock?', 'Inventory data store', 'Validate order', 'Delivered']) {
+    await expect(page.getByRole('button', { name })).toBeVisible()
+  }
+  await expect(page.locator('.vw-network-node')).toHaveCount(11)
+  // Shapes: decisions are diamonds and terminals ellipses.
+  await expect(page.getByRole('button', { name: 'In stock?' }).locator('polygon, path').first()).toBeAttached()
+  await expect(page.getByRole('button', { name: 'Order placed' }).locator('ellipse')).toHaveCount(1)
+
+  const spread = page.getByLabel('Spread parallel edges')
+  await expect(spread).toBeChecked()
+  const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
+  const spreadPaths = await paths()
+  expect(spreadPaths).toHaveLength(14)
+  await spread.uncheck()
+  const plainPaths = await paths()
+  // The two request/response pairs (edges 11 to 14) are drawn differently; the other edges are not.
+  expect(plainPaths.slice(0, 10)).toEqual(spreadPaths.slice(0, 10))
+  for (let index = 10; index < 14; index++) expect(plainPaths[index]).not.toEqual(spreadPaths[index])
+  await spread.check()
+  await page.getByLabel('Parallel edge spacing').selectOption('34')
+  expect(await paths()).not.toEqual(spreadPaths)
+
+  const animated = page.locator('.vw-network-edge.vw-is-animated')
+  await expect(animated).toHaveCount(6)
+  await page.getByLabel('Animate main path').uncheck()
+  await expect(animated).toHaveCount(0)
+  await page.getByLabel('Animate main path').check()
+  await expect(animated).toHaveCount(6)
+
+  await page.getByLabel('Edge style').selectOption('straight')
+  expect((await paths())[0]).not.toContain('C')
+  await page.getByLabel('Edge style').selectOption('curve')
+
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+  const file = await pending
+  expect(file.suggestedFilename()).toBe('order-fulfilment.svg')
+  const text = (await readFile((await file.path())!)).toString('utf8')
+  expect(text).toMatch(/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+  expect(text).toContain('>In stock?<')
+  await expect(page.getByRole('status', { name: 'Diagram status' })).toContainText('Exported SVG (')
+  const png = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export PNG', exact: true }).click()
+  expect((await png).suggestedFilename()).toBe('order-fulfilment.png')
+  await expect(page.getByRole('status', { name: 'Diagram status' })).toContainText('Exported PNG')
+  expect(errors).toEqual([])
+})
+
+test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Graph analysis', exact: true }).click()
+  const summary = page.getByLabel('Network summary')
+  await expect(summary).toHaveText(/^\d+ nodes, \d+ edges, 3 components, \d+ communities, modularity 0\.\d\d$/)
+  const communityCount = Number((await summary.textContent())!.match(/(\d+) communities/)![1])
+  const nodeCount = Number((await summary.textContent())!.match(/^(\d+) nodes/)![1])
+  expect(communityCount).toBeGreaterThanOrEqual(8)
+  const frames = page.locator('.vw-network-group')
+  await expect(frames).toHaveCount(0)
+  await page.getByLabel('Group communities').check()
+  await expect(frames).not.toHaveCount(0)
+  await expect(page.getByText(/^Community \d+ · \d+ nodes$/).first()).toBeAttached()
+  await page.getByRole('button', { name: 'Collapse all', exact: true }).click()
+  await expect(page.locator('.vw-network-node')).toHaveCount(communityCount)
+  expect(communityCount).toBeLessThan(nodeCount)
+  await page.getByRole('button', { name: 'Expand all', exact: true }).click()
+  await expect(page.locator('.vw-network-node')).toHaveCount(nodeCount)
+
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(0)
+  await page.getByLabel('Rank by').selectOption('pagerank')
+  const ranking = page.getByRole('list', { name: 'Top ranked nodes' })
+  await expect(ranking.getByRole('listitem')).toHaveCount(5)
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(5)
+  await ranking.getByRole('button').first().click()
+  await expect(page.getByRole('status', { name: 'Analysis status' })).toContainText('Centered on')
+  await page.getByLabel('Rank by').selectOption('none')
+  await expect(page.locator('.vw-is-highlighted')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the demo falls back to layered for the circular and concentric layouts of the large graph', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  const layout = page.getByLabel('Graph layout')
+  for (const name of ['circular', 'concentric']) {
+    await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+    await layout.selectOption(name)
+    await expect(layout.locator('option', { hasText: name })).toBeEnabled()
+    await page.getByRole('button', { name: 'Large graph', exact: true }).click()
+    await expect(layout).toHaveValue('layered')
+    await expect(layout.locator('option', { hasText: name })).toBeDisabled()
+    await expect(page.getByRole('status').filter({ hasText: `The ${name} layout is offered for up to 1,000 nodes; switched to the layered layout.` })).toBeVisible()
+  }
+  await expect(layout.locator('option', { hasText: 'grid' })).toBeEnabled()
+  await layout.selectOption('grid')
+  await expect(page.locator('.vw-network-node').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await expect(layout.locator('option', { hasText: 'circular' })).toBeEnabled()
+  expect(errors).toEqual([])
+})
