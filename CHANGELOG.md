@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-Everything below is additive and opt-in: without the new fields, props and options, results, server markup, routes, exports and accessible names are the same as in 0.4.0. One type change can affect TypeScript code that lists every value of a union: `ScheduleReasonKind` gains `'manual'` (see below).
+The next release is a minor release (0.5.0) because of the two type changes under "Breaking changes": TypeScript code that lists every value of `ScheduleReasonKind` or `PlanningDiagnosticCode` needs a new case. Code that runs today behaves the same, since the new values only appear once a plan uses manual tasks. Everything else is additive and opt-in: without the new fields, props and options, results, server markup, routes, exports and accessible names are the same as in 0.4.0.
+
+### Breaking changes
+
+- `ScheduleReasonKind` gains `'manual'`, used in traces (`{ explain: true }`) for the dates of manual tasks.
+- `PlanningDiagnosticCode` gains `'manual-conflict'`. `toPlanningDiagnostics` lists each entry of `manualConflicts` as a warning with the task and the link, before unresolved tasks and overloads; with `explain`, its `reasonIds` name the task's `manual` reason. A result without manual conflicts gives the same list as before.
+
+A `switch` or `Record` over every value of either union needs an entry for the new value.
 
 ### Added
 
@@ -13,6 +20,7 @@ Everything below is additive and opt-in: without the new fields, props and optio
 - `GraphEdge.animated`: a dash pattern that flows toward the target (class `vw-is-animated`, speed `--vw-edge-animation-duration`, default `1s`). It stands still under `prefers-reduced-motion: reduce` and in print; exports draw it dashed.
 - `GraphEdge.edgeStyle` overrides the `edgeStyle` prop and the `style` option of `routeGraphEdges` for one edge.
 - `parallelEdgeSpacing` (NetworkGraph) and `parallelSpacing` (`routeGraphEdges`): edges between the same two nodes, in either direction, without waypoints or named ports, are spread around the centre line in every edge style, and several self-loops of one node are nested. With `routingPolicy: 'preserve'`, kept layout paths are not spread. Invalid spacing throws `RangeError`.
+- `collapseGraphGroups` (and so collapsed groups in NetworkGraph) keeps `edgeStyle`, `markerStart`, `markerEnd` and `animated` on an edge that merges several edges when all of them have the same value, as it already did for the label.
 - `layoutCircularGraph`, `layoutGridGraph` and `layoutConcentricGraph` (with `GraphCircularLayoutOptions`, `GraphGridLayoutOptions` and `GraphConcentricLayoutOptions`) for the `layout` prop. Circular places nodes on one circle in input or `sort` order with a radius that keeps `nodeGap` between neighbours; grid fills rows of `columns`; concentric places nodes on rings by `level(node, degree)` (the degree by default, higher levels inside, optional `levelWidth` buckets). They are deterministic and linear apart from the ring sort, draw straight edges and never let boxes overlap. `sort` and `level` receive the caller's node type.
 
 #### Graph analysis (`vue-weave/core`)
@@ -23,13 +31,17 @@ Everything below is additive and opt-in: without the new fields, props and optio
 
 - `ScheduleTask.manual`: manually scheduled dates, as in Microsoft Project. `scheduleTasks`, `levelResources` (which reserves their capacity first and never moves them), `rescheduleFromStatusDate` and `propagateEdit` (where an edit moves the dates) keep them. Links into a manual task bind nothing but still count for cycles; each link its dates violate is listed in `ScheduleSuccess.manualConflicts` (`ScheduleManualConflict`). Results mark these tasks with `ScheduledTask.manual`; they have no float and are never critical. A manual task that ends after `deadline` makes the plan infeasible.
 - `ScheduleTask.inactive`: the task, its links and its resource assignments take no part in any calculation; it is left out of the result's `tasks` and listed in `ScheduleSuccess.inactiveTaskIds`. `calculateResourceLoad` accepts `{ inactiveTaskIds }` (`ResourceLoadOptions`), and `scheduleToGraph` and `buildPlacementInput` skip links that the scheduler ignores.
-- `ScheduleReasonKind` gains `'manual'`, used in traces (`{ explain: true }`) for the dates of manual tasks. A `switch` or `Record` over every `ScheduleReasonKind` needs an entry for it. `PlanningDiagnosticCode` is unchanged: read `manualConflicts` for conflicts.
 
 #### Interchange
 
-- `fromMsProjectXml` reads Microsoft Project XML (MSPDI): tasks with outline levels, percent complete, milestones, summary, manual and active flags, durations, single constraints and baselines, and links with their types and lags. It uses a small loop-based reader without a DOM that skips a DOCTYPE, never expands declared entities and throws with the line and column of malformed XML; what it cannot import (calendars, resources, assignments, Must Finish On constraints, percentage lags) is reported in `warnings`. Working-time lags are read as elapsed time, with a warning.
+- `fromMsProjectXml` reads Microsoft Project XML (MSPDI): tasks with outline levels, percent complete, milestones, summary, manual and active flags, durations, constraints and baselines, and links with their types and lags. It uses a small loop-based reader without a DOM that skips a DOCTYPE, never expands declared entities and throws with the line and column of malformed XML; what it cannot import (calendars, resources, assignments, unknown constraint types, percentage lags) is reported in `warnings`. Working-time lags are read as elapsed time, with a warning.
 - `timelineFromMsProject` turns a plan into GanttChart rows, bars, named baselines and dependencies; summary tasks become parent rows without bars.
+- Must Finish On (`ConstraintType` 3) is imported as `finishNoEarlierThan` plus `finishNoLaterThan` at its date, and `toMsProjectXml` writes that pair at one time as `ConstraintType` 3, so it survives a round trip. Other combinations of two or more constraints are still not written.
 - `MsProjectTask.inactive` and `MsProjectTask.manual` write `Active` 0 and `Manual` 0. The default export is unchanged, and `toMsProjectXml(fromMsProjectXml(toMsProjectXml(plan)))` reproduces the document.
+
+### Fixed
+
+- `calculateResourceLoad` and `levelResources` name the unknown resource or task in an assignment instead of throwing "Unknown task or resource in assignment"; the load error also points to `options.inactiveTaskIds` for tasks that a schedule result leaves out as inactive. Code that matched the old message text must change.
 
 ### Examples
 
