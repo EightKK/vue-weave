@@ -4101,6 +4101,126 @@ test('the scheduling demo shows the plan as a network diagram with critical task
   expect(errors).toEqual([])
 })
 
+test('the scheduling demo pins inspection manually, lists manual conflicts and leaves an inactive order out of the plan', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
+  const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
+  const other = plan.getByRole('button', { name: /^Cut order B \d\d Nov.*–/ })
+  const inspection = plan.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
+  const packing = plan.getByRole('button', { name: /^Pack order A \d\d Nov.*–/ })
+  const manual = page.getByRole('checkbox', { name: 'Schedule inspection manually', exact: true })
+  const cancel = page.getByRole('checkbox', { name: 'Cancel order B (inactive)', exact: true })
+  const conflicts = page.getByRole('region', { name: 'Manual date conflicts', exact: true })
+  const status = page.getByRole('status').filter({ hasText: /Inspect order A|Cut order B|Plan recalculated|Rescheduled|Original plan/ })
+  const editHint = 'Arrow keys move. Shift resizes the end. Alt resizes the start. Escape cancels.'
+
+  // Off by default: inspection is scheduled automatically, critical and not editable.
+  await expect(manual).not.toBeChecked()
+  await expect(cancel).not.toBeChecked()
+  await expect(conflicts).toHaveCount(0)
+  await expect(plan.getByText('Inspection station', { exact: true })).toBeVisible()
+  await expect(inspection).toHaveAccessibleDescription('Critical. Float until 09 Nov 14:00.')
+
+  // Manual: pinned at its planned dates, violet, editable, without float or critical overlay.
+  await manual.check()
+  await expect(status).toHaveText('Inspect order A is scheduled manually at 09 Nov 11:00–09 Nov 14:00. Its links no longer move it; move or resize its bar.')
+  await expect(plan.getByText('Inspection · manual', { exact: true })).toBeVisible()
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(inspection).toHaveClass(/vw-tone-violet/)
+  await expect(inspection).not.toHaveClass(/vw-critical/)
+  await expect(inspection).toHaveAccessibleDescription(editHint)
+  await expect(conflicts).toContainText('None: the manual dates meet every link into them.')
+
+  // Cutting order A one hour later finishes after the pinned inspection starts: the inspection stays and the broken link is listed.
+  await cutting.press('ArrowRight')
+  await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 09:00–09 Nov 12:00')
+  await expect(status).toHaveText('Plan recalculated. 0 other operations changed. 1 manual date conflict.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(conflicts.getByRole('listitem')).toHaveText(['Inspect order A starts before Cut order A finishes (link Cut order A → Inspect order A)'])
+
+  // Dragging the manual bar one hour later previews packing, then moves the manual dates; packing follows and the conflict is resolved.
+  const ghosts = plan.locator('.vw-gantt-cascade-preview')
+  const box = (await inspection.boundingBox())!
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 18, y, { steps: 6 })
+  await expect(ghosts).toHaveCount(1)
+  await page.mouse.up()
+  await expect(status).toHaveText('Plan recalculated. 1 other operation changed.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 12:00–09 Nov 15:00')
+  await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 15:00–09 Nov 17:00')
+  await expect(conflicts.getByRole('listitem')).toHaveCount(0)
+  await expect(conflicts).toContainText('None')
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 17:00')
+
+  // Inactive: cutting order B keeps a placeholder bar but leaves the load view, the network diagram and the chart links.
+  await page.getByRole('checkbox', { name: 'Network diagram', exact: true }).check()
+  const diagram = page.getByLabel('Schedule network diagram', { exact: true })
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(4)
+  await expect(diagram.locator('.vw-network-edge')).toHaveCount(3)
+  const doubleLoad = equipment.getByRole('button', { name: '2 / 1 09 Nov 10:00–09 Nov 12:00', exact: true })
+  await expect(doubleLoad).toBeVisible()
+  await expect(page.getByTestId('schedule-overload')).toHaveText('2 resource-hours')
+  await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
+  await cancel.check()
+  await expect(status).toHaveText('Cut order B is inactive: it no longer drives packing or loads the CNC cell. Plan recalculated.')
+  await expect(plan.getByText('CNC cell · inactive', { exact: true })).toBeVisible()
+  await expect(other).toHaveAttribute('aria-label', 'Cut order B 09 Nov 10:00–09 Nov 12:00')
+  await expect(other).toHaveClass(/vw-is-outline/)
+  await expect(other).not.toHaveClass(/vw-is-editable/)
+  await expect(plan.locator('.vw-gantt-lag')).toHaveCount(0)
+  await expect(doubleLoad).toHaveCount(0)
+  await expect(equipment.getByRole('button', { name: '1 / 1 09 Nov 09:00–09 Nov 12:00', exact: true })).toBeVisible()
+  await expect(page.getByTestId('schedule-overload')).toHaveText('0 resource-hours')
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(3)
+  await expect(diagram.locator('.vw-network-edge')).toHaveCount(2)
+  await expect(diagram.getByRole('button', { name: /^Cut order B / })).toHaveCount(0)
+
+  // Exports: Microsoft Project marks the inactive task, iCalendar leaves it out and the CSV says how each task is scheduled.
+  const { readFile } = await import('node:fs/promises')
+  async function save(name: string) {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name, exact: true }).click()
+    return (await readFile((await (await pending).path())!)).toString('utf8')
+  }
+  const xml = await save('Export MS Project XML')
+  expect(xml).toContain('<Name>Cut order B</Name><Active>0</Active>')
+  expect(xml).toContain('<Name>Inspect order A</Name><Active>1</Active><Manual>1</Manual>')
+  expect(xml.match(/<PredecessorLink>/g)).toHaveLength(3)
+  const ics = await save('Export iCalendar')
+  expect(ics).not.toContain('SUMMARY:Cut order B')
+  expect(ics).toContain('DESCRIPTION:Inspection · manual\r\n')
+  const csv = (await save('Export CSV')).split('\r\n')
+  expect(csv[0]).toBe('Operation,WBS,Task,Start,End,Progress,Scheduling')
+  expect(csv[2]).toBe('Cut order B,2,Cut order B,09 Nov 10:00,09 Nov 12:00,0.5,Inactive')
+  expect(csv[3]).toBe('Inspect order A,3,Inspect order A,09 Nov 12:00,09 Nov 15:00,0.25,Manual')
+
+  // Rescheduling from the status date keeps the manual dates and ignores the inactive order.
+  await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
+  await expect(status).toHaveText('Rescheduled from status date 09 Nov 12:00. 0 operations moved.')
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 12:00–09 Nov 15:00')
+
+  // Reset turns both options off and restores the original plan.
+  await page.getByRole('button', { name: 'Reset schedule', exact: true }).click()
+  await expect(status).toHaveText('Original plan restored.')
+  await expect(manual).not.toBeChecked()
+  await expect(cancel).not.toBeChecked()
+  await expect(conflicts).toHaveCount(0)
+  await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
+  await expect(inspection).not.toHaveClass(/vw-tone-violet/)
+  await expect(other).not.toHaveClass(/vw-is-outline/)
+  await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
+  await expect(diagram.locator('.vw-network-node')).toHaveCount(4)
+  await expect(page.getByTestId('schedule-finish')).toHaveText('09 Nov 16:00')
+  await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
+  expect(errors).toEqual([])
+})
+
 test('gantt columns resize by pointer and keyboard with validation, Escape, undo and right-to-left keys', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
   await expect(chart.getByRole('separator')).toHaveCount(0)
