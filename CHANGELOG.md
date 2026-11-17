@@ -33,7 +33,10 @@ Everything below is additive and opt-in: without the new fields, props and optio
 
 ### Examples
 
-- The graph demo's **Graph layout** select offers `circular`, `grid` and `concentric`.
+- New **Diagram styles** demo: an order-fulfilment diagram placed with `positions` that uses every node shape and edge marker, an animated main path, a loop-back with its own `edgeStyle` and a request/response pair spread by `parallelEdgeSpacing`, with **Spread parallel edges**, spacing, **Animate main path** and **Edge style** controls, SVG and PNG export and a legend.
+- New **Graph analysis** demo: a seeded 142-node supplier network laid out with `layoutForceGraph`, with a summary of components, communities and modularity, **Group communities** with **Collapse all** and **Expand all**, and **Rank by** degree, betweenness or PageRank, which highlights the top five nodes and lists them to focus.
+- The scheduling demo gains **Schedule inspection manually**, which pins inspection with `manual` dates, moves them through `propagateEdit` and lists broken links under **Manual date conflicts**, and **Cancel order B (inactive)**, which keeps a placeholder bar while the order's links, load and network-diagram node drop out; the Microsoft Project export writes it with `Active` 0 and iCalendar leaves it out.
+- The graph demo's **Graph layout** select offers `circular`, `grid` and `concentric`. Like `force`, circular and concentric are offered for up to 1,000 nodes; the large graph falls back to the layered layout.
 - The timeline editing demo gains **Import MS Project XML** next to **Import CSV**, replacing the plan as one undoable step. Milestones no longer make the demo's resource load throw.
 - `Start.cmd` rebuilds the demo before serving it when `preview/` is missing or was built from other sources, and runs `npm ci` first when `node_modules` does not match `package-lock.json`. If a rebuild fails, it shows the previous build with a warning. `npm run build:demo` now writes `preview/demo-build.json` to record which sources the build came from; `npm start` and the browser tests still serve `preview/` as it is. Release preparation checks that the archived demo matches its archived sources.
 
