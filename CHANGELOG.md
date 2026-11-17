@@ -23,6 +23,10 @@ A `switch` or `Record` over every value of either union needs an entry for the n
 - `collapseGraphGroups` (and so collapsed groups in NetworkGraph) keeps `edgeStyle`, `markerStart`, `markerEnd` and `animated` on an edge that merges several edges when all of them have the same value, as it already did for the label.
 - `layoutCircularGraph`, `layoutGridGraph` and `layoutConcentricGraph` (with `GraphCircularLayoutOptions`, `GraphGridLayoutOptions` and `GraphConcentricLayoutOptions`) for the `layout` prop. Circular places nodes on one circle in input or `sort` order with a radius that keeps `nodeGap` between neighbours; grid fills rows of `columns`; concentric places nodes on rings by `level(node, degree)` (the degree by default, higher levels inside, optional `levelWidth` buckets). They are deterministic and linear apart from the ring sort, draw straight edges and never let boxes overlap. `sort` and `level` receive the caller's node type.
 
+#### GanttChart
+
+- `TimelineBar.description`: your own text about a bar, for example "Manually scheduled" or "Inactive". It comes first in the bar's accessible description, before the critical, float, deadline, constraint and baseline facts, and after the dates in its native `title`; `exportSvg`, `exportPng` and `renderTimelineSvg` add it to the bar's `<title>`. The accessible name is unchanged, blank text is ignored, and a value that is not a string is reported through `validation-error`. The scheduling demo uses it for its manual and inactive bars.
+
 #### Graph analysis (`vue-weave/core`)
 
 - `graphComponents` (weakly connected components), `graphDegreeCentrality`, `graphBetweennessCentrality` (Brandes, optional edge lengths), `graphPageRank` (returns `{ scores, iterations, converged }`) and `detectGraphCommunities` (deterministic Louvain with modularity and a `resolution`). `graphCommunityGroups` turns communities into `NetworkGraph` `groups`. All validate input like the other graph helpers, iterate instead of recursing and never mutate their arguments.

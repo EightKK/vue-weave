@@ -726,7 +726,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       const ink = solid ? theme.onSolid : colors.ink
       const y = top + laneTop(bar)
       const label = barLabel(bar)
-      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}`))
+      const note = bar.description?.trim()
+      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}${note ? ' · ' + note : ''}`))
       const late = bar.deadline !== undefined && bar.end > bar.deadline
       const strong = highlightedBars.has(bar.id)
       const marks = {

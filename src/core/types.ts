@@ -86,6 +86,13 @@ export interface TimelineBar<D = unknown> extends TimeRange {
   /** A due time, drawn as an indicator in the bar's lane. A bar whose `end` is after it is marked late. */
   deadline?: number
   /**
+   * Extra text about the bar for assistive technology and the native tooltip, for example "Manually scheduled". GanttChart
+   * puts it first in the bar's accessible description, before the critical, float, deadline, constraint and baseline
+   * facts, and after the dates in its `title`; `renderTimelineSvg` adds it to the bar's `<title>`. The accessible name is
+   * unchanged. Must be a string; blank text is ignored.
+   */
+  description?: string
+  /**
    * Worked pieces of a split bar: sorted, non-overlapping, positive-length intervals inside [start, end]. The gaps are
    * drawn as a thin connector. Not allowed on milestones.
    */

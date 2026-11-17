@@ -149,6 +149,9 @@ const taskBars = computed<TimelineBar[]>(() => originalTasks.flatMap(({ id }) =>
     editable: task !== undefined && (id.startsWith('cut-') || task.manual === true),
     tone: task?.critical ? 'amber' : task?.manual ? 'violet' : 'blue',
     ...(placeholder ? { appearance: 'outline' as const } : {}),
+    // Screen readers hear the same cue as the colour and row detail.
+    ...(placeholder ? { description: 'Inactive: takes no part in the plan' }
+      : task?.manual ? { description: 'Manually scheduled: its links do not move it' } : {}),
     ...(showCritical.value && task ? { critical, ...(task.manual ? {} : { latestEnd }), deadline: deadlines.get(id) } : {}),
     ...(showConstraints.value ? { constraints: timelineConstraints(taskById.value.get(id)) } : {}),
   }]

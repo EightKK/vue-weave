@@ -4132,7 +4132,9 @@ test('the scheduling demo pins inspection manually, lists manual conflicts and l
   await expect(inspection).toHaveAttribute('aria-label', 'Inspect order A 09 Nov 11:00–09 Nov 14:00')
   await expect(inspection).toHaveClass(/vw-tone-violet/)
   await expect(inspection).not.toHaveClass(/vw-critical/)
-  await expect(inspection).toHaveAccessibleDescription(editHint)
+  // TimelineBar.description comes first in the accessible description; the name stays the same.
+  await expect(inspection).toHaveAccessibleDescription('Manually scheduled: its links do not move it. ' + editHint)
+  await expect(inspection).toHaveAttribute('title', 'Inspect order A 09 Nov 11:00–09 Nov 14:00 · Manually scheduled: its links do not move it.')
   await expect(conflicts).toContainText('None: the manual dates meet every link into them.')
 
   // Cutting order A one hour later finishes after the pinned inspection starts: the inspection stays and the broken link is listed.
@@ -4173,6 +4175,7 @@ test('the scheduling demo pins inspection manually, lists manual conflicts and l
   await expect(other).toHaveAttribute('aria-label', 'Cut order B 09 Nov 10:00–09 Nov 12:00')
   await expect(other).toHaveClass(/vw-is-outline/)
   await expect(other).not.toHaveClass(/vw-is-editable/)
+  await expect(other).toHaveAccessibleDescription('Inactive: takes no part in the plan.')
   await expect(plan.locator('.vw-gantt-lag')).toHaveCount(0)
   await expect(doubleLoad).toHaveCount(0)
   await expect(equipment.getByRole('button', { name: '1 / 1 09 Nov 09:00–09 Nov 12:00', exact: true })).toBeVisible()

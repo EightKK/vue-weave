@@ -45,7 +45,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
 - ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
-- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。
+- 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。「手動スケジュール」のような独自の補足も、`TimelineBar.description` でこの説明とツールチップに加えられます。
 - スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
 
 ### ヘッドレスコア（`vue-weave/core`）

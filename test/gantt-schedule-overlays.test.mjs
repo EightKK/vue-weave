@@ -265,3 +265,39 @@ test('GanttChart reports invalid nonWorkingPeriods and new bar fields through va
     assert.doesNotMatch(html, /vw-gantt-canvas/)
   }
 })
+
+test('TimelineBar.description comes first in the accessible description and joins the title without changing the name', async () => {
+  validateTimelineData(rows, [{ ...base, description: 'Manually scheduled' }])
+  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+    ...chartProps, bars: [{ ...base, description: '  Manually scheduled.  ', critical: true, latestEnd: base.end }],
+  }) }))
+  assert.match(html, /aria-label="Bar 02:00–06:00"/)
+  const describedBy = /aria-describedby="([^"]+)"/.exec(html)[1].split(' ')
+  // The trailing full stop and outer spaces are dropped so the parts read as sentences.
+  assert.match(html, new RegExp(`<span id="${describedBy[0]}" hidden>Manually scheduled\\. Critical\\. Float until 06:00\\.</span>`))
+  assert.match(html, /title="Bar 02:00–06:00 · Manually scheduled\. Critical\. Float until 06:00\."/)
+
+  // A description alone is enough to describe a bar; blank text describes nothing.
+  const alone = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [{ ...base, description: 'Inactive' }] }) }))
+  assert.match(alone, /hidden>Inactive\.<\/span>/)
+  assert.match(alone, /title="Bar 02:00–06:00 · Inactive\."/)
+  const blank = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [{ ...base, description: '   ' }] }) }))
+  const plain = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [base] }) }))
+  assert.equal(blank, plain)
+})
+
+test('renderTimelineSvg adds TimelineBar.description to the bar title and validation rejects a non-string', async () => {
+  const svg = renderTimelineSvg(rows, [{ ...base, description: 'Inactive' }], [], exportScale, { formatTime: time => `${time / hour}h` })
+  assert.match(svg, /<title>Bar 2h–6h · Inactive<\/title>/)
+  const plain = renderTimelineSvg(rows, [base], [], exportScale, { formatTime: time => `${time / hour}h` })
+  assert.equal(renderTimelineSvg(rows, [{ ...base, description: '' }], [], exportScale, { formatTime: time => `${time / hour}h` }), plain)
+
+  assert.throws(() => validateTimelineData(rows, [{ ...base, description: 42 }]), /description must be a string/)
+  const reported = []
+  const app = createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [{ ...base, description: 42 }], onValidationError: error => reported.push(error) }) })
+  app.config.errorHandler = () => {}
+  const html = await renderToString(app)
+  assert.equal(reported.length, 1)
+  assert.match(reported[0].message, /description must be a string/)
+  assert.match(html, /No rows to display/)
+})

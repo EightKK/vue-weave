@@ -45,7 +45,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
 - Zoom presets (`zoomPresets`), a now marker (`showNow`), touch pinch zoom (`pinchZoom`) and Ctrl+wheel zoom around the pointer (`wheelZoom`).
 - A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
-- Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names.
+- Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names. Your own text per bar, such as "Manually scheduled", joins that description and the tooltip through `TimelineBar.description`.
 - Scheduling constraints (`TimelineBar.constraints`, named as in `ScheduleTask`) drawn as markers that show violations, with optional drag and keyboard handles (`constraintsEditable`, `constraint-edit`, accepted with `applyTimelineConstraintEdit`).
 
 ### Headless core (`vue-weave/core`)
