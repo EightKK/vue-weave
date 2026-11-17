@@ -102,7 +102,7 @@ function onConstraintEdit(change: TimelineConstraintEdit) {
 }
 ```
 
-If the bars themselves are your source of truth, apply the proposal with `applyTimelineConstraintEdit(bars, change)` and build the tasks with `{ id: bar.id, duration, ...bar.constraints }`. The chart does not check feasibility: conflicting constraints are valid chart data, and a constraint that the bar's dates break is drawn as violated, which is what a plan from `scheduleTasks` never shows. The project `deadline` and `mode` are not bar constraints; draw a due date with `TimelineBar.deadline`. `toMsProjectXml` writes a task's constraint when it has exactly one (`MsProjectTask.constraints`).
+If the bars themselves are your source of truth, apply the proposal with `applyTimelineConstraintEdit(bars, change)` and build the tasks with `{ id: bar.id, duration, ...bar.constraints }`. The chart does not check feasibility: conflicting constraints are valid chart data, and a constraint that the bar's dates break is drawn as violated, which is what a plan from `scheduleTasks` never shows. The project `deadline` and `mode` are not bar constraints; draw a due date with `TimelineBar.deadline`. `toMsProjectXml` writes a task's constraint when it has exactly one, or exactly the finish pair at one time as Must Finish On (`MsProjectTask.constraints`).
 
 ## Propagate an edit
 

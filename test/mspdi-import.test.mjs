@@ -121,7 +121,9 @@ test('fromMsProjectXml reads a Microsoft Project file and reports what it cannot
       id: '2', name: 'Draft', start: at('2026-11-09T08:00'), end: at('2026-11-09T17:00'), outlineLevel: 2, ...base, percentComplete: 100,
       duration: 8 * hour, mode: 'alap', baselines: [{ number: 0, start: at('2026-11-09T09:00'), end: at('2026-11-09T18:00') }],
     },
-    { id: '3', name: 'Review', start: Date.parse('2026-11-10T08:00Z'), end: Date.parse('2026-11-10T17:00Z'), outlineLevel: 2, ...base, duration: 26 * hour },
+    { id: '3', name: 'Review', start: Date.parse('2026-11-10T08:00Z'), end: Date.parse('2026-11-10T17:00Z'), outlineLevel: 2, ...base, duration: 26 * hour,
+      constraints: { finishNoEarlierThan: at('2026-11-10T17:00'), finishNoLaterThan: at('2026-11-10T17:00') },
+    },
     { id: '5', name: 'Ramp-up', start: at('2026-11-11T08:00'), end: at('2026-11-11T08:00'), outlineLevel: 3, ...base, milestone: true, inactive: true },
     { id: '7', name: 'Start bound', start: at('2026-11-11T08:00'), end: at('2026-11-11T09:00') + 500, outlineLevel: 1, ...base },
   ])
@@ -132,15 +134,14 @@ test('fromMsProjectXml reads a Microsoft Project file and reports what it cannot
   ])
   assert.deepEqual(imported.warnings.map(warning => [warning.code, warning.taskId]), [
     ['skipped-baseline', '2'],
-    ['unsupported-constraint', '3'],
     ['outline-level', '5'], ['invalid-value', '5'], ['invalid-value', '5'], ['unsupported-constraint', '5'],
     ['skipped-task', '6'], ['skipped-task', '5'], ['skipped-task', undefined],
     ['invalid-value', '7'], ['unsupported-constraint', '7'],
     ['working-time-lag', '3'], ['percent-lag', '3'], ['unknown-predecessor', '3'], ['skipped-link', '3'], ['skipped-link', '3'], ['skipped-link', '3'],
   ])
-  assert.equal(imported.warnings[1].message, 'The constraint Must Finish On (3) of task 3 is not supported and was left out')
-  assert.equal(imported.warnings[13].message, 'A link to task 3 from task 99, which was not imported, was skipped')
-  assert.equal('taskId' in imported.warnings[8], false)
+  assert.equal(imported.warnings[4].message, 'The constraint type 9 of task 5 is not supported and was left out')
+  assert.equal(imported.warnings[12].message, 'A link to task 3 from task 99, which was not imported, was skipped')
+  assert.equal('taskId' in imported.warnings[7], false)
   // The result is valid input for the exporter and the timeline conversion.
   assert.doesNotThrow(() => toMsProjectXml(imported))
   const timeline = timelineFromMsProject(imported)
@@ -243,4 +244,23 @@ test('an imported plan schedules with its manual tasks kept and its inactive tas
     ['2', 0, 2 * hour + 1000, true], ['3', hour / 2, 3.5 * hour, undefined], ['5', 6 * hour, 7 * hour, true],
   ])
   assert.deepEqual(result.inactiveTaskIds, ['4'])
+})
+
+test('Must Finish On (3) is imported as the finish pair, round trips, and a missing date still warns', () => {
+  const file = (type, date) => `<Project><Name>P</Name><Tasks>
+    <Task><UID>1</UID><Name>A</Name><Start>2026-11-09T08:00:00</Start><Finish>2026-11-09T17:00:00</Finish>
+      <ConstraintType>${type}</ConstraintType>${date}</Task></Tasks></Project>`
+  const xml = file(3, '<ConstraintDate>2026-11-10T17:00:00</ConstraintDate>')
+  const imported = fromMsProjectXml(xml)
+  const time = Date.parse('2026-11-10T17:00:00Z')
+  assert.deepEqual(imported.warnings, [])
+  assert.deepEqual(imported.tasks[0].constraints, { finishNoEarlierThan: time, finishNoLaterThan: time })
+  // Exporting it writes type 3 again, so a type-3 document survives a round trip.
+  const written = toMsProjectXml(imported)
+  assert.match(written, /<ConstraintType>3<\/ConstraintType><ConstraintDate>2026-11-10T17:00:00<\/ConstraintDate>/)
+  assert.deepEqual(fromMsProjectXml(written).tasks[0].constraints, imported.tasks[0].constraints)
+  assert.equal(toMsProjectXml(fromMsProjectXml(written)), written)
+  const undated = fromMsProjectXml(file(3, ''))
+  assert.deepEqual(undated.warnings.map(warning => [warning.code, warning.taskId]), [['unsupported-constraint', '1']])
+  assert.equal('constraints' in undated.tasks[0], false)
 })

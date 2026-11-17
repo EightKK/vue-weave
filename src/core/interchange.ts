@@ -25,8 +25,9 @@ export interface MsProjectTask {
   baselines?: readonly MsProjectBaseline[]
   /**
    * Scheduling constraints in epoch milliseconds, for example `TimelineBar.constraints`. A Microsoft Project task holds
-   * one constraint, so exactly one set constraint is written as `ConstraintType` and `ConstraintDate`; with two or more
-   * none is written.
+   * one constraint, so exactly one set constraint is written as `ConstraintType` and `ConstraintDate`. The one pair that
+   * Microsoft Project can express, `finishNoEarlierThan` and `finishNoLaterThan` at the same time, is written as Must
+   * Finish On (3); any other combination of two or more writes none.
    */
   constraints?: TimelineConstraints
   /** Export as an inactive task (`Active` 0), which Microsoft Project leaves out of its calculation. Default false. */
@@ -76,7 +77,7 @@ const minuteMs = 60_000
 const secondMs = 1000
 const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
 // MSPDI ConstraintType: 2 Must Start On, 4 Start No Earlier Than, 5 Start No Later Than, 6 Finish No Earlier Than and
-// 7 Finish No Later Than.
+// 7 Finish No Later Than. Type 3 (Must Finish On) is the pair finishNoEarlierThan + finishNoLaterThan at one time.
 const constraintTypes: Record<TimelineConstraintKind, number> = {
   fixedStart: 2, startNoEarlierThan: 4, startNoLaterThan: 5, finishNoEarlierThan: 6, finishNoLaterThan: 7,
 }
@@ -177,9 +178,19 @@ function isoDuration(ms: number) {
   return `PT${Math.floor(seconds / 3600)}H${Math.floor(seconds % 3600 / 60)}M${seconds % 60}S`
 }
 
-/** `ConstraintType` and `ConstraintDate` of a task with exactly one constraint; nothing otherwise. */
+/**
+ * `ConstraintType` and `ConstraintDate` of a task with exactly one constraint, or with exactly the finish pair at one
+ * time (Must Finish On); nothing otherwise.
+ */
 function constraintElements(constraints: TimelineConstraints | undefined, offset: number) {
   const set = Object.entries(timelineConstraints(constraints) ?? {}) as [TimelineConstraintKind, number][]
+  if (set.length === 2) {
+    const earliest = set.find(([kind]) => kind === 'finishNoEarlierThan'), latest = set.find(([kind]) => kind === 'finishNoLaterThan')
+    if (earliest && latest && earliest[1] === latest[1]) {
+      return `<ConstraintType>3</ConstraintType><ConstraintDate>${localIso(toSecond(earliest[1]), offset)}</ConstraintDate>`
+    }
+    return ''
+  }
   if (set.length !== 1) return ''
   const [kind, time] = set[0]!
   return `<ConstraintType>${constraintTypes[kind]}</ConstraintType><ConstraintDate>${localIso(toSecond(time), offset)}</ConstraintDate>`
@@ -198,12 +209,14 @@ function constraintElements(constraints: TimelineConstraints | undefined, offset
  *
  * A task with exactly one constraint in `constraints` gets `ConstraintType` (2 Must Start On for `fixedStart`, 4 to 7 for
  * start no earlier, start no later, finish no earlier and finish no later than) and `ConstraintDate`, rounded like the
- * task dates. A task can hold only one constraint in Microsoft Project, so a task with several gets none.
+ * task dates. A task can hold only one constraint in Microsoft Project, so a task with several gets none, except one
+ * whose constraints are exactly `finishNoEarlierThan` and `finishNoLaterThan` at the same time: it gets 3 (Must Finish
+ * On) with that time.
  *
  * A task with `inactive: true` is written with `Active` 0, and one with `manual: false` as automatically scheduled
  * (`Manual` 0); without them every task is active and manually scheduled.
  *
- * Not exported: calendars, resources, assignments, a second constraint of a task, notes, custom fields and baseline
+ * Not exported: calendars, resources, assignments, a second constraint of a task (other than the Must Finish On pair), notes, custom fields and baseline
  * work or cost. Task IDs of the input are not written; the UIDs follow the input order.
  *
  * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
@@ -482,8 +495,7 @@ export interface MsProjectImportTask extends MsProjectTask {
  * The kind of a problem `fromMsProjectXml` worked around. `skipped-task`: a task without a valid UID, start or finish,
  * or with a UID used before. `outline-level`: an outline level more than one below the task before it, which was
  * raised. `invalid-value`: an unreadable percent complete, duration, outline level or lag, which was ignored.
- * `unsupported-constraint`: Must Finish On (3), an unknown constraint type or a constraint without a date, which was
- * left out. `skipped-baseline`: a baseline with an invalid or repeated number or unreadable or inverted dates.
+ * `unsupported-constraint`: an unknown constraint type or a constraint without a date, which was left out. `skipped-baseline`: a baseline with an invalid or repeated number or unreadable or inverted dates.
  * `unknown-predecessor`: a link from a task that was not imported. `skipped-link`: a link to another project, from a
  * task to itself or of an unknown type. `percent-lag`: a lag in percent of the predecessor's duration, which was left
  * out. `working-time-lag`: a lag in working time, which was read as the same amount of elapsed time.
@@ -559,7 +571,8 @@ const uidPattern = /^\d+$/
  * rows (`IsNull` 1) becomes an `MsProjectImportTask` with its UID as `id` and `Name`, `Start`, `Finish`, `OutlineLevel`,
  * `PercentComplete`, `Milestone`, `Summary`, `Manual`, `Active`, `Duration`, its constraint and its `Baseline`
  * dates. Dates are wall-clock times at `utcOffsetMinutes`, as `toMsProjectXml` writes them, unless they carry a zone.
- * Constraint types 2 and 4 to 7 become `constraints` as `toMsProjectXml` maps them, and type 1 (As Late As Possible)
+ * Constraint types 2 and 4 to 7 become `constraints` as `toMsProjectXml` maps them, type 3 (Must Finish On) becomes
+ * `finishNoEarlierThan` and `finishNoLaterThan` at its date, and type 1 (As Late As Possible)
  * becomes `mode: 'alap'`. `PredecessorLink` elements become dependencies with their type (FF 0, FS 1, SF 2, SS 3) and
  * `LinkLag` (tenths of a minute) as elapsed milliseconds. Problems that the reader works around are listed in
  * `warnings` (see `MsProjectImportWarningCode`) instead of thrown.
@@ -638,12 +651,11 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
     else if (constraintType !== undefined && constraintType !== '0') {
       const kind = Object.hasOwn(constraintKinds, constraintType) ? constraintKinds[constraintType] : undefined
       const date = msDate(value('ConstraintDate'), offset)
-      if (kind === undefined) {
-        const label = constraintType === '3' ? 'Must Finish On (3)' : 'type ' + constraintType
-        warn('unsupported-constraint', `The constraint ${label} of task ${id} is not supported and was left out`, id)
+      if (kind === undefined && constraintType !== '3') {
+        warn('unsupported-constraint', `The constraint type ${constraintType} of task ${id} is not supported and was left out`, id)
       } else if (date === undefined) {
         warn('unsupported-constraint', `The constraint of task ${id} has no valid date and was left out`, id)
-      } else task.constraints = { [kind]: date }
+      } else task.constraints = kind === undefined ? { finishNoEarlierThan: date, finishNoLaterThan: date } : { [kind]: date }
     }
     const baselines: MsProjectBaseline[] = []
     for (const child of element.children) {
