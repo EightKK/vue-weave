@@ -64,7 +64,8 @@ export interface GraphCollapseResult<N extends NetworkNode = NetworkNode, E exte
  * Replaces each outermost collapsed group with one proxy node. The proxy has the group's ID and label, a detail with the
  * member count, the rounded shape and `data` of type GraphCollapsedNodeData. Member nodes are removed, edges are
  * re-attached to the proxy (dropping the port on that end), edges inside one collapsed group are dropped, and parallel
- * re-attached edges are merged. Throws Error for a duplicate or empty group ID, an unknown parent, a parent cycle, an
+ * re-attached edges are merged; a merged edge keeps its label, edgeStyle, markers and animated flag only when every merged
+ * edge has the same value. Throws Error for a duplicate or empty group ID, an unknown parent, a parent cycle, an
  * unknown or repeated member, an unknown collapsed ID, or a collapsed group ID that is also a visible node ID. The
  * inputs are not modified.
  */
@@ -205,6 +206,15 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
       const label = group.every(item => item.label === first.label) ? first.label : undefined
       edge = { id: first.id, from, to }
       if (label !== undefined) edge.label = label
+      // Appearance survives only when every merged edge agrees on it.
+      const edgeStyle = group.every(item => item.edgeStyle === first.edgeStyle) ? first.edgeStyle : undefined
+      const markerStart = group.every(item => item.markerStart === first.markerStart) ? first.markerStart : undefined
+      const markerEnd = group.every(item => item.markerEnd === first.markerEnd) ? first.markerEnd : undefined
+      const animated = group.every(item => item.animated === first.animated) ? first.animated : undefined
+      if (edgeStyle !== undefined) edge.edgeStyle = edgeStyle
+      if (markerStart !== undefined) edge.markerStart = markerStart
+      if (markerEnd !== undefined) edge.markerEnd = markerEnd
+      if (animated !== undefined) edge.animated = animated
     }
     if (fromPort !== undefined) edge.fromPort = fromPort
     if (toPort !== undefined) edge.toPort = toPort

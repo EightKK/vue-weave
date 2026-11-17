@@ -77,6 +77,34 @@ test('collapseGraphGroups replaces a collapsed group with a proxy, re-attaches a
   assert.deepEqual(none.groups, groups)
 })
 
+test('collapseGraphGroups keeps edge appearance on merged edges only when every merged edge agrees', () => {
+  const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]
+  const look = { edgeStyle: 'curve', markerStart: 'circle', markerEnd: 'diamond', animated: true }
+  const agree = collapseGraphGroups(nodes, [{ id: 'ab', from: 'a', to: 'b', ...look }, { id: 'ac', from: 'a', to: 'c', ...look }], groups, ['g'])
+  assert.deepEqual(agree.edges, [{ id: 'ab', from: 'a', to: 'g', ...look }])
+  const differ = collapseGraphGroups(nodes, [
+    { id: 'ab', from: 'a', to: 'b', ...look },
+    { id: 'ac', from: 'a', to: 'c', edgeStyle: 'orthogonal', markerStart: 'circle', markerEnd: 'arrow', animated: false },
+  ], groups, ['g'])
+  assert.deepEqual(differ.edges, [{ id: 'ab', from: 'a', to: 'g', markerStart: 'circle' }])
+  // A field missing on one of the edges is dropped, and one missing on all stays absent.
+  const partial = collapseGraphGroups(nodes, [{ id: 'ab', from: 'a', to: 'b', animated: true }, { id: 'ac', from: 'a', to: 'c' }], groups, ['g'])
+  assert.deepEqual(partial.edges, [{ id: 'ab', from: 'a', to: 'g' }])
+  assert.equal('markerEnd' in partial.edges[0], false)
+})
+
+test('NetworkGraph draws the marker and animated class kept on a merged edge of a collapsed group', async () => {
+  const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]
+  const look = { markerEnd: 'diamond', animated: true }
+  const html = await renderToString(createSSRApp({
+    render: () => h(NetworkGraph, {
+      nodes, groups, collapsedGroupIds: new Set(['g']),
+      edges: [{ id: 'ab', from: 'a', to: 'b', ...look }, { id: 'ac', from: 'a', to: 'c', ...look }],
+    }),
+  }))
+  assert.match(html, /<path class="vw-network-edge vw-is-animated" d="[^"]+" marker-end="url\(#[^)]+-diamond\)">/)
+})
+
 test('collapseGraphGroups uses the outermost collapsed group and keeps parents around collapsed children', () => {
   const groups = [
     { id: 'outer', label: 'Outer', nodeIds: ['a'] }, { id: 'inner', label: 'Inner', nodeIds: ['b', 'c'], parentId: 'outer' },
