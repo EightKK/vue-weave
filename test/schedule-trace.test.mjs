@@ -379,3 +379,27 @@ test('collectScheduleReasons visits shared parents of a wide diamond lattice onc
   assert.equal(reasons.length, 2 * width + (layers - 1) * width * width + width + 1)
   assert.equal(new Set(reasons.map(r => r.id)).size, reasons.length)
 })
+
+test('diagnostics list manual conflicts first, one per entry, and leave conflict-free results unchanged', () => {
+  const range = { start: 0, end: 40 }
+  const tasks = [task('a', 5), task('m', 2, { manual: { start: 3, end: 5 } }), task('n', 2, { manual: { start: 1, end: 3 } })]
+  const dependencies = [link('a', 'm'), link('a', 'n')]
+  const plain = scheduleTasks({ range, tasks, dependencies })
+  assert.deepEqual(plain.manualConflicts, [{ taskId: 'm', dependencyId: 'a-m' }, { taskId: 'n', dependencyId: 'a-n' }])
+  assert.deepEqual(toPlanningDiagnostics(plain), [
+    { id: '["manual-conflict","m","a-m"]', code: 'manual-conflict', severity: 'warning', entities: [{ kind: 'task', id: 'm' }, { kind: 'dependency', id: 'a-m' }], reasonIds: [] },
+    { id: '["manual-conflict","n","a-n"]', code: 'manual-conflict', severity: 'warning', entities: [{ kind: 'task', id: 'n' }, { kind: 'dependency', id: 'a-n' }], reasonIds: [] },
+  ])
+  // With explain, the diagnostic points at the manual reason of the earliest pass.
+  const explained = scheduleTasks({ range, tasks, dependencies }, { explain: true })
+  const [first] = toPlanningDiagnostics(explained)
+  const manual = explained.trace.reasons.filter(reason => reason.taskId === 'm' && reason.kind === 'manual' && reason.phase === 'earliest')
+  assert.equal(manual.length, 1)
+  assert.deepEqual(first.reasonIds, [manual[0].id])
+  // A leveling success carries the conflicts too and lists them before unresolved tasks and overloads.
+  const leveled = levelResources({ range, tasks, dependencies, resources: [{ id: 'R', capacity: 1 }], assignments: on('R', 'a', 'm') })
+  assert.deepEqual(toPlanningDiagnostics(leveled).filter(item => item.code === 'manual-conflict').map(item => item.id), [first.id, '["manual-conflict","n","a-n"]'])
+  assert.equal(toPlanningDiagnostics(leveled)[0].code, 'manual-conflict')
+  // Without a violated link there is no new diagnostic.
+  assert.deepEqual(toPlanningDiagnostics(scheduleTasks({ range, tasks: [task('a', 5), task('m', 2, { manual: { start: 10, end: 12 } })], dependencies: [link('a', 'm')] })), [])
+})

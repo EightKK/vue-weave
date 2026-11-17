@@ -341,6 +341,10 @@ function conflictCount(plan: ScheduleResult) {
   const count = plan.ok ? plan.manualConflicts?.length ?? 0 : 0
   return count ? ` ${count} manual date conflict${count === 1 ? '' : 's'}.` : ''
 }
+function dependencyLabel(id: string) {
+  const link = dependencies.find(item => item.id === id)
+  return link ? `${labels.get(link.from)} → ${labels.get(link.to)}` : id
+}
 const endpoints = { FS: ['starts', 'finishes'], SS: ['starts', 'starts'], FF: ['finishes', 'finishes'], SF: ['finishes', 'starts'] } as const
 function describeConflict(conflict: ScheduleManualConflict) {
   const link = dependencies.find(item => item.id === conflict.dependencyId)!
@@ -516,7 +520,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
     </table>
     <p v-else class="status">No capacity conflicts in the current plan.</p>
     <PlanningDiagnostics v-if="diagnostics.length" :diagnostics="diagnostics" :task-label="id => labels.get(id) ?? id"
-      :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :format-time="format" @activate="revealDiagnostic" />
+      :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :dependency-label="dependencyLabel" :format-time="format" @activate="revealDiagnostic" />
   </section>
 </template>
 

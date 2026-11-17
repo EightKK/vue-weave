@@ -1085,7 +1085,7 @@ These core helpers explain a plan without changing it. They are pure and return 
 | scheduleTasks(input, options?) | `options.explain` (default false) adds a `trace: ScheduleTrace` to a successful result. Overloads type `trace` only for `{ explain: true }` (`ExplainedScheduleResult`). Dates, floats, critical flags and `criticalDependencyIds` are the same with or without it; without it the result has no `trace` property. Failures never have a trace. Options that are not an object, or an `explain` that is not a boolean, throw an Error |
 | levelResources(input, options?) | The same option and overloads (`ExplainedLevelResourcesResult`). Dates, `leveledTasks`, `delays`, `overloads` and `unresolvedTaskIds` are unchanged |
 | collectScheduleReasons(trace, taskId, options?) | The task's reasons followed by all their ancestors, breadth first, each once. `options.phases` limits the starting reasons. Iterative, so long chains do not exhaust the call stack. Throws an Error for an unknown task or parent reason |
-| toPlanningDiagnostics(result, load?) | Turns a `scheduleTasks` or `levelResources` result into `PlanningDiagnostic[]`. `load` (for example `calculateResourceLoad` output) replaces the result's own `overloads`; only segments with `overload > 0` are listed. A segment with a non-finite date or overload throws a RangeError. Manual conflicts are not listed; read the result's `manualConflicts` |
+| toPlanningDiagnostics(result, load?) | Turns a `scheduleTasks` or `levelResources` result into `PlanningDiagnostic[]`. `load` (for example `calculateResourceLoad` output) replaces the result's own `overloads`; only segments with `overload > 0` are listed. A segment with a non-finite date or overload throws a RangeError. Each entry of the result's `manualConflicts` becomes a `manual-conflict` warning; a success lists them first, then unresolved tasks, then overloads |
 
 `ScheduleTrace` has `reasons` (each after its parents) and `taskReasonIds` (a `ReadonlyMap` from task ID to its own reason IDs, in input task order, without inactive tasks). Do not store a trace in a snapshot; recalculate it. A `ScheduleReason` has an `id` unique within its trace, `taskId`, `phase` (`ScheduleReasonPhase`), `kind` (`ScheduleReasonKind`), `bound` (`startLower`, `endLower`, `startUpper` or `endUpper`), `candidateTime` and `placedTime`, `parentReasonIds`, and depending on its kind `dependencyId`, `constraint`, `calendarId`, `resourceId`, `demand`, `capacity`, `relatedTaskIds` and `range`.
 
@@ -1107,6 +1107,7 @@ A `PlanningDiagnostic` has `id` (a JSON array of the code and identifying values
 | --- | --- | --- |
 | `schedule-cycle` | error | One per entry of a `cycle` failure: its tasks and dependencies |
 | `schedule-infeasible` | error | An `infeasible` failure: the task, its binding dependencies and `constraints` |
+| `manual-conflict` | warning | Each of `manualConflicts`, listed first: the manual task, then the violated dependency; the plan stays valid. `reasonIds` hold the task's `manual` reason of the `earliest` phase |
 | `leveling-unresolved` | warning | Each of `unresolvedTaskIds`, with its dates; `reasonIds` are its `leveling` reasons |
 | `resource-overload` | warning | Each overloaded segment: the resource, then its tasks; `reasonIds` are the overlapping `capacity` reasons |
 

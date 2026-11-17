@@ -262,7 +262,7 @@ const plan = scheduleTasks({
 | `calculateResourceLoad` | Their `work` counts like any other | Pass `{ inactiveTaskIds: result.inactiveTaskIds }` so their assignments take no capacity instead of throwing |
 | `buildPlacementInput` | A link from an unplaced task into a placed manual task is excluded without a diagnostic | Links that touch them are excluded without a diagnostic |
 | `scheduleToGraph` | A node with zero float, never critical | Left out with the links that touch them |
-| `toPlanningDiagnostics` | Conflicts are not listed; read `manualConflicts` | Not listed |
+| `toPlanningDiagnostics` | Each conflict is a `manual-conflict` warning, listed first | Not listed |
 | Snapshots | Stored and restored as they are | `inactive` must be a boolean |
 
 `fromMsProjectXml` reads both flags from Microsoft Project files (`Manual` 1 and `Active` 0). Its tasks have `manual: true` rather than dates, so pass `{ start: task.start, end: task.end }` as `ScheduleTask.manual`; see [Microsoft Project import](api.md#microsoft-project-import).
@@ -374,4 +374,4 @@ Keep the three kinds of deadline apart:
 - `ScheduleTask.finishNoLaterThan` is a hard limit on one task, reported as a `constraint` reason.
 - `TimelineBar.deadline` is only drawn by GanttChart and never takes part in scheduling.
 
-`toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. It does not list manual conflicts; show the result's `manualConflicts` yourself. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.
+`toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. Each entry of `manualConflicts` becomes a `manual-conflict` warning (the task, then the link), listed before the unresolved tasks and overloads; the plan is still valid, so it is not an error. Its `reasonIds` hold the task's `manual` reason of the `earliest` phase when the result was calculated with `explain`. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.
