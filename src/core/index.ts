@@ -18,6 +18,10 @@ export { layoutSwimlaneGraph, graphSwimlaneAt } from './graphSwimlanes.js'
 export type { GraphSwimlaneSpec, GraphSwimlaneBand, GraphSwimlane, GraphSwimlaneLayout, GraphSwimlaneLayoutOptions } from './graphSwimlanes.js'
 export { layoutForceGraph } from './graphForce.js'
 export type { GraphForceLayoutOptions } from './graphForce.js'
+export { layoutFlowGraph, graphFlowBands } from './graphFlow.js'
+export type {
+  GraphFlowScale, GraphFlowOptions, GraphFlowNode, GraphFlowBand, GraphFlowExcludedEdge, GraphFlowLayout, GraphEdgeBand,
+} from './graphFlow.js'
 export { topologicalOrder, findGraphCycles, shortestGraphPath, searchGraphNodes, filterGraph } from './graphAlgorithms.js'
 export {
   graphComponents, graphDegreeCentrality, graphBetweennessCentrality, graphPageRank, detectGraphCommunities, graphCommunityGroups,

@@ -21,6 +21,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。
 - `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、円形の `layoutCircularGraph`、格子状の `layoutGridGraph`、次数などで同心円に並べる `layoutConcentricGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
 - 工程フローのスイムレーン：`layoutSwimlaneGraph` で部門や作業区ごとのレーンを指定した順に並べ（部門間の受け渡しはレーン境界をまたぐ線になります）、`lanes` prop で帯とタイトルを描きます。ミニマップと書き出しにも反映されます。ドラッグしたノードがどのレーンに入るかは `graphSwimlaneAt` で判定できます。
+- 数量フロー（サンキー図）：`layoutFlowGraph` で各辺を数量に比例した太さの帯として、図全体で同じ縮尺で描きます。ノードごとの流入量・流出量とその差は補正せずにそのまま報告し、単位の異なる数量は合算しません。手戻りのループは破線の参照帯になります。`edgeBands` prop は帯を実際の幅で描き、「Cut → Inspect: 60 pcs」のようなアクセシブルな名前を付けます。書き出しにも反映されます。
 - `node`・`edge`・`group`・`minimap-node` スロットでSVG描画を変更でき、項目の横にHTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロットも使えます。
 - ノードと辺のラベルのその場編集（`editableLabels`。`label-edit` で提案）と、投げ縄による選択（`selectionMode: 'lasso'`）。
 - 接続のポートルール（`connectionRules`。ポートごとの型・方向・接続数の上限）。違反は理由の文で却下され、接続中は接続できる先が強調されます。読み込んだグラフは `graphConnectionViolations` で検査できます。
