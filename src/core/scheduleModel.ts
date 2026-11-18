@@ -3,6 +3,7 @@ import type {
   ScheduleConstraintName, ScheduleCycle, ScheduleInput, ScheduleLink, ScheduleTask, ScheduleFailure,
 } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
+import { firstIndex, subtractPeriods } from './intervals.js'
 import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
 
 export type Limits = { startLower: number; endLower: number; startUpper: number; endUpper: number }
@@ -14,16 +15,6 @@ export type LimitKey = keyof Limits
 export type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string; summaryId?: string }
 export type Bounds = Record<LimitKey, Bound[]>
 export type Slot = TimeRange & { workStart: number }
-
-export function firstIndex(length: number, matches: (index: number) => boolean) {
-  let left = 0, right = length
-  while (left < right) {
-    const middle = left + Math.floor((right - left) / 2)
-    if (matches(middle)) right = middle
-    else left = middle + 1
-  }
-  return left
-}
 
 /** Work starts and finishes have different inverses at shift boundaries. */
 export function workClock(periods: readonly TimeRange[], quantum: number) {
@@ -81,23 +72,6 @@ export function slotFor(clock: WorkClock, duration: number, limits: Limits, late
   return first <= last ? slotAt(clock, latest ? last : first, duration) : undefined
 }
 
-/** Remove half-open cuts from sorted, disjoint periods. Both inputs must be normalized. */
-export function subtractPeriods(periods: readonly TimeRange[], cuts: readonly TimeRange[]): TimeRange[] {
-  const result: TimeRange[] = []
-  let c = 0
-  for (const period of periods) {
-    let start = period.start
-    while (c < cuts.length && cuts[c]!.end <= start) c++
-    for (let i = c; i < cuts.length && cuts[i]!.start < period.end; i++) {
-      const cut = cuts[i]!
-      if (cut.start > start) result.push({ start, end: cut.start })
-      start = Math.max(start, cut.end)
-    }
-    if (start < period.end) result.push({ start, end: period.end })
-  }
-  return result
-}
-
 export function sourceFinish(link: ScheduleLink) {
   return (link.type ?? 'FS')[0] === 'F'
 }
@@ -145,6 +119,8 @@ export interface ScheduleModel {
   inactive: ReadonlySet<string>
   /** Active leaf tasks in hierarchy order, so that the leaves of each summary are contiguous. Empty without hierarchy. */
   leaves: readonly string[]
+  /** Active summary tasks, each after all of its subtasks (post-order). Empty without hierarchy. */
+  summaries: readonly string[]
   /** The input links by ID. */
   links: ReadonlyMap<string, ScheduleLink>
 }
@@ -155,6 +131,25 @@ export interface ScheduleModel {
  * `rescheduleFromActuals` set it.
  */
 export const startedSubtasks = new WeakMap<ScheduleInput, ReadonlySet<string>>()
+
+/** `input`, with `started` recorded as its started subtasks when there are any. */
+export function withStartedSubtasks(input: ScheduleInput, started: ReadonlySet<string>): ScheduleInput {
+  if (started.size) startedSubtasks.set(input, started)
+  return input
+}
+
+/** Check the status date of `rescheduleFromStatusDate` and `rescheduleFromActuals` against a model. */
+export function checkStatusDate(model: ScheduleModel, statusDate: number) {
+  if (typeof statusDate !== 'number' || !Number.isFinite(statusDate)) throw new RangeError('The status date must be finite')
+  if (statusDate < model.range.start || statusDate > model.range.end) throw new RangeError('The status date must be inside the schedule range')
+  model.validateTime(statusDate)
+}
+
+/** Whether a value can be read like a `ReadonlyMap`: it has `get` and is iterable. */
+export function isMapLike(value: unknown): value is ReadonlyMap<unknown, unknown> {
+  const map = value as { get?: unknown; [Symbol.iterator]?: unknown } | undefined
+  return typeof map?.get === 'function' && typeof map[Symbol.iterator] === 'function'
+}
 
 /** Constraints that a summary task cannot have, because its dates are derived from its subtasks. */
 const summaryForbidden = ['fixedStart', 'startNoLaterThan', 'finishNoEarlierThan', 'manual'] as const
@@ -248,6 +243,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   const hierarchy = input.tasks.some(task => task.parentId !== undefined)
     ? buildHierarchy(input.tasks, tasks, inactive, started) : undefined
   const leaves = hierarchy?.leaves ?? []
+  const summaries = hierarchy?.summaries ?? []
   const linkIndex = new Map<string, number>()
   const links = new Map<string, ScheduleLink>()
   for (const link of dependencies) {
@@ -285,7 +281,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
       }
     }
   }
-  return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive, leaves, links }
+  return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive, leaves, summaries, links }
 }
 
 /**
@@ -331,7 +327,7 @@ function buildHierarchy(
     if (task.mode === 'alap') throw new Error(`Summary task ${id} cannot have mode 'alap'`)
   }
   const pre = new Map<string, number>(), post = new Map<string, number>()
-  const leaves: string[] = []
+  const leaves: string[] = [], summaries: string[] = []
   type Frame = { task: ScheduleTask; next: number; off: boolean; first: number; startLower?: Bound; endUpper?: Bound }
   const tighter = (inherited: Bound | undefined, value: number | undefined, constraint: ScheduleConstraintName, id: string, lower: boolean) =>
     value === undefined || (inherited && (lower ? inherited.value >= value : inherited.value <= value))
@@ -379,10 +375,12 @@ function buildHierarchy(
       }
       model.alap = false
       model.summary = { children: group.filter(child => tasks.has(child.id)).map(child => child.id), first: frame.first, last: leaves.length }
+      summaries.push(frame.task.id)
     }
   }
   return {
     leaves,
+    summaries,
     isSummary: (id: string) => children.has(id),
     isAncestor: (ancestor: string, id: string) => pre.get(ancestor)! < pre.get(id)! && post.get(ancestor)! > post.get(id)!,
   }
@@ -430,21 +428,31 @@ export function summaryUpper(
   const parent = task.parent === undefined ? undefined : inherited.get(task.parent)
   const end = parent ? [...parent.end] : []
   const start = parent && earliest.get(task.parent!)!.start === earliest.get(task.id)!.start ? [...parent.start] : []
+  addSuccessorUpper(task, placed, end, start)
+  if (meetManual) addManualUpper(model, task, earliest.get(task.id)!, end, start)
+  return { end: lowest(end), start: lowest(start) }
+}
+
+/** Push the upper bounds of a task's outgoing links, measured against the successors in `placed`, to `end` or `start`. */
+function addSuccessorUpper(task: ModelTask, placed: ReadonlyMap<string, TimeRange>, end: Bound[], start: Bound[]) {
   for (const link of task.outgoing) {
     const successor = placed.get(link.to)!
     const value = (targetFinish(link) ? successor.end : successor.start) - (link.lag ?? 0)
     ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
   }
-  if (meetManual) {
-    const own = earliest.get(task.id)!
-    for (const link of task.manualOutgoing) {
-      const manual = model.tasks.get(link.to)!.manual!
-      const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
-      if ((sourceFinish(link) ? own.end : own.start) > value) continue
-      ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
-    }
+}
+
+/**
+ * Push the upper bounds of a task's links into manual tasks to `end` or `start`, but only those that its earliest dates
+ * `own` already meet, so that placing the task later adds no manual conflict.
+ */
+export function addManualUpper(model: ScheduleModel, task: ModelTask, own: TimeRange, end: Bound[], start: Bound[]) {
+  for (const link of task.manualOutgoing) {
+    const manual = model.tasks.get(link.to)!.manual!
+    const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
+    if ((sourceFinish(link) ? own.end : own.start) > value) continue
+    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
   }
-  return { end: lowest(end), start: lowest(start) }
 }
 
 /** Add the upper bounds that a leaf inherits from its summary tasks. */
@@ -582,11 +590,7 @@ export function lowerBounds(task: ModelTask, placed: ReadonlyMap<string, TimeRan
 /** Add upper bounds from placed successors and an optional project finish. */
 export function addUpperBounds(bounds: Bounds, task: ModelTask, placed: ReadonlyMap<string, TimeRange>, finish?: number): Bounds {
   if (finish !== undefined) bounds.endUpper.push({ value: finish, constraint: 'projectFinish' })
-  for (const link of task.outgoing) {
-    const successor = placed.get(link.to)!
-    const value = (targetFinish(link) ? successor.end : successor.start) - (link.lag ?? 0)
-    ;(sourceFinish(link) ? bounds.endUpper : bounds.startUpper).push({ value, dependencyId: link.id })
-  }
+  addSuccessorUpper(task, placed, bounds.endUpper, bounds.startUpper)
   return bounds
 }
 

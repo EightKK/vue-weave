@@ -1,5 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import { traverseGraph, type GraphTraversalOptions } from './graphTraversal.js'
+import { intervalsMeet } from './intervals.js'
 import type { TimeRange } from './timeline.js'
 import type { TimelineBar } from './types.js'
 import { resolveEntityRefs, resolveViewTargets, type EntityRef, type ViewBindingIndex, type ViewTarget } from './viewBindings.js'
@@ -18,14 +19,6 @@ function checkRange(range: TimeRange, what: string): void {
   }
 }
 
-/** Whether the work interval `[start, end)` (a milestone when start === end) is active in `range`. */
-function active(start: number, end: number, range: TimeRange): boolean {
-  if (range.start === range.end) {
-    // An instant selection: a piece of work running at that time, or a milestone at exactly that time.
-    return start === end ? start === range.start : start <= range.start && range.start < end
-  }
-  return start === end ? range.start <= start && start < range.end : start < range.end && end > range.start
-}
 
 /**
  * Returns the bars that are worked on in the half-open time range `[range.start, range.end)`, in input order. A bar with
@@ -51,7 +44,7 @@ export function timelineBarsInRange<B extends TimelineBarActivity>(
     if (rows && !rows.has(bar.rowId)) continue
     const segments = bar.segments
     if (segments === undefined) {
-      if (active(bar.start, bar.end, range)) result.push(bar)
+      if (intervalsMeet(bar, range)) result.push(bar)
       continue
     }
     if (!Array.isArray(segments) || segments.length === 0 || bar.start === bar.end) {
@@ -62,7 +55,7 @@ export function timelineBarsInRange<B extends TimelineBarActivity>(
       if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.end <= segment.start) {
         throw new RangeError('Segments must be finite, positive-length intervals: ' + bar.id)
       }
-      if (!hit && active(segment.start, segment.end, range)) hit = true
+      if (!hit && intervalsMeet(segment, range)) hit = true
     }
     if (hit) result.push(bar)
   }

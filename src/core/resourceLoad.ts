@@ -1,7 +1,8 @@
 import type { ScheduledTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
-import { assignmentWorkRange, capacityPeriodsOf, capacitySteps, mergeWork, sliceWork } from './resourceCapacity.js'
+import { uniteRanges } from './intervals.js'
+import { assignmentWorkRange, resourceCapacitySteps, sliceWork } from './resourceCapacity.js'
 
 /** A capacity that replaces a resource's `capacity` over a fixed half-open interval of elapsed time. */
 export interface ResourceCapacityPeriod extends TimeRange {
@@ -70,7 +71,7 @@ export function assignmentWorkPeriods(
       throw new RangeError('Working periods must have finite integer endpoints and positive length')
     }
   }
-  const merged = mergeWork(work)
+  const merged = uniteRanges(work)
   return part ? sliceWork(merged, part.offset, part.duration) : merged
 }
 
@@ -122,13 +123,11 @@ export function calculateResourceLoad(
   }
   for (const resource of resources) {
     if (!resource.id || byResource.has(resource.id)) throw new Error('Invalid or duplicate resource: ' + resource.id)
-    if (!Number.isSafeInteger(resource.capacity) || resource.capacity < 0) throw new RangeError('Invalid resource capacity: ' + resource.id)
-    const capacityPeriods = capacityPeriodsOf(resource)
+    const steps = resourceCapacitySteps(resource, range)
     const events = new Map<number, LoadEvent>()
     eventAt(events, range.start)
     eventAt(events, range.end)
-    const availability = normalizeWorkPeriods(resource.periods ?? [range], range)
-    for (const step of capacitySteps(resource.capacity, capacityPeriods, availability)) eventAt(events, step.time).capacity = step.capacity
+    for (const step of steps) eventAt(events, step.time).capacity = step.capacity
     byResource.set(resource.id, events)
   }
   const assigned = new Map<string, Set<string>>()
@@ -147,7 +146,7 @@ export function calculateResourceLoad(
     seen.add(taskId)
     const part = assignmentWorkRange(assignment)
     // Offsets count from the start of the task's whole work, which may begin before the range.
-    if (part && work) work = normalizeWorkPeriods(sliceWork(mergeWork(taskWork.get(taskId)!), part.offset, part.duration), range)
+    if (part && work) work = normalizeWorkPeriods(sliceWork(uniteRanges(taskWork.get(taskId)!), part.offset, part.duration), range)
     for (const period of work ?? []) {
       eventAt(events, period.start).starts.push({ taskId, units })
       eventAt(events, period.end).ends.push({ taskId, units })
