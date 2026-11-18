@@ -32,6 +32,7 @@ import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue
 import type { FieldCheck, FieldValue, TimelineFieldEdit, TimelineFieldSpec } from '../core/fieldEditing.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import type { TimelineDrop } from './types.js'
+import type { TimelineVisibleWindow } from '../core/windowedData.js'
 
 const props = withDefaults(defineProps<{
   /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
@@ -224,6 +225,11 @@ const props = withDefaults(defineProps<{
   /** Accepts HTML drag and drop on the chart and emits `bar-drop` with the row and time under the drop point. Opt-in. Default: false. */
   droppable?: boolean
   /**
+   * Milliseconds that `visible-window-change` waits for scrolling, resizing or zooming to settle before it reports the
+   * window; during a long scroll it still reports at most about every four delays. Default: 100.
+   */
+  visibleWindowDelay?: number
+  /**
    * Synchronous check of a typed field edit proposal from a column with `field`. Return `true` or nothing to accept,
    * `false` or a reason string to reject.
    */
@@ -319,6 +325,13 @@ const emit = defineEmits<{
   'target-activate': [event: ViewTargetEvent]
   /** Something was dropped on the chart; carries the snapped time, the row under the drop point and `dataTransfer`. Only with `droppable`. */
   'bar-drop': [event: TimelineDrop]
+  /**
+   * The rendered window changed: its half-open time window `[start, end)` and the rendered row IDs (after collapsing,
+   * with overscan) plus the expanded parent rows, for loading only what is shown (`useWindowedData`). Emitted only after
+   * mounting, once the window settles (`visibleWindowDelay`), and only when it differs from the last one reported:
+   * scrolling, resizing, zooming, collapsing and new rows can each change it.
+   */
+  'visible-window-change': [window: TimelineVisibleWindow]
   /** Proposal to change a typed field of a column with `field`. Such columns never emit `cell-edit`. */
   'field-edit': [change: TimelineFieldEdit<R>]
   /** A field edit was rejected by `validateFieldEdit`; carries the proposal and the reason. */
@@ -3362,6 +3375,42 @@ async function revealBar(id: string, options: RevealOptions = {}): Promise<Revea
   if (options.focus && barById.value.has(id)) focusBar(id)
   return { status: 'revealed' }
 }
+// The rendered window for partial data loading (`visible-window-change`). It is reported only after mounting, after a
+// trailing delay that a long scroll cannot postpone beyond about four delays, and only when it changed.
+const expandedParentIds = computed(() => {
+  const ids: string[] = []
+  for (const item of displayedRows.value) if (item.hasChildren && !collapsed.value.has(item.row.id)) ids.push(item.row.id)
+  return ids
+})
+const visibleWindow = computed<TimelineVisibleWindow | undefined>(() => {
+  if (validationError.value) return undefined
+  const rowIds: string[] = []
+  for (let index = rowWindow.value.first; index < rowWindow.value.afterLast; index++) rowIds.push(displayedRows.value[index]!.row.id)
+  const { start, end } = timeWindow.value
+  return { start, end: Math.max(start, end), rowIds, expandedIds: expandedParentIds.value }
+})
+let visibleWindowTimer: ReturnType<typeof setTimeout> | undefined
+let visibleWindowSince = 0
+let reportedWindow = ''
+function scheduleVisibleWindow() {
+  if (!mounted) return
+  const delay = Math.max(0, Number.isFinite(props.visibleWindowDelay) ? props.visibleWindowDelay! : 100)
+  if (visibleWindowTimer === undefined) visibleWindowSince = Date.now()
+  else if (Date.now() - visibleWindowSince < 3 * delay) clearTimeout(visibleWindowTimer)
+  else return
+  visibleWindowTimer = setTimeout(reportVisibleWindow, delay)
+}
+function reportVisibleWindow() {
+  visibleWindowTimer = undefined
+  const value = visibleWindow.value
+  if (!mounted || !value) return
+  const key = JSON.stringify([value.start, value.end, value.rowIds, value.expandedIds])
+  if (key === reportedWindow) return
+  reportedWindow = key
+  emit('visible-window-change', { start: value.start, end: value.end, rowIds: [...value.rowIds], expandedIds: [...value.expandedIds] })
+}
+watch(visibleWindow, scheduleVisibleWindow)
+
 defineExpose({ scrollToTime, scrollToRow, cancelEdit: () => cancelEdit('api'), exportSvg, exportPng, fitToBars, revealBar })
 
 // Switching direction mirrors every coordinate: cancel gestures and keep the same time at the inline-start edge.
@@ -3394,6 +3443,7 @@ onMounted(() => {
   observer = new ResizeObserver(syncViewport)
   observer.observe(scroller.value)
   observeCorner(cornerEl.value)
+  scheduleVisibleWindow()
   scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
   syncWheelListener()
 })
@@ -3410,6 +3460,8 @@ onUnmounted(() => {
   observer = undefined
   observedCorner = undefined
   if (nowTimer !== undefined) clearInterval(nowTimer)
+  if (visibleWindowTimer !== undefined) clearTimeout(visibleWindowTimer)
+  visibleWindowTimer = undefined
 })
 </script>
 

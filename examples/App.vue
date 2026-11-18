@@ -14,6 +14,7 @@ import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
 import PortRulesDemo from './PortRulesDemo.vue'
+import LargePlanDemo from './LargePlanDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
 import SchemaShowcase from './showcase/SchemaShowcase.vue'
 import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
@@ -39,7 +40,7 @@ const showcases = [
 const showcase = computed(() => showcases.find(item => item.id === preset.value))
 // Demos that keep their own state and ignore the graph and timeline controls of this page.
 const standalone = computed(() => showcase.value !== undefined
-  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis'].includes(preset.value))
+  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis', 'large-plan'].includes(preset.value))
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -542,6 +543,7 @@ function commit(change: TimelineEdit) {
         <button type="button" :aria-pressed="preset === 'analysis'" @click="preset = 'analysis'">Graph analysis</button>
         <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
         <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
+        <button type="button" :aria-pressed="preset === 'large-plan'" @click="preset = 'large-plan'">Large plan</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
         <button v-if="!standalone" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="!standalone" type="button" :disabled="!canRedo" @click="redo">Redo</button>
@@ -559,6 +561,7 @@ function commit(change: TimelineEdit) {
       <GraphAnalysisDemo v-else-if="preset === 'analysis'" />
       <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
       <PersistenceDemo v-else-if="preset === 'persistence'" />
+      <LargePlanDemo v-else-if="preset === 'large-plan'" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>

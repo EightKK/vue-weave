@@ -72,3 +72,5 @@ export type {
   AsyncGraphGestureListeners,
   GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
 } from './composables/useAsyncGraphLayout.js'
+export { useWindowedData } from './composables/useWindowedData.js'
+export type { UseWindowedDataOptions, WindowedData, WindowedDataLoader, WindowedDataError } from './composables/useWindowedData.js'

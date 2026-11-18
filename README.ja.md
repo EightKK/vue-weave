@@ -68,6 +68,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - リソースビュー：`projectResourceTimeline` は割り当てたリソースごとにタスクを表示し、負荷を二重に数えません。`resolveResourceTimelineEdit` は別の行へのドラッグを割当の変更に変換し、`buildPlacementInput` は未計画タスクを計算から除きます。GanttChart はアプリの一覧からのドロップを受け付けます（`droppable`、`bar-drop`）。
 - 理由の説明：`scheduleTasks(input, { explain: true })` と `levelResources` は各タスクの日程が決まった理由をトレースとして返します。`toPlanningDiagnostics` は循環、実行不能なタスク、負荷超過、平準化で解決できなかったタスクを、関係するタスクとリソースとともに一覧にします。
 - 非同期レイアウト：`useAsyncGraphLayout` はWorkerなど任意の非同期エンジンでレイアウトを計算し、そろった最新のフレームだけを表示します。`routingPolicy="preserve"` はポート付きの辺を含めてエンジンの配線を保持します。
+- 部分読み込み：GanttChart は描画中の範囲を `visible-window-change` で通知し、`useWindowedData` はアプリの `load` 関数を通じて表示中の期間と行だけを取得します。中断、重複排除、範囲ごとの状態、再試行に対応します。`splitDanglingLinks` とグラフ展開ヘルパーは、未読み込みの項目を指すリンクをコンポーネントに渡さないようにします。
 - 型付きセル・検索・保存ビュー：`field` を持つ列は型付きの値を提案し（`field-edit`、`cell-editor` スロット）、`useTimelineView` は行の表示用コピーを検索・並べ替えます。
 - 保存：`useEditTransaction` はアダプター経由で文書ごとに一つずつ保存し、受理・拒否・版競合・結果不明を区別します。Undo／Redo もサーバーへ送ります。`serializeWeaveSnapshot` と `restoreWeaveSnapshot` はデータと表示設定を版付きで検証されたJSONとして保存・復元します。
 - デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
