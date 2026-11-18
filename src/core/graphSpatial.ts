@@ -1,5 +1,6 @@
 // Internal spatial helpers: a uniform bucket grid of rectangles and a flattener for SVG path data. Used by the
-// incremental layout, its change metrics and NetworkGraph's drag preview. Not exported from the package entry points.
+// incremental layout, its change metrics, obstacle routing and NetworkGraph's drag preview. Not exported from the
+// package entry points.
 import type { GraphPoint } from './graph.js'
 
 /** An axis-aligned rectangle by its corners. */
@@ -110,21 +111,21 @@ export class SpatialGrid {
    * exact geometry. Returns true when `visit` did.
    */
   visit(area: SpatialRect, visit: (index: number, rect: SpatialRect) => boolean | void): boolean {
+    // A rectangle is visited once per query: its stamp is set to the query's on the first visit.
     const stamp = ++this.stamp
-    const seen = (index: number) => {
-      if (this.stamps[index] === stamp) return true
-      this.stamps[index] = stamp
-      return false
-    }
+    const stamps = this.stamps, rects = this.rects
     for (const index of this.large) {
-      if (seen(index)) continue
-      if (visit(index, this.rects[index]!)) return true
+      if (stamps[index] === stamp) continue
+      stamps[index] = stamp
+      if (visit(index, rects[index]!)) return true
     }
-    const { kx1, kx2, ky1, ky2 } = this.span(area)
+    const kx1 = Math.floor(area.x1 / this.cell), kx2 = Math.floor(area.x2 / this.cell)
+    const ky1 = Math.floor(area.y1 / this.cell), ky2 = Math.floor(area.y2 / this.cell)
     if ((kx2 - kx1 + 1) * (ky2 - ky1 + 1) > this.buckets.size) {
-      for (let index = 0; index < this.rects.length; index++) {
-        const rect = this.rects[index]
-        if (!rect || seen(index)) continue
+      for (let index = 0; index < rects.length; index++) {
+        const rect = rects[index]
+        if (!rect || stamps[index] === stamp) continue
+        stamps[index] = stamp
         if (visit(index, rect)) return true
       }
       return false
@@ -134,8 +135,9 @@ export class SpatialGrid {
         const list = this.buckets.get(cellKey(kx, ky))
         if (!list) continue
         for (const index of list) {
-          if (seen(index)) continue
-          if (visit(index, this.rects[index]!)) return true
+          if (stamps[index] === stamp) continue
+          stamps[index] = stamp
+          if (visit(index, rects[index]!)) return true
         }
       }
     }
@@ -143,7 +145,8 @@ export class SpatialGrid {
   }
 }
 
-const argumentCounts: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 }
+/** The number of arguments of each SVG path command, by upper-case command letter. */
+export const svgPathArgumentCounts: Readonly<Record<string, number>> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 }
 const token = /([MLHVCSQTAZmlhvcsqtaz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g
 const curveSteps = 16
 
@@ -167,7 +170,7 @@ export function graphPathPolylines(path: string): GraphPoint[][] {
     y = py
   }
   const flush = () => {
-    const count = argumentCounts[command.toUpperCase()]
+    const count = svgPathArgumentCounts[command.toUpperCase()]
     if (count === undefined) return
     const relative = command !== command.toUpperCase()
     const upper = command.toUpperCase()

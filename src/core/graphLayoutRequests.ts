@@ -5,6 +5,7 @@ import {
 import { collapseGraphGroups, type GraphCollapseResult, type GraphShownEdge, type GraphShownNode } from './graphCollapse.js'
 import { graphIncidentCurve } from './graphCurve.js'
 import { markBuiltinRoutes } from './graphGeometry.js'
+import { assertGraphLayoutDirection, isGraphLayoutDirection } from './graphOrient.js'
 import { isGraphPortSide } from './graphPortSide.js'
 import type { GraphLabels, NetworkGroup, NetworkNode } from './types.js'
 
@@ -117,8 +118,6 @@ export interface GraphLayoutKeyInput {
   revision?: string
 }
 
-const directions = ['LR', 'TB', 'RL', 'BT']
-
 function sortedEntries<V>(map: ReadonlyMap<string, V> | undefined): [string, V][] | undefined {
   if (!map?.size) return undefined
   return [...map].sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
@@ -134,7 +133,7 @@ function sortedEntries<V>(map: ReadonlyMap<string, V> | undefined): [string, V][
 export function graphLayoutInputKey(input: GraphLayoutKeyInput): string {
   const { scope, direction = 'LR', revision = '' } = input
   if (scope !== 'expanded' && scope !== 'shown') throw new RangeError('Unknown graph layout scope: ' + String(scope))
-  if (!directions.includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   let settings: string | undefined
   try {
     settings = JSON.stringify(input.settings)
@@ -273,7 +272,7 @@ export function completeGraphLayout(
   layout: GraphLayout, nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options: GraphLayoutCompletionOptions = {},
 ): GraphLayoutCompletion {
   const { direction = 'LR' } = options
-  if (!directions.includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   const missing: GraphEdge[] = [], unresolvedEdgeIds: string[] = []
   for (const edge of edges) {
     if (layout.paths.has(edge.id)) continue
@@ -420,7 +419,7 @@ function checkRequest(request: Record<string, unknown> | null) {
   if (typeof request !== 'object' || request === null) invalid('request must be an object')
   checkHeader(request, true)
   if (!Array.isArray(request.nodes) || !Array.isArray(request.edges) || !Array.isArray(request.groups)) invalid('request needs nodes, edges and groups arrays')
-  if (typeof request.revision !== 'string' || !directions.includes(request.direction as string)) invalid('request needs a revision and a direction')
+  if (typeof request.revision !== 'string' || !isGraphLayoutDirection(request.direction)) invalid('request needs a revision and a direction')
 }
 
 /** Converts a layout Worker message to its JSON form, with every Map as an array of entries. */

@@ -1,4 +1,5 @@
 import { indexGraph, layoutLayeredGraph, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphPort, type IdentifiedNode } from './graph.js'
+import { assertGraphLayoutDirection, graphFlowSides, isVerticalDirection } from './graphOrient.js'
 
 /**
  * How `layoutFlowGraph` turns quantities into pixels. `pixelsPerUnit` fixes the scale; `fitExtent` picks the largest
@@ -144,8 +145,6 @@ export interface GraphEdgeBand {
   label?: string
 }
 
-const directions: readonly GraphLayoutDirection[] = ['LR', 'RL', 'TB', 'BT']
-
 function finite(name: string, value: number, positive: boolean) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (positive && value === 0)) {
     throw new RangeError(`${name} must be finite and ${positive ? 'positive' : 'nonnegative'}`)
@@ -190,7 +189,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   if (typeof unit !== 'function' && (typeof unit !== 'string' || !unit)) throw new Error('layoutFlowGraph needs a unit: a non-empty string or an accessor')
   const displayUnit = options.displayUnit ?? (typeof unit === 'string' ? unit : undefined)
   if (typeof displayUnit !== 'string' || !displayUnit) throw new Error('layoutFlowGraph needs a displayUnit when unit is an accessor')
-  if (!directions.includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   finite('nodeThickness', nodeThickness, true)
   finite('minNodeSize', minNodeSize, true)
   for (const [name, value] of Object.entries({ nodeGap, rankGap, padding, minBandWidth, referenceGap })) finite(name, value, false)
@@ -358,7 +357,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   }
 
   // From abstract to chart coordinates.
-  const vertical = direction === 'TB' || direction === 'BT'
+  const vertical = isVerticalDirection(direction)
   const mirrored = direction === 'RL' || direction === 'BT'
   const point = (u: number, v: number) => {
     const a = mirrored ? along - u : u
@@ -375,8 +374,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
       : { x: a, y: v, width: nodeThickness, height: extent, rank })
   }
   // The faces of a box that the flow leaves and enters.
-  const exit: GraphPort['side'] = direction === 'LR' ? 'right' : direction === 'RL' ? 'left' : direction === 'TB' ? 'bottom' : 'top'
-  const entry: GraphPort['side'] = direction === 'LR' ? 'left' : direction === 'RL' ? 'right' : direction === 'TB' ? 'top' : 'bottom'
+  const { exit, entry } = graphFlowSides(direction)
   const byId = new Map<string, N>(nodes.map(node => [node.id, node]))
 
   const paths = new Map<string, string>()

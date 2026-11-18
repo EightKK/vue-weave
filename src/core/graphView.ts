@@ -1,4 +1,5 @@
 import type { GraphLayout, GraphPoint } from './graph.js'
+import { svgPathArgumentCounts } from './graphSpatial.js'
 import type { GraphViewport } from './types.js'
 
 /** An axis-aligned rectangle in graph (world) coordinates. */
@@ -49,7 +50,6 @@ export function graphRectsIntersect(a: GraphRect, b: GraphRect): boolean {
   return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y
 }
 
-const argumentCounts: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 }
 const pathNumber = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y
 
 /** SVG path whitespace (space, tab, line feed, form feed, carriage return) or a comma. */
@@ -133,7 +133,7 @@ function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?:
     cursor++
     const command = token.toUpperCase()
     const relative = token !== command
-    const count = argumentCounts[command]
+    const count = svgPathArgumentCounts[command]
     if (count === undefined) throw new Error('Unsupported SVG path command: ' + token)
     // Path data must begin with a moveto.
     if (!started && command !== 'M') throw invalid()

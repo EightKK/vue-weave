@@ -3,8 +3,8 @@
 // with them, `routeGraphPorts` draws port edges with them, and NetworkGraph uses them to reroute only the edges a drag
 // preview changes.
 import type { GraphBox, GraphLayoutDirection, GraphPoint, GraphPort } from './graph.js'
-
-const outwardOffsets = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] } as const
+import { isVerticalDirection } from './graphOrient.js'
+import { graphSideNormals } from './graphPortSide.js'
 
 /**
  * The control points of the curve `routeGraphPorts` draws between two endpoints, before it clamps them to the layout:
@@ -15,7 +15,7 @@ export function graphPortControls(
 ): { a: GraphPoint; b: GraphPoint } {
   const distance = Math.min(72, Math.max(22, Math.hypot(to.x - from.x, to.y - from.y) / 3))
   const outward = (point: GraphPoint & { side: GraphPort['side'] }): GraphPoint => {
-    const [dx, dy] = outwardOffsets[point.side]
+    const [dx, dy] = graphSideNormals[point.side]
     return { x: point.x + dx * distance, y: point.y + dy * distance }
   }
   return { a: outward(from), b: outward(to) }
@@ -30,7 +30,7 @@ export function graphIncidentCurve(
     const y = source.y + source.height / 2
     return { path: `M ${x} ${y} C ${x + 30} ${y + 18}, ${x + 30} ${y - 28}, ${x} ${y - 12}`, label: { x: x + 21, y: y - 16 } }
   }
-  if (direction === 'TB' || direction === 'BT') {
+  if (isVerticalDirection(direction)) {
     const forward = target.y + target.height / 2 >= source.y + source.height / 2
     const x1 = source.x + source.width / 2, x2 = target.x + target.width / 2
     const y1 = source.y + (forward ? source.height : 0), y2 = target.y + (forward ? 0 : target.height)

@@ -1,5 +1,6 @@
 import { indexGraph } from './graph.js'
 import type { GraphEdge, GraphGroup, IdentifiedNode } from './graph.js'
+import { heapPop, heapPush } from './graphHeap.js'
 
 interface Arc {
   to: number
@@ -26,47 +27,24 @@ function edgeCost(edge: GraphEdge, weight: ((edge: GraphEdge) => number) | undef
   return cost
 }
 
+type HeapItem = [key: number, sequence: number, value: number]
+
+const heapBefore = (a: HeapItem, b: HeapItem) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+
 /** Binary min-heap of [key, sequence, value]; the sequence breaks ties so pops are deterministic. */
 class MinHeap {
-  private readonly items: [number, number, number][] = []
+  private readonly items: HeapItem[] = []
   private sequence = 0
 
   get size(): number { return this.items.length }
 
   push(key: number, value: number): void {
-    const item: [number, number, number] = [key, this.sequence++, value]
-    const items = this.items
-    let i = items.push(item) - 1
-    while (i > 0) {
-      const parent = (i - 1) >> 1
-      if (!MinHeap.before(item, items[parent]!)) break
-      items[i] = items[parent]!
-      i = parent
-    }
-    items[i] = item
+    heapPush(this.items, [key, this.sequence++, value], heapBefore)
   }
 
   pop(): [number, number] {
-    const items = this.items
-    const top = items[0]!
-    const last = items.pop()!
-    if (items.length) {
-      let i = 0
-      for (;;) {
-        let child = 2 * i + 1
-        if (child >= items.length) break
-        if (child + 1 < items.length && MinHeap.before(items[child + 1]!, items[child]!)) child++
-        if (!MinHeap.before(items[child]!, last)) break
-        items[i] = items[child]!
-        i = child
-      }
-      items[i] = last
-    }
+    const top = heapPop(this.items, heapBefore)!
     return [top[0], top[2]]
-  }
-
-  private static before(a: [number, number, number], b: [number, number, number]): boolean {
-    return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
   }
 }
 

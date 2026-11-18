@@ -1,8 +1,9 @@
 import type { GraphPoint } from './graph.js'
+import { isFiniteGraphPoint } from './graphGeometry.js'
 import type { GraphRect } from './graphView.js'
 
 function finitePoint(point: GraphPoint, what: string) {
-  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError(what + ' must have finite x and y coordinates')
+  if (!isFiniteGraphPoint(point)) throw new RangeError(what + ' must have finite x and y coordinates')
 }
 
 function validatePolygon(polygon: readonly GraphPoint[]) {

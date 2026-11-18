@@ -1,5 +1,6 @@
 import { graphNeighborhood, indexGraph } from './graph.js'
 import type { GraphEdge, IdentifiedNode } from './graph.js'
+import { heapPop, heapPush } from './graphHeap.js'
 
 export interface TopologicalOrderResult {
   /** Nodes in dependency order (input order breaks ties). Nodes on or behind a cycle are omitted. */
@@ -135,21 +136,7 @@ export function shortestGraphPath(
   const settled = new Set<string>()
 
   while (heap.length) {
-    const top = heap[0]!
-    const last = heap.pop()!
-    if (heap.length) {
-      let i = 0
-      for (;;) {
-        let child = 2 * i + 1
-        if (child >= heap.length) break
-        if (child + 1 < heap.length && before(heap[child + 1]!, heap[child]!)) child++
-        if (!before(heap[child]!, last)) break
-        heap[i] = heap[child]!
-        i = child
-      }
-      heap[i] = last
-    }
-    const [dist, , id] = top
+    const [dist, , id] = heapPop(heap, before)!
     if (settled.has(id)) continue
     settled.add(id)
     if (id === toId) break
@@ -158,15 +145,7 @@ export function shortestGraphPath(
       if (settled.has(to) || next >= (distance.get(to) ?? Infinity)) continue
       distance.set(to, next)
       via.set(to, { previous: id, edgeId: edge.id })
-      const item: [number, number, string] = [next, sequence++, to]
-      let i = heap.push(item) - 1
-      while (i > 0) {
-        const parent = (i - 1) >> 1
-        if (!before(item, heap[parent]!)) break
-        heap[i] = heap[parent]!
-        i = parent
-      }
-      heap[i] = item
+      heapPush(heap, [next, sequence++, to], before)
     }
   }
 

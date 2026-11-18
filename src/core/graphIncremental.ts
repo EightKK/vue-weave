@@ -3,6 +3,8 @@ import {
   type GraphNodeSize, type GraphPoint, type IdentifiedNode,
 } from './graph.js'
 import { graphIncidentCurve } from './graphCurve.js'
+import { defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
+import { assertGraphLayoutDirection } from './graphOrient.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
 
 /**
@@ -57,7 +59,6 @@ export interface GraphIncrementalLayout extends GraphLayout {
   fallbackIds: string[]
 }
 
-const directions: readonly GraphLayoutDirection[] = ['LR', 'TB', 'RL', 'BT']
 const eps = 1e-9
 // Free-slot search: jumps past blocking boxes per direction before the slot past every box is used.
 const maxJumps = 256
@@ -97,10 +98,10 @@ export function layoutGraphIncrementally(
   options: GraphIncrementalLayoutOptions = {},
 ): GraphIncrementalLayout {
   const {
-    direction = 'LR', nodeWidth = 144, nodeHeight = 58, sizes, columnGap = 50, rowGap = 24, padding = 20, maxDisplacement = 0,
-    allowNegative = false, previousLayout,
+    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, sizes, columnGap = defaultColumnGap, rowGap = defaultRowGap,
+    padding = defaultPadding, maxDisplacement = 0, allowNegative = false, previousLayout,
   } = options
-  if (!directions.includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   if (!positive(nodeWidth) || !positive(nodeHeight)) throw new RangeError('nodeWidth and nodeHeight must be finite and positive')
   for (const [name, value] of Object.entries({ columnGap, rowGap, padding, maxDisplacement })) {
     if (!Number.isFinite(value) || value < 0) throw new RangeError(name + ' must be finite and nonnegative')

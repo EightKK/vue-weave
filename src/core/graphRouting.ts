@@ -3,8 +3,9 @@ import {
   type IdentifiedNode,
 } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
-import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
-import { assertGraphPortSide } from './graphPortSide.js'
+import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
+import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
 import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape } from './graphShapes.js'
 import {
   buildGraphObstacleIndex, graphPolylineClear, resolveObstacleAvoidance, routeAroundObstacles, type GraphObstacleAvoidance,
@@ -81,7 +82,6 @@ export function graphParallelSlots(edges: readonly GraphEdge[]): Map<string, Gra
 type Side = GraphPort['side']
 type Anchor = GraphPoint & { side: Side }
 
-const normals: Record<Side, readonly [number, number]> = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] }
 // Length of the straight piece an orthogonal route keeps before it turns away from a node side.
 const stub = 16
 
@@ -94,7 +94,7 @@ function format(value: number) {
 }
 
 function sidePoint(box: GraphBox, side: Side, offset = 0.5): Anchor {
-  return { ...graphPortAnchor(box, { id: '', side, offset }), side }
+  return { ...graphSideAnchor(box, side, offset), side }
 }
 
 // Where the ray from the box centre towards a point leaves the box.
@@ -279,14 +279,6 @@ function halfway(points: readonly GraphPoint[]): GraphPoint {
   return points[0] ?? { x: 0, y: 0 }
 }
 
-function onBorder(box: GraphBox, point: GraphPoint) {
-  const near = (a: number, b: number) => Math.abs(a - b) <= 0.5
-  const withinX = point.x >= box.x - 0.5 && point.x <= box.x + box.width + 0.5
-  const withinY = point.y >= box.y - 0.5 && point.y <= box.y + box.height + 0.5
-  return ((near(point.x, box.x) || near(point.x, box.x + box.width)) && withinY)
-    || ((near(point.y, box.y) || near(point.y, box.y + box.height)) && withinX)
-}
-
 /**
  * One routed edge: its path, label anchor and the polyline (or curve control points) it was drawn through, and its
  * route metadata when it was drawn rather than kept.
@@ -429,7 +421,7 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
     const path = layout.paths.get(edge.id)
     if (path !== undefined && /^M[\d\s.,eE+-]+(?:[HV][\d\s.,eE+-]+)+$/.test(path)) {
       const ends = graphPathEndpoints(path)
-      if (ends && onBorder(source, ends.start) && onBorder(target, ends.end)
+      if (ends && isOnGraphBoxSide(source, ends.start) && isOnGraphBoxSide(target, ends.end)
         && (!settings.avoid || graphPolylineClear(settings.avoid.index(), axisPathPoints(path), new Set([edge.from, edge.to])))) {
         const label = layout.edgeLabels.get(edge.id)
         return { path, label: label ?? ends.start, points: [] }
@@ -448,7 +440,7 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
   let through: readonly GraphPoint[] = waypoints
   if (edge.from === edge.to && !waypoints.length) {
     // A self-loop is a bracket on the direction's outgoing side, or between its ports.
-    const side: Side = direction === 'LR' ? 'right' : direction === 'RL' ? 'left' : direction === 'TB' ? 'bottom' : 'top'
+    const side = graphFlowSides(direction).exit
     if (slot) points = nestedLoop(source, side, slot, spacing!)
     else {
       const a = fromPort ?? sidePoint(source, side, 0.35)
@@ -511,7 +503,7 @@ function validateRouteOptions(options: GraphEdgeRouteOptions) {
   const { style = 'curve', direction = 'LR', cornerRadius = 0, policy = 'builtin', parallelSpacing, avoidNodes } = options
   if (!edgeStyles.includes(style)) throw new RangeError('Unknown edge style: ' + style)
   if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
-  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
   if (parallelSpacing !== undefined && !(Number.isFinite(parallelSpacing) && parallelSpacing > 0)) {
     throw new RangeError('parallelSpacing must be a positive finite number of chart units')

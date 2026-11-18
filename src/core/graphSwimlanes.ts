@@ -1,7 +1,10 @@
 import { layoutLayeredGraph } from './graph.js'
 import type { GraphBox, GraphEdge, GraphLayout, GraphLayoutDirection, GraphPoint, IdentifiedNode } from './graph.js'
-import { countAdjacentCrossings } from './graphCrossings.js'
-import { orientGraphLayout } from './graphOrient.js'
+import { countAdjacentCrossings, rankNeighbours } from './graphCrossings.js'
+import {
+  assertGraphLayoutDirection, graphDirectionOrientation, isVerticalDirection, orientGraphLayout, orientGraphRect,
+} from './graphOrient.js'
+import { defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding } from './graphOptions.js'
 import type { GraphRect } from './graphView.js'
 
 /** One lane of a swimlane layout, in the order the caller lists it. `label` defaults to the ID. */
@@ -132,11 +135,11 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
 ): GraphSwimlaneLayout {
   if (!options || !Array.isArray(options.lanes)) throw new Error('layoutSwimlaneGraph needs a lanes array')
   const {
-    direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 16, laneGap = 0, lanePadding = 12,
-    minLaneSize = 0, padding = 20, crossingReduction = 'barycenter', crossingSweeps = 8, laneOf,
+    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = 16, laneGap = 0,
+    lanePadding = 12, minLaneSize = 0, padding = defaultPadding, crossingReduction = 'barycenter', crossingSweeps = 8, laneOf,
   } = options
-  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
-  const vertical = direction === 'TB' || direction === 'BT'
+  assertGraphLayoutDirection(direction)
+  const vertical = isVerticalDirection(direction)
   const headerSize = options.headerSize ?? (vertical ? 32 : 120)
   if (crossingReduction !== 'none' && crossingReduction !== 'barycenter') throw new RangeError('Unknown crossingReduction method')
   if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
@@ -178,15 +181,9 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
   }
   const base = leftToRight(nodes, edges, lanes, laneOfNode, ranks, sizes, crossingReduction === 'barycenter' ? crossingSweeps : 0)
   if (direction === 'LR') return base
-  const orientation = { transpose: vertical, flipX: direction === 'RL', flipY: direction === 'BT' }
+  const orientation = graphDirectionOrientation(direction)
   const oriented = orientGraphLayout(base, orientation)
-  const turn = (rect: GraphRect): GraphRect => {
-    const width = vertical ? rect.height : rect.width, height = vertical ? rect.width : rect.height
-    const x = vertical ? rect.y : rect.x, y = vertical ? rect.x : rect.y
-    return {
-      x: orientation.flipX ? oriented.width - x - width : x, y: orientation.flipY ? oriented.height - y - height : y, width, height,
-    }
-  }
+  const turn = (rect: GraphRect): GraphRect => orientGraphRect(rect, orientation, oriented.width, oriented.height)
   return {
     ...oriented,
     lanes: base.lanes.map(lane => ({ ...lane, ...turn(lane), header: turn(lane.header), nodeIds: lane.nodeIds })),
@@ -289,21 +286,7 @@ function reduceLaneCrossings(
   cells: Map<number, string[]>, edges: readonly GraphEdge[], ranks: ReadonlyMap<string, number>, position: Map<string, number>,
   place: (key: number, cell: readonly string[]) => void, rankCount: number, laneCount: number, sweeps: number,
 ) {
-  const above = new Map<string, string[]>(), below = new Map<string, string[]>()
-  const adjacent: [string, string][] = []
-  const push = (map: Map<string, string[]>, key: string, value: string) => {
-    const list = map.get(key)
-    if (list) list.push(value)
-    else map.set(key, [value])
-  }
-  for (const { from, to } of edges) {
-    const a = ranks.get(from)!, b = ranks.get(to)!
-    if (a === b) continue
-    const [low, high] = a < b ? [from, to] : [to, from]
-    push(below, low, high)
-    push(above, high, low)
-    if (Math.abs(a - b) === 1) adjacent.push([low, high])
-  }
+  const { above, below, adjacent } = rankNeighbours(edges, ranks)
   // Only cells with two or more nodes can change.
   const movable = [...cells.keys()].filter(key => cells.get(key)!.length > 1).sort((a, b) => a - b)
   if (!movable.length || !adjacent.length) return

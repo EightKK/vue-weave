@@ -1,4 +1,5 @@
 import type { GraphEdge, GraphLayout, GraphLayoutDirection } from './graph.js'
+import { isVerticalDirection } from './graphOrient.js'
 
 export interface CrossingItem {
   rank: number
@@ -37,7 +38,7 @@ export function countAdjacentCrossings(items: CrossingItem[]): number {
  * Long edges, same-rank edges and self-loops use their own routes and are not counted.
  */
 export function countGraphCrossings(layout: GraphLayout, edges: readonly GraphEdge[], direction: GraphLayoutDirection = 'LR'): number {
-  const vertical = direction === 'TB' || direction === 'BT'
+  const vertical = isVerticalDirection(direction)
   const items: CrossingItem[] = []
   for (const { from, to } of edges) {
     const source = layout.boxes.get(from), target = layout.boxes.get(to)
@@ -49,14 +50,12 @@ export function countGraphCrossings(layout: GraphLayout, edges: readonly GraphEd
   return countAdjacentCrossings(items)
 }
 
-/** Reorder nodes inside each column (in place) with alternating barycenter/median sweeps; never worse than the input order. */
-export function reduceCrossings(
-  columns: string[][],
-  edges: readonly GraphEdge[],
-  ranks: ReadonlyMap<string, number>,
-  method: 'barycenter' | 'median',
-  sweeps: number,
-): void {
+/**
+ * The neighbours of each node in lower (`above`) and higher (`below`) ranks, in edge order, and the edges between
+ * adjacent ranks as [lower, higher] pairs. Same-rank edges and self-loops are left out. Shared by the crossing reduction
+ * of the layered and the swimlane layouts.
+ */
+export function rankNeighbours(edges: readonly GraphEdge[], ranks: ReadonlyMap<string, number>) {
   const above = new Map<string, string[]>()
   const below = new Map<string, string[]>()
   const adjacent: [string, string][] = []
@@ -73,6 +72,18 @@ export function reduceCrossings(
     push(above, high, low)
     if (Math.abs(a - b) === 1) adjacent.push([low, high])
   }
+  return { above, below, adjacent }
+}
+
+/** Reorder nodes inside each column (in place) with alternating barycenter/median sweeps; never worse than the input order. */
+export function reduceCrossings(
+  columns: string[][],
+  edges: readonly GraphEdge[],
+  ranks: ReadonlyMap<string, number>,
+  method: 'barycenter' | 'median',
+  sweeps: number,
+): void {
+  const { above, below, adjacent } = rankNeighbours(edges, ranks)
 
   const position = new Map<string, number>()
   const place = (column: string[]) => column.forEach((id, i) => position.set(id, i - (column.length - 1) / 2))

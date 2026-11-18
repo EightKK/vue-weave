@@ -1,5 +1,6 @@
 import { indexGraph } from './graph.js'
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
+import { defaultNodeHeight, defaultNodeWidth, defaultPadding } from './graphOptions.js'
 
 export interface GraphForceLayoutOptions {
   nodeWidth?: number
@@ -381,7 +382,7 @@ function groupBounds(members: readonly number[], xs: Float64Array, ys: Float64Ar
 
 function checkOptions(options: GraphForceLayoutOptions) {
   const {
-    nodeWidth = 144, nodeHeight = 58, padding = 20, iterations = 300, linkDistance = 180,
+    nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, padding = defaultPadding, iterations = 300, linkDistance = 180,
     repulsion = 600, gravity = 0.05, nodeGap = 16, seed = 1,
   } = options
   const finite = { nodeWidth, nodeHeight, padding, linkDistance, repulsion, nodeGap }

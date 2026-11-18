@@ -1,4 +1,7 @@
 import type { GraphPoint, GraphPort } from './graph.js'
+import { heapPop, heapPush } from './graphHeap.js'
+import { isGraphPortSide } from './graphPortSide.js'
+import { SpatialGrid, type SpatialRect } from './graphSpatial.js'
 import type { GraphRect } from './graphView.js'
 
 type Side = GraphPort['side']
@@ -20,26 +23,17 @@ export interface GraphObstacleAvoidance {
 const DX = [1, 0, -1, 0] as const
 const DY = [0, 1, 0, -1] as const
 const sideDirection: Record<Side, number> = { right: 0, bottom: 1, left: 2, top: 3 }
-const sideNames: readonly string[] = ['left', 'right', 'top', 'bottom']
 // Expanded search states per region before a search gives up, so a boxed-in end cannot scan the whole graph.
 const maxExpansions = 200_000
-// Rectangles that span more grid cells than this along an axis are kept in a list that every query checks.
-const maxSpan = 64
 // Regions with at most this many search states use typed arrays.
 const denseLimit = 2 ** 16
-const keyRange = 2 ** 25
 const eps = 1e-9
 
-interface Rect {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-}
+type Rect = SpatialRect
 
 /**
- * Internal: obstacle boxes grown by the clearance, in a uniform bucket grid for segment queries. Built once per routing
- * call in O(n) for n boxes (each box is entered in the cells it covers, or in a short list when it is very large).
+ * Internal: obstacle boxes grown by the clearance, in a uniform bucket grid (`SpatialGrid`, indexed like `inflated`)
+ * for segment queries. Built once per routing call in O(n) for n boxes.
  */
 export interface GraphObstacleIndex {
   ids: readonly string[]
@@ -47,8 +41,7 @@ export interface GraphObstacleIndex {
   inflated: readonly Rect[]
   clearance: number
   cell: number
-  buckets: Map<number, number[]>
-  large: number[]
+  grid: SpatialGrid
   /** Sorted distinct x and y coordinates of the grown boxes' edges. */
   xBorders: readonly number[]
   yBorders: readonly number[]
@@ -79,14 +72,6 @@ export function resolveObstacleAvoidance(value: unknown, name = 'avoidNodes'): R
   return { clearance, bendPenalty }
 }
 
-function cellKey(kx: number, ky: number) {
-  return (kx + keyRange) * 2 ** 26 + (ky + keyRange)
-}
-
-function inRange(k: number) {
-  return k > -keyRange && k < keyRange
-}
-
 /** Internal: indexes boxes (in iteration order) as obstacles grown by `clearance`. */
 export function buildGraphObstacleIndex(boxes: Iterable<readonly [string, GraphRect]>, clearance: number): GraphObstacleIndex {
   const ids: string[] = [], raw: Rect[] = [], inflated: Rect[] = []
@@ -105,45 +90,17 @@ export function buildGraphObstacleIndex(boxes: Iterable<readonly [string, GraphR
       : { ...rect }
   }
   const cell = Math.max(1, ids.length ? size / ids.length : 1)
-  const buckets = new Map<number, number[]>(), large: number[] = []
-  inflated.forEach((rect, index) => {
-    const kx1 = Math.floor(rect.x1 / cell), kx2 = Math.floor(rect.x2 / cell)
-    const ky1 = Math.floor(rect.y1 / cell), ky2 = Math.floor(rect.y2 / cell)
-    if (kx2 - kx1 > maxSpan || ky2 - ky1 > maxSpan || !inRange(kx1) || !inRange(kx2) || !inRange(ky1) || !inRange(ky2)) {
-      large.push(index)
-      return
-    }
-    for (let kx = kx1; kx <= kx2; kx++) {
-      for (let ky = ky1; ky <= ky2; ky++) {
-        const key = cellKey(kx, ky)
-        const list = buckets.get(key)
-        if (list) list.push(index)
-        else buckets.set(key, [index])
-      }
-    }
-  })
+  const grid = new SpatialGrid(cell)
+  for (const rect of inflated) grid.insert(rect)
   const xBorders = sortedUnique(inflated.flatMap(rect => [rect.x1, rect.x2]))
   const yBorders = sortedUnique(inflated.flatMap(rect => [rect.y1, rect.y2]))
-  return { ids, raw, inflated, clearance, cell, buckets, large, xBorders, yBorders, bounds, nonnegative }
+  return { ids, raw, inflated, clearance, cell, grid, xBorders, yBorders, bounds, nonnegative }
 }
 
-// Calls `visit` with every obstacle whose bucket overlaps the rectangle (an obstacle may be visited more than once).
-// Returns true as soon as `visit` does.
+// Calls `visit` once with every obstacle whose bucket overlaps the rectangle, until it returns true. The callers test
+// the exact geometry, so visiting each obstacle once gives the same answers as any other visiting order.
 function visitNear(index: GraphObstacleIndex, area: Rect, visit: (id: number) => boolean | void): boolean {
-  for (const id of index.large) if (visit(id)) return true
-  const kx1 = Math.floor(area.x1 / index.cell), kx2 = Math.floor(area.x2 / index.cell)
-  const ky1 = Math.floor(area.y1 / index.cell), ky2 = Math.floor(area.y2 / index.cell)
-  if ((kx2 - kx1 + 1) * (ky2 - ky1 + 1) > index.buckets.size) {
-    for (let id = 0; id < index.inflated.length; id++) if (visit(id)) return true
-    return false
-  }
-  for (let kx = Math.max(kx1, 1 - keyRange); kx <= Math.min(kx2, keyRange - 1); kx++) {
-    for (let ky = Math.max(ky1, 1 - keyRange); ky <= Math.min(ky2, keyRange - 1); ky++) {
-      const list = index.buckets.get(cellKey(kx, ky))
-      if (list) for (const id of list) if (visit(id)) return true
-    }
-  }
-  return false
+  return index.grid.visit(area, visit)
 }
 
 // Per-route exceptions: an obstacle grown around an end is tested at its own size (1), or ignored (0) when even its
@@ -209,34 +166,6 @@ interface QueueItem {
 
 function before(a: QueueItem, b: QueueItem) {
   return a.f < b.f || (a.f === b.f && (a.h < b.h || (a.h === b.h && a.order < b.order)))
-}
-
-function push(heap: QueueItem[], item: QueueItem) {
-  let i = heap.push(item) - 1
-  while (i > 0) {
-    const parent = (i - 1) >> 1
-    if (!before(item, heap[parent]!)) break
-    heap[i] = heap[parent]!
-    i = parent
-  }
-  heap[i] = item
-}
-
-function pop(heap: QueueItem[]): QueueItem | undefined {
-  const top = heap[0]
-  const last = heap.pop()
-  if (last === undefined || !heap.length) return top
-  let i = 0
-  for (;;) {
-    let child = 2 * i + 1
-    if (child >= heap.length) break
-    if (child + 1 < heap.length && before(heap[child + 1]!, heap[child]!)) child++
-    if (!before(heap[child]!, last)) break
-    heap[i] = heap[child]!
-    i = child
-  }
-  heap[i] = last
-  return top
 }
 
 function simplifyRoute(points: readonly GraphPoint[]): GraphPoint[] {
@@ -343,10 +272,10 @@ function searchRegion(
   let order = 0, expanded = 0
   record(start, 0, -1)
   const startH = heuristic(si, sj, sideDirection[from.side])
-  push(heap, { f: startH, h: startH, order: order++, state: start, g: 0 })
+  heapPush(heap, { f: startH, h: startH, order: order++, state: start, g: 0 }, before)
   let found: number | undefined
   while (heap.length) {
-    const item = pop(heap)!
+    const item = heapPop(heap, before)!
     if (item.g > bestOf(item.state)) continue
     const direction = item.state % 4, vertex = (item.state - direction) / 4
     if (vertex === goal) {
@@ -368,7 +297,7 @@ function searchRegion(
       if (bestOf(state) <= g) continue
       record(state, g, item.state)
       const h = heuristic(i2, j2, next)
-      push(heap, { f: g + h, h, order: order++, state, g })
+      heapPush(heap, { f: g + h, h, order: order++, state, g }, before)
     }
   }
   if (found === undefined) return undefined
@@ -431,7 +360,7 @@ export function routeAroundObstacles(
 
 function assertEnd(end: GraphRouteEnd, name: string) {
   if (!end || !Number.isFinite(end.x) || !Number.isFinite(end.y)) throw new RangeError(name + ' must have finite x and y')
-  if (!sideNames.includes(end.side)) throw new RangeError(name + ' has an unknown side: ' + String(end.side))
+  if (!isGraphPortSide(end.side)) throw new RangeError(name + ' has an unknown side: ' + String(end.side))
 }
 
 /**
