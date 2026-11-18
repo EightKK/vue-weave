@@ -97,7 +97,7 @@
 .vw-connect-handle.vw-is-active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); outline: none; }
 .vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); }
 .vw-minimap svg { display: block; width: 100%; height: 100%; }
-.vw-minimap rect { fill: var(--vw-edge, #76929f); }
+.vw-minimap rect:where(:not(.vw-minimap-custom *)) { fill: var(--vw-edge, #76929f); }
 .vw-minimap rect.vw-is-selected { fill: var(--vw-accent, #245e96); }
 .vw-minimap .vw-minimap-window { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .vw-gantt-head { height: var(--vw-header-height, 40px); }
@@ -115,14 +115,25 @@
 .vw-gantt-baseline-3 { background: var(--vw-baseline-3, #23806f); }
 .vw-gantt-marker { position: absolute; z-index: 2; top: var(--vw-header-height, 40px); bottom: 0; border-left: 1px dashed var(--vw-marker, #a74f08); pointer-events: none; }
 .vw-gantt-marker span { display: inline-block; padding: 2px 5px; background: var(--vw-marker, #a74f08); color: #fff; white-space: nowrap; font-size: 10px; }
-.vw-network-group rect { fill: var(--vw-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vw-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
-.vw-network-group text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
+.vw-network-group:where(:not(.vw-has-slot)) rect { fill: var(--vw-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vw-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
+.vw-network-group:where(:not(.vw-has-slot)) text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
 .vw-network-group text[role="button"] { cursor: grab; }
 .vw-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .vw-edge-hit.vw-is-active { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
 .vw-reconnect-handle { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); stroke-width: 2px; cursor: crosshair; }
 .vw-connection-preview { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
 .vw-box-selection { fill: var(--vw-accent, #245e96); fill-opacity: .14; stroke: var(--vw-accent, #245e96); pointer-events: none; }
+/* Opt-in lasso selection (selectionMode 'lasso'), inline label editor (editableLabels), toolbar slots and group slot of NetworkGraph. */
+.vw-lasso-selection { fill: var(--vw-accent, #245e96); fill-opacity: .1; stroke: var(--vw-accent, #245e96); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.vw-network.vw-labels-editable .vw-edge-label { pointer-events: auto; cursor: text; }
+.vw-label-editor { position: absolute; z-index: 3; min-width: 0; height: 28px; padding: 3px 7px; transform: translateY(-50%); border: 2px solid var(--vw-accent, #245e96); border-radius: 5px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); font: inherit; font-size: 13px; text-align: start; box-shadow: 0 3px 10px rgb(15 35 50 / 18%); }
+.vw-label-editor.vw-is-edge { width: var(--vw-label-editor-width, 140px); transform: translate(-50%, -50%); }
+.vw-label-editor:focus { outline: none; }
+.vw-node-toolbar, .vw-edge-toolbar { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 16px); padding: 3px; transform: translate(-50%, calc(-100% - var(--vw-toolbar-offset, 8px))); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 3px 10px rgb(15 35 50 / 16%); font-size: 12px; }
+.vw-node-toolbar.vw-is-below, .vw-edge-toolbar.vw-is-below { transform: translate(-50%, var(--vw-toolbar-offset, 8px)); }
+.vw-network-group .vw-group-handle { fill: transparent; stroke: none; pointer-events: all; outline: none; }
+.vw-network-group .vw-group-handle[role="button"] { cursor: grab; }
+.vw-network-group .vw-group-handle:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 2px; }
 
 .vw-gantt-corner.vw-column-group, .vw-gantt-row-label.vw-column-group { padding: 0; display: flex; flex-direction: row; justify-content: flex-start; gap: 0; }
 .vw-column-group > .vw-name-column { flex: 0 0 var(--vw-row-label-width); width: var(--vw-row-label-width); padding: 0 9px; display: flex; align-items: center; }
@@ -360,8 +371,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-links path.vw-is-highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
   .vw-gantt-links path.vw-is-selected { stroke: Highlight; stroke-width: 3.5px; }
   .vw-gantt-lag-layer .vw-gantt-lag { forced-color-adjust: none; fill: CanvasText; stroke: Canvas; }
-  .vw-network-node rect, .vw-network-node .vw-node-shape, .vw-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
-  .vw-network-node text, .vw-network-group text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
+  .vw-network-node rect, .vw-network-node .vw-node-shape, .vw-network-group:where(:not(.vw-has-slot)) rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-network-node text, .vw-network-group:where(:not(.vw-has-slot)) text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
   .vw-network-node.vw-is-related rect, .vw-network-node.vw-is-related .vw-node-shape { stroke: Highlight; stroke-width: 2.5px; }
   .vw-network-node:hover rect, .vw-network-node:focus-visible rect, .vw-network-node:hover .vw-node-shape, .vw-network-node:focus-visible .vw-node-shape { stroke: Highlight; stroke-width: 4px; }
   .vw-network-node.vw-is-selected rect, .vw-network-node.vw-is-selected .vw-node-shape { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
@@ -401,7 +412,9 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-edge-hit.vw-is-selected { stroke: Highlight; stroke-opacity: .6; }
   .vw-edge-hit:focus-visible, .vw-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
   .vw-edge-selected .vw-network-edge { stroke: Highlight; stroke-width: 3.5px; }
-  .vw-network-tooltip { border-color: CanvasText; box-shadow: none; }
+  .vw-network-tooltip, .vw-node-toolbar, .vw-edge-toolbar, .vw-label-editor { border-color: CanvasText; box-shadow: none; }
+  .vw-lasso-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .2; stroke: Highlight; }
+  .vw-network-group .vw-group-handle:focus-visible { forced-color-adjust: none; stroke: Highlight; }
   .vw-connection-preview, .vw-gantt-link-preview path { stroke: Highlight; }
   .vw-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
   .vw-minimap rect { fill: CanvasText; }
@@ -445,7 +458,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 @media print {
   .vw-network, .vw-gantt, .vw-network *, .vw-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vw-zoom-tools, .vw-gantt-zoom, .vw-gantt-presets, .vw-minimap, .vw-bar-handle, .vw-gantt-link-handle, .vw-gantt-reconnect-handle,
-  .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
+  .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-lasso-selection, .vw-node-toolbar, .vw-edge-toolbar, .vw-label-editor, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
   .vw-network-tooltip, .vw-gantt-progress-handle, .vw-gantt-tooltip, .vw-gantt-create-button, .vw-gantt-create-preview, .vw-gantt-cascade-preview, .vw-guides,
   .vw-group-toggle, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle, .vw-row-move-handle, .vw-gantt-row-drop, .vw-column-resize { display: none !important; }
   .vw-gantt-toolbar { display: none; }

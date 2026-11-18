@@ -6487,3 +6487,242 @@ test('the demo falls back to layered for the circular and concentric layouts of 
   await expect(layout.locator('option', { hasText: 'circular' })).toBeEnabled()
   expect(errors).toEqual([])
 })
+
+test('inline label editing proposes node and edge labels, validates them and returns focus', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  await page.getByLabel('Edit labels').check()
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+  await split.dblclick()
+  const editor = page.getByRole('textbox', { name: 'Edit label of Split', exact: true })
+  await expect(editor).toBeFocused()
+  await expect(editor).toHaveValue('Split')
+  // The editor covers the node: same start edge, centred vertically.
+  const [e, n] = [(await editor.boundingBox())!, (await split.boundingBox())!]
+  expect(Math.abs(e.x - n.x)).toBeLessThan(2)
+  expect(Math.abs(e.y + e.height / 2 - (n.y + n.height / 2))).toBeLessThan(2)
+  await editor.fill('Split A')
+  await editor.press('Enter')
+  const renamed = page.getByRole('button', { name: 'Split A Operation 101', exact: true })
+  await expect(status('Renamed node split to Split A.')).toBeVisible()
+  await expect(renamed).toBeFocused()
+  await expect(editor).toHaveCount(0)
+
+  // F2 opens the editor from the keyboard; the validator rejects an empty label and the label is kept.
+  await renamed.press('F2')
+  const again = page.getByRole('textbox', { name: 'Edit label of Split A', exact: true })
+  await expect(again).toBeFocused()
+  await again.fill('   ')
+  await again.press('Enter')
+  await expect(status('A label cannot be empty.')).toBeVisible()
+  await expect(renamed).toBeVisible()
+  // Escape discards the text; Enter on the node still selects it.
+  await renamed.press('F2')
+  await again.fill('Discarded')
+  await again.press('Escape')
+  await expect(again).toHaveCount(0)
+  await expect(renamed).toBeFocused()
+  await renamed.press('Enter')
+  await expect(renamed).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('textbox', { name: /^Edit label of/ })).toHaveCount(0)
+
+  // An edge label: F2 on the focused edge, and leaving the editor proposes the text.
+  await page.getByRole('button', { name: 'Select edge 72', exact: true }).press('F2')
+  const edgeEditor = page.getByRole('textbox', { name: 'Edit label of 72', exact: true })
+  await expect(edgeEditor).toHaveValue('72')
+  await edgeEditor.fill('72 units')
+  await page.getByRole('heading', { name: 'Network', exact: true }).click()
+  await expect(status('Renamed edge s1 to 72 units.')).toBeVisible()
+  await expect(page.locator('.vw-edge-label', { hasText: '72 units' })).toBeVisible()
+
+  // A change of the source data while the editor is open cancels it without a proposal.
+  const raw = page.getByRole('button', { name: 'Material A1 120 units', exact: true })
+  await raw.dblclick()
+  const rawEditor = page.getByRole('textbox', { name: 'Edit label of Material A1', exact: true })
+  await rawEditor.fill('Stale')
+  await page.getByRole('button', { name: 'Undo', exact: true }).dispatchEvent('click')
+  await expect(rawEditor).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Select edge 72', exact: true })).toBeVisible()
+  await expect(raw).toBeVisible()
+  await expect(raw).toBeFocused()
+  await expect(page.getByRole('button', { name: /^Stale/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the label editor follows the camera in right-to-left graphs and a data refresh cancels it', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await openNetworkFixture(page, '?nodes=3&labels=1&dir=rtl')
+  const node = chainNode(page, 'N0001')
+  const lastLabel = page.getByRole('status', { name: 'Last label', exact: true })
+  await page.evaluate(() => (window as any).__vw.graph().zoom(1.3))
+  await node.dblclick()
+  const editor = page.getByRole('textbox', { name: 'Edit label of N0001', exact: true })
+  await expect(editor).toBeFocused()
+  // Right to left: the editor starts at the node's right edge.
+  const placed = async () => {
+    const [e, n] = [(await editor.boundingBox())!, (await node.boundingBox())!]
+    return { end: e.x + e.width - (n.x + n.width), middle: e.y + e.height / 2 - (n.y + n.height / 2) }
+  }
+  let place = await placed()
+  expect(Math.abs(place.end)).toBeLessThan(2)
+  expect(Math.abs(place.middle)).toBeLessThan(2)
+  await expect(editor).toHaveAttribute('dir', 'auto')
+  // Zooming keeps the editor open and on the node.
+  await page.evaluate(() => (window as any).__vw.graph().zoom(0.7))
+  await expect(editor).toBeFocused()
+  place = await placed()
+  expect(Math.abs(place.end)).toBeLessThan(2)
+  expect(Math.abs(place.middle)).toBeLessThan(2)
+  // New source positions cancel the edit; focus returns to the node.
+  await editor.fill('Renamed')
+  await page.evaluate(() => (window as any).__vw.refresh())
+  await expect(editor).toHaveCount(0)
+  await expect(node).toBeFocused()
+  await expect(lastLabel).toHaveText('')
+  await node.press('F2')
+  await editor.fill('Renamed')
+  await editor.press('Enter')
+  await expect(lastLabel).toHaveText(JSON.stringify({ kind: 'node', id: 'N0001', before: 'N0001', after: 'Renamed' }))
+  // The component does not change the label itself.
+  await expect(node).toBeFocused()
+  // An unchanged label proposes nothing.
+  await node.press('F2')
+  await editor.press('Enter')
+  await expect(lastLabel).toHaveText(JSON.stringify({ kind: 'node', id: 'N0001', before: 'N0001', after: 'Renamed' }))
+  expect(errors).toEqual([])
+})
+
+test('lasso selection selects the nodes whose centre the outline encloses, keeps modifiers and cancels on Escape', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  await page.getByLabel('Lasso selection').check()
+  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
+  const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+  type Box = { x: number; y: number; width: number; height: number }
+  // A diamond around a set of boxes, drawn from its bottom corner.
+  async function lasso(boxes: Box[], options: { modifiers?: string[]; cancel?: boolean } = {}) {
+    const left = Math.min(...boxes.map(box => box.x)), right = Math.max(...boxes.map(box => box.x + box.width))
+    const top = Math.min(...boxes.map(box => box.y)), bottom = Math.max(...boxes.map(box => box.y + box.height))
+    const cx = (left + right) / 2, cy = (top + bottom) / 2
+    const corners = [[cx, bottom + 30], [right + 40, cy], [cx, top - 30], [left - 40, cy], [cx - 4, bottom + 26]]
+    for (const key of ['Shift', ...options.modifiers ?? []]) await page.keyboard.down(key)
+    await page.mouse.move(corners[0]![0]!, corners[0]![1]!)
+    await page.mouse.down()
+    for (const [x, y] of corners.slice(1)) await page.mouse.move(x!, y!, { steps: 6 })
+    await expect(page.locator('.vw-lasso-selection')).toBeVisible()
+    await expect(page.locator('.vw-box-selection')).toHaveCount(0)
+    if (options.cancel) await page.keyboard.press('Escape')
+    await page.mouse.up()
+    for (const key of [...options.modifiers ?? [], 'Shift'].reverse()) await page.keyboard.up(key)
+    await expect(page.locator('.vw-lasso-selection')).toHaveCount(0)
+  }
+  const lotBoxes = [(await lots.first().boundingBox())!, (await lots.last().boundingBox())!]
+  await lasso(lotBoxes)
+  await expect(lots.first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(lots.last()).toHaveAttribute('aria-pressed', 'true')
+  await expect(split).toHaveAttribute('aria-pressed', 'false')
+  // Escape discards the outline and keeps the selection.
+  const splitBox = (await split.boundingBox())!
+  await lasso([splitBox], { cancel: true })
+  await expect(lots.first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(split).toHaveAttribute('aria-pressed', 'false')
+  // Ctrl (Meta) adds to the previous selection, as with box selection.
+  await lasso([splitBox], { modifiers: ['Control'] })
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(lots.first()).toHaveAttribute('aria-pressed', 'true')
+  // A plain lasso replaces it; the selection moves as one batch.
+  await lasso([splitBox])
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(lots.first()).toHaveAttribute('aria-pressed', 'false')
+  // Turning the lasso off brings back box selection.
+  await page.getByLabel('Lasso selection').uncheck()
+  await page.keyboard.down('Shift')
+  await page.mouse.move(lotBoxes[0]!.x - 9, lotBoxes[0]!.y - 12)
+  await page.mouse.down()
+  await page.mouse.move(lotBoxes[1]!.x + lotBoxes[1]!.width + 8, lotBoxes[1]!.y + lotBoxes[1]!.height + 7, { steps: 8 })
+  await expect(page.locator('.vw-box-selection')).toBeVisible()
+  await expect(page.locator('.vw-lasso-selection')).toHaveCount(0)
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+  await expect(lots.last()).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('toolbar slots follow the selected node and edge, and group and minimap slots restyle the graph', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  await page.getByLabel('Item toolbars').check()
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
+  const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
+  const toolbar = page.getByRole('group', { name: 'Node actions Split', exact: true })
+  await expect(toolbar).toHaveCount(0)
+  await split.click()
+  await expect(toolbar).toBeVisible()
+  const placed = async () => {
+    const [t, n] = [(await toolbar.boundingBox())!, (await split.boundingBox())!]
+    return { gap: n.y - (t.y + t.height), center: t.x + t.width / 2 - (n.x + n.width / 2) }
+  }
+  let place = await placed()
+  expect(place.gap).toBeGreaterThan(4)
+  expect(Math.abs(place.center)).toBeLessThan(2)
+  const fontSize = await toolbar.getByRole('button', { name: 'Frame', exact: true }).evaluate(element => getComputedStyle(element).fontSize)
+  // Zooming moves the node; the toolbar follows it at the same text size.
+  await page.locator('.vw-zoom-tools').getByRole('button', { name: 'Zoom out', exact: true }).click()
+  place = await placed()
+  expect(place.gap).toBeGreaterThan(4)
+  expect(Math.abs(place.center)).toBeLessThan(2)
+  expect(await toolbar.getByRole('button', { name: 'Frame', exact: true }).evaluate(element => getComputedStyle(element).fontSize)).toBe(fontSize)
+  // Two selected nodes show no toolbar.
+  await finish.click({ modifiers: ['Shift'] })
+  await expect(page.getByRole('group', { name: /^Node actions/ })).toHaveCount(0)
+  await split.click()
+  await toolbar.getByRole('button', { name: 'Remove', exact: true }).click()
+  await expect(status('Deleted 1 node')).toBeVisible()
+  await expect(split).toHaveCount(0)
+  await expect(toolbar).toHaveCount(0)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(split).toBeVisible()
+
+  // The edge toolbar follows the selected edge.
+  const edges = page.locator('.vw-network-edge')
+  const count = await edges.count()
+  await page.getByRole('button', { name: 'Select edge 72', exact: true }).press('Enter')
+  const edgeToolbar = page.getByRole('group', { name: 'Edge actions 72', exact: true })
+  await expect(edgeToolbar).toBeVisible()
+  await edgeToolbar.getByRole('button', { name: 'Remove', exact: true }).click()
+  await expect(edges).toHaveCount(count - 1)
+  await expect(edgeToolbar).toHaveCount(0)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(edges).toHaveCount(count)
+
+  // The group slot draws the frame; the move handle keeps its name and keys.
+  await expect(page.locator('.vw-network-group.vw-has-slot .demo-group-frame')).toHaveCount(1)
+  await expect(page.locator('.demo-group-label')).toHaveText('Intermediate lots')
+  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
+  const before = await lots.first().getAttribute('transform')
+  await page.getByRole('button', { name: 'Move group Intermediate lots', exact: true }).press('ArrowDown')
+  await expect(lots.first()).not.toHaveAttribute('transform', before!)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(lots.first()).toHaveAttribute('transform', before!)
+  // The minimap draws its nodes through the minimap-node slot and still navigates.
+  await split.click()
+  await expect(page.locator('.vw-minimap .demo-minimap-node')).toHaveCount(6)
+  await expect(page.locator('.vw-minimap .demo-minimap-node.is-selected')).toHaveCount(1)
+  const camera = await page.locator('.vw-network-stage > g').first().getAttribute('transform')
+  await page.getByRole('button', { name: 'Navigate graph overview' }).click({ position: { x: 20, y: 30 } })
+  await expect(page.locator('.vw-network-stage > g').first()).not.toHaveAttribute('transform', camera!)
+  // Without the slots the default overlay returns.
+  await page.getByLabel('Item toolbars').uncheck()
+  await expect(page.locator('.vw-has-slot')).toHaveCount(0)
+  await expect(page.locator('.vw-minimap .demo-minimap-node')).toHaveCount(0)
+  expect(errors).toEqual([])
+})

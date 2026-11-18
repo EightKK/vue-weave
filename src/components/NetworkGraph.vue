@@ -5,6 +5,10 @@ import type { GraphBox } from '../core/graph.js'
 import type { NetworkNode, GraphLabels, GraphLayoutFunction, GraphViewport, NetworkFocusOptions, NetworkGroup, NetworkNodeSlot, NetworkEdgeSlot } from '../core/types.js'
 import type { GraphContextMenu, GraphContextMenuTarget, GraphFitOptions, GraphGesture, GraphGestureEnd, GraphGestureKind, NetworkTooltipSlot } from '../core/types.js'
 import type { GraphClipboardSelection, GraphPaste } from '../core/types.js'
+import type {
+  GraphLabelEdit, GraphSelectionMode, NetworkEdgeToolbarSlot, NetworkGroupSlot, NetworkMinimapNodeSlot, NetworkNodeToolbarSlot,
+} from '../core/types.js'
+import { graphNodesInPolygon } from '../core/graphLasso.js'
 import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphLayoutRoute, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
@@ -138,6 +142,12 @@ const props = withDefaults(defineProps<{
   routingPolicy?: GraphRoutingPolicy
   /** Routes orthogonal edges without waypoints around the node boxes: `true` for an 8-unit clearance, or `{ clearance, bendPenalty }`. Opt-in. Default: false. */
   avoidNodes?: boolean | GraphObstacleAvoidance
+  /** Lets a double-click or F2 on a node or edge open an in-place editor for its label, proposed through `label-edit`. Gives edges their focusable hit area. Opt-in. Default: false. */
+  editableLabels?: boolean
+  /** Synchronous check of a label proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
+  validateLabelEdit?: (change: GraphLabelEdit) => boolean | string | void
+  /** Shape of the `boxSelect` drag: `box` (a rectangle) or `lasso` (a free-form outline that selects the nodes whose centre it encloses). Default: `box`. */
+  selectionMode?: GraphSelectionMode
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -196,12 +206,24 @@ const emit = defineEmits<{
   'gesture-start': [gesture: GraphGesture]
   /** The gesture ended, exactly once per `gesture-start`, after any proposal; carries its kind, source and whether it was committed or cancelled. */
   'gesture-end': [gesture: GraphGestureEnd]
+  /** Proposal to change a node or edge label; carries `kind`, `id`, `before` and `after`. The parent sets the label. Only with `editableLabels`. */
+  'label-edit': [change: GraphLabelEdit]
+  /** A label proposal was rejected by `validateLabelEdit`; carries the proposal and the reason. */
+  'label-edit-rejected': [change: GraphLabelEdit, reason: string]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot<ShownNode>): unknown
   edge(props: NetworkEdgeSlot<ShownEdge>): unknown
   empty(): unknown
   tooltip?(props: NetworkTooltipSlot<ShownNode, ShownEdge>): unknown
+  /** HTML anchored above the only selected node; it keeps its size at every zoom level. */
+  'node-toolbar'?(props: NetworkNodeToolbarSlot<ShownNode>): unknown
+  /** HTML anchored above the selected edge's label point; it keeps its size at every zoom level. */
+  'edge-toolbar'?(props: NetworkEdgeToolbarSlot<ShownEdge>): unknown
+  /** SVG that replaces a group's frame and label, in chart coordinates. */
+  group?(props: NetworkGroupSlot<G>): unknown
+  /** SVG that replaces a node's rectangle in the minimap, in chart coordinates. */
+  'minimap-node'?(props: NetworkMinimapNodeSlot<ShownNode>): unknown
 }>()
 // Plain values compared one level deep: equal primitives, or arrays with identical items.
 function sameValue(a: unknown, b: unknown) {
@@ -232,7 +254,9 @@ const messages = computed<GraphLabels>(() => ({
   deleteRejected: 'This deletion was rejected.', collapseGroup: 'Collapse group', expandGroup: 'Expand group',
   collapsedNode: 'node', collapsedNodes: 'nodes', moveWaypoint: 'Move waypoint', addWaypoint: 'Add waypoint',
   reshapeRejected: 'This edge change was rejected.', resizeNode: 'Resize', topLeft: 'top left', topRight: 'top right',
-  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.', ...labels.value,
+  bottomLeft: 'bottom left', bottomRight: 'bottom right', resizeRejected: 'This resize was rejected.',
+  editLabel: 'Edit label of', labelRejected: 'This label change was rejected.', nodeToolbar: 'Node actions', edgeToolbar: 'Edge actions',
+  ...labels.value,
 }))
 // Tests that read the props once, for the loops over every node and edge.
 function selectionTest() {
@@ -987,8 +1011,15 @@ function fitCamera(overview = false) {
 const camera = ref(fitCamera())
 const fitMode = ref<'auto' | 'overview' | 'manual'>('auto')
 const isPanning = ref(false)
-let pan: { pointerId: number; x: number; y: number; cameraX: number; cameraY: number; box: boolean } | undefined
+let pan: { pointerId: number; x: number; y: number; cameraX: number; cameraY: number; box: boolean; lasso?: boolean } | undefined
 const boxPreview = ref<{ x: number; y: number; width: number; height: number }>()
+// The outline of a lasso selection in chart coordinates (selectionMode 'lasso').
+const lassoPreview = shallowRef<GraphPoint[]>()
+const lassoMode = computed(() => {
+  const mode = props.selectionMode ?? 'box'
+  if (mode !== 'box' && mode !== 'lasso') throw new RangeError('Unknown selection mode: ' + String(mode))
+  return mode === 'lasso'
+})
 let observer: ResizeObserver | undefined
 
 // Gesture notification. A pointer gesture (drag, resize, reshape, box selection, pan or pinch) and an armed connection
@@ -1070,6 +1101,7 @@ function startPan(event: PointerEvent) {
     cameraY: camera.value.y,
     box: Boolean(props.boxSelect && event.shiftKey),
   }
+  if (pan.box && lassoMode.value) pan.lasso = true
   isPanning.value = !pan.box
   svg.value.setPointerCapture(event.pointerId)
   if (pan.box) startAutoPan(event)
@@ -1514,6 +1546,7 @@ function cancelInteraction() {
   const previousPan = pan
   pan = undefined
   boxPreview.value = undefined
+  lassoPreview.value = undefined
   isPanning.value = false
   if (previousPan && svg.value?.hasPointerCapture(previousPan.pointerId)) svg.value.releasePointerCapture(previousPan.pointerId)
   endGesture('pointer', 'cancelled')
@@ -1545,11 +1578,25 @@ function updateBox(clientX: number, clientY: number) {
   const a = worldPoint(pan.x + camera.value.x - pan.cameraX, pan.y + camera.value.y - pan.cameraY), b = worldPoint(clientX, clientY)
   boxPreview.value = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) }
 }
+// A lasso keeps every pointer position at least 3 screen pixels from the previous one, in chart coordinates, so the
+// outline stays put when auto-pan moves the camera.
+function updateLasso(clientX: number, clientY: number) {
+  if (!pan) return
+  const points = lassoPreview.value ?? [worldPoint(pan.x + camera.value.x - pan.cameraX, pan.y + camera.value.y - pan.cameraY)]
+  const next = worldPoint(clientX, clientY), last = points[points.length - 1]!
+  if (lassoPreview.value && Math.hypot(next.x - last.x, next.y - last.y) * camera.value.scale < 3) return
+  lassoPreview.value = [...points, next]
+}
+function updateSelectionArea(clientX: number, clientY: number) {
+  if (pan?.lasso) updateLasso(clientX, clientY)
+  else updateBox(clientX, clientY)
+}
 function movePan(event: PointerEvent) {
   if (!pan || pan.pointerId !== event.pointerId) return
   if (pan.box) {
     gesturePointer = { x: event.clientX, y: event.clientY }
-    updateBox(event.clientX, event.clientY)
+    if (pan.lasso && !lassoPreview.value && Math.hypot(event.clientX - pan.x, event.clientY - pan.y) < 4) return
+    updateSelectionArea(event.clientX, event.clientY)
     return
   }
   fitMode.value = 'manual'
@@ -1564,15 +1611,22 @@ function stopPan(event: PointerEvent) {
   if (pan?.pointerId !== event.pointerId) return
   if (pan.box && event.type === 'pointerup' && Math.hypot(event.clientX - pan.x, event.clientY - pan.y) >= 4) {
     movePan(event)
-    const area = boxPreview.value!
     const selection = new Set(event.ctrlKey || event.metaKey ? props.selectedIds : [])
-    for (const [id, box] of layout.value.boxes) {
-      if (box.x < area.x + area.width && box.x + box.width > area.x && box.y < area.y + area.height && box.y + box.height > area.y) selection.add(id)
+    if (pan.lasso) {
+      // The release point closes the outline even when it is closer than the sampling distance.
+      const outline = [...lassoPreview.value ?? [], worldPoint(event.clientX, event.clientY)]
+      for (const id of graphNodesInPolygon(layout.value.boxes, outline)) selection.add(id)
+    } else {
+      const area = boxPreview.value!
+      for (const [id, box] of layout.value.boxes) {
+        if (box.x < area.x + area.width && box.x + box.width > area.x && box.y < area.y + area.height && box.y + box.height > area.y) selection.add(id)
+      }
     }
     emit('update:selectedIds', selection)
     if (props.edgesSelectable && !event.ctrlKey && !event.metaKey) clearEdgeSelection()
   }
   boxPreview.value = undefined
+  lassoPreview.value = undefined
   pan = undefined
   isPanning.value = false
   endGesture('pointer', event.type === 'pointerup' ? 'committed' : 'cancelled')
@@ -1609,7 +1663,7 @@ function autoPanStep() {
   const point = gesturePointer
   // A gesture that has not moved yet waits; a finished or cancelled one ends the loop.
   const moving = nodeDrag ? Boolean(dragPreview.value) : connectionDrag ? Boolean(connectionPoint.value)
-    : pan?.box ? Boolean(boxPreview.value) : undefined
+    : pan?.box ? Boolean(boxPreview.value || lassoPreview.value) : undefined
   if (moving === undefined || pinch || !props.autoPan || !svg.value || !point) return
   if (moving) {
     const rect = svg.value.getBoundingClientRect()
@@ -1628,7 +1682,7 @@ function autoPanStep() {
       camera.value = { x: x + stepX, y: y + stepY, scale }
       if (nodeDrag) updateNodePreview(point.x, point.y)
       else if (connectionDrag) connectionPoint.value = worldPoint(point.x, point.y)
-      else updateBox(point.x, point.y)
+      else updateSelectionArea(point.x, point.y)
     }
   }
   autoPanFrame = requestAnimationFrame(autoPanStep)
@@ -1903,6 +1957,121 @@ function commitHandle(drag: HandleDrag, resized: typeof resizePreview.value, res
   }
 }
 
+// Inline label editing (editableLabels). The editor is an HTML input placed over the label: it follows the camera, and
+// a change of the source data or the layout cancels it. Enter and blur propose the text, Escape discards it.
+type LabelEditor = { kind: 'node' | 'edge'; id: string; before: string; name: string }
+const labelEditor = shallowRef<LabelEditor>()
+const labelDraft = ref('')
+const labelInput = ref<HTMLInputElement>()
+function openLabelEditor(kind: LabelEditor['kind'], id: string, event: Event) {
+  if (!props.editableLabels || labelEditor.value || gestureInFlight()) return
+  // A collapsed group's proxy and an edge merged from several edges stand for more than one label.
+  const view = collapsedView.value
+  if (kind === 'node' ? view?.proxies.has(id) : (view?.mergedEdges.get(id)?.length ?? 0) > 1) return
+  const node = kind === 'node' ? nodesById.value.get(id) : undefined, edge = kind === 'edge' ? edgesById.value.get(id) : undefined
+  if (!node && !edge) return
+  event.preventDefault()
+  hideTooltip()
+  const before = node ? node.label : edge!.label ?? ''
+  labelEditor.value = { kind, id, before, name: messages.value.editLabel + ' ' + (node ? node.label : edge!.label ?? edge!.id) }
+  labelDraft.value = before
+  void nextTick(() => {
+    labelInput.value?.focus({ preventScroll: true })
+    labelInput.value?.select()
+  })
+}
+function focusLabelOwner(editor: LabelEditor) {
+  if (editor.kind === 'edge') return focusEdge(editor.id)
+  const element = [...svg.value?.querySelectorAll<SVGElement>('.vw-network-node[data-vw-node]') ?? []]
+    .find(item => item.getAttribute('data-vw-node') === editor.id)
+  ;(element ?? svg.value)?.focus({ preventScroll: true })
+}
+function closeLabelEditor(commit: boolean, restoreFocus: boolean) {
+  const editor = labelEditor.value
+  if (!editor) return
+  labelEditor.value = undefined
+  if (restoreFocus) void nextTick(() => focusLabelOwner(editor))
+  const after = labelDraft.value
+  if (!commit || after === editor.before) return
+  const change: GraphLabelEdit = { kind: editor.kind, id: editor.id, before: editor.before, after }
+  notice.value = ''
+  const result = props.validateLabelEdit?.(change)
+  if (result === false || typeof result === 'string') {
+    notice.value = typeof result === 'string' ? result : messages.value.labelRejected!
+    emit('label-edit-rejected', change, notice.value)
+    return
+  }
+  emit('label-edit', change)
+}
+function labelKeydown(event: KeyboardEvent) {
+  if (event.isComposing || (event.key !== 'Enter' && event.key !== 'Escape')) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeLabelEditor(event.key === 'Enter', true)
+}
+// The label anchor of an edge: its label position, else the middle between the ends of its path.
+function edgeAnchor(id: string): GraphPoint | undefined {
+  const point = layout.value.edgeLabels.get(id)
+  if (point) return point
+  const path = layout.value.paths.get(id)
+  if (path === undefined) return undefined
+  try {
+    const ends = graphPathEndpoints(path)
+    return ends && { x: (ends.start.x + ends.end.x) / 2, y: (ends.start.y + ends.end.y) / 2 }
+  } catch {
+    return undefined
+  }
+}
+const labelEditorView = computed(() => {
+  const editor = labelEditor.value
+  if (!editor) return undefined
+  const { x, y, scale } = camera.value
+  if (editor.kind === 'node') {
+    const box = layout.value.boxes.get(editor.id)
+    if (!box) return undefined
+    // At least 120 pixels wide so the text stays editable when zoomed out; it grows from the text start.
+    const width = Math.max(120, box.width * scale)
+    const left = rtl.value ? x + (box.x + box.width) * scale - width : x + box.x * scale
+    return { name: editor.name, edge: false, style: { left: left + 'px', top: y + (box.y + box.height / 2) * scale + 'px', width: width + 'px' } }
+  }
+  const point = edgeAnchor(editor.id)
+  if (!point) return undefined
+  return { name: editor.name, edge: true, style: { left: x + point.x * scale + 'px', top: y + point.y * scale + 'px' } }
+})
+
+// Toolbar slots: HTML anchored above the only selected node and the selected edge, hidden while the item is outside
+// the stage. They are placed in screen pixels, so their content keeps its size at every zoom level.
+function toolbarPlace(left: number, right: number, top: number, bottom: number) {
+  const { width, height } = viewport.value
+  if (right < 0 || left > width || bottom < 0 || top > height) return undefined
+  // Below the item when there is too little room above it.
+  const below = top < 44
+  return { below, style: { left: Math.min(width, Math.max(0, (left + right) / 2)) + 'px', top: (below ? bottom : top) + 'px' } }
+}
+const nodeToolbarView = computed(() => {
+  const ids = props.selectedIds ? [...props.selectedIds] : props.selectedId === undefined ? [] : [props.selectedId]
+  const node = ids.length === 1 ? nodesById.value.get(ids[0]!) : undefined
+  const box = node && layout.value.boxes.get(node.id)
+  if (!node || !box) return undefined
+  const { x, y, scale } = camera.value
+  const place = toolbarPlace(x + box.x * scale, x + (box.x + box.width) * scale, y + box.y * scale, y + (box.y + box.height) * scale)
+  return place && { ...place, name: messages.value.nodeToolbar + ' ' + node.label, slot: { node, box, scale } }
+})
+const edgeToolbarView = computed(() => {
+  let id: string | undefined
+  if (props.edgesSelectable) {
+    const list = selectedEdgeList()
+    id = list.length === 1 ? list[0] : undefined
+  } else if (props.reconnectable || props.editableEdges || props.editableLabels) id = currentEdgeId.value
+  const edge = id === undefined ? undefined : edgesById.value.get(id)
+  const point = edge && edgeAnchor(edge.id)
+  if (!edge || !point) return undefined
+  const { x, y, scale } = camera.value
+  const left = x + point.x * scale, top = y + point.y * scale
+  const place = toolbarPlace(left, left, top - 6, top + 6)
+  return place && { ...place, name: messages.value.edgeToolbar + ' ' + (edge.label ?? edge.id), slot: { edge, point: { x: point.x, y: point.y }, scale } }
+})
+
 // Level of detail. Below the threshold scale the default renderer hides node details and edge labels (CSS).
 const lodLow = computed(() => props.lodThreshold !== undefined && camera.value.scale < props.lodThreshold)
 
@@ -1996,6 +2165,8 @@ const visible = computed(() => {
   if (reshapeId.value !== undefined) edges.add(reshapeId.value)
   if (draft.value) nodes.add(draft.value.fixed.node)
   if (focused.value?.node) nodes.add(focused.value.node)
+  const editing = labelEditor.value
+  if (editing) (editing.kind === 'node' ? nodes : edges).add(editing.id)
   for (const id of [currentEdgeId.value, draft.value?.edge?.id, focused.value?.edge]) if (id) edges.add(id)
   if (props.edgesSelectable) for (const id of props.selectedEdgeIds ?? []) edges.add(id)
   return cullGraphElements(bounds, view, { nodes, edges })
@@ -2166,7 +2337,7 @@ function requestContextMenu(target: GraphContextMenuTarget, clientX: number, cli
 }
 function openContextMenu(event: MouseEvent) {
   // A menu opened mid-gesture (macOS Control-click) can swallow pointerup, so the gesture ends here without a proposal.
-  const dragging = Boolean(dragPreview.value || connectionPoint.value || boxPreview.value || pinch)
+  const dragging = Boolean(dragPreview.value || connectionPoint.value || boxPreview.value || lassoPreview.value || pinch)
   if (nodeDrag || connectionDrag || handleDrag || pinch || pan) cancelInteraction()
   if (!props.contextMenu || editable(event.target)) return
   event.preventDefault()
@@ -2282,6 +2453,7 @@ const editingOptions = computed(() => {
   const lod = props.lodThreshold
   if (lod !== undefined && (!Number.isFinite(lod) || lod <= 0 || lod > 3)) throw new RangeError('lodThreshold must be a finite scale greater than 0 and at most 3')
   if (props.resizable) void minimumSize.value
+  void lassoMode.value
   return { gap }
 })
 const patternId = marker + '-background'
@@ -2310,30 +2482,41 @@ watch(shownGroups, (list) => {
   const ids = new Set(list.map(group => group.id))
   for (const id of [...frameRefs.keys()]) if (!ids.has(id)) frameRefs.delete(id)
 }, { immediate: true })
-type GroupLayerProps = { frame: ShallowRef<ShownGroup>; rtl: boolean; draggable: boolean; name?: string }
-const GroupLayer: FunctionalComponent<GroupLayerProps> = ({ frame, rtl, draggable, name }) => {
+type GroupLayerProps = { frame: ShallowRef<ShownGroup>; rtl: boolean; draggable: boolean; name?: string; slot?: unknown }
+const GroupLayer: FunctionalComponent<GroupLayerProps> = ({ frame, rtl, draggable, name, slot }, { slots }) => {
   const group = frame.value
+  // The label is the move handle. With the group slot, which draws the frame and label itself, a transparent strip
+  // over the top of the frame takes its place.
+  const handle = {
+    role: draggable ? 'button' : undefined, 'data-vw-group': group.id,
+    tabindex: draggable ? 0 : undefined, 'aria-label': draggable ? name : undefined,
+    onPointerdown: withModifiers((event: Event) => startNodeDrag(event as PointerEvent, group.members, undefined, group.id), ['stop']),
+    onClick: (event: MouseEvent) => activateGroup(group.id, event),
+    onKeydown: [
+      (event: KeyboardEvent) => moveWithKeys(event, group.members),
+      withKeys(withModifiers((event: Event) => activateGroup(group.id, event), ['self', 'prevent']), ['enter']),
+      withKeys(withModifiers((event: Event) => activateGroup(group.id, event), ['self', 'prevent']), ['space']),
+    ],
+  }
+  const custom = Boolean(slot && slots.group)
   return h('g', {
-    class: 'vw-network-group', 'aria-hidden': undefined,
+    class: custom ? 'vw-network-group vw-has-slot' : 'vw-network-group', 'aria-hidden': undefined,
     onPointerenter: () => emitTarget('target-enter', groupTarget(group.id), 'pointer'),
     onPointerleave: () => emitTarget('target-leave', groupTarget(group.id), 'pointer'),
-  }, [
+  }, custom ? [
+    renderSlot(slots, 'group', {
+      group: viewGroupsById.value.get(group.id), box: { x: group.x, y: group.y, width: group.width, height: group.height }, depth: group.depth,
+    }),
+    h('rect', { class: 'vw-group-handle', x: group.x, y: group.y, width: group.width, height: Math.min(group.height, 20), ...handle }),
+  ] : [
     h('rect', { x: group.x, y: group.y, width: group.width, height: group.height, rx: '10' }),
-    h('text', {
-      x: rtl ? group.x + group.width - 8 : group.x + 8, y: group.y + 15, role: draggable ? 'button' : undefined, 'data-vw-group': group.id,
-      tabindex: draggable ? 0 : undefined, 'aria-label': draggable ? name : undefined,
-      onPointerdown: withModifiers((event: Event) => startNodeDrag(event as PointerEvent, group.members, undefined, group.id), ['stop']),
-      onClick: (event: MouseEvent) => activateGroup(group.id, event),
-      onKeydown: [
-        (event: KeyboardEvent) => moveWithKeys(event, group.members),
-        withKeys(withModifiers((event: Event) => activateGroup(group.id, event), ['self', 'prevent']), ['enter']),
-        withKeys(withModifiers((event: Event) => activateGroup(group.id, event), ['self', 'prevent']), ['space']),
-      ],
-    }, toDisplayString(group.label)),
+    h('text', { x: rtl ? group.x + group.width - 8 : group.x + 8, y: group.y + 15, ...handle }, toDisplayString(group.label)),
   ])
 }
-GroupLayer.props = ['frame', 'rtl', 'draggable', 'name']
-const GroupLayers: FunctionalComponent = () => {
+GroupLayer.props = ['frame', 'rtl', 'draggable', 'name', 'slot']
+// The groups the group slot receives: the shown groups as given (or as collapsing leaves them), by ID.
+const viewGroupsById = computed(() => new Map((viewGroups.value ?? []).map(group => [group.id, group as G])))
+const GroupLayers: FunctionalComponent<{ groupSlot?: typeof slots.group }> = ({ groupSlot }) => {
   const layers: VNode[] = []
   const area = pattern.value
   if (area) {
@@ -2352,10 +2535,12 @@ const GroupLayers: FunctionalComponent = () => {
     if (shown && !shown.has(group.id)) continue
     layers.push(h(GroupLayer, {
       key: 'group:' + group.id, frame: frameRefs.get(group.id)!, rtl: right, draggable, name: draggable ? groupName(group) : undefined,
-    }))
+      slot: groupSlot,
+    }, groupSlot ? { group: groupSlot, $stable: true } : undefined))
   }
   return layers
 }
+GroupLayers.props = ['groupSlot']
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
 // in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
@@ -2370,7 +2555,7 @@ const tooltipDelayValid = computed(() => {
   return true
 })
 const tooltipBlocked = computed(() => Boolean(
-  dragPreview.value || connectionPoint.value || boxPreview.value || isPanning.value || pinching.value || draft.value
+  dragPreview.value || connectionPoint.value || boxPreview.value || lassoPreview.value || isPanning.value || pinching.value || draft.value
     || resizePreview.value || reshapePreview.value,
 ))
 function clearTooltipTimers() {
@@ -2516,6 +2701,7 @@ const nodeActions = {
   click: clickNode,
   moveWithKeys: (event: KeyboardEvent, id: string) => moveWithKeys(event, movingIds(id), id),
   select,
+  editLabel: (event: Event, id: string) => openLabelEditor('node', id, event),
 }
 const edgeActions = {
   enter: (id: string) => {
@@ -2527,6 +2713,7 @@ const edgeActions = {
     emitTarget('target-leave', edgeTarget(id), 'pointer')
   },
   select: selectEdge,
+  editLabel: (event: Event, id: string) => openLabelEditor('edge', id, event),
 }
 
 // Item geometry. Each node and edge component reads its box or path from a shallow ref of its own, so a drag preview
@@ -2615,10 +2802,12 @@ const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
     onPointerleave: () => actions.leave(node.id),
     onPointerdown: withModifiers((event: Event) => actions.startDrag(event as PointerEvent, node.id), ['stop']),
     onClick: (event: MouseEvent) => actions.click(node.id, event),
+    onDblclick: (event: MouseEvent) => actions.editLabel(event, node.id),
     onKeydown: [
       withModifiers((event: Event) => node.draggable !== false && actions.moveWithKeys(event as KeyboardEvent, node.id), ['self']),
       withKeys(withModifiers(select, ['self', 'prevent']), ['enter']),
       withKeys(withModifiers(select, ['self', 'prevent']), ['space']),
+      withKeys(withModifiers((event: Event) => actions.editLabel(event, node.id), ['self']), ['f2']),
     ],
   }, [
     shared.title ? h('title', null, toDisplayString(node.label) + ' ' + toDisplayString(node.detail)) : createCommentVNode('', true),
@@ -2691,6 +2880,7 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     'data-vw-edge': shared.menu ? edge.id : undefined,
     onPointerenter: () => actions.enter(edge.id),
     onPointerleave: () => actions.leave(edge.id),
+    onDblclick: (event: MouseEvent) => actions.editLabel(event, edge.id),
   }, [
     renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale }, () => [
       h('path', {
@@ -2707,7 +2897,10 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
       'aria-pressed': Boolean(item.pressed), 'aria-describedby': item.describedby, 'data-vw-edge': edge.id,
       onPointerdown: withModifiers(() => {}, ['stop']),
       onClick: select,
-      onKeydown: [withKeys(withModifiers(select, ['prevent']), ['enter']), withKeys(withModifiers(select, ['prevent']), ['space'])],
+      onKeydown: [
+        withKeys(withModifiers(select, ['prevent']), ['enter']), withKeys(withModifiers(select, ['prevent']), ['space']),
+        withKeys((event: Event) => actions.editLabel(event, edge.id), ['f2']),
+      ],
     }) : createCommentVNode('', true),
   ])
 }
@@ -2771,7 +2964,7 @@ const NodeList: FunctionalComponent<ListProps<typeof slots.node>> = ({ itemSlot:
 }
 const EdgeList: FunctionalComponent<ListProps<typeof slots.edge>> = ({ itemSlot: edgeSlot, tooltips: tooltipSlot }) => {
   const shown = tooltipSlot ? described.value : undefined
-  const hit = Boolean(props.reconnectable || props.edgesSelectable || props.editableEdges)
+  const hit = Boolean(props.reconnectable || props.edgesSelectable || props.editableEdges || props.editableLabels)
   const shared = edgeShared = keep(edgeShared, {
     menu: props.contextMenu, hit, name: messages.value.selectEdge, marker, scale: edgeSlot ? camera.value.scale : 0,
     slot: edgeSlot, actions: edgeActions,
@@ -2795,15 +2988,23 @@ NodeList.props = EdgeList.props = ['itemSlot', 'tooltips']
 // The minimap rectangles and the connection handles are items of their own too. Each reads the box ref of its node,
 // so a drag preview re-renders the items of the moved nodes, and the lists render again only when the nodes, the
 // selection or the connection draft change.
-const MinimapNode: FunctionalComponent<{ box: ShallowRef<GraphBox>; selected: boolean }> = ({ box, selected }) => {
+type MinimapNodeProps = { node: ShownNode; box: ShallowRef<GraphBox>; selected: boolean; slot?: unknown }
+const MinimapNode: FunctionalComponent<MinimapNodeProps> = ({ node, box, selected, slot }, { slots }) => {
   const { x, y, width, height } = box.value
+  // The minimap-node slot draws in chart coordinates inside a group that keeps the stylesheet's rectangle paint off it.
+  if (slot && slots['minimap-node']) {
+    return h('g', { class: ['vw-minimap-custom', { 'vw-is-selected': selected }] }, [renderSlot(slots, 'minimap-node', { node, box: box.value, selected })])
+  }
   return h('rect', { class: { 'vw-is-selected': selected }, x, y, width, height, rx: '3' })
 }
-MinimapNode.props = ['box', 'selected']
-const MinimapNodes: FunctionalComponent = () => {
+MinimapNode.props = ['node', 'box', 'selected', 'slot']
+const MinimapNodes: FunctionalComponent<{ itemSlot?: typeof slots['minimap-node'] }> = ({ itemSlot }) => {
   const selected = selectedTest.value
-  return viewNodes.value.map(node => h(MinimapNode, { key: node.id, box: boxRef(node.id), selected: selected(node.id) }))
+  return viewNodes.value.map(node => h(MinimapNode, {
+    key: node.id, node, box: boxRef(node.id), selected: selected(node.id), slot: itemSlot,
+  }, itemSlot ? { 'minimap-node': itemSlot, $stable: true } : undefined))
 }
+MinimapNodes.props = ['itemSlot']
 type HandleProps = { node: NetworkNode; port?: GraphPort; box: ShallowRef<GraphBox>; rl: boolean; pressed?: boolean; prefix?: string }
 const HandleCircle: FunctionalComponent<HandleProps> = ({ node, port, box, rl, pressed, prefix }) => {
   const handle = connectHandle(node, port, box.value, rl)
@@ -2976,6 +3177,11 @@ watch(
   },
 )
 watch(() => [props.draggable, props.connectable, props.reconnectable, props.boxSelect, groupMembership.value, props.editableEdges, props.resizable], cancelInteraction)
+watch(lassoMode, cancelInteraction)
+// New data or a new layout cancels an open label editor without a proposal; keyboard focus returns to the item.
+watch(() => [viewNodes.value, viewEdges.value, savedRouted.value, props.editableLabels], () => {
+  if (labelEditor.value) closeLabelEditor(false, document.activeElement === labelInput.value)
+})
 // A structural change (connect, delete, paste, collapse) keeps a camera the user or the API placed. The view re-fits
 // while the camera is still fitted automatically, when the layout function or options change, and when the graph is
 // replaced: it was or becomes empty, or none of its previous nodes remain.
@@ -3034,7 +3240,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow, 'vw-labels-editable': editableLabels }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <svg
       ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ 'vw-is-panning': isPanning }"
       :aria-label="messages.region" tabindex="0"
@@ -3054,7 +3260,7 @@ onUnmounted(() => {
         </marker>
       </defs>
       <g :transform="`translate(${camera.x} ${camera.y}) scale(${camera.scale})`">
-        <GroupLayers />
+        <GroupLayers :group-slot="$slots.group" />
         <EdgeList :item-slot="$slots.edge" :tooltips="Boolean($slots.tooltip)" />
         <NodeList :item-slot="$slots.node" :tooltips="Boolean($slots.tooltip)" />
         <path v-if="connectionPath && !overlay" class="vw-connection-preview" :d="connectionPath" />
@@ -3088,6 +3294,7 @@ onUnmounted(() => {
             @pointerdown.stop="startResizeDrag($event, handle.node, handle.corner)" @keydown="resizeKeys($event, handle.node, handle.corner)" />
         </g>
         <rect v-if="boxPreview" class="vw-box-selection" v-bind="boxPreview" />
+        <polygon v-else-if="lassoPreview" class="vw-lasso-selection" :points="graphPolygonPoints(lassoPreview)" />
         <HandleNodes v-if="connectable || draft?.edge" />
         <circle v-for="item in reconnectHandles" :key="item.end" class="vw-reconnect-handle"
           :cx="item.x" :cy="item.y" r="6" role="button" tabindex="0" :aria-label="item.label"
@@ -3103,10 +3310,21 @@ onUnmounted(() => {
       :style="tooltipView.style" @pointerenter="keepTooltip" @pointerleave="leaveTooltip">
       <slot name="tooltip" :target="tooltipView.target" />
     </div>
+    <input v-if="labelEditorView" ref="labelInput" v-model="labelDraft" class="vw-label-editor" :class="{ 'vw-is-edge': labelEditorView.edge }"
+      type="text" dir="auto" autocomplete="off" :aria-label="labelEditorView.name" :style="labelEditorView.style"
+      @keydown="labelKeydown" @blur="closeLabelEditor(true, false)">
+    <div v-if="$slots['node-toolbar'] && nodeToolbarView" class="vw-node-toolbar" :class="{ 'vw-is-below': nodeToolbarView.below }"
+      role="group" :aria-label="nodeToolbarView.name" :style="nodeToolbarView.style">
+      <slot name="node-toolbar" v-bind="nodeToolbarView.slot" />
+    </div>
+    <div v-if="$slots['edge-toolbar'] && edgeToolbarView" class="vw-edge-toolbar" :class="{ 'vw-is-below': edgeToolbarView.below }"
+      role="group" :aria-label="edgeToolbarView.name" :style="edgeToolbarView.style">
+      <slot name="edge-toolbar" v-bind="edgeToolbarView.slot" />
+    </div>
     <button v-if="showMinimap && nodes.length" type="button" class="vw-minimap" :aria-label="messages.minimap"
       @click="navigateMinimap" @keydown="panWithKeys">
       <svg :viewBox="`${contentBounds.left} ${contentBounds.top} ${contentBounds.width} ${contentBounds.height}`" aria-hidden="true">
-        <MinimapNodes />
+        <MinimapNodes :item-slot="$slots['minimap-node']" />
         <rect class="vw-minimap-window" :x="-camera.x / camera.scale" :y="-camera.y / camera.scale"
           :width="viewport.width / camera.scale" :height="viewport.height / camera.scale" />
       </svg>

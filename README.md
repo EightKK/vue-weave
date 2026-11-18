@@ -20,7 +20,8 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 - Built-in layout for branches, merges, disconnected nodes, directed cycles and self-loops, with `LR`, `TB`, `RL` or `BT` direction and `crossingReduction: 'barycenter'`.
 - Your own placement and routing through a `layout` function, for example `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, the deterministic `layoutForceGraph`, or ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)).
-- Custom SVG through the `node` and `edge` slots, plus a `tooltip` slot.
+- Custom SVG through the `node`, `edge`, `group` and `minimap-node` slots, plus `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML next to an item.
+- Inline label editing of nodes and edges (`editableLabels`, proposed through `label-edit`) and lasso selection (`selectionMode: 'lasso'`).
 - Node moves, connections, multiple selection and the minimap; edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`) and context-menu requests (`contextMenu`).
 - Nested groups (`parentId`), collapsing into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`) and node resizing (`sizes`, `resizable`).
 - Orthogonal or straight edges (`edgeStyle`, also per edge), orthogonal routes around the nodes (`avoidNodes`), waypoints (`GraphEdge.points`, edited with `editableEdges`), parallel edges spread apart (`parallelEdgeSpacing`), end markers (`markerStart`, `markerEnd`) and flowing edges (`animated`).

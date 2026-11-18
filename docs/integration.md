@@ -172,6 +172,15 @@ NetworkGraph editing aids add two variables, used only when the matching prop is
 | `--vw-background-pattern` | `--vw-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
 | `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
 
+The opt-in label editor, lasso and toolbar slots of NetworkGraph use the theme colours: the lasso outline (`vw-lasso-selection`) is drawn in `--vw-accent`, and the label editor (`vw-label-editor`) and the toolbar containers (`vw-node-toolbar`, `vw-edge-toolbar`) use `--vw-surface`, `--vw-border`, `--vw-text` and, for the editor's border, `--vw-accent`. They add two length variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-label-editor-width` | `140px` | Width of the label editor of an edge (`vw-label-editor.vw-is-edge`); a node's editor takes the node's on-screen width, at least 120 pixels |
+| `--vw-toolbar-offset` | `8px` | Gap between a node or edge and the container of the `node-toolbar` or `edge-toolbar` slot |
+
+With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
+
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
 
 Linked views and typed cells add five variables, used only when the matching prop is set:

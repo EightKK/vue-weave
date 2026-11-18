@@ -3,6 +3,7 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGraph, layoutConcentricGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
+import type { GraphLabelEdit } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
 import SchedulingDemo from './SchedulingDemo.vue'
 import GanttEditingDemo from './GanttEditingDemo.vue'
@@ -329,6 +330,23 @@ watch(graphEditing, () => closeMenu(false))
 const gridSize = 20
 const snapToGrid = ref(false)
 const alignmentGuides = ref(false)
+// Inline label editing, lasso selection and the toolbar, group and minimap slots. The graph proposes a new label; the
+// demo trims it and commits it as one history entry.
+const labelEditing = ref(false)
+const lassoSelect = ref(false)
+const itemSlots = ref(false)
+function validateLabel(change: GraphLabelEdit) {
+  if (!change.after.trim()) return 'A label cannot be empty.'
+}
+function commitLabel(change: GraphLabelEdit) {
+  const label = change.after.trim(), current = data.value
+  commitState({
+    data: change.kind === 'node'
+      ? { ...current, nodes: current.nodes.map(node => node.id === change.id ? { ...node, label } : node) }
+      : { ...current, edges: current.edges.map(edge => edge.id === change.id ? { ...edge, label } : edge) },
+  })
+  status.value = 'Renamed ' + change.kind + ' ' + change.id + ' to ' + label + '.'
+}
 const paletteType = 'application/x-vue-weave-node'
 const paletteItems = [{ kind: 'operation', label: 'Add operation' }, { kind: 'lot', label: 'Add lot' }] as const
 type PaletteKind = typeof paletteItems[number]['kind']
@@ -548,6 +566,9 @@ function commit(change: TimelineEdit) {
           <label v-if="preset === 'manufacturing'"><input v-model="collapsibleGroups" type="checkbox"> Collapsible groups</label>
           <label><input v-model="editableEdges" type="checkbox"> Editable edges</label>
           <label><input v-model="resizableNodes" type="checkbox"> Resizable nodes</label>
+          <label><input v-model="labelEditing" type="checkbox"> Edit labels</label>
+          <label><input v-model="lassoSelect" type="checkbox"> Lasso selection</label>
+          <label><input v-model="itemSlots" type="checkbox"> Item toolbars</label>
           <label>Edge style <select v-model="edgeStyle"><option>curve</option><option>orthogonal</option><option>straight</option></select></label>
           <div class="graph-palette" role="group" aria-label="Node palette">
             <button v-for="item in paletteItems" :key="item.kind" type="button" class="palette-chip" draggable="true"
@@ -571,10 +592,26 @@ function commit(change: TimelineEdit) {
           :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize"
           :validate-node-resize="validateResize" @node-resize-rejected="(_change, reason) => status = reason" :lod-threshold="graphEditing ? 0.5 : undefined"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
+          :editable-labels="graphEditing && labelEditing" :validate-label-edit="validateLabel" @label-edit="commitLabel"
+          @label-edit-rejected="(_change, reason) => status = reason" :selection-mode="graphEditing && lassoSelect ? 'lasso' : 'box'"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
             <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vw-surface, #fff)' }" />
             <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
+          </template>
+          <template v-if="graphEditing && itemSlots" #node-toolbar="{ node }">
+            <button type="button" @click="fitSelection({ kind: 'node', id: node.id })">Frame</button>
+            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'node', id: node.id }))">Remove</button>
+          </template>
+          <template v-if="graphEditing && itemSlots" #edge-toolbar="{ edge }">
+            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'edge', id: edge.id }))">Remove</button>
+          </template>
+          <template v-if="graphEditing && itemSlots" #group="{ group: item, box, depth }">
+            <rect class="demo-group-frame" :x="box.x" :y="box.y" :width="box.width" :height="box.height" rx="12" />
+            <text class="demo-group-label" :x="box.x + 10" :y="box.y + 15">{{ item.label }}{{ depth ? ' (nested)' : '' }}</text>
+          </template>
+          <template v-if="graphEditing && itemSlots" #minimap-node="{ box, selected: active }">
+            <circle class="demo-minimap-node" :class="{ 'is-selected': active }" :cx="box.x + box.width / 2" :cy="box.y + box.height / 2" :r="Math.min(box.width, box.height) / 2" />
           </template>
           <template v-if="graphEditing" #tooltip="{ target }">
             <template v-if="target.kind === 'node'"><strong>{{ target.node.label }}</strong><br>{{ target.node.detail ?? 'No detail' }} · {{ degree(target.node.id) }}</template>
