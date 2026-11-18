@@ -154,6 +154,35 @@ const layout: GraphLayoutFunction = () => swimlanes.value
 - Use `edgeStyle: 'orthogonal'` with `avoidNodes` when edges skip ranks, so they go around the steps in between. Lane headers are not obstacles for `avoidNodes`; they sit before the first rank, so routes and edge labels between steps stay out of them.
 - `exportSvg`, `exportPng` and `renderGraphSvg({ lanes })` draw the bands and titles. Long titles are clipped to the header; the full title is the lane's accessible name and, in exports, its `<title>`.
 
+## Quantity flows (Sankey diagrams)
+
+To show how much flows along each edge, such as a lot that splits and merges again or a cost allocated across departments, project the quantities with `layoutFlowGraph` and draw its bands with the `edgeBands` prop. Every band is as thick as its quantity on one scale for the whole picture, and keeps the original edge ID.
+
+```ts
+const flow = computed(() => layoutFlowGraph(steps.value, transfers.value, {
+  quantity: transfer => transfer.data.amount,
+  unit: transfer => transfer.data.unit, // every edge states its unit
+  displayUnit: unit.value, // only this unit is drawn and summed
+  direction: direction.value,
+  scale: { fitExtent: 320 }, // or { pixelsPerUnit: 2 } for a fixed scale across pictures
+}))
+const layout: GraphLayoutFunction = () => flow.value
+const shown = computed(() => transfers.value.filter(transfer => flow.value.paths.has(transfer.id)))
+const bands = computed(() => graphFlowBands(flow.value))
+```
+
+```vue
+<NetworkGraph :nodes="steps" :edges="shown" :layout="layout" :edge-bands="bands" :options="{ direction }"
+  edges-selectable @update:selected-edge-ids="showTransfer" />
+```
+
+- **Units are never added.** Edges in another unit are left out of the picture and listed in `flow.excluded` with their ID, unit and quantity; show that list next to the graph, as the demo does, so nothing disappears silently. Convert units in your own data before the projection if a conversion is meaningful.
+- **Differences are yours to explain.** `flow.nodes` reports `inflow`, `outflow` and `difference` per node as given; the layout never balances them. Name the difference in your domain (scrap, stock, yield, rounding) or add the missing edges.
+- **Loops are references.** An edge that closes a cycle, such as a rework loop, and a self-loop come back as `reference: true` bands, drawn dashed below the picture and counted in `referenceInflow` and `referenceOutflow`, not in the totals. To show rework as forward flow over time, give each period its own node copies before the projection.
+- **Zero quantities** keep a 1-unit hairline band (`minBandWidth`) that can still be selected.
+- Band names come from `label`, for example "Cut → Inspect: 60 pcs"; pass `nodeLabel` and `formatQuantity` to localize them. Thin node boxes leave little room for text: draw labels next to the boxes in a `node` slot, as the demo does, and remember that exports use the default node drawing.
+- `exportSvg`, `exportPng` and `renderGraphSvg(flow, nodes, shown, { edgeBands: bands })` draw the same bands, each with its label as `<title>`. The demo's Quantity flow example (`examples/QuantityFlowDemo.vue`) shows a split, a merge, a yield loss, a rework loop and a unit switch.
+
 ## Custom content
 
 The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and elements with the class `vw-node-shape` (the outline of the default diamond, ellipse and hexagon nodes), and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
@@ -218,6 +247,15 @@ The opt-in swimlanes of NetworkGraph (`lanes`) add five variables; their default
 | `--vw-lane-header-fill` | `--vw-surface-hover` (`#e4ecf2`) | Fill of a lane header |
 | `--vw-lane-border` | `--vw-border` (`#c9d6df`) | Outline of bands and headers, and the minimap lane outlines |
 | `--vw-lane-title` | `--vw-text` (`#172c3b`) | Lane title text |
+
+The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge path (`vw-network-edge vw-network-band`) in `--vw-edge` with the band width, and reference (loop) bands (`vw-is-reference`) with a dash pattern, so they differ without colour. Selected bands take `--vw-edge-selected` and highlighted ones `--vw-graph-highlight`; the hit area of a band (`vw-edge-hit vw-is-band`) is as wide as the band. In forced-colors mode bands are drawn in `CanvasText`, reference bands in `GrayText` with their dashes and selected bands in `Highlight`. Four variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-flow-band-opacity` | `.5` | Opacity of a band, so crossing bands stay readable |
+| `--vw-flow-band-active-opacity` | `.78` | Opacity of a hovered, selected or highlighted band |
+| `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
+| `--vw-flow-reference-dash` | `10 6` | Dash pattern of a reference band |
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 

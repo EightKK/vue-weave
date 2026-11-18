@@ -32,6 +32,7 @@ import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from '../core/graphSwimlanes.js'
+import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from '../core/graphFlow.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 // The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
@@ -162,6 +163,13 @@ const props = withDefaults(defineProps<{
    * changes a node's lane (see `graphSwimlaneAt`). Opt-in. Default: undefined.
    */
   lanes?: readonly GraphSwimlaneBand[]
+  /**
+   * Edges drawn as bands with real width, by edge ID, usually `graphFlowBands` of a `layoutFlowGraph` result: the
+   * default edge path is stroked with the band width (class `vw-network-band`, dashed with `vw-is-reference`) without
+   * markers, its hit area is at least as wide, and the band label names it. Bands are drawn widest first, before the
+   * other edges. Widths must be finite and at least 0; unknown IDs are ignored. Opt-in. Default: undefined.
+   */
+  edgeBands?: ReadonlyMap<string, GraphEdgeBand>
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -2903,6 +2911,8 @@ type EdgeItemProps = {
   active: boolean
   pressed: boolean
   describedby?: string
+  /** The band drawing of the edge, from `edgeBands`. */
+  band?: GraphEdgeBand
   /** Values shared by every edge, in one object that keeps its identity while they do not change. */
   shared: {
     /** Sets `data-vw-edge` on the group, for context menus. */
@@ -2921,8 +2931,9 @@ type EdgeItemProps = {
 }
 // One edge: the `edge` slot or the default path and label, and the focusable hit area when edges can be selected.
 const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
-  const { edge, shared } = item, { path, labelX, labelY } = item.geometry.value, actions = shared.actions
+  const { edge, shared, band } = item, { path, labelX, labelY } = item.geometry.value, actions = shared.actions
   const related = Boolean(item.related), dimmed = Boolean(item.dimmed), selected = Boolean(item.selected)
+  const bandWidth = band && band.width + 'px'
   const select = (event: Event) => actions.select(edge.id, event as MouseEvent | KeyboardEvent)
   return h('g', {
     class: { 'vw-dimmed': dimmed, 'vw-edge-selected': selected, 'vw-is-highlighted': Boolean(item.highlighted) },
@@ -2931,8 +2942,11 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     onPointerleave: () => actions.leave(edge.id),
     onDblclick: (event: MouseEvent) => actions.editLabel(event, edge.id),
   }, [
-    renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale }, () => [
-      h('path', {
+    renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale, ...band && { band } }, () => [
+      band ? h('path', {
+        class: ['vw-network-edge vw-network-band', { 'vw-is-related': related, 'vw-is-reference': Boolean(band.reference) }], d: path,
+        style: { strokeWidth: bandWidth },
+      }) : h('path', {
         class: ['vw-network-edge', { 'vw-is-related': related, 'vw-is-animated': Boolean(edge.animated) }], d: path,
         'marker-start': markerUrl(shared.marker, edge, 'start'), 'marker-end': markerUrl(shared.marker, edge, 'end'),
       }),
@@ -2941,8 +2955,9 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
         : createCommentVNode('', true),
     ]),
     shared.hit ? h('path', {
-      key: 0, class: ['vw-edge-hit', { 'vw-is-active': Boolean(item.active), 'vw-is-selected': selected }],
-      d: path, role: 'button', tabindex: '0', 'aria-label': shared.name + ' ' + (edge.label ?? edge.id),
+      key: 0, class: ['vw-edge-hit', { 'vw-is-active': Boolean(item.active), 'vw-is-selected': selected, 'vw-is-band': Boolean(band) }],
+      ...band && { style: { strokeWidth: Math.max(14, band.width) + 'px' } },
+      d: path, role: 'button', tabindex: '0', 'aria-label': shared.name + ' ' + (band?.label ?? edge.label ?? edge.id),
       'aria-pressed': Boolean(item.pressed), 'aria-describedby': item.describedby, 'data-vw-edge': edge.id,
       onPointerdown: withModifiers(() => {}, ['stop']),
       onClick: select,
@@ -2953,7 +2968,7 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     }) : createCommentVNode('', true),
   ])
 }
-EdgeItem.props = ['edge', 'geometry', 'related', 'dimmed', 'highlighted', 'selected', 'active', 'pressed', 'describedby', 'shared']
+EdgeItem.props = ['edge', 'geometry', 'related', 'dimmed', 'highlighted', 'selected', 'active', 'pressed', 'describedby', 'band', 'shared']
 // Edge markers. The default end arrow is the marker in the template's defs; every other marker gets an ID derived from
 // it and is only rendered while an edge uses it, so the markup without other markers is unchanged.
 type MarkerKind = Exclude<GraphEdgeMarker, 'none'>
@@ -3021,18 +3036,25 @@ const EdgeList: FunctionalComponent<ListProps<typeof slots.edge>> = ({ itemSlot:
   const selectable = props.edgesSelectable, active = currentEdgeId.value, related = props.relatedIds, highlighted = highlights.value?.edges
   const dimmed = dimTest(), selected = edgeSelectionTest(), pressed = edgePressedTest()
   const markers = extraMarkers.value
-  const items = shownEdges.value.map(edge => h(EdgeItem, {
+  const bands = edgeBands.value
+  const items = (bands ? graphBandOrder(shownEdges.value, bands) : shownEdges.value).map(edge => h(EdgeItem, {
     key: edge.id, edge, geometry: edgeRef(edge.id),
     related: Boolean(related?.has(edge.from) && related.has(edge.to)), dimmed: dimmed(edge.from) || dimmed(edge.to),
     highlighted: Boolean(highlighted?.has(edge.id)),
     selected: Boolean(selectable && selected(edge.id)), active: hit && active === edge.id, pressed: hit && pressed(edge.id),
-    describedby: shown?.kind === 'edge' && shown.id === edge.id ? tooltipId : undefined, shared,
+    describedby: shown?.kind === 'edge' && shown.id === edge.id ? tooltipId : undefined, band: bands?.get(edge.id), shared,
   }, edgeSlot ? { edge: edgeSlot, $stable: true } : undefined))
   // An edge slot draws its own edges, so the markers are only written for the default renderer.
   return markers.length && !edgeSlot ? [h('defs', { key: markersKey }, markers.map(([id, { kind, end }]) => markerNode(id, kind, end))), ...items] : items
 }
 
 NodeList.props = EdgeList.props = ['itemSlot', 'tooltips']
+// `edgeBands`, validated once per change.
+const edgeBands = computed(() => {
+  const bands = props.edgeBands
+  if (bands) assertGraphEdgeBands(bands, 'NetworkGraph edgeBands')
+  return bands
+})
 
 // The minimap rectangles and the connection handles are items of their own too. Each reads the box ref of its node,
 // so a drag preview re-renders the items of the moved nodes, and the lists render again only when the nodes, the
@@ -3216,6 +3238,7 @@ function exportSvg(options: GraphExportOptions<ShownNode, ShownEdge> = {}) {
     ...rest,
     groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
     ...laneBands.value && { lanes: laneBands.value },
+    ...edgeBands.value && { edgeBands: edgeBands.value },
     selectedIds: selection,
     ...highlighted && { highlightedNodeIds: highlighted.nodes, highlightedEdgeIds: highlighted.edges },
     ...highlightColor && { highlightColor },

@@ -4,6 +4,7 @@ import type { EditMode, TimeRange } from './timeline.js'
 import type { TimelineFieldSpec } from './fieldEditing.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
 import type { GraphRect } from './graphView.js'
+import type { GraphEdgeBand } from './graphFlow.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -421,6 +422,8 @@ export interface NetworkEdgeSlot<E extends GraphEdge = GraphEdge> {
   dimmed?: boolean
   /** The current camera scale, for level-of-detail rendering in custom edge slots. */
   scale: number
+  /** The band drawing of the edge from the `edgeBands` prop; absent for an edge without a band. */
+  band?: GraphEdgeBand
 }
 
 /** Props of the NetworkGraph `node-toolbar` slot, shown for the only selected node. `N` types the node. */

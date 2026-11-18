@@ -2,6 +2,7 @@ import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } fr
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
 import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
+import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
@@ -244,6 +245,13 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
   nodeDetail?: (node: N) => string | undefined
   /** Edge label text. Defaults to `edge.label`. */
   edgeLabel?: (edge: E) => string | undefined
+  /**
+   * Edges drawn as bands with real width, like the NetworkGraph `edgeBands` prop (for example `graphFlowBands` of a
+   * `layoutFlowGraph` result): a translucent stroke of the band width without markers, dashed for a reference band,
+   * with the band label as its `<title>`. Bands are drawn widest first, before the other edges, so thin bands stay
+   * visible. Unknown IDs are ignored. Throws RangeError for a width that is not finite and at least 0.
+   */
+  edgeBands?: ReadonlyMap<string, GraphEdgeBand>
 }
 
 /**
@@ -277,11 +285,14 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     include(box.x, box.y, box.width, box.height)
   }
   const edgeText = options.edgeLabel ?? ((edge: GraphEdge) => edge.label)
+  const bands = options.edgeBands
+  if (bands) assertGraphEdgeBands(bands, 'renderGraphSvg')
   for (const edge of edges) {
     const path = layout.paths.get(edge.id)
     if (path === undefined) throw new Error('Missing layout path: ' + edge.id)
     const bounds = graphPathBounds(path)
-    if (bounds) include(bounds.x, bounds.y, bounds.width, bounds.height)
+    const half = (bands?.get(edge.id)?.width ?? 0) / 2
+    if (bounds) include(bounds.x - half, bounds.y - half, bounds.width + 2 * half, bounds.height + 2 * half)
     const label = layout.edgeLabels.get(edge.id)
     if (label && edgeText(edge)) include(label.x - 60, label.y - 14, 120, 20)
   }
@@ -310,7 +321,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const nodeDetail = options.nodeDetail ?? ((node: N) => node.detail)
   const arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
   // The highlight marker is only written when a drawn edge uses it, so an export without highlights is unchanged.
-  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id))
+  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id) && !bands?.has(edge.id))
   // Other markers, and start markers, are also only written when an edge uses them.
   type Marker = Exclude<GraphEdgeMarker, 'none'>
   const markerId = (kind: Marker, end: 'start' | 'end', strong: boolean) => kind === 'arrow' && end === 'end'
@@ -318,6 +329,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     : prefix + (end === 'start' ? '-start-' : '-') + kind + (strong ? '-highlight' : '')
   const markers = new Map<string, { kind: Marker; end: 'start' | 'end'; strong: boolean }>()
   for (const edge of edges) {
+    if (bands?.has(edge.id)) continue
     const strong = highlightedEdges.has(edge.id)
     for (const end of ['start', 'end'] as const) {
       const kind = graphEdgeMarker(edge, end)
@@ -360,8 +372,17 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
     }, escapeXml(group.label))))
   }
-  for (const edge of edges) {
+  for (const edge of bands ? graphBandOrder(edges, bands) : edges) {
     const strong = highlightedEdges.has(edge.id)
+    const band = bands?.get(edge.id)
+    if (band) {
+      content.push(tag('path', {
+        class: band.reference ? 'vw-flow-band vw-is-reference' : 'vw-flow-band', d: layout.paths.get(edge.id)!, fill: 'none',
+        stroke: strong ? highlight : theme.edge, 'stroke-width': band.width,
+        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? '10 6' : undefined,
+      }, band.label ? tag('title', {}, escapeXml(band.label)) : undefined))
+      continue
+    }
     const start = graphEdgeMarker(edge, 'start'), end = graphEdgeMarker(edge, 'end')
     content.push(tag('path', {
       d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,

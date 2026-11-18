@@ -7192,6 +7192,64 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
   expect(errors).toEqual([])
 })
 
+test('the quantity flow demo draws named bands on one scale, never mixes units and maps a selected band back to its edge', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Quantity flow', exact: true }).click()
+  const stage = page.getByLabel('Quantity flow graph', { exact: true })
+  await stage.scrollIntoViewIfNeeded()
+  const status = page.getByRole('status', { name: 'Quantity flow status' })
+  const band = (name: string) => stage.getByRole('button', { name: 'Select edge ' + name, exact: true })
+  // The drawn band is the stroke of the edge path next to the named hit area.
+  const width = (name: string) => band(name).evaluate(hit => Number.parseFloat(getComputedStyle(hit.parentElement!.querySelector('.vw-network-band')!).strokeWidth))
+  for (const name of ['Lot L-100 → Line A: 60 pcs', 'Lot L-100 → Line B: 40 pcs', 'Line A → Inspect: 60 pcs', 'Line B → Inspect: 36 pcs', 'Inspect → Pack: 86 pcs']) {
+    await expect(band(name)).toBeAttached()
+  }
+  // 60:40 on one scale: the same 60 pieces are as wide after line A as before it.
+  expect(await width('Lot L-100 → Line A: 60 pcs') / await width('Lot L-100 → Line B: 40 pcs')).toBeCloseTo(1.5, 6)
+  expect(await width('Line A → Inspect: 60 pcs')).toBe(await width('Lot L-100 → Line A: 60 pcs'))
+  // The rework loop is a dashed reference band, not part of the totals.
+  await expect(band('Rework → Inspect: 10 pcs')).toBeAttached()
+  await expect(stage.locator('.vw-network-band.vw-is-reference')).toHaveCount(1)
+  const totals = page.getByRole('table', { name: 'Node totals' })
+  await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(0)).toHaveText('40')
+  await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(1)).toHaveText('36')
+  await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(2)).toHaveText('−4')
+  // Cost-only edges are listed, never drawn in pieces.
+  await expect(page.getByRole('list', { name: 'Not shown in pcs' })).toContainText('overhead-a: 300 EUR')
+  await expect(stage.getByRole('button', { name: /Overhead →/ })).toHaveCount(0)
+
+  // Selecting a band by keyboard shows the original edge ID and quantity.
+  await band('Line B → Inspect: 36 pcs').focus()
+  await page.keyboard.press('Enter')
+  await expect(status).toHaveText('Selected band: edge b-inspect, 36 pcs')
+  await expect(band('Line B → Inspect: 36 pcs')).toHaveAttribute('aria-pressed', 'true')
+  await band('Rework → Inspect: 10 pcs').focus()
+  await page.keyboard.press('Space')
+  await expect(status).toHaveText('Selected band: edge rework-inspect, 10 pcs (reference loop, not in the totals)')
+  // A pointer click anywhere on a wide band selects it: its hit area is as wide as the band.
+  const wide = (await band('Inspect → Pack: 86 pcs').boundingBox())!
+  await page.mouse.click(wide.x + wide.width / 2, wide.y + wide.height / 2)
+  await expect(status).toHaveText('Selected band: edge inspect-pack, 86 pcs')
+
+  // The cost view draws every edge in EUR, the overhead included.
+  await page.getByLabel('Flow unit').selectOption('EUR')
+  await expect(band('Overhead → Line A: 300 EUR')).toBeAttached()
+  await expect(band('Line B → Inspect: 900 EUR')).toBeAttached()
+  await expect(stage.getByRole('button', { name: / pcs$/ })).toHaveCount(0)
+  await expect(page.getByText('Every edge is in EUR.')).toBeVisible()
+  await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(2)).toHaveText('−100')
+  await page.getByRole('button', { name: 'Export flow SVG', exact: true }).click()
+  await expect(status).toHaveText('Exported SVG with 9 bands.')
+  // Other directions keep the bands and their names.
+  await page.getByLabel('Flow chart direction').selectOption('TB')
+  await expect(band('Lot L-100 → Line A: 1200 EUR')).toBeAttached()
+  await page.getByLabel('Flow unit').selectOption('pcs')
+  await expect(band('Lot L-100 → Line A: 60 pcs')).toBeAttached()
+  expect(errors).toEqual([])
+})
+
 test('the scheduling demo shows plan, recorded actuals and remaining forecast from rescheduleFromActuals', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
