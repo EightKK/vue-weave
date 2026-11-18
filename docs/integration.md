@@ -370,7 +370,34 @@ The `context-menu` event only reports what was targeted, the time and row under 
 
 A TimeScale exposes width, toX(time) and toTime(x). It must map range.start to 0 and range.end to width, be finite and strictly increasing, and provide mutually inverse mappings over the range. It should also extrapolate beyond the range when tick or interval calculations require it. The Gantt component applies zoom to that mapping and uses its inverse for pointer displacement.
 
-For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
+A piecewise scale can give working hours more visual space while retaining a small positive width for other hours. `createWorkingTimeScale` builds one from the chart range, working periods and a base width:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { GanttChart, buildWorkPeriods, createWorkingTimeScale } from 'vue-weave'
+
+const hour = 3_600_000
+const range = { start: Date.UTC(2026, 10, 9), end: Date.UTC(2026, 10, 16) }
+const periods = buildWorkPeriods(range, {
+  timeZone: 'Europe/Berlin',
+  weekly: [1, 2, 3, 4, 5].map(weekday => ({ weekday, startMinute: 9 * 60, endMinute: 17 * 60 })),
+})
+// 40 px per working hour; nights and weekends keep 10 % of that (4 px per hour).
+const scale = computed(() => createWorkingTimeScale(range, periods, 40 / hour, 0.1))
+</script>
+
+<template><GanttChart :rows="rows" :bars="bars" :range="range" :scale="scale" :snap="hour" /></template>
+```
+
+The helper follows the contract above: `toX(range.start)` is 0, `toX(range.end)` is `width`, both mappings are strictly increasing and continuous, they are exact inverses at segment boundaries (within rounding elsewhere), and outside the range they continue with the slope of the nearest edge segment, so a drag past either edge still inverts. Each call is a binary search over the breakpoints, so thousands of periods are fine.
+
+- `nonWorkingRatio` (default 0.1) must be in `(0, 1]`. Zero is rejected with a `RangeError`: a collapsed interval maps all its times to one pixel, so `toTime` could not invert pointer positions and an edit inside it would have no defined time. If you need a hidden gap, keep a small positive ratio. A ratio of 1 gives the linear scale.
+- Periods are clipped to the range, and unsorted, overlapping or touching periods are united; they are not rejected. Periods outside the range are ignored. With no working period in range the whole axis is compressed uniformly.
+- Changing the ratio or `pixelsPerUnit` moves bars on screen but never changes their times, and snapping, `minDuration` and edit proposals work on time, so they stay on the same grid. A gesture is one pointer position in pixels, so a drag over non-working time covers more time per pixel than one over working time.
+- The scale does not know the text direction. GanttChart positions bars and ticks from the inline start edge, so the same scale works with `dir="rtl"`; use `mirrorTimeScale` only for your own renderers.
+
+A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
 
 ## Reusing calculations
 

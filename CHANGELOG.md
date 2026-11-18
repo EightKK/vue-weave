@@ -19,12 +19,14 @@
 - `intlTimeFormatter(options)`: a `formatTime`-compatible function on a cached `Intl.DateTimeFormat` for a locale, IANA time zone or fixed offset and format options. It never uses the runtime's default locale or time zone, so server and client output match.
 - `calendarBands` options `locale` and `labelFormat` for locale-aware band labels.
 - GanttChart `summaryDependencies` (opt-in): a dependency end may name a summary row (a row with child rows) instead of a bar, and is drawn to the start or finish edge of the row's `showSummaries` rollup bar, following the link type and the rollup as its descendants move, drag previews included. Collapsed summaries keep their links; a summary without a drawn rollup bar hides the link like a hidden bar. Connector styles, lag labels, highlights, selection, deletion, reconnect handles, right-to-left charts and virtualisation work as for other links, and the accessible name uses the row label. With `connectable`, rollup bars get link handles and accept dropped links, proposed through `connect` and `reconnect` as usual (reject FF and SF links into a summary in `validateConnection`, as `scheduleTasks` throws for them). `exportSvg`, `exportPng` and `renderTimelineSvg` (option `summaryDependencies`) draw the same links. New core options: `validateTimelineData(rows, bars, dependencies, laneCount, { summaryDependencies })` (`TimelineDataOptions`) and `timelineFromMsProject(project, { summaryDependencies })`, which keeps links to summary tasks in `dependencies` instead of `hiddenDependencyIds`. Without the options, markup, exports and results are unchanged.
+- `createWorkingTimeScale(range, periods, pixelsPerUnit, nonWorkingRatio = 0.1)` and `defaultNonWorkingRatio`: a ready-made piecewise-linear `TimeScale` for the GanttChart `scale` prop that gives working periods (as `buildWorkPeriods` returns them) the base width and other time a compressed share of it. It is strictly increasing, continuous and exactly invertible at segment boundaries, extrapolates beyond the range, clips and unites unsorted or overlapping periods, and uses binary search per call. A ratio of 0 is rejected with a `RangeError` so the scale stays invertible.
 
 ### Examples
 
 - The **Edit graph** tools add **Edit labels**, **Lasso selection** and **Item toolbars** (node and edge toolbars with Frame and Remove actions, a custom group frame and round minimap nodes).
 - The demo's design gallery adds a **Calendar views** showcase.
 - The scheduling demo adds a **Summary task links** option: a small plan whose links end at a summary task's rollup bar, with link editing and SVG export.
+- The scheduling demo adds a **Compress non-working time** option that swaps both charts to a working-time scale; times, snapping and edits are unchanged.
 
 ## 0.5.0 - 2026-11-17
 

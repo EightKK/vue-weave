@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, formatDependencyLag, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate,
+  GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, createWorkingTimeScale, formatDependencyLag, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate,
   scheduleTasks, scheduleToGraph, scheduledBarFields, toPlanningDiagnostics, timelineConstraints, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
   type ResourceAssignment, type ScheduleConstraintName, type ScheduleInput, type ScheduleLink, type ScheduleManualConflict, type ScheduleResult,
   type ScheduleTask, type ScheduledTask, type TimelineBar, type TimelineColumn, type TimelineConstraintEdit, type TimelineEdit,
@@ -27,6 +27,10 @@ const nonWorking = invertWorkPeriods(shifts, range)
 // A display-only due date: packing must finish before the dispatch cut-off or the bar is marked late.
 const deadlines = new Map([['pack', local('2026-11-09T17:00:00')]])
 const shade = ref(true)
+// "Compress non-working time" swaps the linear axis for a working-time scale: working hours get twice the width and
+// breaks, nights and the closure keep a tenth of it. Times, snapping and edits are unchanged; only x positions differ.
+const compress = ref(false)
+const workingScale = computed(() => compress.value ? createWorkingTimeScale(range, shifts, 36 / hour, 0.1) : undefined)
 // "Summary task links" adds a separate, opt-in example of links to and from a summary task (GanttChart summaryDependencies).
 const summaryLinks = ref(false)
 const showCritical = ref(true)
@@ -449,6 +453,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       <div><h2 id="schedule-title">Calendar-aware schedule</h2><p>JST · split shifts · 10 November plant closure</p></div>
       <div class="options">
         <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
+        <label><input v-model="compress" type="checkbox"> Compress non-working time</label>
         <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
         <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
         <label><input v-model="compareBaselines" type="checkbox"> Compare baseline sets</label>
@@ -484,7 +489,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       <div><dt>Resource overload</dt><dd data-testid="schedule-overload">{{ overloadHours }} resource-hour{{ overloadHours === 1 ? '' : 's' }}</dd></div>
     </dl>
     <GanttChart ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="chartDependencies" :highlighted-dependency-ids="criticalLinks"
-      :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
+      :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour" :scale="workingScale"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
       :status-date="statusDate" :show-progress-line="showProgressLine" :baseline-ids="baselineIds" :baseline-label="baselineLabel"
@@ -510,7 +515,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
   <section class="planning-panel" aria-labelledby="load-title">
     <div class="section-head"><div><h2 id="load-title">Resource demand and capacity</h2><p>Demand uses work segments. Breaks and closed dates consume zero work.</p></div></div>
     <GanttChart :rows="resources" :bars="loadBars" :range="range" :columns="resourceColumns" :header-bands="[headerBands[0]!]"
-      :row-height="48" :height="213" :pixels-per-unit="18 / hour" :tick-steps="[4 * hour, 6 * hour, 12 * hour]"
+      :row-height="48" :height="213" :pixels-per-unit="18 / hour" :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :scale="workingScale"
       :format-time="format" :non-working-periods="shade ? nonWorking : undefined" readonly :show-controls="false">
       <template #row-heading>Equipment</template>
       <template #legend><span class="hint">Demand / available units · Amber indicates overload</span></template>

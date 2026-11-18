@@ -2,6 +2,7 @@ export * from './graph.js'
 export * from './timeline.js'
 export * from './types.js'
 
+export { createWorkingTimeScale, defaultNonWorkingRatio } from './workingTimeScale.js'
 export { buildWorkPeriods, invertWorkPeriods, normalizeWorkPeriods } from './workCalendar.js'
 export type { WorkCalendar, WorkShift, WeeklyShift, WorkWeek } from './workCalendar.js'
 export * from './scheduling.js'

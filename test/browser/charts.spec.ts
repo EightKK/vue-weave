@@ -6895,3 +6895,39 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
   await expect(status('Exported summary links SVG with 2 dependency lines.')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('compressing non-working time widens working bars and keeps edits snapped to valid times', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
+  await expect(cutting).toBeVisible()
+  const linearWidth = (await cutting.boundingBox())!.width
+
+  await page.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).check()
+  // The accessible name carries the times, which do not depend on the scale.
+  await expect(cutting).toBeVisible()
+  const compressedWidth = (await cutting.boundingBox())!.width
+  expect(compressedWidth).toBeGreaterThan(linearWidth * 1.5)
+
+  // Dragging one hour of working time (36 px) proposes a whole-hour move that snaps to the same grid as before.
+  const box = (await cutting.boundingBox())!
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
+  await page.mouse.up()
+  const moved = plan.getByRole('button', { name: 'Cut order A 09 Nov 09:00–09 Nov 12:00', exact: true })
+  await expect(moved).toBeVisible()
+
+  // Keyboard edits still move by the snap step and every proposal stays on the hour.
+  await moved.press('ArrowRight')
+  await expect(plan.getByRole('button', { name: /^Cut order A 09 Nov \d\d:00–09 Nov \d\d:00$/ })).toBeVisible()
+
+  await page.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).uncheck()
+  const restored = (await plan.getByRole('button', { name: /^Cut order A / }).boundingBox())!.width
+  expect(restored).toBeLessThan(compressedWidth)
+  expect(errors).toEqual([])
+})
