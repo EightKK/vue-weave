@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildWorkPeriods, scheduleTasks, calculateResourceLoad } from 'vue-weave/core'
+import { link, task } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 40 }
 const shifts = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 28 }, { start: 29, end: 33 }]
 const calendar = { calendars: [{ id: 'shift', periods: shifts }], defaultCalendarId: 'shift' }
-const task = (id, duration, constraints = {}) => ({ id, duration, ...constraints })
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, type, lag })
 
 test('weekly calendar clips night shifts at a civil holiday and respects UTC offset', () => {
   const date = value => Date.parse(value + '+09:00')

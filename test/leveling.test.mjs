@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { calculateResourceLoad, levelResources, scheduleTasks } from 'vue-weave/core'
+import { dates, link, task } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 40 }
 const shifts = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 28 }, { start: 29, end: 33 }]
-const task = (id, duration, constraints = {}) => ({ id, duration, ...constraints })
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, type, lag })
 const machine = [{ id: 'm', capacity: 1 }]
 const on = (...ids) => ids.map(taskId => ({ resourceId: 'm', taskId }))
-const dates = result => result.tasks.map(t => [t.id, t.start, t.end])
 
 function assertReproducible(input, result) {
   const replay = scheduleTasks({ ...input, tasks: result.leveledTasks })

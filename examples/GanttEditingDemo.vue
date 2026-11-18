@@ -8,6 +8,9 @@ import {
 } from '../src'
 import { formatTime, hour, origin } from './data'
 import { download, imageSize } from './download'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
+import { unusedNumber } from './ids'
 
 const range = { start: origin, end: origin + 10 * hour }
 const quarter = hour / 4
@@ -90,8 +93,7 @@ function validateConnection(connection: TimelineConnection, replacing?: string) 
   }
 }
 function connect(connection: TimelineConnection) {
-  let number = model.value.dependencies.length + 1
-  while (model.value.dependencies.some(dep => dep.id === 'link-' + number)) number++
+  const number = unusedNumber(model.value.dependencies, 'link-', model.value.dependencies.length + 1)
   commit(model.value.bars, [...model.value.dependencies, { id: 'link-' + number, ...connection }])
   status.value = `Added ${connection.type} dependency from ${labels.value.get(connection.from)} to ${labels.value.get(connection.to)}.`
 }
@@ -144,8 +146,7 @@ function deleteBars(ids: readonly string[]) {
 }
 /** Add a new task with a fresh ID and label as one undoable step. */
 function addBar(rowId: string, start: number, end: number, lane?: number) {
-  let number = 1
-  while (model.value.bars.some(bar => bar.id === 'task-' + number)) number++
+  const number = unusedNumber(model.value.bars, 'task-')
   const bar: TimelineBar = { id: 'task-' + number, rowId, label: 'New task ' + number, start, end, editable: true, tone: 'amber', progress: 0 }
   if (lane) bar.lane = lane
   commit([...model.value.bars, bar])
@@ -349,11 +350,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="editing-title">
-    <div class="section-head">
-      <div><h2 id="editing-title">Timeline editing</h2><p>Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC</p></div>
-      <div class="options"><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><label><input v-model="wheel" type="checkbox"> Ctrl+wheel zoom</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></div>
-    </div>
+  <DemoPanel title-id="editing-title" title="Timeline editing" subtitle="Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC">
+    <template #options><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><label><input v-model="wheel" type="checkbox"> Ctrl+wheel zoom</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></template>
     <div class="options editing-actions" role="group" aria-label="History and fit">
       <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
       <button type="button" :disabled="!canRedo" @click="redo">Redo timeline change</button>
@@ -384,12 +382,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
         <strong>{{ bar.label }}</strong><br>{{ formatTime(shown.start) }}–{{ formatTime(shown.end) }} · {{ Math.round((bar.progress ?? 0) * 100) }}% complete
       </template>
     </GanttChart>
-    <p class="status" role="status">{{ status }}</p>
+    <StatusLine>{{ status }}</StatusLine>
     <div v-if="menu" ref="menuElement" class="context-menu" role="menu" :aria-label="menu.title"
       :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeys">
       <button v-for="item in menu.items" :key="item.label" type="button" role="menuitem" tabindex="-1" @click="choose(item)">{{ item.label }}</button>
     </div>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

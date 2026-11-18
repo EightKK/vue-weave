@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { createTimeScale, renderTimelineSvg } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Row 1', data: { effort: 3 } }, { id: 'r2', label: 'Row 2', data: { effort: null } }]
@@ -19,7 +18,7 @@ const fieldColumn = { id: 'effort', label: 'Effort', width: 80, value: row => St
 const loadRows = [{ id: 'dev', label: 'Developers' }]
 const loadSegments = [{ resourceId: 'dev', start: hour, end: 3 * hour, load: 2, capacity: 1 }]
 const base = { rows, bars, dependencies, range, pixelsPerUnit: 10 / hour, columns: [plainColumn], loadRows, loadSegments, connectable: true }
-const render = (props = {}, slots) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, ...props }, slots) }))
+const render = (props = {}, slots) => renderComponent(GanttChart, { ...base, ...props }, slots)
 
 test('GanttChart server markup is identical when the new props are unset or at their defaults', async () => {
   const plain = await render()

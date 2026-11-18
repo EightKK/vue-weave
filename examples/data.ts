@@ -1,6 +1,8 @@
 import type { GraphEdge, NetworkNode, TimelineBar, TimelineDependency, TimelineRow } from '../src'
 
-export const hour = 3_600_000
+export const minute = 60_000
+export const hour = 60 * minute
+export const day = 24 * hour
 export const origin = Date.parse('2026-11-09T08:00:00Z')
 export const range = { start: origin, end: origin + 9 * hour }
 export const formatTime = (value: number) => new Date(value).toISOString().slice(11, 16)

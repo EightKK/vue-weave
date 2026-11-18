@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import {
   createTimeScale, dependencyPath, renderTimelineSvg, scheduleTasks, timelineFromMsProject, validateTimelineData,
 } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const pixels = 20 / hour
@@ -26,7 +26,7 @@ const bars = [
 ]
 const range = { start: 0, end: 12 * hour }
 const base = { rows, bars, range, pixelsPerUnit: pixels, showSummaries: true }
-const render = (props = {}) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, ...props }) }))
+const render = (props = {}) => renderComponent(GanttChart, { ...base, ...props })
 const connectors = html => [...html.matchAll(/<path class="[^"]*" d="([^"]+)" marker-end="url\(#[^)]+\)">/g)].map(match => match[1])
 const names = html => [...html.matchAll(/class="vw-dependency-hit[^"]*" d="[^"]+" role="button" tabindex="0" aria-label="([^"]+)"/g)].map(match => match[1])
 
@@ -235,9 +235,9 @@ test('timelineFromMsProject keeps summary links with summaryDependencies, matchi
     { id: 'link-1', from: '1', to: '2' }, { id: 'link-2', from: '2', to: '5' }, { id: 'link-3', from: '3', to: '5', type: 'FF' },
   ])
   assert.deepEqual({ ...shown, dependencies: hidden.dependencies, hiddenDependencyIds: hidden.hiddenDependencyIds }, hidden)
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     rows: shown.rows, bars: shown.bars, dependencies: shown.dependencies, range, pixelsPerUnit: pixels, showSummaries: true, summaryDependencies: true,
-  }) }))
+  })
   // Rows: Design 0, Build 1, Frame 2, Wiring 3, Inspect 4.
   assert.deepEqual(connectors(html), [
     dependencyPath(x(2 * hour), middle(0), x(2 * hour), middle(1)),

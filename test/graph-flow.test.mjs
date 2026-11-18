@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { graphFlowBands, layoutFlowGraph, renderGraphSvg } from 'vue-weave/core'
 import { NetworkGraph, layoutFlowGraph as rootLayoutFlowGraph } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const node = (id, label = id) => ({ id, label })
 const flowEdge = (id, from, to, quantity, unit = 'pcs') => ({ id, from, to, data: { quantity, unit } })
@@ -267,7 +266,7 @@ test('renderGraphSvg draws bands with their widths, reference bands dashed, and 
   assert.throws(() => renderGraphSvg(flow, nodes, edges, { edgeBands: new Map([['lot-a', { width: -1 }]]) }), RangeError)
 })
 
-const render = props => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }) }))
+const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
 
 test('NetworkGraph draws bands with real width and named hit areas on the server; the markup without edgeBands is unchanged', async () => {
   const flow = layoutFlowGraph(nodes, edges, options)

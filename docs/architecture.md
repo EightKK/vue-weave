@@ -86,6 +86,13 @@ Calendar-derived overlays are display data, not scheduling logic. Non-working sh
 
 Scheduling constraints on bars are display data with an editing contract like the progress slider's. The chart draws each constraint, marks the ones that the bar's dates break and, with `constraintsEditable`, previews a handle drag locally and proposes a `TimelineConstraintEdit`; it never checks feasibility or moves a bar. The application applies the proposal (`applyTimelineConstraintEdit`) and reschedules with `scheduleTasks`, which reports a conflict. Markers and handles share the deadline list and the handle list, so the server markup of charts without constraints is unchanged.
 
+## Component internals
+
+The two components keep rendering, measurement and gesture handling in their single-file components. Pure arithmetic lives in plain TypeScript modules beside them, which the package does not export, so it can be read and tested without the component.
+
+- `src/components/networkGraph/`: the drag-preview layout (`previewLayout(context, change)` layers the changed boxes, paths and labels over the saved layout and records which nodes and edges changed, so only those items update), the `avoidNodes` preview rerouting index, group frame geometry, port keys, the move, snap and resize arithmetic, and the default node and marker drawings.
+- `src/components/ganttChart/`: geometry and windowing, prop validation, the edit arithmetic for keys, drag to create and `cascade`, row hierarchy moves and the tooltip composable. One `Gesture` record holds the pointer gesture in flight; previews stay in their own reactive refs.
+
 ## Supported scope
 
 The timeline supports fixed-height rows, collapsible row trees, explicit lanes and continuous invertible time scales. Timeline baselines and header bands come from application data. A bar can carry several named baseline sets; up to three are drawn as stacked strips that the bars make room for, so rows keep their fixed height. A collapsed group hides descendant bars and their links. Applications can provide a parent bar or display an aggregated descendant interval with showSummaries. The same rollup feeds extra column values and, with summaryDependencies, anchors dependencies that end at a summary row.

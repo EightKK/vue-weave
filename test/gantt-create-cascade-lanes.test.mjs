@@ -4,6 +4,7 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { assignLanes, propagateEdit, scheduleTasks, validateTimelineData } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const lanesOf = result => result.bars.map(bar => [bar.id, bar.lane])
 const bar = (id, start, end, extra = {}) => ({ id, rowId: 'r', label: id, start, end, ...extra })
@@ -173,7 +174,7 @@ const bars = [
   { id: 'b', rowId: 'r2', label: 'B', start: 4 * hour, end: 6 * hour },
 ]
 const chartProps = { rows, bars, dependencies: [{ id: 'ab', from: 'a', to: 'b' }], range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }) }))
+const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
 
 test('GanttChart server markup is unchanged without creatable and cascade', async () => {
   for (const extra of [{}, { connectable: true, reconnectable: true, selectedDependencyId: 'ab' }, { dir: 'rtl', progressEditable: true }]) {

@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { createTimeScale, mirrorTimeScale } from 'vue-weave/core'
 import { GanttChart, NetworkGraph } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 
@@ -42,24 +41,24 @@ const bars = [{ id: 'b', rowId: 'r', label: 'Bar', start: hour, end: 3 * hour, e
 const range = { start: 0, end: 6 * hour }
 
 test('GanttChart renders right-to-left on the server with inline-start offsets', async () => {
-  const ltr = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range }) }))
+  const ltr = await renderComponent(GanttChart, { rows, bars, range })
   assert.doesNotMatch(ltr, /dir="/)
   assert.doesNotMatch(ltr, /vw-rtl/)
   assert.match(ltr, /left:calc\(var\(--vw-label-area-width\) \+ 80px\)/)
-  const rtl = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range, dir: 'rtl' }) }))
+  const rtl = await renderComponent(GanttChart, { rows, bars, range, dir: 'rtl' })
   assert.match(rtl, /<div dir="rtl" class="vw-gantt vw-rtl"|<div class="vw-gantt vw-rtl" dir="rtl"/)
   assert.match(rtl, /right:calc\(var\(--vw-label-area-width\) \+ 80px\)/)
   assert.doesNotMatch(rtl, /left:calc\(var\(--vw-label-area-width\)/)
   // `auto` cannot know the inherited direction on the server and renders left-to-right markup.
-  const auto = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range, dir: 'auto' }) }))
+  const auto = await renderComponent(GanttChart, { rows, bars, range, dir: 'auto' })
   assert.doesNotMatch(auto, /vw-rtl|dir="/)
 })
 
 test('NetworkGraph right-to-left aligns labels to the right without moving nodes', async () => {
   const nodes = [{ id: 'a', label: 'Alpha', detail: 'first' }, { id: 'b', label: 'Beta' }]
   const edges = [{ id: 'e', from: 'a', to: 'b' }]
-  const ltr = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges }) }))
-  const rtl = await renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, dir: 'rtl' }) }))
+  const ltr = await renderComponent(NetworkGraph, { nodes, edges })
+  const rtl = await renderComponent(NetworkGraph, { nodes, edges, dir: 'rtl' })
   assert.match(ltr, /<text x="13" y="24" class="vw-node-title">Alpha<\/text>/)
   assert.match(rtl, /<text x="131" y="24" class="vw-node-title">Alpha<\/text>/)
   assert.match(rtl, /class="vw-network vw-rtl"/)

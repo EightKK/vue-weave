@@ -4,6 +4,9 @@ import {
   NetworkGraph, graphSwimlaneAt, layoutSwimlaneGraph, type GraphEdge, type GraphEdgeStyle, type GraphLayoutDirection,
   type GraphLayoutFunction, type GraphNodeMove, type NetworkNode,
 } from '../src'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
+import { unusedNumber } from './ids'
 
 // Opt-in example of `layoutSwimlaneGraph` and the NetworkGraph `lanes` prop: one lane per department, so hand-overs
 // read as edges that cross a lane boundary. The lane order is the caller's and never changes; dragging a step into
@@ -52,8 +55,7 @@ const swimlanes = computed(() => layoutSwimlaneGraph(nodes.value, edges.value, {
 const layout: GraphLayoutFunction = () => swimlanes.value
 
 function addStep() {
-  let number = 1
-  while (nodes.value.some(node => node.id === 'step-' + number)) number++
+  const number = unusedNumber(nodes.value, 'step-')
   const lane = lanes.find(item => item.id === newLane.value)!
   const previous = nodes.value[nodes.value.length - 1]
   nodes.value = [...nodes.value, step('step-' + number, 'Step ' + number, lane.id as keyof typeof tones)]
@@ -82,10 +84,7 @@ function reset() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="swimlane-title">
-    <div class="section-head">
-      <div><h2 id="swimlane-title">Process lanes</h2><p>A machining process with one lane per department; hand-overs cross lane boundaries.</p></div>
-    </div>
+  <DemoPanel title-id="swimlane-title" title="Process lanes" subtitle="A machining process with one lane per department; hand-overs cross lane boundaries.">
     <div class="options swimlane-options" role="group" aria-label="Process lane options">
       <label>Flow direction
         <select v-model="direction" aria-label="Flow direction"><option>LR</option><option>RL</option><option>TB</option><option>BT</option></select>
@@ -105,8 +104,8 @@ function reset() {
     <NetworkGraph :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :options="{ direction }" draggable show-minimap
       :edge-style="edgeStyle" :avoid-nodes="avoidNodes" :height="vertical ? 560 : 440" :labels="{ region: 'Process lane graph' }"
       @node-move="moveStep" />
-    <p class="status" role="status" aria-label="Process lane status">{{ status }}</p>
-  </section>
+    <StatusLine label="Process lane status">{{ status }}</StatusLine>
+  </DemoPanel>
 </template>
 
 <style scoped>

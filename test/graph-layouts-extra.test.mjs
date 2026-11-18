@@ -1,6 +1,7 @@
-import test from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { layoutCircularGraph, layoutGridGraph, layoutConcentricGraph } from 'vue-weave/core'
+import { centre } from './helpers/builders.mjs'
 
 const make = n => Array.from({ length: n }, (_, i) => ({ id: 'n' + i }))
 const chain = n => Array.from({ length: n - 1 }, (_, i) => ({ id: 'e' + i, from: 'n' + i, to: 'n' + (i + 1) }))
@@ -17,8 +18,6 @@ function assertNoOverlap(layout, tolerance = 1e-6) {
     }
   }
 }
-
-const centre = box => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
 
 const layouts = {
   circular: (n, e, o) => layoutCircularGraph(n, e, o),

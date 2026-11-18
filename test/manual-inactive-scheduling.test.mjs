@@ -4,11 +4,10 @@ import {
   buildPlacementInput, calculateResourceLoad, collectScheduleReasons, levelResources, parseWeaveSnapshot, propagateEdit,
   rescheduleFromStatusDate, restoreWeaveSnapshot, scheduleTasks, scheduleToGraph, serializeWeaveSnapshot,
 } from 'vue-weave/core'
+import { dates, link } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 40 }
 const shifts = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 28 }, { start: 29, end: 33 }]
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, type, lag })
-const dates = result => result.tasks.map(task => [task.id, task.start, task.end])
 
 test('a manual task keeps its dates against predecessors, bounds, mode, duration and calendar; successors follow it', () => {
   const input = {

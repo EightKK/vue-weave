@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { GanttChart } from 'vue-weave'
 import { calendarBands, calendarZoomPresets, intlTimeFormatter } from 'vue-weave/core'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const minute = 60_000
 const hour = 60 * minute
@@ -132,10 +131,10 @@ test('calendarZoomPresets use a fixed offset and validate their options', () => 
 test('calendarZoomPresets plug into GanttChart zoomPresets', async () => {
   const presets = calendarZoomPresets(spring, { timeZone: 'Europe/Berlin', locale: 'en-GB' })
   const errors = []
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     rows: [{ id: 'r', label: 'Row' }], bars: [{ id: 'b', rowId: 'r', label: 'Build', start: spring.start + day, end: spring.start + 3 * day }],
     range: spring, zoomPresets: presets, zoomPreset: 'days', formatTime: presets[1].formatTime, onValidationError: error => errors.push(error),
-  }) }))
+  })
   assert.deepEqual(errors, [])
   assert.match(html, /aria-label="Build Mon 2 Mar–Wed 4 Mar"/)
   assert.match(html, />March 2026</)

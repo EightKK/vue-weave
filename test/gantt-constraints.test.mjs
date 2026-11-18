@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import {
   applyTimelineConstraintEdit, createTimeScale, defaultSvgExportTheme, renderTimelineSvg, scheduleTasks, timelineConstraintKinds,
   timelineConstraintViolated, timelineConstraints, toMsProjectXml, validateTimelineData,
 } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const rows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]
@@ -14,7 +14,7 @@ const range = { start: 0, end: 10 * hour }
 const bar = (extra = {}) => ({ id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour, editable: true, ...extra })
 const other = { id: 'b', rowId: 'r2', label: 'B', start: 5 * hour, end: 6 * hour }
 const chartProps = { rows, range, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }) }))
+const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
 
 test('validateTimelineData accepts finite constraints, also conflicting ones, and rejects any other value', () => {
   const check = constraints => validateTimelineData(rows, [bar({ constraints }), other])

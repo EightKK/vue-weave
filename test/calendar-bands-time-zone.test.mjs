@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { calendarBands } from 'vue-weave/core'
+import { sha256Json } from './helpers/seeded.mjs'
 
 const hour = 3_600_000
 const day = 24 * hour
@@ -34,7 +34,7 @@ test('calendarBands without timeZone returns the same bands as before time zones
       }
     }
   }
-  assert.equal(createHash('sha256').update(JSON.stringify(out)).digest('hex'), '8b91f3ce301664a4244d418b5f7f9a13cb29d462c45d3443b5ed8166d1039c0d')
+  assert.equal(sha256Json(out), '8b91f3ce301664a4244d418b5f7f9a13cb29d462c45d3443b5ed8166d1039c0d')
 })
 
 test('calendarBands in a zone without daylight saving equals the matching fixed offset', () => {

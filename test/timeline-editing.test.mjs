@@ -7,6 +7,7 @@ import {
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const day = 24 * hour
@@ -200,7 +201,7 @@ const base = {
 }
 
 test('editing, preset, histogram and now-marker props render on the server without reading the clock', async () => {
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, showNow: true }) }))
+  const html = await renderComponent(GanttChart, { ...base, showNow: true })
   assert.ok(!/NaN|Infinity/.test(html))
   assert.match(html, /aria-label="Start dependency from finish of Alpha"/)
   assert.match(html, /aria-label="Select dependency Alpha → Beta FS"/)
@@ -212,10 +213,10 @@ test('editing, preset, histogram and now-marker props render on the server witho
   assert.match(html, /vw-pinch-zoom/)
   // Without an explicit time the clock is read only after mounting.
   assert.ok(!html.includes('vw-gantt-now'))
-  const fixed = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, showNow: true, now: 5 * hour }) }))
+  const fixed = await renderComponent(GanttChart, { ...base, showNow: true, now: 5 * hour })
   assert.match(fixed, /vw-gantt-now/)
   assert.match(fixed, /title="Now 05:00"/)
-  const hidden = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...base, now: 5 * hour }) }))
+  const hidden = await renderComponent(GanttChart, { ...base, now: 5 * hour })
   assert.ok(!hidden.includes('vw-gantt-now'))
 })
 

@@ -8,6 +8,8 @@ import {
   graphDegreeCentrality, graphPageRank, layoutForceGraph,
   type GraphEdge, type GraphLayoutFunction, type NetworkNode,
 } from '../src'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
 
 // mulberry32: a small deterministic PRNG, so the demo and its tests see the same network every time.
 function seeded(seed: number) {
@@ -132,10 +134,7 @@ async function focus(id: string) {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="analysis-title">
-    <div class="section-head">
-      <div><h2 id="analysis-title">Graph analysis</h2><p>Components, communities and node rankings of a synthetic supplier network.</p></div>
-    </div>
+  <DemoPanel title-id="analysis-title" title="Graph analysis" subtitle="Components, communities and node rankings of a synthetic supplier network.">
     <p class="hint">Summary: <output aria-label="Network summary">{{ summary }}</output></p>
     <div class="options analysis-options" role="group" aria-label="Analysis options">
       <label><input v-model="grouped" type="checkbox"> Group communities</label>
@@ -154,7 +153,7 @@ async function focus(id: string) {
       :groups="shownGroups" :collapsed-group-ids="shownCollapsed" collapsible-groups
       :highlighted-node-ids="highlighted" :height="480" :show-minimap="true"
       :labels="{ region: 'Supplier network' }" @update:collapsed-group-ids="collapsed = $event" />
-    <p class="status" role="status" aria-label="Analysis status">{{ status }}</p>
+    <StatusLine label="Analysis status">{{ status }}</StatusLine>
     <template v-if="top.length">
       <p class="hint">Top 5 by {{ metricNames[rankBy as Exclude<Metric, 'none'>] }}:</p>
       <ol class="analysis-ranking" aria-label="Top ranked nodes">
@@ -163,7 +162,7 @@ async function focus(id: string) {
         </li>
       </ol>
     </template>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

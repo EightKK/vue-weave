@@ -5,9 +5,9 @@ import {
   assignmentWorkPeriods, calculateResourceLoad, levelResources, parseWeaveSnapshot, projectResourceTimeline,
   proposeResourceAssignment, renderTimelineSvg, createTimeScale, scheduleTasks, toPlanningDiagnostics,
 } from 'vue-weave/core'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { GanttChart } from 'vue-weave'
+import { seededRandom } from './helpers/seeded.mjs'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const day = { start: 0, end: 24 }
 const segments = (load, resourceId) => load.filter(item => !resourceId || item.resourceId === resourceId)
@@ -78,10 +78,10 @@ test('the capacity line of GanttChart and the SVG export follow the capacity of 
     [{ id: 'crew', capacity: 4, capacityPeriods: [{ start: 0, end: 4 * hour, capacity: 2 }] }],
     [{ resourceId: 'crew', taskId: 't', units: 3 }])
   assert.deepEqual(segments(load).map(item => item.slice(2)), [[0, 2, 0], [3, 2, 1], [3, 4, 0], [0, 4, 0]])
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     rows: [{ id: 'r', label: 'Row' }], bars: [{ id: 't', rowId: 'r', label: 'Task', start: 2 * hour, end: 6 * hour }],
     range: { start: 0, end: 8 * hour }, pixelsPerUnit: 40 / hour, loadRows: [{ id: 'crew', label: 'Crew' }], loadSegments: load,
-  }) }))
+  })
   // The peak is 4, so a capacity of 2 sits at 50 % and a capacity of 4 at 100 %.
   const lines = [...html.matchAll(/class="vw-load-capacity" style="bottom:([\d.]+)%;?"/g)].map(match => Number(match[1]))
   assert.deepEqual(lines, [50, 50, 100, 100])
@@ -162,9 +162,7 @@ test('leveling keeps manual tasks, ignores inactive tasks and summaries, and agr
 // Seeded plans with capacity periods and partial assignments: leveling and `calculateResourceLoad` must agree. Every
 // remaining overload involves a task that leveling reports as unresolved, so a plan without unresolved tasks has none.
 test('seeded plans: after leveling, every overload involves an unresolved task', () => {
-  let seed = 4242
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
-  const pick = n => Math.floor(random() * n)
+  const { pick } = seededRandom(4242)
   let clean = 0, partials = 0
   for (let plan = 0; plan < 200; plan++) {
     const quantum = pick(2) + 1

@@ -9,6 +9,7 @@ import {
   type GraphEdge, type GraphGesture, type GraphGestureEnd, type GraphNodeMove, type NetworkGroup, type NetworkNode, type GraphRoutingPolicy,
 } from '../src'
 import { createControlledAdapter, createWorkerComputation, inThreadComputation } from './adapters/asyncLayout'
+import DemoPanel from './components/DemoPanel.vue'
 
 const settings = { nodeWidth: 150, nodeHeight: 52 }
 const port = (id: string, side: 'left' | 'right') => ({ id, side, direction: side === 'left' ? 'target' as const : 'source' as const })
@@ -105,10 +106,7 @@ function setCollapsed(ids: Set<string>) {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="async-title">
-    <div class="section-head">
-      <div><h2 id="async-title">Asynchronous layout</h2><p>The built-in layout runs asynchronously; only the newest complete frame is shown.</p></div>
-    </div>
+  <DemoPanel title-id="async-title" title="Asynchronous layout" subtitle="The built-in layout runs asynchronously; only the newest complete frame is shown.">
     <div class="options async-options" role="group" aria-label="Layout service">
       <label>Response timing
         <select v-model="speed" aria-label="Response timing">
@@ -145,7 +143,7 @@ function setCollapsed(ids: Set<string>) {
     <ol class="async-log" aria-label="Layout responses">
       <li v-for="(entry, index) in log" :key="index">{{ entry }}</li>
     </ol>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

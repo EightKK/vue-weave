@@ -4,11 +4,11 @@ import {
   GanttChart, calendarZoomPresets, intlTimeFormatter, type CalendarZoomLevel, type TimelineBar, type TimelineEdit,
   type TimelineMarkerRange, type TimelineRow,
 } from '../../src'
+import { day } from '../data'
 
 // Ready-made calendar zoom levels (`calendarZoomPresets`) in an IANA time zone and a chosen locale, with highlighted
 // time ranges (`markerRanges`): a company-wide code freeze and holidays that close one office only.
 const timeZone = 'Europe/Berlin'
-const day = 86_400_000
 /** Local midnight in Berlin of a day in summer 2026 (CEST, UTC+2), so the data never depends on the local clock or zone. */
 const on = (month: number, date: number) => Date.parse(`2026-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}T00:00:00+02:00`)
 const range = { start: on(4, 6), end: on(8, 31) }

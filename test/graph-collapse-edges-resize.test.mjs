@@ -7,6 +7,8 @@ import {
   routeGraphEdges, routeGraphPorts,
 } from 'vue-weave/core'
 import { NetworkGraph, collapseGraphGroups as rootCollapse, routeGraphEdges as rootRoute, applyGraphSizes as rootSizes } from 'vue-weave'
+import { byId, deepFreeze as freeze, onBorder, segments } from './helpers/builders.mjs'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }, { id: 'd', label: 'D' }, { id: 'e', label: 'E' },
@@ -15,36 +17,6 @@ const edges = [
   { id: 'ab', from: 'a', to: 'b', label: 'feeds' }, { id: 'bc', from: 'b', to: 'c' }, { id: 'ac', from: 'a', to: 'c', label: 'feeds' },
   { id: 'cd', from: 'c', to: 'd' }, { id: 'de', from: 'd', to: 'e' }, { id: 'be', from: 'b', to: 'e' }, { id: 'aa', from: 'a', to: 'a' },
 ]
-const byId = list => new Map(list.map(item => [item.id, item]))
-const freeze = value => {
-  if (value && typeof value === 'object') {
-    for (const item of Object.values(value)) freeze(item)
-    Object.freeze(value)
-  }
-  return value
-}
-// Every segment of a path drawn only with M, L, H and V commands, as pairs of points.
-function segments(path) {
-  const tokens = path.match(/[MLHV]|[-+]?\d*\.?\d+(?:e[-+]?\d+)?/gi)
-  const points = []
-  let command = '', x = 0, y = 0
-  for (let i = 0; i < tokens.length;) {
-    if (/[MLHV]/.test(tokens[i])) command = tokens[i++]
-    if (command === 'M' || command === 'L') {
-      x = Number(tokens[i++])
-      y = Number(tokens[i++])
-    } else if (command === 'H') x = Number(tokens[i++])
-    else if (command === 'V') y = Number(tokens[i++])
-    else throw new Error('Unexpected command ' + command + ' in ' + path)
-    points.push({ x, y })
-  }
-  return points.slice(1).map((point, index) => [points[index], point])
-}
-const onBorder = (box, point) => {
-  const near = (a, b) => Math.abs(a - b) <= 0.01
-  return ((near(point.x, box.x) || near(point.x, box.x + box.width)) && point.y >= box.y - 0.01 && point.y <= box.y + box.height + 0.01)
-    || ((near(point.y, box.y) || near(point.y, box.y + box.height)) && point.x >= box.x - 0.01 && point.x <= box.x + box.width + 0.01)
-}
 
 test('collapseGraphGroups replaces a collapsed group with a proxy, re-attaches and merges edges and drops internal ones', () => {
   assert.equal(rootCollapse, collapseGraphGroups)
@@ -311,7 +283,7 @@ test('position and size overlays validate entries of unknown node IDs alike', ()
 })
 
 const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]
-const render = props => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }) }))
+const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
 
 test('NetworkGraph server markup is unchanged by default values of the new inputs', async () => {
   const plain = await render({ groups, draggable: true, edgesSelectable: true })

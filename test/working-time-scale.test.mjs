@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import { buildWorkPeriods, createTimeScale, createWorkingTimeScale, defaultNonWorkingRatio, invertWorkPeriods } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const day = 24 * hour
@@ -176,7 +176,7 @@ const bars = [
   { id: 'a', rowId: 'r', label: 'Work', start: 2 * hour, end: 4 * hour },
   { id: 'b', rowId: 'r', label: 'Break', start: 4 * hour, end: 6 * hour },
 ]
-const render = props => renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range, snap: hour, formatTime: String, ...props }) }))
+const render = props => renderComponent(GanttChart, { rows, bars, range, snap: hour, formatTime: String, ...props })
 const barBox = (html, id) => {
   const match = html.match(new RegExp('class="vw-gantt-bar[^"]*" style="(?:left|right):calc\\(var\\(--vw-label-area-width\\) \\+ ([\\d.]+)px\\);width:([\\d.]+)px[^"]*" data-vw-bar="' + id + '"'))
   assert.ok(match, 'bar ' + id + ' is rendered')

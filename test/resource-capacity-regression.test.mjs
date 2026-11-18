@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import * as core from 'vue-weave/core'
+import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 // Seeded plans mixing calendars, quanta, pauses, splittable, manual, inactive and summary tasks, priorities, several
 // resources with and without availability `periods`, and assignment units. The digest was produced before
@@ -12,17 +12,9 @@ test('resource load, leveling and diagnostics without capacity periods or partia
 })
 
 function resourcePlanDigest() {
-  let seed = 7302026
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
-  const pick = n => Math.floor(random() * n)
+  const { pick } = seededRandom(7302026)
   const outputs = []
-  const run = fn => {
-    try {
-      return fn()
-    } catch (error) {
-      return { error: error.constructor.name + ': ' + error.message }
-    }
-  }
+  const run = fn => attempt(fn, error => error.constructor.name + ': ' + error.message)
   for (let plan = 0; plan < 300; plan++) {
     const quantum = pick(3) + 1
     const range = { start: 0, end: 160 * quantum }
@@ -93,13 +85,8 @@ function resourcePlanDigest() {
     const plain = run(() => core.levelResources(input))
     const diagnostics = run(() => core.toPlanningDiagnostics(leveled))
     const withLoad = schedule.ok && Array.isArray(load) ? run(() => core.toPlanningDiagnostics(schedule, load)) : undefined
-    outputs.push([load, traced(leveled), plain, diagnostics, withLoad])
+    outputs.push([load, withPlainTrace(leveled), plain, diagnostics, withLoad])
   }
-  return createHash('sha256').update(JSON.stringify(outputs)).digest('hex')
-}
-
-function traced(result) {
-  if (!result || !result.trace) return result
-  return { ...result, trace: { reasons: result.trace.reasons, taskReasonIds: [...result.trace.taskReasonIds] } }
+  return sha256Json(outputs)
 }
 

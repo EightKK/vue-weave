@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import { graphNodesInPolygon, graphPointInPolygon, layoutLayeredGraph } from 'vue-weave/core'
 import { NetworkGraph, graphNodesInPolygon as rootNodesInPolygon, graphPointInPolygon as rootPointInPolygon } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
 
@@ -72,7 +72,7 @@ const edges = [
   { id: 'bc', from: 'b', to: 'c' },
 ]
 const groups = [{ id: 'g', label: 'Pair', nodeIds: ['a', 'b'] }]
-const render = (props, slots) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 
 test('NetworkGraph markup is unchanged when the label, lasso and toolbar inputs are absent or off', async () => {
   const plain = await render({ groups, showMinimap: true, boxSelect: true, selectedId: 'a' })

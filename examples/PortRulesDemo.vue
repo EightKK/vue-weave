@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   NetworkGraph, graphConnectionViolations, type GraphConnection, type GraphEdge, type GraphPortRules, type GraphReconnect, type NetworkNode,
 } from '../src'
+import { unusedNumber } from './ids'
 
 // Opt-in example of NetworkGraph `connectionRules`: each named port declares a type, a direction and a connection
 // limit. Broken rules are rejected with their reason, and while a connection is dragged the handles show which ports
@@ -41,8 +42,7 @@ const audit = computed(() => {
 })
 
 function commitConnection(connection: GraphConnection) {
-  let number = edges.value.length + 1
-  while (edges.value.some(edge => edge.id === 'typed-' + number)) number++
+  const number = unusedNumber(edges.value, 'typed-', edges.value.length + 1)
   edges.value = [...edges.value, { id: 'typed-' + number, ...connection }]
   status.value = 'Connected ' + connection.from + ' to ' + connection.to + '.'
 }

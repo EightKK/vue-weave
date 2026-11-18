@@ -4,6 +4,7 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { removeTimelineBars, validateTimelineData } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 
@@ -54,7 +55,7 @@ test('removeTimelineBars rejects unknown bar IDs with an Error', () => {
 
 const chartProps = { rows, bars, dependencies, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
 function render(props = {}, slots) {
-  return renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }, slots) }))
+  return renderComponent(GanttChart, { ...chartProps, ...props }, slots)
 }
 
 test('GanttChart markup is unchanged without the new interaction props', async () => {
