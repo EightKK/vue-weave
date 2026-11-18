@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- `fromMsProjectXml` also reads calendars, resources and assignments. New optional fields of `MsProjectImport`: `calendars` (`MsProjectCalendar`, each a complete `WorkWeek` with base calendars resolved, weekday working times and one-off exceptions), `defaultCalendarId`, `resources` (`MsProjectResource`) and `assignments` (`MsProjectAssignment`); `MsProjectTask.calendarId` is set from a task's `CalendarUID`. Recurring exceptions, alternate work weeks and unresolvable references are reported as warnings (new codes `skipped-calendar`, `invalid-calendar`, `unsupported-calendar`, `unknown-calendar`, `skipped-resource`, `skipped-assignment`). A file without these sections gives the same result as before.
+- `workCalendarsFromMsProject(project, range)` builds `WorkCalendar`s from imported calendars, and `resourceLoadFromMsProject(project, options?)` maps imported resources and assignments to the inputs of `calculateResourceLoad`, `levelResources` and `projectResourceTimeline` (units scaled to integers, 100 per full-time resource by default). `timelineFromMsProject` adds `resources` and `assignments` to its result when the plan has resources.
+- `toMsProjectXml` writes optional `calendars`, `defaultCalendarId`, `resources`, `assignments` and a task's `calendarId`, so imported calendars, resources and assignments survive a round trip. Without them the output is unchanged.
+- `fromICalendar` reads RFC 5545 text into events (UID, SUMMARY, DESCRIPTION, DTSTART with DTEND or DURATION; UTC, floating, `TZID` and `VALUE=DATE` times, resolved with `Intl`), with warnings for unknown time zones, recurrence (only the first instance is imported), skipped events and malformed lines. `timelineFromICalendar` turns events into rows and bars. New types `ICalendarImport`, `ICalendarImportEvent`, `ICalendarImportOptions`, `ICalendarImportWarning`, `ICalendarImportWarningCode` and `ICalendarTimeline`.
 
 ## 0.5.0 - 2026-11-17
 
