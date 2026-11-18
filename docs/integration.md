@@ -740,3 +740,73 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+## Loading only what is visible
+
+GanttChart renders only the rows and the time window on screen, and NetworkGraph can cull what is off screen, but both still validate and index every item they are given. For plans or graphs too large to fetch at once, load only what is shown. The library stays controlled: GanttChart reports what it renders, `useWindowedData` keeps the request state, and your `load` function fetches. Nothing is requested during server rendering.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { GanttChart, useWindowedData, type TimelineBar, type TimelineDependency, type TimelineVisibleWindow } from 'vue-weave'
+
+const day = 86_400_000
+// `rows` (the whole row skeleton), `range` (the whole plan) and `planVersion` come from your application.
+const view = ref<TimelineVisibleWindow>()
+const filter = ref('all')
+const plan = useWindowedData<TimelineBar, TimelineDependency>({
+  view,
+  condition: () => `${filter.value}@${planVersion.value}`, // results for another filter or version are never attached
+  chunkSize: 7 * day,       // requests are aligned to weeks...
+  origin: range.start,
+  padding: day,             // ...and a day of padding means small scrolls do not refetch
+  load: async (request, { signal }) => {
+    const query = new URLSearchParams({ from: String(request.start), to: String(request.end), rows: request.rowIds!.join(','), filter: filter.value })
+    const response = await fetch(`/api/plan/bars?${query}`, { signal })
+    if (!response.ok) throw new Error(`Loading failed (${response.status})`)
+    return response.json() // { items: TimelineBar[], links: TimelineDependency[] }
+  },
+})
+</script>
+
+<template>
+  <p role="status">{{ plan.status.value }}</p>
+  <button v-if="plan.coverage.value.failed" type="button" @click="plan.retry()">Retry</button>
+  <GanttChart :rows="rows" :bars="plan.items.value" :dependencies="plan.resolvedLinks.value" :range="range" readonly
+    @visible-window-change="view = $event" />
+</template>
+```
+
+- **What is requested.** The window (`[start, end)`, half-open like every interval in the library) is padded, aligned to chunks, and split into cells of one chunk of one row. Only cells that are not loaded, loading or failed are requested; adjacent chunks with the same missing rows share one request. A request asks for the items that overlap `[start, end)`; because chunks are half-open, a bar that ends at midnight is not fetched for the next day, and a milestone at midnight belongs to the next day.
+- **Rows.** The row skeleton (`rows`) is passed whole; it is what scrolling and collapsing work on. `rowIds` in the event are the rendered rows after collapsing, with overscan. To fetch child rows on expansion, watch `expandedIds` (or `update:collapsedIds`) and load the children of newly expanded rows yourself; collapsing a row while its children's bars load aborts the requests that no longer cover a visible row.
+- **Superseded and stale responses.** Scrolling away aborts requests whose cells are all out of view (`signal` aborts; pass it to `fetch`), and a late answer to an aborted or superseded request is ignored even when it arrives. A fast scroll from A to B and back to A issues a new request for A, and only that one's answer is applied.
+- **Duplicates.** A bar spanning two chunks is returned by both requests; items and links are merged by ID, so it is kept once (the later answer replaces it).
+- **Status.** `status` (and `coverageOf(window)` for any window, for example one row) distinguishes `unloaded`, `loading`, `loaded-empty` (fetched, nothing there), `loaded` and `failed`. A failed request keeps everything already loaded on display; its cells stay `failed` until `retry()`. `invalidate()` refetches the view while the current items stay on display; a new `condition` drops everything, because data for another filter or version must not be mixed in.
+- **Dangling links.** A dependency loaded with one bar may point to a bar that is not loaded. The components throw for links to unknown items, so bind `resolvedLinks`; `danglingLinks` holds the rest with their `missingIds`, and they move to `resolvedLinks` as soon as the missing bar arrives. Outside the composable, `splitDanglingLinks(links, presentIds)` does the same split.
+- **Memory.** Loaded items are kept until the condition changes or `resetWindowedData`; to bound memory, change the condition or keep your own cache in `load`.
+
+Partial data cannot determine deadlines, critical paths, total load or plan comparisons. `complete` is true only when every cell of the current view has loaded, which says nothing about the rest of the plan. Run `scheduleTasks`, `levelResources`, `calculateResourceLoad` and comparisons on complete inputs (on the server, or in the client over the full data set) and display their results as data, or label any figure computed over the loaded part as partial. Totals must not change when the user scrolls; the demo's counters show fetched versus total items and say so.
+
+### Expanding a graph one hop at a time
+
+For a graph, load the neighbourhood of the selected nodes and grow it on request. The graph expansion helpers merge pages, deduplicate nodes and edges (cycles and shared neighbours come back from several pages), remember which nodes have been expanded and keep edges to nodes that are not loaded out of the component input:
+
+```ts
+import { shallowRef, computed } from 'vue'
+import { beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, mergeGraphExpansionPage } from 'vue-weave'
+
+const graph = shallowRef(createGraphExpansion({ nodes: [selectedNode] }))
+const shown = computed(() => graphExpansionView(graph.value)) // bind shown.nodes and shown.edges to NetworkGraph
+
+async function expand(id: string) {
+  graph.value = beginGraphExpansion(graph.value, [id])
+  try {
+    const page = await api.neighbours(id) // { nodes, edges } one hop around id
+    graph.value = mergeGraphExpansionPage(graph.value, page, [id])
+  } catch (error) {
+    graph.value = cancelGraphExpansion(graph.value, [id])
+  }
+}
+```
+
+`shown.dangling` lists edges waiting for a node, and `shown.frontierIds` the loaded nodes not expanded yet. Layout stability is out of scope: each expansion gives NetworkGraph a larger graph, which it lays out again, so existing nodes can move. Keep positions yourself (`positions` prop) or use a layout engine that accepts fixed nodes if that matters.

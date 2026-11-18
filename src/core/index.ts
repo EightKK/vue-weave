@@ -120,3 +120,16 @@ export type {
   PlanAssignmentChange, PlanAssignmentDiff, PlanInputDiff, PlanViolation, PlanTaskComparison, PlanResourceOverload, PlanResultDiff,
   PlanComparison, PlanComparisonTargetOptions, PlanComparisonTargets,
 } from './planComparison.js'
+export {
+  createWindowedDataState, setWindowedView, resolveWindowedRequest, rejectWindowedRequest, retryWindowedData, invalidateWindowedData,
+  cancelWindowedRequests, resetWindowedData, windowedCellStatus, windowedCoverage, splitDanglingLinks,
+} from './windowedData.js'
+export type {
+  WindowedCellStatus, WindowedView, TimelineVisibleWindow, WindowedDataOptions, WindowedDataRequest, WindowedDataPage, WindowedCell,
+  WindowedDataNormalizedOptions, WindowedInFlightRequest, WindowedDataState, WindowedDataTransition, WindowedDataSettlement, WindowedCoverage,
+  DanglingLink, SplitDanglingLinksOptions, SplitDanglingLinks,
+} from './windowedData.js'
+export {
+  createGraphExpansion, beginGraphExpansion, cancelGraphExpansion, mergeGraphExpansionPage, graphExpansionView,
+} from './graphExpansion.js'
+export type { GraphExpansionState, GraphExpansionPage, GraphExpansionView } from './graphExpansion.js'
