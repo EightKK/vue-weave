@@ -33,6 +33,17 @@ export interface GraphLayoutRequestInput<N extends NetworkNode = NetworkNode, E 
   /** Node sizes to pass to the layout engine. Like `positions`, give them only when the engine uses them. */
   sizes?: ReadonlyMap<string, GraphNodeSize>
   /**
+   * Incremental layout: nodes the engine must keep where `positions` puts them (pinned). Optional; like `positions`,
+   * part of the input key, so give them only when the engine honours them. IDs that are not nodes of a request (such as
+   * members of a collapsed group in the 'shown' request) are passed as they are; engines ignore them.
+   */
+  fixedIds?: ReadonlySet<string>
+  /**
+   * Incremental layout: nodes that are new since the previous layout (for example the page of a graph expansion), which
+   * the engine places around the others. Optional and part of the input key, like `fixedIds`.
+   */
+  addedIds?: ReadonlySet<string>
+  /**
    * Engine settings. Must be JSON-serializable; its JSON text is part of the input key, so build it with a stable key
    * order.
    */
@@ -64,6 +75,10 @@ export interface GraphLayoutRequest<N extends NetworkNode = NetworkNode, E exten
   direction: GraphLayoutDirection
   positions?: ReadonlyMap<string, GraphPoint>
   sizes?: ReadonlyMap<string, GraphNodeSize>
+  /** Pinned nodes, as given in the input; present only when the input has some. */
+  fixedIds?: ReadonlySet<string>
+  /** New nodes, as given in the input; present only when the input has some. */
+  addedIds?: ReadonlySet<string>
   settings?: unknown
 }
 
@@ -96,6 +111,8 @@ export interface GraphLayoutKeyInput {
   direction?: GraphLayoutDirection
   positions?: ReadonlyMap<string, GraphPoint>
   sizes?: ReadonlyMap<string, GraphNodeSize>
+  fixedIds?: ReadonlySet<string>
+  addedIds?: ReadonlySet<string>
   settings?: unknown
   revision?: string
 }
@@ -135,7 +152,11 @@ export function graphLayoutInputKey(input: GraphLayoutKeyInput): string {
   const collapsed = input.collapsedGroupIds ? [...new Set(input.collapsedGroupIds)].sort() : []
   const positions = sortedEntries(input.positions)?.map(([id, point]) => [id, point.x, point.y])
   const sizes = sortedEntries(input.sizes)?.map(([id, size]) => [id, size.width, size.height])
-  return JSON.stringify(['vw-layout-1', scope, direction, revision, settings, nodes, edges, groups, collapsed, positions, sizes])
+  const fixed = input.fixedIds?.size ? [...input.fixedIds].sort() : undefined
+  const added = input.addedIds?.size ? [...input.addedIds].sort() : undefined
+  // The incremental fields are appended only when present, so keys of inputs without them are unchanged.
+  const incremental = fixed || added ? [fixed, added] : []
+  return JSON.stringify(['vw-layout-1', scope, direction, revision, settings, nodes, edges, groups, collapsed, positions, sizes, ...incremental])
 }
 
 /**
@@ -150,10 +171,13 @@ export function buildGraphLayoutRequests<N extends NetworkNode, E extends GraphE
   input: GraphLayoutRequestInput<N, E, G>, requestId: string,
 ): GraphLayoutRequests<N, E, G> {
   if (typeof requestId !== 'string' || !requestId) throw new Error('A graph layout request needs a nonempty requestId')
-  const { nodes, edges, groups = [], direction = 'LR', positions, sizes, settings, revision = '' } = input
+  const { nodes, edges, groups = [], direction = 'LR', positions, sizes, fixedIds, addedIds, settings, revision = '' } = input
   const known = new Set(groups.map(group => group.id))
   const active = input.collapsedGroupIds && groups.length ? [...new Set(input.collapsedGroupIds)].filter(id => known.has(id)) : []
-  const shared = { direction, revision, ...positions?.size && { positions }, ...sizes?.size && { sizes }, ...settings !== undefined && { settings } }
+  const shared = {
+    direction, revision, ...positions?.size && { positions }, ...sizes?.size && { sizes }, ...fixedIds?.size && { fixedIds },
+    ...addedIds?.size && { addedIds }, ...settings !== undefined && { settings },
+  }
   const request = <RN extends NetworkNode, RE extends GraphEdge, RG extends NetworkGroup>(
     scope: GraphLayoutScope, scopeNodes: readonly RN[], scopeEdges: readonly RE[], scopeGroups: readonly RG[], collapsed: readonly string[],
   ): GraphLayoutRequest<RN, RE, RG> => ({
@@ -313,10 +337,12 @@ export interface GraphLayoutJson {
   routes?: [string, GraphLayoutRoute][]
 }
 
-/** A `GraphLayoutRequest` with its Maps as entry arrays, for JSON. */
-export type GraphLayoutRequestJson = Omit<GraphLayoutRequest, 'positions' | 'sizes'> & {
+/** A `GraphLayoutRequest` with its Maps as entry arrays and its Sets as ID arrays, for JSON. */
+export type GraphLayoutRequestJson = Omit<GraphLayoutRequest, 'positions' | 'sizes' | 'fixedIds' | 'addedIds'> & {
   positions?: [string, GraphPoint][]
   sizes?: [string, GraphNodeSize][]
+  fixedIds?: string[]
+  addedIds?: string[]
 }
 
 /** A layout Worker message in JSON form: every Map is an array of entries. */
@@ -401,8 +427,14 @@ function checkRequest(request: Record<string, unknown> | null) {
 export function graphLayoutMessageToJson(message: GraphLayoutWorkerMessage): GraphLayoutWorkerJsonMessage {
   if (message.type === 'success') return { ...message, layout: graphLayoutToJson(message.layout) }
   if (message.type !== 'request') return { ...message }
-  const { positions, sizes, ...rest } = message.request
-  return { type: 'request', request: { ...rest, ...positions && { positions: [...positions] }, ...sizes && { sizes: [...sizes] } } }
+  const { positions, sizes, fixedIds, addedIds, ...rest } = message.request
+  return {
+    type: 'request',
+    request: {
+      ...rest, ...positions && { positions: [...positions] }, ...sizes && { sizes: [...sizes] }, ...fixedIds && { fixedIds: [...fixedIds] },
+      ...addedIds && { addedIds: [...addedIds] },
+    },
+  }
 }
 
 /**
@@ -416,18 +448,22 @@ export function graphLayoutMessageFromJson(value: unknown): GraphLayoutWorkerMes
     case 'request': {
       const request = message.request as Record<string, unknown> | null
       checkRequest(request)
-      const { positions, sizes, ...rest } = request as unknown as GraphLayoutRequestJson
+      const { positions, sizes, fixedIds, addedIds, ...rest } = request as unknown as GraphLayoutRequestJson
       const positionEntries = positions === undefined ? undefined : entries(positions, 'positions')
       const sizeEntries = sizes === undefined ? undefined : entries(sizes, 'sizes')
       for (const [id, point] of positionEntries ?? []) pointLike(point, 'position ' + id)
       for (const [id, size] of sizeEntries ?? []) {
         if (!finite((size as GraphNodeSize | null)?.width, (size as GraphNodeSize | null)?.height)) invalid('size ' + id)
       }
+      for (const [name, list] of [['fixedIds', fixedIds], ['addedIds', addedIds]] as const) {
+        if (list !== undefined && (!Array.isArray(list) || !list.every(id => typeof id === 'string'))) invalid(name + ' must be an array of IDs')
+      }
       return {
         type: 'request',
         request: {
           ...rest, ...positionEntries && { positions: new Map(positionEntries as [string, GraphPoint][]) },
           ...sizeEntries && { sizes: new Map(sizeEntries as [string, GraphNodeSize][]) },
+          ...fixedIds && { fixedIds: new Set(fixedIds) }, ...addedIds && { addedIds: new Set(addedIds) },
         },
       }
     }
@@ -460,6 +496,9 @@ export function parseGraphLayoutMessage(value: unknown): GraphLayoutWorkerMessag
       checkRequest(request)
       for (const name of ['positions', 'sizes'] as const) {
         if (request![name] !== undefined && !isMap(request![name])) invalid(name + ' must be a Map')
+      }
+      for (const name of ['fixedIds', 'addedIds'] as const) {
+        if (request![name] !== undefined && !(request![name] instanceof Set)) invalid(name + ' must be a Set')
       }
       return message as unknown as GraphLayoutRequestMessage
     }

@@ -609,6 +609,51 @@ Notes:
 - With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
 - `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
 
+### Incremental layouts with an external engine
+
+When the graph grows (a new node, a page of a [graph expansion](#expanding-a-graph-one-hop-at-a-time)), an engine that supports incremental layout can keep the nodes the user was looking at. Pass the information through `useAsyncGraphLayout`: `positions` (the boxes on display), `fixedIds` (nodes that must not move) and `addedIds` (nodes new since the last layout) are optional fields of the input, copied to every request, and part of the input key. Requests without them are exactly as before, so existing adapters keep working.
+
+```ts
+import { computed, shallowRef } from 'vue'
+import { useAsyncGraphLayout, type GraphLayoutRequest } from 'vue-weave'
+
+const shownBoxes = shallowRef(new Map()) // the boxes on display, updated when a frame is shown
+const input = computed(() => {
+  const addedIds = new Set(nodes.value.filter(node => !shownBoxes.value.has(node.id)).map(node => node.id))
+  return { nodes: nodes.value, edges: edges.value, positions: shownBoxes.value, fixedIds: pinned.value, addedIds }
+})
+const graph = useAsyncGraphLayout({ input, adapter: request => layoutWithElk(request) })
+
+// Forward the incremental fields to ELK. The layered algorithm's interactive strategies read the input coordinates of
+// the nodes to keep their layers and order; check the option names against the ELK reference of the version you use.
+async function layoutWithElk(request: GraphLayoutRequest) {
+  const graphInput = toElkGraph(request.nodes, request.edges)
+  if (request.positions?.size) {
+    graphInput.layoutOptions = {
+      ...graphInput.layoutOptions,
+      'org.eclipse.elk.layered.layering.strategy': 'INTERACTIVE',
+      'org.eclipse.elk.layered.cycleBreaking.strategy': 'INTERACTIVE',
+      'org.eclipse.elk.layered.crossingMinimization.semiInteractive': 'true',
+    }
+    for (const child of graphInput.children ?? []) {
+      const position = request.positions.get(child.id)
+      if (position) Object.assign(child, { x: position.x, y: position.y })
+    }
+  }
+  const layout = fromElkGraph(await elk.layout(graphInput))
+  // ELK treats these coordinates as hints and does not pin nodes; put the fixed ones back, or fail the request.
+  for (const id of request.fixedIds ?? []) {
+    const box = layout.boxes.get(id), position = request.positions?.get(id)
+    if (box && position && (box.x !== position.x || box.y !== position.y)) throw new Error('The engine moved a pinned node: ' + id)
+  }
+  return layout
+}
+```
+
+- Which options an engine offers differs: yFiles and similar engines take incremental hints for the added nodes and exact fixed positions, ELK layered uses the coordinates as ordering hints. An engine that cannot honour `fixedIds` should fail the request (as above) rather than silently move pinned nodes.
+- In the `shown` request of a collapsed view, `fixedIds` and `addedIds` are passed as given; IDs of members hidden in a collapsed group are not nodes of that request and are ignored.
+- Without an engine, `layoutGraphIncrementally` from `vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
@@ -713,7 +758,7 @@ const frame = computed(() => graph.display.value!)
 - A failure keeps the last display and sets `error` with the revision and input key that failed. With the default `provisional: true` that display can be the provisional frame of the failed input (`display.source === 'provisional'`): consistent, with the previous boxes and temporary routes for the new edges. Show that the routes are temporary, or set `provisional: false` to keep the last frame the engine produced.
 - When only edges change (for example after a `connect` is accepted), the frame is shown at once with the previous boxes and temporary routes from `completeGraphLayout` (`source: 'provisional'`, `temporaryEdgeIds`) until the engine answers.
 
-A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
+A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` (and the incremental `fixedIds` and `addedIds`, see [Incremental layouts with an external engine](#incremental-layouts-with-an-external-engine)) in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
 
 ### Preserving external routes
 
@@ -809,4 +854,23 @@ async function expand(id: string) {
 }
 ```
 
-`shown.dangling` lists edges waiting for a node, and `shown.frontierIds` the loaded nodes not expanded yet. Layout stability is out of scope: each expansion gives NetworkGraph a larger graph, which it lays out again, so existing nodes can move. Keep positions yourself (`positions` prop) or use a layout engine that accepts fixed nodes if that matters.
+`shown.dangling` lists edges waiting for a node, and `shown.frontierIds` the loaded nodes not expanded yet. By default each expansion gives NetworkGraph a larger graph, which it lays out again, so existing nodes can move. To keep them where they are, place each page around the boxes on display with `layoutGraphIncrementally` and pass the result through a `layout` function of stable identity:
+
+```ts
+import { graphLayoutChangeMetrics, layoutGraphIncrementally, layoutLayeredGraph, type GraphLayoutFunction } from 'vue-weave'
+
+const first = layoutLayeredGraph(shown.value.nodes, shown.value.edges)
+const kept = shallowRef(layoutGraphIncrementally(shown.value.nodes, shown.value.edges, first.boxes, { previousLayout: first }))
+// Bind `:layout="keepLayout"` and keep this function: a new function would re-fit the camera.
+const keepLayout: GraphLayoutFunction = (nodes, edges) =>
+  layoutGraphIncrementally(nodes, edges, kept.value.boxes, { previousLayout: kept.value })
+
+watch(shown, ({ nodes, edges }) => {
+  const next = layoutGraphIncrementally(nodes, edges, kept.value.boxes, { previousLayout: kept.value })
+  // A diagnostic: the nodes that were on display did not move.
+  console.assert(graphLayoutChangeMetrics(kept.value.boxes, next).maxDisplacement === 0)
+  kept.value = next
+})
+```
+
+Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).

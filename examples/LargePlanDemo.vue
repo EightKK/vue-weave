@@ -3,11 +3,14 @@
 // (`visible-window-change`); `useWindowedData` turns it into week-aligned requests for the visible rows, aborts the ones a
 // scroll has superseded and merges the answers by ID. The graph below loads a 5,000-part network one hop at a time with
 // the graph expansion helpers. The data source is simulated (fixed delays, an induced failure toggle, no network), and
-// the counters are demo counters, not benchmarks.
-import { computed, ref, shallowRef } from 'vue'
+// the counters are demo counters, not benchmarks. With "Keep positions when expanding", each page is placed around the
+// parts already shown with `layoutGraphIncrementally`, so they do not move.
+import { computed, ref, shallowRef, watch } from 'vue'
 import {
-  GanttChart, NetworkGraph, beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, mergeGraphExpansionPage,
-  useWindowedData, type GraphEdge, type NetworkNode, type TimelineDependency, type TimelineVisibleWindow, type WindowedCellStatus,
+  GanttChart, NetworkGraph, beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, graphLayoutChangeMetrics,
+  layoutGraphIncrementally, layoutLayeredGraph, mergeGraphExpansionPage, useWindowedData, type GraphEdge, type GraphIncrementalLayout,
+  type GraphLayoutFunction, type NetworkGraphExposed, type NetworkNode, type TimelineDependency, type TimelineVisibleWindow,
+  type WindowedCellStatus,
 } from '../src'
 import {
   day, hour, partCount, partNode, planRange, planRows, queryNeighbours, queryPlan, simulate, totalBars, week,
@@ -79,10 +82,40 @@ const graphError = ref('')
 const selectedLabel = computed(() => selectedPart.value ? graph.value.nodes.get(selectedPart.value)?.label : undefined)
 const canExpand = computed(() => !!selectedPart.value && graph.value.nodes.has(selectedPart.value)
   && !graph.value.expandedIds.has(selectedPart.value) && !graph.value.pendingIds.has(selectedPart.value))
+
+// Stable expansion (opt-in). `kept` is the layout on display; every new page is placed around it, and the largest move
+// of a part that was already shown is measured with `graphLayoutChangeMetrics` (it stays 0).
+const graphRef = ref<NetworkGraphExposed>()
+const keepPositions = ref(false)
+const kept = shallowRef<GraphIncrementalLayout>()
+const largestMove = ref<number>()
+const keepLayout: GraphLayoutFunction = (nodes, edges) =>
+  layoutGraphIncrementally(nodes, edges, kept.value?.boxes ?? new Map(), { previousLayout: kept.value })
+watch(keepPositions, (on) => {
+  largestMove.value = undefined
+  if (!on) {
+    kept.value = undefined
+    return
+  }
+  // Start from the layout the graph shows now, so switching the option on moves nothing.
+  const { nodes, edges } = graphView.value
+  const shown = layoutLayeredGraph(nodes, edges)
+  kept.value = layoutGraphIncrementally(nodes, edges, shown.boxes, { previousLayout: shown })
+})
+watch(graphView, ({ nodes, edges }) => {
+  const before = kept.value
+  if (!before || nodes.length === before.boxes.size) return
+  const next = layoutGraphIncrementally(nodes, edges, before.boxes, { previousLayout: before })
+  largestMove.value = graphLayoutChangeMetrics(before.boxes, next).maxDisplacement
+  kept.value = next
+})
+
 async function expandSelected() {
   const id = selectedPart.value
   if (!id || !canExpand.value) return
   graphError.value = ''
+  // An automatically fitted camera re-fits to a larger graph; pin it so the shown parts also keep their place on screen.
+  if (keepPositions.value && graphRef.value) graphRef.value.setViewport(graphRef.value.getViewport())
   const before = graph.value
   graph.value = beginGraphExpansion(before, [id])
   try {
@@ -140,9 +173,11 @@ async function expandSelected() {
 
     <h3 id="large-graph-title">Neighbourhood expansion</h3>
     <p class="hint">A network of {{ partCount.toLocaleString('en-US') }} parts. Select a loaded part and load its direct neighbours;
-      the layout is recomputed after each hop (positions are not kept stable).</p>
+      by default the layout is recomputed after each hop and parts can move; with Keep positions when expanding, each page is
+      placed around the parts already shown and they stay where they are.</p>
     <div class="options large-plan-options" role="group" aria-label="Graph loading">
       <button type="button" :disabled="!canExpand" @click="expandSelected">Expand neighbours</button>
+      <label><input v-model="keepPositions" type="checkbox"> Keep positions when expanding</label>
       <span class="hint">Selected: <output aria-label="Selected part">{{ selectedLabel ?? 'none' }}</output></span>
       <span class="hint">
         <output aria-label="Loaded parts">{{ graphView.nodes.length }}</output> of {{ partCount.toLocaleString('en-US') }} parts ·
@@ -150,10 +185,12 @@ async function expandSelected() {
         <output aria-label="Pending links">{{ graphView.dangling.length }}</output> waiting ·
         {{ graph.expandedIds.size }} expanded{{ graph.pendingIds.size ? ' · loading…' : '' }}
       </span>
+      <span v-if="keepPositions" class="hint">Largest move of a shown part:
+        <output aria-label="Largest move of shown parts">{{ largestMove === undefined ? 'none yet' : largestMove }}</output></span>
     </div>
     <p v-if="graphError" class="large-plan-error" role="alert">{{ graphError }}</p>
-    <NetworkGraph v-model:selected-id="selectedPart" :nodes="graphView.nodes" :edges="graphView.edges" :height="300"
-      :labels="{ region: 'Neighbourhood graph' }" />
+    <NetworkGraph ref="graphRef" v-model:selected-id="selectedPart" :nodes="graphView.nodes" :edges="graphView.edges" :height="300"
+      :layout="keepPositions ? keepLayout : undefined" :labels="{ region: 'Neighbourhood graph' }" />
   </section>
 </template>
 

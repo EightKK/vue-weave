@@ -7332,3 +7332,64 @@ test('large plan: neighbours load one hop at a time and dangling links wait for 
   await expect(expand).toBeEnabled()
   expect(errors).toEqual([])
 })
+
+test('large plan: with Keep positions when expanding, the parts already shown stay where they are on screen', async ({ page }) => {
+  const { errors, demo, count } = await openLargePlanDemo(page)
+  const graph = demo.getByRole('img', { name: 'Neighbourhood graph' })
+  const parts = demo.getByLabel('Loaded parts', { exact: true })
+  const expand = demo.getByRole('button', { name: 'Expand neighbours', exact: true })
+  const part = (name: string) => graph.getByRole('button', { name, exact: true })
+  const largestMove = demo.getByLabel('Largest move of shown parts', { exact: true })
+  await graph.scrollIntoViewIfNeeded()
+  await demo.getByRole('checkbox', { name: 'Keep positions when expanding' }).check()
+  await expect(largestMove).toHaveText('none yet')
+  await expand.click()
+  await expect(parts).toHaveText('4')
+  await expect(largestMove).toHaveText('0')
+  await part('Part 2').click()
+  await expect(demo.getByLabel('Selected part', { exact: true })).toHaveText('Part 2')
+  const before = await Promise.all(['Part 1', 'Part 2'].map(async name => (await part(name).boundingBox())!))
+  await expand.click()
+  await expect.poll(() => count(parts)).toBeGreaterThan(4)
+  await expect(part('Part 3')).toBeAttached()
+  await expect(largestMove).toHaveText('0')
+  const after = await Promise.all(['Part 1', 'Part 2'].map(async name => (await part(name).boundingBox())!))
+  for (let i = 0; i < before.length; i++) {
+    expect(after[i]!.x).toBeCloseTo(before[i]!.x, 1)
+    expect(after[i]!.y).toBeCloseTo(before[i]!.y, 1)
+    expect(after[i]!.width).toBeCloseTo(before[i]!.width, 1)
+  }
+  expect(errors).toEqual([])
+})
+
+test('process lanes: with Route around steps, dragging a step across an unrelated orthogonal route reroutes it during the drag', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Process lanes', exact: true }).click()
+  const stage = page.getByLabel('Process lane graph', { exact: true })
+  await stage.scrollIntoViewIfNeeded()
+  await page.getByLabel('Process edge style').selectOption('orthogonal')
+  await page.getByLabel('Route around steps').check()
+  // Edge 2 is the receive → cut hand-over; Final check is not one of its ends.
+  const edge = stage.locator('.vw-network-edge').nth(2)
+  const before = await edge.getAttribute('d')
+  const middle = await edge.evaluate((path: SVGPathElement) => {
+    const point = path.getPointAtLength(path.getTotalLength() / 2)
+    const matrix = path.getScreenCTM()!
+    return { x: point.x * matrix.a + point.y * matrix.c + matrix.e, y: point.x * matrix.b + point.y * matrix.d + matrix.f }
+  })
+  const step = (await stage.getByRole('button', { name: 'Final check', exact: true }).boundingBox())!
+  const start = { x: step.x + step.width / 2, y: step.y + step.height / 2 }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(middle.x, middle.y, { steps: 10 })
+  // Still dragging: the route goes around the step's preview box.
+  await expect.poll(() => edge.getAttribute('d')).not.toBe(before)
+  // Back where it started, the route is the saved one again.
+  await page.mouse.move(start.x, start.y, { steps: 10 })
+  await expect.poll(() => edge.getAttribute('d')).toBe(before)
+  await page.mouse.up()
+  await expect(edge).toHaveAttribute('d', before!)
+  expect(errors).toEqual([])
+})

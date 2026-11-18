@@ -13,7 +13,8 @@ import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoin
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
 import { graphParallelSlots, routeGraphEdgesWithSlots, type GraphEdgeStyle, type GraphParallelSlot } from '../core/graphRouting.js'
-import type { GraphObstacleAvoidance } from '../core/graphObstacleRouting.js'
+import { resolveObstacleAvoidance, type GraphObstacleAvoidance } from '../core/graphObstacleRouting.js'
+import { SpatialGrid, graphPathPolylines, segmentMeetsRect } from '../core/graphSpatial.js'
 import {
   graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText, graphPolygonPoints,
 } from '../core/graphShapes.js'
@@ -610,6 +611,57 @@ const savedRouteExtents = computed(() => {
   }
   return sortExtents(list)
 })
+// With avoidNodes, a box that a preview moves or resizes can now cross, or no longer need to avoid, the route of an edge
+// it does not touch. The segments of the saved routes the router draws around boxes (orthogonal, without waypoints, not
+// self-loops) are indexed once per saved layout, so each preview frame finds those edges with a spatial query of the old
+// and new clearance areas of the changed boxes and reroutes them too. Beyond `previewRerouteLimit` such edges, the frame
+// reroutes none of them and they follow once the move is saved.
+const previewRerouteLimit = 32
+const avoidance = computed(() => resolveObstacleAvoidance(props.avoidNodes))
+const avoidedRoutes = computed(() => {
+  const settings = avoidance.value
+  if (!settings) return undefined
+  const routed = savedRouted.value
+  let size = 0
+  for (const box of routed.boxes.values()) size += (box.width + box.height) / 2
+  const grid = new SpatialGrid(routed.boxes.size ? size / routed.boxes.size : 64)
+  const owners: string[] = [], segments: [GraphPoint, GraphPoint][] = []
+  for (const edge of viewEdges.value) {
+    if (edge.from === edge.to || edge.points?.length || (edge.edgeStyle ?? props.edgeStyle) !== 'orthogonal') continue
+    const path = routed.paths.get(edge.id)
+    if (path === undefined) continue
+    for (const line of graphPathPolylines(path)) {
+      for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1]!, b = line[i]!
+        grid.insert({ x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y), x2: Math.max(a.x, b.x), y2: Math.max(a.y, b.y) })
+        owners.push(edge.id)
+        segments.push([a, b])
+      }
+    }
+  }
+  return { grid, owners, segments, clearance: settings.clearance }
+})
+// The edges, other than those in `skip`, whose saved route meets the old or new clearance area of a changed box; empty
+// without avoidNodes or past the limit.
+function obstructedEdges(changed: ReadonlyMap<string, GraphBox>, before: ReadonlyMap<string, GraphBox>, skip: ReadonlySet<string>) {
+  if (!changed.size || !avoidance.value) return []
+  const index = avoidedRoutes.value!, c = index.clearance
+  const found = new Set<string>()
+  for (const [id, box] of changed) {
+    for (const area of [before.get(id), box]) {
+      if (!area) continue
+      const rect = { x1: area.x - c, y1: area.y - c, x2: area.x + area.width + c, y2: area.y + area.height + c }
+      index.grid.visit(rect, (i) => {
+        const owner = index.owners[i]!
+        if (skip.has(owner) || found.has(owner)) return
+        const [a, b] = index.segments[i]!
+        if (segmentMeetsRect(a, b, rect, false)) found.add(owner)
+      })
+      if (found.size > previewRerouteLimit) return []
+    }
+  }
+  return [...found]
+}
 function previewLayout(
   moving: ReadonlyMap<string, GraphPoint> | undefined, resizing: { id: string; box: GraphRect } | undefined,
   reshaping: { id: string; points: GraphPoint[] } | undefined,
@@ -641,6 +693,7 @@ function previewLayout(
   const ids = new Set<string>()
   for (const id of changed.keys()) for (const edgeId of incidentEdges.value.get(id) ?? []) ids.add(edgeId)
   if (reshaping) ids.add(reshaping.id)
+  for (const id of obstructedEdges(changed, arranged.boxes, ids)) ids.add(id)
   // With parallel spacing, an edge that gains waypoints leaves the parallel edges between its nodes, which spreads the
   // others again. Only the edges between the same two nodes can change their places.
   let slots = parallelSlots.value
