@@ -9,6 +9,7 @@ import { applyGraphPositions, applyGraphSizes, graphPortAnchor, graphEdgeEndpoin
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
 import { graphParallelSlots, routeGraphEdgesWithSlots, type GraphEdgeStyle, type GraphParallelSlot } from '../core/graphRouting.js'
+import type { GraphObstacleAvoidance } from '../core/graphObstacleRouting.js'
 import {
   graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText, graphPolygonPoints,
 } from '../core/graphShapes.js'
@@ -135,6 +136,8 @@ const props = withDefaults(defineProps<{
   highlightedEdgeIds?: ReadonlySet<string>
   /** `builtin` redraws every edge with a named port and, in the orthogonal and straight styles, every edge. `preserve` keeps the paths of the layout while they still fit their nodes and ports. Default: `builtin`. */
   routingPolicy?: GraphRoutingPolicy
+  /** Routes orthogonal edges without waypoints around the node boxes: `true` for an 8-unit clearance, or `{ clearance, bendPenalty }`. Opt-in. Default: false. */
+  avoidNodes?: boolean | GraphObstacleAvoidance
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -395,7 +398,9 @@ const parallelSpacing = computed(() => {
   return spacing
 })
 // The corner radius only applies to orthogonal routes, which an edge can also choose with its own edgeStyle.
-const routeOptions = computed(() => ({ style: props.edgeStyle, direction: direction.value, cornerRadius: 6, parallelSpacing: parallelSpacing.value }))
+const routeOptions = computed(() => ({
+  style: props.edgeStyle, direction: direction.value, cornerRadius: 6, parallelSpacing: parallelSpacing.value, avoidNodes: props.avoidNodes,
+}))
 // The places of parallel edges among the edges between the same two nodes, over the whole view, so that routing a few
 // edges of a preview spreads them as routing the whole graph does.
 const parallelSlots = computed(() => parallelSpacing.value === undefined ? undefined : graphParallelSlots(viewEdges.value))
@@ -404,7 +409,7 @@ const savedLayout = computed(() => arrange(viewPositions.value, props.sizes))
 // With the preserve policy, the layout's own paths are kept while they fit (see isGraphRouteValid).
 const savedPorted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, viewEdges.value, direction.value, { policy: policy.value }))
 const savedRouted = computed(() => routeGraphEdgesWithSlots(
-  savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value,
+  savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value, true,
 ))
 
 // Drag previews. A node drag, resize or waypoint drag changes a few nodes or one edge, so the preview layout shares the
@@ -549,7 +554,7 @@ function routeOne(
   const single = routeGraphEdgesWithSlots({
     boxes, paths: new Map([[edge.id, path]]), edgeLabels: new Map(label ? [[edge.id, label]] : []), width: 0, height: 0,
     ...routes && { routes: new Map() },
-  }, [edge], nodesById.value, routeOptions.value, slots)
+  }, [edge], nodesById.value, routeOptions.value, slots, true)
   return {
     path: single.paths.get(edge.id)!, label: single.edgeLabels.get(edge.id), width: single.width, height: single.height,
     route: single.routes?.get(edge.id),

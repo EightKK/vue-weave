@@ -23,7 +23,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Custom SVG through the `node` and `edge` slots, plus a `tooltip` slot.
 - Node moves, connections, multiple selection and the minimap; edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`) and context-menu requests (`contextMenu`).
 - Nested groups (`parentId`), collapsing into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`) and node resizing (`sizes`, `resizable`).
-- Orthogonal or straight edges (`edgeStyle`, also per edge), waypoints (`GraphEdge.points`, edited with `editableEdges`), parallel edges spread apart (`parallelEdgeSpacing`), end markers (`markerStart`, `markerEnd`) and flowing edges (`animated`).
+- Orthogonal or straight edges (`edgeStyle`, also per edge), orthogonal routes around the nodes (`avoidNodes`), waypoints (`GraphEdge.points`, edited with `editableEdges`), parallel edges spread apart (`parallelEdgeSpacing`), end markers (`markerStart`, `markerEnd`) and flowing edges (`animated`).
 - Diamond, ellipse and hexagon nodes besides boxes (`NetworkNode.shape`), also in exports.
 - Large graphs and touch: viewport culling (`cullOffscreen`), pinch zoom, and level of detail when zoomed out (`lodThreshold`).
 - Search highlighting (`matchIds`, `dimmedIds`) and the `focusNode(id)` and `fit({ ids })` methods.

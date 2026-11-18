@@ -23,7 +23,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - `node`・`edge` スロットでSVG描画を変更でき、`tooltip` スロットも使えます。
 - ノード移動、接続、複数選択、ミニマップ。辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）。
 - 入れ子のグループ（`parentId`）、グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、ノードのサイズ変更（`sizes`・`resizable`）。
-- 辺の直角・直線表示（`edgeStyle`。辺ごとにも指定可）、経由点（`GraphEdge.points`。`editableEdges` で編集）、平行な辺の振り分け（`parallelEdgeSpacing`）、辺の端の記号（`markerStart`・`markerEnd`）、流れるアニメーション（`animated`）。
+- 辺の直角・直線表示（`edgeStyle`。辺ごとにも指定可）、ノードを避ける直角の経路（`avoidNodes`）、経由点（`GraphEdge.points`。`editableEdges` で編集）、平行な辺の振り分け（`parallelEdgeSpacing`）、辺の端の記号（`markerStart`・`markerEnd`）、流れるアニメーション（`animated`）。
 - 箱形に加えて、ひし形・楕円・六角形のノード（`NetworkNode.shape`）。書き出しにも反映されます。
 - 大規模グラフとタッチ操作：表示範囲外の描画省略（`cullOffscreen`）、ピンチズーム、縮小時に詳細を隠す表示（`lodThreshold`）。
 - 検索結果の強調（`matchIds`・`dimmedIds`）と、`focusNode(id)`・`fit({ ids })` メソッド。
