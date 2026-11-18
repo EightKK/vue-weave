@@ -4,6 +4,7 @@ import {
   buildWorkPeriods, calculateResourceLoad, calendarBands, editTimeRange, invertWorkPeriods, moveTimeRanges, normalizeWorkPeriods,
   rescheduleFromStatusDate, scheduleTasks, timeTicks, timelineFromCsvTable, toICalendar, toMsProjectXml, validateTimelineData,
 } from 'vue-weave/core'
+import { seededRandom } from './helpers/seeded.mjs'
 
 /** The original algorithm: every segment copies the active set. */
 function referenceLoad(range, tasks, resources, assignments) {
@@ -74,8 +75,7 @@ test('calculateResourceLoad shares taskIds arrays between segments with the same
 })
 
 test('calculateResourceLoad output equals the copying algorithm on irregular data, including order', () => {
-  let seed = 7
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+  const { random } = seededRandom(7)
   for (let round = 0; round < 20; round++) {
     const tasks = Array.from({ length: 12 }, (_, i) => ({
       id: 'x' + i,

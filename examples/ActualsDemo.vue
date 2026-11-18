@@ -4,12 +4,12 @@ import {
   GanttChart, actualsTimelineBars, rescheduleFromActuals, type ActualsDiagnostic, type PlanningDiagnostic, type ScheduleInput,
   type ScheduleLink, type ScheduleTask, type TaskActuals, type TimelineRow,
 } from '../src'
-import { formatTime, hour, origin } from './data'
+import { formatTime, hour, minute, origin } from './data'
+import DemoPanel from './components/DemoPanel.vue'
 
 // Opt-in example of `rescheduleFromActuals`: recorded actual intervals are kept exactly as reported and only the
 // remaining work is scheduled on the shift calendar from the status date. Each row shows the original plan (grey strip),
 // the actuals (solid bars) and the remaining forecast (outline bars), from `actualsTimelineBars`.
-const minute = 60_000
 const at = (hours: number, minutes = 0) => origin + hours * hour + minutes * minute
 const range = { start: origin, end: at(33) }
 // Two shifts a day with a lunch break: 08:00–12:00 and 13:00–17:00 UTC.
@@ -67,13 +67,10 @@ const remainingHours = (id: string) => (result.value.tasks.find(task => task.id 
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="actuals-title">
-    <div class="section-head">
-      <div><h2 id="actuals-title">Recorded actuals</h2><p>rescheduleFromActuals · status 14:00 UTC · actuals stay as recorded</p></div>
-      <div class="options">
-        <label><input v-model="reviseWeld" type="checkbox"> Welding needs 3 h more</label>
-      </div>
-    </div>
+  <DemoPanel title-id="actuals-title" title="Recorded actuals" subtitle="rescheduleFromActuals · status 14:00 UTC · actuals stay as recorded">
+    <template #options>
+      <label><input v-model="reviseWeld" type="checkbox"> Welding needs 3 h more</label>
+    </template>
     <dl class="schedule-metrics">
       <div><dt>Planned finish</dt><dd>{{ planFinish }}</dd></div>
       <div><dt>Forecast finish</dt><dd data-testid="actuals-finish">{{ finish }}</dd></div>
@@ -95,7 +92,7 @@ const remainingHours = (id: string) => (result.value.tasks.find(task => task.id 
     <ul class="actuals-diagnostics" aria-label="Recorded actuals diagnostics">
       <li v-for="item in result.diagnostics" :key="item.id">{{ describe(item) }}</li>
     </ul>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

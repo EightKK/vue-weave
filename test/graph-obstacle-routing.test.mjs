@@ -1,29 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { findOrthogonalRoute, layoutLayeredGraph, renderGraphSvg, routeGraphEdges } from 'vue-weave/core'
 import { NetworkGraph } from 'vue-weave'
-
-const byId = list => new Map(list.map(item => [item.id, item]))
-
-// The points of a path drawn with M, L, H and V commands only.
-function polyline(path) {
-  const tokens = path.match(/[MLHV]|[-+]?\d*\.?\d+(?:e[-+]?\d+)?/gi)
-  const points = []
-  let command = '', x = 0, y = 0
-  for (let i = 0; i < tokens.length;) {
-    if (/[MLHV]/.test(tokens[i])) command = tokens[i++]
-    if (command === 'M' || command === 'L') {
-      x = Number(tokens[i++])
-      y = Number(tokens[i++])
-    } else if (command === 'H') x = Number(tokens[i++])
-    else if (command === 'V') y = Number(tokens[i++])
-    else throw new Error('Unexpected command ' + command + ' in ' + path)
-    points.push({ x, y })
-  }
-  return points
-}
+import { byId, polyline } from './helpers/builders.mjs'
+import { seededRandom } from './helpers/seeded.mjs'
+import { renderComponent } from './helpers/ssr.mjs'
 
 // Whether an axis-aligned segment passes through the interior of a rectangle grown by `margin`.
 function crosses(a, b, box, margin = 0) {
@@ -216,8 +197,7 @@ test('routeGraphEdges avoidNodes keeps a clear bypass lane and reroutes one that
 
 test('routeGraphEdges avoidNodes routes a layered graph of 3,000 nodes around every box', () => {
   const nodes = [], edges = []
-  let seed = 7
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+  const { random } = seededRandom(7)
   for (let rank = 0; rank < 30; rank++) for (let i = 0; i < 100; i++) nodes.push({ id: `n${rank}_${i}` })
   for (let rank = 1; rank < 30; rank++) {
     for (let i = 0; i < 100; i++) {
@@ -245,7 +225,7 @@ test('NetworkGraph avoidNodes is opt-in and the SVG export draws the avoiding ro
   const edges = [{ id: 'a-b', from: 'a', to: 'b' }]
   // m sits between a and b, on the straight route.
   const positions = new Map([['a', { x: 20, y: 80 }], ['m', { x: 220, y: 70 }], ['b', { x: 420, y: 80 }]])
-  const render = props => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, positions, ...props }) }))
+  const render = props => renderComponent(NetworkGraph, { nodes, edges, positions, ...props })
   const base = await render({ edgeStyle: 'orthogonal' })
   assert.equal(await render({ edgeStyle: 'orthogonal', avoidNodes: false }), base)
   const avoided = await render({ edgeStyle: 'orthogonal', avoidNodes: true })

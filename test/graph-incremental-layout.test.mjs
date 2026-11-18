@@ -7,6 +7,7 @@ import {
   parseGraphLayoutMessage, routeGraphEdges,
 } from 'vue-weave/core'
 import { useAsyncGraphLayout } from 'vue-weave'
+import { centre } from './helpers/builders.mjs'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id.toUpperCase() }))
 const edge = (from, to, id = from + to) => ({ id, from, to })
@@ -25,7 +26,6 @@ function assertNoOverlap(layout, gap = 0) {
     }
   }
 }
-const centre = box => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
 
 const baseNodes = nodes('a', 'b', 'c')
 const baseEdges = [edge('a', 'b'), edge('b', 'c')]

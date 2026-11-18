@@ -5,6 +5,7 @@ import {
   type GraphBox, type GraphConnection, type GraphEdge, type GraphEdgeStyle, type GraphLayout, type GraphNodeMove, type GraphPoint,
   type GraphPort, type GraphReconnect, type NetworkNode,
 } from '../../src'
+import { unusedNumber } from '../ids'
 
 // A node-based automation editor: white step cards with an icon tile, named input and output ports (two outputs on
 // the condition), an animated path for the run in progress and controlled moves and connections.
@@ -159,8 +160,7 @@ function validateConnection(connection: GraphConnection, replacing?: string) {
   return true
 }
 function commitConnection(connection: GraphConnection) {
-  let number = edges.value.length + 1
-  while (edges.value.some(edge => edge.id === 'flow-' + number)) number++
+  const number = unusedNumber(edges.value, 'flow-', edges.value.length + 1)
   edges.value = [...edges.value, flow('flow-' + number, connection)]
   status.value = `Connected ${portName(connection.from, connection.fromPort)} to ${label(connection.to)}.`
 }

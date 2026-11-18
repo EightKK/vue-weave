@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { cloneGraphElements, graphAlignmentGuides, snapGraphPoint } from 'vue-weave/core'
 import { NetworkGraph, cloneGraphElements as rootClone, graphAlignmentGuides as rootGuides } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const rect = (x, y, width = 100, height = 40) => ({ x, y, width, height })
 
@@ -189,7 +188,7 @@ test('cloneGraphElements leaves its input untouched', () => {
   assert.notEqual(result.positions.get('node:a'), positions.get('a'))
 })
 
-const render = (props, slots) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 
 test('NetworkGraph markup is unchanged by the editing props and the none background', async () => {
   const plain = await render({})

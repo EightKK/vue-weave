@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { renderTimelineSvg } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 // 0..50 is drawn at 10 px per unit and 50..100 at 1 px per unit: strictly increasing and invertible.
 const scale = {
@@ -15,9 +14,9 @@ const rows = [{ id: 'r', label: 'Row' }]
 const range = { start: 0, end: 100 }
 const tickPositions = [0, 100, 200, 300, 400, 500, 510, 520, 530, 540, 550]
 
-const render = props => renderToString(createSSRApp({ render: () => h(GanttChart, {
+const render = props => renderComponent(GanttChart, {
   rows, bars: [], range, scale, snap: 1, formatTime: String, ...props,
-}) }))
+})
 const offsets = (html, className, side) => [...html.matchAll(
   new RegExp(`class="${className}(?: vw-is-end)?"[^>]*style="${side}:([\\d.]+)px;?"`, 'g'),
 )].map(match => Number(match[1]))

@@ -16,6 +16,7 @@ import {
   day, hour, partCount, partNode, planRange, planRows, queryNeighbours, queryPlan, simulate, totalBars, week,
   type PlanBar, type PlanFilter,
 } from './adapters/largePlanSource'
+import DemoPanel from './components/DemoPanel.vue'
 
 const speed = ref<'fast' | 'slow'>('fast')
 const failing = ref(false)
@@ -129,11 +130,7 @@ async function expandSelected() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="large-plan-title">
-    <div class="section-head">
-      <div><h2 id="large-plan-title">Large plan with partial loading</h2>
-        <p>Only the weeks and rows on screen are fetched; scrolling, zooming and collapsing load more.</p></div>
-    </div>
+  <DemoPanel title-id="large-plan-title" title="Large plan with partial loading" subtitle="Only the weeks and rows on screen are fetched; scrolling, zooming and collapsing load more.">
     <div class="options large-plan-options" role="group" aria-label="Simulated data source">
       <label>Response time
         <select v-model="speed" aria-label="Response time">
@@ -191,7 +188,7 @@ async function expandSelected() {
     <p v-if="graphError" class="large-plan-error" role="alert">{{ graphError }}</p>
     <NetworkGraph ref="graphRef" v-model:selected-id="selectedPart" :nodes="graphView.nodes" :edges="graphView.edges" :height="300"
       :layout="keepPositions ? keepLayout : undefined" :labels="{ region: 'Neighbourhood graph' }" />
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

@@ -7,6 +7,7 @@ import {
   validateTimelineData,
 } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 
@@ -185,10 +186,10 @@ test('renderTimelineSvg is unchanged without the new inputs and validates nonWor
 const chartProps = { rows, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
 
 test('GanttChart renders shading, critical, float, deadline and segments on the server', async () => {
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     ...chartProps, bars: [{ ...segmented, editable: true }],
     nonWorkingPeriods: [{ start: 3 * hour, end: 4 * hour }, { start: 3.5 * hour, end: 4.5 * hour }, { start: 20 * hour, end: 30 * hour }],
-  }) }))
+  })
   // Overlapping intervals are drawn as given; intervals outside the window are not rendered.
   assert.match(html, /<div class="vw-gantt-non-working-layer" aria-hidden="true"><!--\[--><span class="vw-gantt-non-working" style="left:30px;width:10px;"><\/span><span class="vw-gantt-non-working" style="left:35px;width:10px;"><\/span><!--\]--><\/div><div class="vw-gantt-grid"/)
   assert.match(html, /class="vw-gantt-bar vw-tone-blue vw-is-solid vw-is-editable vw-critical vw-late vw-segmented"/)
@@ -206,10 +207,10 @@ test('GanttChart renders shading, critical, float, deadline and segments on the 
 })
 
 test('GanttChart localizes the bar description and mirrors the new layers right to left', async () => {
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     ...chartProps, dir: 'rtl', bars: [{ ...segmented, id: 'b2' }], nonWorkingPeriods: [{ start: 3 * hour, end: 4 * hour }],
     labels: { critical: 'Kritisch', float: 'Puffer bis', deadline: 'Frist', late: 'Verspätet' },
-  }) }))
+  })
   assert.match(html, /<span class="vw-gantt-non-working" style="right:30px;width:10px;">/)
   assert.match(html, /<span class="vw-gantt-segment" style="right:19px;width:20px;"/)
   assert.match(html, /class="vw-gantt-float" style="right:calc\(var\(--vw-label-area-width\) \+ 60px\)/)
@@ -227,9 +228,9 @@ test('GanttChart places shading, segments and float lines with a custom scale', 
     toTime: x => x <= 100 ? x / 20 * hour : 5 * hour + (x - 100) / 4 * hour,
   }
   for (const time of [0, 2.5 * hour, 5 * hour, 7.5 * hour, 10 * hour]) assert.equal(scale.toTime(scale.toX(time)), time)
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     ...chartProps, scale, bars: [segmented], nonWorkingPeriods: [{ start: 4 * hour, end: 6 * hour }],
-  }) }))
+  })
   assert.match(html, /<span class="vw-gantt-non-working" style="left:80px;width:24px;"><\/span>/)
   assert.match(html, /<span class="vw-gantt-segment" style="left:-1px;width:20px;"/)
   assert.match(html, /<span class="vw-gantt-segment" style="left:39px;width:24px;"/)
@@ -238,7 +239,7 @@ test('GanttChart places shading, segments and float lines with a custom scale', 
 
 test('GanttChart markup, names and descriptions are unchanged without the new inputs', async () => {
   const bars = [{ ...base, editable: true, progress: 0.5 }, { ...base, id: 'm', start: 7 * hour, end: 7 * hour }]
-  const render = props => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }) }))
+  const render = props => renderComponent(GanttChart, { ...chartProps, ...props })
   const plain = await render({ bars })
   assert.equal(await render({ bars: bars.map(bar => ({ ...bar, critical: false })), nonWorkingPeriods: [] }), plain)
   assert.doesNotMatch(plain, /vw-gantt-non-working|vw-critical|vw-late|vw-segmented|vw-gantt-segment|vw-gantt-float|vw-gantt-deadline|hidden>/)
@@ -268,9 +269,9 @@ test('GanttChart reports invalid nonWorkingPeriods and new bar fields through va
 
 test('TimelineBar.description comes first in the accessible description and joins the title without changing the name', async () => {
   validateTimelineData(rows, [{ ...base, description: 'Manually scheduled' }])
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {
+  const html = await renderComponent(GanttChart, {
     ...chartProps, bars: [{ ...base, description: '  Manually scheduled.  ', critical: true, latestEnd: base.end }],
-  }) }))
+  })
   assert.match(html, /aria-label="Bar 02:00–06:00"/)
   const describedBy = /aria-describedby="([^"]+)"/.exec(html)[1].split(' ')
   // The trailing full stop and outer spaces are dropped so the parts read as sentences.
@@ -278,11 +279,11 @@ test('TimelineBar.description comes first in the accessible description and join
   assert.match(html, /title="Bar 02:00–06:00 · Manually scheduled\. Critical\. Float until 06:00\."/)
 
   // A description alone is enough to describe a bar; blank text describes nothing.
-  const alone = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [{ ...base, description: 'Inactive' }] }) }))
+  const alone = await renderComponent(GanttChart, { ...chartProps, bars: [{ ...base, description: 'Inactive' }] })
   assert.match(alone, /hidden>Inactive\.<\/span>/)
   assert.match(alone, /title="Bar 02:00–06:00 · Inactive\."/)
-  const blank = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [{ ...base, description: '   ' }] }) }))
-  const plain = await renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: [base] }) }))
+  const blank = await renderComponent(GanttChart, { ...chartProps, bars: [{ ...base, description: '   ' }] })
+  const plain = await renderComponent(GanttChart, { ...chartProps, bars: [base] })
   assert.equal(blank, plain)
 })
 

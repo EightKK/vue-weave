@@ -5,44 +5,19 @@ import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphCl
 import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
 import type { GraphLabelEdit } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
-import SchedulingDemo from './SchedulingDemo.vue'
-import GanttEditingDemo from './GanttEditingDemo.vue'
-import LinkedPlanningDemo from './LinkedPlanningDemo.vue'
-import AsyncGraphDemo from './AsyncGraphDemo.vue'
-import DiagramStylesDemo from './DiagramStylesDemo.vue'
-import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
-import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
-import PersistenceDemo from './PersistenceDemo.vue'
 import PortRulesDemo from './PortRulesDemo.vue'
-import SwimlaneDemo from './SwimlaneDemo.vue'
-import QuantityFlowDemo from './QuantityFlowDemo.vue'
-import LargePlanDemo from './LargePlanDemo.vue'
-import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
-import SchemaShowcase from './showcase/SchemaShowcase.vue'
-import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
-import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
-import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
-import BookingShowcase from './showcase/BookingShowcase.vue'
-import CalendarShowcase from './showcase/CalendarShowcase.vue'
+import { demos, demosIn } from './demos'
 import { download, imageSize } from './download'
+import StatusLine from './components/StatusLine.vue'
+import { unusedNumber } from './ids'
 
 const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
 
 const preset = ref('manufacturing')
-// The design gallery restyles both components with slots, CSS variables and the vw- classes only; each showcase keeps its own state.
-const showcases = [
-  { id: 'workflow', label: 'Workflow builder', component: WorkflowShowcase },
-  { id: 'schema', label: 'Database schema', component: SchemaShowcase },
-  { id: 'org', label: 'Org chart', component: OrgChartShowcase },
-  { id: 'roadmap', label: 'Product roadmap', component: RoadmapShowcase },
-  { id: 'sprint', label: 'Sprint plan', component: SprintGanttShowcase },
-  { id: 'booking', label: 'Room bookings', component: BookingShowcase },
-  { id: 'calendar', label: 'Calendar views', component: CalendarShowcase },
-]
-const showcase = computed(() => showcases.find(item => item.id === preset.value))
-// Demos that keep their own state and ignore the graph and timeline controls of this page.
-const standalone = computed(() => showcase.value !== undefined
-  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis', 'swimlanes', 'flow', 'large-plan'].includes(preset.value))
+const datasets = demosIn('dataset'), standaloneDemos = demosIn('standalone'), showcases = demosIn('gallery')
+// A standalone demo or showcase replaces the graph and timeline of this page and ignores their controls.
+const activeDemo = computed(() => demos.find(item => item.id === preset.value)?.component)
+const standalone = computed(() => activeDemo.value !== undefined)
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -182,8 +157,7 @@ function validateConnection({ from, to, fromPort, toPort }: GraphConnection, rep
     && edge.fromPort === fromPort && edge.toPort === toPort)) return 'This connection already exists.'
 }
 function commitConnection(connection: GraphConnection) {
-  let number = data.value.edges.length + 1
-  while (data.value.edges.some(edge => edge.id === 'connection-' + number)) number++
+  const number = unusedNumber(data.value.edges, 'connection-', data.value.edges.length + 1)
   const edges = [...data.value.edges, { id: 'connection-' + number, ...connection }]
   commitState({ data: { ...data.value, edges }, positions: positions.value })
   status.value = 'Connected ' + connection.from + ' to ' + connection.to + '.'
@@ -368,8 +342,7 @@ function startPaletteDrag(event: DragEvent, kind: PaletteKind) {
 // Centres a new 144 x 58 node on the point, on the grid when snapping, and never at negative coordinates.
 function addNode(kind: PaletteKind, center: GraphPoint) {
   const prefix = kind === 'operation' ? 'Operation' : 'Lot'
-  let number = 1
-  while (data.value.nodes.some(node => node.id === kind + '-' + number)) number++
+  const number = unusedNumber(data.value.nodes, kind + '-')
   const id = kind + '-' + number
   const node: NetworkNode = kind === 'operation'
     ? { id, label: prefix + ' ' + number, detail: 'New operation', shape: 'rounded' }
@@ -535,19 +508,8 @@ function commit(change: TimelineEdit) {
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
-        <button v-for="item in [{ id: 'manufacturing', label: 'Manufacturing' }, { id: 'project', label: 'Project delivery' }, { id: 'scale', label: '1,000 resources' }, { id: 'large', label: 'Large graph' }]"
-          :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
-        <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
-        <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
-        <button type="button" :aria-pressed="preset === 'linked'" @click="preset = 'linked'">Linked views</button>
-        <button type="button" :aria-pressed="preset === 'async'" @click="preset = 'async'">Async layout</button>
-        <button type="button" :aria-pressed="preset === 'diagram'" @click="preset = 'diagram'">Diagram styles</button>
-        <button type="button" :aria-pressed="preset === 'analysis'" @click="preset = 'analysis'">Graph analysis</button>
-        <button type="button" :aria-pressed="preset === 'swimlanes'" @click="preset = 'swimlanes'">Process lanes</button>
-        <button type="button" :aria-pressed="preset === 'flow'" @click="preset = 'flow'">Quantity flow</button>
-        <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
-        <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
-        <button type="button" :aria-pressed="preset === 'large-plan'" @click="preset = 'large-plan'">Large plan</button>
+        <button v-for="item in datasets" :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
+        <button v-for="item in standaloneDemos" :key="item.id" type="button" :aria-pressed="preset === item.id" @click="preset = item.id">{{ item.label }}</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
         <button v-if="!standalone" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="!standalone" type="button" :disabled="!canRedo" @click="redo">Redo</button>
@@ -556,18 +518,7 @@ function commit(change: TimelineEdit) {
         <span id="gallery-nav-label" class="gallery-label">Design gallery</span>
         <button v-for="item in showcases" :key="item.id" type="button" :aria-pressed="preset === item.id" @click="preset = item.id">{{ item.label }}</button>
       </nav>
-      <component :is="showcase.component" v-if="showcase" />
-      <SchedulingDemo v-else-if="preset === 'scheduling'" />
-      <GanttEditingDemo v-else-if="preset === 'editing'" />
-      <LinkedPlanningDemo v-else-if="preset === 'linked'" />
-      <AsyncGraphDemo v-else-if="preset === 'async'" />
-      <DiagramStylesDemo v-else-if="preset === 'diagram'" />
-      <GraphAnalysisDemo v-else-if="preset === 'analysis'" />
-      <SwimlaneDemo v-else-if="preset === 'swimlanes'" />
-      <QuantityFlowDemo v-else-if="preset === 'flow'" />
-      <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
-      <PersistenceDemo v-else-if="preset === 'persistence'" />
-      <LargePlanDemo v-else-if="preset === 'large-plan'" />
+      <component :is="activeDemo" v-if="activeDemo" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
@@ -654,7 +605,7 @@ function commit(change: TimelineEdit) {
           <template #legend><span class="hint">Drag to move · Drag ends to resize · Focus a bar to edit with arrow keys</span></template>
           <template #row-heading>Resource</template>
         </GanttChart>
-        <p class="status" role="status">{{ status }}</p>
+        <StatusLine>{{ status }}</StatusLine>
         <output class="vw-sr-only" aria-label="Select events">{{ selectCount }}</output>
       </section>
       </template>

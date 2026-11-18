@@ -3,6 +3,8 @@ import { computed, ref, shallowRef } from 'vue'
 import {
   NetworkGraph, graphFlowBands, layoutFlowGraph, type GraphEdge, type GraphLayoutDirection, type GraphLayoutFunction, type NetworkNode,
 } from '../src'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
 
 // Opt-in example of `layoutFlowGraph` and the NetworkGraph `edgeBands` prop: a production lot drawn as quantity bands.
 // Material edges carry pieces and cost; the overhead allocation carries cost only, so the pieces view leaves it out
@@ -74,10 +76,7 @@ function exportSvg() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="flow-title">
-    <div class="section-head">
-      <div><h2 id="flow-title">Quantity flow</h2><p>A lot of 100 pieces splits 60/40, merges at inspection and loses 4 on line B; band width is quantity on one scale.</p></div>
-    </div>
+  <DemoPanel title-id="flow-title" title="Quantity flow" subtitle="A lot of 100 pieces splits 60/40, merges at inspection and loses 4 on line B; band width is quantity on one scale.">
     <div class="options flow-options" role="group" aria-label="Quantity flow options">
       <label>Unit
         <select v-model="unit" aria-label="Flow unit" @change="changeUnit">
@@ -98,7 +97,7 @@ function exportSvg() {
         <text class="flow-node-label" x="0" y="-7">{{ node.label }}</text>
       </template>
     </NetworkGraph>
-    <p class="status" role="status" aria-label="Quantity flow status">{{ status }}</p>
+    <StatusLine label="Quantity flow status">{{ status }}</StatusLine>
     <div class="flow-details">
       <table aria-label="Node totals">
         <thead><tr><th scope="col">Step</th><th scope="col">In</th><th scope="col">Out</th><th scope="col">Difference</th><th scope="col">Loop</th></tr></thead>
@@ -121,7 +120,7 @@ function exportSvg() {
         <p v-else>Every edge is in {{ flow.unit }}.</p>
       </div>
     </div>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

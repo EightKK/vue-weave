@@ -3,10 +3,8 @@ import { test } from 'node:test'
 import {
   calculateResourceLoad, collectScheduleReasons, levelResources, scheduleTasks, toPlanningDiagnostics,
 } from 'vue-weave/core'
+import { dates, link, task } from './helpers/builders.mjs'
 
-const task = (id, duration, fields = {}) => ({ id, duration, ...fields })
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, type, lag })
-const dates = result => result.tasks.map(t => [t.id, t.start, t.end])
 const on = (resourceId, ...ids) => ids.map(taskId => ({ resourceId, taskId }))
 const withoutTrace = ({ trace, ...rest }) => rest
 /** Reasons of one task and phase as [kind, bound, candidateTime, placedTime, detail]. */

@@ -4,6 +4,7 @@ import {
   GanttChart, calendarBands, type TimelineBar, type TimelineColumn, type TimelineDependency, type TimelineEdit,
   type TimelineProgressEdit, type TimelineRow, type TimelineSelectDetail, type TimeRange,
 } from '../../src'
+import { day } from '../data'
 
 // A classic task Gantt for a four-week sprint: a task list with Start, Days and % columns, day columns with weekday
 // headers, shaded weekends, epics rolled up as summary rows, finish-to-start arrows and editable progress.
@@ -11,7 +12,6 @@ type Tone = 'violet' | 'blue' | 'teal'
 interface RowData { kind: 'epic' | 'task' | 'milestone'; tone: Tone }
 interface SprintRow extends TimelineRow<RowData> { data: RowData }
 
-const day = 86_400_000
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 /** Midnight UTC of a day in late 2026; fixed so that renders and tests never depend on the clock or time zone. */

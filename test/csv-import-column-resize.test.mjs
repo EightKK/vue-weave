@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { parseCsv, timelineCsvTable, timelineFromCsvTable, timelineLabelColumnId, toCsv } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const parseTime = text => Date.parse(text)
@@ -135,9 +134,9 @@ test('timelineFromCsvTable names the line of invalid data', () => {
 const rows = [{ id: 'r1', label: 'Line A' }, { id: 'r2', label: 'Line B' }]
 const bars = [{ id: 'b', rowId: 'r1', label: 'Cut', start: 0, end: hour }]
 const columns = [{ id: 'owner', label: 'Owner', width: 90, value: () => 'Ana' }]
-const render = props => renderToString(createSSRApp({ render: () => h(GanttChart, {
+const render = props => renderComponent(GanttChart, {
   rows, bars, range: { start: 0, end: 4 * hour }, ...props,
-}) }))
+})
 
 test('GanttChart renders no column resize handles without columnsResizable', async () => {
   const plain = await render({ columns })

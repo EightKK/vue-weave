@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import {
   checkGraphConnection, createGraphConnectionChecker, graphConnectionTargets, graphConnectionValidator, graphConnectionViolations,
 } from 'vue-weave/core'
 import { NetworkGraph, checkGraphConnection as rootCheck } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'src', label: 'Source', ports: [{ id: 'num', side: 'right', label: 'Number' }, { id: 'txt', side: 'right', label: 'Text' }] },
@@ -182,7 +181,7 @@ test('rule input is validated', () => {
 })
 
 test('NetworkGraph renders identical markup with and without connectionRules', async () => {
-  const render = props => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, connectable: true, ...props }) }))
+  const render = props => renderComponent(NetworkGraph, { nodes, edges, connectable: true, ...props })
   const plain = await render({})
   assert.equal(await render({ connectionRules: undefined }), plain)
   assert.equal(await render({ connectionRules: rules }), plain)

@@ -13,9 +13,9 @@ import {
   type LoadViewTarget, type PlanComparisonTask, type PlanScenario, type ResourceAssignment, type ResourceCapacity, type ScheduleLink,
   type TimelineBar, type ViewBinding,
 } from '../../src'
+import StatusLine from './StatusLine.vue'
+import { hour, origin } from '../data'
 
-const hour = 3_600_000
-const origin = Date.UTC(2026, 10, 9, 8)
 const range = { start: origin, end: origin + 14 * hour }
 const at = (clock: number) => origin + (clock - 8) * hour
 const formatTime = (time: number) => new Date(time).toISOString().slice(11, 16)
@@ -251,7 +251,7 @@ const selectionText = computed(() => selection.value.size ? [...selection.value]
       <button type="button" @click="advanceCurrent">Simulate another planner's change</button>
       <label><input v-model="partial" type="checkbox"> Current plan only partly loaded</label>
     </div>
-    <p class="status" role="status" aria-label="Scenario status">{{ message }}</p>
+    <StatusLine label="Scenario status">{{ message }}</StatusLine>
     <p class="hint">
       <output aria-label="Current plan revision">Current plan revision {{ history.state.value.revision }}, finish {{ current.result.ok ? formatTime(current.result.finish) : 'none' }}</output>
       · <output aria-label="Scenario selection">Selected: {{ selectionText }}</output>

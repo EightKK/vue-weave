@@ -6,6 +6,9 @@ import {
 } from '../src'
 import { formatTime, hour, origin } from './data'
 import { download } from './download'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
+import { unusedNumber } from './ids'
 
 // Opt-in example of GanttChart `summaryDependencies`: links into and out of a summary task are drawn to the edges of its
 // rollup bar. The plan uses `ScheduleTask.parentId`, so the scheduler and the chart read the same links unchanged.
@@ -69,8 +72,7 @@ function validateConnection(connection: TimelineConnection, replacing?: string) 
   return typeof result === 'string' ? result : undefined
 }
 function connect(connection: TimelineConnection) {
-  let number = model.value.links.length + 1
-  while (model.value.links.some(link => link.id === 'link-' + number)) number++
+  const number = unusedNumber(model.value.links, 'link-', model.value.links.length + 1)
   accept(model.value.tasks, [...model.value.links, { id: 'link-' + number, ...connection }],
     `Added ${connection.type} link from ${name(connection.from)} to ${name(connection.to)}.`)
 }
@@ -111,14 +113,11 @@ function exportLinks() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="summary-links-title">
-    <div class="section-head">
-      <div><h2 id="summary-links-title">Summary task links</h2><p>summaryDependencies · links drawn to the rollup bar of a summary task · UTC</p></div>
-      <div class="options">
-        <button type="button" @click="exportLinks">Export summary links SVG</button>
-        <button type="button" @click="reset">Reset summary links</button>
-      </div>
-    </div>
+  <DemoPanel title-id="summary-links-title" title="Summary task links" subtitle="summaryDependencies · links drawn to the rollup bar of a summary task · UTC">
+    <template #options>
+      <button type="button" @click="exportLinks">Export summary links SVG</button>
+      <button type="button" @click="reset">Reset summary links</button>
+    </template>
     <GanttChart ref="chart" :rows="rows" :bars="bars" :range="range" :dependencies="model.links" :format-time="formatTime"
       :pixels-per-unit="70 / hour" :tick-steps="[hour, 2 * hour]" :row-height="52" :height="330" :snap="15 * 60_000"
       show-summaries summary-dependencies connectable reconnectable :highlighted-dependency-ids="critical"
@@ -130,6 +129,6 @@ function exportLinks() {
       <template #row-heading>Task</template>
       <template #legend><span class="hint">Amber links are critical. FF and SF links into the summary are rejected, as the scheduler rejects them.</span></template>
     </GanttChart>
-    <p class="status" role="status">{{ notice }}</p>
-  </section>
+    <StatusLine>{{ notice }}</StatusLine>
+  </DemoPanel>
 </template>

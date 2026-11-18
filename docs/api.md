@@ -9,6 +9,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
 ## Contents
 
 - [NetworkGraph](#networkgraph)
+  - [NetworkGraph directions and crossing reduction](#networkgraph-directions-and-crossing-reduction)
   - [Graph editing and minimap](#graph-editing-and-minimap)
   - [Named ports, reconnection and group actions](#named-ports-reconnection-and-group-actions)
   - [Port rules and valid-target hints](#port-rules-and-valid-target-hints)
@@ -17,7 +18,6 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Snap to grid, alignment guides, auto-pan, drops and clipboard](#snap-to-grid-alignment-guides-auto-pan-drops-and-clipboard)
   - [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)
   - [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)
-  - [NetworkGraph directions and crossing reduction](#networkgraph-directions-and-crossing-reduction)
   - [Label editing, lasso selection and item slots](#label-editing-lasso-selection-and-item-slots)
   - [Swimlanes](#swimlanes)
   - [Quantity bands](#quantity-bands)
@@ -52,8 +52,10 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Viewport helpers](#viewport-helpers)
   - [Row trees and summaries](#row-trees-and-summaries)
   - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
+  - [Recorded actuals](#recorded-actuals)
   - [Interchange exports](#interchange-exports)
   - [Microsoft Project import](#microsoft-project-import)
+  - [iCalendar import](#icalendar-import)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
 - [Linked views](#linked-views)
   - [Time range exploration](#time-range-exploration)
@@ -95,6 +97,10 @@ Events are select(id), update:selectedId(id), and viewport-change({x,y,scale}). 
 
 A narrow viewport initially focuses around the selected node at a readable scale. Fit-to-view explicitly shows the full graph. Pointer dragging pans the background. Ctrl+wheel zooms around the cursor. Arrow keys pan a focused SVG. Enter/Space select a focused node. Optional node movement and connection proposals are described in [Graph editing and minimap](#graph-editing-and-minimap).
 
+### NetworkGraph directions and crossing reduction
+
+`NetworkGraph` `options.direction` accepts `LR`, `TB`, `RL` and `BT`. Edge endpoints, edited positions, ports, groups, the minimap and culling follow the chosen direction; unnamed endpoints use the mirrored sides for RL and BT, and the default handle of a node without ports sits on its left edge in RL. `options.crossingReduction` (`none`, `barycenter`, `median`) and `options.crossingSweeps` are passed to `layoutLayeredGraph`; the defaults (`none`, 8) leave the layout identical to earlier versions. When the `layout` prop is set, it replaces the built-in layout and these two options are ignored, while `options.direction` still controls edge routing for moved nodes.
+
 ### Graph editing and minimap
 
 | API | Behavior |
@@ -114,6 +120,8 @@ Editing and the minimap are opt-in. The select and update:selectedId events fire
 
 The optional GraphLabels fields minimap, connectFrom, connectTo, reconnectSource, reconnectTarget, moveGroup, groupWithin (default "within"), rejected (default "This connection was rejected."), selectEdge (default "Select edge", followed by the edge label or ID) and deleteRejected (default "This deletion was rejected.") localize editor controls and announcements.
 
+Related exported types: `GraphConnection`.
+
 ### Named ports, reconnection and group actions
 
 | API | Behavior |
@@ -127,6 +135,8 @@ The optional GraphLabels fields minimap, connectFrom, connectTo, reconnectSource
 | nodes-move(changes) | Emitted once when multiple nodes move. The node-move event covers single-node changes. |
 
 The application accepts reconnection by replacing the corresponding edge. Preserve the edge ID and metadata and set both endpoint port fields from the proposal, including clearing a field when it is absent. Group and multi-selection movements preserve relative offsets among the movable nodes. Nodes with draggable false keep their positions. Groups use absolute positions; nesting is opt-in through parentId. The diagram editor expects different source and target nodes.
+
+Related exported types: `GraphReconnect`.
 
 ### Port rules and valid-target hints
 
@@ -190,6 +200,8 @@ highlightedNodeIds and highlightedEdgeIds are for showing what another view sele
 
 The classes combine: a highlighted node can also be selected, related or dimmed, and dimming still lowers its opacity. Changing the highlight sets never cancels a drag, connection or pan. Unknown IDs are ignored. With collapsed groups, a highlighted hidden node highlights its proxy, a merged edge is highlighted when any of its original edges is, and an edge dropped inside a collapsed group highlights that group's proxy, as resolveCollapsedTargets resolves them. Slots do not receive a highlight prop; style custom content through the vw-is-highlighted class of the node or edge group. exportSvg and exportPng draw the highlight unless includeHighlight is false.
 
+Related exported types: `NetworkFocusOptions`.
+
 ### Edge selection, deletion, context menu, tooltips and fit to selection
 
 | API | Behavior |
@@ -217,6 +229,8 @@ GraphContextMenu has target ({ kind: 'node' | 'edge' | 'group', id } or { kind: 
 The tooltip is never rendered on the server or before mounting. Hover shows it after tooltipDelay; moving to another element switches it at once. Keyboard focus shows it immediately; focus caused by a pointer press does not. The pointer can move onto the tooltip without hiding it (WCAG 1.4.13), and Escape dismisses it anywhere on the page. A press in the stage, a drag, connection, box selection, pan or pinch hides it. While shown it has role tooltip and an ID from useId, and the described node or edge hit area references it with aria-describedby. It is placed beside the element and follows the camera, after the element or before it in right-to-left graphs, flipping to the side with more room. While the slot is provided, nodes omit their SVG title so the browser does not show a second tooltip; the accessible name is unchanged. Style it through the vw-network-tooltip class.
 
 fit() without options shows the whole graph exactly as before. fit({ ids }) centres the combined boxes of those nodes at the largest scale that fits inside the viewport minus padding on each side, capped at 1.15 like Fit to view and clamped to the zoom range, then emits viewport-change. Unknown IDs throw Error, invalid padding throws RangeError, and an empty ids list leaves the camera unchanged and emits nothing. fit({ padding }) fits the whole graph with that margin and keeps it when the viewport is resized, until the camera moves or fit() runs again.
+
+Related exported types: `GraphContextMenuTarget`.
 
 ### Snap to grid, alignment guides, auto-pan, drops and clipboard
 
@@ -250,6 +264,8 @@ With droppable, dragenter, dragover and drop events on the stage call preventDef
 With clipboard, Ctrl+C (Cmd+C), Ctrl+V and Ctrl+D on the stage or one of its nodes, edges, group labels or handles emit proposals; keys pressed in focusable slot content such as an input keep their usual meaning, Alt or Shift with the key is ignored, and held keys do not repeat. Like deletion, a focused node or edge outside the selection is copied or duplicated alone; otherwise the selection is: selectedIds (or selectedId) plus the edge selection, and every edge between two listed nodes is added. Nothing is emitted, and the browser default is kept, when that is empty. paste-request is always emitted. Nothing is proposed during a pointer drag, connection, pan, box selection or pinch, nor while a keyboard connection is armed. The component keeps no clipboard: store what copy-selection reports, then build the copies with cloneGraphElements and commit them as one history entry. Ctrl+D is also the browser's bookmark shortcut; it is only cancelled when duplicate-selection is emitted.
 
 The background pattern is a pattern element with an ID from useId, inside an aria-hidden group drawn behind the groups, edges and nodes; its rectangle ignores pointer events. Cells are backgroundGap chart units apart; when that is less than 8 screen pixels, every second (fourth, and so on) line is drawn. The dots and lines keep a 1-pixel size at every zoom level and use --vw-background-pattern (default --vw-grid). With a pattern, the root also receives vw-network-patterned, which replaces the fixed dotted backdrop with the plain --vw-surface-muted surface. The pattern is part of the server markup.
+
+Related exported types: `GraphCloneOptions`.
 
 ### Group collapse, edge styles and waypoints, level of detail and node resizing
 
@@ -286,6 +302,8 @@ The orthogonal router leaves the source and enters the target on the sides that 
 
 Waypoint and resize handles are focusable buttons. On a waypoint handle the arrow keys move it by 10 chart units (40 with Shift), or to the next snapGrid line (four with Shift); Delete or Backspace removes it and focus returns to the edge. Enter or Space on an add handle inserts a waypoint at that point. A pointer drag of a waypoint, or of an add handle, which inserts a new waypoint there, previews the route and proposes the new list on release; a press without movement on an add handle inserts the waypoint at the handle. On a resize handle the arrow keys move that corner's vertical or horizontal edge by 10 (40 with Shift), or to the next grid line; a pointer drag previews the box with the dragged edges on the grid when snapGrid is set. Resizes keep the opposite corner, minNodeSize and a nonnegative origin. Waypoints are clamped to nonnegative coordinates. Escape, pointer cancellation, a second touch and changes of the source data or layout cancel a drag in flight without a proposal. The new GraphLabels fields collapseGroup, expandGroup, collapsedNode, collapsedNodes, moveWaypoint, addWaypoint, reshapeRejected, resizeNode, topLeft, topRight, bottomLeft, bottomRight and resizeRejected localize the names and announcements.
 
+Related exported types: `GraphCollapseOptions`.
+
 ### Node shapes, edge markers, animated and parallel edges
 
 | API | Behavior |
@@ -301,10 +319,6 @@ Every input is opt-in: without these fields and with the defaults written out (s
 Where edges meet shaped nodes: straight edges, and curve or straight edges through waypoints or spread as parallel edges, end where the line from the node centre meets the outline. Orthogonal edges and the layout's own paths attach to the middle of the box sides, which lies on every outline; orthogonal routes through waypoints leave from that middle as well, and the ends of self-loops and of spread orthogonal edges slide along their first leg onto the outline. Named ports, connection handles and edges of moved or resized nodes in the curve style stay on the box sides.
 
 The export (exportSvg, exportPng and renderGraphSvg) draws the same shapes, markers (hollow ones filled with the theme's surfaceMuted, the markers of highlighted edges in the highlight colour) and paths; animated edges are dashed (`stroke-dasharray="6 4"`) without motion.
-
-### NetworkGraph directions and crossing reduction
-
-`NetworkGraph` `options.direction` accepts `LR`, `TB`, `RL` and `BT`. Edge endpoints, edited positions, ports, groups, the minimap and culling follow the chosen direction; unnamed endpoints use the mirrored sides for RL and BT, and the default handle of a node without ports sits on its left edge in RL. `options.crossingReduction` (`none`, `barycenter`, `median`) and `options.crossingSweeps` are passed to `layoutLayeredGraph`; the defaults (`none`, 8) leave the layout identical to earlier versions. When the `layout` prop is set, it replaces the built-in layout and these two options are ignored, while `options.direction` still controls edge routing for moved nodes.
 
 ### Label editing, lasso selection and item slots
 
@@ -467,6 +481,8 @@ Pointer cancellation, loss of capture and Escape discard the preview. Changes to
 
 Slots are legend(), row-heading(), row({row,index}), bar({bar,range,selected}), tick({time,label}), empty(), the opt-in tooltip({bar,range,selected}) and cell-editor (see [Timeline columns and rollups](#timeline-columns-and-rollups)). The bar slot is inside a button. Use noninteractive content inside it. Keep row and bar slot contents within the configured dimensions. Methods are scrollToTime(time), scrollToRow(rowId), cancelEdit(), exportSvg(options), exportPng(options), fitToBars(ids, options) and revealBar(id, options); see [Export to SVG and PNG](#export-to-svg-and-png), [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit) and [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops). cancelEdit() also closes an open `cell-editor` and reports `edit-cancel` with reason `api`.
 
+Related exported types: `TimelineEditCancelReason`.
+
 ### Timeline planning overlays
 
 | API | Behavior |
@@ -478,6 +494,8 @@ Slots are legend(), row-heading(), row({row,index}), bar({bar,range,selected}), 
 | markers | Array of unique IDs with finite time and label. Drawn as vertical markers in the visible time window. |
 
 The row slot also receives depth and expanded. The row index refers to the expanded view. Links with hidden endpoints disappear while the group is collapsed. scrollToRow targets expanded rows. Any summary interval or progress can be supplied as a bar on the parent row. The optional GanttLabels fields expandRow, collapseRow and baseline localize these additions. CSS variables --vw-baseline and --vw-marker theme the overlays.
+
+Related exported types: `TimelineBand`.
 
 ### Baseline sets
 
@@ -539,6 +557,8 @@ Which element edits a cell:
 
 Setting `field` therefore moves a column from `cell-edit` to `field-edit`. The field cell button (`vw-field-cell`, named "row label · column label value") opens the editor on click, Enter, Space or F2, and focus moves into the editor's first focusable element. `commit(value)` checks the value with `validateFieldValue` and `validateFieldEdit`; on success it emits `field-edit`, closes the editor and returns focus to the cell button, and on failure it keeps the editor open with `validation` and `error` set and announces the reason. It returns the `FieldCheck`. `commitText(text)` parses the text with the field first. `cancel()` and Escape (unless the slot content already handled it with `preventDefault`) close the editor without a proposal, return focus to the cell and emit `edit-cancel` with reason `escape`. A key that commits or cancels does not also activate the cell button. Focus leaving the editor does not close it. New `rows` or `columns`, `readonly`, a change of the collapsed rows and `cancelEdit()` close an open editor with `edit-cancel` (`source-changed`, `hidden` or `api`); new bars do not. The built-in field input proposes on Enter or change with source `keyboard`; text that cannot be parsed or fails the spec is kept, marked `aria-invalid` and announced, and Escape restores the formatted value. Read-only field cells show `column.value` as plain text, like other cells.
 
+Related exported types: `TimelineCellEdit`, `TimelineSummary`.
+
 ### Column resizing
 
 Opt-in with `columnsResizable`. Without it and without `labelWidth`, the chart renders the same markup as before (server output is byte-identical), and pointer, keyboard, events and names are unchanged. Column widths stay controlled: the chart previews a drag and proposes the result, and the parent applies it.
@@ -580,6 +600,8 @@ function onColumnResize(change: TimelineColumnResize) {
 | dependency-delete(id) | Delete or Backspace was pressed on a focused dependency. The parent removes it from dependencies to accept. Not emitted when readonly is set. |
 
 A bar cannot link to itself, and reconnecting a dependency to its existing endpoints proposes nothing. Escape, pointer cancellation and loss of capture discard a pending connection. Changes to bars, rows, dependencies, the coordinate system or the connectable and reconnectable props cancel an in-flight connection, including one armed from the keyboard. Handles are hidden and no `connect`, `reconnect` or `dependency-delete` proposal is emitted when readonly is set; selecting a dependency (`dependency-select`) stays possible, like selecting a bar.
+
+Related exported types: `TimelineDependencyType`.
 
 ### Dependency lag
 
@@ -695,6 +717,8 @@ const active = computed(() => presets.find(preset => preset.id === level.value)!
 </template>
 ```
 
+Related exported types: `CalendarBandOptions`, `CalendarBandUnit`.
+
 ### Marker ranges
 
 `markerRanges` highlights half-open intervals `[start, end)` such as a code freeze, holidays or an office closure. It is opt-in: without it (or with an empty array) the chart renders exactly the markup it did before. Point markers (`markers`) are unchanged; a marker range is a separate `TimelineMarkerRange` with `id`, `start`, `end`, `label`, optional `tone` and optional `rowIds`.
@@ -720,6 +744,8 @@ Each range draws a band (`vw-gantt-range`, plus `vw-is-row` for a row band and `
 | load-segment slot | Customize a segment using segment, row, peak and overload. The slot content is inside an element with role img and an accessible label. |
 
 Each segment is scaled to the row's peak load or capacity. The default rendering fills load up to capacity, highlights the overloaded part and draws a dashed capacity line. Segments carry an accessible label such as "CNC cell 09:00–10:00: load 2 / capacity 1, overloaded by 1", built from formatTime and the GanttLabels fields load, capacity and overload; the load row group is named with loadRegion. Invalid load data is reported through validation-error. With `loadSelectable`, each segment is a focusable element with role button (class `vw-is-selectable`) and the same accessible name, and `highlightedLoadTargets` and `selectedLoadTargets` mark segments by time range; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops).
+
+Related exported types: `ResourceLoadHistogram`.
 
 ### Linked views, reveal and external drops
 
@@ -924,7 +950,6 @@ function onConstraintEdit(change: TimelineConstraintEdit) {
 | moveTimelineRow(rows, id, target) | New rows array in tree preorder with the row and its subtree moved under `target.parentId` (a root without it) at sibling `target.index`, counted without the moved row. The moved row is a new object; the others keep their identity. Unknown rows or parents and moves into the own subtree throw an Error; an index that is not an integer from 0 to the sibling count throws a RangeError |
 | indentTimelineRow(rows, id) / outdentTimelineRow(rows, id) | `moveTimelineRow` to the last child of the previous sibling, or to the next sibling after the parent. A first sibling cannot be indented and a root row cannot be outdented (Error) |
 | timelineCsvTable(rows, bars, options?) | A header and one record per bar for `toCsv`; see [Interchange exports](#interchange-exports) |
-| parseCsv(text, options?), timelineFromCsvTable(table, options) | Read CSV text and turn a `timelineCsvTable` layout back into rows and bars; see [Interchange exports](#interchange-exports) |
 | timelineLabelColumnId | `'$label'`, the `TimelineColumnResize.id` of the row label column; see [Column resizing](#column-resizing) |
 | applyTimelineConstraintEdit(bars, change) | New bars array in which the bar `change.id` is a copy with `constraints[change.kind]` set to `change.after`, or without it when `after` is undefined; the `constraints` field is left out once no constraint remains. Other bars keep their identity and the input is not modified. An unknown bar or kind throws an Error and an `after` that is not a finite number a RangeError. `before` is not compared with the bar. See [Scheduling constraints](#scheduling-constraints) |
 | timelineConstraints(source) | The constraint fields of any object, for example a `ScheduleTask`, as a new `TimelineConstraints` with only the kinds that are set, or undefined when none is; a set value that is not finite throws a RangeError. Builds `TimelineBar.constraints` from scheduler tasks |
@@ -1099,6 +1124,8 @@ Sizes that are not finite or are negative (and node sizes of 0) throw `RangeErro
 
 Connected components (ignoring edge direction) are laid out separately and packed in rows, so disconnected parts never overlap. Without pinned nodes the drawing is translated so its bounding box starts at `padding`. Components that contain a pinned node are simulated together in the caller's coordinate frame and the other components are packed to their right; pinned boxes are reported at exactly their given coordinates unless some node or route would start above or left of `padding`, in which case the whole drawing is shifted by the same amount. Overlaps between two pinned boxes are not resolved. Box `rank` is the breadth-first depth, ignoring edge direction, from the first node of its component in input order. Edges are straight segments clipped to the box borders with labels at their midpoints. Parallel edges between one pair (in either direction) bend to alternate sides as quadratic curves with the label at the curve midpoint, and self-loops are drawn as growing loops on the right side. An empty graph returns `2 × padding` (at least 1) for both dimensions. Unknown endpoints and duplicate IDs throw `Error` through `indexGraph`; invalid numbers, a non-integer seed and non-finite initial positions throw `RangeError`. All traversals are iterative and the arguments are never mutated.
 
+Related exported types: `GraphCrossingReduction`, `GraphForceLayoutOptions`, `GraphSwimlaneLayoutOptions`.
+
 ### Incremental placement
 
 `layoutGraphIncrementally(nodes, edges, positions: ReadonlyMap<string, GraphKnownPosition>, options?: GraphIncrementalLayoutOptions): GraphIncrementalLayout` places the nodes that have no position yet around the ones that do, for a graph that grows (a page of a [graph expansion](#partial-data-loading), a new node) without moving what the user is looking at. `GraphKnownPosition` is a box top-left corner, optionally with `width`, `height` and `rank`, so the `boxes` of an earlier layout can be passed as they are. The result is a complete `GraphLayout` for the `layout` prop (or its boxes for `positions`) plus `placedIds` (the new nodes in placement order), `movedIds` (positioned nodes the relaxed mode pushed aside) and `fallbackIds` (see `allowNegative`).
@@ -1125,6 +1152,8 @@ Connected components (ignoring edge direction) are laid out separately and packe
 Throws Error for the graph errors of `indexGraph` and for a fixed ID that is not a node (`Unknown fixed graph node`) or has no position, and RangeError for an unknown direction, a non-finite position, a size that is not finite and positive, and gaps, padding or `maxDisplacement` that are not finite and nonnegative. For a force layout that keeps chosen nodes, `layoutForceGraph` takes `initialPositions` and `fixed`; it moves the other nodes.
 
 `graphLayoutChangeMetrics(before: ReadonlyMap<string, GraphPoint>, after: { boxes, paths? }, options?: { edges? }): GraphLayoutChangeMetrics` measures one layout change, as a diagnostic for tests and evaluation, not a benchmark or quality score: `compared` (IDs of `before` with a box in `after`), `maxDisplacement` and `totalDisplacement` (distances between top-left corners), `movedIds`, `overlaps` (pairs of boxes of `after` whose interiors overlap) and `edgeBoxIntersections` (pairs of an edge of `options.edges` and a box other than its ends that its path in `after.paths` passes through; curves are sampled, so this count is approximate for curves). Boxes go into a bucket grid. Throws RangeError for non-finite coordinates.
+
+Related exported types: `GraphLayoutChangeOptions`.
 
 ### Quantity flow projection
 
@@ -1167,6 +1196,8 @@ Throws Error for the graph errors of `indexGraph` and for a fixed ID that is not
 
 Sizes that are not finite or are negative (and a node thickness, minimum node size or pixels per unit of 0), an unknown direction or scale and a sweep count that is not a positive integer throw RangeError.
 
+Related exported types: `GraphFlowOptions`, `GraphFlowScale`.
+
 ### Graph algorithms
 
 All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs and bad ports throw `Error`) and never mutate their arguments.
@@ -1178,6 +1209,8 @@ All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs a
 | shortestGraphPath(nodes, edges, fromId, toId, { directed = true, weight }) | `{ nodeIds, edgeIds, distance }` or `null` when unreachable. Breadth-first without `weight`, Dijkstra with it (weights must be finite and nonnegative, otherwise `RangeError`). Unknown IDs throw `Error`. |
 | searchGraphNodes(nodes, query, { fields }) | Case-insensitive substring match on `id` and `label` (both by default). An empty query matches every node. |
 | filterGraph(nodes, edges, match, { neighborhood = 0, fields }) | `match` is a predicate or a text query. Returns `{ nodes, edges }`: matching nodes plus everything within `neighborhood` hops (via `graphNeighborhood`) and the edges with both endpoints kept. |
+
+Related exported types: `GraphIndex`, `GraphFilterOptions`, `GraphNodeMatch`, `GraphSearchOptions`, `GraphPathResult`, `ShortestGraphPathOptions`, `TopologicalOrderResult`.
 
 ### Graph analysis
 
@@ -1198,6 +1231,8 @@ import { detectGraphCommunities, graphCommunityGroups } from 'vue-weave/core'
 const { communities } = detectGraphCommunities(nodes, edges)
 const groups = graphCommunityGroups(communities, { label: members => `${members.length} nodes` })
 ```
+
+Related exported types: `GraphDegreeCentralityOptions`, `GraphBetweennessOptions`, `GraphPageRankOptions`, `GraphPageRankResult`, `GraphCommunityOptions`, `GraphCommunityResult`, `GraphCommunityGroupsOptions`.
 
 ### Viewport helpers
 
@@ -1231,6 +1266,8 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 
 `ResourceCapacity` is `{ id, capacity, periods?, capacityPeriods? }`. Optional `capacityPeriods` (`ResourceCapacityPeriod[]`: `{ start, end, capacity }`) replace `capacity` over fixed half-open intervals of absolute time; outside them `capacity` applies and outside `periods` the capacity is 0. Periods need integer endpoints with `end > start`, a nonnegative integer `capacity` and must not overlap within a resource (adjacent is fine); otherwise a RangeError names the resource, and a value that is not an array throws an Error. Segments split where the capacity changes, so each segment's `capacity` and `overload` hold for its whole interval. `ResourceAssignment` is `{ resourceId, taskId, units?, workOffset?, workDuration? }`. With `workOffset` (nonnegative integer, default 0) or `workDuration` (positive integer, default the rest of the work), the assignment covers only that part of the task's working time, measured along its `work` segments in the units of the times; a part beyond the work is clipped, and invalid values throw a RangeError. Load is added only during the part, and a task is in `taskIds` only there. `levelResources` honours both fields and also requires them to align with the quantum. See [Capacity that changes over time](scheduling.md#capacity-that-changes-over-time) and [Assignments for part of a task](scheduling.md#assignments-for-part-of-a-task).
 
+Related exported types: `WorkShift`, `WeeklyShift`.
+
 #### Scheduling modes, splits, leveling and time zones
 
 | API | Behavior |
@@ -1249,6 +1286,53 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | levelResources(input) | `LevelResourcesInput` is a `ScheduleInput` plus `resources` and `assignments`. Returns `ScheduleFailure` or `LevelResourcesSuccess`: the leveled schedule plus `leveledTasks`, `delays` (`ResourceDelay[]`), `overloads` and `unresolvedTaskIds`. Capacity is reserved against `capacityPeriods`, and a partial assignment (`workOffset`, `workDuration`) needs its resource only during its part of the work, so a plan without unresolved tasks has no overload in `calculateResourceLoad`. |
 
 The exported types are `ScheduleSuccess`, `ScheduleFailure`, `ScheduleCycle`, `ScheduleConstraintName`, `ScheduleManualConflict`, `ResourceLoadOptions`, `ResourceCapacityPeriod`, `LevelResourcesInput`, `LevelResourcesSuccess`, `LevelResourcesResult`, `ResourceDelay`, `ScheduleEdit`, `ScheduleChange`, `PropagateEditSuccess` and `PropagateEditResult`. `levelResources` ranks ready tasks by priority, then total float, then early start, then ID, and gives each the earliest start with enough capacity before its latest feasible dates. Tasks without such a start keep their earliest dates and are reported as unresolved. Manual tasks never move: their capacity is reserved first, and one that finds too little capacity at its dates is reported as unresolved. The [scheduling guide](scheduling.md#level-resources) defines each step. Optimization policies remain the application's concern.
+
+### Recorded actuals
+
+`rescheduleFromActuals(input, statusDate, actuals)` replans from what actually happened instead of a progress share. `actuals` is a `ReadonlyMap` from task ID to `TaskActuals`:
+
+| Field | Meaning |
+| --- | --- |
+| `intervals` | Recorded working intervals, half-open `[start, end)` in absolute time, possibly several (start, interruption, resume). Each must be finite, have `end > start`, align with the horizon and quantum and lie inside `input.range`; otherwise RangeError. They are never moved, clipped to a calendar or merged with the forecast |
+| `remainingWork` | Optional working time still to do, in the input's units on the task's calendar; a non-negative multiple of the quantum (RangeError otherwise). Default: `duration` minus the elapsed length of the intervals (overlaps counted once), at least 0 |
+| `finished` | Optional `true` when the task is complete. Requires at least one interval (Error) |
+
+The status date is validated like that of `rescheduleFromStatusDate`. Actuals that are not a Map, an unknown task, a summary task or an entry without an `intervals` array throw an Error; entries of inactive tasks are validated and ignored. The arguments are not modified.
+
+`RescheduleFromActualsResult` is a union on `ok`, which equals `schedule.ok`:
+
+| Field | Meaning |
+| --- | --- |
+| `schedule` | The forecast `ScheduleResult` with the input's task and link IDs. A started task spans from its first actual start to its forecast finish and its `work` is its sorted actual intervals followed by its remaining work; its latest dates and float describe the remaining work. A finished task spans its actuals, with latest dates equal to its dates, float 0 and `critical` false |
+| `plan` | `scheduleTasks(input)`, the original plan |
+| `tasks` | One `ActualsTask` per active task in input order |
+| `diagnostics` | `ActualsDiagnostic` entries, task by task, followed by `toPlanningDiagnostics(schedule)` |
+| `statusDate` | The status date |
+
+An `ActualsTask` has `id`, `state` (`ActualsTaskState`: `not-started`, `in-progress` or `finished`), `actual` (copies of the recorded intervals in input order), `remaining` (the forecast working segments of the remaining work; empty for finished, manual and summary tasks, milestones and a failed schedule), `performedWork`, `remainingWork`, the forecast `start` and `end` (after a failure, the span of the actuals, or absent), `plan` (the task's dates in `plan`, when it succeeded), `offCalendar` (the parts of the actuals outside the task's calendar after pauses) and, when they apply, `parentId`, `summary` and `manual`. A summary task sums `performedWork` and `remainingWork` of its subtasks and is `finished` when all of them are.
+
+An `ActualsDiagnostic` has the shape of a `PlanningDiagnostic` (`id`, `code`, `severity`, `entities` with the task, `range`, empty `reasonIds`), so both fit in one list. `ActualsDiagnosticCode`:
+
+| Code | Severity | Range |
+| --- | --- | --- |
+| `actual-overlap` | error | The overlapping part of two intervals of the task |
+| `actual-after-status-date` | warning | The part of an interval after the status date |
+| `actual-outside-calendar` | warning | A part of an interval outside the task's working time |
+| `actual-contradiction` | error | None: the task is `finished` but has a positive `remainingWork` |
+
+`actualsTimelineBars(result, options?)` returns `TimelineBar[]` in task order, without summary tasks (use GanttChart `showSummaries` for their rows). A task with actuals gets a solid bar `<label> · actual` spanning them, with the merged intervals as `segments` when there are several; a task with remaining work, and an unstarted or manual task, gets an outline bar `<label> · forecast` over its forecast work. After a failed schedule only actual bars are returned. The original plan becomes a baseline of the task's first bar. `ActualsTimelineBarOptions`:
+
+| Option | Default |
+| --- | --- |
+| `label(taskId)` | The task ID |
+| `rowId(taskId)` | The task ID |
+| `barId(taskId, part)` | `taskId + ':' + part`, with `part` `actual` or `forecast` |
+| `partLabels` | `{ actual: 'actual', forecast: 'forecast' }`, appended to the label after ` · ` |
+| `descriptions` | `{ actual: 'Recorded actual work', forecast: 'Remaining work forecast' }`, the bars' `description` |
+| `tones` | `{ actual: 'teal', forecast: 'blue' }` |
+| `baselineId` | `timelineBaselineId`: the plan becomes the bar's `baseline`. Another ID adds a named `baselines` entry; `false` adds none |
+
+Related exported types: `RescheduleFromActualsFields`.
 
 ### Interchange exports
 
@@ -1343,6 +1427,8 @@ const plan = scheduleTasks({ range, tasks, dependencies })
 
 The `dependencies` of `timelineFromMsProject` have IDs and connect leaf tasks only, so they serve as `ScheduleLink`s. Without calendars, `duration` is scheduled in continuous time; pass `workCalendarsFromMsProject(project, range)` as `calendars`, `project.defaultCalendarId` as `defaultCalendarId` and each task's `calendarId` for working time.
 
+Related exported types: `MsProjectImportWarningCode`, `MsProjectResourceLoad`, `MsProjectResourceLoadOptions`.
+
 ### iCalendar import
 
 | Export | Behavior |
@@ -1363,50 +1449,7 @@ const { events, warnings } = fromICalendar(await file.text(), { utcOffsetMinutes
 const { rows, bars } = timelineFromICalendar(events)
 ```
 
-### Recorded actuals
-
-`rescheduleFromActuals(input, statusDate, actuals)` replans from what actually happened instead of a progress share. `actuals` is a `ReadonlyMap` from task ID to `TaskActuals`:
-
-| Field | Meaning |
-| --- | --- |
-| `intervals` | Recorded working intervals, half-open `[start, end)` in absolute time, possibly several (start, interruption, resume). Each must be finite, have `end > start`, align with the horizon and quantum and lie inside `input.range`; otherwise RangeError. They are never moved, clipped to a calendar or merged with the forecast |
-| `remainingWork` | Optional working time still to do, in the input's units on the task's calendar; a non-negative multiple of the quantum (RangeError otherwise). Default: `duration` minus the elapsed length of the intervals (overlaps counted once), at least 0 |
-| `finished` | Optional `true` when the task is complete. Requires at least one interval (Error) |
-
-The status date is validated like that of `rescheduleFromStatusDate`. Actuals that are not a Map, an unknown task, a summary task or an entry without an `intervals` array throw an Error; entries of inactive tasks are validated and ignored. The arguments are not modified.
-
-`RescheduleFromActualsResult` is a union on `ok`, which equals `schedule.ok`:
-
-| Field | Meaning |
-| --- | --- |
-| `schedule` | The forecast `ScheduleResult` with the input's task and link IDs. A started task spans from its first actual start to its forecast finish and its `work` is its sorted actual intervals followed by its remaining work; its latest dates and float describe the remaining work. A finished task spans its actuals, with latest dates equal to its dates, float 0 and `critical` false |
-| `plan` | `scheduleTasks(input)`, the original plan |
-| `tasks` | One `ActualsTask` per active task in input order |
-| `diagnostics` | `ActualsDiagnostic` entries, task by task, followed by `toPlanningDiagnostics(schedule)` |
-| `statusDate` | The status date |
-
-An `ActualsTask` has `id`, `state` (`ActualsTaskState`: `not-started`, `in-progress` or `finished`), `actual` (copies of the recorded intervals in input order), `remaining` (the forecast working segments of the remaining work; empty for finished, manual and summary tasks, milestones and a failed schedule), `performedWork`, `remainingWork`, the forecast `start` and `end` (after a failure, the span of the actuals, or absent), `plan` (the task's dates in `plan`, when it succeeded), `offCalendar` (the parts of the actuals outside the task's calendar after pauses) and, when they apply, `parentId`, `summary` and `manual`. A summary task sums `performedWork` and `remainingWork` of its subtasks and is `finished` when all of them are.
-
-An `ActualsDiagnostic` has the shape of a `PlanningDiagnostic` (`id`, `code`, `severity`, `entities` with the task, `range`, empty `reasonIds`), so both fit in one list. `ActualsDiagnosticCode`:
-
-| Code | Severity | Range |
-| --- | --- | --- |
-| `actual-overlap` | error | The overlapping part of two intervals of the task |
-| `actual-after-status-date` | warning | The part of an interval after the status date |
-| `actual-outside-calendar` | warning | A part of an interval outside the task's working time |
-| `actual-contradiction` | error | None: the task is `finished` but has a positive `remainingWork` |
-
-`actualsTimelineBars(result, options?)` returns `TimelineBar[]` in task order, without summary tasks (use GanttChart `showSummaries` for their rows). A task with actuals gets a solid bar `<label> · actual` spanning them, with the merged intervals as `segments` when there are several; a task with remaining work, and an unstarted or manual task, gets an outline bar `<label> · forecast` over its forecast work. After a failed schedule only actual bars are returned. The original plan becomes a baseline of the task's first bar. `ActualsTimelineBarOptions`:
-
-| Option | Default |
-| --- | --- |
-| `label(taskId)` | The task ID |
-| `rowId(taskId)` | The task ID |
-| `barId(taskId, part)` | `taskId + ':' + part`, with `part` `actual` or `forecast` |
-| `partLabels` | `{ actual: 'actual', forecast: 'forecast' }`, appended to the label after ` · ` |
-| `descriptions` | `{ actual: 'Recorded actual work', forecast: 'Remaining work forecast' }`, the bars' `description` |
-| `tones` | `{ actual: 'teal', forecast: 'blue' }` |
-| `baselineId` | `timelineBaselineId`: the plan becomes the bar's `baseline`. Another ID adds a named `baselines` entry; `false` adds none |
+Related exported types: `ICalendarImportWarningCode`.
 
 ### Network diagram from a schedule
 
@@ -1459,6 +1502,8 @@ Each set object also has `related*` sets (`relatedNodeIds`, `relatedEdgeIds`, `r
 
 `revealLinkedTarget({ reveal, expand?, maxExpansions? })` (Vue entry) goes to a linked item that may be inside a collapsed group or row. It calls `reveal()` (for example `() => graph.value?.revealNode(id, { focus: true })`); when the result is `hidden-by-collapse` it asks `expand(proxyId, result)`, which expands that proxy in the controlled `collapsedGroupIds` or `collapsedIds` and returns true, or returns false to decline. After an accepted expansion it waits for the render (two `nextTick`s) and reveals again, up to `maxExpansions` (default 16) nested collapses. It resolves a `LinkedRevealResult`: the last `RevealResult` plus `expandedIds`, and `declined: true` when `expand` declined or accepted without the item becoming visible. It never expands anything itself, and it resolves `revealed` only when the last reveal did, so a refused expansion is never reported as a completed move. Without `expand` it returns the first result.
 
+Related exported types: `ViewBinding`, `ViewBindingIndex`, `LoadSegmentLike`, `ResolvedEntityRefs`, `ResolvedViewTargets`, `ResolvedLoadTargets`, `GraphTraversalDirection`, `GraphTraversalResult`, `CollapsedTargetsResult`, `LinkedViewName`, `UseLinkedSelectionOptions`, `RevealLinkedTargetOptions`.
+
 ### Time range exploration
 
 Select a time range, for example 14:00–16:00 on inspection machine X, and show what was worked on in it in the linked views, optionally with what the graph relates to it. Times are never inferred from the graph: activity comes only from the bars.
@@ -1490,6 +1535,8 @@ It throws `RangeError` for a range or bar time that is not finite or ends before
 
 Pass `graph.relatedNodeIds` to NetworkGraph `relatedIds` to draw related nodes, and the edges between them, apart from active ones (`vw-is-related` instead of `vw-is-highlighted`). GanttChart has no related-bar prop; merge `relatedBarIds` into `highlightedBarIds` or style them yourself, for example through `appearance` or `tone` on derived bars.
 
+Related exported types: `TimelineBarsInRangeOptions`, `TimeRangeTargetsOptions`.
+
 ## Resource timelines and unplanned tasks
 
 These `vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
@@ -1514,6 +1561,8 @@ Chart links use bar IDs, so the scheduler's `ScheduleLink` array cannot be passe
 `proposeResourceAssignment(state, request)` takes `{ assignments, resourceIds?, taskIds? }` and one of `{ kind: 'add', taskId, resourceId, units? }`, `{ kind: 'remove', taskId, resourceId }` and `{ kind: 'replace', taskId, fromResourceId, toResourceId }`. A replacement keeps the position, units and `workOffset`/`workDuration` of the replaced assignment. Unknown tasks or resources (when the lists are given) and duplicate assignments in the state throw an Error, and units that are not a positive integer throw a RangeError.
 
 `buildPlacementInput(input, placedTaskIds)` takes a `ScheduleInput` with optional `assignments`, such as a `LevelResourcesInput`, and returns the same kind of input with only the placed tasks, the links between them and their assignments. A link from an unplaced task to a placed one is reported as `{ code: 'unplaced-predecessor', taskId, predecessorId, dependencyId }` and makes `ok` false, unless the scheduler would ignore it anyway: a link that touches an `inactive` task, or a link into a placed task with `manual` dates, is only excluded. A placed task whose `parentId` names an unplaced task gets the ID of its nearest placed ancestor instead, or none when no ancestor is placed. Duplicate or unknown IDs and duplicate assignments still throw an Error.
+
+Related exported types: `ResourceTimelineTask`, `ResourceTimelineResource`, `ResourceTimelineOptions`, `ResourceBarOrigin`, `EditMode`, `ResourceTimelineRejectionCode`, `ResourceTimelineEditResolution`, `ResourceTimelineEditsResolution`, `ResourceAssignmentRequest`, `ResourceAssignmentState`, `ResourceAssignmentProposal`, `PlacementInput`, `PlacementDiagnostic`.
 
 ## Planning diagnostics and schedule traces
 
@@ -1606,6 +1655,8 @@ Vue (`vue-weave`):
 - `graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options?: { transport?: 'clone' | 'json' })` makes an adapter that talks to a Worker the caller created.
 - Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `AsyncGraphGestureListeners`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.
 
+Related exported types: `GraphLayoutRequestMessage`, `GraphLayoutCancelMessage`, `GraphLayoutSuccessMessage`, `GraphLayoutFailureMessage`.
+
 ## Partial data loading
 
 The components virtualise rendering, but validate and index every row, bar, node and edge they are given. To load only what is shown, GanttChart reports the window it renders, and the helpers below keep the request state; the application fetches. See [Loading only what is visible](integration.md#loading-only-what-is-visible) for a walkthrough.
@@ -1658,6 +1709,8 @@ Timeline view state (`TimelineViewState`, version 1) is JSON-safe: column order,
 
 `useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state`, `projection` (pass its `rows`, `bars` and `dependencies` to GanttChart), `columns` (the visible `TimelineColumn<R>` array in saved order with saved widths, ready for the `columns` prop), `diagnostics` (saved-view problems, column problems included), `setSearch`, `setSort`, `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.
 
+Related exported types: `TimelineFieldKind`, `FieldPrimitive`, `FieldChoice`, `FieldDurationBasis`, `FieldErrorCode`, `FieldParseResult`, `TimelineViewInput`, `TimelineViewColumn`, `TimelineViewSort`, `TimelineViewSearch`, `TimelineRowCompare`, `TimelineHiddenTarget`, `TimelineViewProjection`, `TimelineViewDiagnostic`, `TimelineViewDiagnosticCode`.
+
 ## Application undo and redo
 
 Import `useEditHistory(initial, limit = 100)` from the Vue entry point. It returns `state`, `canUndo`, `canRedo`, `commit`, `undo`, `redo` and `reset`. The limit is the maximum number of undo steps and must be a positive integer; invalid limits throw `RangeError`.
@@ -1695,6 +1748,8 @@ Only an accepted response changes anything. It replaces the accepted state with 
 
 The server must apply each save as a conditional update on `baseVersion`, deduplicate by `operationId`, and commit all affected records atomically. See [integration](integration.md).
 
+Related exported types: `TransactionSource`, `TransactionStatus`, `TransactionCoreState`, `PendingTransaction`, `TransactionFailure`, `SettleResult`, `UseEditTransactionOptions`, `HistoryReset`.
+
 ## Versioned JSON snapshots
 
 `vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
@@ -1725,6 +1780,8 @@ Rules the functions enforce:
 - `registry.onMissing: 'fallback'` turns a missing layout, column, editor, renderer or comparator from an error into a warning and uses the default display. The default is `'fail'`.
 
 `parseWeaveSnapshot` and `restoreWeaveSnapshot` report `SnapshotDiagnostic` items (`severity`, `code`, `path`, `message`). The graph and timeline types of the restored value are the ordinary `NetworkNode`, `GraphEdge`, `NetworkGroup`, `TimelineRow`, `TimelineBar` and `TimelineDependency`.
+
+Related exported types: `JsonValue`, `SnapshotKind`, `SnapshotMetadata`, `SnapshotColumnDefinition`, `SnapshotColumnState`, `SnapshotSortRule`, `SnapshotDiagnosticCode`, `SnapshotDiagnosticSeverity`, `SnapshotLayoutFactory`, `SnapshotMigration`, `GraphCameraTarget`, `GraphSnapshotView`, `GraphSnapshotData`, `GraphSnapshotInput`, `GraphSnapshotV1`, `TimelineSnapshotView`, `TimelineSnapshotData`, `TimelineSnapshotInput`, `TimelineSnapshotV1`, `PlanningTaskDisplay`, `PlanningPlacement`, `PlanningSnapshotData`, `PlanningSnapshotInput`, `PlanningSnapshotV1`, `SerializeWeaveSnapshotOptions`, `ParseWeaveSnapshotOptions`, `ParseWeaveSnapshotResult`, `WeaveSnapshotRegistry`, `RestoreWeaveSnapshotResult`, `RestoredWeaveSnapshot`, `RestoredGraphSnapshot`, `RestoredGraphView`, `RestoredTimelineSnapshot`, `RestoredTimelineView`, `RestoredPlanningSnapshot`, `RestoredColumn`, `RestoredSortRule`.
 
 ## Export to SVG and PNG
 
@@ -1761,6 +1818,8 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 | mirrorTimeScale(scale) | A right-to-left copy of a `TimeScale`: range start maps to `width`, range end to 0 |
 
 Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, `surfaceMuted`, `text`, `muted`, `border`, `grid`, `edge`, `accent`, `onSolid`, `markerInk` (marker and now-flag label text; default `#ffffff`, read from `--vw-marker-ink` by the component export methods), `baseline`, `baseline2` and `baseline3` (the second and third baseline slots, read from `--vw-baseline-2` and `--vw-baseline-3`; optional in `SvgExportTheme`), `marker`, `now`, `load`, `loadOverload`, `loadCapacity`, `dependencyHighlight`, `nonWorking`, `critical`, `float`, `deadline`, `status`, `constraint` and `constraintViolated` (read from `--vw-constraint` and `--vw-constraint-violated`), `range`, `rangeInk` and `rangeLine` (marker ranges without a tone, read from `--vw-range`, `--vw-range-ink` and `--vw-range-line`) and per-tone `ink`, `line`, `pale`, `solid`; the ten newest are optional in `SvgExportTheme` and always present in `defaultSvgExportTheme`), `fontFamily`, `title`, `background`, `idPrefix` (letters, digits, `_`, `.` and `-`; default `vw-export`) and `direction` (`ltr` or `rtl`). The builders validate their input like the components do and throw `RangeError` for invalid numbers or geometry and `Error` for bad references and IDs. All text and attribute values are escaped; the output contains no scripts, event attributes or external references.
+
+Related exported types: `GraphPngExportOptions`, `GanttPngExportOptions`, `SvgToneColors`.
 
 ## Right-to-left layout
 

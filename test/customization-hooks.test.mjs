@@ -4,6 +4,7 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createTimeScale, dependencyPath, renderTimelineSvg } from 'vue-weave/core'
 import { GanttChart, NetworkGraph } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 
@@ -47,7 +48,7 @@ test('renderTimelineSvg draws dependencies in the requested style', () => {
 const nodes = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
 const edges = [{ id: 'ab', from: 'a', to: 'b' }, { id: 'bc', from: 'b', to: 'c' }]
 function renderGraph(props = {}, slots) {
-  return renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+  return renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 }
 
 test('NetworkGraph edge slot props separate selection, related and highlighted edges', async () => {

@@ -7,6 +7,7 @@ import {
   scheduleToGraph, timelineCsvTable, timelineRowPosition, timelineWbsCodes, toCsv, toICalendar, toMsProjectXml,
 } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const freeze = rows => Object.freeze(rows.map(row => Object.freeze({ ...row })))
@@ -406,7 +407,7 @@ const chartBars = [
   { id: 'b', rowId: 'r2', label: 'B', start: 4 * hour, end: 6 * hour },
 ]
 const chartProps = { rows: chartRows, bars: chartBars, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }) }))
+const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
 
 test('GanttChart server markup is unchanged without rowsReorderable and statusDate', async () => {
   for (const extra of [{}, { markers: [{ id: 'x', time: 2 * hour, label: 'X' }], showNow: true, now: hour }, { dir: 'rtl', rowDraggable: true, creatable: true }]) {

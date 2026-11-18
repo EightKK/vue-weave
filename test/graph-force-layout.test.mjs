@@ -1,13 +1,13 @@
-import test from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { layoutForceGraph } from 'vue-weave/core'
+import { seededRandom } from './helpers/seeded.mjs'
 
 const node = id => ({ id })
 const edge = (id, from, to) => ({ id, from, to })
 
 function randomGraph(count, extra, seed = 7) {
-  let state = seed
-  const random = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648
+  const { random } = seededRandom(seed)
   const nodes = Array.from({ length: count }, (_, i) => node('n' + i))
   const edges = []
   for (let i = 1; i < count; i++) edges.push(edge('t' + i, 'n' + Math.floor(random() * i), 'n' + i))

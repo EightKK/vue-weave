@@ -5,6 +5,8 @@
 import { computed, ref } from 'vue'
 import { NetworkGraph, type GraphEdge, type GraphEdgeStyle, type GraphNodeSize, type GraphPoint, type NetworkNode } from '../src'
 import { download, imageSize } from './download'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
 
 const nodes: NetworkNode[] = [
   { id: 'start', label: 'Order placed', shape: 'ellipse', tone: 'teal' },
@@ -83,10 +85,7 @@ async function exportPng() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="diagram-title">
-    <div class="section-head">
-      <div><h2 id="diagram-title">Diagram styles</h2><p>Order fulfilment drawn with node shapes, edge markers, animated edges and spread parallel edges.</p></div>
-    </div>
+  <DemoPanel title-id="diagram-title" title="Diagram styles" subtitle="Order fulfilment drawn with node shapes, edge markers, animated edges and spread parallel edges.">
     <div class="options diagram-options" role="group" aria-label="Diagram options">
       <label><input v-model="spread" type="checkbox"> Spread parallel edges</label>
       <label>Spacing
@@ -107,13 +106,13 @@ async function exportPng() {
     <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :edge-style="edgeStyle" :avoid-nodes="avoidNodes"
       :parallel-edge-spacing="spread ? spacing : undefined" :positions="positions" :sizes="sizes"
       :options="{ direction: 'LR', nodeWidth: 160, nodeHeight: 60 }" :height="500" :labels="{ region: 'Order fulfilment diagram' }" />
-    <p class="status" role="status" aria-label="Diagram status">{{ status }}</p>
+    <StatusLine label="Diagram status">{{ status }}</StatusLine>
     <ul class="diagram-legend" aria-label="Legend">
       <li><strong>Shapes</strong> ellipse: start and end, diamond: decision, hexagon: data store, box: step</li>
       <li><strong>Markers</strong> arrow: control flow, open arrow: data flow, circle: start, bar: cancellation, diamond: aggregation</li>
       <li><strong>Edges</strong> flowing dashes: main path, orthogonal route: loop-back, pairs side by side: request and response</li>
     </ul>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

@@ -4,13 +4,13 @@ import {
   applyGraphPositions, applyGraphSizes, completeGraphLayout, graphPathEndpoints, isGraphRouteValid, layoutLayeredGraph, routeGraphEdges, routeGraphPorts,
 } from 'vue-weave/core'
 import { completeGraphLayout as rootComplete, isGraphRouteValid as rootValid } from 'vue-weave'
+import { byId } from './helpers/builders.mjs'
 
 const nodes = [
   { id: 'a', label: 'A', ports: [{ id: 'out', side: 'right', offset: 0.25 }] },
   { id: 'b', label: 'B', ports: [{ id: 'in', side: 'left' }] },
   { id: 'c', label: 'C' },
 ]
-const byId = list => new Map(list.map(node => [node.id, node]))
 const edges = [
   { id: 'ab', from: 'a', to: 'b', fromPort: 'out', toPort: 'in' },
   { id: 'ac', from: 'a', to: 'c' },

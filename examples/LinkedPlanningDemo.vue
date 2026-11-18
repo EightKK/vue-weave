@@ -12,9 +12,9 @@ import {
 } from '../src'
 import GraphContextToolbar from './components/GraphContextToolbar.vue'
 import ScenarioComparison from './components/ScenarioComparison.vue'
+import DemoPanel from './components/DemoPanel.vue'
+import { hour, origin } from './data'
 
-const hour = 3_600_000
-const origin = Date.UTC(2026, 10, 9, 8)
 const range = { start: origin, end: origin + 12 * hour }
 const names: Record<string, string> = { prep: 'Prepare stock', cutA: 'Cut order A', cutB: 'Cut order B', inspect: 'Inspect', pack: 'Pack' }
 const tasks: ScheduleTask[] = [
@@ -287,10 +287,7 @@ async function expandAndShow() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="linked-title" @keydown.esc="clear">
-    <div class="section-head">
-      <div><h2 id="linked-title">Linked planning views</h2><p>Act in any view; the others highlight the same tasks. Escape clears the selection.</p></div>
-    </div>
+  <DemoPanel title-id="linked-title" title="Linked planning views" subtitle="Act in any view; the others highlight the same tasks. Escape clears the selection." @keydown.esc="clear">
     <div class="options linked-options" role="group" aria-label="Linked view controls">
       <label>Impact range
         <select v-model="impactDirection" aria-label="Impact direction">
@@ -380,7 +377,7 @@ async function expandAndShow() {
     </p>
     <p class="hint"><label><input v-model="scenariosOpen" type="checkbox"> Compare plan scenarios</label></p>
     <ScenarioComparison v-if="scenariosOpen" />
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

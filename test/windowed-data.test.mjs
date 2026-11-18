@@ -8,6 +8,7 @@ import {
   setWindowedView, splitDanglingLinks, windowedCellStatus, windowedCoverage,
 } from 'vue-weave/core'
 import { GanttChart, useWindowedData } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const day = 86_400_000
 const bar = (id, rowId, start, end) => ({ id, rowId, label: id, start, end })
@@ -302,7 +303,7 @@ test('GanttChart server markup is unchanged with a visible-window-change listene
   const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
   const bars = [bar('b1', 'r1', 0, 3_600_000)]
   const range = { start: 0, end: 86_400_000 }
-  const plain = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range }) }))
+  const plain = await renderComponent(GanttChart, { rows, bars, range })
   const windows = []
   let loads = 0
   const listened = await renderToString(createSSRApp({

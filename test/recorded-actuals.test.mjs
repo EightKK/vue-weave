@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import * as core from 'vue-weave/core'
+import { sparseLink as link, task } from './helpers/builders.mjs'
+import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { renderComponent } from './helpers/ssr.mjs'
 
 // Seeded plans with calendars, every link type and lag, bounds, a deadline, pauses, manual and inactive tasks, summary
 // tasks and progress entries, run through `rescheduleFromStatusDate`, `scheduleTasks` and `toPlanningDiagnostics`. The
@@ -13,8 +15,6 @@ test('progress-percentage rescheduling gives the same results as before recorded
 
 const { actualsTimelineBars, rescheduleFromActuals, scheduleTasks, timelineBaselineId } = core
 const range = { start: 0, end: 100 }
-const task = (id, duration, fields = {}) => ({ id, duration, ...fields })
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, ...(type ? { type } : {}), ...(lag ? { lag } : {}) })
 const byId = (result, id) => result.tasks.find(item => item.id === id)
 const span = item => [item.start, item.end]
 const codes = result => result.diagnostics.map(item => [item.code, item.entities.map(entity => entity.id).join(',')])
@@ -294,14 +294,12 @@ test('actualsTimelineBars shows the plan, the actuals and the forecast on one ro
 })
 
 test('actualsTimelineBars renders on the server with accessible names for each part', async () => {
-  const { createSSRApp, h } = await import('vue')
-  const { renderToString } = await import('vue/server-renderer')
   const { GanttChart } = await import('vue-weave')
   const result = rescheduleFromActuals(chain(), 5, new Map([['a', { intervals: [{ start: 0, end: 1 }, { start: 3, end: 4 }] }]]))
   const rows = ['a', 'b', 'c'].map(id => ({ id, label: 'Task ' + id }))
   const bars = actualsTimelineBars(result, { label: id => 'Task ' + id })
   const formatTime = time => String(time)
-  const html = await renderToString(createSSRApp({ render: () => h(GanttChart, { rows, bars, range: { start: 0, end: 20 }, formatTime }) }))
+  const html = await renderComponent(GanttChart, { rows, bars, range: { start: 0, end: 20 }, formatTime })
   assert.match(html, /aria-label="Task a · actual 0–4"/)
   assert.match(html, /aria-label="Task a · forecast 5–7"/)
   assert.match(html, /aria-label="Task b · forecast 7–11"/)
@@ -316,9 +314,7 @@ test('actualsTimelineBars renders on the server with accessible names for each p
 })
 
 test('random plans with actuals keep every actual and place remaining work after the status date', () => {
-  let seed = 7
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
-  const pick = n => Math.floor(random() * n)
+  const { pick } = seededRandom(7)
   let succeeded = 0
   for (let plan = 0; plan < 300; plan++) {
     const periods = []
@@ -395,16 +391,8 @@ test('random plans with actuals keep every actual and place remaining work after
 })
 
 function progressPlanDigest() {
-  let seed = 20261119
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
-  const pick = n => Math.floor(random() * n)
-  const run = fn => {
-    try {
-      return fn()
-    } catch (error) {
-      return { error: error.name + ': ' + error.message }
-    }
-  }
+  const { pick } = seededRandom(20261119)
+  const run = fn => attempt(fn, error => error.name + ': ' + error.message)
   const outputs = []
   for (let plan = 0; plan < 200; plan++) {
     const quantum = pick(2) + 1
@@ -475,12 +463,7 @@ function progressPlanDigest() {
     const rescheduled = run(() => core.rescheduleFromStatusDate(input, status, progress))
     const diagnostics = run(() => core.toPlanningDiagnostics(schedule))
     const statusDiagnostics = run(() => core.toPlanningDiagnostics(rescheduled))
-    outputs.push([traceFree(schedule), rescheduled, diagnostics, statusDiagnostics])
+    outputs.push([withPlainTrace(schedule), rescheduled, diagnostics, statusDiagnostics])
   }
-  return createHash('sha256').update(JSON.stringify(outputs)).digest('hex')
-}
-
-function traceFree(result) {
-  if (!result || !result.trace) return result
-  return { ...result, trace: { reasons: result.trace.reasons, taskReasonIds: [...result.trace.taskReasonIds] } }
+  return sha256Json(outputs)
 }

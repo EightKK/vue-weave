@@ -7,6 +7,7 @@ import {
   timelineBaselineIds, timelineBaselineLimit, toMsProjectXml, validateTimelineData,
 } from 'vue-weave/core'
 import { GanttChart } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
 const rows = [{ id: 'r', label: 'Row' }, { id: 's', label: 'Second' }]
@@ -21,7 +22,7 @@ const named = [
 ]
 const range = { start: 0, end: 8 * hour }
 const chartProps = { rows, range, pixelsPerUnit: 20 / hour }
-const render = (props = {}) => renderToString(createSSRApp({ render: () => h(GanttChart, { ...chartProps, bars: legacyBars, ...props }) }))
+const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, bars: legacyBars, ...props })
 const strips = html => html.match(/<div class="vw-gantt-baseline[^>]*>/g) ?? []
 const scale = createTimeScale(range, 20 / hour)
 

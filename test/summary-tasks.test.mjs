@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import * as core from 'vue-weave/core'
+import { sparseLink as link, task } from './helpers/builders.mjs'
+import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 const {
   collectScheduleReasons, levelResources, propagateEdit, rescheduleFromStatusDate, scheduleTasks, scheduledBarFields,
@@ -9,9 +10,7 @@ const {
 } = core
 
 const range = { start: 0, end: 100 }
-const task = (id, duration, fields = {}) => ({ id, duration, ...fields })
 const sub = (id, duration, parentId, fields = {}) => ({ id, duration, parentId, ...fields })
-const link = (from, to, type, lag) => ({ id: from + '-' + to, from, to, ...(type ? { type } : {}), ...(lag ? { lag } : {}) })
 const dates = result => {
   assert.equal(result.ok, true, JSON.stringify(result))
   return Object.fromEntries(result.tasks.map(item => [item.id, [item.start, item.end]]))
@@ -294,17 +293,9 @@ test('plans without hierarchy give the same results as before summary tasks', ()
 })
 
 function flatPlanDigest() {
-  let seed = 20261118
-  const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
-  const pick = n => Math.floor(random() * n)
+  const { pick } = seededRandom(20261118)
   const outputs = []
-  const run = fn => {
-    try {
-      return fn()
-    } catch (error) {
-      return { error: error.message }
-    }
-  }
+  const run = fn => attempt(fn)
   for (let plan = 0; plan < 150; plan++) {
     const quantum = pick(2) + 1
     const range = { start: 0, end: 120 * quantum }
@@ -336,7 +327,7 @@ function flatPlanDigest() {
     if (plan % 25 === 7) dependencies.push({ id: 'back', from: 't' + (count - 1), to: 't0' })
     const input = { range, quantum, ...calendar, tasks, dependencies }
     const raw = run(() => core.scheduleTasks(input, { explain: true }))
-    const plain = scheduleOutput(raw)
+    const plain = withPlainTrace(raw)
     const leveled = run(() => core.levelResources({
       ...input, resources: [{ id: 'r', capacity: 1 }], assignments: tasks.filter((_, i) => i % 2 === 0).map(task => ({ resourceId: 'r', taskId: task.id })),
     }, { explain: true }))
@@ -345,12 +336,7 @@ function flatPlanDigest() {
     const progress = new Map(tasks.filter(() => pick(2)).map(task => [task.id, pick(5) / 4]))
     const status = run(() => core.rescheduleFromStatusDate(input, (pick(20)) * quantum, progress))
     const diagnostics = run(() => core.toPlanningDiagnostics(raw))
-    outputs.push([plain, scheduleOutput(leveled), edited, status, diagnostics])
+    outputs.push([plain, withPlainTrace(leveled), edited, status, diagnostics])
   }
-  return createHash('sha256').update(JSON.stringify(outputs)).digest('hex')
-}
-
-function scheduleOutput(result) {
-  if (!result || !result.trace) return result
-  return { ...result, trace: { reasons: result.trace.reasons, taskReasonIds: [...result.trace.taskReasonIds] } }
+  return sha256Json(outputs)
 }
