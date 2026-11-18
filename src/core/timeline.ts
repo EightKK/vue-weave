@@ -4,7 +4,7 @@ import type {
 } from './types.js'
 import type { TimelineBaselineVariance } from './types.js'
 import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraints } from './types.js'
-import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
+import { cachedDateFormat, zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
 export interface TimeRange {
@@ -712,6 +712,14 @@ function pad(value: number) {
 
 const hourMs = 3_600_000
 const maxCalendarBands = 10000
+/** Default `Intl.DateTimeFormat` options of locale-aware `calendarBands` labels, by unit. */
+const calendarLabelFormats: Readonly<Record<CalendarBandUnit, Intl.DateTimeFormatOptions>> = {
+  hour: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+  day: { year: 'numeric', month: 'short', day: 'numeric' },
+  week: { year: 'numeric', month: 'short', day: 'numeric' },
+  month: { year: 'numeric', month: 'long' },
+  year: { year: 'numeric' },
+}
 
 /** A band boundary: the instant and the local wall time there, expressed as if it were UTC. */
 interface BandBoundary {
@@ -721,7 +729,8 @@ interface BandBoundary {
 
 /**
  * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset or
- * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries.
+ * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries: ISO-like by
+ * default, with `Intl.DateTimeFormat` when `locale` or `labelFormat` is set, or by a custom `label` function.
  *
  * With `timeZone`, day, week, month and year bands start at the first instant of their local date: local midnight,
  * or the end of a daylight-saving gap that skips midnight. A local date that the zone skips entirely has no band.
@@ -731,7 +740,7 @@ interface BandBoundary {
  */
 export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options: CalendarBandOptions = {}): TimelineBand[] {
   checkRange(range)
-  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label } = options
+  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label, locale, labelFormat } = options
   if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
   if (timeZone !== undefined && utcOffsetMinutes !== undefined) {
     throw new RangeError('Specify either timeZone or utcOffsetMinutes, not both')
@@ -745,6 +754,10 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
   }
   if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
   const format = timeZone === undefined ? undefined : zoneFormat(timeZone)
+  // Locale-aware labels format the local wall time of the band start, which is expressed as if it were UTC.
+  const intlLabel = !label && (locale !== undefined || labelFormat !== undefined)
+    ? cachedDateFormat(locale ?? 'en-US', { ...(labelFormat ?? calendarLabelFormats[unit]), timeZone: 'UTC' })
+    : undefined
   const offset = fixedOffset * minuteMs
   // Zone rules are looked up up to two days around an instant, so it must stay inside the Date range.
   const checkZoneTime = (time: number) => {
@@ -804,6 +817,7 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
     return fromCivil(year + step, 0)
   }
   function defaultLabel(wall: number) {
+    if (intlLabel) return intlLabel.format(wall)
     const date = new Date(wall)
     const ymd = String(date.getUTCFullYear()).padStart(4, '0') + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate())
     if (unit === 'hour') return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes())

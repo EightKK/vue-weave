@@ -480,3 +480,24 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-field-cell:focus-visible { outline-color: Highlight; }
   .vw-cell-input[aria-invalid="true"] { border: 2px dashed CanvasText; }
 }
+
+/* GanttChart marker ranges (`markerRanges`): a translucent band under the bars, across the body or across single rows,
+   and a label strip at the bottom of the time header. Positions use the inline-start side, so they need no RTL rules. */
+.vw-gantt-range { position: absolute; z-index: 1; top: var(--vw-header-height, 40px); bottom: 0; background: var(--vw-range, #f9efdc); opacity: var(--vw-range-opacity, .7); pointer-events: none; }
+.vw-gantt-range.vw-is-row { bottom: auto; }
+.vw-gantt-range > span { display: none; }
+.vw-gantt-range-label { position: absolute; bottom: 0; box-sizing: border-box; height: 13px; padding: 0 4px; overflow: hidden; border-top: 2px solid var(--vw-range-line, #b58848); background: var(--vw-range, #f9efdc); color: var(--vw-range-ink, #764908); font-size: 9.5px; font-weight: 650; line-height: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.vw-gantt-range.vw-has-tone, .vw-gantt-range-label.vw-has-tone { background: var(--vw-item-pale, var(--vw-range, #f9efdc)); }
+.vw-gantt-range-label.vw-has-tone { border-top-color: var(--vw-item-line, var(--vw-range-line, #b58848)); color: var(--vw-item-ink, var(--vw-range-ink, #764908)); }
+.vw-theme-dark { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
+}
+@media (forced-colors: active) {
+  .vw-gantt-range, .vw-gantt-range.vw-has-tone { forced-color-adjust: none; opacity: 1; background: repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 9px); }
+  .vw-gantt-range-label, .vw-gantt-range-label.vw-has-tone { forced-color-adjust: none; background: Canvas; color: CanvasText; border-top-color: CanvasText; }
+}
+/* Marker ranges print with the chart (the print rules above keep their exact colours); a band keeps its translucency. */
+@media print {
+  .vw-gantt-range-label { break-inside: avoid; }
+}

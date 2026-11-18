@@ -14,6 +14,7 @@ const properties: Record<string, string> = {
   nonWorking: '--vw-non-working', critical: '--vw-critical', float: '--vw-float', deadline: '--vw-deadline', status: '--vw-status',
   constraint: '--vw-constraint', constraintViolated: '--vw-constraint-violated',
   baseline2: '--vw-baseline-2', baseline3: '--vw-baseline-3',
+  range: '--vw-range', rangeInk: '--vw-range-ink', rangeLine: '--vw-range-line',
 }
 
 /** Read the `--vw-*` custom properties in effect on an element; unset properties keep the export defaults. */

@@ -38,7 +38,7 @@ Run `npm run check` before you consider a change done. Also run the browser test
 
 - `src/core/` contains pure TypeScript, grouped by area. `src/core/index.ts` exports the public parts as `vue-weave/core`.
   - Graph: indexing, the default layered layout and ports (`graph.ts`); other layouts (`graphLayouts.ts`, `graphForce.ts`); algorithms, analysis (components, centrality, communities), edge routing, collapsing, editing, snapping and viewport helpers (`graphAlgorithms.ts`, `graphAnalysis.ts`, `graphRouting.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphSnapping.ts`, `graphView.ts`); crossing counts (`graphCrossings.ts`).
-  - Timeline: time scales and interval editing (`timeline.ts`) and row hierarchy moves (`rowHierarchy.ts`).
+  - Timeline: time scales and interval editing (`timeline.ts`), row hierarchy moves (`rowHierarchy.ts`) and calendar zoom presets and `Intl` time formatting (`calendarFormat.ts`).
   - Scheduling: work calendars (`workCalendar.ts`), scheduling (`scheduling.ts`), resource leveling (`leveling.ts`), resource load (`resourceLoad.ts`), status-date rescheduling (`statusDate.ts`) and schedule-to-graph conversion (`pert.ts`).
   - Output: SVG export (`exportSvg.ts`) and MS Project, iCalendar and CSV interchange (`interchange.ts`).
   - Shared types are in `types.ts`. `graphOrient.ts`, `graphCurve.ts`, `graphPortSide.ts`, `graphShapes.ts`, `timeZone.ts`, `barSegments.ts` and `scheduleModel.ts` are internal helpers that `index.ts` does not export.

@@ -1,6 +1,6 @@
 // Internal geometry shared by GanttChart and renderTimelineSvg. Not part of the public entry points.
 import { baselineVariance, timelineBaseline, timelineBaselineIds, timelineBaselineLimit, type TimeRange } from './timeline.js'
-import type { TimelineBar } from './types.js'
+import type { TimelineBar, TimelineMarkerRange } from './types.js'
 
 export interface SegmentPiece extends TimeRange {
   /** Completed fraction of this piece, between 0 and 1. */
@@ -77,6 +77,25 @@ export function checkNonWorkingPeriods(periods: readonly TimeRange[] | undefined
   for (const period of periods ?? []) {
     if (!Number.isFinite(period.start) || !Number.isFinite(period.end) || period.end <= period.start) {
       throw new RangeError('nonWorkingPeriods must have finite endpoints with start < end')
+    }
+  }
+}
+
+/**
+ * Validate `markerRanges`: unique non-empty IDs, finite endpoints with start < end (a zero-width range is rejected; a
+ * point in time is a `TimelineMarker`) and, when `rowIds` is given, row IDs that `knownRows` contains.
+ */
+export function checkMarkerRanges(ranges: readonly TimelineMarkerRange[] | undefined, knownRows: ReadonlySet<string>) {
+  const ids = new Set<string>()
+  for (const range of ranges ?? []) {
+    if (!range.id || ids.has(range.id)) throw new Error('Invalid or duplicate marker range ID: ' + range.id)
+    ids.add(range.id)
+    if (typeof range.start !== 'number' || typeof range.end !== 'number' || !Number.isFinite(range.start)
+      || !Number.isFinite(range.end) || range.end <= range.start) {
+      throw new RangeError('A marker range must have finite endpoints with start < end: ' + range.id)
+    }
+    for (const rowId of range.rowIds ?? []) {
+      if (!knownRows.has(rowId)) throw new Error('Unknown row for marker range ' + range.id + ': ' + rowId)
     }
   }
 }

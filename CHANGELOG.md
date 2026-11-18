@@ -2,7 +2,20 @@
 
 ## Unreleased
 
-No changes yet.
+Everything here is additive and opt-in: without the new prop and options, server markup, SVG exports, labels and accessible names are the same as in 0.5.0, and the default `formatTime` is unchanged.
+
+### Added
+
+#### GanttChart
+
+- `markerRanges` (`TimelineMarkerRange`): highlighted half-open ranges `[start, end)` drawn as a band under the bars, across the body or only across `rowIds`, with a label strip at the bottom of the time header (`role="img"`, named `<label> <start>–<end>` with `formatTime`). Optional `tone`; otherwise the new `--vw-range`, `--vw-range-line`, `--vw-range-ink` and `--vw-range-opacity` variables (dark theme values included). Ranges are clipped to `range` and the visible time window, mirrored in right-to-left charts, hatched in forced colors, printed, and drawn by `exportSvg`, `exportPng` and `renderTimelineSvg` (`markerRanges` option; theme colours `range`, `rangeLine` and `rangeInk`). A duplicate or missing ID or an unknown row is an `Error`, and endpoints that are not finite with `start < end` (including a zero-width range) a `RangeError`, reported through `validation-error`. Point `markers` are unchanged.
+
+#### Core
+
+- `calendarZoomPresets(range, options)`: ready `zoomPresets` for hours, days, weeks, months, quarters and years (`CalendarZoomLevel`), each with `pixelsPerUnit`, `tickSteps`, `snap`, header bands from `calendarBands` in an IANA `timeZone` or fixed offset, and a matching `formatTime`, labelled in a `locale`.
+- `intlTimeFormatter(options)`: a `formatTime`-compatible function on a cached `Intl.DateTimeFormat` for a locale, IANA time zone or fixed offset and format options. It never uses the runtime's default locale or time zone, so server and client output match.
+- `calendarBands` options `locale` and `labelFormat` for locale-aware band labels.
+- The demo's design gallery adds a **Calendar views** showcase.
 
 ## 0.5.0 - 2026-11-17
 

@@ -11,7 +11,7 @@ import {
 } from '../core/timeline.js'
 import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, resourceLoadHistogram, type ResourceLoadHistogram } from '../core/timeline.js'
 import { formatDependencyLag } from '../core/timeline.js'
-import type { ChartDirection, GanttExportOptions, GanttPngExportOptions } from '../core/types.js'
+import type { ChartDirection, GanttExportOptions, GanttPngExportOptions, TimelineMarkerRange } from '../core/types.js'
 import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
 } from '../core/types.js'
@@ -19,7 +19,7 @@ import type { CreateValidator, TimelineCascade, TimelineCreate } from '../core/t
 import type { RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../core/types.js'
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
-import { checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
+import { checkMarkerRanges, checkNonWorkingPeriods, progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
 import { timelineBaselineId } from '../core/timeline.js'
@@ -62,6 +62,12 @@ const props = withDefaults(defineProps<{
   headerBands?: readonly (readonly TimelineBand[])[]
   /** Vertical markers with a unique ID, finite time and label, drawn inside the visible time window. */
   markers?: readonly TimelineMarker[]
+  /**
+   * Highlighted half-open ranges `[start, end)`, each with a unique ID, label, optional `tone` and optional `rowIds`: a
+   * shaded band across the body (or across those rows only) with its label at the bottom of the header, drawn inside
+   * the visible time window. `end` must be greater than `start`. Opt-in.
+   */
+  markerRanges?: readonly TimelineMarkerRange[]
   /** Extra sticky columns next to the row label, each with an ID, label, pixel width, `value(row, summary)` and optional `editable`. */
   columns?: readonly TimelineColumn<R>[]
   /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
@@ -445,6 +451,7 @@ function validateDisplay() {
     if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
     markerIds.add(item.id)
   }
+  if (props.markerRanges?.length) checkMarkerRanges(props.markerRanges, new Set(props.rows.map(row => row.id)))
   baselineSelection(props.bars, stableBaselineIds.value)
 }
 function validateProps() {
@@ -495,7 +502,7 @@ watch([
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.dependencyStyle, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
-  () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value,
+  () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value, () => props.markerRanges,
 ], () => {
   try {
     const result = validateProps()
@@ -839,18 +846,72 @@ function stickyBandStyle(x: number) {
 }
 const shownMarkers = computed(() => (props.markers ?? [])
   .filter(item => item.time >= timeWindow.value.start && item.time < timeWindow.value.end))
-// Markers, then the status date (`statusDate`), share one template element so a chart without a status date renders
-// exactly the markup it did before.
+/** The visible part of each marker range (`markerRanges`), clipped to the range and the visible time window. */
+const shownRanges = computed(() => {
+  if (validationError.value || !props.markerRanges?.length) return []
+  const low = Math.max(stableRange.value.start, timeWindow.value.start)
+  const high = Math.min(stableRange.value.end, timeWindow.value.end)
+  return props.markerRanges.flatMap(item => {
+    const start = Math.max(item.start, low), end = Math.min(item.end, high)
+    if (end <= start) return []
+    const left = axis.value.toX(start)
+    const tone = item.tone === undefined ? [] : [`vw-tone-${item.tone}`, 'vw-has-tone']
+    return [{ item, left, width: axis.value.toX(end) - left, tone, name: `${item.label} ${props.formatTime(item.start)}–${props.formatTime(item.end)}` }]
+  })
+})
+type MarkerEntry = { key: string; label: string; classes: string | string[]; style: Record<string, string>; role?: string; name?: string; hidden?: 'true' }
+// Marker range bands, markers, then the status date (`statusDate`), share one template element so a chart without
+// marker ranges or a status date renders exactly the markup it did before.
 const markerEntries = computed(() => {
-  const entries: { key: string; time: number; label: string; className?: string; role?: string; name?: string }[] = shownMarkers.value
-    .map(item => ({ key: 'marker:' + item.id, time: item.time, label: item.label }))
+  const entries: MarkerEntry[] = []
+  for (const { item, left, width, tone } of shownRanges.value) {
+    const style = { [inlineSide.value]: `calc(var(--vw-label-area-width) + ${left}px)`, width: `${width}px` }
+    if (!item.rowIds) {
+      entries.push({ key: 'range:' + item.id, label: '', classes: ['vw-gantt-range', ...tone], style, hidden: 'true' })
+      continue
+    }
+    // A band restricted to rows is drawn on each of those rows that is displayed and inside the virtual row window.
+    const { first, afterLast } = rowWindow.value
+    for (const rowId of new Set(item.rowIds)) {
+      const index = rowOrder.value.get(rowId)
+      if (index === undefined || index < first || index >= afterLast) continue
+      entries.push({
+        key: 'range:' + item.id + ':' + rowId, label: '', classes: ['vw-gantt-range', 'vw-is-row', ...tone], hidden: 'true',
+        style: { ...style, top: `calc(var(--vw-header-height) + ${index * props.rowHeight}px)`, height: `${props.rowHeight}px` },
+      })
+    }
+  }
+  for (const item of shownMarkers.value) {
+    entries.push({
+      key: 'marker:' + item.id, label: item.label, classes: 'vw-gantt-marker',
+      style: { [inlineSide.value]: `calc(var(--vw-label-area-width) + ${axis.value.toX(item.time)}px)` },
+    })
+  }
   const time = props.statusDate
   if (time !== undefined && !validationError.value && time >= stableRange.value.start && time <= stableRange.value.end
     && time >= timeWindow.value.start && time <= timeWindow.value.end) {
     const label = messages.value.statusDate!
-    entries.push({ key: 'status', time, label, className: 'vw-gantt-status-date', role: 'img', name: `${label} ${props.formatTime(time)}` })
+    entries.push({
+      key: 'status', label, classes: ['vw-gantt-marker', 'vw-gantt-status-date'], role: 'img', name: `${label} ${props.formatTime(time)}`,
+      style: { [inlineSide.value]: `calc(var(--vw-label-area-width) + ${axis.value.toX(time)}px)` },
+    })
   }
   return entries
+})
+type HeadLine = { key: string; text: string; classes: string | string[]; style: Record<string, string>; role?: string; name?: string; hidden?: 'true' }
+// Tick lines, then the header labels of marker ranges, share one template element in the time header, so a chart
+// without marker ranges renders exactly the markup it did before. A label is named like a status-date marker.
+const headLines = computed(() => {
+  const lines: HeadLine[] = tickXs.value.map(line => ({
+    key: 'line-' + line.tick, text: '', classes: 'vw-gantt-tick-line', style: { [inlineSide.value]: `${line.x}px` }, hidden: 'true',
+  }))
+  for (const { item, left, width, tone, name } of shownRanges.value) {
+    lines.push({
+      key: 'range-' + item.id, text: item.label, classes: ['vw-gantt-range-label', ...tone], role: 'img', name,
+      style: { [inlineSide.value]: `${left}px`, width: `${width}px` },
+    })
+  }
+  return lines
 })
 /**
  * The progress line through one displayed row, in row coordinates of the visible time window: a vertical line at the
@@ -3132,6 +3193,7 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     headerBands: activeBands.value,
     dependencyStyle: props.dependencyStyle,
     markers: props.markers,
+    markerRanges: props.markerRanges,
     now: props.showNow && time !== undefined && time >= stableRange.value.start && time <= stableRange.value.end ? time : undefined,
     nowLabel: messages.value.now,
     tickStep: tickStep.value,
@@ -3282,7 +3344,7 @@ onUnmounted(() => {
             <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>
           </div>
           <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
-            <span v-for="line in tickXs" :key="'line-' + line.tick" class="vw-gantt-tick-line" :style="{ [inlineSide]: `${line.x}px` }" aria-hidden="true"></span>
+            <span v-for="line in headLines" :key="line.key" :class="line.classes" :style="line.style" :role="line.role" :aria-label="line.name" :title="line.name" :aria-hidden="line.hidden">{{ line.text }}</span>
             <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ 'vw-is-end': tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
@@ -3298,9 +3360,8 @@ onUnmounted(() => {
         <div class="vw-gantt-grid" aria-hidden="true">
           <span v-for="line in tickXs" :key="line.tick" class="vw-gantt-grid-line" :style="{ [inlineSide]: `${line.x}px` }"></span>
         </div>
-        <div v-for="item in markerEntries" :key="item.key" class="vw-gantt-marker" :class="item.className"
-          :role="item.role" :aria-label="item.name" :title="item.name"
-          :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${axis.toX(item.time)}px)` }">
+        <div v-for="item in markerEntries" :key="item.key" :class="item.classes"
+          :role="item.role" :aria-label="item.name" :title="item.name" :style="item.style" :aria-hidden="item.hidden">
           <span>{{ item.label }}</span>
         </div>
         <div v-if="nowTime !== undefined" class="vw-gantt-marker vw-gantt-now" :title="`${messages.now} ${formatTime(nowTime)}`"
