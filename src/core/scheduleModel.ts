@@ -151,7 +151,8 @@ export interface ScheduleModel {
 
 /**
  * Subtasks whose start has happened, keyed by the input object they belong to. They do not inherit the start bounds of
- * their summary tasks (links into a summary and its `startNoEarlierThan`). Only `rescheduleFromStatusDate` sets it.
+ * their summary tasks (links into a summary and its `startNoEarlierThan`). Only `rescheduleFromStatusDate` and
+ * `rescheduleFromActuals` set it.
  */
 export const startedSubtasks = new WeakMap<ScheduleInput, ReadonlySet<string>>()
 

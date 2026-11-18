@@ -58,7 +58,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - グラフの指標：連結成分（`graphComponents`）、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）、検出結果を `NetworkGraph` のグループに変換する `graphCommunityGroups`。
 - グラフの形状：`collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` は、コンポーネントのpropsと同じ形状を計算します。
 - カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、サマリータスク（`parentId`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
-- `levelResources` による設備負荷の平準化（時間とともに変わる能力 `capacityPeriods` と、タスクの一部だけを占める割り当て `workOffset`・`workDuration` にも対応）と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
+- `levelResources` による設備負荷の平準化（時間とともに変わる能力 `capacityPeriods` と、タスクの一部だけを占める割り当て `workOffset`・`workDuration` にも対応）と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。`rescheduleFromActuals` は記録された実績区間をそのまま保ち、残作業だけを再計画します（`actualsTimelineBars` で計画・実績・予測を 1 行に表示）。
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
 - カレンダー表示：`calendarZoomPresets` はIANAタイムゾーンに沿った時・日・週・月・四半期・年のズームプリセットを作り、`intlTimeFormatter` と `calendarBands`（`locale`）はサーバーとクライアントで一致するロケール対応のラベルを作ります。
 - データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として（カレンダー、リソース、割り当ても）、`fromICalendar` と `timelineFromICalendar` はiCalendarファイルを読み込みます。

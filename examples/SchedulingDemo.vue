@@ -9,6 +9,7 @@ import {
 import { download } from './download'
 import PlanningDiagnostics from './components/PlanningDiagnostics.vue'
 import SummaryLinksDemo from './SummaryLinksDemo.vue'
+import ActualsDemo from './ActualsDemo.vue'
 
 const hour = 3_600_000
 const local = (value: string) => Date.parse(value + '+09:00')
@@ -33,6 +34,8 @@ const compress = ref(false)
 const workingScale = computed(() => compress.value ? createWorkingTimeScale(range, shifts, 36 / hour, 0.1) : undefined)
 // "Summary task links" adds a separate, opt-in example of links to and from a summary task (GanttChart summaryDependencies).
 const summaryLinks = ref(false)
+// "Recorded actuals" adds a separate, opt-in example of rescheduling from recorded actual intervals (rescheduleFromActuals).
+const recordedActuals = ref(false)
 const showCritical = ref(true)
 const originalTasks: ScheduleTask[] = [
   { id: 'cut-a', duration: 3 * hour },
@@ -461,6 +464,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         <label><input type="checkbox" :checked="manualInspection" @change="toggleManualInspection"> Schedule inspection manually</label>
         <label><input type="checkbox" :checked="orderBCancelled" @change="toggleOrderB"> Cancel order B (inactive)</label>
         <label><input v-model="summaryLinks" type="checkbox"> Summary task links</label>
+        <label><input v-model="recordedActuals" type="checkbox"> Recorded actuals</label>
         <button type="button" @click="exportSchedule">Export schedule SVG</button>
         <button type="button" @click="reset">Reset schedule</button>
       </div>
@@ -535,6 +539,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :dependency-label="dependencyLabel" :format-time="format" @activate="revealDiagnostic" />
   </section>
   <SummaryLinksDemo v-if="summaryLinks" />
+  <ActualsDemo v-if="recordedActuals" />
 </template>
 
 <style scoped>
