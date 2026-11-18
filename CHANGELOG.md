@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Summary tasks in the scheduler: `ScheduleTask.parentId` makes a task a subtask, and a task that other tasks name as parent is a summary task whose dates are the span of its subtasks. FS and SS links into a summary bind the start of every subtask (FF and SF links into a summary throw an Error, as Microsoft Project does not allow them); links from a summary use its rolled-up start or finish. A summary's `startNoEarlierThan` and `finishNoLaterThan` bind its subtasks; `fixedStart`, `startNoLaterThan`, `finishNoEarlierThan`, `manual` and `mode: 'alap'` on a summary throw an Error. Results mark summaries with `summary: true`, give them the span of their subtasks' latest dates, the smallest float of their subtasks and a critical flag when any subtask is critical, and give subtasks their `parentId`. Unknown parents, parent cycles and links between a summary and its own subtask throw an Error that names the tasks; a dependency cycle through a summary's roll-up is a `cycle` failure. `propagateEdit` refuses to edit a summary, `rescheduleFromStatusDate` frees started subtasks from the start bounds of their summaries, `levelResources` levels the subtasks and gives summaries no load, and `buildPlacementInput` moves placed subtasks of an unplaced summary to their nearest placed ancestor. Plans without `parentId` are scheduled exactly as before. See [Summary tasks](docs/scheduling.md#summary-tasks).
 
 ## 0.5.0 - 2026-11-17
 

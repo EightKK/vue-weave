@@ -48,7 +48,10 @@ export interface ScheduleReason {
   demand?: number
   /** Capacity of the resource in `range`, before any reservation. */
   capacity?: number
-  /** The other end of a dependency, the tasks that finish the project, or the tasks holding the capacity. */
+  /**
+   * The other end of a dependency, the tasks that finish the project, the tasks holding the capacity, or the summary
+   * task that a subtask inherits a `constraint` from.
+   */
   relatedTaskIds?: readonly string[]
   /** The interval in which a resource lacked capacity. */
   range?: TimeRange
@@ -168,6 +171,8 @@ export interface SlotReasonContext {
   finish?: { parents: readonly string[]; taskIds: readonly string[] }
   /** Parents of the unnamed leveling horizon bounds. */
   horizon?: readonly string[]
+  /** All links by ID, for the links of a summary task that bind its subtasks. */
+  links?: ReadonlyMap<string, ScheduleLink>
 }
 
 const taskConstraints: ReadonlySet<ScheduleConstraintName> = new Set([
@@ -202,7 +207,8 @@ export function recordSlotReasons(
     for (const bound of bindingBounds(bounds, limits, key)) {
       const base = { taskId: task.id, phase, bound: key, candidateTime, placedTime }
       if (bound.dependencyId !== undefined) {
-        const link = (latest ? allOutgoing(task) : task.incoming).find(item => item.id === bound.dependencyId)!
+        const link = (latest ? allOutgoing(task) : task.incoming).find(item => item.id === bound.dependencyId)
+          ?? context.links!.get(bound.dependencyId)!
         boundIds.push(recorder.add({
           ...base, kind: 'dependency', dependencyId: link.id, relatedTaskIds: [latest ? link.to : link.from],
           parentReasonIds: context.linkParents(link, latest),
@@ -210,7 +216,9 @@ export function recordSlotReasons(
       } else if (bound.constraint === undefined) {
         boundIds.push(recorder.add({ ...base, kind: 'project-bound', parentReasonIds: context.horizon ?? [] }))
       } else if (taskConstraints.has(bound.constraint)) {
-        boundIds.push(recorder.add({ ...base, kind: 'constraint', constraint: bound.constraint, parentReasonIds: [] }))
+        const reason: ReasonData = { ...base, kind: 'constraint', constraint: bound.constraint, parentReasonIds: [] }
+        if (bound.summaryId !== undefined) reason.relatedTaskIds = [bound.summaryId]
+        boundIds.push(recorder.add(reason))
       } else if (bound.constraint === 'projectFinish' && context.finish) {
         boundIds.push(recorder.add({
           ...base, kind: 'project-bound', constraint: bound.constraint, relatedTaskIds: context.finish.taskIds,

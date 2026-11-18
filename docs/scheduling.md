@@ -48,6 +48,7 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 - The four links constrain the named successor endpoint to be at or after the predecessor endpoint plus `lag`. FS connects finish to start. SS connects start to start. FF connects finish to finish. SF connects start to finish. A positive lag is elapsed waiting time, and a negative lag permits overlap. A start at the end of a shift advances to the next available start. A finish lower bound that falls in a break advances to the next feasible completion tick.
 - Bounds are `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, and the project `deadline`. A fixed start for positive work must be in a working period. The deadline is a hard upper bound.
 - Tasks with `manual` dates stay where they are and `inactive` tasks take no part; see [Manual and inactive tasks](#manual-and-inactive-tasks). `tasks` in a result is in input order without inactive tasks.
+- Tasks with a `parentId` form a hierarchy of summary tasks; see [Summary tasks](#summary-tasks).
 - Invalid references or values throw. Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
 - The forward pass finds earliest dates. The backward pass holds the earliest project finish as its upper limit and finds latest dates. Total float is the task's own working time between those starts, or elapsed time for a milestone. workFloat is always working time on the task's calendar: it equals totalFloat for tasks and, for a milestone, the calendar's working time between its earliest and latest points. Use workFloat to compare milestones with tasks. A zero-float task is critical. A critical link binds two critical tasks after projecting the dependency endpoint onto the successor calendar. The result can contain multiple controlling chains and individually constrained critical tasks.
 
@@ -266,6 +267,56 @@ const plan = scheduleTasks({
 | Snapshots | Stored and restored as they are | `inactive` must be a boolean |
 
 `fromMsProjectXml` reads both flags from Microsoft Project files (`Manual` 1 and `Active` 0). Its tasks have `manual: true` rather than dates, so pass `{ start: task.start, end: task.end }` as `ScheduleTask.manual`; see [Microsoft Project import](api.md#microsoft-project-import).
+
+## Summary tasks
+
+`ScheduleTask.parentId` makes a task a subtask of another task, which becomes a summary task. The hierarchy is opt-in: a plan without `parentId` is scheduled exactly as before, and its result has neither `summary` nor `parentId` fields. Summaries can be nested to any depth; the calculation uses loops, not recursion.
+
+```ts
+const plan = scheduleTasks({
+  range: { start: 0, end: 100 },
+  tasks: [
+    { id: 'design', duration: 2 },
+    { id: 'build', duration: 0 },                    // a summary: its duration is ignored
+    { id: 'frame', duration: 3, parentId: 'build' },
+    { id: 'wiring', duration: 1, parentId: 'build' },
+    { id: 'inspect', duration: 1 },
+  ],
+  dependencies: [
+    { id: 'design-build', from: 'design', to: 'build' }, // binds frame and wiring
+    { id: 'build-inspect', from: 'build', to: 'inspect' }, // waits for the later of the two
+  ],
+})
+// build [2, 5) with summary: true; frame [2, 5) and wiring [2, 3) with parentId 'build'; inspect [5, 6).
+```
+
+**Dates.** A summary's `start` and `end` are the earliest start and the latest finish of its subtasks, after ALAP placement; `latestStart` and `latestEnd` span their latest dates the same way. Its own `duration`, `calendarId`, `pauses`, `splittable` and `priority` are ignored (they are still validated), and its `work` is empty, so it takes no resource capacity. A summary whose subtasks are all inactive is inactive itself, and an inactive summary makes all of its subtasks inactive; both are listed in `inactiveTaskIds`.
+
+**Links into a summary** (the summary is the successor) follow Microsoft Project:
+
+- FS and SS links bind the start of every leaf subtask, at any depth, as if the link were drawn to each of them. Each subtask still has its own links and bounds.
+- FF and SF links into a summary throw an Error. Microsoft Project does not allow them either: a summary's finish is the result of its subtasks, not something a link can push. Link to the subtask that should finish instead.
+- A manual subtask keeps its dates; each link into its summary that they violate is listed in `manualConflicts` with the subtask's ID.
+
+**Links from a summary** (the summary is the predecessor) use its rolled-up dates: FS and FF the finish of its latest subtask, SS and SF the start of its earliest subtask. Any link type may start at a summary.
+
+**Constraints.** A summary's `startNoEarlierThan` binds the start of every subtask and its `finishNoLaterThan` the finish of every subtask; nested summaries combine theirs. When a subtask cannot meet an inherited bound, the `infeasible` failure names the subtask and the constraint, and with `explain` the `constraint` reason has the summary in `relatedTaskIds`. `fixedStart`, `startNoLaterThan`, `finishNoEarlierThan`, `manual` and `mode: 'alap'` on a summary throw an Error, because they would hold only one of its subtasks. Put them on the subtasks.
+
+**Backward pass, float and critical path.** The backward pass works on the subtasks. An FS or FF link from a summary gives every subtask a latest finish; an SS or SF link from a summary gives a latest start only to the subtasks whose earliest start is the summary's earliest start, because only they start the summary (the others may slip without moving it). A summary's `totalFloat` and `workFloat` are the smallest of its subtasks that are not manual, or 0 when all of them are manual, and it is `critical` when any subtask is critical. A link into a summary is in `criticalDependencyIds` when both ends are critical and it binds a critical subtask.
+
+**Validation and cycles.** These throw an Error that names the tasks: a `parentId` that is not a non-empty string, an unknown parent (`Unknown parent task x of task a`), parent IDs that form a cycle (`The parent IDs of these tasks form a cycle: a → b → a`), and a link between a summary and one of its own subtasks, in either direction (`Dependency l links summary task S with its own subtask a`). Inactive tasks are validated too. A summary's dates depend on all of its subtasks, so a chain of links from a subtask back to its summary (for example `S → x` and `x → a` with `a` in `S`) is a `cycle` failure listing the summary, the subtask and the links, like any other cycle; `toPlanningDiagnostics` reports it as `schedule-cycle`.
+
+**Progress.** The scheduler does not take progress for a summary. Use `summarizeTimelineRows` to roll up the progress of the bars below a GanttChart row; it weights each subtask by its length.
+
+| Function | Summary tasks |
+| --- | --- |
+| `scheduleTasks` | Dates, latest dates, float and critical flag rolled up from the subtasks; `summary: true`, and `parentId` on subtasks |
+| `propagateEdit` | Editing a summary throws an Error: edit its subtasks, and `changes` lists the summaries whose rolled-up dates move with them |
+| `rescheduleFromStatusDate` | Progress entries for summaries are accepted and ignored. A started or finished subtask no longer inherits the start bounds of its summaries (links into them and their `startNoEarlierThan`), like its own; unstarted subtasks still do |
+| `levelResources` | Levels the subtasks; summaries roll up from the leveled subtasks, are never delayed themselves and are not listed in `delays`. Assignments to a summary are accepted and take no capacity |
+| `calculateResourceLoad` | A summary's `work` is empty, so its assignments take no capacity |
+| `buildPlacementInput` | A placed subtask whose summary is not placed moves to its nearest placed ancestor, or to the top level |
+| `scheduleToGraph` | A summary is a node like any other, with its rolled-up dates and float |
 
 ## Split work
 

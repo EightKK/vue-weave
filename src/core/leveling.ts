@@ -1,7 +1,7 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
 import {
-  addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, manualSlot, slotFor,
-  topologicalOrder, type ModelTask, type Slot, type WorkClock,
+  addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, manualSlot,
+  slotFor, summarySlot, summaryUpper, topologicalOrder, type ModelTask, type Slot, type SummaryUpper, type WorkClock,
 } from './scheduleModel.js'
 import {
   explainOption, recordManualReason, recordSlotReasons, ScheduleTraceRecorder, type ExplainedLevelResourcesResult,
@@ -219,6 +219,9 @@ function withoutMode(task: ScheduleTask): ScheduleTask {
  * Manual tasks are never moved: their capacity is reserved first, at their manual dates, and one that finds too little
  * capacity there is listed in `unresolvedTaskIds`. Inactive tasks and their assignments are ignored.
  *
+ * Summary tasks are never placed themselves: their dates roll up from their leveled subtasks, assignments to them take
+ * no capacity, and they are not listed in `delays`.
+ *
  * With `{ explain: true }`, a successful result also has a `trace`. It holds the `latest` reasons of the horizon that
  * leveling may not pass and the `leveling` reasons recorded while capacity was reserved, including the resources,
  * intervals and holding tasks that delayed or split a task. It does not explain the replayed `scheduleTasks` run.
@@ -264,7 +267,8 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     const pair = JSON.stringify([resourceId, taskId])
     if (assigned.has(pair)) throw new Error('Duplicate resource assignment for task: ' + taskId)
     assigned.add(pair)
-    if (model.inactive.has(taskId)) continue
+    // A summary task does no work of its own, so its assignments take no capacity.
+    if (model.inactive.has(taskId) || tasks.get(taskId)!.summary) continue
     let list = demands.get(taskId)
     if (!list) demands.set(taskId, list = [])
     list.push({ profile, units, resourceId })
@@ -274,24 +278,33 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const sorted = topologicalOrder(model)
   const order = 'order' in sorted ? sorted.order : []
   const horizon = new Map<string, Slot>()
+  const unleveled = new Map(base.tasks.map(task => [task.id, task]))
+  const inherited = new Map<string, SummaryUpper>()
   for (let i = order.length - 1; i >= 0; i--) {
     const task = tasks.get(order[i]!)!
+    if (task.summary) {
+      inherited.set(task.id, summaryUpper(model, task, horizon, inherited, unleveled))
+      continue
+    }
     if (task.manual) {
       if (trace) recordManualReason(trace, 'latest', task)
       horizon.set(task.id, manualSlot(task))
       continue
     }
-    const bounds = addUpperBounds(cloneBounds(task.bounds), task, horizon)
+    const bounds = addSummaryUpper(addUpperBounds(cloneBounds(task.bounds), task, horizon), task, inherited, unleveled)
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)
-    if (trace) recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, { linkParents: link => trace.ids('latest', link.to) })
+    if (trace) {
+      recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, {
+        linkParents: link => trace.ids('latest', link.to), links: model.links,
+      })
+    }
     horizon.set(task.id, slot)
   }
 
   // Priority: manual tasks (which never move) first, then explicit priority (higher first), total float, early start,
   // then ID in code-unit order. Manual tasks wait for no predecessor, so they are all placed before any other task.
-  const unleveled = new Map(base.tasks.map(task => [task.id, task]))
   const entry = (task: ModelTask) => {
     const { totalFloat, start } = unleveled.get(task.id)!
     return { task, manual: Boolean(task.manual), priority: task.source.priority ?? 0, totalFloat, start }
@@ -301,9 +314,11 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
         : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
   const waiting = new Map<string, number>()
+  // A summary waits for its children and is placed at their span.
   for (const task of tasks.values()) {
-    waiting.set(task.id, task.incoming.length)
-    if (!task.incoming.length) queue.push(entry(task))
+    const count = task.incoming.length + (task.summary?.children.length ?? 0)
+    waiting.set(task.id, count)
+    if (!count) queue.push(entry(task))
   }
 
   const placed = new Map<string, Slot>()
@@ -360,15 +375,22 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     if (needs.length) reserved.set(task.id, mergeRanges(slices))
   }
   const release = (task: ModelTask) => {
-    for (const link of task.outgoing) {
-      const count = waiting.get(link.to)! - 1
-      waiting.set(link.to, count)
-      if (!count) queue.push(entry(tasks.get(link.to)!))
+    const next = task.outgoing.map(link => link.to)
+    if (task.parent !== undefined) next.push(task.parent)
+    for (const id of next) {
+      const count = waiting.get(id)! - 1
+      waiting.set(id, count)
+      if (!count) queue.push(entry(tasks.get(id)!))
     }
   }
   while (queue.size) {
     const { task } = queue.pop()
     const { clock, duration } = task
+    if (task.summary) {
+      placed.set(task.id, summarySlot(task, placed))
+      release(task)
+      continue
+    }
     const needs = demands.get(task.id) ?? []
     if (task.manual) {
       // A manual task stays at its dates. Its work takes capacity even where too little remains.
@@ -421,7 +443,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       recordCapacity(trace, task, needs, window, slot.start > early.start || stuck, early, slot)
       if (stuck) {
         recordSlotReasons(trace, 'leveling', task, bounds, limits, lastSlot, true, {
-          linkParents: () => [], horizon: trace.ids('latest', task.id),
+          linkParents: () => [], horizon: trace.ids('latest', task.id), links: model.links,
         })
       }
     }
@@ -462,6 +484,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const delays: ResourceDelay[] = []
   leveled.tasks.forEach((after, i) => {
     const before = base.tasks[i]!, pauses = added.get(after.id) ?? []
+    if (after.summary) return
     if (before.start === after.start && before.end === after.end && !pauses.length) return
     delays.push({
       taskId: after.id, before: { start: before.start, end: before.end }, after: { start: after.start, end: after.end },

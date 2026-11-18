@@ -39,7 +39,8 @@ export interface PlacementResult<I extends PlacementInput = PlacementInput> {
  * links and their assignments are left out of the input. A link from an unplaced task to a placed one is reported as
  * an `unplaced-predecessor` diagnostic and makes the result not `ok`, instead of the scheduler throwing or the link
  * being dropped silently. A link from a placed task to an unplaced one is only excluded. So is a link that the scheduler
- * ignores anyway: one that touches an `inactive` task, or one into a placed task with `manual` dates.
+ * ignores anyway: one that touches an `inactive` task, or one into a placed task with `manual` dates. A placed task
+ * whose `parentId` names an unplaced task gets the ID of its nearest placed ancestor instead, or none at the top.
  *
  * Malformed input still throws an Error: duplicate or empty task, link or placed IDs, a placed ID or a link or
  * assignment endpoint that is not an input task, and duplicate assignments. The input is not modified.
@@ -89,7 +90,26 @@ export function buildPlacementInput<I extends PlacementInput>(input: I, placedTa
     ;(placed.has(assignment.taskId) ? assignments : excludedAssignments).push(assignment)
   }
 
-  const result: I = { ...input, tasks: input.tasks.filter(task => placed.has(task.id)) }
+  // A placed subtask of an unplaced summary moves up to its nearest placed ancestor, or to the top level.
+  const parents = new Map(input.tasks.map(task => [task.id, task.parentId]))
+  const placedParent = (task: I['tasks'][number]) => {
+    const seen = new Set<string>([task.id])
+    let parentId = task.parentId
+    while (parentId !== undefined && taskIds.has(parentId) && !placed.has(parentId)) {
+      if (seen.has(parentId)) return task.parentId // A parent cycle: scheduleTasks reports it.
+      seen.add(parentId)
+      parentId = parents.get(parentId)
+    }
+    return parentId
+  }
+  const tasks = input.tasks.filter(task => placed.has(task.id)).map(task => {
+    if (task.parentId === undefined) return task
+    const parentId = placedParent(task)
+    if (parentId === task.parentId) return task
+    const { parentId: _unplaced, ...rest } = task
+    return parentId === undefined ? rest : { ...rest, parentId }
+  })
+  const result: I = { ...input, tasks }
   if (input.dependencies !== undefined) result.dependencies = dependencies
   if (input.assignments !== undefined) result.assignments = assignments
   return {

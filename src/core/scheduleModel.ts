@@ -7,8 +7,11 @@ import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
 
 export type Limits = { startLower: number; endLower: number; startUpper: number; endUpper: number }
 export type LimitKey = keyof Limits
-/** A bound without a constraint or dependency is a leveling horizon bound. */
-export type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string }
+/**
+ * A bound without a constraint or dependency is a leveling horizon bound. `summaryId` names the summary task that a
+ * subtask inherits a constraint from.
+ */
+export type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string; summaryId?: string }
 export type Bounds = Record<LimitKey, Bound[]>
 export type Slot = TimeRange & { workStart: number }
 
@@ -122,6 +125,13 @@ export interface ModelTask {
   manual?: TimeRange
   /** Only when explaining: the continuous clock, the task's calendar clock without its pauses, and the calendar's ID. */
   calendar?: { continuous: WorkClock; clock: WorkClock; id: string | undefined }
+  /** The active summary task this task belongs to. */
+  parent?: string
+  /**
+   * Present for a summary task: its active children in input order, and its active leaf descendants as the slice
+   * `[first, last)` of `ScheduleModel.leaves`. A summary has no incoming links: links into it are attached to its leaves.
+   */
+  summary?: { children: string[]; first: number; last: number }
 }
 
 export interface ScheduleModel {
@@ -133,7 +143,20 @@ export interface ScheduleModel {
   validateTime: (value: number | undefined) => void
   /** IDs of inactive tasks. They are validated but are not in `tasks`, and their links are attached to no task. */
   inactive: ReadonlySet<string>
+  /** Active leaf tasks in hierarchy order, so that the leaves of each summary are contiguous. Empty without hierarchy. */
+  leaves: readonly string[]
+  /** The input links by ID. */
+  links: ReadonlyMap<string, ScheduleLink>
 }
+
+/**
+ * Subtasks whose start has happened, keyed by the input object they belong to. They do not inherit the start bounds of
+ * their summary tasks (links into a summary and its `startNoEarlierThan`). Only `rescheduleFromStatusDate` sets it.
+ */
+export const startedSubtasks = new WeakMap<ScheduleInput, ReadonlySet<string>>()
+
+/** Constraints that a summary task cannot have, because its dates are derived from its subtasks. */
+const summaryForbidden = ['fixedStart', 'startNoLaterThan', 'finishNoEarlierThan', 'manual'] as const
 
 /**
  * Validate a scheduling input and index it. Throws for malformed input. With `explain`, each task also keeps its
@@ -188,6 +211,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
       if (pauses.length) clock = workClock(subtractPeriods(clock.periods, pauses), quantum)
     }
     if (task.inactive !== undefined && typeof task.inactive !== 'boolean') throw new Error('Invalid inactive flag: ' + task.id)
+    if (task.parentId !== undefined && (typeof task.parentId !== 'string' || !task.parentId)) throw new Error('Invalid parent task ID: ' + task.id)
     let manual: TimeRange | undefined
     if (task.manual !== undefined) {
       if (typeof task.manual !== 'object' || task.manual === null) throw new Error('Manual dates must be an object with a start and an end: ' + task.id)
@@ -219,7 +243,12 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
     if (explain) modelTask.calendar = { continuous, clock: calendarClock, id: task.calendarId ?? input.defaultCalendarId }
     tasks.set(task.id, modelTask)
   })
+  const started = startedSubtasks.get(input)
+  const hierarchy = input.tasks.some(task => task.parentId !== undefined)
+    ? buildHierarchy(input.tasks, tasks, inactive, started) : undefined
+  const leaves = hierarchy?.leaves ?? []
   const linkIndex = new Map<string, number>()
+  const links = new Map<string, ScheduleLink>()
   for (const link of dependencies) {
     if (!link.id || linkIndex.has(link.id) || !ids.has(link.from) || !ids.has(link.to)) {
       throw new Error('Invalid or duplicate schedule dependency: ' + link.id)
@@ -227,19 +256,205 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
     if (!['FS', 'SS', 'FF', 'SF'].includes(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
     const lag = link.lag ?? 0
     if (!Number.isSafeInteger(lag) || lag % quantum !== 0) throw new RangeError('Invalid schedule dependency lag: ' + link.id)
+    if (hierarchy && link.from !== link.to) {
+      const down = hierarchy.isAncestor(link.from, link.to)
+      if (down || hierarchy.isAncestor(link.to, link.from)) {
+        throw new Error(`Dependency ${link.id} links summary task ${down ? link.from : link.to} with its own subtask ${down ? link.to : link.from}`)
+      }
+    }
+    if (hierarchy?.isSummary(link.to) && targetFinish(link)) {
+      throw new Error(`Dependency ${link.id} is ${link.type} into summary task ${link.to}; only FS and SS links can end at a summary task`)
+    }
     linkIndex.set(link.id, linkIndex.size)
-    // A link that touches an inactive task takes no part; a link into a manual task binds nothing.
+    links.set(link.id, link)
+    // A link that touches an inactive task takes no part; a link into a manual task binds nothing. A link into a summary
+    // task binds each of its active leaf subtasks, except subtasks whose start has already happened.
     const from = tasks.get(link.from), to = tasks.get(link.to)
     if (!from || !to) continue
-    if (to.manual) {
-      from.manualOutgoing.push(link)
-      to.manualIncoming.push(link)
-    } else {
-      from.outgoing.push(link)
-      to.incoming.push(link)
+    const targets = to.summary ? leaves.slice(to.summary.first, to.summary.last).filter(id => !started?.has(id)) : [link.to]
+    for (const target of targets) {
+      const item = target === link.to ? link : { ...link, to: target }
+      const successor = tasks.get(target)!
+      if (successor.manual) {
+        from.manualOutgoing.push(item)
+        successor.manualIncoming.push(item)
+      } else {
+        from.outgoing.push(item)
+        successor.incoming.push(item)
+      }
     }
   }
-  return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive }
+  return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive, leaves, links }
+}
+
+/**
+ * Validate the summary task hierarchy of `parentId` and apply it to the model: every task below an inactive task, and
+ * every summary without an active leaf, becomes inactive; leaves inherit the `startNoEarlierThan` (unless their start
+ * has happened) and `finishNoLaterThan` of their summaries; summaries get their children and leaf ranges. Iterative,
+ * so deep hierarchies do not exhaust the call stack.
+ */
+function buildHierarchy(
+  list: readonly ScheduleTask[], tasks: Map<string, ModelTask>, inactive: Set<string>, started: ReadonlySet<string> | undefined,
+) {
+  const byId = new Map(list.map(task => [task.id, task]))
+  const children = new Map<string, ScheduleTask[]>()
+  const roots: ScheduleTask[] = []
+  for (const task of list) {
+    if (task.parentId === undefined) {
+      roots.push(task)
+      continue
+    }
+    if (!byId.has(task.parentId)) throw new Error('Unknown parent task ' + task.parentId + ' of task ' + task.id)
+    let group = children.get(task.parentId)
+    if (!group) children.set(task.parentId, group = [])
+    group.push(task)
+  }
+  const state = new Map<string, 'open' | 'done'>()
+  for (const task of list) {
+    const path: string[] = []
+    let id: string | undefined = task.id
+    while (id !== undefined && !state.has(id)) {
+      state.set(id, 'open')
+      path.push(id)
+      id = byId.get(id)!.parentId
+    }
+    if (id !== undefined && state.get(id) === 'open') {
+      const loop = [...path.slice(path.indexOf(id)), id]
+      throw new Error('The parent IDs of these tasks form a cycle: ' + loop.join(' → '))
+    }
+    for (const item of path) state.set(item, 'done')
+  }
+  for (const id of children.keys()) {
+    const task = byId.get(id)!
+    for (const key of summaryForbidden) if (task[key] !== undefined) throw new Error(`Summary task ${id} cannot have ${key}`)
+    if (task.mode === 'alap') throw new Error(`Summary task ${id} cannot have mode 'alap'`)
+  }
+  const pre = new Map<string, number>(), post = new Map<string, number>()
+  const leaves: string[] = []
+  type Frame = { task: ScheduleTask; next: number; off: boolean; first: number; startLower?: Bound; endUpper?: Bound }
+  const tighter = (inherited: Bound | undefined, value: number | undefined, constraint: ScheduleConstraintName, id: string, lower: boolean) =>
+    value === undefined || (inherited && (lower ? inherited.value >= value : inherited.value <= value))
+      ? inherited : { value, constraint, summaryId: id }
+  let counter = 0
+  const stack: Frame[] = []
+  const enter = (task: ScheduleTask) => {
+    const parent = stack.at(-1)
+    pre.set(task.id, counter++)
+    const off = Boolean(parent?.off) || inactive.has(task.id)
+    const frame: Frame = { task, next: 0, off, first: leaves.length }
+    const model = tasks.get(task.id)
+    if (off) {
+      inactive.add(task.id)
+      tasks.delete(task.id)
+    } else if (parent) model!.parent = parent.task.id
+    if (children.has(task.id)) {
+      frame.startLower = tighter(parent?.startLower, task.startNoEarlierThan, 'startNoEarlierThan', task.id, true)
+      frame.endUpper = tighter(parent?.endUpper, task.finishNoLaterThan, 'finishNoLaterThan', task.id, false)
+    } else if (!off) {
+      leaves.push(task.id)
+      if (parent?.startLower && !started?.has(task.id)) model!.bounds.startLower.push(parent.startLower)
+      if (parent?.endUpper) model!.bounds.endUpper.push(parent.endUpper)
+    }
+    stack.push(frame)
+  }
+  for (const root of roots) {
+    enter(root)
+    while (stack.length) {
+      const frame = stack.at(-1)!
+      const group = children.get(frame.task.id)
+      if (group && frame.next < group.length) {
+        enter(group[frame.next++]!)
+        continue
+      }
+      stack.pop()
+      post.set(frame.task.id, counter++)
+      const model = tasks.get(frame.task.id)
+      if (!group || !model) continue
+      if (frame.first === leaves.length) {
+        // A summary whose subtasks are all inactive has no dates, so it is inactive too.
+        inactive.add(frame.task.id)
+        tasks.delete(frame.task.id)
+        continue
+      }
+      model.alap = false
+      model.summary = { children: group.filter(child => tasks.has(child.id)).map(child => child.id), first: frame.first, last: leaves.length }
+    }
+  }
+  return {
+    leaves,
+    isSummary: (id: string) => children.has(id),
+    isAncestor: (ancestor: string, id: string) => pre.get(ancestor)! < pre.get(id)! && post.get(ancestor)! > post.get(id)!,
+  }
+}
+
+/** The span of a summary's children in `slots`. */
+export function summarySlot(task: ModelTask, slots: ReadonlyMap<string, TimeRange>): Slot {
+  let start = Infinity, end = -Infinity
+  for (const id of task.summary!.children) {
+    const slot = slots.get(id)!
+    start = Math.min(start, slot.start)
+    end = Math.max(end, slot.end)
+  }
+  return { start, end, workStart: 0 }
+}
+
+/** Roll up the summaries of `slots` from their children, in topological order. */
+export function rollUpSummaries(model: ScheduleModel, order: readonly string[], slots: Map<string, Slot>): void {
+  for (const id of order) {
+    const task = model.tasks.get(id)!
+    if (task.summary) slots.set(id, summarySlot(task, slots))
+  }
+}
+
+/**
+ * Upper bounds that a summary passes down to its subtasks. `end` binds the finish of every subtask; `start` binds only
+ * the subtasks whose earliest start is the summary's earliest start, because the summary starts with the earliest one.
+ */
+export type SummaryUpper = { end: Bound[]; start: Bound[] }
+
+function lowest(bounds: Bound[]): Bound[] {
+  const value = bounds.reduce((min, bound) => Math.min(min, bound.value), Infinity)
+  return bounds.filter(bound => bound.value === value)
+}
+
+/**
+ * The upper bounds of a summary: those its parent passes down, plus those of its outgoing links measured against the
+ * successors in `placed`. With `meetManual`, a link into a manual task also binds when the summary's earliest dates
+ * already meet it (as for ALAP placement); otherwise links into manual tasks bind nothing.
+ */
+export function summaryUpper(
+  model: ScheduleModel, task: ModelTask, placed: ReadonlyMap<string, TimeRange>, inherited: ReadonlyMap<string, SummaryUpper>,
+  earliest: ReadonlyMap<string, TimeRange>, meetManual = false,
+): SummaryUpper {
+  const parent = task.parent === undefined ? undefined : inherited.get(task.parent)
+  const end = parent ? [...parent.end] : []
+  const start = parent && earliest.get(task.parent!)!.start === earliest.get(task.id)!.start ? [...parent.start] : []
+  for (const link of task.outgoing) {
+    const successor = placed.get(link.to)!
+    const value = (targetFinish(link) ? successor.end : successor.start) - (link.lag ?? 0)
+    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
+  }
+  if (meetManual) {
+    const own = earliest.get(task.id)!
+    for (const link of task.manualOutgoing) {
+      const manual = model.tasks.get(link.to)!.manual!
+      const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
+      if ((sourceFinish(link) ? own.end : own.start) > value) continue
+      ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
+    }
+  }
+  return { end: lowest(end), start: lowest(start) }
+}
+
+/** Add the upper bounds that a leaf inherits from its summary tasks. */
+export function addSummaryUpper(
+  bounds: Bounds, task: ModelTask, inherited: ReadonlyMap<string, SummaryUpper>, earliest: ReadonlyMap<string, TimeRange>,
+): Bounds {
+  if (task.parent === undefined) return bounds
+  const limits = inherited.get(task.parent)!
+  bounds.endUpper.push(...limits.end)
+  if (earliest.get(task.id)!.start === earliest.get(task.parent)!.start) bounds.startUpper.push(...limits.start)
+  return bounds
 }
 
 /** The slot of a manual task: its manual dates. */
@@ -257,18 +472,27 @@ export function allOutgoing(task: ModelTask): ScheduleLink[] {
 export function topologicalOrder(model: ScheduleModel): { order: string[] } | { cycles: ScheduleCycle[] } {
   const { tasks } = model
   // Links into manual tasks bind nothing, but a cycle through them is still a cycle.
-  const remaining = new Map([...tasks].map(([id, task]) => [id, task.incoming.length + task.manualIncoming.length]))
+  // A summary waits for its children, whose dates it rolls up.
+  const remaining = new Map([...tasks].map(([id, task]) =>
+    [id, task.incoming.length + task.manualIncoming.length + (task.summary?.children.length ?? 0)]))
   const order = [...remaining].filter(([, count]) => count === 0).map(([id]) => id)
   for (let i = 0; i < order.length; i++) {
-    for (const link of allOutgoing(tasks.get(order[i]!)!)) {
-      const count = remaining.get(link.to)! - 1
-      remaining.set(link.to, count)
-      if (!count) order.push(link.to)
+    for (const next of successorIds(tasks.get(order[i]!)!)) {
+      const count = remaining.get(next)! - 1
+      remaining.set(next, count)
+      if (!count) order.push(next)
     }
   }
   if (order.length === tasks.size) return { order }
   const ordered = new Set(order)
   return { cycles: findCycles(tasks, model.linkIndex, [...tasks.keys()].filter(id => !ordered.has(id))) }
+}
+
+/** The tasks that wait for a task: the targets of its links and its summary task. */
+function successorIds(task: ModelTask): string[] {
+  const ids = allOutgoing(task).map(link => link.to)
+  if (task.parent !== undefined) ids.push(task.parent)
+  return ids
 }
 
 /** Iterative Tarjan over the unordered tasks. Every link inside a component lies on a cycle. */
@@ -286,16 +510,16 @@ function findCycles(tasks: Map<string, ModelTask>, linkIndex: ReadonlyMap<string
   for (const root of candidates) {
     if (index.has(root)) continue
     visit(root)
-    const frames = [{ id: root, edge: 0, outgoing: allOutgoing(tasks.get(root)!) }]
+    const frames = [{ id: root, edge: 0, outgoing: successorIds(tasks.get(root)!) }]
     while (frames.length) {
       const frame = frames.at(-1)!
       const outgoing = frame.outgoing
       if (frame.edge < outgoing.length) {
-        const next = outgoing[frame.edge++]!.to
+        const next = outgoing[frame.edge++]!
         if (!allowed.has(next)) continue
         if (!index.has(next)) {
           visit(next)
-          frames.push({ id: next, edge: 0, outgoing: allOutgoing(tasks.get(next)!) })
+          frames.push({ id: next, edge: 0, outgoing: successorIds(tasks.get(next)!) })
         } else if (onStack.has(next)) low.set(frame.id, Math.min(low.get(frame.id)!, index.get(next)!))
         continue
       }
@@ -318,13 +542,14 @@ function findCycles(tasks: Map<string, ModelTask>, linkIndex: ReadonlyMap<string
   const cycles: ScheduleCycle[] = []
   for (const component of components) {
     const members = new Set(component)
-    const dependencyIds: string[] = []
+    // A link into a summary is attached to each of its leaves, so the same ID can occur more than once.
+    const dependencyIds = new Set<string>()
     for (const id of component) {
-      for (const link of allOutgoing(tasks.get(id)!)) if (members.has(link.to)) dependencyIds.push(link.id)
+      for (const link of allOutgoing(tasks.get(id)!)) if (members.has(link.to)) dependencyIds.add(link.id)
     }
-    if (!dependencyIds.length) continue
+    if (!dependencyIds.size) continue
     const taskIds = component.sort((a, b) => position(a) - position(b))
-    cycles.push({ taskIds, dependencyIds: dependencyIds.sort((a, b) => linkIndex.get(a)! - linkIndex.get(b)!) })
+    cycles.push({ taskIds, dependencyIds: [...dependencyIds].sort((a, b) => linkIndex.get(a)! - linkIndex.get(b)!) })
   }
   return cycles.sort((a, b) => position(a.taskIds[0]!) - position(b.taskIds[0]!))
 }

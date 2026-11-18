@@ -1,5 +1,5 @@
 import {
-  buildScheduleModel, limitsOf, lowerBounds, slotFor, targetFinish, topologicalOrder, type WorkClock,
+  buildScheduleModel, limitsOf, lowerBounds, slotFor, startedSubtasks, summarySlot, targetFinish, topologicalOrder, type WorkClock,
 } from './scheduleModel.js'
 import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
@@ -30,7 +30,9 @@ import type { TimeRange } from './timeline.js'
  * no longer apply are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
  *
  * Manual tasks keep their manual dates whatever their progress, and inactive tasks stay inactive; progress entries of
- * both are accepted and have no effect.
+ * both are accepted and have no effect. Summary tasks roll up from their subtasks; their progress entries are accepted
+ * and have no effect. A started subtask no longer inherits the start bounds of its summaries (links into a summary
+ * and its `startNoEarlierThan`), for the same reason as its own.
  *
  * Throws a RangeError for a status date that is not finite, outside `input.range` or not aligned with the quantum,
  * a progress value outside 0..1 or a done share that does not fit before the status date, and an Error for a progress
@@ -59,7 +61,7 @@ export function rescheduleFromStatusDate(
   const resumes = new Map<string, Resume>()
   const tasks = input.tasks.map((task): ScheduleTask => {
     const modelled = model.tasks.get(task.id)
-    if (!modelled || modelled.manual) return task
+    if (!modelled || modelled.manual || modelled.summary) return task
     const value = progress.get(task.id) ?? 0
     const { startNoEarlierThan, startNoLaterThan, fixedStart: _fixed, mode: _mode, ...rest } = task
     if (value === 1) {
@@ -88,7 +90,12 @@ export function rescheduleFromStatusDate(
   // remaining work. No link into a completed task applies.
   const dependencies = (input.dependencies ?? []).filter(link =>
     !completed.has(link.to) && !(resumes.has(link.to) && !targetFinish(link)))
-  return scheduleTasks({ ...input, tasks: delayRemainingWork({ ...input, tasks, dependencies }, resumes), dependencies })
+  const started = new Set([...completed, ...resumes.keys()])
+  const adjusted: ScheduleInput = { ...input, tasks, dependencies }
+  if (started.size) startedSubtasks.set(adjusted, started)
+  const final: ScheduleInput = { ...input, tasks: delayRemainingWork(adjusted, resumes), dependencies }
+  if (started.size) startedSubtasks.set(final, started)
+  return scheduleTasks(final)
 }
 
 /** A partly done task: its own pauses, where its done work ends, its remaining work and its clock without the gap. */
@@ -117,6 +124,10 @@ function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string
   const earliest = new Map<string, TimeRange>()
   for (const id of sorted.order) {
     const task = model.tasks.get(id)!
+    if (task.summary) {
+      earliest.set(id, summarySlot(task, earliest))
+      continue
+    }
     if (task.manual) {
       earliest.set(id, task.manual)
       continue
