@@ -55,6 +55,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Time range exploration](#time-range-exploration)
 - [Resource timelines and unplanned tasks](#resource-timelines-and-unplanned-tasks)
 - [Planning diagnostics and schedule traces](#planning-diagnostics-and-schedule-traces)
+- [Plan scenario comparison](#plan-scenario-comparison)
 - [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)
 - [Typed fields and timeline views](#typed-fields-and-timeline-views)
 - [Application undo and redo](#application-undo-and-redo)
@@ -1340,6 +1341,39 @@ A `PlanningDiagnostic` has `id` (a JSON array of the code and identifying values
 | `resource-overload` | warning | Each overloaded segment: the resource, then its tasks; `reasonIds` are the overlapping `capacity` reasons |
 
 The exported types are `PlanningDiagnostic`, `PlanningDiagnosticCode`, `PlanningDiagnosticSeverity`, `ScheduleReason`, `ScheduleReasonPhase`, `ScheduleReasonKind`, `ScheduleReasonBound`, `ScheduleTrace`, `ScheduleOptions`, `CollectScheduleReasonsOptions`, `ExplainedScheduleSuccess`, `ExplainedScheduleResult`, `ExplainedLevelResourcesSuccess` and `ExplainedLevelResourcesResult`. See [Explain a plan](scheduling.md#explain-a-plan).
+
+## Plan scenario comparison
+
+Core helpers that compare a candidate plan with the current plan. They are pure, use loops only, never modify their arguments and return data; the comparison table, wording and adoption are the application's concern. See [Compare plan scenarios](scheduling.md#compare-plan-scenarios).
+
+| Export | Contract |
+| --- | --- |
+| comparePlans(current, candidate) | Compares two `PlanScenario`s and returns a `PlanComparison` with two separate parts: `input` (`PlanInputDiff`, the differences of the inputs) and `result` (`PlanResultDiff`, the differences of the calculated schedules). A side without `result` is calculated with `scheduleTasks(input, { explain: true })`; a side without `load` but with `input.resources` gets `calculateResourceLoad` of its result. A cycle or an infeasible plan (a project `deadline` failure included) never throws: it is reported in `result.state` and the input differences are still returned. Throws an Error for an invalid or duplicate task, dependency, calendar or resource ID, a duplicate or unknown assignment, an invalid `partial`, `revision` or `baseRevision`, or a result that names a task its input does not have as active; a RangeError for a non-finite task `deadline` or a load segment with non-finite or unordered dates, a negative overload, or overlapping segments of one resource. Invalid scheduling input throws from `scheduleTasks` as usual |
+| planComparisonTargets(comparison, index, options?) | View projection: the tasks of `options.taskIds` (default: every task of `comparison.result.tasks`) as `EntityRef`s of kind `options.entityKind` (default `task`), their targets through a `buildViewBindingIndex` index (`targets`, `unknown` as in `resolveViewTargets`), and `load`: for each listed task of `result.tasks`, a `LoadViewTarget` for its dates in each scheduled plan on each resource assigned in that plan, for `highlightedLoadTargets`. Empty ranges and repeats are left out |
+| planBaselines(result, setId) | The dates of a successful `scheduleTasks` or `levelResources` result as one baseline set: a `Map` from task ID to `TimelineBaseline` `{ id: setId, start, end }`. Add the entries to `TimelineBar.baselines` of the candidate bars and pass `setId` in `baselineIds` to draw the current plan under the candidate. Throws an Error for a failed result or an empty or reserved (`timelineBaselineId`) set ID |
+
+`PlanScenario`: `input` (`PlanComparisonInput`: a `ScheduleInput` whose tasks are `PlanComparisonTask`s, plus optional `resources` and `assignments`), optional precomputed `result` and `load`, optional `revision` (of the current plan), `baseRevision` (of a candidate: the current revision it was derived from) and `partial` (true when the plan's data is not completely loaded). `PlanComparisonTask` adds an optional `deadline`: a due time that is not a scheduling bound (as `TimelineBar.deadline`); a scheduled task that ends after it is a `deadline` violation.
+
+`PlanComparison`:
+
+| Field | Meaning |
+| --- | --- |
+| `complete`, `partial` | `complete` is false when either side is flagged `partial`; `partial` says which |
+| `revision` | `{ current?, base?, stale }`: `stale` is true when the current `revision` and the candidate's `baseRevision` are both given and differ |
+| `empty` | True when the inputs are equal and so is every compared result |
+| `input` | `settings` (changed top-level input fields such as `range`, `quantum`, `defaultCalendarId` or `deadline`), and for `tasks`, `dependencies`, `calendars` and `resources` a `PlanCollectionDiff` (`added` and `removed` IDs and `changed` `{ id, fields }`); `assignments` (`PlanAssignmentDiff`: `added`, `removed`, `changed` `{ taskId, resourceId, fields }` matched by task and resource, with `units` defaulting to 1, and `taskIds` with any assignment difference). Fields are compared structurally, so any field, including fields added in later versions, is reported by name |
+| `result.state` | `PlanScheduleState` per side: `scheduled` with `finish`, `cycle` with `cycles`, or `infeasible` with `taskId`, `constraints`, `dependencyIds` and `deadline` (true when the project deadline is one of the conflicts) |
+| `result.comparable` | True when both sides are scheduled. Otherwise `tasks` lists only edited tasks, `consequenceTaskIds` is empty and no violation is gained or lost |
+| `result.finish` | `{ current?, candidate?, shift? }`: the final completion of each scheduled side and `candidate - current` |
+| `result.tasks` | `PlanTaskComparison` for each edited task and each task whose dates, critical flag or state differ, current input order first, then added tasks: `edited`, `input` (`added`, `removed`, `changed` or `unchanged`; changed fields or assignments make `changed`), `fields`, `assignmentsChanged`, `current` and `candidate` (`PlanTaskSide`: `scheduled` with `start`, `end`, `critical` and `summary` or `manual` flags, or `inactive`, `absent` or `unscheduled`), `startShift` and `finishShift` when both are scheduled, `critical` (`gained` or `lost`), `resourceIds` per side and `reasons` |
+| `result.editedTaskIds`, `result.consequenceTaskIds` | The edited tasks, and the tasks whose own input is unchanged but whose result differs |
+| `result.criticalDependencies` | `gained` and `lost` IDs of `criticalDependencyIds` |
+| `result.violations` | `PlanViolation`s per scheduled side (`current`, `candidate`) and `gained` and `lost` ones: `deadline` (task, due time, finish), `manual-conflict` (task, dependency) and `leveling-unresolved` (task), matched by code, task and dependency |
+| `result.overload` | `PlanResourceOverload` for every resource of either plan with load: `current` and `candidate` cumulative overload (the sum over the resource's segments of `overload * (end - start)`, in the caller's capacity units times time units; undefined on a side without a schedule or without that resource) and `change`. Values of different resources are never added |
+
+`reasons` holds each side's own reasons of the task from that side's `explain` trace (present when that side has a trace and the task is scheduled there). They explain why the task got its dates in that plan, not which change caused a difference; `comparePlans` never names a single cause.
+
+The exported types are `PlanComparisonTask`, `PlanComparisonInput`, `PlanScenario`, `PlanScheduleState`, `PlanTaskSide`, `PlanFieldChange`, `PlanCollectionDiff`, `PlanAssignmentChange`, `PlanAssignmentDiff`, `PlanInputDiff`, `PlanViolation`, `PlanTaskComparison`, `PlanResourceOverload`, `PlanResultDiff`, `PlanComparison`, `PlanComparisonTargetOptions` and `PlanComparisonTargets`.
 
 ## Asynchronous layouts and preserved routes
 

@@ -107,3 +107,9 @@ export type {
   GraphLayoutCompletionOptions, GraphLayoutCompletion, GraphLayoutRequestMessage, GraphLayoutCancelMessage, GraphLayoutSuccessMessage,
   GraphLayoutFailureMessage, GraphLayoutWorkerMessage, GraphLayoutJson, GraphLayoutRequestJson, GraphLayoutWorkerJsonMessage,
 } from './graphLayoutRequests.js'
+export { comparePlans, planComparisonTargets, planBaselines } from './planComparison.js'
+export type {
+  PlanComparisonTask, PlanComparisonInput, PlanScenario, PlanScheduleState, PlanTaskSide, PlanFieldChange, PlanCollectionDiff,
+  PlanAssignmentChange, PlanAssignmentDiff, PlanInputDiff, PlanViolation, PlanTaskComparison, PlanResourceOverload, PlanResultDiff,
+  PlanComparison, PlanComparisonTargetOptions, PlanComparisonTargets,
+} from './planComparison.js'

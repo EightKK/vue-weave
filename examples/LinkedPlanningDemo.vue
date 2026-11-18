@@ -11,6 +11,7 @@ import {
   type TimelineBar, type TimelineLoadSegment, type ViewBinding, type ViewTarget, type ViewTargetEvent,
 } from '../src'
 import GraphContextToolbar from './components/GraphContextToolbar.vue'
+import ScenarioComparison from './components/ScenarioComparison.vue'
 
 const hour = 3_600_000
 const origin = Date.UTC(2026, 10, 9, 8)
@@ -71,6 +72,8 @@ const bindings: ViewBinding[] = [
   }),
 ]
 const index = buildViewBindingIndex(bindings)
+// Plan scenario comparison (opt-in): a separate panel with its own copy of this plan, see ScenarioComparison.vue.
+const scenariosOpen = ref(false)
 
 // Time range exploration (opt-in): the bars worked on in [start, end) highlight their tasks in every view, and the
 // chosen traversal adds related tasks, shown in the graph through `relatedIds`. Display only: nothing is selected.
@@ -375,6 +378,8 @@ async function expandAndShow() {
       <output aria-label="Delete proposals">Delete proposals: {{ deleteProposals.length }}</output>
       <span v-if="deleteProposals.length"> (last: {{ deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join(', ') }}; the demo does not apply them)</span>
     </p>
+    <p class="hint"><label><input v-model="scenariosOpen" type="checkbox"> Compare plan scenarios</label></p>
+    <ScenarioComparison v-if="scenariosOpen" />
   </section>
 </template>
 
