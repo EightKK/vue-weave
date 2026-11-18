@@ -35,6 +35,8 @@ export type {
 } from './graphCollapse.js'
 export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
 export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
+export { findOrthogonalRoute } from './graphObstacleRouting.js'
+export type { GraphObstacleAvoidance, GraphRouteEnd } from './graphObstacleRouting.js'
 export * from './leveling.js'
 export * from './exportSvg.js'
 export {

@@ -34,6 +34,8 @@ const spread = ref(true)
 const spacing = ref(40)
 const animate = ref(true)
 const edgeStyle = ref<GraphEdgeStyle>('curve')
+// Orthogonal routes (the loop-back, or every edge in the orthogonal style) go around the node boxes.
+const avoidNodes = ref(false)
 const graph = ref<InstanceType<typeof NetworkGraph>>()
 const status = ref('Ready. Export the diagram as SVG or PNG.')
 
@@ -98,10 +100,11 @@ async function exportPng() {
           <option value="curve">curve</option><option value="straight">straight</option><option value="orthogonal">orthogonal</option>
         </select>
       </label>
+      <label><input v-model="avoidNodes" type="checkbox"> Avoid nodes</label>
       <button type="button" @click="exportSvg">Export SVG</button>
       <button type="button" @click="exportPng">Export PNG</button>
     </div>
-    <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :edge-style="edgeStyle"
+    <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :edge-style="edgeStyle" :avoid-nodes="avoidNodes"
       :parallel-edge-spacing="spread ? spacing : undefined" :positions="positions" :sizes="sizes"
       :options="{ direction: 'LR', nodeWidth: 160, nodeHeight: 60 }" :height="500" :labels="{ region: 'Order fulfilment diagram' }" />
     <p class="status" role="status" aria-label="Diagram status">{{ status }}</p>

@@ -6403,6 +6403,36 @@ test('the diagram demo draws shapes and markers, spreads parallel edges, animate
   expect(errors).toEqual([])
 })
 
+test('the diagram demo routes orthogonal edges around the nodes with Avoid nodes', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Diagram styles', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
+  const avoid = page.getByLabel('Avoid nodes')
+  await expect(avoid).not.toBeChecked()
+  // In the curve style only the orthogonal loop-back (edge 4) is routed by the option, and it has nothing in its way.
+  const curves = await paths()
+  await avoid.check()
+  expect(await paths()).toEqual(curves)
+  await avoid.uncheck()
+
+  await page.getByLabel('Edge style').selectOption('orthogonal')
+  const plain = await paths()
+  expect(plain).toHaveLength(13)
+  await avoid.check()
+  const avoided = await paths()
+  // The brackets between same-column nodes and the spread request/response pair move into the middle of the free
+  // channels beside the boxes; the routes that already run between neighbouring nodes stay as they are.
+  for (const index of [0, 1, 2, 4, 5, 6, 7, 12]) expect(avoided[index]).toEqual(plain[index])
+  for (const index of [3, 8, 9, 10, 11]) expect(avoided[index]).not.toEqual(plain[index])
+  await avoid.uncheck()
+  expect(await paths()).toEqual(plain)
+  await page.getByLabel('Edge style').selectOption('curve')
+  expect(errors).toEqual([])
+})
+
 test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

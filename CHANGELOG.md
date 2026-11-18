@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Obstacle-avoiding orthogonal routing, opt-in: the NetworkGraph `avoidNodes` prop and the `avoidNodes` option of `routeGraphEdges` (`true` or a `GraphObstacleAvoidance` with `clearance`, default 8, and `bendPenalty`, default 24) route orthogonal edges without waypoints around every node box, collapsed-group proxies included, leaving and entering on the same sides as before. Waypoints keep their precedence, self-loops and clear bypass lanes are kept, and an edge without a route around the boxes keeps the plain orthogonal route. Drag and resize previews and `exportSvg`/`exportPng` draw the same routes. The new `findOrthogonalRoute(from, to, obstacles, options)` (with `GraphRouteEnd`) exposes the router: A* over a sparse grid of lines between box edges, deterministic and bounded. Without the option, routes are unchanged. The diagram demo has an "Avoid nodes" toggle.
 
 ## 0.5.0 - 2026-11-17
 

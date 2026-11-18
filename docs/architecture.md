@@ -42,7 +42,13 @@ For each edge NetworkGraph decides its path in this order:
 4. Otherwise (the default `'builtin'`), edges with named ports are redrawn from their anchors, and the orthogonal and straight styles redraw every edge; the curve style keeps the layout's other paths.
 5. An edge without any path, for example one just connected while an asynchronous layout is pending, gets a temporary built-in route under `'preserve'` (`completeGraphLayout`); under `'builtin'` it is an error.
 
-Drag previews apply the same rules to the moved nodes only, and the SVG export draws the routed paths, so screen, preview and export agree. Routing does not avoid obstacles; a layout engine that needs that owns its routes under `'preserve'`.
+Drag previews apply the same rules to the moved nodes only, and the SVG export draws the routed paths, so screen, preview and export agree. By default routing does not avoid obstacles; a layout engine that needs that owns its routes under `'preserve'`.
+
+### Obstacle avoidance
+
+With the opt-in `avoidNodes` prop (`avoidNodes` option of routeGraphEdges), orthogonal edges without waypoints are routed around the node boxes, collapsed-group proxies included, by findOrthogonalRoute. It fits into step 4 above: the ends and their sides are the ones the plain orthogonal route uses (named ports or the sides facing each other along the direction), each end first leaves its node by the clearance, and the router finds the cheapest axis-aligned path between those two points, counting length plus a penalty per bend. Waypoints, self-loops, `'preserve'` and the curve and straight styles are unchanged. When no route exists, the edge keeps the plain orthogonal route, so routing never fails because of obstacles.
+
+The router never builds a pixel grid. Boxes grown by the clearance go into a uniform bucket grid once per routing call (O(n)). Candidate lines run halfway between neighbouring box edges, so a route keeps to the middle of each free channel and never squeezes between boxes closer than twice the clearance, plus the lines through both ends. A* runs over the crossings of these lines in a region around both ends, which grows fourfold up to the whole area when no route is found; segment tests use the bucket grid, and the search is capped at 200,000 expanded states per region so a boxed-in end cannot scan the whole graph. Equal costs are broken by insertion order, so the result depends only on the geometry. Each edge is routed independently: edges may share segments, and there is no nudging of parallel segments. A drag preview reroutes only the edges of the moved nodes; the others are rerouted around the new position when it is saved, so the preview can show an unrelated route through a dragged node until the drop.
 
 ## Timeline rendering and editing
 
