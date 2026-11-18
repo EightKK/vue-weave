@@ -281,6 +281,14 @@ export interface GraphLabels {
   bottomRight?: string
   /** Announced when `validateNodeResize` returns false. Default "This resize was rejected." */
   resizeRejected?: string
+  /** Name prefix of the inline label editor (`editableLabels`), followed by the node label or the edge label or ID. Default "Edit label of". */
+  editLabel?: string
+  /** Announced when `validateLabelEdit` returns false. Default "This label change was rejected." */
+  labelRejected?: string
+  /** Name prefix of the `node-toolbar` slot's group, followed by the node label. Default "Node actions". */
+  nodeToolbar?: string
+  /** Name prefix of the `edge-toolbar` slot's group, followed by the edge label or ID. Default "Edge actions". */
+  edgeToolbar?: string
 }
 
 export interface GanttLabels {
@@ -400,6 +408,54 @@ export interface NetworkEdgeSlot<E extends GraphEdge = GraphEdge> {
   /** The current camera scale, for level-of-detail rendering in custom edge slots. */
   scale: number
 }
+
+/** Props of the NetworkGraph `node-toolbar` slot, shown for the only selected node. `N` types the node. */
+export interface NetworkNodeToolbarSlot<N extends NetworkNode = NetworkNode> {
+  node: N
+  /** The node box in chart coordinates. */
+  box: GraphBox
+  /** The current camera scale. */
+  scale: number
+}
+
+/** Props of the NetworkGraph `edge-toolbar` slot, shown for the selected edge. `E` types the edge. */
+export interface NetworkEdgeToolbarSlot<E extends GraphEdge = GraphEdge> {
+  edge: E
+  /** The anchor in chart coordinates: the edge label position, else the middle between the path ends. */
+  point: GraphPoint
+  /** The current camera scale. */
+  scale: number
+}
+
+/** Props of the NetworkGraph `group` slot, which draws a group frame and label in chart coordinates. `G` types the group. */
+export interface NetworkGroupSlot<G extends NetworkGroup = NetworkGroup> {
+  group: G
+  /** The frame in chart coordinates, including the label strip at its top. */
+  box: GraphRect
+  /** Nesting depth: 0 for a group without `parentId`. */
+  depth: number
+}
+
+/** Props of the NetworkGraph `minimap-node` slot, which draws one node in the minimap in chart coordinates. */
+export interface NetworkMinimapNodeSlot<N extends NetworkNode = NetworkNode> {
+  node: N
+  box: GraphBox
+  selected: boolean
+}
+
+/**
+ * A label proposal from NetworkGraph (`editableLabels`). `before` is the current label (empty for an edge without one)
+ * and `after` the text typed, unchanged. Set the node's or edge's `label` to accept it.
+ */
+export interface GraphLabelEdit {
+  kind: 'node' | 'edge'
+  id: string
+  before: string
+  after: string
+}
+
+/** How a NetworkGraph `boxSelect` drag selects: a rectangle (`box`) or a free-form outline (`lasso`). */
+export type GraphSelectionMode = 'box' | 'lasso'
 
 /** A waypoint proposal from NetworkGraph (`editableEdges`). Set the edge's `points` to `after` to accept it. */
 export interface GraphEdgeReshape {

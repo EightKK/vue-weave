@@ -25,6 +25,7 @@ export type {
   TopologicalOrderResult, ShortestGraphPathOptions, GraphPathResult, GraphSearchOptions, GraphFilterOptions, GraphNodeMatch,
 } from './graphAlgorithms.js'
 export * from './graphView.js'
+export { graphPointInPolygon, graphNodesInPolygon } from './graphLasso.js'
 export { graphDeletion, removeGraphElements, cloneGraphElements } from './graphEditing.js'
 export type { GraphDeletion, GraphCloneOptions, GraphCloneResult } from './graphEditing.js'
 export { graphAlignmentGuides, snapGraphPoint } from './graphSnapping.js'

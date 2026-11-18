@@ -76,3 +76,9 @@ footer { padding-block: 6px; }
 .palette-chip:active { cursor: grabbing; }
 .palette-chip:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
 .dark .palette-chip { background: #243e58; color: #e5edf3; border-color: #6388ad; }
+/* The demo's group and minimap slots (Item toolbars). */
+.demo-group-frame { fill: var(--vw-violet-pale, #efe7f8); fill-opacity: .55; stroke: var(--vw-violet-line, #9983ba); stroke-width: 1.5; pointer-events: none; }
+.demo-group-label { fill: var(--vw-violet-ink, #523b78); font-size: 11px; font-weight: 700; pointer-events: none; user-select: none; }
+.demo-minimap-node { fill: var(--vw-edge, #76929f); }
+.demo-minimap-node.is-selected { fill: var(--vw-accent, #245e96); }
+.vw-node-toolbar button, .vw-edge-toolbar button { padding: 3px 8px; font-size: 11px; }

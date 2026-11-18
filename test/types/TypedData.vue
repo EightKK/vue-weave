@@ -17,6 +17,7 @@ import {
   useTimelineView, useLinkedSelection, revealLinkedTarget, useAsyncGraphLayout, useEditTransaction, useEditHistory,
   type LinkedRevealResult, type LoadViewTarget, type TransactionOutcome,
   type AsyncGraphGestureListeners, type GraphGesture, type GraphGestureEnd, type GraphGestureKind,
+  type GraphLabelEdit, type GraphSelectionMode, type NetworkGroupSlot, type NetworkNodeToolbarSlot,
 } from '../../src'
 
 interface Owner { owner: string }
@@ -107,6 +108,17 @@ function editCancel(event: TimelineEditCancel) { return event.reason + event.bar
 // Gesture events and the async layout's ready-made listeners.
 function gestureStart(event: GraphGesture) { const kind: GraphGestureKind = event.kind; return kind + event.source }
 function gestureEnd(event: GraphGestureEnd) { return event.kind + event.source + (event.outcome === 'committed' ? 1 : 0) }
+// Label proposals, the lasso mode and the toolbar and group slots.
+function labelEdit(change: GraphLabelEdit) { return change.kind + change.id + change.before + change.after }
+const validateLabelEdit = (change: GraphLabelEdit) => change.after.trim().length > 0 || 'Empty'
+const lasso: GraphSelectionMode = 'lasso'
+type TeamGroup = NetworkGroup & { team: string }
+const teamGroups: TeamGroup[] = [{ id: 'g', label: 'Group', nodeIds: ['a'], team: 'Core' }]
+const toolbarProps: NetworkNodeToolbarSlot<TaskNode> = { node: nodes[0]!, box: { x: 0, y: 0, width: 1, height: 1, rank: 0 }, scale: 1 }
+const groupProps: NetworkGroupSlot<TeamGroup> = { group: teamGroups[0]!, box: { x: 0, y: 0, width: 1, height: 1 }, depth: 0 }
+// @ts-expect-error The selection mode is 'box' or 'lasso'.
+const circle: GraphSelectionMode = 'circle'
+void [toolbarProps, groupProps, circle]
 // @ts-expect-error Camera zoom is not a reported gesture.
 const zoomGesture: GraphGestureKind = 'zoom'
 const asyncGraph = useAsyncGraphLayout({
@@ -257,6 +269,35 @@ void [fromTask, appliedBars, msConstrained, notAKind, textConstraint]
   <NetworkGraph :nodes="nodes" :edges="edges" @gesture-end="editCancel" />
   <!-- @vue-expect-error The routing policy is 'builtin' or 'preserve'. -->
   <NetworkGraph :nodes="nodes" :edges="edges" routing-policy="keep" />
+
+  <!-- Toolbar and minimap slots receive the item types; label proposals are typed. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" editable-labels :selection-mode="lasso" box-select show-minimap
+    :validate-label-edit="validateLabelEdit" @label-edit="labelEdit" @label-edit-rejected="(change, text) => labelEdit(change) + reason(text)">
+    <template #node-toolbar="{ node, box, scale }">
+      <button type="button">{{ owner(node.data) }} {{ priority(node.priority) }} {{ box.width * scale }}</button>
+    </template>
+    <template #edge-toolbar="{ edge, point, scale }">
+      <button type="button">{{ weight(edge.data) }} {{ point.x * scale }}</button>
+      <!-- @vue-expect-error The edge data is not `any`. -->
+      {{ edge.data?.missing }}
+    </template>
+    <template #minimap-node="{ node, box, selected }">
+      <rect :width="box.width" :data-owner="owner(node.data)" :data-selected="flag(selected)" />
+    </template>
+  </NetworkGraph>
+  <NetworkGraph :nodes="nodes" :edges="edges" :groups="teamGroups">
+    <template #group="{ group, box, depth }">
+      <text :x="box.x">{{ group.label }} {{ group.team }} {{ depth }}</text>
+      <text>
+        <!-- @vue-expect-error A group has no `missing` field. -->
+        {{ group.missing }}
+      </text>
+    </template>
+  </NetworkGraph>
+  <!-- @vue-expect-error The selection mode is 'box' or 'lasso'. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" selection-mode="circle" />
+  <!-- @vue-expect-error A label validator receives label edits, not node moves. -->
+  <NetworkGraph :nodes="nodes" :edges="edges" :validate-label-edit="nodeMoves" />
 
   <!-- Untyped items compile as before, with `unknown` data. -->
   <NetworkGraph :nodes="untypedNodes" :edges="untypedEdges" :groups="groups" @select="id => reason(id)">

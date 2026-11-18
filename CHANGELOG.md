@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- NetworkGraph inline label editing (`editableLabels`): a double-click, or F2 on a focused node or edge, opens a text editor over the label. Enter or leaving the editor proposes the text through `label-edit` (`GraphLabelEdit` with `kind`, `id`, `before` and `after`), Escape discards it, and new data or a new layout cancels it. `validateLabelEdit` and `label-edit-rejected` follow the other validators. The editor is named "Edit label of" plus the label (`labels.editLabel`); `labels.labelRejected` localizes the rejection.
+- NetworkGraph lasso selection: `selectionMode: 'lasso'` turns the `boxSelect` Shift-drag into a free-form outline that selects the nodes whose centre it encloses, with the same modifiers, auto-pan, Escape and events as box selection. Core exports the hit tests `graphPointInPolygon` and `graphNodesInPolygon` and the `GraphSelectionMode` type.
+- NetworkGraph slots: `node-toolbar` and `edge-toolbar` (HTML anchored above the only selected node or the selected edge, named by `labels.nodeToolbar` and `labels.edgeToolbar`), `group` (a group's frame and label, keeping a transparent move handle) and `minimap-node` (a node in the minimap), typed by `NetworkNodeToolbarSlot`, `NetworkEdgeToolbarSlot`, `NetworkGroupSlot` and `NetworkMinimapNodeSlot`. Slot content is not exported to SVG or PNG.
+- CSS: `vw-label-editor`, `vw-lasso-selection`, `vw-node-toolbar`, `vw-edge-toolbar`, `vw-group-handle`, `vw-minimap-custom` and the `vw-has-slot` and `vw-labels-editable` modifiers, and the variables `--vw-label-editor-width` and `--vw-toolbar-offset`. The group frame, group label and minimap rectangle rules no longer reach slot content; their specificity is unchanged.
+
+### Examples
+
+- The **Edit graph** tools add **Edit labels**, **Lasso selection** and **Item toolbars** (node and edge toolbars with Frame and Remove actions, a custom group frame and round minimap nodes).
 
 ## 0.5.0 - 2026-11-17
 
