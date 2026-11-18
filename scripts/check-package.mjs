@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { reachableDeclarations } from './declaration-graph.mjs'
 
 // Run through npm run test:package so the build is fresh and npm's CLI path is available.
 // Only the temporary consumer installs dependencies; the repository lockfile is unchanged.
@@ -54,6 +55,12 @@ try {
   const tsc = join(root, 'node_modules/typescript/bin/tsc')
   const installOptions = ['--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false']
   npm(['install', ...installOptions, '--omit=peer', tarball], consumer)
+  // Only declarations reachable from the two public entries may ship, so internal helper files cannot be deep-imported.
+  const installedTypes = join(consumer, 'node_modules', manifest.name, 'dist', 'types')
+  const reachable = await reachableDeclarations(['index.d.ts', 'core/index.d.ts'].map(entry => join(installedTypes, entry)))
+  const reachablePaths = new Set([...reachable].map(path => `dist/types/${relative(installedTypes, path).split(sep).join('/')}`))
+  const unreachable = [...files].filter(path => path.startsWith('dist/types/') && !reachablePaths.has(path))
+  assert.deepEqual(unreachable, [], `Declaration files not reachable from the public entries: ${unreachable.join(', ')}`)
   const coreProbe = `
     import assert from 'node:assert/strict'
     import { createTimeScale, layoutLayeredGraph } from '${manifest.name}/core'

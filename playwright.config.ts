@@ -3,9 +3,9 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './test/browser',
   fullyParallel: false,
-  // The specs share one server on port 4173 and include timing-sensitive pointer scenarios (hover delays, auto-pan);
-  // they run one at a time in a single worker, as they did when they were one file.
-  workers: 1,
+  // The specs share one static server on port 4173 and must not depend on each other or on server state.
+  // Two workers run whole files side by side (fullyParallel stays off); fixed, so CI and local runs behave the same.
+  workers: 2,
   use: {
     baseURL: 'http://127.0.0.1:4173',
     viewport: { width: 1440, height: 1000 },

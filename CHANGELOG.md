@@ -72,6 +72,10 @@
 - The **Edit graph** tools add **Typed ports** (a small graph with typed, directed and limited ports that shows valid-target hints and rejection reasons), **Edit labels**, **Lasso selection** and **Item toolbars** (node and edge toolbars with Frame and Remove actions, a custom group frame and round minimap nodes).
 - The demo app lists its examples in one registry (`examples/demos.ts`) and shares a panel frame, a status line and an ID helper between demos. Visible text, accessible names and default states are unchanged.
 
+### Packaging
+
+- Internal declaration files are no longer shipped: the build removes every file under `dist/types` that the declarations of `vue-weave` and `vue-weave/core` do not reach, and `npm run test:package` fails if one is packed. Deep imports of internal `.d.ts` paths were never supported. The entry declarations, JavaScript and stylesheet are unchanged.
+
 ## 0.5.0 - 2026-11-17
 
 This is a minor release because of the two type changes under "Breaking changes": TypeScript code that lists every value of `ScheduleReasonKind` or `PlanningDiagnosticCode` needs a new case. Code that runs today behaves the same, since the new values only appear once a plan uses manual tasks. Everything else is additive and opt-in: without the new fields, props and options, results, server markup, routes, exports and accessible names are the same as in 0.4.0.
