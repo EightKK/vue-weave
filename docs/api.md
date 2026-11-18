@@ -920,6 +920,8 @@ Import pure functions and types from `vue-weave/core`. The Vue entry also re-exp
 | scheduledBarFields(task) | `ScheduledBarFields` for a TimelineBar from a scheduled task: start, end, critical, latestEnd and, only for work in more than one segment, segments. Returns new objects |
 | propagateEdit(input, edit) | Reschedule with one task pinned at a new start (and optionally a new end) and list every task whose dates change, including summary tasks whose rolled-up dates follow: a `PropagateEditResult`. Editing a summary task throws an Error; see [Propagate an edit](scheduling.md#propagate-an-edit) |
 | rescheduleFromStatusDate(input, statusDate, progress) | Reschedule a plan at a status date from reported progress: done tasks keep their dates, partly done tasks keep their done work and continue at or after the status date, and unstarted tasks start no earlier than it. FS and SS links into started tasks and every link into done tasks no longer apply; FF and SF links into partly done tasks still bound their finish and can delay the remaining work. Returns a `ScheduleResult`; see [Reschedule from a status date](scheduling.md#reschedule-from-a-status-date) |
+| rescheduleFromActuals(input, statusDate, actuals) | Reschedule a plan from recorded actual intervals (`ReadonlyMap<string, TaskActuals>`): the actuals are kept exactly as recorded and only the remaining work is scheduled from the status date. Returns a `RescheduleFromActualsResult` with the forecast `schedule`, the original `plan`, per-task `ActualsTask` entries and `diagnostics`; see [Recorded actuals](#recorded-actuals) and [Reschedule from recorded actuals](scheduling.md#reschedule-from-recorded-actuals) |
+| actualsTimelineBars(result, options?) | GanttChart bars for a `rescheduleFromActuals` result: a solid actual bar and an outline forecast bar per task, with the plan as a baseline; see [Recorded actuals](#recorded-actuals) |
 | scheduleToGraph(result, dependencies, options?) | A PERT network diagram for NetworkGraph from a successful schedule; see [Network diagram from a schedule](#network-diagram-from-a-schedule) |
 | toMsProjectXml(project, options?), toICalendar(events, options?), toCsv(table) | Interchange documents as strings; see [Interchange exports](#interchange-exports) |
 | parseCsv(text, options?), timelineFromCsvTable(table, options) | CSV import: records of strings, then `{ rows, bars }`; see [Interchange exports](#interchange-exports) |
@@ -1193,6 +1195,51 @@ import { fromICalendar, timelineFromICalendar } from 'vue-weave/core'
 const { events, warnings } = fromICalendar(await file.text(), { utcOffsetMinutes: 540 })
 const { rows, bars } = timelineFromICalendar(events)
 ```
+
+### Recorded actuals
+
+`rescheduleFromActuals(input, statusDate, actuals)` replans from what actually happened instead of a progress share. `actuals` is a `ReadonlyMap` from task ID to `TaskActuals`:
+
+| Field | Meaning |
+| --- | --- |
+| `intervals` | Recorded working intervals, half-open `[start, end)` in absolute time, possibly several (start, interruption, resume). Each must be finite, have `end > start`, align with the horizon and quantum and lie inside `input.range`; otherwise RangeError. They are never moved, clipped to a calendar or merged with the forecast |
+| `remainingWork` | Optional working time still to do, in the input's units on the task's calendar; a non-negative multiple of the quantum (RangeError otherwise). Default: `duration` minus the elapsed length of the intervals (overlaps counted once), at least 0 |
+| `finished` | Optional `true` when the task is complete. Requires at least one interval (Error) |
+
+The status date is validated like that of `rescheduleFromStatusDate`. Actuals that are not a Map, an unknown task, a summary task or an entry without an `intervals` array throw an Error; entries of inactive tasks are validated and ignored. The arguments are not modified.
+
+`RescheduleFromActualsResult` is a union on `ok`, which equals `schedule.ok`:
+
+| Field | Meaning |
+| --- | --- |
+| `schedule` | The forecast `ScheduleResult` with the input's task and link IDs. A started task spans from its first actual start to its forecast finish and its `work` is its sorted actual intervals followed by its remaining work; its latest dates and float describe the remaining work. A finished task spans its actuals, with latest dates equal to its dates, float 0 and `critical` false |
+| `plan` | `scheduleTasks(input)`, the original plan |
+| `tasks` | One `ActualsTask` per active task in input order |
+| `diagnostics` | `ActualsDiagnostic` entries, task by task, followed by `toPlanningDiagnostics(schedule)` |
+| `statusDate` | The status date |
+
+An `ActualsTask` has `id`, `state` (`ActualsTaskState`: `not-started`, `in-progress` or `finished`), `actual` (copies of the recorded intervals in input order), `remaining` (the forecast working segments of the remaining work; empty for finished, manual and summary tasks, milestones and a failed schedule), `performedWork`, `remainingWork`, the forecast `start` and `end` (after a failure, the span of the actuals, or absent), `plan` (the task's dates in `plan`, when it succeeded), `offCalendar` (the parts of the actuals outside the task's calendar after pauses) and, when they apply, `parentId`, `summary` and `manual`. A summary task sums `performedWork` and `remainingWork` of its subtasks and is `finished` when all of them are.
+
+An `ActualsDiagnostic` has the shape of a `PlanningDiagnostic` (`id`, `code`, `severity`, `entities` with the task, `range`, empty `reasonIds`), so both fit in one list. `ActualsDiagnosticCode`:
+
+| Code | Severity | Range |
+| --- | --- | --- |
+| `actual-overlap` | error | The overlapping part of two intervals of the task |
+| `actual-after-status-date` | warning | The part of an interval after the status date |
+| `actual-outside-calendar` | warning | A part of an interval outside the task's working time |
+| `actual-contradiction` | error | None: the task is `finished` but has a positive `remainingWork` |
+
+`actualsTimelineBars(result, options?)` returns `TimelineBar[]` in task order, without summary tasks (use GanttChart `showSummaries` for their rows). A task with actuals gets a solid bar `<label> · actual` spanning them, with the merged intervals as `segments` when there are several; a task with remaining work, and an unstarted or manual task, gets an outline bar `<label> · forecast` over its forecast work. After a failed schedule only actual bars are returned. The original plan becomes a baseline of the task's first bar. `ActualsTimelineBarOptions`:
+
+| Option | Default |
+| --- | --- |
+| `label(taskId)` | The task ID |
+| `rowId(taskId)` | The task ID |
+| `barId(taskId, part)` | `taskId + ':' + part`, with `part` `actual` or `forecast` |
+| `partLabels` | `{ actual: 'actual', forecast: 'forecast' }`, appended to the label after ` · ` |
+| `descriptions` | `{ actual: 'Recorded actual work', forecast: 'Remaining work forecast' }`, the bars' `description` |
+| `tones` | `{ actual: 'teal', forecast: 'blue' }` |
+| `baselineId` | `timelineBaselineId`: the plan becomes the bar's `baseline`. Another ID adds a named `baselines` entry; `false` adds none |
 
 ### Network diagram from a schedule
 

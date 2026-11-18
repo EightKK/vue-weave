@@ -175,6 +175,48 @@ Tasks with `manual` dates keep them whatever their progress; their outgoing link
 
 The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
 
+## Reschedule from recorded actuals
+
+`rescheduleFromStatusDate` and `rescheduleFromActuals` answer different questions, and neither changes the other's results:
+
+| | `rescheduleFromStatusDate(input, statusDate, progress)` | `rescheduleFromActuals(input, statusDate, actuals)` |
+| --- | --- | --- |
+| Input per task | A completed share from 0 to 1 | Recorded actual intervals `[start, end)`, an optional `remainingWork` and an optional `finished` flag |
+| Done work | `progress × duration`, placed from the planned start (or ending at the status date) on the task's calendar | Exactly the recorded intervals, also on breaks, holidays or after the status date |
+| Remaining work | `duration` minus the done work | `remainingWork`, or by default `duration` minus the elapsed length of the actuals (overlaps once), at least 0 |
+| Result | A `ScheduleResult` | A `RescheduleFromActualsResult`: the forecast `schedule`, the original `plan`, per-task `actual` and `remaining` work, and diagnostics |
+
+Use the progress share when only a percentage is known. Use recorded actuals when the shop floor reports when work actually ran, for example "10:10–10:40 and 11:20–12:00". The library standardises only time and quantity: it never derives remaining work from good-piece counts or shop-floor percentages. Convert those to `remainingWork` yourself, in the task's working-time units; when you omit it, the default rule above applies.
+
+```ts
+import { actualsTimelineBars, rescheduleFromActuals } from 'vue-weave/core'
+
+// a (4 units) → b (4 units), continuous time. a started late at 2, stopped at 3, resumed at 5 and ran until 6.
+const result = rescheduleFromActuals(input, 7, new Map([
+  ['a', { intervals: [{ start: 2, end: 3 }, { start: 5, end: 6 }] }],
+]))
+// a: actual [[2, 3], [5, 6]] as recorded, 2 units performed, 2 remaining at [7, 9); b now runs [9, 13).
+const bars = actualsTimelineBars(result, { label: id => names.get(id)! })
+```
+
+The rules per task:
+
+- **Not started** (no entry, or no intervals). The task starts no earlier than the status date, like progress 0, with every own bound and link. An explicit `remainingWork` replaces its duration.
+- **In progress** (intervals and remaining work). The remaining work starts no earlier than the status date or the end of the last actual interval, whichever is later, and is placed on the task's calendar and pauses. Its start has happened, so, as for a started task in `rescheduleFromStatusDate`, its `startNoEarlierThan`, `startNoLaterThan`, `fixedStart`, `mode`, incoming FS and SS links and the start bounds inherited from its summaries no longer apply, even when its predecessors are unfinished. Incoming FF and SF links (with lag), `finishNoEarlierThan`, `finishNoLaterThan` and the deadline still bind its finish: the remaining work then resumes later. Outgoing SS and SF links use its first actual start; FS and FF links use its forecast finish.
+- **Finished** (`finished: true`, or no remaining work). The task spans its actuals and ends at its last actual end. Like a manual task, it ignores every incoming link and own bound, and only the project deadline can make it infeasible. Successors follow its last actual end. Pass `remainingWork` to keep a task that overran its duration open.
+
+Actuals are facts, so contradictions in them are reported as diagnostics and never corrected: overlapping intervals of one task (`actual-overlap`, an error; the overlap counts once), an interval after the status date (`actual-after-status-date`, a warning; the remaining work then starts after it), an interval outside the task's working time after pauses (`actual-outside-calendar`, a warning; the result's `offCalendar` lists the parts) and a finished task with positive `remainingWork` (`actual-contradiction`, an error; the explicit `remainingWork` is scheduled). Malformed numbers throw instead: a status date or interval that is not finite, aligned with the quantum or inside the range, an interval that does not end after it starts, and an invalid `remainingWork` throw a RangeError.
+
+When the remaining work cannot meet a bound or link, for example a `finishNoLaterThan` or the deadline, `ok` is false, `schedule` is the `infeasible` (or `cycle`) failure with the input's task and link IDs, `diagnostics` ends with its `schedule-infeasible` entry, and `tasks` still holds every task's actuals, with the span of its actuals as its dates. Nothing is thrown.
+
+Manual tasks keep their manual dates: their actuals are kept and checked, but do not move them. Summary tasks roll up the actual and forecast dates of their subtasks; an actuals entry for a summary throws an Error. Entries of inactive tasks are validated and ignored. `explain` is not supported; schedule `input` itself for a trace of the plan.
+
+### Show plan, actuals and forecast in GanttChart
+
+`actualsTimelineBars(result, options?)` composes existing bar features, so no new chart prop is needed. On each task's row, the recorded actuals are a solid bar named `<label> · actual` (several intervals become `segments`), the remaining work is an outline bar named `<label> · forecast`, and the original plan is the baseline of the first bar. Solid and outline also differ in forced-colors mode, and each bar's `description` says "Recorded actual work" or "Remaining work forecast", so screen readers hear which part is which. SVG and PNG export draw the same bars. Pass `baselineId: 'plan'` with GanttChart `baselineIds` and `baselineLabel` to call the strip "Original plan", and add a legend in the `legend` slot. Show summary rows with `showSummaries`.
+
+The scheduling demo's **Recorded actuals** option shows a finished task that overran, a late start that ran into the lunch break and resumed, an upward revision of remaining work (**Welding needs 3 h more**) and unstarted successors whose forecast moves while every actual bar stays where it was.
+
 ## Network diagram
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Edges are labelled with the link type when it is not FS and with a non-zero `lag`, formatted by `formatLag` (default `formatDependencyLag`, such as `SS +2 h`). Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).
@@ -260,6 +302,7 @@ const plan = scheduleTasks({
 | `propagateEdit` | An edit moves the manual dates (see [Propagate an edit](#propagate-an-edit)) | Editing one throws an Error |
 | `levelResources` | Never moved. Their capacity is reserved first, before any other task; one that finds too little capacity at its dates keeps them and is listed in `unresolvedTaskIds`, with its overload in `overloads` | Left out with their assignments |
 | `rescheduleFromStatusDate` | Keep their dates whatever their progress | Progress entries are accepted and ignored |
+| `rescheduleFromActuals` | Keep their manual dates; their actuals are kept, checked and reported, and `remaining` is empty | Actuals entries are validated and ignored |
 | `calculateResourceLoad` | Their `work` counts like any other | Pass `{ inactiveTaskIds: result.inactiveTaskIds }` so their assignments take no capacity instead of throwing |
 | `buildPlacementInput` | A link from an unplaced task into a placed manual task is excluded without a diagnostic | Links that touch them are excluded without a diagnostic |
 | `scheduleToGraph` | A node with zero float, never critical | Left out with the links that touch them |
@@ -321,6 +364,7 @@ const bars = plan.tasks.filter(task => !task.summary).map(task => ({ id: task.id
 | `scheduleTasks` | Dates, latest dates, float and critical flag rolled up from the subtasks; `summary: true`, and `parentId` on subtasks |
 | `propagateEdit` | Editing a summary throws an Error: edit its subtasks, and `changes` lists the summaries whose rolled-up dates move with them |
 | `rescheduleFromStatusDate` | Progress entries for summaries are accepted and ignored. A started or finished subtask no longer inherits the start bounds of its summaries (links into them and their `startNoEarlierThan`), like its own; unstarted subtasks still do |
+| `rescheduleFromActuals` | Actuals entries for summaries throw an Error: record them on the subtasks. A summary rolls up the actual and forecast dates of its subtasks, so it starts at the earliest actual start. A started or finished subtask no longer inherits the start bounds of its summaries, as with `rescheduleFromStatusDate` |
 | `levelResources` | Levels the subtasks; summaries roll up from the leveled subtasks, are never delayed themselves and are not listed in `delays`. Assignments to a summary are accepted and take no capacity |
 | `calculateResourceLoad` | A summary's `work` is empty, so its assignments take no capacity |
 | `buildPlacementInput` | A placed subtask whose summary is not placed moves to its nearest placed ancestor, or to the top level |

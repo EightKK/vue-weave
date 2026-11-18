@@ -7054,3 +7054,44 @@ test('typed port rules hint valid targets, reject type and limit violations with
   await expect(page.getByText('No rule violations', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('the scheduling demo shows plan, recorded actuals and remaining forecast from rescheduleFromActuals', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  // Off by default: the scheduling page keeps its charts.
+  await expect(page.getByRole('region', { name: 'Recorded actuals timeline', exact: true })).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Recorded actuals', exact: true }).check()
+  const chart = page.getByRole('region', { name: 'Recorded actuals timeline', exact: true })
+  await expect(chart).toBeVisible()
+  await chart.scrollIntoViewIfNeeded()
+  const bar = (name: string) => chart.getByRole('button', { name, exact: true })
+  // Finished cutting keeps its overrun actual and has no forecast; interrupted milling keeps both actual pieces.
+  await expect(bar('Cut stock · actual 08:00–11:30')).toHaveCount(1)
+  await expect(chart.getByRole('button', { name: /^Cut stock · forecast/ })).toHaveCount(0)
+  await expect(bar('Mill housing · actual 11:40–14:00')).toHaveAccessibleDescription(/Recorded actual work/)
+  await expect(bar('Mill housing · actual 11:40–14:00').locator('.vw-gantt-segment')).toHaveCount(2)
+  await expect(bar('Mill housing · forecast 14:00–16:40')).toHaveAccessibleDescription(/Remaining work forecast/)
+  await expect(bar('Mill housing · forecast 14:00–16:40')).toHaveClass(/vw-is-outline/)
+  await expect(bar('Mill housing · actual 11:40–14:00')).toHaveClass(/vw-is-solid/)
+  // The original plan is the baseline strip of each task's first bar.
+  await expect(bar('Paint frame · forecast 08:00–10:00')).toHaveAccessibleDescription(/Original plan/)
+  await expect(chart.locator('.vw-gantt-baseline')).toHaveCount(5)
+  await expect(page.getByRole('list', { name: 'Recorded actuals legend', exact: true }).getByRole('listitem')).toHaveCount(3)
+  const diagnostics = page.getByRole('list', { name: 'Recorded actuals diagnostics', exact: true })
+  await expect(diagnostics.getByRole('listitem')).toHaveText(['Mill housing: Actual work outside the shift calendar (kept as recorded) 12:00–12:20'])
+  await expect(page.getByTestId('actuals-finish')).toHaveText('11:00')
+
+  // Without the upward revision welding is finished; successors move while every actual bar stays where it was.
+  const actualNames = () => chart.getByRole('button', { name: / · actual / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')))
+  const before = await actualNames()
+  expect(before).toHaveLength(3)
+  await page.getByRole('checkbox', { name: 'Welding needs 3 h more', exact: true }).uncheck()
+  await expect(bar('Paint frame · forecast 16:40–09:40')).toHaveCount(1)
+  await expect(bar('Pack · forecast 09:40–10:40')).toHaveCount(1)
+  await expect(chart.getByRole('button', { name: /^Weld frame · forecast/ })).toHaveCount(0)
+  await expect(page.getByTestId('actuals-finish')).toHaveText('10:40')
+  expect(await actualNames()).toEqual(before)
+  expect(errors).toEqual([])
+})

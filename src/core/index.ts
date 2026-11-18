@@ -54,6 +54,11 @@ export {
   timelineWbsCodes, timelineRowPosition, moveTimelineRow, indentTimelineRow, outdentTimelineRow,
 } from './rowHierarchy.js'
 export { rescheduleFromStatusDate } from './statusDate.js'
+export { rescheduleFromActuals, actualsTimelineBars } from './actuals.js'
+export type {
+  TaskActuals, ActualsDiagnostic, ActualsDiagnosticCode, ActualsTask, ActualsTaskState, RescheduleFromActualsResult, RescheduleFromActualsFields,
+  ActualsTimelineBarOptions,
+} from './actuals.js'
 export {
   toMsProjectXml, fromMsProjectXml, timelineFromMsProject, workCalendarsFromMsProject, resourceLoadFromMsProject,
   toICalendar, fromICalendar, timelineFromICalendar, toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable,
