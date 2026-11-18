@@ -7138,3 +7138,56 @@ test('plan scenarios: create a candidate, compare, highlight a row, discard, ado
   await expect(revision).toHaveText('Current plan revision r1, finish 17:00')
   expect(errors).toEqual([])
 })
+
+test('the process lanes demo draws one named lane per department, keeps lane order when a step is added and follows the flow direction', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Process lanes', exact: true }).click()
+  const stage = page.getByLabel('Process lane graph', { exact: true })
+  await stage.scrollIntoViewIfNeeded()
+  const status = page.getByRole('status', { name: 'Process lane status' })
+  const names = ['Purchasing', 'Machining', 'Inspection', 'Shipping']
+  const lane = (name: string) => stage.getByRole('group', { name, exact: true })
+  const step = (name: string) => stage.getByRole('button', { name, exact: true })
+  for (const name of names) await expect(lane(name)).toBeAttached()
+  await expect(stage.locator('.vw-swimlane')).toHaveCount(4)
+  const box = async (locator: ReturnType<typeof lane>) => (await locator.boundingBox())!
+  const order = async (axis: 'x' | 'y') => Promise.all(names.map(async name => (await box(lane(name)))[axis]))
+  const ascending = (values: number[]) => values.every((value, i) => i === 0 || value > values[i - 1]!)
+  const within = async (node: string, name: string) => {
+    const a = await box(step(node)), b = await box(lane(name))
+    return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
+  }
+  expect(ascending(await order('y'))).toBe(true)
+  expect(await within('Cut stock', 'Machining')).toBe(true)
+
+  // A new step lands in the chosen (empty) lane; the lane order stays.
+  await page.getByLabel('Lane for new step').selectOption({ label: 'Shipping' })
+  await page.getByRole('button', { name: 'Add step', exact: true }).click()
+  await expect(status).toHaveText('Added Step 1 to Shipping.')
+  await expect(step('Step 1')).toBeVisible()
+  expect(await within('Step 1', 'Shipping')).toBe(true)
+  expect(ascending(await order('y'))).toBe(true)
+
+  // Dragging a step onto another lane is a proposal that the demo turns into a lane change.
+  const from = await box(step('Deburr')), target = await box(lane('Inspection'))
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2, target.y + target.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await expect(status).toHaveText('Deburr moved to Inspection.')
+  await expect.poll(() => within('Deburr', 'Inspection')).toBe(true)
+
+  // Top to bottom: vertical lanes stacked left to right in the same order; right to left keeps the rows.
+  await page.getByLabel('Flow direction').selectOption('TB')
+  await expect.poll(async () => ascending(await order('x'))).toBe(true)
+  expect(await within('Step 1', 'Shipping')).toBe(true)
+  await page.getByLabel('Flow direction').selectOption('RL')
+  await expect.poll(async () => ascending(await order('y'))).toBe(true)
+  await page.getByLabel('Process edge style').selectOption('orthogonal')
+  await page.getByLabel('Route around steps').check()
+  await expect(stage.locator('.vw-network-edge')).toHaveCount(8)
+  expect(await within('Measure', 'Inspection')).toBe(true)
+  expect(errors).toEqual([])
+})

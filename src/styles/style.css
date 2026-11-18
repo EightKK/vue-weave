@@ -143,6 +143,23 @@
 .vw-network-group .vw-group-handle { fill: transparent; stroke: none; pointer-events: all; outline: none; }
 .vw-network-group .vw-group-handle[role="button"] { cursor: grab; }
 .vw-network-group .vw-group-handle:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 2px; }
+/* Opt-in swimlanes of NetworkGraph (`lanes`): bands behind the graph, a header with a solid border and the title. They
+   never take the pointer, so panning, box selection and drops work over them. */
+.vw-swimlane rect, .vw-swimlane text { pointer-events: none; }
+.vw-swimlane-band { fill: var(--vw-lane-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1px; }
+.vw-swimlane.vw-is-alternate .vw-swimlane-band { fill: var(--vw-lane-fill-alternate, var(--vw-surface-muted, #f1f5f8)); }
+.vw-swimlane-header { fill: var(--vw-lane-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1.5px; }
+.vw-swimlane-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 12px; font-weight: 700; user-select: none; }
+.vw-network.vw-rtl .vw-swimlane-title text { direction: rtl; unicode-bidi: embed; }
+.vw-minimap .vw-minimap-lane { fill: none; stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+@media (forced-colors: active) {
+  /* Colours collapse, so bands keep a solid outline, alternate bands a dashed one and headers a thicker border. */
+  .vw-swimlane-band, .vw-swimlane-header { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-swimlane.vw-is-alternate .vw-swimlane-band { fill: Canvas; stroke-dasharray: 6 3; }
+  .vw-swimlane-header { stroke-width: 2.5px; }
+  .vw-swimlane-title text { forced-color-adjust: none; fill: CanvasText; }
+  .vw-minimap .vw-minimap-lane { fill: none; stroke: GrayText; }
+}
 
 .vw-gantt-corner.vw-column-group, .vw-gantt-row-label.vw-column-group { padding: 0; display: flex; flex-direction: row; justify-content: flex-start; gap: 0; }
 .vw-column-group > .vw-name-column { flex: 0 0 var(--vw-row-label-width); width: var(--vw-row-label-width); padding: 0 9px; display: flex; align-items: center; }

@@ -1,13 +1,13 @@
 import type { GraphEdge, GraphLayout, GraphLayoutDirection } from './graph.js'
 
-interface CrossingItem {
+export interface CrossingItem {
   rank: number
   a: number
   b: number
 }
 
 /** Count pairs of edges between the same two adjacent ranks whose endpoints strictly swap order. */
-function countAdjacentCrossings(items: CrossingItem[]): number {
+export function countAdjacentCrossings(items: CrossingItem[]): number {
   const groups = new Map<number, CrossingItem[]>()
   for (const item of items) {
     const group = groups.get(item.rank)
