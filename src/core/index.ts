@@ -65,6 +65,8 @@ export * from './viewBindings.js'
 export * from './editTransaction.js'
 
 export * from './graphTraversal.js'
+export { timelineBarsInRange, resolveTimeRangeTargets } from './timeRangeTargets.js'
+export type { TimelineBarActivity, TimelineBarsInRangeOptions, TimeRangeTargetsOptions, TimeRangeTargets } from './timeRangeTargets.js'
 export {
   projectResourceTimeline, createResourceTimelineProjector, resourceTimelineBarId, resolveResourceTimelineEdit,
   resolveResourceTimelineEdits, resourceTimelineCascade, proposeResourceAssignment,

@@ -5522,6 +5522,66 @@ test('linked views: the context toolbar follows the selected node and hides for 
   expect(errors).toEqual([])
 })
 
+test('linked views: a time range highlights the active tasks and, on request, related ones without selecting them', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  const controls = demo.getByRole('group', { name: 'Time range controls' })
+  const result = demo.getByRole('status', { name: 'Time range result' })
+  await expect(result).toHaveText('Time range off.')
+  await expect(controls.getByRole('combobox', { name: 'Range relation' })).toBeDisabled()
+  await controls.getByRole('checkbox', { name: 'Explore a time range' }).check()
+  // 10:30–11:30: both cutting orders run; preparation ended at 10:00.
+  await expect(result).toHaveText('Active 10:30–11:30: Cut order A, Cut order B.')
+  for (const label of ['Cut order A', 'Cut order B']) {
+    await expect(node(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(node(label)).toHaveAttribute('aria-pressed', 'false')
+    await expect(bar(label)).toHaveClass(/\bvw-is-highlighted\b/)
+    await expect(bar(label)).toHaveAttribute('aria-pressed', 'false')
+  }
+  await expect(node('Prepare stock')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(summary).toContainText('Nothing selected')
+
+  // Related tasks are marked separately (`relatedIds`) in the graph and are not active.
+  const relation = controls.getByRole('combobox', { name: 'Range relation' })
+  await relation.selectOption('successors')
+  await expect(result).toHaveText('Active 10:30–11:30: Cut order A, Cut order B. Related: Inspect, Pack.')
+  await expect(node('Inspect')).toHaveClass(/\bvw-is-related\b/)
+  await expect(node('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Prepare stock')).not.toHaveClass(/\bvw-is-related\b/)
+  await relation.selectOption('predecessors')
+  await expect(result).toHaveText('Active 10:30–11:30: Cut order A, Cut order B. Related: Prepare stock.')
+  await expect(node('Prepare stock')).toHaveClass(/\bvw-is-related\b/)
+  await expect(node('Inspect')).not.toHaveClass(/\bvw-is-related\b/)
+
+  // Restricting to the CNC cell rows and moving the range: cutting order B ends at 12:00 (half-open), so only A is active.
+  await relation.selectOption('active')
+  await controls.getByRole('combobox', { name: 'Range resource' }).selectOption('cnc')
+  await controls.getByLabel('Range start').fill('12:00')
+  await controls.getByLabel('Range end').fill('13:00')
+  await expect(result).toHaveText('Active 12:00–13:00: Cut order A.')
+  await expect(node('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await controls.getByLabel('Range end').fill('11:00')
+  await expect(result).toHaveText('The range end is before its start.')
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await controls.getByLabel('Range end').fill('13:00')
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+
+  // Range highlights never join a selection: deleting the selected bar proposes only that bar.
+  await bar('Pack').click()
+  await expect(summary).toContainText('Selected in timeline: Pack')
+  await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await bar('Pack').press('Delete')
+  await expect(demo.getByLabel('Delete proposals').locator('..')).toContainText('last: Pack;')
+  // Turning the range off removes its highlights and keeps the selection.
+  await controls.getByRole('checkbox', { name: 'Explore a time range' }).uncheck()
+  await expect(result).toHaveText('Time range off.')
+  await page.mouse.move(2, 2)
+  await expect(bar('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
 test('linked views: reveal handles collapsed groups, collapsed rows and unknown targets', async ({ page }) => {
   const { errors, demo, node, bar, navigation } = await openLinkedDemo(page)
   // Collapse the graph group, then select the bar of a hidden member in the timeline.

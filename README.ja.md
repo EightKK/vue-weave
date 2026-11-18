@@ -63,7 +63,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 ### 計画・連動・保存
 
-- ビューの連動：`useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。利用者が操作したビューだけが選択を持ち、ほかのビューには表示専用の強調（`highlightedNodeIds`、`highlightedEdgeIds`、`highlightedBarIds`、`highlightedLoadTargets`）を渡します。`target-enter`、`target-leave`、`target-activate` イベントが指している対象を通知し、`revealNode`、`revealBar`、`revealLinkedTarget` が折り畳まれたグループや行の中も含めてその対象へ移動します。
+- ビューの連動：`useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。利用者が操作したビューだけが選択を持ち、ほかのビューには表示専用の強調（`highlightedNodeIds`、`highlightedEdgeIds`、`highlightedBarIds`、`highlightedLoadTargets`）を渡します。`target-enter`、`target-leave`、`target-activate` イベントが指している対象を通知し、`revealNode`、`revealBar`、`revealLinkedTarget` が折り畳まれたグループや行の中も含めてその対象へ移動します。任意の時間範囲（`timelineBarsInRange`、`resolveTimeRangeTargets`、または `timeRange` オプション）を指定すると、その範囲に作業していた対象（分割バーは作業区間で判定）と、必要に応じてグラフ上で関連する対象を強調します。
 - リソースビュー：`projectResourceTimeline` は割り当てたリソースごとにタスクを表示し、負荷を二重に数えません。`resolveResourceTimelineEdit` は別の行へのドラッグを割当の変更に変換し、`buildPlacementInput` は未計画タスクを計算から除きます。GanttChart はアプリの一覧からのドロップを受け付けます（`droppable`、`bar-drop`）。
 - 理由の説明：`scheduleTasks(input, { explain: true })` と `levelResources` は各タスクの日程が決まった理由をトレースとして返します。`toPlanningDiagnostics` は循環、実行不能なタスク、負荷超過、平準化で解決できなかったタスクを、関係するタスクとリソースとともに一覧にします。
 - 非同期レイアウト：`useAsyncGraphLayout` はWorkerなど任意の非同期エンジンでレイアウトを計算し、そろった最新のフレームだけを表示します。`routingPolicy="preserve"` はポート付きの辺を含めてエンジンの配線を保持します。
