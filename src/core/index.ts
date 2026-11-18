@@ -30,6 +30,13 @@ export * from './graphView.js'
 export { graphPointInPolygon, graphNodesInPolygon } from './graphLasso.js'
 export { graphDeletion, removeGraphElements, cloneGraphElements } from './graphEditing.js'
 export type { GraphDeletion, GraphCloneOptions, GraphCloneResult } from './graphEditing.js'
+export {
+  createGraphConnectionChecker, checkGraphConnection, graphConnectionTargets, graphConnectionViolations, graphConnectionValidator,
+} from './graphPortRules.js'
+export type {
+  GraphPortDirection, GraphPortRule, GraphPortRules, GraphConnectionRejectionCode, GraphConnectionRejection, GraphConnectionCheck,
+  GraphConnectionViolation, GraphConnectionOrigin, GraphConnectionTargets, GraphConnectionChecker,
+} from './graphPortRules.js'
 export { graphAlignmentGuides, snapGraphPoint } from './graphSnapping.js'
 export type { GraphAlignment, GraphAlignmentGuide } from './graphSnapping.js'
 export { collapseGraphGroups } from './graphCollapse.js'

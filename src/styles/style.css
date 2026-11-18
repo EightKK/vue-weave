@@ -95,6 +95,15 @@
 .vw-network-node.vw-is-draggable { cursor: grab; }
 .vw-connect-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: crosshair; }
 .vw-connect-handle.vw-is-active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); outline: none; }
+/* Opt-in connection rule hints (NetworkGraph `connectionRules`) while a connection is in progress: a valid target is
+   larger and filled, an invalid one hollow, dashed and faded, so the two differ without colour. */
+.vw-connect-handle.vw-is-valid-target { r: 7.5px; fill: var(--vw-connect-valid, #1d7a4f); stroke: var(--vw-surface, #fff); stroke-width: 2.5px; }
+.vw-connect-handle.vw-is-invalid-target { fill: var(--vw-surface, #fff); stroke: var(--vw-connect-invalid, #a8361f); stroke-dasharray: 2 2; opacity: .65; cursor: not-allowed; }
+.vw-connect-handle.vw-is-valid-target:focus-visible, .vw-connect-handle.vw-is-invalid-target:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; opacity: 1; }
+@media (forced-colors: active) {
+  .vw-connect-handle.vw-is-valid-target { fill: Highlight; stroke: CanvasText; }
+  .vw-connect-handle.vw-is-invalid-target { fill: Canvas; stroke: GrayText; opacity: 1; }
+}
 .vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); }
 .vw-minimap svg { display: block; width: 100%; height: 100%; }
 .vw-minimap rect:where(:not(.vw-minimap-custom *)) { fill: var(--vw-edge, #76929f); }
@@ -331,7 +340,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
   --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
   --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
-  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
   --vw-dimmed-opacity: .4;
   --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
 }
@@ -349,7 +358,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
     --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
     --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
     --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
-  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
     --vw-dimmed-opacity: .4;
     --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
   }

@@ -6895,3 +6895,66 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
   await expect(status('Exported summary links SVG with 2 dependency lines.')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('typed port rules hint valid targets, reject type and limit violations with a reason and allow limit-1 reconnects', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Edit graph').check()
+  await page.getByLabel('Typed ports').check()
+  const graph = page.getByRole('group', { name: 'Typed port example', exact: true })
+  const status = page.getByRole('status', { name: 'Typed port status', exact: true })
+  const handle = (name: string) => graph.getByRole('button', { name, exact: true })
+  const edges = graph.locator('.vw-network-edge')
+  await expect(edges).toHaveCount(1)
+  await expect(page.getByText('No rule violations', { exact: true })).toBeVisible()
+  await expect(graph.locator('.vw-is-valid-target, .vw-is-invalid-target')).toHaveCount(0)
+
+  // A pointer drag from a number output marks the free number inputs valid and the rest invalid, with the reason.
+  await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
+  const a = (await handle('Start connection from Sensor · Reading').boundingBox())!
+  const b = (await handle('Start connection from Average · Input B').boundingBox())!
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+  await page.mouse.down()
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2 + 20, { steps: 6 })
+  await expect(handle('Connect to Average · Input B')).toHaveClass(/vw-is-valid-target/)
+  await expect(handle('Connect to Display · Show')).toHaveClass(/vw-is-valid-target/)
+  await expect(handle('Connect to Average · Input A')).toHaveClass(/vw-is-invalid-target/)
+  await expect(handle('Connect to Average · Input A')).toHaveAccessibleDescription('Average · Input A already has its maximum of 1 connection.')
+  await expect(handle('Connect to Title · Text')).toHaveAccessibleDescription('Title · Text allows only outgoing connections.')
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await expect(status).toHaveText('Connected sensor to average.')
+  await expect(edges).toHaveCount(2)
+  await expect(graph.locator('.vw-is-valid-target, .vw-is-invalid-target')).toHaveCount(0)
+
+  // The keyboard two-step connect gets the same hints and the same rejection path: text into a number input.
+  await handle('Start connection from Title · Text').press('Enter')
+  await expect(handle('Connect to Display · Show')).toHaveClass(/vw-is-valid-target/)
+  await expect(handle('Connect to Average · Input B')).toHaveClass(/vw-is-invalid-target/)
+  await handle('Connect to Average · Input B').press('Enter')
+  await expect(status).toHaveText('Rejected: Average · Input B accepts number, not text from Title · Text.')
+  await expect(edges).toHaveCount(2)
+
+  // A pointer drop on a full limit-1 input is rejected with its reason.
+  await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
+  const backup = (await handle('Start connection from Backup sensor · Reading').boundingBox())!
+  const full = (await handle('Start connection from Average · Input A').boundingBox())!
+  await page.mouse.move(backup.x + backup.width / 2, backup.y + backup.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(full.x + full.width / 2, full.y + full.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await expect(status).toHaveText('Rejected: Average · Input A already has its maximum of 1 connection.')
+  await expect(edges).toHaveCount(2)
+
+  // Reconnecting the source of the edge into the limit-1 input does not count that edge against its own limit.
+  await graph.getByRole('button', { name: 'Select edge reading', exact: true }).press('Enter')
+  await handle('Reconnect source of reading').press('Enter')
+  await expect(handle('Connect to Backup sensor · Reading')).toHaveClass(/vw-is-valid-target/)
+  await expect(handle('Connect to Title · Text')).toHaveClass(/vw-is-invalid-target/)
+  await handle('Connect to Backup sensor · Reading').press('Enter')
+  await expect(status).toHaveText('Reconnected reading-a.')
+  await expect(edges).toHaveCount(2)
+  await expect(page.getByText('No rule violations', { exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

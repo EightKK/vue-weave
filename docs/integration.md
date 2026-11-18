@@ -172,6 +172,13 @@ NetworkGraph editing aids add two variables, used only when the matching prop is
 | `--vw-background-pattern` | `--vw-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
 | `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
 
+NetworkGraph port rules (`connectionRules`) mark the connection handles while a connection or reconnection is in progress: a valid target (`.vw-connect-handle.vw-is-valid-target`) is drawn larger and filled, and an invalid one (`.vw-connect-handle.vw-is-invalid-target`) hollow with a dashed outline and faded, so the two differ without colour. In forced-colors mode valid targets are filled with `Highlight` and invalid ones outlined in `GrayText`. The rules add two variables, with values in the built-in dark themes:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-connect-valid` | `#1d7a4f` (dark `#6fd0a0`) | Fill of connection handles that are valid targets |
+| `--vw-connect-invalid` | `#a8361f` (dark `#ff8a80`) | Dashed outline of connection handles that are not valid targets |
+
 The opt-in label editor, lasso and toolbar slots of NetworkGraph use the theme colours: the lasso outline (`vw-lasso-selection`) is drawn in `--vw-accent`, and the label editor (`vw-label-editor`) and the toolbar containers (`vw-node-toolbar`, `vw-edge-toolbar`) use `--vw-surface`, `--vw-border`, `--vw-text` and, for the editor's border, `--vw-accent`. They add two length variables:
 
 | Variable | Default | Used for |

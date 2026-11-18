@@ -13,6 +13,7 @@ import DiagramStylesDemo from './DiagramStylesDemo.vue'
 import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
+import PortRulesDemo from './PortRulesDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
 import SchemaShowcase from './showcase/SchemaShowcase.vue'
 import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
@@ -336,6 +337,7 @@ const alignmentGuides = ref(false)
 // demo trims it and commits it as one history entry.
 const labelEditing = ref(false)
 const lassoSelect = ref(false)
+const typedPorts = ref(false)
 const itemSlots = ref(false)
 function validateLabel(change: GraphLabelEdit) {
   if (!change.after.trim()) return 'A label cannot be empty.'
@@ -571,6 +573,7 @@ function commit(change: TimelineEdit) {
           <label><input v-model="labelEditing" type="checkbox"> Edit labels</label>
           <label><input v-model="lassoSelect" type="checkbox"> Lasso selection</label>
           <label><input v-model="itemSlots" type="checkbox"> Item toolbars</label>
+          <label><input v-model="typedPorts" type="checkbox"> Typed ports</label>
           <label>Edge style <select v-model="edgeStyle"><option>curve</option><option>orthogonal</option><option>straight</option></select></label>
           <div class="graph-palette" role="group" aria-label="Node palette">
             <button v-for="item in paletteItems" :key="item.kind" type="button" class="palette-chip" draggable="true"
@@ -621,6 +624,7 @@ function commit(change: TimelineEdit) {
           </template>
         </NetworkGraph>
         <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions. Ctrl+C, Ctrl+V and Ctrl+D (⌘ on macOS) copy, paste and duplicate nodes.</p>
+        <PortRulesDemo v-if="graphEditing && typedPorts" />
         <div v-if="menu" ref="menuElement" class="graph-menu" role="menu" :aria-label="menu.label"
           :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeydown" @contextmenu.prevent>
           <button v-for="item in menu.items" :key="item.label" type="button" role="menuitem" tabindex="-1" @click="runMenuItem(item)">{{ item.label }}</button>
