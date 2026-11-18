@@ -404,15 +404,26 @@ function checkBaselines(bar: TimelineBar) {
   }
 }
 
+/** Options of `validateTimelineData`. */
+export interface TimelineDataOptions {
+  /**
+   * Accept a dependency end that names a summary row (a row other rows have as `parentId`) when no bar has that ID, as
+   * GanttChart `summaryDependencies` and `renderTimelineSvg` `summaryDependencies` draw them. Default false: every
+   * dependency end must be a bar ID.
+   */
+  summaryDependencies?: boolean
+}
+
 /**
  * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
  * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
  * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.) Throws a RangeError for a
- * dependency `lag` that is not a finite number.
+ * dependency `lag` that is not a finite number. With `options.summaryDependencies`, a dependency end may also be the ID
+ * of a summary row; an ID that is both a bar ID and a row ID always means the bar.
  */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
-  dependencies: readonly TimelineDependency[] = [], laneCount = 1,
+  dependencies: readonly TimelineDependency[] = [], laneCount = 1, options: TimelineDataOptions = {},
 ) {
   if (!Number.isInteger(laneCount) || laneCount <= 0) throw new RangeError('laneCount must be a positive integer')
   function uniqueIds(items: readonly { id: string }[], kind: string) {
@@ -444,8 +455,12 @@ export function validateTimelineData(
     if (bar.segments !== undefined) checkSegments(bar)
     if (bar.constraints !== undefined) checkConstraints(bar)
   }
+  // Summary rows (rows with child rows) that a dependency may end at with `summaryDependencies`.
+  const summaryIds = new Set<string>()
+  if (options.summaryDependencies) for (const row of rows) if (row.parentId !== undefined) summaryIds.add(row.parentId)
+  const known = (id: string) => barIds.has(id) || summaryIds.has(id)
   for (const dependency of dependencies) {
-    if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
+    if (!known(dependency.from) || !known(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
     if (dependency.from === dependency.to) {
       throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
     }

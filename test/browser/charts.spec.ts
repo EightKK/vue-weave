@@ -6800,3 +6800,98 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   await expect(page.locator('.vw-minimap .demo-minimap-node')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('the scheduling demo draws opt-in links to and from a summary task and edits them like other links', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Scheduling', exact: true }).click()
+  // Off by default: the scheduling page keeps its two charts.
+  await expect(page.getByRole('region', { name: 'Summary task links timeline', exact: true })).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Summary task links', exact: true }).check()
+  const chart = page.getByRole('region', { name: 'Summary task links timeline', exact: true })
+  await expect(chart).toBeVisible()
+  // The example is the last panel of the page; pointer gestures need it on screen.
+  await chart.scrollIntoViewIfNeeded()
+  const status = (text: string) => page.getByRole('status').filter({ hasText: text })
+  const links = chart.getByRole('button', { name: /^Select dependency / })
+  const into = chart.getByRole('button', { name: 'Select dependency Design review → Build phase FS', exact: true })
+  const out = chart.getByRole('button', { name: 'Select dependency Build phase → Final inspection FS', exact: true })
+  await expect(links).toHaveCount(2)
+  await expect(into).toHaveCount(1)
+  await expect(out).toHaveCount(1)
+
+  // The links end at the edges of the rollup bar: into its start, out of its finish.
+  const rollup = chart.locator('.vw-gantt-summary')
+  await expect(rollup).toHaveAttribute('title', 'Build phase · 2 · 10:00–13:00')
+  const edges = async () => {
+    const style = (await rollup.getAttribute('style'))!
+    const left = Number(/\+ ([\d.]+)px\)/.exec(style)![1]), width = Number(/width: ?([\d.]+)px/.exec(style)![1])
+    return { start: left, finish: left + width }
+  }
+  let edge = await edges()
+  await expect(into).toHaveAttribute('d', new RegExp(` H ${edge.start}$`))
+  await expect(out).toHaveAttribute('d', new RegExp(`^M ${edge.finish} `))
+
+  // Dragging a subtask moves the rollup bar and the link out of it during the preview and after the accepted edit.
+  const frame = chart.getByRole('button', { name: 'Frame 10:00–13:00', exact: true })
+  const box = (await frame.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2, { steps: 6 })
+  await expect(rollup).toHaveAttribute('title', 'Build phase · 2 · 10:00–14:00')
+  edge = await edges()
+  await expect(out).toHaveAttribute('d', new RegExp(`^M ${edge.finish} `))
+  await page.mouse.up()
+  await expect(status('Frame requested from 11:00. Build phase 10:00–14:00.')).toBeVisible()
+  await expect(chart.getByRole('button', { name: 'Final inspection 14:00–15:00', exact: true })).toBeVisible()
+  await expect(out).toHaveAttribute('d', new RegExp(`^M ${(await edges()).finish} `))
+
+  // Keyboard selection and deletion work as for links between bars.
+  await out.press('Enter')
+  await expect(status('Selected link build-inspect. Press Delete to remove it.')).toBeVisible()
+  await expect(out).toHaveAttribute('aria-pressed', 'true')
+  await out.press('Delete')
+  await expect(status('Deleted link build-inspect.')).toBeVisible()
+  await expect(links).toHaveCount(1)
+
+  // The rollup bar has link handles: drag from its finish onto a bar to propose a link out of the summary. Without the
+  // link, the inspection starts at the beginning of the horizon.
+  const source = (await chart.getByRole('button', { name: 'Start dependency from finish of Build phase', exact: true }).boundingBox())!
+  const target = (await chart.getByRole('button', { name: 'Final inspection 08:00–09:00', exact: true }).boundingBox())!
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target.x + 4, target.y + target.height / 2, { steps: 10 })
+  await expect(chart.locator('.vw-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
+  await page.mouse.up()
+  await expect(status('Added FS link from Build phase to Final inspection.')).toBeVisible()
+  await expect(out).toHaveCount(1)
+  await expect(chart.getByRole('button', { name: 'Final inspection 14:00–15:00', exact: true })).toBeVisible()
+
+  // Links into the summary go through validateConnection: a duplicate and an FF link into it are rejected.
+  await chart.getByRole('button', { name: 'Start dependency from start of Design review', exact: true }).press('Enter')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Build phase', exact: true }).press('Enter')
+  await expect(status('These tasks are already linked.')).toBeVisible()
+  await into.press('Enter')
+  await into.press('Delete')
+  await expect(status('Deleted link design-build.')).toBeVisible()
+  await chart.getByRole('button', { name: 'Start dependency from finish of Design review', exact: true }).press('Enter')
+  await chart.getByRole('button', { name: 'Connect dependency to finish of Build phase', exact: true }).press('Enter')
+  await expect(status('A FF link cannot end at the summary Build phase. Link to the subtask that should finish instead.')).toBeVisible()
+  await expect(links).toHaveCount(1)
+
+  // Dropping a dragged link on the rollup bar body joins its nearer end.
+  const from = (await chart.getByRole('button', { name: 'Start dependency from finish of Design review', exact: true }).boundingBox())!
+  const bar = (await rollup.boundingBox())!
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + 6, bar.y + bar.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await expect(status('Added FS link from Design review to Build phase.')).toBeVisible()
+  await expect(into).toHaveCount(1)
+
+  // The SVG export draws the summary links too.
+  await page.getByRole('button', { name: 'Export summary links SVG', exact: true }).click()
+  await expect(status('Exported summary links SVG with 2 dependency lines.')).toBeVisible()
+  expect(errors).toEqual([])
+})

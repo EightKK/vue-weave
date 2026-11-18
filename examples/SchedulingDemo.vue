@@ -8,6 +8,7 @@ import {
 } from '../src'
 import { download } from './download'
 import PlanningDiagnostics from './components/PlanningDiagnostics.vue'
+import SummaryLinksDemo from './SummaryLinksDemo.vue'
 
 const hour = 3_600_000
 const local = (value: string) => Date.parse(value + '+09:00')
@@ -26,6 +27,8 @@ const nonWorking = invertWorkPeriods(shifts, range)
 // A display-only due date: packing must finish before the dispatch cut-off or the bar is marked late.
 const deadlines = new Map([['pack', local('2026-11-09T17:00:00')]])
 const shade = ref(true)
+// "Summary task links" adds a separate, opt-in example of links to and from a summary task (GanttChart summaryDependencies).
+const summaryLinks = ref(false)
 const showCritical = ref(true)
 const originalTasks: ScheduleTask[] = [
   { id: 'cut-a', duration: 3 * hour },
@@ -452,6 +455,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         <label><input type="checkbox" :checked="showConstraints" @change="toggleConstraints"> Show scheduling constraints</label>
         <label><input type="checkbox" :checked="manualInspection" @change="toggleManualInspection"> Schedule inspection manually</label>
         <label><input type="checkbox" :checked="orderBCancelled" @change="toggleOrderB"> Cancel order B (inactive)</label>
+        <label><input v-model="summaryLinks" type="checkbox"> Summary task links</label>
         <button type="button" @click="exportSchedule">Export schedule SVG</button>
         <button type="button" @click="reset">Reset schedule</button>
       </div>
@@ -525,6 +529,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
     <PlanningDiagnostics v-if="diagnostics.length" :diagnostics="diagnostics" :task-label="id => labels.get(id) ?? id"
       :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :dependency-label="dependencyLabel" :format-time="format" @activate="revealDiagnostic" />
   </section>
+  <SummaryLinksDemo v-if="summaryLinks" />
 </template>
 
 <style scoped>

@@ -306,6 +306,14 @@ const plan = scheduleTasks({
 
 **Validation and cycles.** These throw an Error that names the tasks: a `parentId` that is not a non-empty string, an unknown parent (`Unknown parent task x of task a`), parent IDs that form a cycle (`The parent IDs of these tasks form a cycle: a → b → a`), and a link between a summary and one of its own subtasks, in either direction (`Dependency l links summary task S with its own subtask a`). Inactive tasks are validated too. A summary's dates depend on all of its subtasks, so a chain of links from a subtask back to its summary (for example `S → x` and `x → a` with `a` in `S`) is a `cycle` failure listing the summary, the subtask and the links, like any other cycle; `toPlanningDiagnostics` reports it as `schedule-cycle`.
 
+**Draw the links.** GanttChart draws links to and from a summary task with the opt-in `summaryDependencies` prop, together with `showSummaries`. Give the summary task a row and no bar (`rowId: task.id` for the other tasks, as in [Show a plan in GanttChart](#show-a-plan-in-ganttchart)), and pass the same `dependencies`: an end that names the summary is drawn to the start or finish edge of its rollup bar, following the link type, and it moves with the subtasks. Highlight the plan's `criticalDependencyIds` as for other links. Without `summaryDependencies` the chart rejects such links as unknown endpoints. With `connectable`, the rollup bar gets link handles too; the chart proposes any type, so reject FF and SF links into a summary in `validateConnection` (or report the Error `scheduleTasks` throws). See [Dependencies on summary rows](api.md#dependencies-on-summary-rows).
+
+```ts
+const bars = plan.tasks.filter(task => !task.summary).map(task => ({ id: task.id, rowId: task.id, label: labels.get(task.id)!, ...scheduledBarFields(task) }))
+// <GanttChart :rows="rows" :bars="bars" :dependencies="dependencies" show-summaries summary-dependencies
+//   :highlighted-dependency-ids="new Set(plan.criticalDependencyIds)" />
+```
+
 **Progress.** The scheduler does not take progress for a summary. Use `summarizeTimelineRows` to roll up the progress of the bars below a GanttChart row; it weights each subtask by its length.
 
 | Function | Summary tasks |
@@ -348,6 +356,8 @@ Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task
 ## Try the demo
 
 Open **Scheduling** and focus **Cut order A**. Press Right Arrow once to move its requested start from 08:00 to 09:00. Inspection moves to 13:00, projected finish moves from 16:00 to 17:00, and the CNC overlap grows from one to two resource-hours. Press Right Arrow again to see packing finish on 11 November after the 10 November closure. Further moves beyond the horizon leave the accepted plan on screen. **Reset schedule** restores the original dates.
+
+Check **Summary task links** to add a small plan with a summary task. Its links end at the **Build phase** rollup bar; drag **Frame** to move the rollup bar and its links, select a link with Enter and remove it with Delete, or drag from a rollup handle to add one. FF and SF links into the summary are rejected with a message.
 
 The status date slider (09 Nov 12:00 by default) draws the status-date line, and **Show progress line** draws the progress line from the reported progress: cutting order A is done, B is half done and inspection a quarter done. **Reschedule from status date** applies `rescheduleFromStatusDate`: B keeps its first hour and finishes after lunch, inspection keeps its first half hour and continues at 13:00, and packing moves to 14:30–16:30. At 09 Nov 08:00 the done hour of cutting order B cannot fit before the status date, so the demo catches the `RangeError` and reports it instead of changing the plan. The next edit recalculates the plan from the requested starts. **Export MS Project XML**, **Export iCalendar** and **Export CSV** save the current plan with `toMsProjectXml`, `toICalendar` and `toCsv`, and **Network diagram** shows it as a NetworkGraph built with `scheduleToGraph`.
 

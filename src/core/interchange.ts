@@ -1275,6 +1275,11 @@ export interface MsProjectTimelineOptions {
    * `baseline10` for 1 to 10, as Microsoft Project names them.
    */
   baselineId?: (number: number) => string
+  /**
+   * Keep the links that touch a summary task in `dependencies`, with the summary's row ID as their end, for GanttChart
+   * `summaryDependencies` (with `showSummaries`). Default false: they are listed in `hiddenDependencyIds` instead.
+   */
+  summaryDependencies?: boolean
 }
 
 /** GanttChart data from `timelineFromMsProject`. */
@@ -1283,7 +1288,10 @@ export interface MsProjectTimeline {
   bars: TimelineBar[]
   /** Links between bars, with the IDs `link-1`, `link-2`, … in input order. */
   dependencies: TimelineDependency[]
-  /** IDs of the links that are not in `dependencies` because one of their tasks is a summary task without a bar. */
+  /**
+   * IDs of the links that are not in `dependencies` because one of their tasks is a summary task without a bar. Empty
+   * with `summaryDependencies`.
+   */
   hiddenDependencyIds: string[]
   /** Present when the plan has resources: its work resources, ready for `projectResourceTimeline`. */
   resources?: ResourceTimelineResource[]
@@ -1301,7 +1309,8 @@ const defaultBaselineId = (number: number) => number === 0 ? 'baseline' : 'basel
  * dates, `progress` (percent complete / 100), `constraints` and its baselines as named `baselines`
  * (`options.baselineId`). A milestone (`milestone` or `start === end`) is a zero-length bar at its start, and an
  * inactive task has `appearance: 'outline'`. Dependencies get the IDs `link-1`, `link-2`, … in input order, with
- * `type` and `lag` when given; a link that touches a summary task is listed in `hiddenDependencyIds` instead.
+ * `type` and `lag` when given; a link that touches a summary task is listed in `hiddenDependencyIds` instead, unless
+ * `options.summaryDependencies` keeps it in `dependencies` with the summary's row ID as its end.
  *
  * When the plan has `resources`, the result also has `resources` (`id`, `label` = name) and `assignments` for
  * `projectResourceTimeline`, computed by `resourceLoadFromMsProject` with its default unit scale (units in percent).
@@ -1348,7 +1357,7 @@ export function timelineFromMsProject(project: MsProjectInput, options: MsProjec
   ;(project.dependencies ?? []).forEach((dependency, index) => {
     checkMsProjectDependency(dependency, uids)
     const id = 'link-' + (index + 1)
-    if (summaries.has(dependency.from) || summaries.has(dependency.to)) {
+    if (!options.summaryDependencies && (summaries.has(dependency.from) || summaries.has(dependency.to))) {
       hiddenDependencyIds.push(id)
       return
     }

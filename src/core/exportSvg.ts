@@ -417,6 +417,12 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   columns?: readonly TimelineColumn<R>[]
   /** Draw rollup bars on parent rows without bars of their own. */
   showSummaries?: boolean
+  /**
+   * As GanttChart `summaryDependencies`: a dependency end may name a summary row instead of a bar. Such an end joins
+   * the start or finish edge of the row's rollup bar, so it is drawn only with `showSummaries` and when the row has a
+   * rollup (descendant bars and no bar of its own); otherwise the dependency is left out. Default false.
+   */
+  summaryDependencies?: boolean
   headerBands?: readonly (readonly TimelineBand[])[]
   markers?: readonly TimelineMarker[]
   /**
@@ -505,7 +511,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
 ): string {
   const rowHeight = options.rowHeight ?? 66
   const laneCount = options.laneCount ?? 1
-  validateTimelineData(rows, bars, dependencies, laneCount)
+  validateTimelineData(rows, bars, dependencies, laneCount, { summaryDependencies: options.summaryDependencies })
   const { prefix, theme, rtl, font, background } = common(options)
   if (!Number.isFinite(rowHeight) || rowHeight < 8 + laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
   const labelWidth = options.labelWidth ?? 154
@@ -707,10 +713,13 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     if (!list) barsByRow.set(bar.rowId, list = [])
     list.push(bar)
   }
+  // Drawn rollup bars by row ID, the ends of `summaryDependencies` links.
+  const rollups = new Map<string, TimeRange>()
   shown.forEach((item, index) => {
     const top = headerHeight + index * rowHeight
     const own = barsByRow.get(item.row.id) ?? []
     const summary = item.hasChildren && options.showSummaries && !own.length ? summaries?.get(item.row.id) : undefined
+    if (summary && options.summaryDependencies) rollups.set(item.row.id, summary)
     if (summary && intersectsWindow(summary, window)) {
       const box = span(summary.start, summary.end)
       const w = Math.max(3, box.width)
@@ -887,13 +896,23 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const lagLabels: string[] = []
   const formatLag = options.formatLag ?? formatDependencyLag
   const barById = new Map(bars.map(bar => [bar.id, bar]))
+  // A dependency end: a bar, or with `summaryDependencies` the rollup bar of a summary row, centred in its row.
+  const linkEnd = (id: string) => {
+    const bar = barById.get(id)
+    if (bar) {
+      const index = rowIndex.get(bar.rowId)
+      return index === undefined ? undefined : { range: bar as TimeRange, index, offset: laneTop(bar) + barHeight / 2 }
+    }
+    const rollup = rollups.get(id)
+    return rollup && { range: rollup, index: rowIndex.get(id)!, offset: rowHeight / 2 }
+  }
   for (const dep of dependencies) {
-    const source = barById.get(dep.from)!, target = barById.get(dep.to)!
-    const sourceIndex = rowIndex.get(source.rowId), targetIndex = rowIndex.get(target.rowId)
-    if (sourceIndex === undefined || targetIndex === undefined) continue
-    const ends = dependencyTimes(source, target, dep.type)
-    const y1 = headerHeight + sourceIndex * rowHeight + laneTop(source) + barHeight / 2
-    const y2 = headerHeight + targetIndex * rowHeight + laneTop(target) + barHeight / 2
+    const source = linkEnd(dep.from), target = linkEnd(dep.to)
+    if (!source || !target) continue
+    const sourceIndex = source.index, targetIndex = target.index
+    const ends = dependencyTimes(source.range, target.range, dep.type)
+    const y1 = headerHeight + sourceIndex * rowHeight + source.offset
+    const y2 = headerHeight + targetIndex * rowHeight + target.offset
     const strong = highlighted.has(dep.id)
     paths.push(tag('path', {
       d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2), options.dependencyStyle), fill: 'none',

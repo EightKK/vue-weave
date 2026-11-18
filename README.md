@@ -36,7 +36,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 
 - Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines (up to three named baseline sets with variance), header bands and date markers; row and time-window virtualization.
 - Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
-- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`), and lag or lead labels on dependencies (`lag`, `formatLag`) that the scheduler applies too.
+- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`), and lag or lead labels on dependencies (`lag`, `formatLag`) that the scheduler applies too. Opt-in dependencies to and from summary rows, drawn to their rollup bars (`summaryDependencies`).
 - Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
 - Drag to create bars (`creatable`, `create`), stacked without overlap by `assignLanes`.
 - Auto-scheduling previews (`cascade`) that show the bars a move would push and propose them with it as one `edits` batch.

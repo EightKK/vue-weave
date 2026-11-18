@@ -72,6 +72,12 @@ const props = withDefaults(defineProps<{
   columns?: readonly TimelineColumn<R>[]
   /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
   showSummaries?: boolean
+  /**
+   * Lets a dependency end name a summary row (a row with child rows) when no bar has that ID. The end joins the start or
+   * finish edge of the row's rollup bar, so it is drawn with `showSummaries` when the row has a rollup; otherwise the
+   * dependency is hidden. With `connectable`, rollup bars also get link handles. Opt-in. Default: false.
+   */
+  summaryDependencies?: boolean
   /** Synchronous check of a cell edit proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateCellEdit?: (change: TimelineCellEdit) => boolean | string | void
   /** Fixed row height in pixels; at least `8 + laneCount * 14`. Default: 66. */
@@ -455,7 +461,7 @@ function validateDisplay() {
   baselineSelection(props.bars, stableBaselineIds.value)
 }
 function validateProps() {
-  validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount)
+  validateTimelineData(props.rows, props.bars, props.dependencies, props.laneCount, { summaryDependencies: props.summaryDependencies })
   validatePresets()
   createTimeScale(stableRange.value, activePixelsPerUnit.value)
   createTimeScale(bounds.value, 1)
@@ -503,6 +509,7 @@ watch([
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.dependencyStyle, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
   () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value, () => props.markerRanges,
+  () => props.summaryDependencies,
 ], () => {
   try {
     const result = validateProps()
@@ -996,7 +1003,7 @@ const shownRows = computed(() => {
       creatable: canCreateIn(item.row),
       reorderable: rowHandlesVisible.value,
       progress: progressSegment(item.row.id),
-      summary: item.hasChildren && props.showSummaries && !bars.length ? summaries.value?.get(item.row.id) : undefined,
+      summary: item.hasChildren && props.showSummaries && !bars.length ? drawnSummaries.value?.get(item.row.id) : undefined,
       baselines: shownBaselines(bars),
       floats: bars.flatMap(bar => {
         const end = rangeOf(bar).end
@@ -1124,29 +1131,69 @@ const shownNonWorking = computed(() => {
   })
 })
 
+/** The name of a dependency end: the bar label or, for a summary row end (`summaryDependencies`), the row label. */
+function endLabel(id: string) {
+  return barById.value.get(id)?.label ?? (props.summaryDependencies ? rowById.value.get(id)?.label : undefined) ?? id
+}
 function dependencyName(dep: TimelineDependency) {
-  return `${barById.value.get(dep.from)?.label ?? dep.from} → ${barById.value.get(dep.to)?.label ?? dep.to} ${dep.type ?? 'FS'}`
+  return `${endLabel(dep.from)} → ${endLabel(dep.to)} ${dep.type ?? 'FS'}`
+}
+
+// Summary rows as dependency ends (`summaryDependencies`). The rollups then follow the time ranges of a drag preview,
+// so a rollup bar and the dependencies that end at it move with the dragged descendants. Without the prop, the rollups
+// are those of `summaries`.
+const drawnSummaries = computed(() => {
+  const moved = previews.value
+  if (!props.summaryDependencies || !props.showSummaries || !moved?.size || validationError.value) return summaries.value
+  return summarizeTimelineRows(tree.value, props.bars.map(bar => {
+    const range = moved.get(bar.id)?.range
+    return range ? { ...bar, start: range.start, end: range.end } : bar
+  }))
+})
+/** The drawn rollup and displayed row index of each summary row a dependency end can name. Empty without the prop. */
+const summaryAnchors = computed(() => {
+  const anchors = new Map<string, { range: TimeRange; index: number }>()
+  if (!props.summaryDependencies || !props.showSummaries || validationError.value) return anchors
+  const rollups = drawnSummaries.value
+  displayedRows.value.forEach((item, index) => {
+    const id = item.row.id
+    // A rollup is drawn only on a parent row without bars; an ID that is also a bar ID names the bar.
+    const rollup = item.hasChildren && !barsByRow.value.has(id) && !barById.value.has(id) ? rollups?.get(id) : undefined
+    if (rollup) anchors.set(id, { range: rollup, index })
+  })
+  return anchors
+})
+/**
+ * A dependency end in body coordinates: its interval, displayed row (shifted by a row preview) and vertical offset in
+ * the row. A bar end follows its preview; a summary end is the middle of the row's rollup bar.
+ */
+function dependencyEnd(id: string) {
+  const bar = barById.value.get(id)
+  if (bar) {
+    const index = rowOrder.value.get(bar.rowId)
+    if (index === undefined) return undefined
+    return { range: rangeOf(bar), row: index + (previews.value?.get(bar.id)?.rowShift ?? 0), offset: laneTop(bar) + barHeight.value / 2 }
+  }
+  const anchor = summaryAnchors.value.get(id)
+  return anchor && { range: anchor.range, row: anchor.index, offset: props.rowHeight / 2 }
 }
 
 const shownLines = computed(() => {
   const { first, afterLast } = rowWindow.value
   const { left, right } = xWindow.value
   return (validationError.value ? [] : props.dependencies).flatMap(dep => {
-    const source = barById.value.get(dep.from)
-    const target = barById.value.get(dep.to)
+    const source = dependencyEnd(dep.from)
+    const target = dependencyEnd(dep.to)
     if (!source || !target) return []
-    const sourceIndex = rowOrder.value.get(source.rowId)
-    const targetIndex = rowOrder.value.get(target.rowId)
-    if (sourceIndex === undefined || targetIndex === undefined) return []
-    const sourceRow = sourceIndex + (previews.value?.get(source.id)?.rowShift ?? 0)
-    const targetRow = targetIndex + (previews.value?.get(target.id)?.rowShift ?? 0)
+    const sourceRow = source.row
+    const targetRow = target.row
     if (Math.max(sourceRow, targetRow) < first || Math.min(sourceRow, targetRow) >= afterLast) return []
-    const endpoints = dependencyTimes(rangeOf(source), rangeOf(target), dep.type)
+    const endpoints = dependencyTimes(source.range, target.range, dep.type)
     const x1 = axis.value.toX(endpoints.from)
     const x2 = axis.value.toX(endpoints.to)
     if (Math.max(x1, x2) + 10 < left || Math.min(x1, x2) - 10 > right) return []
-    const y1 = sourceRow * props.rowHeight + laneTop(source) + barHeight.value / 2
-    const y2 = targetRow * props.rowHeight + laneTop(target) + barHeight.value / 2
+    const y1 = sourceRow * props.rowHeight + source.offset
+    const y2 = targetRow * props.rowHeight + target.offset
     const lag = dep.lag ? lagLabel(dep, dep.lag, lagLabelPoint(x1, y1, x2, y2, sourceRow * props.rowHeight, props.rowHeight)) : undefined
     return [{ ...dep, path: dependencyPath(x1, y1, x2, y2, props.dependencyStyle), x1, y1, x2, y2, dependency: dep, lag }]
   })
@@ -1957,13 +2004,13 @@ const dependencyTargets = computed(() => (props.connectable || props.reconnectab
 function linkKey(end: LinkEnd) {
   return JSON.stringify([end.bar, end.end])
 }
-function linkPressed(bar: TimelineBar, end: TimelineBarEnd) {
+function linkPressed(id: string, end: TimelineBarEnd) {
   const fixed = linkDraft.value?.fixed
-  return Boolean(fixed && fixed.bar === bar.id && fixed.end === end)
+  return Boolean(fixed && fixed.bar === id && fixed.end === end)
 }
-function linkHandleName(bar: TimelineBar, end: TimelineBarEnd) {
-  const action = linkDraft.value && !linkPressed(bar, end) ? messages.value.connectTo : messages.value.connectFrom
-  return `${action} ${end === 'start' ? messages.value.startOf : messages.value.finishOf} ${bar.label}`
+function linkHandleName(id: string, label: string, end: TimelineBarEnd) {
+  const action = linkDraft.value && !linkPressed(id, end) ? messages.value.connectTo : messages.value.connectFrom
+  return `${action} ${end === 'start' ? messages.value.startOf : messages.value.finishOf} ${label}`
 }
 function linkHandleStyle(bar: TimelineBar, end: TimelineBarEnd) {
   const box = barBox(bar)
@@ -1978,7 +2025,13 @@ function linkHandleStyle(bar: TimelineBar, end: TimelineBarEnd) {
 function linkOrigin(end: LinkEnd) {
   const bar = barById.value.get(end.bar)
   const index = bar && rowOrder.value.get(bar.rowId)
-  if (!bar || index === undefined) return undefined
+  if (!bar || index === undefined) {
+    // A summary row end (`summaryDependencies`): the edge of its rollup bar.
+    const anchor = summaryAnchors.value.get(end.bar)
+    if (!anchor) return undefined
+    const time = end.end === 'start' ? anchor.range.start : anchor.range.end
+    return { x: axis.value.toX(time), y: anchor.index * props.rowHeight + props.rowHeight / 2 }
+  }
   const range = rangeOf(bar)
   return { x: axis.value.toX(end.end === 'start' ? range.start : range.end), y: index * props.rowHeight + laneTop(bar) + barHeight.value / 2 }
 }
@@ -1994,10 +2047,10 @@ function captureLink(event: PointerEvent) {
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
 }
-function startLink(event: PointerEvent, bar: TimelineBar, end: TimelineBarEnd) {
+function startLink(event: PointerEvent, id: string, end: TimelineBarEnd) {
   skipLinkClick = false
   if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
-  linkDraft.value = { fixed: { bar: bar.id, end }, role: 'to' }
+  linkDraft.value = { fixed: { bar: id, end }, role: 'to' }
   captureLink(event)
 }
 function moveLink(event: PointerEvent) {
@@ -2026,7 +2079,7 @@ function finishLink(event: PointerEvent) {
   skipLinkClick = true
   // A press without movement leaves the end armed for a second click or key.
   if (!dragged) return
-  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-vw-link], [data-vw-bar]')
+  const element = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-vw-link], [data-vw-bar], [data-vw-summary]')
   if (!element || !scroller.value?.contains(element)) {
     linkDraft.value = undefined
     return
@@ -2035,24 +2088,25 @@ function finishLink(event: PointerEvent) {
     const [bar, end] = JSON.parse(element.dataset.vwLink) as [string, TimelineBarEnd]
     return completeLink({ bar, end })
   }
-  // Dropping on a bar body picks its nearer end.
+  // Dropping on a bar body, or on a rollup bar with `summaryDependencies`, picks its nearer end.
   const rect = element.getBoundingClientRect()
   const firstHalf = event.clientX < rect.left + rect.width / 2
-  completeLink({ bar: element.dataset.vwBar!, end: firstHalf !== rtl.value ? 'start' : 'finish' })
+  completeLink({ bar: element.dataset.vwBar ?? element.dataset.vwSummary!, end: firstHalf !== rtl.value ? 'start' : 'finish' })
 }
-function activateLink(bar: TimelineBar, end: TimelineBarEnd, event: MouseEvent | KeyboardEvent) {
+function activateLink(id: string, end: TimelineBarEnd, event: MouseEvent | KeyboardEvent) {
   if (event.type === 'click' && skipLinkClick) {
     skipLinkClick = false
     return
   }
-  if (linkDraft.value) completeLink({ bar: bar.id, end })
-  else if (props.connectable) linkDraft.value = { fixed: { bar: bar.id, end }, role: 'to' }
+  if (linkDraft.value) completeLink({ bar: id, end })
+  else if (props.connectable) linkDraft.value = { fixed: { bar: id, end }, role: 'to' }
 }
 function completeLink(target: LinkEnd) {
   const pending = linkDraft.value
   linkDraft.value = undefined
   notice.value = ''
-  if (props.readonly || !pending || pending.fixed.bar === target.bar || !barById.value.has(target.bar)) return
+  if (props.readonly || !pending || pending.fixed.bar === target.bar
+    || !(barById.value.has(target.bar) || summaryAnchors.value.has(target.bar))) return
   const [from, to] = pending.role === 'from' ? [target, pending.fixed] : [pending.fixed, target]
   const connection: TimelineConnection = { from: from.bar, to: to.bar, type: dependencyTypeForEnds(from.end, to.end) }
   const dependency = pending.dependency
@@ -2091,17 +2145,70 @@ function dependencyKeys(event: KeyboardEvent, id: string) {
     if (!props.readonly) emit('dependency-delete', id)
   }
 }
-const reconnectHandles = computed(() => {
+/**
+ * Buttons placed on the canvas: the two reconnect handles of the selected dependency and, with `summaryDependencies`
+ * and link handles shown, the link handles of the displayed rollup bars. They share one template loop, so a chart
+ * without `summaryDependencies` renders exactly the markup it did before.
+ */
+type CanvasHandle = {
+  key: string; className: string | (string | Record<string, boolean>)[]; style: Record<string, string>; label: string; pressed: boolean
+  dependency?: TimelineDependency; end?: 'from' | 'to'; link?: LinkEnd
+}
+const reconnectHandles = computed<CanvasHandle[]>(() => {
   const id = activeDependencyId.value
   if (!props.reconnectable || props.readonly || id === undefined) return []
   const line = shownLines.value.find(item => item.id === id)
   if (!line) return []
   const name = dependencyName(line.dependency)
+  const place = (x: number, y: number) => ({ [inlineSide.value]: `calc(var(--vw-label-area-width) + ${x - 6}px)`, top: `${headerHeight.value + y - 6}px` })
+  const pressed = (end: 'from' | 'to') => Boolean(linkDraft.value?.dependency && linkDraft.value.role === end)
   return [
-    { end: 'from' as const, x: line.x1, y: line.y1, label: `${messages.value.reconnectSource} ${name}`, dependency: line.dependency },
-    { end: 'to' as const, x: line.x2, y: line.y2, label: `${messages.value.reconnectTarget} ${name}`, dependency: line.dependency },
+    { key: 'from', className: 'vw-gantt-reconnect-handle', style: place(line.x1, line.y1), label: `${messages.value.reconnectSource} ${name}`, pressed: pressed('from'), dependency: line.dependency, end: 'from' },
+    { key: 'to', className: 'vw-gantt-reconnect-handle', style: place(line.x2, line.y2), label: `${messages.value.reconnectTarget} ${name}`, pressed: pressed('to'), dependency: line.dependency, end: 'to' },
   ]
 })
+const summaryLinkHandles = computed<CanvasHandle[]>(() => {
+  if (!props.summaryDependencies || !linkHandlesVisible.value) return []
+  const { first, afterLast } = rowWindow.value
+  const handles: CanvasHandle[] = []
+  for (const [id, anchor] of summaryAnchors.value) {
+    if (anchor.index < first || anchor.index >= afterLast || !intersectsWindow(anchor.range, timeWindow.value)) continue
+    const left = axis.value.toX(anchor.range.start)
+    const width = Math.max(3, axis.value.toX(anchor.range.end) - left)
+    const label = rowById.value.get(id)?.label ?? id
+    for (const end of linkEnds) {
+      // Kept inside the axis like the handles of bars, so the sticky label column never covers them.
+      const x = Math.max(0, Math.min(axis.value.width - 12, end === 'start' ? left - 15 : left + width + 3))
+      handles.push({
+        key: linkKey({ bar: id, end }),
+        className: ['vw-gantt-link-handle', `vw-is-${end}`, { 'vw-is-active': linkPressed(id, end) }],
+        style: {
+          [inlineSide.value]: `calc(var(--vw-label-area-width) + ${x}px)`,
+          top: `${headerHeight.value + anchor.index * props.rowHeight + props.rowHeight / 2 - 6}px`,
+        },
+        label: linkHandleName(id, label, end), pressed: linkPressed(id, end), link: { bar: id, end },
+      })
+    }
+  }
+  return handles
+})
+const canvasHandles = computed(() => summaryLinkHandles.value.length ? [...reconnectHandles.value, ...summaryLinkHandles.value] : reconnectHandles.value)
+function pressCanvasHandle(item: CanvasHandle, event: PointerEvent) {
+  if (item.dependency) reconnectDependency(item.dependency, item.end!, event)
+  else startLink(event, item.link!.bar, item.link!.end)
+}
+function clickCanvasHandle(item: CanvasHandle, event: MouseEvent) {
+  if (item.dependency) clickReconnect(item.dependency, item.end!)
+  else activateLink(item.link!.bar, item.link!.end, event)
+}
+function canvasHandleKeys(item: CanvasHandle, event: KeyboardEvent) {
+  if (item.dependency) reconnectDependency(item.dependency, item.end!)
+  else activateLink(item.link!.bar, item.link!.end, event)
+}
+/** With link handles shown, a rollup bar that a dragged link can be dropped on carries its row ID. */
+function summaryDropId(id: string) {
+  return linkHandlesVisible.value && summaryAnchors.value.has(id) ? id : undefined
+}
 function reconnectDependency(dependency: TimelineDependency, end: 'from' | 'to', event?: PointerEvent) {
   if (event && (!event.isPrimary || event.button !== 0 || pointerGestureActive())) return
   skipLinkClick = false
@@ -2404,11 +2511,11 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
   if (isConstraintHandle(handle)) return constraintHandleAttrs(bar, handle)
   if (handle !== 'progress') {
     return {
-      class: ['vw-gantt-link-handle', `vw-is-${handle}`, { 'vw-is-active': linkPressed(bar, handle) }],
+      class: ['vw-gantt-link-handle', `vw-is-${handle}`, { 'vw-is-active': linkPressed(bar.id, handle) }],
       style: linkHandleStyle(bar, handle),
       'data-vw-link': linkKey({ bar: bar.id, end: handle }),
-      'aria-label': linkHandleName(bar, handle),
-      'aria-pressed': linkPressed(bar, handle),
+      'aria-label': linkHandleName(bar.id, bar.label, handle),
+      'aria-pressed': linkPressed(bar.id, handle),
     }
   }
   const value = shownProgress(bar) ?? 0
@@ -2427,11 +2534,11 @@ function handleAttrs(bar: TimelineBar, handle: BarHandle) {
 function pressHandle(event: PointerEvent, bar: TimelineBar, handle: BarHandle) {
   if (isConstraintHandle(handle)) startConstraint(event, bar, handle)
   else if (handle === 'progress') startProgress(event, bar)
-  else startLink(event, bar, handle)
+  else startLink(event, bar.id, handle)
 }
 function clickHandle(event: MouseEvent, bar: TimelineBar, handle: BarHandle) {
   event.stopPropagation()
-  if (handle !== 'progress' && !isConstraintHandle(handle)) activateLink(bar, handle, event)
+  if (handle !== 'progress' && !isConstraintHandle(handle)) activateLink(bar.id, handle, event)
 }
 function handleKeys(event: KeyboardEvent, bar: TimelineBar, handle: BarHandle) {
   if (isConstraintHandle(handle)) return constraintKeys(event, bar, handle)
@@ -2439,7 +2546,7 @@ function handleKeys(event: KeyboardEvent, bar: TimelineBar, handle: BarHandle) {
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.stopPropagation()
   event.preventDefault()
-  activateLink(bar, handle, event)
+  activateLink(bar.id, handle, event)
 }
 function percent(value: number) {
   return Math.round(value * 100) + '%'
@@ -3190,6 +3297,7 @@ function exportSvg(options: GanttExportOptions<R, B> = {}) {
     labelWidth: rowLabelWidth(),
     columns: props.columns,
     showSummaries: props.showSummaries,
+    summaryDependencies: props.summaryDependencies,
     headerBands: activeBands.value,
     dependencyStyle: props.dependencyStyle,
     markers: props.markers,
@@ -3436,7 +3544,8 @@ onUnmounted(() => {
           </div>
           <div v-if="row.summary && intersectsWindow(row.summary, timeWindow)" class="vw-gantt-summary"
             :style="summaryStyle(row.summary)"
-            :title="`${row.row.label} · ${row.summary.count} · ${formatTime(row.summary.start)}–${formatTime(row.summary.end)}`">
+            :title="`${row.row.label} · ${row.summary.count} · ${formatTime(row.summary.start)}–${formatTime(row.summary.end)}`"
+            :data-vw-summary="summaryDropId(row.row.id)">
             <span v-if="row.summary.progress !== undefined" :style="{ width: (row.summary.progress * 100) + '%' }"></span>
           </div>
           <div v-for="strip in row.baselines" :key="strip.key" :class="strip.className"
@@ -3537,14 +3646,14 @@ onUnmounted(() => {
             @pointerenter="enterTarget(dependencyTarget(line.id), 'pointer')" @pointerleave="leaveTarget(dependencyTarget(line.id), 'pointer')"
             @focus="focusTarget($event, dependencyTarget(line.id))" @blur="blurTarget(dependencyTarget(line.id))" />
         </svg>
-        <button v-for="item in reconnectHandles" :key="item.end" type="button" class="vw-gantt-reconnect-handle"
-          :style="{ [inlineSide]: `calc(var(--vw-label-area-width) + ${item.x - 6}px)`, top: `${headerHeight + item.y - 6}px` }"
-          :aria-label="item.label" :aria-pressed="Boolean(linkDraft?.dependency && linkDraft.role === item.end)"
-          :data-vw-dependency="contextMenu ? item.dependency.id : undefined"
-          @pointerdown="reconnectDependency(item.dependency, item.end, $event)"
-          @click.stop="clickReconnect(item.dependency, item.end)"
-          @keydown.enter.stop.prevent="reconnectDependency(item.dependency, item.end)"
-          @keydown.space.stop.prevent="reconnectDependency(item.dependency, item.end)"></button>
+        <button v-for="item in canvasHandles" :key="item.key" type="button" :class="item.className"
+          :style="item.style" :aria-label="item.label" :aria-pressed="item.pressed"
+          :data-vw-dependency="contextMenu && item.dependency ? item.dependency.id : undefined"
+          :data-vw-link="item.link && linkKey(item.link)"
+          @pointerdown="pressCanvasHandle(item, $event)"
+          @click.stop="clickCanvasHandle(item, $event)"
+          @keydown.enter.stop.prevent="canvasHandleKeys(item, $event)"
+          @keydown.space.stop.prevent="canvasHandleKeys(item, $event)"></button>
         <svg v-if="linkPreviewPath" class="vw-gantt-link-preview" width="1" height="1" overflow="visible" aria-hidden="true"
           :style="{ top: `${headerHeight}px` }">
           <path :d="linkPreviewPath" />

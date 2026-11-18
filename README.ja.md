@@ -36,7 +36,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 
 - 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン（差異付きで最大3つの名前付きセット）、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
 - `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
-- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。
+- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。サマリー行への依存関係とサマリー行からの依存関係を、集約バーにつないで描画することもできます（`summaryDependencies`、オプトイン）。
 - 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。
 - 行の空いている部分のドラッグによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。
 - 移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）。

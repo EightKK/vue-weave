@@ -1,5 +1,8 @@
 // Type-level checks for summary tasks. Checked by `npm run typecheck`.
-import { scheduleTasks, type ScheduleInput, type ScheduleTask } from '../../src/core/index'
+import {
+  scheduleTasks, validateTimelineData, type MsProjectTimelineOptions, type ScheduleInput, type ScheduleTask, type TimelineDataOptions,
+  type TimelineSvgOptions,
+} from '../../src/core/index'
 
 declare const input: ScheduleInput
 
@@ -16,3 +19,13 @@ if (result.ok) {
   void summary
   void parentId
 }
+
+// Dependencies on summary rows: opt-in options of validation, SVG export and the MS Project import.
+const options: TimelineDataOptions = { summaryDependencies: true }
+validateTimelineData([], [], [], 1, options)
+// @ts-expect-error summaryDependencies is a boolean
+validateTimelineData([], [], [], 1, { summaryDependencies: 'yes' })
+const svgOptions: TimelineSvgOptions = { showSummaries: true, summaryDependencies: true }
+const importOptions: MsProjectTimelineOptions = { summaryDependencies: true }
+void svgOptions
+void importOptions
