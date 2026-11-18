@@ -1,10 +1,13 @@
 import { layoutLayeredGraph } from './graph.js'
-import type { GraphBox, GraphEdge, GraphLayout, GraphLayoutDirection, GraphPoint, IdentifiedNode } from './graph.js'
+import type { GraphBox, GraphEdge, GraphLayout, GraphLayoutOptions, GraphPoint, IdentifiedNode } from './graph.js'
 import { countAdjacentCrossings, rankNeighbours } from './graphCrossings.js'
 import {
   assertGraphLayoutDirection, graphDirectionOrientation, isVerticalDirection, orientGraphLayout, orientGraphRect,
 } from './graphOrient.js'
-import { defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding } from './graphOptions.js'
+import {
+  checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
+  sameRankTurnDistance,
+} from './graphOptions.js'
 import type { GraphRect } from './graphView.js'
 
 /** One lane of a swimlane layout, in the order the caller lists it. `label` defaults to the ID. */
@@ -38,20 +41,17 @@ export interface GraphSwimlaneLayout extends GraphLayout {
   lanes: GraphSwimlane[]
 }
 
-/** Options of `layoutSwimlaneGraph`. `N` is the node type, so a `laneOf` function receives your own nodes. */
-export interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = IdentifiedNode> {
+/**
+ * Options of `layoutSwimlaneGraph`: the shared layout options plus the lanes. `N` is the node type, so a `laneOf`
+ * function receives your own nodes. `direction` LR and RL give horizontal lanes stacked top to bottom; TB and BT give
+ * vertical lanes stacked left to right. `rowGap` is the distance between nodes of one lane in one rank, and `padding`
+ * the margin around the bands.
+ */
+export interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = IdentifiedNode> extends GraphLayoutOptions {
   /** The lanes in display order: IDs or `{ id, label }`. The order is never changed; a lane without nodes still gets a band. */
   lanes: readonly (string | GraphSwimlaneSpec)[]
   /** The lane of each node: a function of the node or a map of node ID to lane ID. Every node needs a known lane. */
   laneOf: ((node: N) => string | undefined) | ReadonlyMap<string, string>
-  /** Flow direction. LR and RL give horizontal lanes stacked top to bottom; TB and BT give vertical lanes stacked left to right. Default LR. */
-  direction?: GraphLayoutDirection
-  nodeWidth?: number
-  nodeHeight?: number
-  /** Distance between ranks along the flow. Default 50. */
-  columnGap?: number
-  /** Distance between nodes of one lane in one rank. Default 16. */
-  rowGap?: number
   /** Free space between neighbouring lane bands. Default 0. */
   laneGap?: number
   /** Space between a band's edges (and its header) and the nodes in it. Default 12. */
@@ -60,8 +60,6 @@ export interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = Identifie
   minLaneSize?: number
   /** Thickness of the title area along the flow, at the flow start of each band. Default 120 for LR and RL, 32 for TB and BT. */
   headerSize?: number
-  /** Margin around the bands. Default 20. */
-  padding?: number
   /** Ordering of the nodes of one lane in one rank. Lanes never change order. Default `barycenter`. */
   crossingReduction?: 'none' | 'barycenter'
   /** Maximum number of alternating sweeps of the crossing reduction. Default 8. */
@@ -135,19 +133,15 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
 ): GraphSwimlaneLayout {
   if (!options || !Array.isArray(options.lanes)) throw new Error('layoutSwimlaneGraph needs a lanes array')
   const {
-    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = 16, laneGap = 0,
+    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = defaultRowGap, laneGap = 0,
     lanePadding = 12, minLaneSize = 0, padding = defaultPadding, crossingReduction = 'barycenter', crossingSweeps = 8, laneOf,
   } = options
   assertGraphLayoutDirection(direction)
   const vertical = isVerticalDirection(direction)
   const headerSize = options.headerSize ?? (vertical ? 32 : 120)
   if (crossingReduction !== 'none' && crossingReduction !== 'barycenter') throw new RangeError('Unknown crossingReduction method')
-  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
-  for (const [name, value] of Object.entries({ nodeWidth, nodeHeight, columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding })) {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || ((name === 'nodeWidth' || name === 'nodeHeight') && value === 0)) {
-      throw new RangeError(name + ' must be finite and nonnegative (node sizes positive)')
-    }
-  }
+  checkLayoutNumber('crossingSweeps', crossingSweeps, 'positiveInteger')
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding })
   if (typeof laneOf !== 'function' && !(laneOf instanceof Map)) throw new Error('laneOf must be a function or a Map')
 
   const lanes: { id: string; label: string }[] = []
@@ -248,7 +242,7 @@ function leftToRight(
     const x1 = source.x + source.width, y1 = source.y + source.height / 2, y2 = target.y + target.height / 2
     if (target.rank === source.rank) {
       // Same-rank edges (inside a cycle) and self-loops turn on the right side, like the layered layout.
-      const turn = x1 + Math.min(24, Math.max(6, columnGap / 2))
+      const turn = x1 + sameRankTurnDistance(columnGap)
       const endY = edge.from === edge.to ? y2 - target.height / 3 : y2
       routeRight = Math.max(routeRight, turn + 6)
       paths.set(edge.id, `M ${x1} ${y1} C ${turn + 6} ${y1}, ${turn + 6} ${endY}, ${x1} ${endY}`)

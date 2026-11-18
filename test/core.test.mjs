@@ -291,11 +291,46 @@ test('viewport rectangles invert the camera transform and grow by a screen-space
   assert.equal(rect.y + rect.height / 2, 50)
 })
 
-test('rectangle intersection includes touching edges and rejects separated boxes', () => {
+test('rectangle intersection needs overlapping interiors: touching edges and corners do not count', () => {
   const a = { x: 0, y: 0, width: 10, height: 10 }
-  assert.ok(graphRectsIntersect(a, { x: 10, y: 10, width: 5, height: 5 }))
-  assert.ok(!graphRectsIntersect(a, { x: 10.5, y: 0, width: 5, height: 5 }))
-  assert.ok(!graphRectsIntersect(a, { x: 0, y: -8, width: 5, height: 7 }))
+  const both = b => {
+    const result = graphRectsIntersect(a, b)
+    assert.equal(graphRectsIntersect(b, a), result, 'symmetric')
+    return result
+  }
+  // Corner and edge contact.
+  assert.equal(both({ x: 10, y: 10, width: 5, height: 5 }), false)
+  assert.equal(both({ x: -5, y: -5, width: 5, height: 5 }), false)
+  assert.equal(both({ x: 10, y: 0, width: 5, height: 5 }), false)
+  assert.equal(both({ x: 0, y: 10, width: 5, height: 5 }), false)
+  assert.equal(both({ x: 0, y: -5, width: 10, height: 5 }), false)
+  // Separated.
+  assert.equal(both({ x: 10.5, y: 0, width: 5, height: 5 }), false)
+  assert.equal(both({ x: 0, y: -8, width: 5, height: 7 }), false)
+  // Overlapping, containing and equal; a tiny overlap counts (no tolerance).
+  assert.equal(both({ x: 9.999, y: 0, width: 5, height: 5 }), true)
+  assert.equal(both({ x: 2, y: 2, width: 3, height: 3 }), true)
+  assert.equal(both({ x: -1, y: -1, width: 12, height: 12 }), true)
+  assert.equal(both({ ...a }), true)
+  // Zero-size rectangles: a point or segment through the interior intersects; one on the border does not.
+  assert.equal(both({ x: 5, y: 5, width: 0, height: 0 }), true)
+  assert.equal(both({ x: 5, y: -3, width: 0, height: 20 }), true)
+  assert.equal(both({ x: 0, y: 0, width: 0, height: 0 }), false)
+  assert.equal(both({ x: 10, y: 5, width: 0, height: 0 }), false)
+  assert.equal(both({ x: 0, y: 0, width: 0, height: 10 }), false)
+  assert.equal(graphRectsIntersect({ x: 1, y: 1, width: 0, height: 0 }, { x: 1, y: 1, width: 0, height: 0 }), false)
+  assert.equal(graphRectsIntersect({ x: 0, y: 2, width: 4, height: 0 }, { x: 2, y: 0, width: 0, height: 4 }), true)
+})
+
+test('culling keeps elements whose bounds only touch the view, so their strokes still draw', () => {
+  const view = { x: 0, y: 0, width: 100, height: 100 }
+  const bounds = {
+    nodes: new Map([['edge', { x: 100, y: 10, width: 20, height: 20 }], ['corner', { x: -20, y: -20, width: 20, height: 20 }], ['out', { x: 101, y: 0, width: 5, height: 5 }]]),
+    edges: new Map([['line', { x: 0, y: 100, width: 50, height: 0 }], ['far', { x: 0, y: 100.5, width: 50, height: 0 }]]),
+  }
+  const visible = cullGraphElements(bounds, view)
+  assert.deepEqual([...visible.nodes], ['edge', 'corner'])
+  assert.deepEqual([...visible.edges], ['line'])
 })
 
 test('path bounds cover absolute and relative commands, curves, arcs and malformed input', () => {
