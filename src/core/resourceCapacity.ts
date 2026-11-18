@@ -2,6 +2,7 @@
 // validation. Not part of the public entry.
 import type { ResourceAssignment, ResourceCapacity, ResourceCapacityPeriod } from './resourceLoad.js'
 import type { TimeRange } from './timeline.js'
+import { normalizeWorkPeriods } from './workCalendar.js'
 
 /** From `time` until the next step, the resource has `capacity`. */
 export interface CapacityStep {
@@ -72,6 +73,21 @@ export function capacitySteps(base: number, periods: readonly ResourceCapacityPe
   return steps
 }
 
+/**
+ * The validated capacity of a resource inside `range` as steps (see `capacitySteps`): its base `capacity`, its
+ * `capacityPeriods` and its availability `periods` (default: the whole range). `checkPeriod`, when given, is called with
+ * every availability and capacity period before they are normalized.
+ */
+export function resourceCapacitySteps(
+  resource: ResourceCapacity, range: TimeRange, checkPeriod?: (period: TimeRange) => void,
+): CapacityStep[] {
+  if (!Number.isSafeInteger(resource.capacity) || resource.capacity < 0) throw new RangeError('Invalid resource capacity: ' + resource.id)
+  const capacityPeriods = capacityPeriodsOf(resource)
+  if (checkPeriod) for (const period of [...resource.periods ?? [], ...capacityPeriods]) checkPeriod(period)
+  const availability = normalizeWorkPeriods(resource.periods ?? [range], range)
+  return capacitySteps(resource.capacity, capacityPeriods, availability)
+}
+
 /** The validated work sub-range of an assignment, or undefined when it applies over the whole work of its task. */
 export function assignmentWorkRange(assignment: Pick<ResourceAssignment, 'taskId' | 'workOffset' | 'workDuration'>) {
   const { workOffset, workDuration } = assignment
@@ -99,18 +115,6 @@ export function sliceWork(work: readonly TimeRange[], offset: number, duration: 
     if (start < end) result.push({ start: period.start + start - before, end: period.start + end - before })
     before += length
     if (before >= to) break
-  }
-  return result
-}
-
-/** Sorted copy of periods with overlapping and touching ones joined. The periods must have positive length. */
-export function mergeWork(work: readonly TimeRange[]): TimeRange[] {
-  const sorted = [...work].sort((a, b) => a.start - b.start)
-  const result: TimeRange[] = []
-  for (const period of sorted) {
-    const previous = result.at(-1)
-    if (previous && previous.end >= period.start) previous.end = Math.max(previous.end, period.end)
-    else result.push({ start: period.start, end: period.end })
   }
   return result
 }

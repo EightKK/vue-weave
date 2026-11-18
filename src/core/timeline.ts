@@ -4,6 +4,7 @@ import type {
 } from './types.js'
 import type { TimelineBaselineVariance } from './types.js'
 import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraints } from './types.js'
+import { firstIndex, intervalsMeet } from './intervals.js'
 import { cachedDateFormat, zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
@@ -635,27 +636,9 @@ export interface AssignLanesResult<B extends TimelineBar = TimelineBar> {
   rowLaneCounts: Map<string, number>
 }
 
-/**
- * Whether two intervals of one row may not share a lane. Bars are half-open, so touching bars fit in one lane; a
- * milestone conflicts with every bar that contains its time and with milestones at the same time.
- */
-function lanesConflict(a: TimeRange, b: TimeRange) {
-  const pointA = a.start === a.end, pointB = b.start === b.end
-  if (pointA && pointB) return a.start === b.start
-  if (pointA) return b.start <= a.start && a.start < b.end
-  if (pointB) return a.start <= b.start && b.start < a.end
-  return a.start < b.end && b.start < a.end
-}
-
 /** Index of the first interval in a start-sorted lane that starts after `time`. */
 function startsAfter(lane: readonly TimeRange[], time: number) {
-  let low = 0, high = lane.length
-  while (low < high) {
-    const middle = (low + high) >>> 1
-    if (lane[middle]!.start > time) high = middle
-    else low = middle + 1
-  }
-  return low
+  return firstIndex(lane.length, index => lane[index]!.start > time)
 }
 
 /**
@@ -684,7 +667,7 @@ export function assignLanes<B extends TimelineBar>(bars: readonly B[], options: 
         const items = placed[lane]
         if (!items) return true
         const next = startsAfter(items, bar.start)
-        return !(next > 0 && lanesConflict(items[next - 1]!, bar)) && !(next < items.length && lanesConflict(items[next]!, bar))
+        return !(next > 0 && intervalsMeet(items[next - 1]!, bar)) && !(next < items.length && intervalsMeet(items[next]!, bar))
       }
       for (const index of indexes) {
         const bar = bars[index]!
@@ -705,7 +688,7 @@ export function assignLanes<B extends TimelineBar>(bars: readonly B[], options: 
       for (const index of order) {
         const bar = bars[index]!
         let lane = 0
-        while (lane < last.length && lanesConflict(last[lane]!, bar)) lane++
+        while (lane < last.length && intervalsMeet(last[lane]!, bar)) lane++
         last[lane] = bar
         lanes[index] = lane
       }

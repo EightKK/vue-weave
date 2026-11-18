@@ -1,5 +1,6 @@
 import {
-  buildScheduleModel, limitsOf, lowerBounds, slotFor, startedSubtasks, summarySlot, targetFinish, topologicalOrder, type WorkClock,
+  buildScheduleModel, checkStatusDate, isMapLike, limitsOf, lowerBounds, slotFor, summarySlot, targetFinish, topologicalOrder,
+  withStartedSubtasks, type WorkClock,
 } from './scheduleModel.js'
 import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
@@ -42,10 +43,8 @@ export function rescheduleFromStatusDate(
   input: ScheduleInput, statusDate: number, progress: ReadonlyMap<string, number>,
 ): ScheduleResult {
   const model = buildScheduleModel(input)
-  if (typeof statusDate !== 'number' || !Number.isFinite(statusDate)) throw new RangeError('The status date must be finite')
-  if (statusDate < model.range.start || statusDate > model.range.end) throw new RangeError('The status date must be inside the schedule range')
-  model.validateTime(statusDate)
-  if (typeof progress?.get !== 'function' || typeof progress[Symbol.iterator] !== 'function') {
+  checkStatusDate(model, statusDate)
+  if (!isMapLike(progress)) {
     throw new Error('Progress must be a Map from task ID to the completed share, such as new Map([[\'a\', 0.5]])')
   }
   for (const [id, value] of progress) {
@@ -91,11 +90,8 @@ export function rescheduleFromStatusDate(
   const dependencies = (input.dependencies ?? []).filter(link =>
     !completed.has(link.to) && !(resumes.has(link.to) && !targetFinish(link)))
   const started = new Set([...completed, ...resumes.keys()])
-  const adjusted: ScheduleInput = { ...input, tasks, dependencies }
-  if (started.size) startedSubtasks.set(adjusted, started)
-  const final: ScheduleInput = { ...input, tasks: delayRemainingWork(adjusted, resumes), dependencies }
-  if (started.size) startedSubtasks.set(final, started)
-  return scheduleTasks(final)
+  const adjusted = withStartedSubtasks({ ...input, tasks, dependencies }, started)
+  return scheduleTasks(withStartedSubtasks({ ...input, tasks: delayRemainingWork(adjusted, resumes), dependencies }, started))
 }
 
 /** A partly done task: its own pauses, where its done work ends, its remaining work and its clock without the gap. */

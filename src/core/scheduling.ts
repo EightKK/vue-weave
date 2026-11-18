@@ -1,5 +1,5 @@
 import {
-  addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
+  addManualUpper, addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
   rollUpSummaries, slotFor, sourceFinish, summarySlot, summaryUpper, targetFinish, topologicalOrder, type Slot, type SummaryUpper,
 } from './scheduleModel.js'
 import {
@@ -244,13 +244,7 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
     }
     if (!task.alap) continue
     const bounds = addSummaryUpper(addUpperBounds(lowerBounds(task, earliest), task, placed, finish), task, inheritedPlaced, earliest)
-    const own = earliest.get(task.id)!
-    for (const link of task.manualOutgoing) {
-      const manual = tasks.get(link.to)!.manual!
-      const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
-      if ((sourceFinish(link) ? own.end : own.start) > value) continue
-      ;(sourceFinish(link) ? bounds.endUpper : bounds.startUpper).push({ value, dependencyId: link.id })
-    }
+    addManualUpper(model, task, earliest.get(task.id)!, bounds.endUpper, bounds.startUpper)
     const limits = limitsOf(bounds)
     const slot = slotFor(task.clock, task.duration, limits, true)
     if (!slot) return diagnose(model, task, bounds)

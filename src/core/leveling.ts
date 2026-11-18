@@ -1,6 +1,7 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
+import { firstIndex, joinTouching, rangesOverlap } from './intervals.js'
 import {
-  addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, firstIndex, limitsOf, lowerBounds, manualSlot,
+  addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
   slotFor, summarySlot, summaryUpper, topologicalOrder, type ModelTask, type Slot, type SummaryUpper, type WorkClock,
 } from './scheduleModel.js'
 import {
@@ -10,7 +11,7 @@ import {
 import { scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleSuccess, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
-import { assignmentWorkRange, capacityPeriodsOf, capacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
+import { assignmentWorkRange, resourceCapacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
 
 export interface LevelResourcesInput extends ScheduleInput {
   resources: readonly ResourceCapacity[]
@@ -178,27 +179,6 @@ class Heap<T> {
   }
 }
 
-/** Whether two sorted lists of disjoint half-open ranges overlap anywhere. */
-function overlapping(a: readonly TimeRange[], b: readonly TimeRange[]): boolean {
-  let j = 0
-  for (const range of a) {
-    while (j < b.length && b[j]!.end <= range.start) j++
-    if (j < b.length && b[j]!.start < range.end) return true
-  }
-  return false
-}
-
-/** Sorted ranges with touching neighbours joined. */
-function mergeRanges(ranges: readonly TimeRange[]): TimeRange[] {
-  const result: TimeRange[] = []
-  for (const range of ranges) {
-    const previous = result.at(-1)
-    if (previous?.end === range.start) previous.end = range.end
-    else result.push({ start: range.start, end: range.end })
-  }
-  return result
-}
-
 /** A resource that a task needs and, for a partial assignment, its part of the task's work in elapsed working time. */
 interface Need {
   profile: Profile
@@ -350,14 +330,11 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const profiles = new Map<string, Profile>()
   for (const resource of input.resources) {
     if (!resource.id || profiles.has(resource.id)) throw new Error('Invalid or duplicate resource: ' + resource.id)
-    if (!Number.isSafeInteger(resource.capacity) || resource.capacity < 0) throw new RangeError('Invalid resource capacity: ' + resource.id)
-    const capacityPeriods = capacityPeriodsOf(resource)
-    for (const period of [...resource.periods ?? [], ...capacityPeriods]) {
+    const steps = resourceCapacitySteps(resource, range, period => {
       model.validateTime(period.start)
       model.validateTime(period.end)
-    }
-    const availability = normalizeWorkPeriods(resource.periods ?? [range], range)
-    profiles.set(resource.id, new Profile(range, capacitySteps(resource.capacity, capacityPeriods, availability)))
+    })
+    profiles.set(resource.id, new Profile(range, steps))
   }
   const demands = new Map<string, Need[]>()
   const assigned = new Set<string>()
@@ -482,7 +459,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
         }
       }
     }
-    if (needs.length) reserved.set(task.id, mergeRanges(slices))
+    if (needs.length) reserved.set(task.id, joinTouching(slices))
   }
   const release = (task: ModelTask) => {
     const next = task.outgoing.map(link => link.to)
@@ -516,7 +493,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
             const own = needSlices(need, slices)
             if (!own.length) continue
             windows.set(need, need.part ? { start: own[0]!.start, end: own.at(-1)!.end } : slot)
-            if (overlapping(own, need.profile.blocked(need.units, range.end))) short = true
+            if (rangesOverlap(own, need.profile.blocked(need.units, range.end))) short = true
           }
           if (short) {
             unresolved.add(task.id)
@@ -524,7 +501,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
           }
         } else {
           const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
-          if (overlapping(slices, blocked)) {
+          if (rangesOverlap(slices, blocked)) {
             unresolved.add(task.id)
             if (trace) recordCapacity(trace, task, needs, slot, true, slot, slot)
           }
@@ -630,7 +607,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   for (const after of leveled.tasks) {
     const expected = reserved.get(after.id)
     if (!expected) continue
-    const actual = mergeRanges(after.work)
+    const actual = joinTouching(after.work)
     if (expected.length !== actual.length
       || expected.some((slice, i) => slice.start !== actual[i]!.start || slice.end !== actual[i]!.end)) unresolved.add(after.id)
   }

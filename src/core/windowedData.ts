@@ -441,7 +441,7 @@ export function rejectWindowedRequest<T, L = never>(
   return { state: { ...state, cells, inflight, requests: publicRequests(inflight) }, applied: true }
 }
 
-function cellInWindow(options: Grid, key: string, chunks: { first: number; last: number }, rows: ReadonlySet<string> | undefined) {
+function cellInWindow(key: string, chunks: { first: number; last: number }, rows: ReadonlySet<string> | undefined) {
   const separator = key.indexOf('\u0000')
   const chunk = Number(separator < 0 ? key : key.slice(0, separator))
   if (chunk < chunks.first || chunk > chunks.last) return false
@@ -461,7 +461,7 @@ export function retryWindowedData<T, L = never>(state: WindowedDataState<T, L>, 
   const cells = new Map(state.cells)
   for (const [key, cell] of state.cells) {
     if (cell.status !== 'failed') continue
-    if (chunks && !cellInWindow(options, key, chunks, rows)) continue
+    if (chunks && !cellInWindow(key, chunks, rows)) continue
     cells.delete(key)
   }
   return setWindowedView({ ...state, cells }, state.view)

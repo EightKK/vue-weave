@@ -1,4 +1,7 @@
-import { buildScheduleModel, sourceFinish, startedSubtasks, subtractPeriods, targetFinish } from './scheduleModel.js'
+import { subtractPeriods, uniteRanges } from './intervals.js'
+import {
+  buildScheduleModel, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
+} from './scheduleModel.js'
 import {
   scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleSuccess, type ScheduleTask,
   type ScheduledTask,
@@ -148,10 +151,8 @@ export function rescheduleFromActuals(
 ): RescheduleFromActualsResult {
   const model = buildScheduleModel(input)
   const { range, quantum } = model
-  if (typeof statusDate !== 'number' || !Number.isFinite(statusDate)) throw new RangeError('The status date must be finite')
-  if (statusDate < range.start || statusDate > range.end) throw new RangeError('The status date must be inside the schedule range')
-  model.validateTime(statusDate)
-  if (typeof actuals?.get !== 'function' || typeof actuals[Symbol.iterator] !== 'function') {
+  checkStatusDate(model, statusDate)
+  if (!isMapLike(actuals)) {
     throw new Error('Actuals must be a Map from task ID to recorded actuals, such as new Map([[\'a\', { intervals: [{ start, end }] }]])')
   }
   for (const [id, entry] of actuals) {
@@ -263,10 +264,8 @@ export function rescheduleFromActuals(
     const standIn = sourceFinish(link) ? undefined : startStandIns.get(link.from)
     dependencies.push(standIn ? { ...link, from: standIn } : link)
   }
-  const adjusted: ScheduleInput = { ...input, tasks, dependencies }
   const started = new Set([...finished, ...startStandIns.keys(), ...startStandIns.values()])
-  if (started.size) startedSubtasks.set(adjusted, started)
-  const raw = scheduleTasks(adjusted)
+  const raw = scheduleTasks(withStartedSubtasks({ ...input, tasks, dependencies }, started))
   const plan = scheduleTasks(input)
 
   const owner = new Map([...startStandIns].map(([id, standIn]) => [standIn, id]))
@@ -335,35 +334,20 @@ export function rescheduleFromActuals(
     results.set(task.id, entry)
     order.push(entry)
   }
-  rollUpActuals(order, results, model.tasks)
+  rollUpActuals(model, results)
   const fields = { statusDate, plan, tasks: order, diagnostics }
   return schedule.ok ? { ok: true, schedule, ...fields } : { ok: false, schedule, ...fields }
 }
 
 /**
- * Give each summary the state, work and (after a failed schedule) the span of its subtasks. Summaries are handled from
- * the deepest up, without recursion.
+ * Give each summary the state, work and (after a failed schedule) the span of its subtasks. The model lists summaries
+ * after their subtasks, so nested summaries roll up without recursion.
  */
-function rollUpActuals(
-  order: ActualsTask[], results: Map<string, ActualsTask>, tasks: ReturnType<typeof buildScheduleModel>['tasks'],
-) {
-  const summaries = order.filter(entry => entry.summary)
-  if (!summaries.length) return
-  const depth = new Map<string, number>()
-  for (const entry of order) {
-    const path: string[] = []
-    let id: string | undefined = entry.id
-    while (id !== undefined && !depth.has(id)) {
-      path.push(id)
-      id = tasks.get(id)!.parent
-    }
-    let level = id === undefined ? -1 : depth.get(id)!
-    for (let i = path.length - 1; i >= 0; i--) depth.set(path[i]!, ++level)
-  }
-  summaries.sort((a, b) => depth.get(b.id)! - depth.get(a.id)!)
-  for (const summary of summaries) {
+function rollUpActuals(model: ScheduleModel, results: ReadonlyMap<string, ActualsTask>) {
+  for (const id of model.summaries) {
+    const summary = results.get(id)!
     let performed = 0, remaining = 0, started = false, open = false, start = Infinity, end = -Infinity
-    for (const childId of tasks.get(summary.id)!.summary!.children) {
+    for (const childId of model.tasks.get(id)!.summary!.children) {
       const child = results.get(childId)!
       performed += child.performedWork
       remaining += child.remainingWork
@@ -428,12 +412,7 @@ export function actualsTimelineBars(result: RescheduleFromActualsResult, options
   for (const task of result.tasks) {
     if (task.summary) continue
     const parts: TimelineBar[] = []
-    const merged: TimeRange[] = []
-    for (const part of [...task.actual].sort((a, b) => a.start - b.start)) {
-      const last = merged.at(-1)
-      if (last && part.start <= last.end) last.end = Math.max(last.end, part.end)
-      else merged.push({ start: part.start, end: part.end })
-    }
+    const merged = uniteRanges(task.actual)
     if (merged.length) {
       const bar: TimelineBar = {
         id: barId(task.id, 'actual'), rowId: rowId(task.id), label: label(task.id) + ' · ' + words.actual,
