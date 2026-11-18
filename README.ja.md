@@ -57,7 +57,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、サマリータスク（`parentId`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
 - `levelResources` による設備負荷の平準化と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
-- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として読み込みます。
+- データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として（カレンダー、リソース、割り当ても）、`fromICalendar` と `timelineFromICalendar` はiCalendarファイルを読み込みます。
 
 ### 計画・連動・保存
 

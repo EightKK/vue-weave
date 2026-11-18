@@ -57,7 +57,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses, manually scheduled (`manual`) and inactive (`inactive`) tasks, summary tasks (`parentId`), and IANA time-zone calendars (`WorkWeek.timeZone`).
 - Resource leveling with `levelResources`, and plan updates with `propagateEdit` (ready to return from `cascade`) and `rescheduleFromStatusDate`.
 - Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
-- Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars, and `fromMsProjectXml` with `timelineFromMsProject` imports a Microsoft Project XML file as rows, bars, baselines and dependencies.
+- Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars, `fromMsProjectXml` with `timelineFromMsProject` imports a Microsoft Project XML file as rows, bars, baselines and dependencies (and its calendars, resources and assignments), and `fromICalendar` with `timelineFromICalendar` imports an iCalendar file.
 
 ### Planning, linking and saving
 

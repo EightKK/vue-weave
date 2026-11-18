@@ -1,8 +1,11 @@
 // Interchange formats: Microsoft Project XML (MSPDI), iCalendar and CSV. Pure string builders and readers without a DOM.
 import { escapeXml } from './exportSvg.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
-import { createTimelineRowTree, timelineBaselineId } from './timeline.js'
-import { maxUtcOffsetMinutes } from './workCalendar.js'
+import type { ResourceAssignment, ResourceCapacity } from './resourceLoad.js'
+import type { ResourceTimelineResource } from './resourceTimeline.js'
+import { createTimelineRowTree, timelineBaselineId, type TimeRange } from './timeline.js'
+import { zonedInstant, zoneFormat } from './timeZone.js'
+import { buildWorkPeriods, maxUtcOffsetMinutes, type WeeklyShift, type WorkCalendar, type WorkShift, type WorkWeek } from './workCalendar.js'
 import type {
   TimelineBar, TimelineConstraintKind, TimelineConstraints, TimelineDependency, TimelineDependencyType, TimelineRow,
 } from './types.js'
@@ -38,6 +41,49 @@ export interface MsProjectTask {
    * task that keeps the given dates.
    */
   manual?: boolean
+  /** ID of an `MsProjectCalendar` of the project: the task's own calendar (`CalendarUID`). Default: the project calendar. */
+  calendarId?: string
+}
+
+/**
+ * A calendar of a Microsoft Project plan: a weekly pattern with date exceptions, as `WorkWeek` of `buildWorkPeriods`
+ * holds it. Shift minutes are local wall-clock times.
+ */
+export interface MsProjectCalendar {
+  /** Unique within the project. `toMsProjectXml` numbers calendars from 1 in input order and does not write this ID. */
+  id: string
+  name: string
+  /** Read from `IsBaseCalendar`. `toMsProjectXml` ignores it and writes every calendar as a base calendar. */
+  base?: boolean
+  /** The ID of the calendar this one was derived from (`BaseCalendarUID`). Informational: `week` is already complete. */
+  baseCalendarId?: string
+  /**
+   * The complete weekly pattern and exceptions, with everything inherited from the base calendar already applied. A
+   * weekday without shifts is non-working. `toMsProjectXml` writes only `weekly` and `exceptions`: `utcOffsetMinutes` and
+   * `timeZone` are ignored (MSPDI times are wall-clock times), and a shift that ends after minute 1440 throws a RangeError.
+   */
+  week: WorkWeek
+}
+
+/** A resource of a Microsoft Project plan. */
+export interface MsProjectResource {
+  /** Unique within the project. `toMsProjectXml` numbers resources from 1 in input order and does not write this ID. */
+  id: string
+  name: string
+  /** `Type`: 0 material, 1 work, 2 cost. Absent counts as `'work'` where it matters. */
+  type?: 'work' | 'material' | 'cost'
+  /** `MaxUnits` as a fraction of one full-time resource: 1 is 100 %, 2.5 is 250 %. Absent counts as 1. */
+  maxUnits?: number
+  /** ID of an `MsProjectCalendar`: the resource's own working time (`CalendarUID`). */
+  calendarId?: string
+}
+
+/** A resource assigned to a task. At most one assignment per task and resource. */
+export interface MsProjectAssignment {
+  taskId: string
+  resourceId: string
+  /** `Units` as a fraction of full time: 1 is 100 %. Absent counts as 1. */
+  units?: number
 }
 
 /**
@@ -66,6 +112,12 @@ export interface MsProjectInput {
   name: string
   tasks: readonly MsProjectTask[]
   dependencies?: readonly MsProjectDependency[]
+  /** Calendars, written by `toMsProjectXml` and read by `fromMsProjectXml`. */
+  calendars?: readonly MsProjectCalendar[]
+  /** The ID of the project calendar (`CalendarUID`), one of `calendars`. */
+  defaultCalendarId?: string
+  resources?: readonly MsProjectResource[]
+  assignments?: readonly MsProjectAssignment[]
 }
 
 export interface MsProjectXmlOptions {
@@ -75,6 +127,7 @@ export interface MsProjectXmlOptions {
 
 const minuteMs = 60_000
 const secondMs = 1000
+const resourceTypes = { material: 0, work: 1, cost: 2 } as const
 const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
 // MSPDI ConstraintType: 2 Must Start On, 4 Start No Earlier Than, 5 Start No Later Than, 6 Finish No Earlier Than and
 // 7 Finish No Later Than. Type 3 (Must Finish On) is the pair finishNoEarlierThan + finishNoLaterThan at one time.
@@ -180,20 +233,119 @@ function isoDuration(ms: number) {
 
 /**
  * `ConstraintType` and `ConstraintDate` of a task with exactly one constraint, or with exactly the finish pair at one
- * time (Must Finish On); nothing otherwise.
+ * time (Must Finish On); empty strings otherwise. They are separate because `CalendarUID` sits between them.
  */
-function constraintElements(constraints: TimelineConstraints | undefined, offset: number) {
+function constraintElements(constraints: TimelineConstraints | undefined, offset: number): [string, string] {
   const set = Object.entries(timelineConstraints(constraints) ?? {}) as [TimelineConstraintKind, number][]
+  const pair = (type: number, time: number): [string, string] =>
+    [`<ConstraintType>${type}</ConstraintType>`, `<ConstraintDate>${localIso(toSecond(time), offset)}</ConstraintDate>`]
   if (set.length === 2) {
     const earliest = set.find(([kind]) => kind === 'finishNoEarlierThan'), latest = set.find(([kind]) => kind === 'finishNoLaterThan')
-    if (earliest && latest && earliest[1] === latest[1]) {
-      return `<ConstraintType>3</ConstraintType><ConstraintDate>${localIso(toSecond(earliest[1]), offset)}</ConstraintDate>`
-    }
-    return ''
+    if (earliest && latest && earliest[1] === latest[1]) return pair(3, earliest[1])
+    return ['', '']
   }
-  if (set.length !== 1) return ''
+  if (set.length !== 1) return ['', '']
   const [kind, time] = set[0]!
-  return `<ConstraintType>${constraintTypes[kind]}</ConstraintType><ConstraintDate>${localIso(toSecond(time), offset)}</ConstraintDate>`
+  return pair(constraintTypes[kind], time)
+}
+
+function uniqueNumbered<T extends { id: string }>(items: readonly T[] | undefined, what: string) {
+  const uids = new Map<string, number>()
+  if (items === undefined) return uids
+  if (!Array.isArray(items)) throw new Error(what + 's must be an array')
+  for (const item of items) {
+    if (typeof item?.id !== 'string' || !item.id || uids.has(item.id)) throw new Error(`Invalid or duplicate ${what} ID: ${item?.id}`)
+    uids.set(item.id, uids.size + 1)
+  }
+  return uids
+}
+
+function checkWorkShift(shift: WorkShift, what: string) {
+  const { startMinute, endMinute } = shift ?? {}
+  if (!Number.isInteger(startMinute) || !Number.isInteger(endMinute) || startMinute < 0 || startMinute >= 1440 || endMinute <= startMinute) {
+    throw new RangeError('Invalid shift minutes in ' + what)
+  }
+  if (endMinute > 1440) throw new RangeError('A shift that ends after midnight cannot be written; split it at midnight: ' + what)
+}
+
+/** Check calendars, resources and assignments as `toMsProjectXml` needs them; returns the UID of each ID. */
+function checkMsProjectExtras(project: MsProjectInput, taskUids: ReadonlyMap<string, number>) {
+  const calendarUids = uniqueNumbered(project.calendars, 'calendar')
+  const resourceUids = uniqueNumbered(project.resources, 'resource')
+  for (const calendar of project.calendars ?? []) {
+    checkText(calendar.name, 'The name of calendar ' + calendar.id)
+    const week = calendar.week
+    if (!week || !Array.isArray(week.weekly)) throw new Error('Calendar ' + calendar.id + ' needs a week with a weekly array')
+    for (const shift of week.weekly) {
+      checkWorkShift(shift, 'calendar ' + calendar.id)
+      if (!Number.isInteger(shift.weekday) || shift.weekday < 0 || shift.weekday > 6) throw new RangeError('Invalid weekday in calendar ' + calendar.id)
+    }
+    for (const [date, shifts] of Object.entries(week.exceptions ?? {})) {
+      if (!civilDay(date)) throw new RangeError(`Invalid exception date in calendar ${calendar.id}: ${date}`)
+      for (const shift of shifts) checkWorkShift(shift, 'calendar ' + calendar.id)
+    }
+  }
+  if (project.defaultCalendarId !== undefined && !calendarUids.has(project.defaultCalendarId)) {
+    throw new Error('Unknown default calendar: ' + project.defaultCalendarId)
+  }
+  for (const task of project.tasks) {
+    if (task.calendarId !== undefined && !calendarUids.has(task.calendarId)) throw new Error(`Unknown calendar of task ${task.id}: ${task.calendarId}`)
+  }
+  for (const resource of project.resources ?? []) {
+    checkText(resource.name, 'The name of resource ' + resource.id)
+    if (resource.type !== undefined && !Object.hasOwn(resourceTypes, resource.type)) throw new Error(`Invalid type of resource ${resource.id}: ${resource.type}`)
+    if (resource.maxUnits !== undefined && (typeof resource.maxUnits !== 'number' || !Number.isFinite(resource.maxUnits) || resource.maxUnits < 0)) {
+      throw new RangeError('maxUnits must be a finite number of at least 0: ' + resource.id)
+    }
+    if (resource.calendarId !== undefined && !calendarUids.has(resource.calendarId)) throw new Error(`Unknown calendar of resource ${resource.id}: ${resource.calendarId}`)
+  }
+  const pairs = new Set<string>()
+  for (const assignment of project.assignments ?? []) {
+    if (!taskUids.has(assignment.taskId) || !resourceUids.has(assignment.resourceId)) {
+      throw new Error(`Unknown task or resource in assignment: ${assignment.taskId}, ${assignment.resourceId}`)
+    }
+    const key = JSON.stringify([assignment.taskId, assignment.resourceId])
+    if (pairs.has(key)) throw new Error(`Duplicate resource assignment for task: ${assignment.taskId}, ${assignment.resourceId}`)
+    pairs.add(key)
+    const units = assignment.units
+    if (units !== undefined && (typeof units !== 'number' || !Number.isFinite(units) || units < 0)) {
+      throw new RangeError(`Assignment units must be a finite number of at least 0: ${assignment.taskId}, ${assignment.resourceId}`)
+    }
+  }
+  return { calendarUids, resourceUids }
+}
+
+/** The epoch milliseconds of the UTC midnight of a `YYYY-MM-DD` civil date, or undefined when it is not a real date. */
+function civilDay(date: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!match) return undefined
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const value = new Date(0)
+  value.setUTCFullYear(year, month - 1, day)
+  return month >= 1 && month <= 12 && value.getUTCDate() === day ? value.getTime() : undefined
+}
+
+const clockText = (minute: number) => `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}:00`
+
+function workingTimesXml(shifts: readonly WorkShift[]) {
+  const sorted = [...shifts].sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
+  return '<WorkingTimes>' + sorted.map(shift =>
+    `<WorkingTime><FromTime>${clockText(shift.startMinute)}</FromTime><ToTime>${clockText(shift.endMinute)}</ToTime></WorkingTime>`).join('') + '</WorkingTimes>'
+}
+
+function calendarXml(calendar: MsProjectCalendar, uid: number) {
+  const { week } = calendar
+  const days = Array.from({ length: 7 }, (_, weekday) => {
+    const shifts = week.weekly.filter(shift => shift.weekday === weekday)
+    return `<WeekDay><DayType>${weekday + 1}</DayType><DayWorking>${shifts.length ? 1 : 0}</DayWorking>${shifts.length ? workingTimesXml(shifts) : ''}</WeekDay>`
+  })
+  for (const date of Object.keys(week.exceptions ?? {}).sort()) {
+    const shifts = week.exceptions![date]!
+    days.push(`<WeekDay><DayType>0</DayType><DayWorking>${shifts.length ? 1 : 0}</DayWorking>`
+      + `<TimePeriod><FromDate>${date}T00:00:00</FromDate><ToDate>${date}T23:59:00</ToDate></TimePeriod>${shifts.length ? workingTimesXml(shifts) : ''}</WeekDay>`)
+  }
+  return `<Calendar><UID>${uid}</UID><Name>${escapeXml(calendar.name)}</Name><IsBaseCalendar>1</IsBaseCalendar>`
+    + `<WeekDays>${days.join('')}</WeekDays></Calendar>`
 }
 
 /**
@@ -216,18 +368,28 @@ function constraintElements(constraints: TimelineConstraints | undefined, offset
  * A task with `inactive: true` is written with `Active` 0, and one with `manual: false` as automatically scheduled
  * (`Manual` 0); without them every task is active and manually scheduled.
  *
- * Not exported: calendars, resources, assignments, a second constraint of a task (other than the Must Finish On pair), notes, custom fields and baseline
- * work or cost. Task IDs of the input are not written; the UIDs follow the input order.
+ * Optional `calendars`, `resources` and `assignments` are written as `Calendars`, `Resources` and `Assignments` with UIDs
+ * from 1 in input order. Every calendar is written as a base calendar with its complete weekly pattern (`DayType` 1 to 7,
+ * Sunday first) and each exception date as a `DayType` 0 entry with a `TimePeriod`. `defaultCalendarId` and a task's
+ * `calendarId` become `CalendarUID`. A resource gets `Type`, `MaxUnits` (when set) and `CalendarUID`, an assignment `Units` (default 1). These
+ * elements follow the MSPDI schema order but have not been opened in Microsoft Project itself.
+ *
+ * Not exported: a second constraint of a task (other than the Must Finish On pair), notes, custom fields, baseline
+ * work or cost and the base-calendar inheritance and time zone of a calendar. Task, calendar and resource IDs of the
+ * input are not written; the UIDs follow the input order.
  *
  * Throws an Error for empty or duplicate task IDs, a missing project or task name, unknown dependency ends, a
  * dependency from a task to itself, unknown link types, a duplicate baseline number on a task and `inactive` or `manual`
  * flags that are not booleans, and a RangeError for non-finite or unordered dates (also of baselines), an invalid
- * outline level, percent complete, lag, baseline number or constraint time.
+ * outline level, percent complete, lag, baseline number or constraint time. Calendars, resources and assignments throw an
+ * Error for empty or duplicate IDs, missing names, unknown references and duplicate assignments, and a RangeError for
+ * invalid shifts, exception dates, `maxUnits` or `units`.
  */
 export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOptions = {}): string {
   const offset = checkOffset(options.utcOffsetMinutes)
   checkText(project.name, 'The project name')
   const { uids, levels } = checkMsProjectTasks(project.tasks)
+  const { calendarUids, resourceUids } = checkMsProjectExtras(project, uids)
   const predecessors = new Map<string, string[]>()
   for (const dependency of project.dependencies ?? []) {
     const { from, type, lag } = checkMsProjectDependency(dependency, uids)
@@ -254,6 +416,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
     const startTime = toSecond(task.start), finishTime = toSecond(task.end)
     const start = localIso(startTime, offset), finish = localIso(finishTime, offset)
     const duration = isoDuration(milestone ? 0 : finishTime - startTime)
+    const [constraintType, constraintDate] = constraintElements(task.constraints, offset)
     return '<Task>'
       + `<UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(task.name)}</Name>`
       + `<Active>${task.inactive === true ? 0 : 1}</Active><Manual>${task.manual === false ? 0 : 1}</Manual>`
@@ -262,7 +425,9 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
       + `<ManualStart>${start}</ManualStart><ManualFinish>${finish}</ManualFinish><ManualDuration>${duration}</ManualDuration>`
       + `<Milestone>${milestone ? 1 : 0}</Milestone><Summary>${summary ? 1 : 0}</Summary>`
       + `<PercentComplete>${Math.round(task.percentComplete ?? 0)}</PercentComplete>`
-      + constraintElements(task.constraints, offset)
+      + constraintType
+      + (task.calendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(task.calendarId)}</CalendarUID>`)
+      + constraintDate
       + (predecessors.get(task.id) ?? []).join('')
       + (task.baselines ?? []).map(baseline => {
         const baselineStart = toSecond(baseline.start), baselineFinish = toSecond(baseline.end)
@@ -275,10 +440,25 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
   const name = escapeXml(project.name)
   const dates = project.tasks.length
     ? `<StartDate>${localIso(projectStart, offset)}</StartDate><FinishDate>${localIso(projectEnd, offset)}</FinishDate>` : ''
+  const defaultCalendar = project.defaultCalendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(project.defaultCalendarId)}</CalendarUID>`
+  const calendars = project.calendars?.length
+    ? `<Calendars>${project.calendars.map(calendar => calendarXml(calendar, calendarUids.get(calendar.id)!)).join('')}</Calendars>` : ''
+  const resources = project.resources?.length
+    ? '<Resources>' + project.resources.map(resource => {
+      const uid = resourceUids.get(resource.id)!
+      return `<Resource><UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(resource.name)}</Name>`
+        + `<Type>${resourceTypes[resource.type ?? 'work']}</Type><IsNull>0</IsNull>${resource.maxUnits === undefined ? '' : `<MaxUnits>${resource.maxUnits}</MaxUnits>`}`
+        + (resource.calendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(resource.calendarId)}</CalendarUID>`) + '</Resource>'
+    }).join('') + '</Resources>' : ''
+  const assignments = project.assignments?.length
+    ? '<Assignments>' + project.assignments.map((assignment, index) =>
+      `<Assignment><UID>${index + 1}</UID><TaskUID>${uids.get(assignment.taskId)}</TaskUID>`
+      + `<ResourceUID>${resourceUids.get(assignment.resourceId)}</ResourceUID><Units>${assignment.units ?? 1}</Units></Assignment>`).join('')
+      + '</Assignments>' : ''
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
     + '<Project xmlns="http://schemas.microsoft.com/project">'
-    + `<Name>${name}</Name><Title>${name}</Title><ScheduleFromStart>1</ScheduleFromStart>${dates}`
-    + `<Tasks>${tasks.join('')}</Tasks></Project>\n`
+    + `<Name>${name}</Name><Title>${name}</Title><ScheduleFromStart>1</ScheduleFromStart>${dates}${defaultCalendar}`
+    + `${calendars}<Tasks>${tasks.join('')}</Tasks>${resources}${assignments}</Project>\n`
 }
 
 /** An element of a parsed XML document. */
@@ -499,15 +679,27 @@ export interface MsProjectImportTask extends MsProjectTask {
  * `unknown-predecessor`: a link from a task that was not imported. `skipped-link`: a link to another project, from a
  * task to itself or of an unknown type. `percent-lag`: a lag in percent of the predecessor's duration, which was left
  * out. `working-time-lag`: a lag in working time, which was read as the same amount of elapsed time.
+ * `skipped-calendar`: a calendar without a valid or with a repeated UID. `invalid-calendar`: a working time, exception
+ * or base calendar reference that cannot be read or would be circular, which was left out. `unsupported-calendar`: a
+ * recurring exception, an alternate work week or a day type that `WorkWeek` cannot hold, which was left out.
+ * `unknown-calendar`: a calendar UID of the project, a task or a resource that no imported calendar has, which was left
+ * out. `skipped-resource`: a resource without a valid UID or with a UID used before. `skipped-assignment`: an
+ * assignment to a task or resource that was not imported, or repeating a task and resource pair.
  */
 export type MsProjectImportWarningCode =
   | 'skipped-task' | 'outline-level' | 'invalid-value' | 'unsupported-constraint' | 'skipped-baseline'
   | 'unknown-predecessor' | 'skipped-link' | 'percent-lag' | 'working-time-lag'
+  | 'skipped-calendar' | 'invalid-calendar' | 'unsupported-calendar' | 'unknown-calendar'
+  | 'skipped-resource' | 'skipped-assignment'
 
 export interface MsProjectImportWarning {
   code: MsProjectImportWarningCode
   /** The imported ID (the UID) of the task the warning is about, when there is one. */
   taskId?: string
+  /** The imported ID of the calendar the warning is about, when there is one. */
+  calendarId?: string
+  /** The imported ID of the resource the warning is about, when there is one. */
+  resourceId?: string
   /** An English description for logs; match on `code`. */
   message: string
 }
@@ -519,6 +711,14 @@ export interface MsProjectImport {
   /** In the order of their successor tasks and then of their links. `type` is always set, `lag` only when not 0. */
   dependencies: MsProjectDependency[]
   warnings: MsProjectImportWarning[]
+  /** Present when the file has calendars. Ordered as in the file; see `MsProjectCalendar`. */
+  calendars?: MsProjectCalendar[]
+  /** The project calendar (`CalendarUID`), when the file names one that was imported. */
+  defaultCalendarId?: string
+  /** Present when the file has resources. Excludes the project's own "unassigned" resource (UID 0). */
+  resources?: MsProjectResource[]
+  /** Present when the file has assignments to imported tasks and resources. */
+  assignments?: MsProjectAssignment[]
 }
 
 const msDateTime = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/
@@ -562,6 +762,176 @@ function msDurationValue(text: string): number | undefined {
 const isTrue = (text: string | undefined) => text === '1' || text === 'true'
 const uidPattern = /^\d+$/
 
+type MsWarn = (code: MsProjectImportWarningCode, message: string, subject?: string | { taskId?: string; calendarId?: string; resourceId?: string }) => void
+
+/** Minutes after midnight of an MSPDI clock time such as `08:00:00` (up to 24:00:00), rounded to a whole minute. */
+function msClock(text: string | undefined): number | undefined {
+  const match = text === undefined ? null : /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text)
+  if (!match) return undefined
+  const [h, m, sec = 0] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)]
+  if (m > 59 || sec > 59 || h > 24 || (h === 24 && (m || sec))) return undefined
+  return Math.round((h * 3600 + m * 60 + sec) / 60)
+}
+
+/** The `YYYY-MM-DD` date of an MSPDI date-time, when it is a real date. */
+function msDay(text: string | undefined): string | undefined {
+  const date = text === undefined ? undefined : /^\d{4}-\d{2}-\d{2}(?=T|$)/.exec(text)?.[0]
+  return date !== undefined && civilDay(date) !== undefined ? date : undefined
+}
+
+/** The longest run of dates that one calendar exception expands to. */
+const maxExceptionDays = 3660
+
+interface RawCalendar {
+  id: string
+  name: string
+  base: boolean
+  baseId?: string
+  weekly: (WorkShift[] | undefined)[]
+  exceptions: Map<string, WorkShift[]>
+}
+
+/** The shifts in the `WorkingTimes` of a `WeekDay` or `Exception`; unreadable entries are reported and left out. */
+function msWorkingTimes(element: XmlElement, working: boolean, warn: MsWarn, calendarId: string): WorkShift[] {
+  const shifts: WorkShift[] = []
+  if (!working) return shifts
+  for (const times of element.children) {
+    if (times.name !== 'WorkingTimes') continue
+    for (const time of times.children) {
+      if (time.name !== 'WorkingTime') continue
+      const fields = childMap(time)
+      const from = msClock(fields.get('FromTime')?.text.trim()), to = msClock(fields.get('ToTime')?.text.trim())
+      // A working time that ends at midnight is written as 00:00:00.
+      const end = to === 0 ? 1440 : to
+      if (from === undefined || end === undefined || from >= 1440 || end <= from) {
+        warn('invalid-calendar', `A working time of calendar ${calendarId} cannot be read and was left out`, { calendarId })
+      } else shifts.push({ startMinute: from, endMinute: end })
+    }
+  }
+  return shifts.sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
+}
+
+function msException(raw: RawCalendar, element: XmlElement, warn: MsWarn) {
+  const fields = childMap(element)
+  const period = fields.get('TimePeriod') ? childMap(fields.get('TimePeriod')!) : new Map<string, XmlElement>()
+  const first = msDay(period.get('FromDate')?.text.trim()), last = msDay(period.get('ToDate')?.text.trim()) ?? first
+  const working = isTrue((fields.get('DayWorking') ?? { text: '' }).text.trim())
+  const calendarId = raw.id
+  const occurrences = fields.get('Occurrences')?.text.trim()
+  if (occurrences !== undefined && /^\d+$/.test(occurrences) && Number(occurrences) > 1) {
+    warn('unsupported-calendar', `A recurring exception of calendar ${calendarId} was left out`, { calendarId })
+    return
+  }
+  if (first === undefined || last === undefined || last < first) {
+    warn('invalid-calendar', `An exception of calendar ${calendarId} has no valid dates and was left out`, { calendarId })
+    return
+  }
+  const shifts = msWorkingTimes(element, working, warn, calendarId)
+  const firstTime = civilDay(first)!, lastTime = civilDay(last)!
+  const days = Math.round((lastTime - firstTime) / 86_400_000) + 1
+  if (days > maxExceptionDays) {
+    warn('invalid-calendar', `An exception of calendar ${calendarId} covers more than ${maxExceptionDays} days; only the first ${maxExceptionDays} were kept`, { calendarId })
+  }
+  for (let day = 0; day < Math.min(days, maxExceptionDays); day++) {
+    raw.exceptions.set(new Date(firstTime + day * 86_400_000).toISOString().slice(0, 10), shifts)
+  }
+}
+
+/** Read `Calendars` and resolve base calendars into complete weeks. Loops only, so long base chains are safe. */
+function readMsCalendars(section: XmlElement | undefined, offset: number, warn: MsWarn): MsProjectCalendar[] {
+  const raws = new Map<string, RawCalendar>()
+  for (const element of section?.children ?? []) {
+    if (element.name !== 'Calendar') continue
+    const fields = childMap(element)
+    const uid = fields.get('UID')?.text.trim()
+    if (uid === undefined || !uidPattern.test(uid)) {
+      warn('skipped-calendar', 'A calendar without a valid UID was skipped')
+      continue
+    }
+    const id = uid.replace(/^0+(?=\d)/, '')
+    if (raws.has(id)) {
+      warn('skipped-calendar', `Calendar ${id} repeats a UID and was skipped`, { calendarId: id })
+      continue
+    }
+    const baseText = fields.get('BaseCalendarUID')?.text.trim()
+    const raw: RawCalendar = {
+      id, name: fields.get('Name')?.text ?? '', base: isTrue(fields.get('IsBaseCalendar')?.text.trim()),
+      weekly: Array.from({ length: 7 }, () => undefined), exceptions: new Map(),
+    }
+    if (baseText !== undefined && uidPattern.test(baseText)) raw.baseId = baseText.replace(/^0+(?=\d)/, '')
+    else if (baseText !== undefined && baseText !== '-1' && baseText !== '') {
+      warn('invalid-calendar', `Calendar ${id} has a base calendar UID that cannot be read`, { calendarId: id })
+    }
+    for (const days of element.children) {
+      if (days.name === 'WeekDays') {
+        for (const day of days.children) {
+          if (day.name !== 'WeekDay') continue
+          const dayFields = childMap(day)
+          const type = dayFields.get('DayType')?.text.trim() ?? ''
+          const working = isTrue(dayFields.get('DayWorking')?.text.trim())
+          if (type === '0') {
+            msException(raw, day, warn)
+          } else if (/^[1-7]$/.test(type)) {
+            const shifts = msWorkingTimes(day, working, warn, id)
+            if (working && !day.children.some(child => child.name === 'WorkingTimes' && child.children.length)) {
+              // A working day without times: the file does not say when, so the day keeps what the base calendar has.
+              warn('invalid-calendar', `A working day of calendar ${id} has no working times and was left to the base calendar`, { calendarId: id })
+            } else raw.weekly[Number(type) - 1] = shifts
+          } else {
+            warn('unsupported-calendar', `A day of type ${type || '(none)'} in calendar ${id} is not supported and was left out`, { calendarId: id })
+          }
+        }
+      } else if (days.name === 'Exceptions') {
+        for (const exception of days.children) if (exception.name === 'Exception') msException(raw, exception, warn)
+      } else if (days.name === 'WorkWeeks' && days.children.length) {
+        warn('unsupported-calendar', `The alternate work weeks of calendar ${id} are not supported and were left out`, { calendarId: id })
+      }
+    }
+    raws.set(id, raw)
+  }
+  // Resolve inheritance, base calendars first, without recursion.
+  const resolved = new Map<string, { weekly: WorkShift[][]; exceptions: Map<string, WorkShift[]> }>()
+  for (const start of raws.values()) {
+    const chain: RawCalendar[] = []
+    const seen = new Set<string>()
+    for (let current: RawCalendar | undefined = start; current && !resolved.has(current.id); ) {
+      seen.add(current.id)
+      chain.push(current)
+      let next: RawCalendar | undefined
+      if (current.baseId !== undefined) {
+        next = raws.get(current.baseId)
+        if (!next) {
+          warn('unknown-calendar', `The base calendar ${current.baseId} of calendar ${current.id} was not imported`, { calendarId: current.id })
+          current.baseId = undefined
+        } else if (seen.has(next.id)) {
+          warn('invalid-calendar', `Calendar ${current.id} has a circular base calendar and its base was ignored`, { calendarId: current.id })
+          current.baseId = undefined
+          next = undefined
+        }
+      }
+      current = next
+    }
+    for (const raw of chain.reverse()) {
+      const base = raw.baseId === undefined ? undefined : resolved.get(raw.baseId)
+      resolved.set(raw.id, {
+        weekly: raw.weekly.map((own, day) => own ?? base?.weekly[day] ?? []),
+        exceptions: new Map([...base?.exceptions ?? [], ...raw.exceptions]),
+      })
+    }
+  }
+  return [...raws.values()].map(raw => {
+    const { weekly, exceptions } = resolved.get(raw.id)!
+    const week: WorkWeek = { weekly: weekly.flatMap((shifts, weekday): WeeklyShift[] => shifts.map(shift => ({ weekday, ...shift }))) }
+    if (offset !== 0) week.utcOffsetMinutes = offset
+    if (exceptions.size) week.exceptions = Object.fromEntries([...exceptions].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([date, shifts]) => [date, shifts.map(shift => ({ ...shift }))]))
+    const calendar: MsProjectCalendar = { id: raw.id, name: raw.name, base: raw.base, week }
+    if (raw.baseId !== undefined) calendar.baseCalendarId = raw.baseId
+    return calendar
+  })
+}
+
+const decimalText = /^\d+(\.\d+)?$/
+
 /**
  * Read a Microsoft Project XML (MSPDI) document, such as one written by Microsoft Project's "Save as XML" or by
  * `toMsProjectXml`. Pure string parsing: no DOM, no network and no file access; a DOCTYPE is skipped and only the five
@@ -577,8 +947,15 @@ const uidPattern = /^\d+$/
  * `LinkLag` (tenths of a minute) as elapsed milliseconds. Problems that the reader works around are listed in
  * `warnings` (see `MsProjectImportWarningCode`) instead of thrown.
  *
- * Not imported: calendars, resources, assignments, notes, custom fields, baseline work and cost, lags in percent and
- * the working-time meaning of other lags. Throws an Error for malformed XML (with the line and column) and for a
+ * Calendars become `calendars` (`MsProjectCalendar`): the weekly working times (`DayType` 1 to 7) and the one-off
+ * exceptions (`DayType` 0 entries and `Exceptions`) as a `WorkWeek`, with base calendars resolved so each week is complete.
+ * The project `CalendarUID` becomes `defaultCalendarId` and a task's or resource's one `calendarId`. Resources
+ * (`UID`, `Name`, `Type`, `MaxUnits`, `CalendarUID`) become `resources` and `Assignments` (`TaskUID`, `ResourceUID`,
+ * `Units`) become `assignments`; `Units` and `MaxUnits` stay fractions (1 is 100 %). Recurring exceptions, alternate
+ * work weeks and the exception of a working day without times are reported in `warnings` and left out.
+ *
+ * Not imported: notes, custom fields, baseline work and cost, lags in percent, the working-time meaning of other lags,
+ * resource cost rates and availability tables, assignment work, dates and contours. Throws an Error for malformed XML (with the line and column) and for a
  * document whose root element is not `Project`, and a RangeError for an invalid `utcOffsetMinutes`.
  */
 export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {}): MsProjectImport {
@@ -588,9 +965,24 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
   if (root.name !== 'Project') throw new Error('Not a Microsoft Project XML document: the root element is ' + root.name)
   const project = childMap(root)
   const warnings: MsProjectImportWarning[] = []
-  const warn = (code: MsProjectImportWarningCode, message: string, taskId?: string) => {
-    warnings.push(taskId === undefined ? { code, message } : { code, taskId, message })
+  const warn: MsWarn = (code, message, subject) => {
+    const who = typeof subject === 'string' ? { taskId: subject } : subject
+    warnings.push({ code, ...who, message })
   }
+  const calendars = readMsCalendars(project.get('Calendars'), offset, warn)
+  const calendarIds = new Set(calendars.map(calendar => calendar.id))
+  // A calendar UID of -1 or 0 means "none"; anything else must be an imported calendar.
+  const calendarRef = (text: string | undefined, subject: { taskId?: string; resourceId?: string } | undefined, what: string) => {
+    if (text === undefined || text === '' || text === '-1') return undefined
+    const id = uidPattern.test(text) ? text.replace(/^0+(?=\d)/, '') : undefined
+    if (id === undefined) warn('invalid-value', `${what} has a calendar UID that cannot be read: ${text}`, subject)
+    else if (id !== '0') {
+      if (calendarIds.has(id)) return id
+      warn('unknown-calendar', `${what} uses calendar ${id}, which was not imported, and it was left out`, subject)
+    }
+    return undefined
+  }
+  const defaultCalendarId = calendarRef(project.get('CalendarUID')?.text.trim(), undefined, 'The project')
   const tasks: MsProjectImportTask[] = []
   const links: { id: string; elements: XmlElement[] }[] = []
   const ids = new Set<string>()
@@ -640,6 +1032,8 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       milestone: isTrue(value('Milestone')), summary: isTrue(value('Summary')), manual: isTrue(value('Manual')),
       inactive: value('Active') === '0' || value('Active') === 'false',
     }
+    const taskCalendar = calendarRef(value('CalendarUID'), { taskId: id }, `Task ${id}`)
+    if (taskCalendar !== undefined) task.calendarId = taskCalendar
     const durationText = value('Duration')
     if (durationText !== undefined) {
       const duration = msDurationValue(durationText)
@@ -721,9 +1115,158 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       dependencies.push(dependency)
     }
   }
+  const resources: MsProjectResource[] = []
+  const resourceIds = new Set<string>()
+  for (const element of project.get('Resources')?.children ?? []) {
+    if (element.name !== 'Resource') continue
+    const fields = childMap(element)
+    const value = (field: string) => fields.get(field)?.text.trim()
+    if (isTrue(value('IsNull'))) continue
+    const uid = value('UID')
+    if (uid === undefined || !uidPattern.test(uid)) {
+      warn('skipped-resource', 'A resource without a valid UID was skipped')
+      continue
+    }
+    const id = uid.replace(/^0+(?=\d)/, '')
+    // Resource 0 is Microsoft Project's placeholder for unassigned work.
+    if (id === '0') continue
+    if (resourceIds.has(id)) {
+      warn('skipped-resource', `Resource ${id} repeats a UID and was skipped`, { resourceId: id })
+      continue
+    }
+    resourceIds.add(id)
+    const resource: MsProjectResource = { id, name: fields.get('Name')?.text ?? '' }
+    const typeText = value('Type')
+    if (typeText !== undefined) {
+      const type = /^[0-2]$/.test(typeText) ? (['material', 'work', 'cost'] as const)[Number(typeText)] : undefined
+      if (type) resource.type = type
+      else warn('invalid-value', `Resource ${id} has a type that cannot be read: ${typeText}`, { resourceId: id })
+    }
+    const unitsText = value('MaxUnits')
+    if (unitsText !== undefined) {
+      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) resource.maxUnits = Number(unitsText)
+      else warn('invalid-value', `Resource ${id} has a maximum of units that cannot be read: ${unitsText}`, { resourceId: id })
+    }
+    const calendarId = calendarRef(value('CalendarUID'), { resourceId: id }, `Resource ${id}`)
+    if (calendarId !== undefined) resource.calendarId = calendarId
+    resources.push(resource)
+  }
+  const assignments: MsProjectAssignment[] = []
+  const assigned = new Set<string>()
+  for (const element of project.get('Assignments')?.children ?? []) {
+    if (element.name !== 'Assignment') continue
+    const fields = childMap(element)
+    const value = (field: string) => fields.get(field)?.text.trim()
+    const taskUid = value('TaskUID'), resourceUid = value('ResourceUID')
+    const taskId = taskUid !== undefined && uidPattern.test(taskUid) ? taskUid.replace(/^0+(?=\d)/, '') : undefined
+    const resourceId = resourceUid !== undefined && uidPattern.test(resourceUid) ? resourceUid.replace(/^0+(?=\d)/, '') : undefined
+    // Unassigned work (resource -65535 or 0) and the project summary task (0) are not assignments.
+    if (taskId === '0' || resourceId === '0' || resourceUid === '-65535') continue
+    if (taskId === undefined || resourceId === undefined || !ids.has(taskId) || !resourceIds.has(resourceId)) {
+      warn('skipped-assignment', `An assignment of resource ${resourceUid ?? '(none)'} to task ${taskUid ?? '(none)'}, which was not imported, was skipped`, taskId)
+      continue
+    }
+    const key = JSON.stringify([taskId, resourceId])
+    if (assigned.has(key)) {
+      warn('skipped-assignment', `A repeated assignment of resource ${resourceId} to task ${taskId} was skipped`, { taskId, resourceId })
+      continue
+    }
+    assigned.add(key)
+    const assignment: MsProjectAssignment = { taskId, resourceId }
+    const unitsText = value('Units')
+    if (unitsText !== undefined) {
+      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) assignment.units = Number(unitsText)
+      else warn('invalid-value', `The units of resource ${resourceId} on task ${taskId} cannot be read and were left out`, { taskId, resourceId })
+    }
+    assignments.push(assignment)
+  }
   const projectName = project.get('Name')?.text
   const name = projectName?.trim() ? projectName : project.get('Title')?.text ?? projectName ?? ''
-  return { name, tasks, dependencies, warnings }
+  const result: MsProjectImport = { name, tasks, dependencies, warnings }
+  if (calendars.length) result.calendars = calendars
+  if (defaultCalendarId !== undefined) result.defaultCalendarId = defaultCalendarId
+  if (resources.length) result.resources = resources
+  if (assignments.length) result.assignments = assignments
+  return result
+}
+
+/**
+ * Turn the calendars of a plan, such as the result of `fromMsProjectXml`, into `WorkCalendar`s for `scheduleTasks` and
+ * `levelResources`: `buildWorkPeriods(range, calendar.week)` for each calendar, with the calendar's `id`. Pass the
+ * project's `defaultCalendarId` as `ScheduleInput.defaultCalendarId` and a task's `calendarId` as
+ * `ScheduleTask.calendarId`. Throws what `buildWorkPeriods` throws, for example for a range of more than 3,661 days.
+ */
+export function workCalendarsFromMsProject(project: { calendars?: readonly MsProjectCalendar[] }, range: TimeRange): WorkCalendar[] {
+  return (project.calendars ?? []).map(calendar => ({ id: calendar.id, periods: buildWorkPeriods(range, calendar.week) }))
+}
+
+export interface MsProjectResourceLoadOptions {
+  /**
+   * Whole units per 100 % of a full-time resource, because `calculateResourceLoad` and `levelResources` count integer
+   * units while Microsoft Project uses fractions. Capacity and units are multiplied by it and rounded. Default 100, so
+   * one unit is 1 %; use 1 when every resource and assignment is whole-numbered.
+   */
+  unitScale?: number
+  /**
+   * With a range, a resource with a calendar gets `periods`, the working time of that calendar inside the range, so its
+   * capacity is 0 outside them. Resources without a calendar are available for the whole range.
+   */
+  range?: TimeRange
+}
+
+export interface MsProjectResourceLoad {
+  /** The work resources, as `calculateResourceLoad` and `levelResources` take them. */
+  resources: ResourceCapacity[]
+  /** The assignments of work resources to tasks that are not summary tasks, with `units` set. */
+  assignments: ResourceAssignment[]
+  /** `skipped-assignment` for an assignment that rounds to less than one unit. */
+  warnings: MsProjectImportWarning[]
+}
+
+/**
+ * Map the resources and assignments of a plan, such as the result of `fromMsProjectXml`, to the shapes of
+ * `calculateResourceLoad`, `levelResources` and `projectResourceTimeline`. Only work resources count (`type` `'work'` or
+ * absent); material and cost resources, and assignments to them or to summary tasks, are left out. A resource's
+ * `capacity` is `maxUnits` (default 1) and an assignment's `units` its `units` (default 1), both times `unitScale` and
+ * rounded. An assignment that rounds to 0 is left out with a warning. The input is validated like `toMsProjectXml`.
+ * Throws a RangeError for an invalid `unitScale`.
+ */
+export function resourceLoadFromMsProject(project: MsProjectInput, options: MsProjectResourceLoadOptions = {}): MsProjectResourceLoad {
+  const scale = options.unitScale ?? 100
+  if (!Number.isSafeInteger(scale) || scale < 1) throw new RangeError('unitScale must be a positive integer')
+  const { uids, levels } = checkMsProjectTasks(project.tasks)
+  checkMsProjectExtras(project, uids)
+  const summaries = new Set<string>()
+  project.tasks.forEach((task, index) => {
+    if ((levels[index + 1] ?? 0) > levels[index]!) summaries.add(task.id)
+  })
+  const calendars = new Map((project.calendars ?? []).map(calendar => [calendar.id, calendar]))
+  const resources: ResourceCapacity[] = []
+  const work = new Set<string>()
+  for (const resource of project.resources ?? []) {
+    if (resource.type !== undefined && resource.type !== 'work') continue
+    const capacity = Math.round((resource.maxUnits ?? 1) * scale)
+    if (!Number.isSafeInteger(capacity)) throw new RangeError('Resource capacity is too large for the unit scale: ' + resource.id)
+    const entry: ResourceCapacity = { id: resource.id, capacity }
+    if (options.range && resource.calendarId !== undefined) entry.periods = buildWorkPeriods(options.range, calendars.get(resource.calendarId)!.week)
+    resources.push(entry)
+    work.add(resource.id)
+  }
+  const assignments: ResourceAssignment[] = []
+  const warnings: MsProjectImportWarning[] = []
+  for (const assignment of project.assignments ?? []) {
+    if (!work.has(assignment.resourceId) || summaries.has(assignment.taskId)) continue
+    const units = Math.round((assignment.units ?? 1) * scale)
+    if (!Number.isSafeInteger(units) || units < 1) {
+      warnings.push({
+        code: 'skipped-assignment', taskId: assignment.taskId, resourceId: assignment.resourceId,
+        message: `The assignment of resource ${assignment.resourceId} to task ${assignment.taskId} has less than one unit at this unit scale and was left out`,
+      })
+      continue
+    }
+    assignments.push({ resourceId: assignment.resourceId, taskId: assignment.taskId, units })
+  }
+  return { resources, assignments, warnings }
 }
 
 export interface MsProjectTimelineOptions {
@@ -742,6 +1285,10 @@ export interface MsProjectTimeline {
   dependencies: TimelineDependency[]
   /** IDs of the links that are not in `dependencies` because one of their tasks is a summary task without a bar. */
   hiddenDependencyIds: string[]
+  /** Present when the plan has resources: its work resources, ready for `projectResourceTimeline`. */
+  resources?: ResourceTimelineResource[]
+  /** Present with `resources`: the assignments of those resources to bars, as `resourceLoadFromMsProject` maps them (units in percent). */
+  assignments?: ResourceAssignment[]
 }
 
 const defaultBaselineId = (number: number) => number === 0 ? 'baseline' : 'baseline' + number
@@ -755,6 +1302,9 @@ const defaultBaselineId = (number: number) => number === 0 ? 'baseline' : 'basel
  * (`options.baselineId`). A milestone (`milestone` or `start === end`) is a zero-length bar at its start, and an
  * inactive task has `appearance: 'outline'`. Dependencies get the IDs `link-1`, `link-2`, … in input order, with
  * `type` and `lag` when given; a link that touches a summary task is listed in `hiddenDependencyIds` instead.
+ *
+ * When the plan has `resources`, the result also has `resources` (`id`, `label` = name) and `assignments` for
+ * `projectResourceTimeline`, computed by `resourceLoadFromMsProject` with its default unit scale (units in percent).
  *
  * Throws the Errors and RangeErrors of `toMsProjectXml` for invalid tasks and dependencies, and an Error for a
  * baseline set ID that is empty, `timelineBaselineId` or used for two numbers. The input is not modified.
@@ -807,7 +1357,14 @@ export function timelineFromMsProject(project: MsProjectInput, options: MsProjec
     if (dependency.lag) link.lag = dependency.lag
     dependencies.push(link)
   })
-  return { rows, bars, dependencies, hiddenDependencyIds }
+  const result: MsProjectTimeline = { rows, bars, dependencies, hiddenDependencyIds }
+  if (project.resources?.length) {
+    const load = resourceLoadFromMsProject(project)
+    const work = new Set(load.resources.map(resource => resource.id))
+    result.resources = project.resources.filter(resource => work.has(resource.id)).map(resource => ({ id: resource.id, label: resource.name }))
+    result.assignments = load.assignments
+  }
+  return result
 }
 
 export interface ICalendarEvent {
@@ -894,6 +1451,308 @@ export function toICalendar(events: readonly ICalendarEvent[], options: ICalenda
   }
   lines.push('END:VCALENDAR')
   return lines.map(fold).join('\r\n') + '\r\n'
+}
+
+/** An event read by `fromICalendar`. It is an `ICalendarEvent`, so `toICalendar` and `timelineFromICalendar` accept it. */
+export interface ICalendarImportEvent extends ICalendarEvent {
+  /** DTSTART was a date (`VALUE=DATE`). `start` is midnight and `end` the midnight that ends the last day (exclusive). */
+  allDay: boolean
+  /** The RRULE of a recurring event, as written. Only the first instance is imported. */
+  recurrenceRule?: string
+}
+
+export interface ICalendarImportOptions {
+  /**
+   * Offset from UTC in minutes for local times that have no zone: floating date-times, dates, and date-times whose
+   * TZID cannot be resolved. Default 0 (UTC), integer within ±1080.
+   */
+  utcOffsetMinutes?: number
+}
+
+/**
+ * The kind of a problem `fromICalendar` worked around. `skipped-event`: an event without a readable DTSTART, with a
+ * RECURRENCE-ID (a changed instance of a recurring event), with a UID used before, or without END:VEVENT.
+ * `missing-uid`: an event without a UID, which got the ID `event-<n>`. `recurrence`: RRULE, RDATE or EXDATE, of which only
+ * the first instance was imported. `unknown-time-zone`: a TZID that `Intl` does not know; the time is read as local time
+ * at `utcOffsetMinutes`. `invalid-value`: an unreadable DTEND or DURATION (the event is an instant), or a DTEND before
+ * DTSTART (the event is an instant too). `malformed`: a line without a colon, or an END that does not match, which
+ * was ignored.
+ */
+export type ICalendarImportWarningCode = 'skipped-event' | 'missing-uid' | 'recurrence' | 'unknown-time-zone' | 'invalid-value' | 'malformed'
+
+export interface ICalendarImportWarning {
+  code: ICalendarImportWarningCode
+  /** The imported ID of the event the warning is about, when it has one. */
+  eventId?: string
+  /** The one-based line of the file where the property or component starts, after unfolding the first line of it. */
+  line?: number
+  /** An English description for logs; match on `code`. */
+  message: string
+}
+
+/** The result of `fromICalendar`. */
+export interface ICalendarImport {
+  /** NAME or X-WR-CALNAME of the calendar, when there is one. */
+  name?: string
+  events: ICalendarImportEvent[]
+  warnings: ICalendarImportWarning[]
+}
+
+interface ICalendarProperty {
+  name: string
+  params: Map<string, string>
+  value: string
+  line: number
+}
+
+const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
+const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
+
+/** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
+function icalProperty(text: string, line: number): ICalendarProperty | undefined {
+  let index = 0
+  const stop = (from: number) => {
+    // The end of a name or parameter value: the first ; or : outside double quotes.
+    let quoted = false
+    for (let i = from; i < text.length; i++) {
+      const char = text[i]!
+      if (char === '"') quoted = !quoted
+      else if (!quoted && (char === ';' || char === ':')) return i
+    }
+    return -1
+  }
+  let end = stop(0)
+  if (end < 0) return undefined
+  const name = text.slice(0, end).toUpperCase()
+  const params = new Map<string, string>()
+  index = end
+  while (text[index] === ';') {
+    end = stop(index + 1)
+    if (end < 0) return undefined
+    const parameter = text.slice(index + 1, end)
+    const equals = parameter.indexOf('=')
+    if (equals > 0) {
+      const raw = parameter.slice(equals + 1)
+      params.set(parameter.slice(0, equals).toUpperCase(), raw.length > 1 && raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw)
+    }
+    index = end
+  }
+  return { name, params, value: text.slice(index + 1), line }
+}
+
+/** Unescape an iCalendar TEXT value. */
+function icalUnescape(value: string) {
+  return value.replace(/\\([\\;,nN])/g, (_, char: string) => char === 'n' || char === 'N' ? '\n' : char)
+}
+
+/** The wall-clock time (as UTC epoch milliseconds) of date and time fields, or undefined for an impossible date. */
+function wallTime(y: number, mo: number, d: number, h: number, mi: number, s: number) {
+  if (mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return undefined
+  const date = new Date(0)
+  date.setUTCFullYear(y, mo - 1, d)
+  if (date.getUTCDate() !== d) return undefined
+  date.setUTCHours(h, mi, s, 0)
+  return date.getTime()
+}
+
+/** The IANA formatter for a TZID, also when a producer prefixed it like `/mozilla.org/20050126_1/Europe/Berlin`. */
+function icalZone(tzid: string) {
+  const parts = tzid.split('/')
+  const candidates = [tzid]
+  if (tzid.startsWith('/')) for (let take = 3; take >= 1; take--) if (parts.length > take) candidates.push(parts.slice(-take).join('/'))
+  for (const candidate of candidates) {
+    try {
+      return zoneFormat(candidate)
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined
+}
+
+/**
+ * Read RFC 5545 text, such as `toICalendar` output or an export of a calendar application, into events. Pure string
+ * parsing without a DOM, network or file access, done with loops. Lines are unfolded (CRLF, LF or CR line ends; a
+ * leading byte order mark is removed), property names and parameter names are case-insensitive, quoted parameter values
+ * are read, and TEXT values are unescaped (backslash followed by n, comma, semicolon or backslash; any other backslash is kept as written).
+ *
+ * Each VEVENT becomes an `ICalendarImportEvent` with `id` (UID), `summary` (SUMMARY, empty when missing), `description`
+ * when DESCRIPTION is present, `start` and `end` in epoch milliseconds. DTSTART and DTEND may be UTC (`Z`), floating,
+ * have a `TZID` parameter or be dates (`VALUE=DATE`). A UTC time is exact. A TZID is resolved with `Intl` in the same
+ * way as `buildWorkPeriods` (an hour skipped by daylight saving moves forward, a repeated one takes its first
+ * occurrence); the nonstandard prefix of `/mozilla.org/…/Europe/Berlin` is stripped, and VTIMEZONE definitions are not
+ * read. A floating time, a date and a time with an unknown TZID (reported) are wall-clock times at
+ * `options.utcOffsetMinutes`. The end is DTEND, else DTSTART plus DURATION (weeks, days, hours, minutes and seconds;
+ * days count 24 hours), else the start plus one day for a date and the start itself for a date-time, which is an
+ * instant like the events `toICalendar` writes without DTEND. For a date, DTEND is the exclusive end, so the
+ * event spans whole days as in `[start, end)`.
+ *
+ * Recurrence is not expanded: an event with RRULE, RDATE or EXDATE is imported once, at its first instance, with the
+ * rule in `recurrenceRule`, and a warning. Changed instances (RECURRENCE-ID) are skipped. Properties other than the
+ * ones above, other components (VTODO, VTIMEZONE, …) and nested components such as VALARM are ignored.
+ * Problems that the reader works around are listed in `warnings` instead of thrown.
+ *
+ * Throws an Error for a value that is not a string or has no BEGIN:VCALENDAR, and a RangeError for an invalid
+ * `utcOffsetMinutes`. The reader sets no size limit: bound the size of uploaded files yourself.
+ */
+export function fromICalendar(text: string, options: ICalendarImportOptions = {}): ICalendarImport {
+  const offset = checkOffset(options.utcOffsetMinutes)
+  if (typeof text !== 'string') throw new Error('iCalendar text must be a string')
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+  // Unfold: a line that starts with a space or tab continues the one before it.
+  const lines: { text: string; line: number }[] = []
+  const physical = source.split(/\r\n|\n|\r/)
+  physical.forEach((content, index) => {
+    if ((content[0] === ' ' || content[0] === '\t') && lines.length) lines[lines.length - 1]!.text += content.slice(1)
+    else if (content !== '') lines.push({ text: content, line: index + 1 })
+  })
+  const warnings: ICalendarImportWarning[] = []
+  const warn = (code: ICalendarImportWarningCode, message: string, line?: number, eventId?: string) => {
+    warnings.push({ code, ...(eventId === undefined ? {} : { eventId }), ...(line === undefined ? {} : { line }), message })
+  }
+  if (!lines.some(({ text: line }) => /^BEGIN:VCALENDAR\s*$/i.test(line))) throw new Error('Not an iCalendar document: there is no BEGIN:VCALENDAR')
+
+  const events: ICalendarImportEvent[] = []
+  const ids = new Set<string>()
+  let name: string | undefined
+  const stack: string[] = []
+  let current: ICalendarProperty[] | undefined
+  let currentLine = 0
+  const time = (property: ICalendarProperty, eventId: string): { time: number; date: boolean } | undefined => {
+    const match = icalDateTime.exec(property.value.trim())
+    if (!match) return undefined
+    const [y, mo, d, h = 0, mi = 0, sec = 0] = match.slice(1, 7).map(part => part === undefined ? undefined : Number(part)) as number[]
+    const wall = wallTime(y!, mo!, d!, h, mi, sec)
+    if (wall === undefined) return undefined
+    const date = match[4] === undefined
+    if (match[7] === 'Z') return { time: wall, date }
+    const tzid = property.params.get('TZID')
+    if (tzid !== undefined && !date) {
+      const format = icalZone(tzid)
+      if (format) return { time: zonedInstant(format, wall), date }
+      warn('unknown-time-zone', `The time zone ${tzid} is unknown; the time was read as local time at the given offset`, property.line, eventId)
+    }
+    return { time: wall - offset * minuteMs, date }
+  }
+  const finish = () => {
+    const properties = current!
+    current = undefined
+    const find = (propertyName: string) => properties.find(property => property.name === propertyName)
+    const uid = find('UID')
+    let id = uid === undefined ? undefined : icalUnescape(uid.value)
+    if (!id) {
+      id = 'event-' + (events.length + 1)
+      warn('missing-uid', `The event at line ${currentLine} has no UID and was named ${id}`, currentLine, id)
+    }
+    const label = id
+    const startProperty = find('DTSTART')
+    const start = startProperty && time(startProperty, label)
+    if (properties.some(property => property.name === 'RECURRENCE-ID')) {
+      warn('skipped-event', `Event ${label} changes one instance of a recurring event (RECURRENCE-ID) and was skipped`, currentLine, label)
+      return
+    }
+    if (!start) {
+      warn('skipped-event', `Event ${label} has no valid DTSTART and was skipped`, currentLine, label)
+      return
+    }
+    if (ids.has(id)) {
+      warn('skipped-event', `Event ${label} repeats a UID and was skipped`, currentLine, label)
+      return
+    }
+    ids.add(id)
+    let end = start.time
+    const endProperty = find('DTEND'), durationProperty = find('DURATION')
+    if (endProperty) {
+      const parsed = time(endProperty, label)
+      if (!parsed) warn('invalid-value', `The DTEND of event ${label} cannot be read; the event is an instant`, endProperty.line, label)
+      else if (parsed.time < start.time) warn('invalid-value', `The DTEND of event ${label} is before its DTSTART; the event is an instant`, endProperty.line, label)
+      else end = parsed.time
+      if (durationProperty) warn('invalid-value', `Event ${label} has both DTEND and DURATION; DURATION was ignored`, durationProperty.line, label)
+    } else if (durationProperty) {
+      const match = icalDuration.exec(durationProperty.value.trim())
+      const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = (match?.slice(2) ?? []).map(part => part === undefined ? undefined : Number(part)) as number[]
+      const length = match && /\d/.test(durationProperty.value)
+        ? (((weeks * 7 + days) * 24 + hours) * 60 + minutes) * minuteMs + seconds * secondMs : undefined
+      if (length === undefined || match![1] === '-' || !Number.isFinite(start.time + length)) {
+        warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
+      } else end = start.time + length
+    } else if (start.date) end = start.time + 86_400_000
+    const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
+    const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')
+    if (summary) event.summary = icalUnescape(summary.value)
+    if (description) event.description = icalUnescape(description.value)
+    if (rule) event.recurrenceRule = rule.value.trim()
+    const repeats = rule ?? find('RDATE') ?? find('EXDATE')
+    if (repeats) warn('recurrence', `Event ${label} repeats; only its first instance was imported`, repeats.line, label)
+    events.push(event)
+  }
+  for (const { text: lineText, line } of lines) {
+    const upper = lineText.toUpperCase()
+    if (upper.startsWith('BEGIN:')) {
+      const kind = upper.slice(6).trim()
+      if (kind === 'VEVENT' && stack.at(-1) === 'VCALENDAR') {
+        current = []
+        currentLine = line
+      }
+      stack.push(kind)
+      continue
+    }
+    if (upper.startsWith('END:')) {
+      const kind = upper.slice(4).trim()
+      if (stack.at(-1) !== kind) {
+        warn('malformed', `END:${kind} at line ${line} does not match the open component and was ignored`, line)
+        continue
+      }
+      stack.pop()
+      if (kind === 'VEVENT' && current) finish()
+      continue
+    }
+    const inEvent = stack.at(-1) === 'VEVENT' && current !== undefined
+    const inCalendar = stack.length === 1 && stack[0] === 'VCALENDAR'
+    if (!inEvent && !inCalendar) continue
+    const property = icalProperty(lineText, line)
+    if (!property) {
+      warn('malformed', `The line ${line} has no colon and was ignored`, line)
+      continue
+    }
+    if (inEvent) current!.push(property)
+    else if ((property.name === 'NAME' || property.name === 'X-WR-CALNAME') && (name === undefined || property.name === 'NAME')) name = icalUnescape(property.value)
+  }
+  if (current) warn('skipped-event', `The event at line ${currentLine} has no END:VEVENT and was skipped`, currentLine)
+  const result: ICalendarImport = { events, warnings }
+  if (name !== undefined) result.name = name
+  return result
+}
+
+/** GanttChart data from `timelineFromICalendar`. */
+export interface ICalendarTimeline {
+  rows: TimelineRow[]
+  bars: TimelineBar[]
+}
+
+/**
+ * Turn events, such as the result of `fromICalendar` or the input of `toICalendar`, into GanttChart rows and bars: one
+ * row and one bar per event, in input order, both with the event ID, the summary as label, the dates, and the
+ * description (when it is not empty) as the bar's `description`. An event with `start === end` is a zero-length
+ * milestone bar. Throws the Errors and RangeErrors of `toICalendar` for empty or duplicate IDs, a missing summary and
+ * non-finite or unordered times. The input is not modified.
+ */
+export function timelineFromICalendar(events: readonly ICalendarEvent[]): ICalendarTimeline {
+  const ids = new Set<string>()
+  const rows: TimelineRow[] = [], bars: TimelineBar[] = []
+  for (const event of events) {
+    if (typeof event.id !== 'string' || !event.id || ids.has(event.id)) throw new Error('Invalid or duplicate event ID: ' + event.id)
+    ids.add(event.id)
+    checkTime(event.start, 'An event time')
+    checkTime(event.end, 'An event time')
+    if (event.end < event.start) throw new RangeError('An event cannot end before it starts: ' + event.id)
+    checkText(event.summary, 'The summary of event ' + event.id)
+    rows.push({ id: event.id, label: event.summary })
+    const bar: TimelineBar = { id: event.id, rowId: event.id, label: event.summary, start: event.start, end: event.end }
+    if (event.description) bar.description = event.description
+    bars.push(bar)
+  }
+  return { rows, bars }
 }
 
 /** A CSV cell: text, a finite number or an empty cell. */
