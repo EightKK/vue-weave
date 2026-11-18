@@ -44,6 +44,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Timeline editing helpers](#timeline-editing-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
+  - [Layout defaults and option checks](#layout-defaults-and-option-checks)
   - [Layout directions, crossing reduction and extra layouts](#layout-directions-crossing-reduction-and-extra-layouts)
   - [Incremental placement](#incremental-placement)
   - [Quantity flow projection](#quantity-flow-projection)
@@ -87,7 +88,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
 | showControls | boolean / true | Zoom/fit buttons |
 | dir | ChartDirection / ltr | `rtl` or `auto` mirrors the zoom tools, minimap and label alignment; see [Right-to-left layout](#right-to-left-layout) |
 
-GraphLayoutOptions defaults are direction LR, nodeWidth 144, nodeHeight 58, columnGap 50, rowGap 24 and padding 20. Sizes must be positive; spacing must be nonnegative. Empty graphs keep positive layout dimensions even with zero padding. TB changes the layout direction while preserving each node's physical width and height.
+GraphLayoutOptions defaults are direction LR, nodeWidth 144, nodeHeight 58, columnGap 50, rowGap 24 and padding 20. Sizes must be finite numbers > 0; spacing must be finite numbers ≥ 0 (see [Layout defaults and option checks](#layout-defaults-and-option-checks)). Empty graphs keep positive layout dimensions even with zero padding. TB changes the layout direction while preserving each node's physical width and height.
 
 NetworkNode<D> has id, label, optional detail, tone (teal/blue/amber/violet), shape (`NetworkNodeShape`: box, rounded, diamond, ellipse or hexagon; see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)), resizable and data (D, default unknown). GraphEdge<D> has id, from, to, optional label, data (D, default unknown) and points (waypoints, see [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)), and the optional edgeStyle, markerStart, markerEnd and animated (see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)). The default renderer clips long text to the node box; its title exposes the full label. Node slots own their clipping and sizing.
 
@@ -1054,6 +1055,40 @@ All exported interfaces and component props are included in the declaration file
 
 NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeGraphPorts` and finally `routeGraphEdges` for its `edgeStyle`. `applyGraphPositions` overlays finite, nonnegative coordinates, expands the layout bounds when needed and reroutes incident edges while preserving other paths. Position entries for unknown node IDs are ignored, but their coordinates are still validated (RangeError), and an incident edge whose other end has no layout box throws an Error naming the edge and the node. `routeGraphPorts` then replaces paths and label positions for edges with named ports, leaving unnamed-edge routes intact; with the `routingPolicy` prop `'preserve'` both routing steps run with `policy: 'preserve'` and keep the layout's valid paths, also for edges with named ports. These operations do not mutate the supplied layout and may return it unchanged when there is nothing to update.
 
+### Layout defaults and option checks
+
+Every built-in layout uses the same defaults for the options it shares: nodes 144 × 58, `columnGap` 50, `rowGap` 24 and `padding` 20.
+
+| Layout | Options type | Shared defaults | Other spacing defaults |
+| --- | --- | --- | --- |
+| `layoutLayeredGraph` | `GraphLayeredLayoutOptions` (extends `GraphLayoutOptions`) | all | — |
+| `layoutTreeGraph` | `GraphTreeLayoutOptions` (extends `GraphLayoutOptions`) | all | — |
+| `layoutSwimlaneGraph` | `GraphSwimlaneLayoutOptions` (extends `GraphLayoutOptions`) | all | `laneGap` 0, `lanePadding` 12, `minLaneSize` 0, `headerSize` 120 (LR, RL) or 32 (TB, BT) |
+| `layoutGraphIncrementally` | `GraphIncrementalLayoutOptions` (extends `GraphLayoutOptions`) | all | `maxDisplacement` 0 |
+| `layoutGridGraph` | `GraphGridLayoutOptions` | nodes, `columnGap`, `rowGap`, `padding` | — |
+| `layoutRadialGraph` | `GraphRadialLayoutOptions` | nodes, `padding` | `ringGap` 40 |
+| `layoutCircularGraph` | `GraphCircularLayoutOptions` | nodes, `padding` | `nodeGap` 40 (between neighbours on the circle) |
+| `layoutConcentricGraph` | `GraphConcentricLayoutOptions` | nodes, `padding` | `ringGap` 40 |
+| `layoutForceGraph` | `GraphForceLayoutOptions` | nodes, `padding` | `nodeGap` 16 (kept by the overlap passes), `linkDistance` 180 |
+| `layoutFlowGraph` | `GraphFlowOptions` | `padding` | `nodeThickness` 24, `nodeGap` 16 (across the flow), `rankGap` 120, `referenceGap` 12 |
+
+The tree, swimlane and incremental options extend `GraphLayoutOptions` and add their own fields, so one `GraphLayoutOptions` object can be spread into any of them.
+
+Every layout checks its numeric options the same way and throws a `RangeError` whose message names the option, the rule it broke and the value it got: `<option> must be <rule> (got <value>)`.
+
+| Rule | Options | Example message |
+| --- | --- | --- |
+| a finite number > 0 | `nodeWidth`, `nodeHeight`; `radius` (circular), `levelWidth` (concentric), `nodeThickness`, `minNodeSize`, `pixelsPerUnit` and `fitExtent` (flow) | `nodeWidth must be a finite number > 0 (got 0)` |
+| a finite number ≥ 0 | `columnGap`, `rowGap`, `padding`, `ringGap`, `nodeGap`, `laneGap`, `lanePadding`, `minLaneSize`, `headerSize`, `maxDisplacement`, `linkDistance`, `repulsion`, `rankGap`, `minBandWidth`, `referenceGap` | `columnGap must be a finite number ≥ 0 (got -1)` |
+| a finite number | `startAngle` (circular, concentric) | `startAngle must be a finite number (got NaN)` |
+| an integer ≥ 1 | `crossingSweeps`, `columns` (grid), `iterations` (force) | `crossingSweeps must be an integer ≥ 1 (got 0)` |
+| a finite number in [0, 1] | `gravity` (force) | `gravity must be a finite number in [0, 1] (got 2)` |
+| a safe integer | `seed` (force) | `seed must be a safe integer (got 0.5)` |
+
+A value that is not a number is reported as such, for example `(got "5")` or `(got null)`. Options are checked in a fixed order (node sizes first), and only the first invalid one is reported. Node data such as positions and per-node sizes keeps its own messages, which name the node.
+
+Same-rank edges (inside a cycle) and self-loops of the layered, tree and swimlane layouts leave the flow-end side of the box and turn `min(24, max(6, columnGap / 2))` units past it.
+
 ### Layout directions, crossing reduction and extra layouts
 
 `GraphLayoutOptions.direction` also accepts `RL` and `BT`. They mirror the LR and TB layouts (ranks grow right-to-left or bottom-to-top) and keep paths, edge labels and bounds consistent. `graphEdgeEndpoint`, `routeGraphPorts` and `applyGraphPositions` accept the same `GraphLayoutDirection` type; unnamed endpoints leave and enter on the mirrored sides.
@@ -1069,7 +1104,7 @@ NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeG
 
 `layoutTreeGraph(nodes, edges, options)` and `layoutRadialGraph(nodes, edges, options)` return a `GraphLayout`, so they can be used as the NetworkGraph `layout` prop, for example `(n, e) => layoutTreeGraph(n, e, { direction: 'TB' })`. Both build a breadth-first spanning forest. Roots are `options.roots` (unknown IDs throw an `Error`), then nodes without incoming edges, then any node left over inside a cycle. Edges that are not tree edges (cross, back, same-depth and self-loops) are still routed. Cycles, disconnected nodes and self-loops do not throw. Invalid numbers throw `RangeError`. Traversals are iterative.
 
-- `GraphTreeLayoutOptions`: direction (LR, TB, RL, BT), nodeWidth, nodeHeight, columnGap (between depths), rowGap (between leaves), padding and roots. Leaves are spaced evenly and each parent is centred over its children. Box `rank` is the tree depth.
+- `GraphTreeLayoutOptions` extends `GraphLayoutOptions` (direction LR, TB, RL or BT, nodeWidth, nodeHeight, columnGap between depths, rowGap between leaves, padding) with roots. Leaves are spaced evenly and each parent is centred over its children. Box `rank` is the tree depth.
 - `GraphRadialLayoutOptions`: nodeWidth, nodeHeight, ringGap (default 40), padding and roots. Nodes sit on concentric rings by depth; one root is placed at the centre, several roots share the first ring. Subtrees receive angular wedges proportional to their leaf counts and ring radii are widened so boxes do not overlap. Edges are straight segments clipped to the box borders.
 
 `layoutCircularGraph(nodes, edges, options)`, `layoutGridGraph(nodes, edges, options)` and `layoutConcentricGraph(nodes, edges, options)` are three more built-in `GraphLayout` producers for the `layout` prop, for example `(n, e) => layoutGridGraph(n, e, { columns: 4 })`. Edges are straight lines between box borders (so in a grid they can pass over other boxes) and self-loops are small curves on the right side of the node. Cycles, disconnected nodes, parallel edges and self-loops do not throw; duplicate node IDs and edges that reference unknown nodes throw an `Error`, invalid numbers throw `RangeError`. All three are deterministic, never mutate their input, are iterative, and take O(n + e) (concentric adds a sort of the distinct levels).
@@ -1078,7 +1113,7 @@ NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeG
 - `layoutGridGraph` fills rows of `columns` nodes in input order. `columns` must be a positive integer (default `Math.ceil(Math.sqrt(n))`). `rank` is the row index.
 - `layoutConcentricGraph` puts nodes on rings by `level(node, degree)`, where `degree` counts incident edges without self-loops and is the default level. Higher levels sit closer to the centre and `rank` is the ring index, 0 being the innermost. `levelWidth` groups levels into one ring when `floor(level / levelWidth)` is equal; without it each distinct level has its own ring. `level` must return finite numbers (`RangeError` otherwise). Every ring is large enough for its nodes and rings are at least one node diagonal plus `ringGap` (default 40) apart, so boxes never overlap. Nodes keep input order within a ring.
 - `GraphCircularLayoutOptions`: nodeWidth, nodeHeight, nodeGap, padding, radius, startAngle, clockwise, sort.
-- `GraphGridLayoutOptions`: nodeWidth, nodeHeight, columnGap (default 40), rowGap (default 24), padding, columns.
+- `GraphGridLayoutOptions`: nodeWidth, nodeHeight, columnGap (default 50), rowGap (default 24), padding, columns.
 - `GraphConcentricLayoutOptions`: nodeWidth, nodeHeight, ringGap, padding, level, levelWidth, startAngle.
 - Both functions are generic over the node type, so `sort` and `level` receive your own nodes (for example `NetworkNode<MyData>`) without casts.
 
@@ -1096,7 +1131,7 @@ NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeG
 | direction | `LR` (default) and `RL` give horizontal lanes stacked top to bottom; `TB` and `BT` give vertical lanes stacked left to right. The header sits at the flow start: left (LR), right (RL), top (TB) or bottom (BT). |
 | nodeWidth, nodeHeight | Box size, default 144 × 58; positive. |
 | columnGap | Distance between ranks along the flow. Default 50. |
-| rowGap | Distance between stacked nodes of one lane in one rank. Default 16. |
+| rowGap | Distance between stacked nodes of one lane in one rank. Default 24. |
 | laneGap | Free space between neighbouring bands. Default 0. |
 | lanePadding | Space between a band's edges (and its header) and its nodes. Default 12. |
 | minLaneSize | Smallest band thickness across the flow. Default 0, so a band is at least one node plus twice `lanePadding`. |
@@ -1104,7 +1139,7 @@ NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeG
 | padding | Margin around the bands. Default 20. |
 | crossingReduction, crossingSweeps | `barycenter` (default) or `none`; positive integer sweep limit, default 8. |
 
-Sizes that are not finite or are negative (and node sizes of 0) throw `RangeError`, as do an unknown direction or crossing method; the graph errors of `indexGraph` (duplicate IDs, unknown endpoints) throw `Error`.
+`GraphSwimlaneLayoutOptions` extends `GraphLayoutOptions`. Sizes that are not finite or are negative (and node sizes of 0) throw `RangeError` (see [Layout defaults and option checks](#layout-defaults-and-option-checks)), as do an unknown direction or crossing method; the graph errors of `indexGraph` (duplicate IDs, unknown endpoints) throw `Error`.
 
 `graphSwimlaneAt(lanes, target)` returns the lane (of any `GraphSwimlaneBand` list) whose band contains a point, or the centre of a rectangle such as a node box, or undefined in a gap or outside every band. Bands are half-open, so a point on the far edge of one band belongs to the next. A non-finite point throws `RangeError`.
 
@@ -1139,7 +1174,7 @@ Related exported types: `GraphCrossingReduction`, `GraphForceLayoutOptions`, `Gr
 
 | Option | Meaning |
 | --- | --- |
-| direction | `GraphLayoutDirection` / `'LR'`. RL and BT place successors to the left and above. |
+| direction | `GraphLayoutDirection` / `'LR'`. RL and BT place successors to the left and above. `GraphIncrementalLayoutOptions` extends `GraphLayoutOptions`, which holds direction, nodeWidth, nodeHeight, columnGap, rowGap and padding. |
 | nodeWidth, nodeHeight | 144 × 58: the size of a node without its own. |
 | sizes | `ReadonlyMap<string, GraphNodeSize>` of node sizes; a size in the node's position wins. |
 | columnGap, rowGap | 50 and 24: free space along and across the flow. |
@@ -1194,7 +1229,7 @@ Related exported types: `GraphLayoutChangeOptions`.
 | nodeLabel | `(node) => string` for band labels. Default: the node's `label` when it is a string, else its ID. |
 | formatQuantity | `(quantity, unit) => string` for band labels. Default `` `${quantity} ${unit}` ``. |
 
-Sizes that are not finite or are negative (and a node thickness, minimum node size or pixels per unit of 0), an unknown direction or scale and a sweep count that is not a positive integer throw RangeError.
+Sizes that are not finite or are negative (and a node thickness, minimum node size, pixels per unit or fit extent of 0), an unknown direction or scale and a sweep count that is not a positive integer throw RangeError, in the format of [Layout defaults and option checks](#layout-defaults-and-option-checks).
 
 Related exported types: `GraphFlowOptions`, `GraphFlowScale`.
 
@@ -1241,11 +1276,11 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | Export | Purpose |
 | --- | --- |
 | graphViewportRect(camera, size, overscan = 0) | World rectangle a `GraphViewport` camera shows for a screen size, grown by `overscan` screen pixels. Throws `RangeError` for a nonpositive scale or negative size |
-| graphRectsIntersect(a, b) | Whether two rectangles overlap or touch |
+| graphRectsIntersect(a, b) | Whether the interiors of two rectangles overlap: on both axes each starts strictly before the other ends, compared exactly without a tolerance. Rectangles that only touch along an edge or at a corner do not intersect. A zero-width or zero-height rectangle (a segment or point) intersects a rectangle whose interior it passes through, not one whose border it lies on, and never another zero-size rectangle at the same place |
 | graphPathBounds(path) | Bounding rectangle of an SVG path string, or `undefined` without coordinates. Bézier curves use their control points, including the reflected control point of S and T; arcs are bounded exactly after SVG radius correction and rotation. Numbers may use `e`/`E` exponents. Throws for malformed data (including data that does not begin with a moveto, `M` or `m`) or unsupported commands |
 | graphPathEndpoints(path) | First moveto point and final current point of an SVG path string, or `undefined` without coordinates |
 | graphLayoutBounds(layout, labelReach = 80) | `GraphBounds` with one rectangle per node and per edge, edge labels included |
-| cullGraphElements(bounds, view, keep?) | `GraphVisibleIds` of the nodes and edges that intersect `view`, plus any IDs in `keep` (`GraphCullKeep`) |
+| cullGraphElements(bounds, view, keep?) | `GraphVisibleIds` of the nodes and edges whose bounds intersect or touch `view` (touching counts here, unlike `graphRectsIntersect`, because the bounds leave out the stroke width), plus any IDs in `keep` (`GraphCullKeep`) |
 | graphCameraAt(point, size, scale) | Camera that centers a world point at a scale; `focusNode` uses the same rule |
 | graphPointInPolygon(point, polygon) | Whether a point is inside a polygon of vertices in order (closed implicitly), by the even-odd rule; a point on the outline counts as inside, and a polygon with fewer than three vertices contains nothing. Throws `RangeError` for a non-finite coordinate |
 | graphNodesInPolygon(boxes, polygon) | IDs of the boxes (for example `layout.boxes`) whose centre is inside the polygon, in map order; the lasso of `selectionMode` uses it. Throws `RangeError` for non-finite polygon points or box geometry |

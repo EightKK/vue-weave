@@ -4,7 +4,8 @@ import { graphPathEndpoints } from './graphView.js'
 import { assertGraphPortSide, graphSideAnchor, isGraphPortSide } from './graphPortSide.js'
 import { heapPop, heapPush } from './graphHeap.js'
 import {
-  checkLayoutNumbers, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
+  checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
+  sameRankTurnDistance,
 } from './graphOptions.js'
 import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
@@ -256,12 +257,23 @@ export type GraphLayoutDirection = 'LR' | 'TB' | 'RL' | 'BT'
 /** Ordering heuristic that reduces edge crossings between adjacent ranks. */
 export type GraphCrossingReduction = 'none' | 'barycenter' | 'median'
 
+/**
+ * Options shared by the rank-based layouts (layered, tree, swimlane and incremental). Defaults: direction LR, nodes
+ * 144 by 58, columnGap 50, rowGap 24, padding 20. Sizes must be finite numbers > 0 and gaps and padding finite
+ * numbers ≥ 0, otherwise the layout throws a RangeError that names the option.
+ */
 export interface GraphLayoutOptions {
+  /** Flow direction: ranks grow along it. Default 'LR'. */
   direction?: GraphLayoutDirection
+  /** Width of a node box. Default 144. */
   nodeWidth?: number
+  /** Height of a node box. Default 58. */
   nodeHeight?: number
+  /** Free space between ranks along the flow (between depth levels in the tree layout). Default 50. */
   columnGap?: number
+  /** Free space between neighbouring boxes of one rank across the flow (between adjacent leaves in the tree layout, between nodes of one lane in one rank in the swimlane layout). Default 24. */
   rowGap?: number
+  /** Margin around the layout. Default 20. */
   padding?: number
 }
 
@@ -321,8 +333,8 @@ export function layoutLayeredGraph(
   } = options
   assertGraphLayoutDirection(direction)
   if (!['none', 'barycenter', 'median'].includes(crossingReduction)) throw new RangeError('Unknown crossingReduction method')
-  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
-  checkLayoutNumbers({ nodeWidth, nodeHeight, columnGap, rowGap, padding }, ['nodeWidth', 'nodeHeight'])
+  checkLayoutNumber('crossingSweeps', crossingSweeps, 'positiveInteger')
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, padding })
   if (direction === 'LR') return leftToRightLayered(nodes, edges, nodeWidth, nodeHeight, columnGap, rowGap, padding, crossingReduction, crossingSweeps)
   // Other directions lay out the left-to-right drawing (with swapped node sizes for TB and BT) and turn it.
   const vertical = isVerticalDirection(direction)
@@ -379,7 +391,7 @@ function leftToRightLayered(
     edgeLabels.set(edge.id, { x: (x1 + target.x) / 2, y: (y1 + y2) / 2 - 7 })
 
     if (jump === 0) {
-      const turn = x1 + Math.min(24, columnGap / 2)
+      const turn = x1 + sameRankTurnDistance(columnGap)
       const endY = edge.from === edge.to ? y2 - target.height / 3 : y2
       routeRight = Math.max(routeRight, turn)
       edgeLabels.set(edge.id, { x: turn + 9, y: (y1 + endY) / 2 })

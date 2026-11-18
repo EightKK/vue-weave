@@ -1,9 +1,9 @@
 import {
-  indexGraph, layoutLayeredGraph, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphLayoutRoute,
+  indexGraph, layoutLayeredGraph, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutOptions, type GraphLayoutRoute,
   type GraphNodeSize, type GraphPoint, type IdentifiedNode,
 } from './graph.js'
 import { graphIncidentCurve } from './graphCurve.js'
-import { defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
+import { checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
 import { assertGraphLayoutDirection } from './graphOrient.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
 
@@ -14,21 +14,15 @@ import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } f
 export type GraphKnownPosition = GraphPoint & Partial<GraphNodeSize> & { rank?: number }
 
 /** Options of `layoutGraphIncrementally`. */
-export interface GraphIncrementalLayoutOptions {
-  /** Flow direction: successors are placed after their predecessors along it. Default 'LR'. */
-  direction?: GraphLayoutDirection
-  /** Width of a node without a size of its own (from its position or `sizes`). Default 144, as layoutLayeredGraph. */
-  nodeWidth?: number
-  /** Height of a node without a size of its own. Default 58. */
-  nodeHeight?: number
+/**
+ * Options of `layoutGraphIncrementally`: the shared layout options, where `direction` is the direction in which
+ * successors are placed after their predecessors, `nodeWidth` and `nodeHeight` size a node without a size of its own
+ * (from its position or `sizes`), `columnGap` and `rowGap` are the free space kept between boxes along and across the
+ * flow, and `padding` is added to the right and bottom of the layout size (and is where a graph without positions starts).
+ */
+export interface GraphIncrementalLayoutOptions extends GraphLayoutOptions {
   /** Node sizes by ID. A size in a node's position wins over this one. */
   sizes?: ReadonlyMap<string, GraphNodeSize>
-  /** Free space kept between boxes along the flow. Default 50. */
-  columnGap?: number
-  /** Free space kept between boxes across the flow. Default 24. */
-  rowGap?: number
-  /** Margin added to the right and bottom of the layout size, and where a graph without positions starts. Default 20. */
-  padding?: number
   /** Pinned nodes. Each must be a node with a position; it never moves, whatever the other options say. */
   fixedIds?: Iterable<string>
   /**
@@ -102,10 +96,7 @@ export function layoutGraphIncrementally(
     padding = defaultPadding, maxDisplacement = 0, allowNegative = false, previousLayout,
   } = options
   assertGraphLayoutDirection(direction)
-  if (!positive(nodeWidth) || !positive(nodeHeight)) throw new RangeError('nodeWidth and nodeHeight must be finite and positive')
-  for (const [name, value] of Object.entries({ columnGap, rowGap, padding, maxDisplacement })) {
-    if (!Number.isFinite(value) || value < 0) throw new RangeError(name + ' must be finite and nonnegative')
-  }
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, padding, maxDisplacement })
   for (const [id, size] of sizes ?? []) {
     if (!positive(size?.width) || !positive(size?.height)) throw new RangeError('Graph node sizes must be finite and positive: ' + id)
   }

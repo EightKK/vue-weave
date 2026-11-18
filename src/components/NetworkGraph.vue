@@ -20,7 +20,7 @@ import { completeGraphLayout } from '../core/graphLayoutRequests.js'
 import { resolveCollapsedTargets } from '../core/graphTraversal.js'
 import type { GraphViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
 import {
-  cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphPathEndpoints, graphViewportRect, type GraphRect,
+  cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphPathEndpoints, graphRectsIntersect, graphViewportRect, type GraphRect,
 } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
 import { createGraphConnectionChecker, type GraphPortRules } from '../core/graphPortRules.js'
@@ -1299,9 +1299,7 @@ function stopPan(event: PointerEvent) {
       for (const id of graphNodesInPolygon(layout.value.boxes, outline)) selection.add(id)
     } else {
       const area = boxPreview.value!
-      for (const [id, box] of layout.value.boxes) {
-        if (box.x < area.x + area.width && box.x + box.width > area.x && box.y < area.y + area.height && box.y + box.height > area.y) selection.add(id)
-      }
+      for (const [id, box] of layout.value.boxes) if (graphRectsIntersect(box, area)) selection.add(id)
     }
     emit('update:selectedIds', selection)
     if (props.edgesSelectable && !event.ctrlKey && !event.metaKey) clearEdgeSelection()
@@ -1855,6 +1853,7 @@ const visibleGroups = computed<ReadonlySet<string> | undefined>((previous) => {
   if (!view) return undefined
   const groups = new Set<string>()
   for (const group of shownGroups.value) {
+    // Touching counts, as in cullGraphElements: a frame on the view edge still draws its stroke into the view.
     const near = group.x <= view.x + view.width && group.x + group.width >= view.x
       && group.y <= view.y + view.height && group.y + group.height >= view.y
     if (near || focused.value?.group === group.id || gestureGroups.value.has(group.id)) groups.add(group.id)

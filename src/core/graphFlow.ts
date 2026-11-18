@@ -1,5 +1,6 @@
 import { indexGraph, layoutLayeredGraph, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutDirection, type GraphPort, type IdentifiedNode } from './graph.js'
 import { assertGraphLayoutDirection, graphFlowSides, isVerticalDirection } from './graphOrient.js'
+import { checkLayoutNumber, checkLayoutNumbers, defaultPadding } from './graphOptions.js'
 
 /**
  * How `layoutFlowGraph` turns quantities into pixels. `pixelsPerUnit` fixes the scale; `fitExtent` picks the largest
@@ -145,12 +146,6 @@ export interface GraphEdgeBand {
   label?: string
 }
 
-function finite(name: string, value: number, positive: boolean) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (positive && value === 0)) {
-    throw new RangeError(`${name} must be finite and ${positive ? 'positive' : 'nonnegative'}`)
-  }
-}
-
 function coordinate(value: number) {
   const rounded = Math.round(value * 1000) / 1000
   return String(rounded === 0 ? 0 : rounded)
@@ -182,7 +177,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   nodes: readonly N[], edges: readonly E[], options: GraphFlowOptions<N, E>,
 ): GraphFlowLayout {
   const {
-    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = 20, scale = { fitExtent: 360 },
+    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = defaultPadding, scale = { fitExtent: 360 },
     minNodeSize = 2, minBandWidth = 1, referenceGap = 12, crossingSweeps = 4,
   } = options ?? ({} as GraphFlowOptions<N, E>)
   if (typeof quantity !== 'function') throw new Error('layoutFlowGraph needs a quantity accessor')
@@ -190,14 +185,13 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   const displayUnit = options.displayUnit ?? (typeof unit === 'string' ? unit : undefined)
   if (typeof displayUnit !== 'string' || !displayUnit) throw new Error('layoutFlowGraph needs a displayUnit when unit is an accessor')
   assertGraphLayoutDirection(direction)
-  finite('nodeThickness', nodeThickness, true)
-  finite('minNodeSize', minNodeSize, true)
-  for (const [name, value] of Object.entries({ nodeGap, rankGap, padding, minBandWidth, referenceGap })) finite(name, value, false)
-  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
+  checkLayoutNumbers({ nodeThickness, minNodeSize }, 'positive')
+  checkLayoutNumbers({ nodeGap, rankGap, padding, minBandWidth, referenceGap }, 'nonnegative')
+  checkLayoutNumber('crossingSweeps', crossingSweeps, 'positiveInteger')
   const fixed = scale && 'pixelsPerUnit' in scale ? scale.pixelsPerUnit : undefined
   const fit = scale && 'fitExtent' in scale ? scale.fitExtent : undefined
-  if (fixed !== undefined) finite('pixelsPerUnit', fixed, true)
-  else if (fit !== undefined) finite('fitExtent', fit, true)
+  if (fixed !== undefined) checkLayoutNumber('pixelsPerUnit', fixed, 'positive')
+  else if (fit !== undefined) checkLayoutNumber('fitExtent', fit, 'positive')
   else throw new RangeError('scale must be { pixelsPerUnit } or { fitExtent }')
   indexGraph(nodes, edges)
 
