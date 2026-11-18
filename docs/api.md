@@ -51,6 +51,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Microsoft Project import](#microsoft-project-import)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
 - [Linked views](#linked-views)
+  - [Time range exploration](#time-range-exploration)
 - [Resource timelines and unplanned tasks](#resource-timelines-and-unplanned-tasks)
 - [Planning diagnostics and schedule traces](#planning-diagnostics-and-schedule-traces)
 - [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)
@@ -1193,9 +1194,11 @@ resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { ent
 | `resolveLoadTargets(segments, targets)` | `{ segments, unknown }`: current segments that overlap a load target. A load segment has no ID and its boundaries change when load is recalculated, so a target that overlaps no current segment is reported in `unknown` and never replaced by another segment. |
 | `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. |
 | `resolveCollapsedTargets(collapse, { nodeIds, edgeIds }, edges)` | Resolves IDs of the full graph against a `collapseGraphGroups` result: hidden nodes to their proxy, edges merged into a re-attached edge to the merged edge, and edges dropped inside one collapsed group to that group's proxy node. `edges` are the edges given to `collapseGraphGroups`. Returns `{ nodeIds, edgeIds, unknownNodeIds, unknownEdgeIds }`. |
-| `useLinkedSelection({ bindings, onSelect })` | See below. |
+| `timelineBarsInRange(bars, range, { rowIds }?)` | The bars worked on in the half-open range `[range.start, range.end)`, in input order, with their own type (`B extends TimelineBarActivity`: `id`, `rowId`, `start`, `end`, `segments`). See [Time range exploration](#time-range-exploration). |
+| `resolveTimeRangeTargets(index, barIds, { graph, traversal }?)` | `TimeRangeTargets`: `{ activeBarIds, activeEntities, activeTargets, relatedEntities, relatedTargets, unknownBarIds }`. See [Time range exploration](#time-range-exploration). |
+| `useLinkedSelection({ bindings, onSelect, timeRange })` | See below. |
 
-`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them.
+`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them. The optional `timeRange` adds display-only highlights for a time range; see [Time range exploration](#time-range-exploration).
 
 | View | Pass to the component |
 | --- | --- |
@@ -1203,7 +1206,40 @@ resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { ent
 | `timeline` (`LinkedTimelineSets`) | `selectedBarIds` to GanttChart `selectedIds`; `highlightedBarIds` and `highlightedDependencyIds` to the props of the same name; `highlightedRowIds` to your own row rendering |
 | `load` (`LinkedLoadSets`) | `selected` to GanttChart `selectedLoadTargets` and `highlighted` to `highlightedLoadTargets` |
 
+Each set object also has `related*` sets (`relatedNodeIds`, `relatedEdgeIds`, `relatedGroupIds`; `relatedBarIds`, `relatedDependencyIds`, `relatedRowIds`; `load.related`). They are empty unless `timeRange` has a `traversal`; see below.
+
 `revealLinkedTarget({ reveal, expand?, maxExpansions? })` (Vue entry) goes to a linked item that may be inside a collapsed group or row. It calls `reveal()` (for example `() => graph.value?.revealNode(id, { focus: true })`); when the result is `hidden-by-collapse` it asks `expand(proxyId, result)`, which expands that proxy in the controlled `collapsedGroupIds` or `collapsedIds` and returns true, or returns false to decline. After an accepted expansion it waits for the render (two `nextTick`s) and reveals again, up to `maxExpansions` (default 16) nested collapses. It resolves a `LinkedRevealResult`: the last `RevealResult` plus `expandedIds`, and `declined: true` when `expand` declined or accepted without the item becoming visible. It never expands anything itself, and it resolves `revealed` only when the last reveal did, so a refused expansion is never reported as a completed move. Without `expand` it returns the first result.
+
+### Time range exploration
+
+Select a time range, for example 14:00–16:00 on inspection machine X, and show what was worked on in it in the linked views, optionally with what the graph relates to it. Times are never inferred from the graph: activity comes only from the bars.
+
+```ts
+import { buildViewBindingIndex, resolveTimeRangeTargets, timelineBarsInRange } from 'vue-weave/core'
+
+const active = timelineBarsInRange(bars, { start: t1400, end: t1600 }, { rowIds: ['machine-x'] })
+const result = resolveTimeRangeTargets(buildViewBindingIndex(bindings), active.map(bar => bar.id), {
+  graph: { nodes, edges }, traversal: { direction: 'forward' }, // all successors
+})
+result.activeTargets  // the active bars and every target bound to their entities
+result.relatedTargets // what the walk reached, without the active targets
+```
+
+`timelineBarsInRange(bars, range, options?)` follows the half-open interval rules:
+
+- A bar without `segments` is active when `bar.start < range.end && bar.end > range.start`.
+- A bar with `segments` is active only when one of its work segments overlaps the range the same way. A pause between segments (a lunch break, for example) that covers the whole range does not count, although the bar's outer extent overlaps.
+- A milestone (`start === end`) at time t is active when `range.start <= t < range.end`: at the range start, not at its end.
+- An empty range (`start === end`) is the instant t: it matches work with `start <= t < end` and milestones at exactly t.
+- `options.rowIds` keeps only bars of those rows; unknown row IDs match nothing.
+
+It throws `RangeError` for a range or bar time that is not finite or ends before it starts, and for empty, non-finite or zero-length segments or segments on a milestone. It returns the input bar objects in input order and does not modify them.
+
+`resolveTimeRangeTargets(index, barIds, options?)` resolves the active bars through a `buildViewBindingIndex` index. `activeEntities` are the entities bound to the bars; `activeTargets` are the bars themselves plus every target bound to those entities, so an active task's node, load range and other bars are active too. Bar IDs that no binding reaches stay in `activeTargets` and are listed in `unknownBarIds`. With `graph` and `traversal` (`GraphTraversalOptions`), it walks the graph with `traverseGraph` from the graph nodes of the active entities: `{ direction: 'forward' }` for all successors, `'backward'` for all predecessors, `'both'` for both, `{ direction: 'both', maxHops: 1 }` for direct neighbours, and `maxHops` to limit the depth. The walk is iterative and terminates on cycles. `relatedEntities` are the reached entities that are not active, and `relatedTargets` the reached graph nodes and edges and the targets bound to related entities, without any active target. Invalid traversal options or graph edges throw as in `traverseGraph`.
+
+`useLinkedSelection({ bindings, timeRange })` does both reactively. `timeRange` is a `LinkedTimeRange` (`{ range, bars, rowIds?, graph?, traversal? }`), a ref or getter, or undefined. Active targets join the `highlighted*` sets and `load.highlighted`, and related targets fill the `related*` sets, both without targets the owning view selected and without repeats; the returned `timeRange` computed holds the `TimeRangeTargets`. The range is display only: it never changes `owner`, `selectedEntities`, the `selected*` sets or calls `onSelect`, so Delete in a view never removes range-highlighted items. An invalid range throws `RangeError` when the sets are read; validate user input first. Without `timeRange`, every set is as before and the `related*` sets are empty.
+
+Pass `graph.relatedNodeIds` to NetworkGraph `relatedIds` to draw related nodes, and the edges between them, apart from active ones (`vw-is-related` instead of `vw-is-highlighted`). GanttChart has no related-bar prop; merge `relatedBarIds` into `highlightedBarIds` or style them yourself, for example through `appearance` or `tone` on derived bars.
 
 ## Resource timelines and unplanned tasks
 
