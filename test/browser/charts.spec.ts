@@ -6281,10 +6281,84 @@ test('every design gallery showcase fits a phone-width page', async ({ page }) =
   page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
-  for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings']) {
+  for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views']) {
     await page.getByRole('button', { name, exact: true }).click()
     await expect(page.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth), name).toBe(390)
+  }
+  expect(errors).toEqual([])
+})
+
+test('the calendar views showcase switches calendar zoom presets and locales and highlights marker ranges', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Calendar views', exact: true }).click()
+  const showcase = page.getByRole('region', { name: 'Calendar views', exact: true })
+  await expect(showcase.getByRole('heading', { name: 'Calendar views', exact: true })).toBeVisible()
+  const levels = showcase.getByRole('group', { name: 'Zoom level', exact: true })
+  await expect(levels.getByRole('button', { name: 'Weeks', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  // Marker ranges are named like status-date markers: label, then start and end in the chart's formatTime.
+  const freeze = showcase.getByRole('img', { name: 'Code freeze 18 May–1 Jun', exact: true })
+  await expect(freeze).toBeVisible()
+  await expect(freeze).toHaveText('Code freeze')
+  await expect(showcase.getByRole('img', { name: 'Golden Week 29 Apr–7 May', exact: true })).toBeVisible()
+  // Golden Week shades the Tokyo row; the Labour Day closure shades Berlin and Lisbon.
+  await expect(showcase.locator('.vw-gantt-range.vw-is-row')).toHaveCount(3)
+  const band = (await showcase.locator('.vw-gantt-range:not(.vw-is-row)').first().boundingBox())!
+  const label = (await freeze.boundingBox())!
+  expect(Math.abs(band.x - label.x)).toBeLessThan(1)
+  expect(Math.abs(band.width - label.width)).toBeLessThan(1)
+  // The summer shutdown lies outside the visible time window at week zoom, so it is not rendered.
+  const shutdown = showcase.getByRole('img', { name: 'Summer shutdown 10 Aug–24 Aug', exact: true })
+  await expect(shutdown).toHaveCount(0)
+  // The bar names and keyboard snap follow the active preset: one day per arrow key at week zoom.
+  const api = page.getByRole('button', { name: 'API v2 13 Apr–15 May', exact: true })
+  await api.press('ArrowRight')
+  await expect(page.getByRole('button', { name: 'API v2 14 Apr–16 May', exact: true })).toBeFocused()
+  // The status line uses intlTimeFormatter with dateStyle "full"; ICU versions differ in the comma after the weekday.
+  await expect(showcase.getByRole('status').filter({ hasText: /^Moved API v2: Tuesday,? 14 April 2026 – Saturday,? 16 May 2026$/ })).toBeVisible()
+  await levels.getByRole('button', { name: 'Months', exact: true }).click()
+  await expect(levels.getByRole('button', { name: 'Months', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(shutdown).toBeVisible()
+  await expect(showcase.getByText('August 2026', { exact: true })).toHaveCount(0)
+  await expect(showcase.locator('.vw-gantt-band', { hasText: /^Aug$/ })).toBeVisible()
+  // Another locale relabels presets, bands, bars and ranges.
+  await showcase.getByLabel('Language').selectOption('de-DE')
+  await expect(levels.getByRole('button', { name: 'Monate', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(showcase.getByRole('img', { name: 'Code freeze 18. Mai–1. Juni', exact: true })).toBeVisible()
+  await expect(showcase.locator('.vw-gantt-band', { hasText: /^Mai$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^API v2 14\. Apr\.?–16\. Mai$/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('gantt marker ranges line up with the time axis in both directions and appear in the SVG export', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  for (const search of ['?ranges=1', '?ranges=1&rtl=1']) {
+    const rtl = search.includes('rtl')
+    const { chart, out } = await openGanttFixture(page, search)
+    const hold = chart.getByRole('img', { name: 'Hold 1–3', exact: true })
+    await expect(hold).toHaveText('Hold')
+    const label = (await hold.boundingBox())!
+    // 2 units at 50 px per unit.
+    expect(Math.round(label.width)).toBe(100)
+    const body = (await chart.locator('.vw-gantt-range:not(.vw-is-row)').boundingBox())!
+    expect(Math.abs(body.x - label.x)).toBeLessThan(1)
+    expect(Math.abs(body.width - label.width)).toBeLessThan(1)
+    // The band ends at time 3 and the Review marker sits at time 5: later times are to the right in LTR, left in RTL.
+    const review = (await chart.locator('.vw-gantt-marker:not(.vw-gantt-now)').boundingBox())!
+    if (rtl) expect(label.x).toBeGreaterThan(review.x + 90)
+    else expect(label.x + label.width).toBeLessThan(review.x - 90)
+    // The row-restricted band covers Row 2 only: it starts where the Task B bar's row starts.
+    const rowBand = (await chart.locator('.vw-gantt-range.vw-is-row').boundingBox())!
+    const taskB = (await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox())!
+    expect(rowBand.y).toBeLessThan(taskB.y)
+    expect(rowBand.y + rowBand.height).toBeGreaterThan(taskB.y + taskB.height)
+    expect(rowBand.height).toBeLessThan(80)
+    await expect(chart.getByRole('img', { name: 'Row hold 4–7', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+    await expect(out('Exported ranges')).toHaveText('Hold 1–3; Row hold 4–7; Hold 1–3; Row hold 4–7')
   }
   expect(errors).toEqual([])
 })

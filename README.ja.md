@@ -45,6 +45,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - ポインターのドラッグや矢印キーによる列幅の変更（`columnsResizable`、`column-resize`、`labelWidth`）。
 - 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
 - ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
+- コードフリーズや休暇などの期間の強調表示（`markerRanges`）。チャート全体または指定した行に帯を描き、見出しにラベルを表示します。
 - 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
 - 非稼働時間の網掛け（`nonWorkingPeriods`）。バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` で、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業を表示します。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。「手動スケジュール」のような独自の補足も、`TimelineBar.description` でこの説明とツールチップに加えられます。
 - スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
@@ -57,6 +58,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、サマリータスク（`parentId`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
 - `levelResources` による設備負荷の平準化と、`propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）・`rescheduleFromStatusDate` による計画の更新。
 - チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
+- カレンダー表示：`calendarZoomPresets` はIANAタイムゾーンに沿った時・日・週・月・四半期・年のズームプリセットを作り、`intlTimeFormatter` と `calendarBands`（`locale`）はサーバーとクライアントで一致するロケール対応のラベルを作ります。
 - データ交換：`toMsProjectXml`、`toICalendar`、`toCsv` は計画を書き出し、`parseCsv` と `timelineFromCsvTable` はCSVファイルを行とバーとして、`fromMsProjectXml` と `timelineFromMsProject` はMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として（カレンダー、リソース、割り当ても）、`fromICalendar` と `timelineFromICalendar` はiCalendarファイルを読み込みます。
 
 ### 計画・連動・保存
@@ -219,7 +221,7 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、ダイアグラム表現（ノード形状、エッジ端の記号、アニメーションと平行エッジ）、グラフ分析（連結成分、コミュニティ、中心性の順位）、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけでワークフロービルダー、データベーススキーマ図、組織図、プロダクトロードマップ、スプリント計画、客室予約カレンダーの見た目に作り替えています。編集結果はデモ画面内の状態として保持します。
+デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、ダイアグラム表現（ノード形状、エッジ端の記号、アニメーションと平行エッジ）、グラフ分析（連結成分、コミュニティ、中心性の順位）、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけでワークフロービルダー、データベーススキーマ図、組織図、プロダクトロードマップ、スプリント計画、客室予約カレンダー、期間を強調したカレンダー表示の見た目に作り替えています。編集結果はデモ画面内の状態として保持します。
 
 Windowsでは代わりに `Start.cmd` をダブルクリックしても起動できます。`preview/` が現在のソースからビルドされたものであればそのまま表示し、そうでなければ先にビルドします。インストール済みの依存関係が `package-lock.json` と一致しない場合は、ビルドの前に `npm ci` も実行します。`npm start` は `preview/` をそのまま表示します。
 

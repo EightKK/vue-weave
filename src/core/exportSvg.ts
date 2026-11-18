@@ -8,10 +8,10 @@ import {
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
-  TimelineMarker, TimelineRow,
+  TimelineMarker, TimelineMarkerRange, TimelineRow,
 } from './types.js'
 import type { TimelineConstraintKind } from './types.js'
-import { checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
+import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
@@ -61,6 +61,12 @@ export interface SvgExportTheme {
   constraint?: string
   /** Violated constraint markers (`--vw-constraint-violated`). Defaults to `defaultSvgExportTheme.constraintViolated`. */
   constraintViolated?: string
+  /** Fill of marker ranges without a tone (`--vw-range`). Defaults to `defaultSvgExportTheme.range`. */
+  range?: string
+  /** Label text of marker ranges without a tone (`--vw-range-ink`). Defaults to `defaultSvgExportTheme.rangeInk`. */
+  rangeInk?: string
+  /** Edge line of marker range labels without a tone (`--vw-range-line`). Defaults to `defaultSvgExportTheme.rangeLine`. */
+  rangeLine?: string
   tones: Record<ChartTone, SvgToneColors>
 }
 
@@ -76,6 +82,7 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
   nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08', status: '#1f7a4d',
   baseline2: '#9a4c95', baseline3: '#23806f', constraint: '#a1246e', constraintViolated: '#c4161c',
+  range: '#f9efdc', rangeInk: '#764908', rangeLine: '#b58848',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -412,6 +419,11 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   showSummaries?: boolean
   headerBands?: readonly (readonly TimelineBand[])[]
   markers?: readonly TimelineMarker[]
+  /**
+   * Highlighted half-open ranges, as GanttChart `markerRanges`: a band across the body (or across `rowIds` only) with
+   * its label at the bottom of the header, drawn with its tone or the `range` theme colours at 70% opacity.
+   */
+  markerRanges?: readonly TimelineMarkerRange[]
   /** Time of a "now" line. */
   now?: number
   /** Tick interval. Defaults to the first of `tickSteps` that is at least 76 px wide. */
@@ -483,7 +495,8 @@ const bandHeight = 26
 
 /**
  * Build a standalone SVG document of a timeline with the default rendering: row headings and columns, header bands
- * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, the now line and load rows.
+ * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, marker ranges, the now line and
+ * load rows.
  * Every displayed row is included (collapsed descendants are omitted) unless `rowRange` narrows it. Runs without a DOM.
  */
 export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
@@ -565,6 +578,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
     markerIds.add(item.id)
   }
+  const markerRanges = options.markerRanges ?? []
+  checkMarkerRanges(markerRanges, new Set(rows.map(row => row.id)))
   if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')
   if (options.statusDate !== undefined && !Number.isFinite(options.statusDate)) throw new RangeError('statusDate must be finite')
   checkNonWorkingPeriods(options.nonWorkingPeriods)
@@ -641,6 +656,29 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     if (end <= start) continue
     area.push(tag('rect', { ...span(start, end), y: headerHeight, height: totalHeight - headerHeight, fill: theme.nonWorking }))
   }
+  // Marker ranges: the body band goes behind the grid and bars; its header label is drawn after the ticks below.
+  const rangeLabels: string[] = []
+  for (const item of markerRanges) {
+    const start = Math.max(item.start, window.start), end = Math.min(item.end, window.end)
+    if (end <= start) continue
+    const box = span(start, end)
+    const colors = item.tone === undefined ? { pale: theme.range, line: theme.rangeLine, ink: theme.rangeInk } : toneColors(theme, item.tone)
+    const fills = item.rowIds
+      ? [...new Set(item.rowIds)].flatMap(rowId => {
+        const index = rowIndex.get(rowId)
+        return index === undefined ? [] : [{ y: headerHeight + index * rowHeight, height: rowHeight }]
+      })
+      : [{ y: headerHeight, height: totalHeight - headerHeight }]
+    const title = tag('title', {}, escapeXml(`${item.label} ${format(item.start)}–${format(item.end)}`))
+    if (fills.length) {
+      area.push(tag('g', { class: 'vw-gantt-range' }, title
+        + fills.map(fill => tag('rect', { ...box, ...fill, fill: colors.pale, 'fill-opacity': 0.7 })).join('')))
+    }
+    const strip = { ...box, y: headerHeight - 13, height: 13 }
+    rangeLabels.push(tag('g', { class: 'vw-gantt-range-label' }, title + tag('rect', { ...strip, fill: colors.pale })
+      + tag('line', { x1: box.x, y1: strip.y + 1, x2: box.x + box.width, y2: strip.y + 1, stroke: colors.line, 'stroke-width': 2 })
+      + clippedText(strip, rtl, [{ text: item.label, y: 10, size: 10, weight: 650, fill: colors.ink, inset: 4 }])))
+  }
   bands.forEach((level, index) => {
     for (const band of level) {
       const start = Math.max(band.start, window.start), end = Math.min(band.end, window.end)
@@ -661,6 +699,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
   }
+  area.push(...rangeLabels)
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue

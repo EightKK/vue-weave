@@ -45,6 +45,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Column resizing by pointer or arrow keys (`columnsResizable`, `column-resize`, `labelWidth`).
 - A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
 - Zoom presets (`zoomPresets`), a now marker (`showNow`), touch pinch zoom (`pinchZoom`) and Ctrl+wheel zoom around the pointer (`wheelZoom`).
+- Highlighted time ranges such as a code freeze or holidays (`markerRanges`), across the chart or on chosen rows, with a header label.
 - A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
 - Non-working time shading (`nonWorkingPeriods`), and critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names. Your own text per bar, such as "Manually scheduled", joins that description and the tooltip through `TimelineBar.description`.
 - Scheduling constraints (`TimelineBar.constraints`, named as in `ScheduleTask`) drawn as markers that show violations, with optional drag and keyboard handles (`constraintsEditable`, `constraint-edit`, accepted with `applyTimelineConstraintEdit`).
@@ -57,6 +58,7 @@ Everything beyond the basics is opt-in through props. Details are in [docs/api.m
 - Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses, manually scheduled (`manual`) and inactive (`inactive`) tasks, summary tasks (`parentId`), and IANA time-zone calendars (`WorkWeek.timeZone`).
 - Resource leveling with `levelResources`, and plan updates with `propagateEdit` (ready to return from `cascade`) and `rescheduleFromStatusDate`.
 - Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
+- Calendar views: `calendarZoomPresets` builds ready hour, day, week, month, quarter and year zoom presets in an IANA time zone, and `intlTimeFormatter` and `calendarBands` (`locale`) give locale-aware labels that match on server and client.
 - Interchange: `toMsProjectXml`, `toICalendar` and `toCsv` export plans; `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars, `fromMsProjectXml` with `timelineFromMsProject` imports a Microsoft Project XML file as rows, bars, baselines and dependencies (and its calendars, resources and assignments), and `fromICalendar` with `timelineFromICalendar` imports an iCalendar file.
 
 ### Planning, linking and saving
@@ -219,7 +221,7 @@ npm run build:demo
 npm start
 ```
 
-The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, diagram styles (node shapes, edge markers, animated and parallel edges), graph analysis (components, communities and centrality rankings), resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. The **Design gallery** row restyles the same two components as a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan and a room booking calendar, using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state.
+The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, diagram styles (node shapes, edge markers, animated and parallel edges), graph analysis (components, communities and centrality rankings), resource planning with unplanned tasks and saved editing against a simulated server, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. The **Design gallery** row restyles the same two components as a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan, a room booking calendar and calendar views with highlighted ranges, using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state.
 
 On Windows you can double-click `Start.cmd` instead. It serves `preview/` when it was built from the current sources, and otherwise builds it first, running `npm ci` beforehand if the installed dependencies do not match `package-lock.json`. `npm start` serves `preview/` as it is.
 

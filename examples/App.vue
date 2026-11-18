@@ -19,6 +19,7 @@ import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
 import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
 import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
 import BookingShowcase from './showcase/BookingShowcase.vue'
+import CalendarShowcase from './showcase/CalendarShowcase.vue'
 import { download, imageSize } from './download'
 
 const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
@@ -32,6 +33,7 @@ const showcases = [
   { id: 'roadmap', label: 'Product roadmap', component: RoadmapShowcase },
   { id: 'sprint', label: 'Sprint plan', component: SprintGanttShowcase },
   { id: 'booking', label: 'Room bookings', component: BookingShowcase },
+  { id: 'calendar', label: 'Calendar views', component: CalendarShowcase },
 ]
 const showcase = computed(() => showcases.find(item => item.id === preset.value))
 // Demos that keep their own state and ignore the graph and timeline controls of this page.

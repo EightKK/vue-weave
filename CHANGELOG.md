@@ -14,10 +14,15 @@
 - `workCalendarsFromMsProject(project, range)` builds `WorkCalendar`s from imported calendars, and `resourceLoadFromMsProject(project, options?)` maps imported resources and assignments to the inputs of `calculateResourceLoad`, `levelResources` and `projectResourceTimeline` (units scaled to integers, 100 per full-time resource by default). `timelineFromMsProject` adds `resources` and `assignments` to its result when the plan has resources.
 - `toMsProjectXml` writes optional `calendars`, `defaultCalendarId`, `resources`, `assignments` and a task's `calendarId`, so imported calendars, resources and assignments survive a round trip. Without them the output is unchanged.
 - `fromICalendar` reads RFC 5545 text into events (UID, SUMMARY, DESCRIPTION, DTSTART with DTEND or DURATION; UTC, floating, `TZID` and `VALUE=DATE` times, resolved with `Intl`), with warnings for unknown time zones, recurrence (only the first instance is imported), skipped events and malformed lines. `timelineFromICalendar` turns events into rows and bars. New types `ICalendarImport`, `ICalendarImportEvent`, `ICalendarImportOptions`, `ICalendarImportWarning`, `ICalendarImportWarningCode` and `ICalendarTimeline`.
+- `markerRanges` (`TimelineMarkerRange`): highlighted half-open ranges `[start, end)` drawn as a band under the bars, across the body or only across `rowIds`, with a label strip at the bottom of the time header (`role="img"`, named `<label> <start>–<end>` with `formatTime`). Optional `tone`; otherwise the new `--vw-range`, `--vw-range-line`, `--vw-range-ink` and `--vw-range-opacity` variables (dark theme values included). Ranges are clipped to `range` and the visible time window, mirrored in right-to-left charts, hatched in forced colors, printed, and drawn by `exportSvg`, `exportPng` and `renderTimelineSvg` (`markerRanges` option; theme colours `range`, `rangeLine` and `rangeInk`). A duplicate or missing ID or an unknown row is an `Error`, and endpoints that are not finite with `start < end` (including a zero-width range) a `RangeError`, reported through `validation-error`. Point `markers` are unchanged.
+- `calendarZoomPresets(range, options)`: ready `zoomPresets` for hours, days, weeks, months, quarters and years (`CalendarZoomLevel`), each with `pixelsPerUnit`, `tickSteps`, `snap`, header bands from `calendarBands` in an IANA `timeZone` or fixed offset, and a matching `formatTime`, labelled in a `locale`.
+- `intlTimeFormatter(options)`: a `formatTime`-compatible function on a cached `Intl.DateTimeFormat` for a locale, IANA time zone or fixed offset and format options. It never uses the runtime's default locale or time zone, so server and client output match.
+- `calendarBands` options `locale` and `labelFormat` for locale-aware band labels.
 
 ### Examples
 
 - The **Edit graph** tools add **Edit labels**, **Lasso selection** and **Item toolbars** (node and edge toolbars with Frame and Remove actions, a custom group frame and round minimap nodes).
+- The demo's design gallery adds a **Calendar views** showcase.
 
 ## 0.5.0 - 2026-11-17
 
