@@ -67,6 +67,7 @@ Vue 3でネットワークグラフやガントチャートを実装するため
 - ビューの連動：`useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。利用者が操作したビューだけが選択を持ち、ほかのビューには表示専用の強調（`highlightedNodeIds`、`highlightedEdgeIds`、`highlightedBarIds`、`highlightedLoadTargets`）を渡します。`target-enter`、`target-leave`、`target-activate` イベントが指している対象を通知し、`revealNode`、`revealBar`、`revealLinkedTarget` が折り畳まれたグループや行の中も含めてその対象へ移動します。任意の時間範囲（`timelineBarsInRange`、`resolveTimeRangeTargets`、または `timeRange` オプション）を指定すると、その範囲に作業していた対象（分割バーは作業区間で判定）と、必要に応じてグラフ上で関連する対象を強調します。
 - リソースビュー：`projectResourceTimeline` は割り当てたリソースごとにタスクを表示し、負荷を二重に数えません。`resolveResourceTimelineEdit` は別の行へのドラッグを割当の変更に変換し、`buildPlacementInput` は未計画タスクを計算から除きます。GanttChart はアプリの一覧からのドロップを受け付けます（`droppable`、`bar-drop`）。
 - 理由の説明：`scheduleTasks(input, { explain: true })` と `levelResources` は各タスクの日程が決まった理由をトレースとして返します。`toPlanningDiagnostics` は循環、実行不能なタスク、負荷超過、平準化で解決できなかったタスクを、関係するタスクとリソースとともに一覧にします。
+- 計画シナリオの比較：`comparePlans` は候補計画を現行計画と比較し、入力の差分（編集したタスク、依存関係、カレンダー、割り当て、能力）と計算結果の差分（最終完了、結果として動いたタスク、クリティカルの変化、期限超過、リソースごとの累積負荷超過）を分けて返します。`planComparisonTargets` と `planBaselines` で既存のハイライトとベースラインセットに表示できます。
 - 非同期レイアウト：`useAsyncGraphLayout` はWorkerなど任意の非同期エンジンでレイアウトを計算し、そろった最新のフレームだけを表示します。`routingPolicy="preserve"` はポート付きの辺を含めてエンジンの配線を保持します。
 - 型付きセル・検索・保存ビュー：`field` を持つ列は型付きの値を提案し（`field-edit`、`cell-editor` スロット）、`useTimelineView` は行の表示用コピーを検索・並べ替えます。
 - 保存：`useEditTransaction` はアダプター経由で文書ごとに一つずつ保存し、受理・拒否・版競合・結果不明を区別します。Undo／Redo もサーバーへ送ります。`serializeWeaveSnapshot` と `restoreWeaveSnapshot` はデータと表示設定を版付きで検証されたJSONとして保存・復元します。

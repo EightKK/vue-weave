@@ -7054,3 +7054,87 @@ test('typed port rules hint valid targets, reject type and limit violations with
   await expect(page.getByText('No rule violations', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('plan scenarios: create a candidate, compare, highlight a row, discard, adopt and undo as one step', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Linked views', exact: true }).click()
+  await page.getByRole('checkbox', { name: 'Compare plan scenarios' }).check()
+  const panel = page.locator('section[aria-labelledby="scenario-title"]')
+  const status = panel.getByRole('status', { name: 'Scenario status' })
+  const revision = panel.getByLabel('Current plan revision')
+  const selected = panel.getByLabel('Scenario selection')
+  const node = (label: string) => panel.getByRole('button', { name: new RegExp('^' + label + ' ES ') })
+  const bar = (label: string) => panel.getByRole('button', { name: new RegExp('^' + label + ' \\d\\d:\\d\\d') })
+  const comparison = panel.getByRole('table', { name: 'Plan comparison' })
+  const tasks = panel.getByRole('table', { name: 'Task changes' })
+  await expect(revision).toHaveText('Current plan revision r1, finish 17:00')
+
+  // A selection made before the candidate exists.
+  await bar('Prepare stock').click()
+  await expect(selected).toHaveText('Selected: Prepare stock')
+
+  await panel.getByRole('combobox', { name: 'Candidate strategy' }).selectOption('push')
+  await panel.getByRole('button', { name: 'Create candidate' }).click()
+  await expect(status).toContainText('Candidate created from revision r1')
+  await expect(comparison.getByRole('row', { name: /^Final completion/ })).toHaveText(/17:00\s*20:00\s*\+3 h/)
+  await expect(comparison.getByRole('row', { name: /^Deadline misses/ })).toHaveText(/0\s*1\s*1 gained, 0 lost/)
+  await expect(comparison.getByRole('row', { name: /^Overload CNC cell/ })).toHaveText(/2 unit-h\s*2 unit-h\s*±0 unit-h/)
+  // The current plan is drawn under the candidate bars as a baseline set.
+  await expect(panel.locator('.vw-gantt-baseline')).toHaveCount(5)
+  await expect(revision).toHaveText('Current plan revision r1, finish 17:00')
+
+  await panel.getByRole('radio', { name: 'Tasks I changed' }).check()
+  await expect(tasks.getByRole('button')).toHaveText(['Cut order A', 'Cut order B'])
+  await panel.getByRole('radio', { name: 'Tasks that moved as a result' }).check()
+  await expect(tasks.getByRole('button')).toHaveText(['Prepare stock', 'Inspect', 'Pack'])
+
+  // Selecting a row highlights the task and the changed tasks downstream in both views, and its load ranges.
+  await tasks.getByRole('button', { name: 'Inspect', exact: true }).click()
+  await expect(tasks.getByRole('button', { name: 'Inspect', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(node('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(panel.locator('.vw-gantt-load-segment.vw-is-highlighted').first()).toBeVisible()
+  await expect(panel.getByLabel('Candidate reasons')).toContainText('after cutA-inspect')
+
+  // Discard restores the plan and the selection exactly.
+  await panel.getByRole('button', { name: 'Discard candidate' }).click()
+  await expect(status).toHaveText('Candidate discarded. The current plan and selection are as before.')
+  await expect(comparison).toHaveCount(0)
+  await expect(selected).toHaveText('Selected: Prepare stock')
+  await expect(revision).toHaveText('Current plan revision r1, finish 17:00')
+  await expect(panel.locator('.vw-gantt-baseline')).toHaveCount(0)
+  await expect(panel.locator('.vw-is-highlighted')).toHaveCount(0)
+
+  // A change of the current plan while comparing makes the candidate stale; adopting it is refused.
+  await panel.getByRole('combobox', { name: 'Candidate strategy' }).selectOption('move')
+  await panel.getByRole('button', { name: 'Create candidate' }).click()
+  await expect(comparison.getByRole('row', { name: /^Final completion/ })).toHaveText(/17:00\s*19:00\s*\+2 h/)
+  await panel.getByRole('button', { name: "Simulate another planner's change" }).click()
+  await expect(panel.getByRole('alert')).toContainText('moved from revision r1 to r2')
+  await expect(comparison.getByRole('row', { name: /^Final completion/ })).toHaveText(/18:00\s*19:00\s*\+1 h/)
+  await expect(panel.getByRole('button', { name: 'Adopt candidate' })).toBeDisabled()
+  await panel.getByRole('button', { name: 'Discard candidate' }).click()
+  await expect(revision).toHaveText('Current plan revision r2, finish 18:00')
+
+  // A partly loaded current plan is never shown as a complete comparison.
+  await panel.getByRole('button', { name: 'Create candidate' }).click()
+  await panel.getByRole('checkbox', { name: 'Current plan only partly loaded' }).check()
+  await expect(panel.getByRole('alert')).toContainText('Incomplete comparison')
+  await expect(panel.getByRole('button', { name: 'Adopt candidate' })).toBeDisabled()
+  await panel.getByRole('checkbox', { name: 'Current plan only partly loaded' }).uncheck()
+
+  // Adopt is one history entry: one Undo restores the previous plan.
+  await panel.getByRole('button', { name: 'Adopt candidate' }).click()
+  await expect(status).toContainText('Adopted: Move Cut order A to the backup saw.')
+  await expect(revision).toHaveText('Current plan revision r3, finish 20:00')
+  await panel.getByRole('button', { name: 'Undo plan change' }).click()
+  await expect(revision).toHaveText('Current plan revision r2, finish 18:00')
+  await panel.getByRole('button', { name: 'Undo plan change' }).click()
+  await expect(revision).toHaveText('Current plan revision r1, finish 17:00')
+  expect(errors).toEqual([])
+})

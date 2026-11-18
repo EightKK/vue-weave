@@ -436,3 +436,52 @@ Keep the three kinds of deadline apart:
 - `TimelineBar.deadline` is only drawn by GanttChart and never takes part in scheduling.
 
 `toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. Each entry of `manualConflicts` becomes a `manual-conflict` warning (the task, then the link), listed before the unresolved tasks and overloads; the plan is still valid, so it is not an error. Its `reasonIds` hold the task's `manual` reason of the `earliest` phase when the result was calculated with `explain`. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.
+
+## Compare plan scenarios
+
+`comparePlans(current, candidate)` compares a candidate plan with the current plan, for example after equipment maintenance is planned and the planner tries to push work later on the same equipment or to move it to other equipment. Keep three layers apart:
+
+- **Input**: each plan is a `PlanScenario` whose `input` is the `scheduleTasks` input with optional `resources` and `assignments`. The candidate is a separate draft of the input; the current plan stays where it is (in `useEditHistory` or `useEditTransaction`) and does not change while comparing.
+- **Computed result**: each side's schedule and load. Pass a precomputed `result` (for example from `levelResources`) and `load`, or let `comparePlans` calculate `scheduleTasks(input, { explain: true })` and `calculateResourceLoad`. The comparison itself is computed too: recalculate it whenever either plan changes, never store it.
+- **View projection**: `planComparisonTargets` turns compared tasks into the targets of the existing highlight props through your view bindings, and `planBaselines` turns the current plan into a baseline set for the candidate's bars.
+
+```ts
+import { comparePlans, planBaselines, planComparisonTargets, scheduleTasks } from 'vue-weave/core'
+
+const comparison = comparePlans(
+  { input: currentInput, revision: acceptedVersion },
+  { input: candidateInput, baseRevision: candidateBaseVersion },
+)
+comparison.input.tasks.changed            // [{ id: 'cutA', fields: ['startNoEarlierThan'] }]
+comparison.input.resources.changed        // [{ id: 'cnc', fields: ['periods'] }]
+comparison.result.editedTaskIds           // tasks the planner changed (fields or assignments)
+comparison.result.consequenceTaskIds      // tasks with unchanged input whose dates, critical flag or state moved
+comparison.result.finish                  // { current, candidate, shift }
+comparison.result.overload                // cumulative overload per resource, both sides
+
+// Draw the current plan under the candidate bars with the existing baseline sets.
+const before = planBaselines(scheduleTasks(currentInput), 'current')
+const bars = candidateTasks.map(task => ({ ...barOf(task), baselines: [before.get(task.id)!] }))
+// <GanttChart :bars="bars" :baseline-ids="['current']" ... />
+```
+
+What the comparison means:
+
+- A task is **edited** when its own fields or its assignments differ (or it was added or removed). A task whose input is unchanged but whose result differs is a **consequence**. A changed dependency, calendar or resource is reported in `input` but does not make a task edited.
+- When one side has no schedule (a cycle, or an infeasible plan such as a missed project `deadline`), `result.state` says so, `result.comparable` is false and the input differences are still returned; nothing throws. Its finish is undefined.
+- Summary tasks are compared by their rolled-up dates, so a summary usually appears as a consequence of its subtasks. Manual tasks keep their dates; a link they now violate appears as a gained `manual-conflict` violation. Inactive tasks have the side state `inactive`.
+- `deadline` violations come from `PlanComparisonTask.deadline`, a due time like `TimelineBar.deadline` that the scheduler ignores. The hard `ScheduleInput.deadline` and `finishNoLaterThan` make a plan infeasible instead.
+- Cumulative overload is the sum of `overload * (end - start)` over one resource's load segments, in your capacity units times your time units. It is never summed across resources. A task assigned to two resources counts once in each resource and never twice in one; overlapping segments of one resource in a supplied `load` throw a RangeError.
+- `reasons` are each side's own trace reasons of a task. They explain that plan's dates; they are not a claim that one change caused the difference.
+
+### Adopting or discarding a candidate
+
+The library leaves the decision to the application. The contract the demo follows:
+
+1. Creating a candidate records the revision of the current plan it was derived from (`baseRevision`), and remembers the selection of the moment.
+2. Comparing never changes the current plan. If the current plan advances (another planner's save, a server refresh), recalculate `comparePlans` against the new current plan; `comparison.revision.stale` is then true, and the candidate must not be adopted as it is.
+3. Adopting is one bulk change: commit the whole candidate input with one `history.commit(...)`, or one `useEditTransaction.submit(changes)` with all changes, so that one Undo reverts the adoption.
+4. Discarding drops the draft. The current plan was never touched; restore the remembered selection.
+5. When a plan is only partly loaded (for example a windowed load of a large plan), set `partial: true` on that side. `comparison.complete` is then false; show the comparison as incomplete and do not adopt from it.
+
+Try it in the demo: open **Linked views** and check **Compare plan scenarios**.

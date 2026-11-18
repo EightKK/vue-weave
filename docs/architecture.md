@@ -20,6 +20,8 @@ Applications keep three kinds of data apart, and the APIs follow that split.
 
 Edits, history (`useEditHistory`, `useEditTransaction`) and snapshots (`serializeWeaveSnapshot`) hold input only. A task shown on two resource rows is still one task; projected bar IDs map back through `origins` and are never saved as task IDs. Load, traces and layouts are recalculated from the input instead of being stored or undone. A view projection never feeds a calculation: schedules and load come from the full input, not from a filtered or sorted display.
 
+Plan scenarios follow the same split. A candidate plan is a second input (a draft that records the revision it was derived from); `comparePlans` is computed from both inputs and their computed results, and keeps input differences and result differences in separate parts; the highlights (`planComparisonTargets`) and the current plan drawn as a baseline set (`planBaselines`) are projections. Adopting a candidate replaces the input in one history entry.
+
 The ESM root exports Vue components and core functions. The separate core export supports headless use. Vite externalizes Vue. Declaration files preserve props, slots and exposed methods. Consumers load style.css explicitly.
 
 ## Graph layout
