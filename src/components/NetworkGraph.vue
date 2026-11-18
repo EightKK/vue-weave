@@ -26,6 +26,7 @@ import {
   cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphPathEndpoints, graphViewportRect, type GraphRect,
 } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
+import { createGraphConnectionChecker, type GraphPortRules } from '../core/graphPortRules.js'
 import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '../core/graphSnapping.js'
 import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
@@ -58,6 +59,12 @@ const props = withDefaults(defineProps<{
   groups?: readonly G[]
   /** Synchronous check of a connection proposal; receives the existing edge ID when reconnecting. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateConnection?: (connection: GraphConnection, replacingEdgeId?: string) => boolean | string | void
+  /**
+   * Port rules (type, direction, connection limit) checked before `validateConnection`; a broken rule rejects the
+   * proposal with its reason through `connect-rejected`. While a connection is in progress, handles get
+   * `vw-is-valid-target` or `vw-is-invalid-target`. Opt-in. Default: undefined.
+   */
+  connectionRules?: GraphPortRules
   /** Shows an overview minimap of the graph and viewport. Opt-in. Default: false. */
   showMinimap?: boolean
   /** IDs of nodes to emphasize, together with the edges that join two of them. */
@@ -1521,7 +1528,8 @@ function proposeConnection(pending: ConnectionDraft | undefined, handle: PortHan
   if (to.port !== undefined) connection.toPort = to.port
   const edge = pending.edge
   if (edge && edge.from === connection.from && edge.to === connection.to && edge.fromPort === connection.fromPort && edge.toPort === connection.toPort) return
-  const result = props.validateConnection?.(connection, edge?.id)
+  const ruled = connectionChecker.value?.check(connection, edge?.id)
+  const result = ruled && !ruled.ok ? ruled.reason : props.validateConnection?.(connection, edge?.id)
   if (result === false || typeof result === 'string') {
     notice.value = typeof result === 'string' ? result : messages.value.rejected!
     emit('connect-rejected', connection, notice.value)
@@ -1535,6 +1543,9 @@ function proposeConnection(pending: ConnectionDraft | undefined, handle: PortHan
     emit('connect', connection)
   }
 }
+// The checker of the opt-in connection rules, built once per change of the nodes, edges or rules.
+const connectionChecker = computed(() => props.connectionRules
+  ? createGraphConnectionChecker(props.nodes, props.edges, props.connectionRules) : undefined)
 function cancelInteraction() {
   stopAutoPan()
   cancelNodeDrag()
@@ -3005,33 +3016,60 @@ const MinimapNodes: FunctionalComponent<{ itemSlot?: typeof slots['minimap-node'
   }, itemSlot ? { 'minimap-node': itemSlot, $stable: true } : undefined))
 }
 MinimapNodes.props = ['itemSlot']
-type HandleProps = { node: NetworkNode; port?: GraphPort; box: ShallowRef<GraphBox>; rl: boolean; pressed?: boolean; prefix?: string }
-const HandleCircle: FunctionalComponent<HandleProps> = ({ node, port, box, rl, pressed, prefix }) => {
+// `hint` is set only with `connectionRules` while a connection is in progress: true for a valid target, or the reason
+// (possibly empty) why the handle is not one.
+type HandleProps = {
+  node: NetworkNode; port?: GraphPort; box: ShallowRef<GraphBox>; rl: boolean; pressed?: boolean; prefix?: string; hint?: true | string
+}
+const HandleCircle: FunctionalComponent<HandleProps> = ({ node, port, box, rl, pressed, prefix, hint }) => {
   const handle = connectHandle(node, port, box.value, rl)
   const activate = (event: Event) => (props.connectable || draft.value) && activatePort(handle, event as MouseEvent | KeyboardEvent)
   return h('circle', {
-    class: ['vw-connect-handle', { 'vw-is-active': pressed }], 'data-vw-node': handle.node, 'data-vw-port': portKey(handle),
+    class: ['vw-connect-handle', { 'vw-is-active': pressed, 'vw-is-valid-target': hint === true, 'vw-is-invalid-target': typeof hint === 'string' }],
+    'data-vw-node': handle.node, 'data-vw-port': portKey(handle),
     cx: handle.x, cy: handle.y, r: '6', role: 'button', tabindex: '0', 'aria-label': `${prefix} ${handle.label}`,
-    'aria-pressed': Boolean(pressed),
+    'aria-pressed': Boolean(pressed), 'aria-description': typeof hint === 'string' && hint ? hint : undefined,
     onPointerdown: withModifiers((event: Event) => props.connectable && startPort(event as PointerEvent, handle), ['stop']),
     onClick: withModifiers(activate, ['stop']),
     onKeydown: [withKeys(withModifiers(activate, ['stop', 'prevent']), ['enter']), withKeys(withModifiers(activate, ['stop', 'prevent']), ['space'])],
   })
 }
-HandleCircle.props = ['node', 'port', 'box', 'rl', 'pressed', 'prefix']
+HandleCircle.props = ['node', 'port', 'box', 'rl', 'pressed', 'prefix', 'hint']
 const HandleNodes: FunctionalComponent = () => {
   const rl = direction.value === 'RL', pending = draft.value, fixed = pending && portKey(pending.fixed)
   const { connectTo, connectFrom } = messages.value
+  const hint = pending && connectionHints(pending)
   const list = []
   for (const node of visibleNodes.value ?? viewNodes.value) {
     const box = boxRef(node.id)
     for (const port of node.ports ?? [undefined]) {
       const key = portKey({ node: node.id, port: port?.id })
       const pressed = pending && fixed === key
-      list.push(h(HandleCircle, { key, node, port, box, rl, pressed, prefix: pending && !pressed ? connectTo : connectFrom }))
+      list.push(h(HandleCircle, {
+        key, node, port, box, rl, pressed, prefix: pending && !pressed ? connectTo : connectFrom,
+        hint: hint && !pressed ? hint(node.id, port?.id) : undefined,
+      }))
     }
   }
   return list
+}
+// With `connectionRules`, tells for each handle whether it completes the connection in progress: true, or the reason
+// it does not (empty for a handle the component never connects, such as another handle of the fixed node).
+function connectionHints(pending: ConnectionDraft): ((node: string, port: string | undefined) => true | string) | undefined {
+  const checker = connectionChecker.value
+  if (!checker) return undefined
+  const targets = checker.targets({ ...pending.fixed, end: pending.end }, pending.edge?.id)
+  return (node, port) => {
+    if (node === pending.fixed.node) return ''
+    if (port === undefined ? targets.nodeIds.has(node) && !targets.ports.has(node) : targets.ports.get(node)?.has(port)) return true
+    const ends = [pending.fixed, { node, port }]
+    const [from, to] = pending.end === 'from' ? [ends[1]!, ends[0]!] : ends as [PortRef, PortRef]
+    const connection: GraphConnection = { from: from.node, to: to.node }
+    if (from.port !== undefined) connection.fromPort = from.port
+    if (to.port !== undefined) connection.toPort = to.port
+    const result = checker.check(connection, pending.edge?.id)
+    return result.ok ? true : result.reason
+  }
 }
 
 watch(camera, value => emit('viewport-change', { ...value }))
