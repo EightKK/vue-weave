@@ -1,6 +1,7 @@
 import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } from './graph.js'
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
+import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
@@ -222,6 +223,11 @@ export interface GraphSvgGroup {
 export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> extends SvgExportOptions {
   /** Group rectangles drawn behind the nodes. */
   groups?: readonly GraphSvgGroup[]
+  /**
+   * Swimlane bands drawn behind the groups, edges and nodes, each with its title clipped to its header area, for
+   * example the `lanes` of a `layoutSwimlaneGraph` result. Throws like NetworkGraph `lanes` for invalid lanes.
+   */
+  lanes?: readonly GraphSwimlaneBand[]
   /** Node IDs drawn in the selected style. */
   selectedIds?: Iterable<string>
   /** Node IDs whose box gets the highlight outline, like NetworkGraph `highlightedNodeIds`. Unknown IDs are ignored. */
@@ -288,6 +294,10 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     groupIds.add(group.id)
     include(group.x, group.y, group.width, group.height)
   }
+  if (options.lanes !== undefined) {
+    assertGraphSwimlaneBands(options.lanes, 'renderGraphSvg')
+    for (const lane of options.lanes) include(lane.x, lane.y, lane.width, lane.height)
+  }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
   const highlightedNodes = new Set(options.highlightedNodeIds ?? [])
@@ -331,6 +341,16 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
+  // Lanes: alternating band fills, a header with a solid border and the title clipped to the header.
+  options.lanes?.forEach((lane, index) => {
+    const { header } = lane
+    content.push(tag('g', { class: 'vw-swimlane' }, tag('title', {}, escapeXml(lane.label)) + tag('rect', {
+      x: lane.x, y: lane.y, width: lane.width, height: lane.height,
+      fill: index % 2 ? theme.surfaceMuted : theme.surface, stroke: theme.border,
+    }) + (header.width > 0 && header.height > 0 ? tag('rect', {
+      x: header.x, y: header.y, width: header.width, height: header.height, fill: theme.surfaceMuted, stroke: theme.border, 'stroke-width': 1.5,
+    }) : '') + clippedText(header, rtl, [{ text: lane.label, y: Math.min(header.height / 2, 14) + 4, size: 12, weight: 700, fill: theme.text, inset: 8 }])))
+  })
   for (const group of options.groups ?? []) {
     content.push(tag('g', {}, tag('rect', {
       x: group.x, y: group.y, width: group.width, height: group.height, rx: 10,

@@ -31,6 +31,7 @@ import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '
 import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
+import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from '../core/graphSwimlanes.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 // The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
@@ -155,6 +156,12 @@ const props = withDefaults(defineProps<{
   validateLabelEdit?: (change: GraphLabelEdit) => boolean | string | void
   /** Shape of the `boxSelect` drag: `box` (a rectangle) or `lasso` (a free-form outline that selects the nodes whose centre it encloses). Default: `box`. */
   selectionMode?: GraphSelectionMode
+  /**
+   * Swimlane bands drawn behind the groups, edges and nodes, each with its title in its header area and the title as
+   * its accessible name; usually the `lanes` of a `layoutSwimlaneGraph` result. Display only: the component never
+   * changes a node's lane (see `graphSwimlaneAt`). Opt-in. Default: undefined.
+   */
+  lanes?: readonly GraphSwimlaneBand[]
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -955,6 +962,12 @@ function handleFromKey(key: string) {
   return portKey(ref) === key ? handleAt(ref) : undefined
 }
 
+// Swimlane bands, checked once per new list. They are part of the content bounds below.
+const laneBands = computed(() => {
+  const list = props.lanes
+  if (list) assertGraphSwimlaneBands(list, 'NetworkGraph')
+  return list?.length ? list : undefined
+})
 // The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
 // the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
 // The previous object while the bounds are equal, so a drag inside them does not re-render the minimap or the camera.
@@ -965,6 +978,12 @@ const contentBounds = computed<{ left: number; top: number; right: number; botto
     top = Math.min(top, group.y)
     right = Math.max(right, group.x + group.width)
     bottom = Math.max(bottom, group.y + group.height)
+  }
+  for (const lane of laneBands.value ?? []) {
+    left = Math.min(left, lane.x)
+    top = Math.min(top, lane.y)
+    right = Math.max(right, lane.x + lane.width)
+    bottom = Math.max(bottom, lane.y + lane.height)
   }
   const next = { left, top, right, bottom, width: right - left, height: bottom - top }
   return keep(previous, next)
@@ -2541,6 +2560,9 @@ const GroupLayers: FunctionalComponent<{ groupSlot?: typeof slots.group }> = ({ 
       h('rect', { class: 'vw-network-background', ...area.area, fill: `url(#${patternId})` }),
     ]))
   }
+  // Swimlanes: one layer above the background and below the groups, only with `lanes`.
+  const laneList = laneBands.value
+  if (laneList) layers.push(h('g', { key: 'lanes', class: 'vw-swimlanes' }, laneList.map((lane, index) => laneNode(lane, index))))
   const shown = visibleGroups.value, draggable = props.draggable, right = rtl.value
   for (const group of groupMembership.value) {
     if (shown && !shown.has(group.id)) continue
@@ -2552,6 +2574,22 @@ const GroupLayers: FunctionalComponent<{ groupSlot?: typeof slots.group }> = ({ 
   return layers
 }
 GroupLayers.props = ['groupSlot']
+// A swimlane band with its header and its title, clipped to the header area. The band is its title's group.
+function laneNode(lane: GraphSwimlaneBand, index: number) {
+  const { header } = lane
+  const parts = [h('rect', { class: 'vw-swimlane-band', x: lane.x, y: lane.y, width: lane.width, height: lane.height })]
+  if (header.width > 0 && header.height > 0) {
+    parts.push(
+      h('rect', { class: 'vw-swimlane-header', x: header.x, y: header.y, width: header.width, height: header.height }),
+      h('svg', { class: 'vw-swimlane-title', x: header.x, y: header.y, width: header.width, height: header.height, overflow: 'hidden' }, [
+        h('text', { x: rtl.value ? header.width - 8 : 8, y: Math.min(header.height / 2, 14) + 4 }, toDisplayString(lane.label)),
+      ]),
+    )
+  }
+  return h('g', {
+    key: lane.id, class: index % 2 ? 'vw-swimlane vw-is-alternate' : 'vw-swimlane', role: 'group', 'aria-label': lane.label, 'data-vw-lane': lane.id,
+  }, parts)
+}
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
 // in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
@@ -3009,11 +3047,17 @@ const MinimapNode: FunctionalComponent<MinimapNodeProps> = ({ node, box, selecte
   return h('rect', { class: { 'vw-is-selected': selected }, x, y, width, height, rx: '3' })
 }
 MinimapNode.props = ['node', 'box', 'selected', 'slot']
+// With `lanes`, the minimap draws the lane outlines first.
+const lanesKey = Symbol('lanes')
 const MinimapNodes: FunctionalComponent<{ itemSlot?: typeof slots['minimap-node'] }> = ({ itemSlot }) => {
   const selected = selectedTest.value
-  return viewNodes.value.map(node => h(MinimapNode, {
+  const items = viewNodes.value.map(node => h(MinimapNode, {
     key: node.id, node, box: boxRef(node.id), selected: selected(node.id), slot: itemSlot,
   }, itemSlot ? { 'minimap-node': itemSlot, $stable: true } : undefined))
+  const laneList = laneBands.value
+  return laneList ? [h('g', { key: lanesKey, class: 'vw-minimap-lanes' }, laneList.map(lane => h('rect', {
+    key: lane.id, class: 'vw-minimap-lane', x: lane.x, y: lane.y, width: lane.width, height: lane.height,
+  }))), ...items] : items
 }
 MinimapNodes.props = ['itemSlot']
 // `hint` is set only with `connectionRules` while a connection is in progress: true for a valid target, or the reason
@@ -3171,6 +3215,7 @@ function exportSvg(options: GraphExportOptions<ShownNode, ShownEdge> = {}) {
     idPrefix: 'vw-export-' + marker.replace(/[^\w-]/g, ''),
     ...rest,
     groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
+    ...laneBands.value && { lanes: laneBands.value },
     selectedIds: selection,
     ...highlighted && { highlightedNodeIds: highlighted.nodes, highlightedEdgeIds: highlighted.edges },
     ...highlightColor && { highlightColor },

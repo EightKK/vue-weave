@@ -19,6 +19,7 @@ The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and
   - [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)
   - [NetworkGraph directions and crossing reduction](#networkgraph-directions-and-crossing-reduction)
   - [Label editing, lasso selection and item slots](#label-editing-lasso-selection-and-item-slots)
+  - [Swimlanes](#swimlanes)
 - [GanttChart](#ganttchart)
   - [Editing contract](#editing-contract)
   - [Timeline planning overlays](#timeline-planning-overlays)
@@ -324,6 +325,42 @@ Every input is opt-in. Without editableLabels, with selectionMode 'box' and with
 **Group and minimap slots.** With the group slot, the group element gets vw-has-slot, the stylesheet's frame and label paint no longer applies to the slot content, and a transparent strip over the top 20 units of the frame (class vw-group-handle) takes over the label's role: it carries data-vw-group and, with draggable, the "Move group" button name, drag, arrow keys and activation. Slot content should not take pointer events where the handle should receive them. The minimap-node slot content is drawn inside a vw-minimap-custom group (with vw-is-selected for selected nodes) inside the minimap button, so it must not be interactive; clicks and keys still navigate the minimap.
 
 Slot content (toolbars, group frames, minimap nodes, like the node, edge and tooltip slots) is not part of exportSvg or exportPng, which draw the default rendering. The GraphLabels fields editLabel, labelRejected, nodeToolbar and edgeToolbar localize the names and announcements.
+
+### Swimlanes
+
+| API | Behavior |
+| --- | --- |
+| lanes | readonly GraphSwimlaneBand[] / undefined. Opt-in. Each lane `{ id, label, x, y, width, height, header }` is drawn behind the groups, edges and nodes: a band (class vw-swimlane-band, every second lane also vw-is-alternate on its vw-swimlane element), a header rectangle (vw-swimlane-header) and the label clipped to the header area (a nested `svg` with `overflow="hidden"`, class vw-swimlane-title). Each lane is an SVG group (role group) whose accessible name is its label and which carries `data-vw-lane`. Bands and titles never take the pointer, so panning, box selection, drops and node drags work over them. The bands are part of the fitted content, the minimap (vw-minimap-lane outlines) and exportSvg and exportPng. An empty or repeated ID or a label that is not a string throws Error, and a band or header that is not finite or has a negative size throws RangeError while rendering. A header with a zero width or height draws no header and no title. |
+
+Without lanes (or with an empty list) the server markup, keys, events and accessible names are unchanged.
+
+The usual source is `layoutSwimlaneGraph`, whose result is both a `GraphLayout` for the `layout` prop and the lane geometry for `lanes`. Compute it once and pass a stable function that reads it, so the graph lays out again whenever the result changes, and pass the same direction in `options` so edge routing and handles use the flow's sides:
+
+```ts
+const swimlanes = computed(() => layoutSwimlaneGraph(nodes.value, edges.value, {
+  lanes: [{ id: 'buy', label: 'Purchasing' }, { id: 'make', label: 'Machining' }, { id: 'check', label: 'Inspection' }],
+  laneOf: node => node.data.lane,
+  direction: direction.value,
+}))
+const layout: GraphLayoutFunction = () => swimlanes.value
+```
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :options="{ direction }" draggable @node-move="moveStep" />
+```
+
+**Lane changes are the application's decision.** The component never moves a node to another lane, never blocks a drag out of one and never clips nodes to their band. A drag still proposes `node-move` with the new top-left corner; `graphSwimlaneAt(lanes, { ...change.after, width, height })` returns the lane holding the moved box's centre, or undefined when it is in a gap or outside every band, so the parent can turn the proposal into a lane reassignment (change the node's lane and lay out again), keep the position inside the lane, or refuse it:
+
+```ts
+function moveStep(change: GraphNodeMove) {
+  const box = swimlanes.value.boxes.get(change.id)!
+  const lane = graphSwimlaneAt(swimlanes.value.lanes, { ...change.after, width: box.width, height: box.height })
+  if (!lane) return // outside every lane: refuse, or keep the position and flag the node
+  nodes.value = nodes.value.map(node => node.id === change.id ? { ...node, data: { ...node.data, lane: lane.id } } : node)
+}
+```
+
+Bands do not follow saved `positions`: a node placed through `positions` outside its band stays drawn where it is, and `graphSwimlaneAt` on its box tells the application. Lanes and groups are independent; a group frame is drawn above the bands. With `dir="rtl"` the lane titles are right-aligned in their header with `direction: rtl`; like the rest of the graph geometry, the bands and headers are not mirrored (use `direction: 'RL'` in the layout for a flow from right to left, which also puts the headers on the right).
 
 ## GanttChart
 
@@ -984,6 +1021,32 @@ NetworkGraph applies `applyGraphPositions`, then `applyGraphSizes`, then `routeG
 - `GraphConcentricLayoutOptions`: nodeWidth, nodeHeight, ringGap, padding, level, levelWidth, startAngle.
 - Both functions are generic over the node type, so `sort` and `level` receive your own nodes (for example `NetworkNode<MyData>`) without casts.
 
+`layoutSwimlaneGraph(nodes, edges, options)` lays a process out in swimlanes: one band per lane in the caller's order, the flow running along the bands. It returns a `GraphSwimlaneLayout`, a `GraphLayout` (for the NetworkGraph `layout` prop) plus `lanes`, one `GraphSwimlane` per lane in the given order: the band `{ x, y, width, height }` across the whole flow (header included), its `header` rectangle at the flow start of the band, `id`, `label`, `index` and `nodeIds` (by rank, then by position inside the lane). Pass `lanes` to the NetworkGraph `lanes` prop and to `renderGraphSvg`; see [Swimlanes](#swimlanes).
+
+- Ranks (position along the flow) are those of `layoutLayeredGraph`: the condensation of the strongly connected components, so cycles and self-loops terminate and every node of a cycle shares one rank; same-rank edges and self-loops turn on the right side of the box (in LR). Traversals are iterative, so a 12,000-node chain lays out.
+- Across the flow every node lies inside its own lane's band, clear of the header. Several nodes of one lane in one rank are stacked (`rowGap` apart) and centred, and the band grows to fit the largest stack. A lane without nodes still gets a band one node thick, so a step added to it later keeps the other lanes in order. The lane order itself never changes, and adding a node or an edge keeps every lane's position relative to the others.
+- `crossingReduction: 'barycenter'` (the default) reorders the nodes of one lane in one rank by alternating barycenter sweeps and keeps the best order found by adjacent-rank crossings; `'none'` keeps input order. Nodes never leave their lane. The output is deterministic.
+- Edges are cubic curves from the source box's flow-end side to the target's flow-start side, labels at their middle (in the gap between ranks, never in a header). Edges that skip ranks are not routed around the boxes between; use `edgeStyle: 'orthogonal'` with `avoidNodes` for that.
+
+| Option | Meaning |
+| --- | --- |
+| lanes | Required. Lane IDs or `{ id, label }` (`GraphSwimlaneSpec`) in display order; the label defaults to the ID. An empty or repeated ID throws Error. |
+| laneOf | Required. `(node) => laneId` (it receives your node type) or a `ReadonlyMap` of node ID to lane ID. A node without a lane (undefined, null or an empty string) throws `Error('Graph node has no swimlane: <id>')`; an unknown lane throws `Error('Unknown swimlane <lane> for graph node <id>')`. There is no implicit "unassigned" lane: add one to `lanes` and map such nodes to it if you want them drawn. |
+| direction | `LR` (default) and `RL` give horizontal lanes stacked top to bottom; `TB` and `BT` give vertical lanes stacked left to right. The header sits at the flow start: left (LR), right (RL), top (TB) or bottom (BT). |
+| nodeWidth, nodeHeight | Box size, default 144 × 58; positive. |
+| columnGap | Distance between ranks along the flow. Default 50. |
+| rowGap | Distance between stacked nodes of one lane in one rank. Default 16. |
+| laneGap | Free space between neighbouring bands. Default 0. |
+| lanePadding | Space between a band's edges (and its header) and its nodes. Default 12. |
+| minLaneSize | Smallest band thickness across the flow. Default 0, so a band is at least one node plus twice `lanePadding`. |
+| headerSize | Thickness of the header along the flow. Default 120 for LR and RL, 32 for TB and BT; 0 draws no header. |
+| padding | Margin around the bands. Default 20. |
+| crossingReduction, crossingSweeps | `barycenter` (default) or `none`; positive integer sweep limit, default 8. |
+
+Sizes that are not finite or are negative (and node sizes of 0) throw `RangeError`, as do an unknown direction or crossing method; the graph errors of `indexGraph` (duplicate IDs, unknown endpoints) throw `Error`.
+
+`graphSwimlaneAt(lanes, target)` returns the lane (of any `GraphSwimlaneBand` list) whose band contains a point, or the centre of a rectangle such as a node box, or undefined in a gap or outside every band. Bands are half-open, so a point on the far edge of one band belongs to the next. A non-finite point throws `RangeError`.
+
 `layoutForceGraph(nodes, edges, options)` is a deterministic force-directed `GraphLayout` producer for the same `layout` prop, for example `(n, e) => layoutForceGraph(n, e, { seed: 1 })`. Linked nodes are pulled toward `linkDistance`, every pair of nodes repels through an iterative Barnes–Hut quadtree, and a weak gravity pulls each group toward its centre while the simulation cools over `iterations` steps. Grid-based passes then push overlapping boxes apart until every pair keeps `nodeGap` of free space, spreading free nodes slightly when a region stays crowded. The same input and options always give the same output: start positions come from a seeded mulberry32 generator, never `Math.random`. About 2,000 nodes with the default 300 iterations take roughly half a second in Node. The work grows with the node count and `iterations` (3,750 nodes take about a second) and runs synchronously, so for large graphs compute it once in a worker or on the server and pass the result through `positions`, or lower `iterations`.
 
 | Option | Meaning |
@@ -1454,7 +1517,7 @@ Both components expose two export methods on their template ref. They need no de
 | exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
 | exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
 
-The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label and group, whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style, and the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` the highlight colour (`--vw-graph-highlight`). GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds` and, with `summaryDependencies`, links to summary rows) and their lag labels, the `highlightedBarIds` outlines, markers, `markerRanges` bands and header labels, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
+The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label, group and swimlane (`lanes`), whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style, and the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` the highlight colour (`--vw-graph-highlight`). GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds` and, with `summaryDependencies`, links to summary rows) and their lag labels, the `highlightedBarIds` outlines, markers, `markerRanges` bands and header labels, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
 
 The export uses the default rendering. Slot content (`node`, `edge`, `row`, `row-heading`, `cell`, `bar`, `tick`, `load-row`, `load-segment`) cannot be reproduced; use the label options below instead. Text is clipped to its box rather than ellipsized, and the width of marker labels is estimated. Hover, focus and pointer previews are not exported.
 
@@ -1473,7 +1536,7 @@ The core entry provides the same rendering without Vue or a DOM, for servers, wo
 
 | Export | Purpose |
 | --- | --- |
-| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions<N, E>` adds `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `highlightedNodeIds` and `highlightedEdgeIds` (a 3-unit node outline and a 2.6-unit edge with its own arrowhead, in `highlightColor`, default the theme's `dependencyHighlight`; without highlighted items the output is unchanged), `padding` and the label callbacks, which receive the node and edge types of the arguments, to the shared options. Node shapes, `markerStart` and `markerEnd` (markers with the IDs `<idPrefix>-<marker>` and `<idPrefix>-start-<marker>`, plus `-highlight` on highlighted edges, written only when used; hollow ones filled with `surfaceMuted`) and `animated` edges (dashed `6 4`, without motion) are drawn as NetworkGraph draws them; an unknown marker throws RangeError |
+| renderGraphSvg(layout, nodes, edges, options?) | SVG document of a graph layout. `GraphSvgOptions<N, E>` adds `lanes` (`GraphSwimlaneBand` bands drawn first, each a `g class="vw-swimlane"` with a `title`, alternating `surface` and `surfaceMuted` fills, a `surfaceMuted` header with a 1.5-unit `border` stroke and the label clipped to the header; validated like the NetworkGraph `lanes` prop), `groups` (`GraphSvgGroup` rectangles), `selectedIds`, `highlightedNodeIds` and `highlightedEdgeIds` (a 3-unit node outline and a 2.6-unit edge with its own arrowhead, in `highlightColor`, default the theme's `dependencyHighlight`; without highlighted items the output is unchanged), `padding` and the label callbacks, which receive the node and edge types of the arguments, to the shared options. Node shapes, `markerStart` and `markerEnd` (markers with the IDs `<idPrefix>-<marker>` and `<idPrefix>-start-<marker>`, plus `-highlight` on highlighted edges, written only when used; hollow ones filled with `surfaceMuted`) and `animated` edges (dashed `6 4`, without motion) are drawn as NetworkGraph draws them; an unknown marker throws RangeError |
 | renderTimelineSvg(rows, bars, dependencies, scale, options?) | SVG document of a timeline on any `TimeScale`. `TimelineSvgOptions` covers `collapsedIds`, `timeRange`, `rowRange`, `rowHeight` (66), `laneCount` (1), `labelWidth` (154), `columns`, `showSummaries`, `summaryDependencies` (as the GanttChart prop; needs `showSummaries`), `headerBands`, `markers`, `markerRanges` (validated as the GanttChart prop; drawn with each range's tone, or the `range`, `rangeLine` and `rangeInk` theme colours, at 0.7 fill opacity), `now`, `nowLabel`, `tickStep` or `tickSteps`, `tickAnchor`, `formatTime`, `rowHeading`, `loadRows`, `loadSegments`, `loadRowHeight` (44), `highlightedDependencyIds`, `dependencyStyle` (as the GanttChart prop, default `orthogonal`), `highlightedBarIds` (bars outlined in the `dependencyHighlight` theme colour, with the `vw-is-highlighted` class on their group), `nonWorkingPeriods`, `statusDate`, `statusDateLabel` (default "Status date"), `showProgressLine`, `formatLag` (default `formatDependencyLag`; labels each dependency with a non-zero `lag`), `baselineIds`, `baselineLabel` (default "Baseline" for `timelineBaselineId`, otherwise the set ID), `formatVariance` (default `formatDependencyLag`) and `varianceLabels` (`start`, `finish`, `duration`; defaults "start", "finish" and "duration"), which draw baseline sets as described in [Baseline sets](#baseline-sets), `constraintLabels` (text of each `TimelineConstraintKind` in marker titles; defaults as `GanttLabels`) and `constraintViolatedLabel` (default "violated"), `barLabel` and `rowLabel`; `columns` and the label callbacks receive the row and bar types of the arguments (`TimelineSvgOptions<R, B>`). Bar fields `critical`, `latestEnd`, `deadline`, `segments` and `constraints` are drawn as on screen |
 | escapeXml(text) | Escape `& < > " '` and drop characters that XML 1.0 forbids |
 | defaultSvgExportTheme | The stylesheet's fallback colours as an `SvgExportTheme` |
@@ -1495,7 +1558,7 @@ In a right-to-left GanttChart the row heading column and `columns` sit on the ri
 
 Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused editable bar one `snap` later and ArrowRight one `snap` earlier. Shift with an arrow moves the end and Alt with an arrow moves the start, in the same visual direction (Shift+ArrowLeft makes the bar end later). Up and Down (with `rowDraggable`) are unchanged. Pointer drags follow the pointer: dragging left moves later. The start resize handle is on the right edge of a bar and the end handle on the left. When a dependency is dropped on a bar body, the right half picks the start and the left half the finish. The collapsed-row toggle shows ◂ instead of ▸.
 
-In a right-to-left NetworkGraph only the chrome changes: the zoom tools and the minimap move to the bottom-left corner, node titles and details, group labels and edge labels are right-aligned with `direction: rtl`, and the default node text is anchored at the box's right edge. Layout geometry, edge routes, camera, panning keys and saved positions are unchanged; use `options.direction: 'RL'` to mirror the layout itself. Custom node slots own their own text alignment.
+In a right-to-left NetworkGraph only the chrome changes: the zoom tools and the minimap move to the bottom-left corner, node titles and details, group labels, swimlane titles and edge labels are right-aligned with `direction: rtl`, and the default node text is anchored at the box's right edge. Layout geometry, edge routes, camera, panning keys and saved positions are unchanged; use `options.direction: 'RL'` to mirror the layout itself. Custom node slots own their own text alignment.
 
 `exportSvg` and `exportPng` follow the component's direction. In the core, `renderTimelineSvg` and `renderGraphSvg` take `direction: 'rtl'`, and `mirrorTimeScale(scale)` returns a scale with `toX(range.start) = width` and `toX(range.end) = 0`; its round trips are exact whenever those of `scale` are and the pixel values are exactly representable.
 

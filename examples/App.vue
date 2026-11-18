@@ -14,6 +14,7 @@ import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
 import PortRulesDemo from './PortRulesDemo.vue'
+import SwimlaneDemo from './SwimlaneDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
 import SchemaShowcase from './showcase/SchemaShowcase.vue'
 import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
@@ -39,7 +40,7 @@ const showcases = [
 const showcase = computed(() => showcases.find(item => item.id === preset.value))
 // Demos that keep their own state and ignore the graph and timeline controls of this page.
 const standalone = computed(() => showcase.value !== undefined
-  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis'].includes(preset.value))
+  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis', 'swimlanes'].includes(preset.value))
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -540,6 +541,7 @@ function commit(change: TimelineEdit) {
         <button type="button" :aria-pressed="preset === 'async'" @click="preset = 'async'">Async layout</button>
         <button type="button" :aria-pressed="preset === 'diagram'" @click="preset = 'diagram'">Diagram styles</button>
         <button type="button" :aria-pressed="preset === 'analysis'" @click="preset = 'analysis'">Graph analysis</button>
+        <button type="button" :aria-pressed="preset === 'swimlanes'" @click="preset = 'swimlanes'">Process lanes</button>
         <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
         <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
@@ -557,6 +559,7 @@ function commit(change: TimelineEdit) {
       <AsyncGraphDemo v-else-if="preset === 'async'" />
       <DiagramStylesDemo v-else-if="preset === 'diagram'" />
       <GraphAnalysisDemo v-else-if="preset === 'analysis'" />
+      <SwimlaneDemo v-else-if="preset === 'swimlanes'" />
       <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
       <PersistenceDemo v-else-if="preset === 'persistence'" />
       <template v-else>

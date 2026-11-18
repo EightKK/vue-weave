@@ -131,6 +131,29 @@ function resize({ id, before, after }: GraphNodeResize) {
 
 A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no further theme variables are needed.
 
+## Swimlanes for process flows
+
+To draw a process with one lane per department or work centre, lay it out with `layoutSwimlaneGraph` and pass its lanes to the `lanes` prop. Hand-overs between departments then read as edges that cross a lane boundary.
+
+```ts
+const swimlanes = computed(() => layoutSwimlaneGraph(steps.value, links.value, {
+  lanes: departments.value.map(item => ({ id: item.id, label: item.name })), // the order you list is the order drawn
+  laneOf: step => step.data.department,
+  direction: direction.value,
+}))
+const layout: GraphLayoutFunction = () => swimlanes.value
+```
+
+```vue
+<NetworkGraph :nodes="steps" :edges="links" :layout="layout" :lanes="swimlanes.lanes" :options="{ direction }"
+  edge-style="orthogonal" avoid-nodes draggable @node-move="moveStep" />
+```
+
+- Keep the lane list in application state. Lanes without steps still get a band, so the order stays stable as steps are added; to hide a lane, remove it from the list. Every step needs a lane that is in the list (otherwise the layout throws); keep an explicit "Unassigned" lane if your data can lack one.
+- The component never reassigns a lane. On `node-move`, call `graphSwimlaneAt(swimlanes.value.lanes, { ...change.after, width, height })` and apply your domain rule: change the step's department and lay out again, or refuse the move. `undefined` means the box would be outside every lane. The demo's Process lanes example (`examples/SwimlaneDemo.vue`) does this.
+- Use `edgeStyle: 'orthogonal'` with `avoidNodes` when edges skip ranks, so they go around the steps in between. Lane headers are not obstacles for `avoidNodes`; they sit before the first rank, so routes and edge labels between steps stay out of them.
+- `exportSvg`, `exportPng` and `renderGraphSvg({ lanes })` draw the bands and titles. Long titles are clipped to the header; the full title is the lane's accessible name and, in exports, its `<title>`.
+
 ## Custom content
 
 The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and elements with the class `vw-node-shape` (the outline of the default diamond, ellipse and hexagon nodes), and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
@@ -185,6 +208,16 @@ The opt-in label editor, lasso and toolbar slots of NetworkGraph use the theme c
 | --- | --- | --- |
 | `--vw-label-editor-width` | `140px` | Width of the label editor of an edge (`vw-label-editor.vw-is-edge`); a node's editor takes the node's on-screen width, at least 120 pixels |
 | `--vw-toolbar-offset` | `8px` | Gap between a node or edge and the container of the `node-toolbar` or `edge-toolbar` slot |
+
+The opt-in swimlanes of NetworkGraph (`lanes`) add five variables; their defaults follow the theme variables, so the built-in dark theme applies to them. Each lane is a `vw-swimlane` group (every second one also `vw-is-alternate`) with a `vw-swimlane-band`, a `vw-swimlane-header` and the title in `vw-swimlane-title`; the minimap draws `vw-minimap-lane` outlines.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-lane-fill` | `--vw-surface` (`#ffffff`) | Fill of a lane band |
+| `--vw-lane-fill-alternate` | `--vw-surface-muted` (`#f1f5f8`) | Fill of every second lane band (`vw-is-alternate`) |
+| `--vw-lane-header-fill` | `--vw-surface-hover` (`#e4ecf2`) | Fill of a lane header |
+| `--vw-lane-border` | `--vw-border` (`#c9d6df`) | Outline of bands and headers, and the minimap lane outlines |
+| `--vw-lane-title` | `--vw-text` (`#172c3b`) | Lane title text |
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
@@ -293,7 +326,7 @@ Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), node shapes (like node rectangles), hollow edge markers (`Canvas` inside an outline in the edge colour), the status-date line (a thick `CanvasText` line), the progress line (dashed `CanvasText`), dependency lag labels (`CanvasText` on a `Canvas` halo), marker range bands (hatched with `CanvasText`) and labels (`CanvasText` on `Canvas`) and scheduling constraint markers and handles (`CanvasText` on a `Canvas` halo, a violated one with a dashed stem, a focused handle with a `Highlight` outline), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), node shapes (like node rectangles), hollow edge markers (`Canvas` inside an outline in the edge colour), the status-date line (a thick `CanvasText` line), the progress line (dashed `CanvasText`), dependency lag labels (`CanvasText` on a `Canvas` halo), marker range bands (hatched with `CanvasText`) and labels (`CanvasText` on `Canvas`) scheduling constraint markers and handles (`CanvasText` on a `Canvas` halo, a violated one with a dashed stem, a focused handle with a `Highlight` outline) and swimlanes (`Canvas` bands outlined in `CanvasText`, every second band dashed, headers with a thicker border and `CanvasText` titles), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components; animated graph edges stay dashed but still. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
 - `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines, marker ranges and the scheduling constraint markers (also those drawn as handles) are printed, animated graph edges print dashed without motion, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
@@ -604,7 +637,7 @@ The timeline then runs from right to left and its row headings sit on the right.
 
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
-The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels (swimlane titles included); choose `options.direction: 'RL'` to lay out ranks from right to left.
 
 ## Saving and restoring a view
 
