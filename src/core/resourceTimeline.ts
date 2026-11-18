@@ -23,7 +23,10 @@ export interface ResourceTimelineInput<D = unknown, R = unknown> {
   resources: readonly ResourceTimelineResource<R>[]
   /** Placed tasks, for example built with `scheduledBarFields` from a schedule. */
   tasks: readonly ResourceTimelineTask<D>[]
-  /** Task-resource pairs. Each task gets one bar in the row of every resource assigned to it. */
+  /**
+   * Task-resource pairs. Each task gets one bar in the row of every resource assigned to it, for the whole task even
+   * when the assignment covers only part of its work.
+   */
   assignments: readonly ResourceAssignment[]
   /** Task-level links, such as the `ScheduleLink` array passed to the scheduler. They use task IDs, not bar IDs. */
   dependencies?: readonly TimelineDependency[]
@@ -362,7 +365,7 @@ export type ResourceAssignmentRequest =
 export type ResourceAssignmentProposal =
   | {
     ok: true
-    /** The new assignment list. A replacement keeps the position and units of the replaced assignment. */
+    /** The new assignment list. A replacement keeps the position, units and work part of the replaced assignment. */
     assignments: ResourceAssignment[]
     added: readonly ResourceAssignment[]
     removed: readonly ResourceAssignment[]

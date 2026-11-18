@@ -3,6 +3,7 @@ import { createTimelineRowTree, validateTimelineData, timelineLabelColumnId } fr
 import { indexGraph } from './graph.js'
 import { scheduleTasks, type ScheduleResult } from './scheduling.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
+import { assignmentWorkRange, capacityPeriodsOf } from './resourceCapacity.js'
 import type {
   JsonValue, SnapshotCodec, SnapshotDiagnostic, SnapshotDiagnosticCode, SnapshotDiagnosticSeverity,
 } from './snapshot.js'
@@ -470,6 +471,9 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
     }
     const periods = list(resource, 'periods', at, report, false)
     if (periods && rangeOk) attempt(report, 'structure', at + '.periods', () => void normalizeWorkPeriods(periods as never, range as never))
+    if (resource.capacityPeriods !== undefined) {
+      attempt(report, 'structure', at + '.capacityPeriods', () => void capacityPeriodsOf(resource as never))
+    }
   })
   const pairs = new Set<string>()
   const pairKey = (taskId: string, resourceId: string) => JSON.stringify([taskId, resourceId])
@@ -481,6 +485,7 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
     if (units !== undefined && (typeof units !== 'number' || !Number.isSafeInteger(units) || units <= 0)) {
       report.error('structure', at + '.units', 'Must be a positive safe integer')
     }
+    attempt(report, 'structure', at, () => void assignmentWorkRange(assignment as never))
     if (taskId === undefined || resourceId === undefined) return
     if (!taskIds.has(taskId)) report.error('reference', at + '.taskId', 'Unknown task in assignment: ' + taskId)
     if (!resourceIds.has(resourceId)) report.error('reference', at + '.resourceId', 'Unknown resource in assignment: ' + resourceId)

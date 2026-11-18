@@ -181,9 +181,61 @@ The status date must be finite, inside `input.range` and aligned with the quantu
 
 ## Compare demand with capacity
 
-Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available. Each assignment requests positive integer units and applies to every work segment of the task. Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
+Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available, unless the resource has `capacityPeriods` (see [Capacity that changes over time](#capacity-that-changes-over-time)). Each assignment requests positive integer units and applies to every work segment of the task, unless it covers only part of the work (see [Assignments for part of a task](#assignments-for-part-of-a-task)). Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
 
 The sweep reports load, available capacity, excess units and active task IDs for every event interval. Work that falls outside the equipment calendar appears as demand against zero capacity. Conflicts are diagnostic. `levelResources` provides a baseline leveling heuristic, described in [Level resources](#level-resources). Optimization, setup sequencing and other leveling policies remain the planning application's concern.
+
+### Capacity that changes over time
+
+`capacityPeriods` on a resource gives it a different capacity over fixed elapsed intervals, for example a second crew in a peak week, a reduced shift or a maintenance stop:
+
+```ts
+const resources = [{
+  id: 'press', capacity: 2, periods: workingTime,
+  capacityPeriods: [
+    { start: monday6, end: monday14, capacity: 3 }, // extra operator
+    { start: tuesday10, end: tuesday12, capacity: 0 }, // maintenance
+  ],
+}]
+```
+
+- Each period is half-open `[start, end)` in absolute time, with integer endpoints, `end > start` and a nonnegative integer `capacity`. Periods of one resource must not overlap; adjacent periods are fine. A violation throws a RangeError that names the resource. `levelResources` also requires the endpoints to align with the quantum, as it does for `periods`.
+- Inside a capacity period its `capacity` applies; outside every capacity period the resource's `capacity` applies. Outside the availability `periods` the capacity stays 0, whatever the capacity periods say: a capacity period does not make a closed resource available.
+- `calculateResourceLoad` splits its segments wherever the capacity changes, so each segment's `capacity` and `overload` hold for its whole interval. A task that needs 3 units from 13:00 to 15:00 on a resource with capacity 2 until 14:00 and 3 after is overloaded by exactly 1 unit from 13:00 to 14:00 and not after. A capacity of 0 during downtime overloads only the work that falls into it; idle time needs nothing. A capacity period with the same capacity as its surroundings does not split a segment.
+- GanttChart draws the capacity line of each load segment at that segment's `capacity`, so the line steps with the capacity when you pass the output of `calculateResourceLoad` as `loadSegments`. `renderTimelineSvg` draws the same line.
+- `levelResources` reserves capacity against the same step function, so leveling and the load calculation agree at every instant: a plan without `unresolvedTaskIds` has no overload.
+
+### Assignments for part of a task
+
+An assignment with `workOffset` or `workDuration` needs its resource only for part of the task's work, such as "the machine for the whole operation, one operator only for the first 30 minutes":
+
+```ts
+const assignments = [
+  { resourceId: 'machine', taskId: 'turn' },
+  { resourceId: 'operator', taskId: 'turn', workDuration: 30 * minute },
+  { resourceId: 'inspector', taskId: 'turn', workOffset: 90 * minute, workDuration: 15 * minute },
+]
+```
+
+- Both values are working time of the task, measured along its scheduled `work` segments in the units of the plan's times: `workOffset` from the start of the task's work (default 0, a nonnegative integer) and `workDuration` from there (a positive integer, default the rest of the work). Calendar breaks, pauses and leveling splits are skipped, so a 30-minute part that reaches lunch continues after lunch. `assignmentWorkPeriods(work, assignment)` returns the elapsed periods of the part.
+- The part is relative to the task, so it moves with the task. Capacity periods, in contrast, are fixed in absolute time: use them for what the resource can supply when, and partial assignments for what a task needs during its work.
+- A part that reaches beyond the task's work is clipped to it. A part that starts at or after the end of the work takes no capacity. This keeps an assignment valid when the task gets shorter. Negative or fractional values, or a `workDuration` of 0, throw a RangeError. `levelResources` also requires both values to be multiples of the quantum.
+- `calculateResourceLoad` adds the assignment's units only during its part, and lists the task in a segment's `taskIds` only there. Offsets count from the start of the whole work even when `range` starts later.
+- `levelResources` checks and reserves each resource only during its part of the work at each candidate placement. Two tasks that each need the single operator for their first hour can overlap after that hour. A `splittable` task pauses only where a resource it needs at that point of its work is short. A manual task is checked only over each part.
+- `projectResourceTimeline` shows the whole task on the row of a partially assigned resource: a bar is the task, not the part. The load is computed from the scheduled tasks and the assignments, so nothing is counted twice. Use `assignmentWorkPeriods` to draw the part yourself, for example as `segments` of that projection. A replacement with `proposeResourceAssignment` keeps the part.
+
+Leveling remains the heuristic described in [Level resources](#level-resources): with time-varying capacity and partial assignments it still places one task at a time at its earliest feasible start, and does not search for an optimal plan.
+
+### Other functions that read resources and assignments
+
+| Function | Capacity periods and partial assignments |
+| --- | --- |
+| `calculateResourceLoad`, `levelResources` | Use both, as described above |
+| `toPlanningDiagnostics` | Reads the overload of each load segment, which already reflects both |
+| `buildPlacementInput` | Copies resources and the assignments of placed tasks unchanged |
+| `projectResourceTimeline`, `proposeResourceAssignment` | Accept partial assignments; one bar per assignment for the whole task; a replacement keeps the part |
+| `parseWeaveSnapshot`, `restoreWeaveSnapshot` | A planning snapshot keeps both and reports invalid values as `structure` diagnostics |
+| `resourceLoadFromMsProject`, `timelineFromMsProject` | Never produce them: the Microsoft Project import does not read resource availability tables or assignment contours |
 
 ## Time-zone calendars
 
@@ -350,6 +402,8 @@ The result has the fields of a successful `scheduleTasks` result for the leveled
 - `delays`: each task whose dates or work changed, in input order, with `before` and `after` intervals, `delay` (`after.start - before.start`, in elapsed units), the added `pauses`, and `cause`. The cause is `capacity` when leveling constrained the task itself, and `predecessor` when only a dependency moved it.
 - `overloads`: the overloaded segments of `calculateResourceLoad` for the leveled plan. The list is empty when every task was resolved.
 - `unresolvedTaskIds`: tasks that kept an overload, in input order.
+
+Capacity periods and partial assignments take part in steps 4 and 5: a task needs each resource only during its part of the work, against the capacity valid at each time. See [Compare demand with capacity](#compare-demand-with-capacity).
 
 Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task later after capacity is reserved would reintroduce conflicts. The deadline, the horizon and every task bound remain hard limits. The unleveled project finish is not a limit, so the leveled `finish` can be later. `calculateResourceLoad` remains the diagnostic for any plan.
 
