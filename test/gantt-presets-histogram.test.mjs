@@ -71,7 +71,7 @@ test('invalid presets and load segments report validation-error and render the e
     [{ zoomPreset: 'missing' }, /Unknown zoom preset/],
     [{ zoomPresets: [{ id: 'x', label: 'X', pixelsPerUnit: 0 }], zoomPreset: undefined }, /pixelsPerUnit/],
     [{ loadSegments: [{ resourceId: 'other', start: 0, end: hour, load: 1, capacity: 1 }] }, /Unknown resource/],
-    [{ loadRows: [{ id: 'cnc', label: 'A' }, { id: 'cnc', label: 'B' }] }, /duplicate load row/],
+    [{ loadRows: [{ id: 'cnc', label: 'A' }, { id: 'cnc', label: 'B' }] }, /Duplicate load row ID: cnc/],
     [{ now: Number.NaN, showNow: true }, /now must be finite/],
   ]) {
     const reported = []

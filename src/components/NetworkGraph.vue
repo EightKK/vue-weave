@@ -387,12 +387,14 @@ const baseLayout = computed(() => {
   if (props.layout) indexGraph(nodes, edges)
   const result = props.layout ? props.layout(nodes, edges) : layoutLayeredGraph(nodes, edges, options.value)
   if (!Number.isFinite(result.width) || !Number.isFinite(result.height) || result.width <= 0 || result.height <= 0) {
-    throw new Error('A custom layout must return positive finite dimensions')
+    throw new RangeError('A custom layout must return positive finite dimensions')
   }
+  // A missing box is a bad reference (Error), a box with invalid geometry a RangeError, as for asynchronous layout results.
   for (const node of nodes) {
     const box = result.boxes.get(node.id)
-    if (!box || ![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
-      throw new Error('Missing or invalid layout box: ' + node.id)
+    if (!box) throw new Error('Missing layout box: ' + node.id)
+    if (![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
+      throw new RangeError('Invalid layout box: ' + node.id)
     }
   }
   // With the preserve policy, an edge without a path (such as an edge connected while an external layout is computed)
@@ -2128,7 +2130,7 @@ const editingOptions = computed(() => {
   if (!Number.isFinite(gap) || gap <= 0) throw new RangeError('backgroundGap must be a positive finite number of chart units')
   const threshold = props.guideThreshold
   if (!Number.isFinite(threshold) || threshold < 0) throw new RangeError('guideThreshold must be a nonnegative finite number of screen pixels')
-  if (!['none', 'dots', 'lines'].includes(props.background)) throw new Error('Unknown NetworkGraph background: ' + props.background)
+  if (!['none', 'dots', 'lines'].includes(props.background)) throw new RangeError('Unknown NetworkGraph background: ' + props.background)
   if (!['curve', 'orthogonal', 'straight'].includes(props.edgeStyle)) throw new RangeError('Unknown edge style: ' + props.edgeStyle)
   const lod = props.lodThreshold
   if (lod !== undefined && (!Number.isFinite(lod) || lod <= 0 || lod > 3)) throw new RangeError('lodThreshold must be a finite scale greater than 0 and at most 3')

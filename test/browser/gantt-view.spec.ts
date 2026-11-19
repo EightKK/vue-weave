@@ -470,8 +470,8 @@ test('invalid markers, columns and header bands report validation-error and rend
   await expect(bar).toBeVisible()
   const expected: string[] = []
   for (const [control, message] of [
-    ['Duplicate markers', 'Invalid timeline marker: m'],
-    ['Invalid column width', 'Invalid timeline column: c'],
+    ['Duplicate markers', 'Duplicate marker ID: m'],
+    ['Invalid column width', 'Invalid timeline column width: c'],
     ['Overlapping header bands', 'Timeline bands must be finite, ordered and nonoverlapping'],
   ] as const) {
     await timeline.getByRole('button', { name: control, exact: true }).click()
