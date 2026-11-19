@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  buildPlacementInput, calculateResourceLoad, comparePlans, createTimeScale, createTimelineRowTree, createWindowedDataState,
-  levelResources, parseWeaveSnapshot, planBaselines, projectResourceTimeline, propagateEdit, renderTimelineSvg, rescheduleFromActuals,
+  buildPlacementInput, calculateResourceLoad, comparePlans, createGraphExpansion, createTimeScale, createTimelineRowTree, createWindowedDataState,
+  levelResources, mergeGraphExpansionPage, parseWeaveSnapshot, planBaselines, projectResourceTimeline, propagateEdit, renderTimelineSvg, rescheduleFromActuals,
   rescheduleFromStatusDate, resolveWindowedRequest, scheduleTasks, scheduleToGraph, serializeWeaveSnapshot, setWindowedView,
   timelineCsvTable, timelineFromICalendar, timelineFromMsProject, timelineWbsCodes, toICalendar, toMsProjectXml, validateTimelineData,
 } from 'vue-weave/core'
@@ -76,6 +76,9 @@ const cases = [
   })],
   ['resolveWindowedRequest items', 'windowed data item', 'i', id => windowed([{ id: 'i', start: 0, end: 1 }, { id, start: 1, end: 2 }]), { duplicate: ' (in one response)' }],
   ['resolveWindowedRequest links', 'windowed data link', 'l', id => windowed([], [{ id: 'l', from: 'a', to: 'b' }, { id, from: 'b', to: 'a' }]), { duplicate: ' (in one response)' }],
+  ['setWindowedView view rows', 'view row', null, id => setWindowedView(createWindowedDataState({ chunkSize: 10 }), { start: 0, end: 5, rowIds: ['a', id] })],
+  ['mergeGraphExpansionPage nodes', 'graph page node', 'n', id => mergeGraphExpansionPage(createGraphExpansion(), { nodes: [{ id: 'n' }, { id }] }), { duplicate: ' (in one page)' }],
+  ['mergeGraphExpansionPage edges', 'graph page edge', 'e', id => mergeGraphExpansionPage(createGraphExpansion(), { edges: [{ id: 'e', from: 'a', to: 'b' }, { id, from: 'a', to: 'b' }] }), { duplicate: ' (in one page)' }],
   ['toMsProjectXml tasks', 'task', 'a', id => toMsProjectXml(msProject([{ id: 'a' }, { id }]))],
   ['toMsProjectXml resources', 'resource', 'r', id => toMsProjectXml({ ...msProject([{ id: 'a' }]), resources: [{ id: 'r', name: 'R' }, { id, name: 'Q' }] })],
   ['timelineFromMsProject tasks', 'task', 'a', id => timelineFromMsProject(msProject([{ id: 'a' }, { id }]))],

@@ -54,12 +54,18 @@ export interface WindowedData<T, L = never> {
   /** True while a request is in flight. */
   pending: ComputedRef<boolean>
   /**
-   * The last failure of the current condition; cleared by `retry`, `invalidate` or a new condition. Per-cell failures are
-   * in `state`. An invalid view (such as one with more than `maxCells` cells) or condition is reported here without
-   * `request`, not thrown: the state then has no view and nothing in flight (`complete` false) and keeps the data of the
-   * current condition (an invalid condition drops all data), and the error clears when a valid view is set.
+   * The current failure of the current condition, or undefined. Per-cell failures are in `state`. Precedence, from the
+   * first that applies: (1) a failed request (`{ request, error }`), cleared by `retry`, `invalidate` or a new condition;
+   * (2) an invalid view (such as one with more than `maxCells` cells) or condition, reported without `request` and not
+   * thrown: the state then has no view and nothing in flight (`complete` false) and keeps the data of the current
+   * condition (an invalid condition drops all data), cleared when a valid view is set; (3) a `linkEnds` accessor that
+   * throws, reported as `{ error }` without `request`: `resolvedLinks` and `danglingLinks` are then both empty (never a
+   * partial split), while `items`, `links`, `status` and `complete` are unaffected. (3) is derived from the loaded links
+   * and clears by itself as soon as the split succeeds again (new links, or whatever the accessor reads changed); while (1)
+   * or (2) is shown, (3) is not evaluated and appears afterwards if it still applies. Reading `error` evaluates the split
+   * (cached, like `resolvedLinks`) unless (1) or (2) applies; nothing is evaluated for an application that reads none of them.
    */
-  error: Readonly<ShallowRef<WindowedDataError | undefined>>
+  error: ComputedRef<WindowedDataError | undefined>
   /** Coverage of any window, for example one row (`{ start, end, rowIds: [id] }`) or the whole plan. */
   coverageOf: (window: WindowedView) => WindowedCoverage
   /** Requests failed cells again (all, or those in `window`) that the current view needs. Loaded data stays. */
@@ -85,7 +91,8 @@ export interface WindowedData<T, L = never> {
 export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T, L>): WindowedData<T, L> {
   const { load, linkEnds } = options
   const state = shallowRef(createWindowedDataState<T, L>(options, toValue(options.condition) ?? ''))
-  const error = shallowRef<WindowedDataError>()
+  // The last failure of a request, the view or the condition. `error` (below) derives from it and from the link split.
+  const failure = shallowRef<WindowedDataError>()
   const controllers = new Map<string, AbortController>()
   let started = false
   let disposed = false
@@ -95,7 +102,7 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
    * flight is aborted (the transition's `abort` list and, as a safeguard, any other), and only then are new requests started.
    */
   function apply(transition: WindowedDataTransition<T, L>) {
-    if (state.value.condition !== transition.state.condition) error.value = undefined
+    if (state.value.condition !== transition.state.condition) failure.value = undefined
     state.value = transition.state
     const live = transition.state.requests
     for (const id of transition.abort) {
@@ -145,13 +152,13 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
     const settled = rejectWindowedRequest(state.value, request.requestId, reason)
     if (!settled.applied) return
     state.value = settled.state
-    error.value = { request, error: reason }
+    failure.value = { request, error: reason }
   }
 
   /** Reports a view that can not be loaded: nothing stays in flight and no view is current, so `complete` is false. */
   function rejectView(reason: unknown) {
     apply(setWindowedView(state.value, undefined))
-    error.value = { error: reason }
+    failure.value = { error: reason }
   }
 
   /**
@@ -170,7 +177,7 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
       // The condition is unknown, so no data of any condition can be shown.
       const reset = resetWindowedData(state.value)
       apply({ ...reset, state: { ...reset.state, view: undefined } })
-      error.value = { error: reason }
+      failure.value = { error: reason }
       return false
     }
     if (condition !== state.value.condition) apply(setWindowedView(state.value, undefined, condition))
@@ -182,7 +189,7 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
       return false
     }
     // A view error ends once the view is valid again; failures of requests stay until `retry` or `invalidate`.
-    if (error.value && !error.value.request) error.value = undefined
+    if (failure.value && !failure.value.request) failure.value = undefined
     apply(transition)
     return true
   }
@@ -203,14 +210,14 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
     if (disposed || !started) return
     const ok = update()
     const transition = retryWindowedData(state.value, window)
-    if (ok) error.value = undefined
+    if (ok) failure.value = undefined
     apply(transition)
   }
   function invalidate() {
     if (disposed || !started) return
     const ok = update()
     const transition = invalidateWindowedData(state.value)
-    if (ok) error.value = undefined
+    if (ok) failure.value = undefined
     apply(transition)
   }
   function cancel() {
@@ -227,7 +234,18 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
 
   const items = computed(() => [...state.value.items.values()])
   const links = computed(() => [...state.value.links.values()])
-  const split = computed(() => splitDanglingLinks(links.value, state.value.items, linkEnds as Required<SplitDanglingLinksOptions<L>>))
+  // A `linkEnds` accessor that throws must not escape from `resolvedLinks` or `danglingLinks` (read while rendering). The
+  // split is then empty, never partial, and the failure is part of the value, so `error` derives from it without any
+  // state being written inside a computed. It is evaluated only when `resolvedLinks`, `danglingLinks` or `error` is read.
+  const split = computed<{ resolved: L[]; dangling: DanglingLink<L>[]; failure?: WindowedDataError }>(() => {
+    try {
+      return splitDanglingLinks(links.value, state.value.items, linkEnds as Required<SplitDanglingLinksOptions<L>>)
+    } catch (reason) {
+      return { resolved: [], dangling: [], failure: { error: reason } }
+    }
+  })
+  // A failure of a request, the view or the condition comes first; the link-ends failure is shown when there is none.
+  const error = computed(() => failure.value ?? split.value.failure)
   const coverage = computed(() => windowedCoverage(state.value))
   return {
     state: shallowReadonly(state),
@@ -239,7 +257,7 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
     status: computed(() => coverage.value.status),
     complete: computed(() => coverage.value.complete),
     pending: computed(() => state.value.requests.size > 0),
-    error: shallowReadonly(error) as Readonly<ShallowRef<WindowedDataError | undefined>>,
+    error,
     coverageOf: window => windowedCoverage(state.value, window),
     retry, invalidate, cancel, dispose,
   }

@@ -224,10 +224,13 @@ function normalizeView(view: WindowedView) {
   const end = finite(view.end, 'View end')
   if (end < start) throw new RangeError('View end must not be before its start')
   if (view.rowIds === undefined) return { start, end }
+  if (!Array.isArray(view.rowIds)) throw new TypeError('View rowIds must be an array')
+  // Row IDs follow the shared ID rule (a non-empty string). A repeated ID is not an error: a view lists the rows it
+  // shows, so a repeat is dropped and the first occurrence keeps its place.
   const seen = new Set<string>()
   const rowIds: string[] = []
-  for (const id of view.rowIds) {
-    if (typeof id !== 'string') throw new TypeError('View row IDs must be strings')
+  for (const id of view.rowIds as readonly unknown[]) {
+    if (!isId(id)) throw invalidIdError('view row', id)
     if (seen.has(id)) continue
     seen.add(id)
     rowIds.push(id)
@@ -248,8 +251,10 @@ function windowCells(options: Grid, view: { start: number; end: number; rowIds?:
  * are all outside the new view are aborted, and their cells become `unloaded` again; a request that still covers some
  * needed cell keeps running. A different `condition` (a filter, a query, a data version) aborts everything and drops all
  * cells, items and links, so results for another condition are never attached. `view` undefined keeps the cells and data
- * but aborts every request. Throws RangeError for a non-finite view, `end < start` or more than `maxCells` cells, and
- * TypeError for a view that is not an object or a condition that is not a string. A throw changes nothing: the given state
+ * but aborts every request. Throws RangeError for a non-finite view, `end < start` or more than `maxCells` cells, Error
+ * (`Invalid view row ID: <value>`) for a row ID that is not a non-empty string (a repeated row ID is dropped, not an
+ * error), and TypeError for a view that is not an object, `rowIds` that is not an array or a condition that is not a
+ * string. A throw changes nothing: the given state
  * is still the current one, with its condition, requests and data. To switch the condition even when the new view may be
  * invalid, switch it first without a view (`setWindowedView(state, undefined, condition)`, which never throws for a string
  * condition), apply that transition, and then set the view; `useWindowedData` does this.
@@ -574,6 +579,10 @@ export interface SplitDanglingLinks<L> {
  * loaded (yet). The components throw for links to unknown items, so pass only `resolved` to them. Call it again with the
  * new set of present IDs after more data arrives: a dangling link whose missing end has arrived moves to `resolved`.
  * `present` is a set of item IDs (or anything with `has`, such as a Map by ID) or any iterable of them. The inputs are not modified.
+ * The ends are not validated: an end that is not a present ID (`undefined`, a number, `''`) is simply missing, so the link
+ * is dangling and `missingIds` holds the value as returned; a link is `resolved` only when both ends are present. A
+ * `from` or `to` accessor that throws makes the call throw; nothing is caught here (`useWindowedData` reports it
+ * through its `error`).
  */
 export function splitDanglingLinks<L extends { from: string; to: string }>(
   links: readonly L[], present: { has(id: string): boolean } | Iterable<string>, options?: SplitDanglingLinksOptions<L>,
