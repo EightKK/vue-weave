@@ -3,8 +3,8 @@ import {
   type ComputedRef, type MaybeRefOrGetter, type ShallowRef,
 } from 'vue'
 import {
-  cancelWindowedRequests, createWindowedDataState, invalidateWindowedData, rejectWindowedRequest, resolveWindowedRequest,
-  retryWindowedData, setWindowedView, splitDanglingLinks, windowedCoverage,
+  cancelWindowedRequests, createWindowedDataState, invalidateWindowedData, rejectWindowedRequest, resetWindowedData,
+  resolveWindowedRequest, retryWindowedData, setWindowedView, splitDanglingLinks, windowedCoverage,
   type DanglingLink, type SplitDanglingLinksOptions, type WindowedCellStatus, type WindowedCoverage, type WindowedDataOptions,
   type WindowedDataPage, type WindowedDataRequest, type WindowedDataState, type WindowedDataTransition, type WindowedView,
 } from '../core/windowedData.js'
@@ -53,7 +53,12 @@ export interface WindowedData<T, L = never> {
   complete: ComputedRef<boolean>
   /** True while a request is in flight. */
   pending: ComputedRef<boolean>
-  /** The last failure of the current condition; cleared by `retry`, `invalidate` or a new condition. Per-cell failures are in `state`. */
+  /**
+   * The last failure of the current condition; cleared by `retry`, `invalidate` or a new condition. Per-cell failures are
+   * in `state`. An invalid view (such as one with more than `maxCells` cells) or condition is reported here without
+   * `request`, not thrown: the state then has no view and nothing in flight (`complete` false) and keeps the data of the
+   * current condition (an invalid condition drops all data), and the error clears when a valid view is set.
+   */
   error: Readonly<ShallowRef<WindowedDataError | undefined>>
   /** Coverage of any window, for example one row (`{ start, end, rowIds: [id] }`) or the whole plan. */
   coverageOf: (window: WindowedView) => WindowedCoverage
@@ -71,7 +76,9 @@ export interface WindowedData<T, L = never> {
  * Loads only what a view shows. The view (a time window and optionally row IDs) is aligned to chunks, missing cells are
  * requested through `load`, superseded requests are aborted, late, aborted and out-of-order responses are ignored, items
  * that overlapping requests return twice are kept once, failed cells keep the loaded data and wait for `retry`, and a
- * new `condition` drops data that belongs to another one. Requests start when the owning component mounts (immediately
+ * new `condition` drops data that belongs to another one. A new condition is processed before the new view is checked,
+ * so an invalid view never keeps the old condition's requests or data; responses are matched by request ID and
+ * condition. Requests start when the owning component mounts (immediately
  * outside a component), so nothing is requested during server rendering. All decisions are made by the pure core
  * functions (`setWindowedView`, `resolveWindowedRequest`, ...), which can also be used without Vue.
  */
@@ -83,23 +90,41 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
   let started = false
   let disposed = false
 
+  /**
+   * Commits a transition in one step: the state is assigned first, then every controller whose request is no longer in
+   * flight is aborted (the transition's `abort` list and, as a safeguard, any other), and only then are new requests started.
+   */
   function apply(transition: WindowedDataTransition<T, L>) {
     if (state.value.condition !== transition.state.condition) error.value = undefined
     state.value = transition.state
+    const live = transition.state.requests
     for (const id of transition.abort) {
       controllers.get(id)?.abort()
       controllers.delete(id)
     }
+    for (const [id, controller] of controllers) {
+      if (live.has(id)) continue
+      controller.abort()
+      controllers.delete(id)
+    }
     for (const request of transition.start) run(request)
+  }
+
+  /** True while the request is still wanted: not aborted, in flight in the current state and of its condition. */
+  function wanted(request: WindowedDataRequest, signal: AbortSignal) {
+    if (signal.aborted || disposed) return false
+    const current = state.value
+    return request.condition === current.condition && current.requests.get(request.requestId)?.condition === current.condition
   }
 
   function run(request: WindowedDataRequest) {
     const controller = new AbortController()
     controllers.set(request.requestId, controller)
     const { signal } = controller
+    // A load that throws synchronously becomes a rejection, reported like any other failure of the request.
     new Promise<readonly T[] | WindowedDataPage<T, L>>(done => done(load(request, { signal }))).then((response) => {
       if (controllers.get(request.requestId) === controller) controllers.delete(request.requestId)
-      if (signal.aborted || disposed) return
+      if (!wanted(request, signal)) return
       let settled
       try {
         settled = resolveWindowedRequest(state.value, request.requestId, response)
@@ -111,7 +136,7 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
       state.value = settled.state
     }, (reason: unknown) => {
       if (controllers.get(request.requestId) === controller) controllers.delete(request.requestId)
-      if (signal.aborted || disposed) return
+      if (!wanted(request, signal)) return
       fail(request, reason)
     })
   }
@@ -123,18 +148,43 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
     error.value = { request, error: reason }
   }
 
+  /** Reports a view that can not be loaded: nothing stays in flight and no view is current, so `complete` is false. */
+  function rejectView(reason: unknown) {
+    apply(setWindowedView(state.value, undefined))
+    error.value = { error: reason }
+  }
+
+  /**
+   * Brings the state up to the current condition and view. A new condition is processed first and on its own: every
+   * request of the old condition is aborted and its data dropped before the new view is even read. An invalid view (more
+   * than `maxCells` cells, non-finite, `end < start`) or an invalid condition is reported through `error`, never thrown.
+   * Returns false when the view or condition was rejected.
+   */
   function update() {
-    if (!started || disposed) return
-    const view = toValue(options.view)
-    const condition = toValue(options.condition) ?? ''
+    if (!started || disposed) return true
+    let condition: unknown
+    try {
+      condition = toValue(options.condition) ?? ''
+      if (typeof condition !== 'string') throw new TypeError('condition must be a string')
+    } catch (reason) {
+      // The condition is unknown, so no data of any condition can be shown.
+      const reset = resetWindowedData(state.value)
+      apply({ ...reset, state: { ...reset.state, view: undefined } })
+      error.value = { error: reason }
+      return false
+    }
+    if (condition !== state.value.condition) apply(setWindowedView(state.value, undefined, condition))
     let transition
     try {
-      transition = setWindowedView(state.value, view, condition)
+      transition = setWindowedView(state.value, toValue(options.view))
     } catch (reason) {
-      error.value = { error: reason }
-      return
+      rejectView(reason)
+      return false
     }
+    // A view error ends once the view is valid again; failures of requests stay until `retry` or `invalidate`.
+    if (error.value && !error.value.request) error.value = undefined
     apply(transition)
+    return true
   }
 
   const scope = getCurrentScope()
@@ -147,17 +197,24 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
   if (getCurrentInstance()) onMounted(begin)
   else begin()
 
+  // `retry` and `invalidate` first catch up with a condition or view change that the watcher has not processed yet, so
+  // they never request data for a condition that is no longer current. A rejected view keeps its error.
   function retry(window?: WindowedView) {
-    if (disposed) return
-    error.value = undefined
-    apply(retryWindowedData(state.value, window))
+    if (disposed || !started) return
+    const ok = update()
+    const transition = retryWindowedData(state.value, window)
+    if (ok) error.value = undefined
+    apply(transition)
   }
   function invalidate() {
     if (disposed || !started) return
-    error.value = undefined
-    apply(invalidateWindowedData(state.value))
+    const ok = update()
+    const transition = invalidateWindowedData(state.value)
+    if (ok) error.value = undefined
+    apply(transition)
   }
   function cancel() {
+    if (disposed) return
     apply(cancelWindowedRequests(state.value))
   }
   function dispose() {

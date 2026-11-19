@@ -248,7 +248,11 @@ function windowCells(options: Grid, view: { start: number; end: number; rowIds?:
  * are all outside the new view are aborted, and their cells become `unloaded` again; a request that still covers some
  * needed cell keeps running. A different `condition` (a filter, a query, a data version) aborts everything and drops all
  * cells, items and links, so results for another condition are never attached. `view` undefined keeps the cells and data
- * but aborts every request. Throws RangeError for a non-finite view, `end < start` or more than `maxCells` cells.
+ * but aborts every request. Throws RangeError for a non-finite view, `end < start` or more than `maxCells` cells, and
+ * TypeError for a view that is not an object or a condition that is not a string. A throw changes nothing: the given state
+ * is still the current one, with its condition, requests and data. To switch the condition even when the new view may be
+ * invalid, switch it first without a view (`setWindowedView(state, undefined, condition)`, which never throws for a string
+ * condition), apply that transition, and then set the view; `useWindowedData` does this.
  */
 export function setWindowedView<T, L = never>(
   state: WindowedDataState<T, L>, view: WindowedView | undefined, condition: string = state.condition,
@@ -280,8 +284,9 @@ export function setWindowedView<T, L = never>(
     links = new Map()
   } else {
     for (const [id, request] of inflight) {
+      // A request of another condition (in a state assembled by hand) is never kept.
       let keep = false
-      if (needed) for (const key of request.cells) if (needed.has(key)) { keep = true; break }
+      if (needed && request.condition === condition) for (const key of request.cells) if (needed.has(key)) { keep = true; break }
       if (keep) continue
       abort.push(id)
       inflight.delete(id)
@@ -352,6 +357,12 @@ function publicRequests(inflight: ReadonlyMap<string, WindowedInFlightRequest>) 
   return requests
 }
 
+/** The request in flight with this ID, if it belongs to the current condition (matched by request and by condition). */
+function currentRequest<T, L>(state: WindowedDataState<T, L>, requestId: string) {
+  const request = state.inflight.get(requestId)
+  return request && request.condition === state.condition ? request : undefined
+}
+
 function readPage<T, L>(page: readonly T[] | WindowedDataPage<T, L>): { items: readonly T[]; links: readonly L[] } {
   if (Array.isArray(page)) return { items: page as readonly T[], links: [] }
   const value = page as WindowedDataPage<T, L>
@@ -365,30 +376,37 @@ function readPage<T, L>(page: readonly T[] | WindowedDataPage<T, L>): { items: r
 /**
  * Applies the response of a request in flight: its items and links are merged into the data by ID (an item that an
  * earlier, overlapping request already returned is replaced, never duplicated), and each of its cells becomes `loaded`
- * or `loaded-empty`. A response of an unknown, aborted or superseded request is ignored (`applied: false`). Throws
- * Error for an item or link without a non-empty string ID or with an ID twice in the response, and TypeError for a
- * malformed response; the state is then unchanged (report it with `rejectWindowedRequest`).
+ * or `loaded-empty`. A response is applied only while its request is in flight and belongs to the current condition;
+ * the response of an unknown, aborted or superseded request, or of a request of another condition, is ignored
+ * (`applied: false`). Throws Error for an item or link without a non-empty string ID or with an ID twice in the response,
+ * TypeError for a malformed response, and whatever an accessor throws; every check runs before anything is merged, so the
+ * state is then unchanged and nothing of the response is merged (report it with `rejectWindowedRequest`).
  */
 export function resolveWindowedRequest<T, L = never>(
   state: WindowedDataState<T, L>, requestId: string, response: readonly T[] | WindowedDataPage<T, L>,
 ): WindowedDataSettlement<T, L> {
-  const request = state.inflight.get(requestId)
+  const request = currentRequest(state, requestId)
   if (!request) return { state, applied: false }
   const { items: received, links: receivedLinks } = readPage(response)
   const { itemId, itemRow, itemRange, linkId, chunkSize, origin } = state.options
+  // Each accessor is called once per item, so the IDs that are checked are the IDs that are merged.
   const pageIds = new Set<string>()
+  const itemIds: string[] = []
   for (const item of received) {
     const id = itemId(item)
     if (!isId(id)) throw invalidIdError('windowed data item', id)
     if (pageIds.has(id)) throw inContext(duplicateIdError('windowed data item', id), 'in one response')
     pageIds.add(id)
+    itemIds.push(id)
   }
   const linkIds = new Set<string>()
+  const linkIdList: string[] = []
   for (const link of receivedLinks) {
     const id = linkId(link)
     if (!isId(id)) throw invalidIdError('windowed data link', id)
     if (linkIds.has(id)) throw inContext(duplicateIdError('windowed data link', id), 'in one response')
     linkIds.add(id)
+    linkIdList.push(id)
   }
   // Cells of the request that received at least one item.
   const filled = new Set<string>()
@@ -407,11 +425,11 @@ export function resolveWindowedRequest<T, L = never>(
     for (let chunk = first; chunk <= last; chunk++) for (const id of rows) filled.add(cellKey(chunk, id))
   }
   const items = new Map(state.items)
-  for (const item of received) items.set(itemId(item), item)
+  for (let index = 0; index < received.length; index++) items.set(itemIds[index]!, received[index]!)
   let links = state.links
   if (receivedLinks.length) {
     const next = new Map(links)
-    for (const link of receivedLinks) next.set(linkId(link), link)
+    for (let index = 0; index < receivedLinks.length; index++) next.set(linkIdList[index]!, receivedLinks[index]!)
     links = next
   }
   const cells = new Map(state.cells)
@@ -426,12 +444,13 @@ export function resolveWindowedRequest<T, L = never>(
 
 /**
  * Marks the cells of a failed request in flight `failed`. Loaded items and links stay, so what is displayed does not
- * disappear. A failure of an unknown, aborted or superseded request is ignored (`applied: false`).
+ * disappear. A failure of an unknown, aborted or superseded request, or of a request of another condition, is ignored
+ * (`applied: false`).
  */
 export function rejectWindowedRequest<T, L = never>(
   state: WindowedDataState<T, L>, requestId: string, error: unknown,
 ): WindowedDataSettlement<T, L> {
-  const request = state.inflight.get(requestId)
+  const request = currentRequest(state, requestId)
   if (!request) return { state, applied: false }
   const cells = new Map(state.cells)
   for (const key of request.cells) {

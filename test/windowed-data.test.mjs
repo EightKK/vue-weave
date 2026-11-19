@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, effectScope, h, nextTick, ref } from 'vue'
+import { createRenderer, createSSRApp, effectScope, h, nextTick, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import {
   cancelWindowedRequests, createGraphExpansion, createWindowedDataState, graphExpansionView, invalidateWindowedData, mergeGraphExpansionPage,
@@ -8,6 +8,7 @@ import {
   setWindowedView, splitDanglingLinks, windowedCellStatus, windowedCoverage,
 } from 'vue-weave/core'
 import { GanttChart, useWindowedData } from 'vue-weave'
+import { seededRandom } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const day = 86_400_000
@@ -317,4 +318,353 @@ test('GanttChart server markup is unchanged with a visible-window-change listene
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.deepEqual(windows, [])
   assert.equal(loads, 0)
+})
+
+/** Mounts `setup` in a minimal client app without a DOM, so `onMounted` and unmounting run as in a component. */
+function mountHeadless(setup) {
+  const node = () => ({})
+  const { createApp } = createRenderer({
+    insert() {}, remove() {}, createElement: node, createText: node, createComment: node, setText() {}, setElementText() {},
+    parentNode: () => null, nextSibling: () => null, patchProp() {},
+  })
+  let result
+  const app = createApp({ setup() { result = setup(); return () => null } })
+  app.mount({})
+  return { result, unmount: () => app.unmount() }
+}
+
+test('a new condition with an oversized view aborts the old requests first and never attaches their late answers', async () => {
+  const { calls, load } = controlledLoad()
+  const view = ref({ start: 0, end: day, rowIds: ['a'] })
+  const condition = ref('plant=A')
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: day, maxCells: 10 }))
+  calls[0].resolve([bar('a-loaded', 'a', 0, 1)])
+  await flush()
+  view.value = { start: day, end: 2 * day, rowIds: ['a'] }
+  await nextTick()
+  assert.equal(calls.length, 2)
+  // The condition and an oversized view change together, while A's second request is in flight.
+  condition.value = 'plant=B'
+  view.value = { start: 0, end: 100 * day, rowIds: ['a'] }
+  await nextTick()
+  assert.equal(calls[1].signal.aborted, true)
+  assert.equal(calls.length, 2)
+  assert.equal(data.state.value.condition, 'plant=B')
+  assert.equal(data.state.value.view, undefined)
+  assert.deepEqual(data.items.value, [])
+  assert.equal(data.pending.value, false)
+  assert.equal(data.status.value, 'unloaded')
+  assert.equal(data.complete.value, false)
+  assert.ok(data.error.value.error instanceof RangeError)
+  assert.match(data.error.value.error.message, /maxCells/)
+  assert.equal(data.error.value.request, undefined)
+  // A's answer arrives anyway (the application ignored the abort): it is discarded.
+  calls[1].resolve([bar('a-only', 'a', day, day + 1)])
+  await flush()
+  assert.deepEqual(data.items.value, [])
+  assert.equal(data.complete.value, false)
+  assert.equal(data.state.value.cells.size, 0)
+  // A valid view clears the view error and loads B.
+  view.value = { start: 0, end: day, rowIds: ['a'] }
+  await nextTick()
+  assert.equal(data.error.value, undefined)
+  assert.equal(calls[2].request.condition, 'plant=B')
+  calls[2].resolve([bar('b1', 'a', 0, 1)])
+  await flush()
+  assert.deepEqual(data.items.value.map(item => item.id), ['b1'])
+  assert.equal(data.complete.value, true)
+  scope.stop()
+})
+
+test('the core state machine throws for an invalid view without changing anything, and matches answers by request and condition', () => {
+  const a = setWindowedView(createWindowedDataState({ chunkSize: 1, maxCells: 4 }, 'A'), { start: 0, end: 2 })
+  assert.throws(() => setWindowedView(a.state, { start: 0, end: 50 }, 'B'), RangeError)
+  assert.throws(() => setWindowedView(a.state, null, 'B'), TypeError)
+  assert.equal(a.state.condition, 'A')
+  assert.equal(a.state.requests.size, 1)
+  // Switching the condition first, without a view, never throws for a string condition and drops everything.
+  const b = setWindowedView(a.state, undefined, 'B')
+  assert.deepEqual(b.abort, [a.start[0].requestId])
+  assert.deepEqual(b.start, [])
+  assert.equal(b.state.condition, 'B')
+  assert.equal(b.state.requests.size, 0)
+  assert.equal(b.state.cells.size, 0)
+  assert.throws(() => setWindowedView(b.state, { start: 0, end: 50 }), RangeError)
+  assert.equal(resolveWindowedRequest(b.state, a.start[0].requestId, [bar('x', undefined, 0, 1)]).applied, false)
+  assert.equal(rejectWindowedRequest(b.state, a.start[0].requestId, new Error('late')).applied, false)
+  // A request of another condition in a state assembled by hand is neither applied nor kept.
+  const forged = { ...a.state, condition: 'B' }
+  const ignored = resolveWindowedRequest(forged, a.start[0].requestId, [bar('x', undefined, 0, 1)])
+  assert.equal(ignored.applied, false)
+  assert.equal(ignored.state, forged)
+  assert.equal(rejectWindowedRequest(forged, a.start[0].requestId, new Error('x')).applied, false)
+  assert.deepEqual(setWindowedView(forged, { start: 0, end: 2 }).abort, [a.start[0].requestId])
+})
+
+test('a response whose merge throws half-way merges nothing and fails only its own cells', async () => {
+  let { state, start } = setWindowedView(createWindowedDataState({
+    chunkSize: 1, itemRow: item => { if (item.bad) throw new Error('bad row'); return item.rowId },
+  }), { start: 0, end: 2, rowIds: ['a'] })
+  ;({ state } = resolveWindowedRequest(state, start[0].requestId, [bar('kept', 'a', 0, 1)]))
+  ;({ state, start } = setWindowedView(state, { start: 0, end: 3, rowIds: ['a'] }))
+  for (const response of [[bar('n1', 'a', 2, 3), { ...bar('n2', 'a', 2, 3), bad: true }], [bar('n1', 'a', 2, 3), bar('n1', 'a', 2, 3)], { items: [bar('n1', 'a', 2, 3)], links: [{ id: '' }] }, 42]) {
+    assert.throws(() => resolveWindowedRequest(state, start[0].requestId, response))
+  }
+  assert.deepEqual([...state.items.keys()], ['kept'])
+  assert.equal(windowedCellStatus(state, 2, 'a'), 'loading')
+  // Through the composable the throw becomes a failure of that request; nothing of the response is merged.
+  const { calls, load } = controlledLoad()
+  const view = ref({ start: 0, end: 1, rowIds: ['a'] })
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view, load, chunkSize: 1 }))
+  calls[0].resolve([bar('kept', 'a', 0, 1)])
+  await flush()
+  view.value = { start: 0, end: 2, rowIds: ['a'] }
+  await nextTick()
+  calls[1].resolve([bar('n1', 'a', 1, 2), bar('n1', 'a', 1, 2)])
+  await flush()
+  assert.deepEqual(data.items.value.map(item => item.id), ['kept'])
+  assert.equal(windowedCellStatus(data.state.value, 1, 'a'), 'failed')
+  assert.equal(windowedCellStatus(data.state.value, 0, 'a'), 'loaded')
+  assert.match(data.error.value.error.message, /Duplicate windowed data item ID: n1/)
+  assert.equal(data.error.value.request.requestId, calls[1].request.requestId)
+  assert.equal(data.pending.value, false)
+  scope.stop()
+})
+
+test('a load that throws synchronously during a condition change fails the new request and keeps nothing of the old condition', async () => {
+  const calls = []
+  const load = (request, { signal }) => {
+    if (request.condition === 'B') throw new Error('sync failure')
+    return new Promise((resolve, reject) => calls.push({ request, signal, resolve, reject }))
+  }
+  const view = ref({ start: 0, end: 1 })
+  const condition = ref('A')
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: 1 }))
+  calls[0].resolve([bar('a0', undefined, 0, 1)])
+  await flush()
+  view.value = { start: 0, end: 2 }
+  await nextTick()
+  condition.value = 'B'
+  await flush()
+  assert.equal(calls[1].signal.aborted, true)
+  assert.deepEqual(data.items.value, [])
+  assert.equal(data.status.value, 'failed')
+  assert.equal(data.complete.value, false)
+  assert.equal(data.pending.value, false)
+  assert.equal(data.error.value.error.message, 'sync failure')
+  assert.equal(data.error.value.request.condition, 'B')
+  calls[1].resolve([bar('a1', undefined, 1, 2)])
+  await flush()
+  assert.deepEqual(data.items.value, [])
+  scope.stop()
+})
+
+test('an invalid view of the same condition aborts what is in flight, keeps loaded data and clears once the view is valid', async () => {
+  const { calls, load } = controlledLoad()
+  const view = ref({ start: 0, end: 1 })
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view, load, chunkSize: 1, maxCells: 5 }))
+  calls[0].resolve([bar('k', undefined, 0, 1)])
+  await flush()
+  view.value = { start: 0, end: 3 }
+  await nextTick()
+  view.value = { start: 0, end: 50 }
+  await nextTick()
+  assert.equal(calls[1].signal.aborted, true)
+  assert.deepEqual(data.items.value.map(item => item.id), ['k'])
+  assert.equal(data.complete.value, false)
+  assert.equal(data.pending.value, false)
+  assert.equal(windowedCellStatus(data.state.value, 1), 'unloaded')
+  assert.ok(data.error.value.error instanceof RangeError)
+  for (const invalid of [{ start: 2, end: 1 }, { start: 0, end: Infinity }, null]) {
+    view.value = invalid
+    await nextTick()
+    assert.equal(data.error.value.request, undefined)
+    assert.equal(data.state.value.view, undefined)
+  }
+  // retry and invalidate keep a view error while the view stays invalid and request nothing.
+  data.retry()
+  data.invalidate()
+  assert.ok(data.error.value)
+  assert.equal(calls.length, 2)
+  calls[1].resolve([bar('late', undefined, 1, 2)])
+  await flush()
+  assert.deepEqual(data.items.value.map(item => item.id), ['k'])
+  view.value = { start: 0, end: 3 }
+  await nextTick()
+  assert.equal(data.error.value, undefined)
+  // invalidate made every cell unloaded (the items stayed), so the whole view is requested again.
+  assert.deepEqual([calls[2].request.start, calls[2].request.end], [0, 3])
+  assert.deepEqual(data.items.value.map(item => item.id), ['k'])
+  scope.stop()
+})
+
+test('retry, invalidate, cancel and dispose racing with answers in flight never attach a superseded answer', async () => {
+  const { calls, load } = controlledLoad()
+  const view = ref({ start: 0, end: 1 })
+  const condition = ref('A')
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: 1 }))
+  // invalidate aborts the request in flight and requests again; the first answer is ignored.
+  data.invalidate()
+  assert.deepEqual(calls.map(call => call.signal.aborted), [true, false])
+  calls[0].resolve([bar('stale', undefined, 0, 1)])
+  calls[1].resolve([bar('fresh', undefined, 0, 1)])
+  await flush()
+  assert.deepEqual(data.items.value.map(item => item.id), ['fresh'])
+  // A rejection after an abort is not an error.
+  view.value = { start: 1, end: 2 }
+  await nextTick()
+  data.cancel()
+  assert.equal(calls[2].signal.aborted, true)
+  calls[2].reject(new DOMException('aborted', 'AbortError'))
+  await flush()
+  assert.equal(data.error.value, undefined)
+  assert.equal(data.status.value, 'unloaded')
+  // retry right after a condition change, before the watcher ran, requests only the new condition.
+  condition.value = 'B'
+  data.retry()
+  await nextTick()
+  assert.deepEqual(calls.slice(3).map(call => call.request.condition), ['B'])
+  // A failure, then retry: the late failure of the superseded request does not come back.
+  calls[3].reject(new Error('down'))
+  await flush()
+  assert.equal(data.error.value.error.message, 'down')
+  data.retry()
+  assert.equal(data.error.value, undefined)
+  // dispose aborts everything and ignores every later answer.
+  data.dispose()
+  assert.equal(calls[4].signal.aborted, true)
+  calls[4].resolve([bar('after', undefined, 1, 2)])
+  await flush()
+  assert.deepEqual(data.items.value, [])
+  data.retry()
+  data.invalidate()
+  view.value = { start: 5, end: 6 }
+  await nextTick()
+  assert.equal(calls.length, 5)
+  scope.stop()
+})
+
+test('unmounting the owning component aborts requests in flight and ignores their answers', async () => {
+  const { calls, load } = controlledLoad()
+  const view = ref({ start: 0, end: 2 })
+  const { result: data, unmount } = mountHeadless(() => useWindowedData({ view, load, chunkSize: 1, maxChunksPerRequest: 1 }))
+  assert.equal(calls.length, 2)
+  calls[0].resolve([bar('first', undefined, 0, 1)])
+  await flush()
+  unmount()
+  assert.deepEqual(calls.map(call => call.signal.aborted), [false, true])
+  calls[1].resolve([bar('late', undefined, 1, 2)])
+  calls[1].reject(new Error('late'))
+  await flush()
+  assert.deepEqual(data.items.value.map(item => item.id), ['first'])
+  assert.equal(data.error.value, undefined)
+  view.value = { start: 3, end: 4 }
+  await nextTick()
+  assert.equal(calls.length, 2)
+})
+
+test('random interleavings keep the windowed data consistent with the current condition', async () => {
+  const rowsPool = ['a', 'b', 'c', 'd']
+  const conditions = ['A', 'B', 'C']
+  const runs = 150
+  const steps = 40
+  for (let seed = 1; seed <= runs; seed++) {
+    const { random, pick } = seededRandom(seed)
+    const calls = []
+    let throwNext = false
+    const load = (request, { signal }) => {
+      if (throwNext) {
+        throwNext = false
+        calls.push({ request, signal, settled: true })
+        throw new Error('sync')
+      }
+      return new Promise((resolve, reject) => calls.push({ request, signal, resolve, reject, settled: false }))
+    }
+    const randomView = () => {
+      if (random() < 0.1) return { start: 3, end: 1 }
+      const start = pick(6)
+      const rows = rowsPool.filter(() => random() < 0.6)
+      return { start, end: start + pick(4), rowIds: rows.length ? rows : ['a'] }
+    }
+    const view = ref(randomView())
+    const condition = ref(conditions[pick(3)])
+    const scope = effectScope()
+    const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: 1, maxCells: 12 }))
+    const answer = (request) => {
+      const items = []
+      for (const row of request.rowIds ?? []) {
+        if (random() < 0.5) continue
+        const at = request.start + pick(request.end - request.start)
+        items.push({ id: `${request.condition}-${row}-${at}`, rowId: row, start: at, end: at + 1, condition: request.condition })
+      }
+      if (items.length && random() < 0.1) items.push(items[0])
+      return items
+    }
+    const open = () => calls.filter(call => !call.settled)
+    for (let step = 0; step < steps; step++) {
+      const action = pick(10)
+      const context = `seed ${seed}, step ${step}, action ${action}`
+      if (action === 0) view.value = randomView()
+      else if (action === 1) condition.value = conditions[pick(3)]
+      else if (action === 2) {
+        // The reported case: a new condition and an oversized view at once.
+        condition.value = conditions[pick(3)]
+        view.value = { start: 0, end: 20, rowIds: rowsPool }
+      } else if (action === 3 || action === 4) {
+        const candidates = open()
+        if (candidates.length) {
+          const call = candidates[pick(candidates.length)]
+          call.settled = true
+          call.resolve(answer(call.request))
+        }
+      } else if (action === 5) {
+        const candidates = open()
+        if (candidates.length) {
+          const call = candidates[pick(candidates.length)]
+          call.settled = true
+          call.reject(new Error('down'))
+        }
+      } else if (action === 6) {
+        throwNext = random() < 0.3
+        data.retry()
+      } else if (action === 7) data.invalidate()
+      else if (action === 8) data.cancel()
+      else throwNext = true
+      await flush()
+      const state = data.state.value
+      assert.equal(state.condition, condition.value, context)
+      for (const item of data.items.value) assert.equal(item.condition, state.condition, context)
+      for (const [id, request] of state.requests) {
+        assert.equal(request.condition, state.condition, context)
+        const call = calls.find(c => c.request.requestId === id)
+        assert.ok(call && !call.signal.aborted, context)
+      }
+      for (const cell of state.cells.values()) {
+        if (cell.status === 'loading') assert.ok(state.requests.has(cell.requestId), context)
+      }
+      for (const call of calls) {
+        if (!call.settled && !state.requests.has(call.request.requestId)) assert.equal(call.signal.aborted, true, context)
+      }
+      if (data.error.value?.request) assert.equal(data.error.value.request.condition, state.condition, context)
+      if (data.complete.value) {
+        const current = state.view
+        assert.ok(current, context)
+        const first = Math.floor(current.start)
+        const last = current.end > current.start ? Math.ceil(current.end) - 1 : first
+        for (let chunk = first; chunk <= last; chunk++) {
+          for (const row of current.rowIds) {
+            assert.ok(['loaded', 'loaded-empty'].includes(windowedCellStatus(state, chunk, row)), context)
+          }
+        }
+      }
+      assert.equal(data.pending.value, state.requests.size > 0, context)
+    }
+    scope.stop()
+    for (const call of calls) if (!call.settled) assert.equal(call.signal.aborted, true)
+  }
 })
