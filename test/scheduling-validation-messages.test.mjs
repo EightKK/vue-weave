@@ -66,6 +66,7 @@ const cases = [
   ['timelineCsvTable rows', 'row', 'r1', id => { const r = rows(); r[1].id = id; timelineCsvTable(r, []) }],
   ['renderTimelineSvg markers', 'marker', 'm', id => renderTimelineSvg(rows(), bars(), [], scale, { markers: [{ id: 'm', time: 1, label: 'M' }, { id, time: 2, label: 'N' }] })],
   ['renderTimelineSvg marker ranges', 'marker range', 'm', id => renderTimelineSvg(rows(), bars(), [], scale, { markerRanges: [{ id: 'm', start: 1, end: 2, label: 'M' }, { id, start: 3, end: 4, label: 'N' }] })],
+  ['renderTimelineSvg columns', 'column', 'c', id => renderTimelineSvg(rows(), bars(), [], scale, { columns: [{ id: 'c', label: 'C', width: 40, value: () => '' }, { id, label: 'D', width: 40, value: () => '' }] })],
   ['renderTimelineSvg load rows', 'load row', 'L', id => renderTimelineSvg(rows(), bars(), [], scale, { loadRows: [{ id: 'L', label: 'L' }, { id, label: 'M' }] })],
   ['renderTimelineSvg baselineIds', 'baseline set', 'v', id => renderTimelineSvg(rows(), bars(), [], scale, { baselineIds: ['v', id] }), { invalid: ' (baselineIds)', duplicate: ' (baselineIds)' }],
   ['planBaselines', 'baseline set', null, id => planBaselines(scheduleTasks(plan()), id)],
@@ -104,8 +105,10 @@ test('numeric IDs are rejected even where nothing else would notice them', () =>
   assert.throws(() => createTimelineRowTree([{ id: 0, label: 'A' }]), { message: 'Invalid row ID: 0' })
   assert.throws(() => renderTimelineSvg(rows(), bars(), [], scale, { markers: [{ id: 3, time: 1, label: 'M' }] }), { name: 'Error', message: 'Invalid marker ID: 3' })
   assert.throws(() => calculateResourceLoad(range, [{ id: 4, work: [] }], [], []), { message: 'Invalid task ID: 4' })
-  // A marker with a valid ID but an invalid time is still a RangeError.
+  assert.throws(() => renderTimelineSvg(rows(), bars(), [], scale, { columns: [{ id: 7, label: 'C', width: 40, value: () => '' }] }), { name: 'Error', message: 'Invalid column ID: 7' })
+  // A marker with a valid ID but an invalid time, and a column with a valid ID but an invalid width, are still RangeErrors.
   assert.throws(() => renderTimelineSvg(rows(), bars(), [], scale, { markers: [{ id: 'm', time: Number.NaN, label: 'M' }] }), RangeError)
+  assert.throws(() => renderTimelineSvg(rows(), bars(), [], scale, { columns: [{ id: 'c', label: 'C', width: 0, value: () => '' }] }), { name: 'RangeError', message: 'Invalid timeline column width: c' })
 })
 
 test('calculateResourceLoad and levelResources check assignments with the same messages', () => {

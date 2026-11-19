@@ -5,6 +5,7 @@ import {
   checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
   sameRankTurnDistance,
 } from './graphOptions.js'
+import { unknownReferenceError } from './ids.js'
 
 /** Options of `layoutTreeGraph`: the shared layout options (`columnGap` between depth levels, `rowGap` between adjacent leaves) plus roots. */
 export interface GraphTreeLayoutOptions extends GraphLayoutOptions {
@@ -33,7 +34,7 @@ interface Forest {
 // Breadth-first spanning forest. Edges that do not become tree edges (cross, back, forward, self) stay routed but do not place nodes.
 function spanningForest(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], requested: readonly string[] = []): Forest {
   const index = indexGraph(nodes, edges)
-  for (const id of requested) if (!index.outgoing.has(id)) throw new Error(`Unknown root node ID: ${id}`)
+  for (const id of requested) if (!index.outgoing.has(id)) throw unknownReferenceError('node', 'roots', id)
   const hasParent = new Set<string>()
   for (const { from, to } of edges) if (from !== to) hasParent.add(to)
 

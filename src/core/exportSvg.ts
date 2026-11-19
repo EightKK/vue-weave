@@ -14,8 +14,8 @@ import type {
 } from './types.js'
 import type { TimelineConstraintKind } from './types.js'
 import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
-import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
-import { checkId, uniqueIds } from './ids.js'
+import { baselineLayout, baselineSelection, baselineStrips, checkBandsAndMarkers, checkLoadRows, checkTimelineColumns } from './barSegments.js'
+import { checkId } from './ids.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -299,11 +299,10 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   }
   const groupIds = new Set<string>()
   for (const group of options.groups ?? []) {
-    if (!group.id || groupIds.has(group.id)) throw new Error('Invalid or duplicate export group: ' + group.id)
+    checkId('export group', group.id, groupIds)
     if (![group.x, group.y, group.width, group.height].every(Number.isFinite) || group.width < 0 || group.height < 0) {
       throw new RangeError('Invalid export group geometry: ' + group.id)
     }
-    groupIds.add(group.id)
     include(group.x, group.y, group.width, group.height)
   }
   if (options.lanes !== undefined) {
@@ -570,14 +569,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   if (!Number.isFinite(offset) || !Number.isFinite(axisWidth) || axisWidth <= 0) throw new RangeError('The exported time window has no width')
 
   const columns = options.columns ?? []
-  const columnIds = new Set<string>()
-  let columnsWidth = 0
-  for (const column of columns) {
-    if (!column.id || columnIds.has(column.id)) throw new Error('Invalid timeline column: ' + column.id)
-    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
-    columnIds.add(column.id)
-    columnsWidth += column.width
-  }
+  const columnsWidth = checkTimelineColumns(columns)
 
   const tree = createTimelineRowTree(rows)
   const collapsed = new Set(options.collapsedIds ?? [])
@@ -597,31 +589,12 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const summaries = options.showSummaries || columns.length ? summarizeTimelineRows(tree, bars) : undefined
 
   const loadRowHeight = options.loadRowHeight ?? 44
-  let histogram: ReturnType<typeof resourceLoadHistogram> | undefined
   const loadRows = options.loadRows ?? []
-  if (loadRows.length) {
-    const ids = uniqueIds(loadRows, 'load row')
-    if (!Number.isFinite(loadRowHeight) || loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
-    histogram = resourceLoadHistogram(options.loadSegments ?? [], ids)
-  } else if (options.loadSegments?.length) {
-    throw new Error('loadSegments require loadRows')
-  }
+  const loadRowIds = checkLoadRows(loadRows, options.loadSegments, loadRowHeight)
+  const histogram = loadRowIds && resourceLoadHistogram(options.loadSegments ?? [], loadRowIds)
 
   const bands = options.headerBands ?? []
-  for (const level of bands) {
-    let previousEnd = -Infinity
-    for (const band of level) {
-      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
-      }
-      previousEnd = band.end
-    }
-  }
-  const markerIds = new Set<string>()
-  for (const item of options.markers ?? []) {
-    checkId('marker', item.id, markerIds)
-    if (!Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
-  }
+  checkBandsAndMarkers(bands, options.markers)
   const markerRanges = options.markerRanges ?? []
   checkMarkerRanges(markerRanges, new Set(rows.map(row => row.id)))
   if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')

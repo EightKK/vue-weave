@@ -1,6 +1,7 @@
 // NetworkGraph group frames: the checked group hierarchy in paint order and the frame rectangle of each group.
 import type { GraphBox } from '../../core/graph.js'
 import type { NetworkGroup } from '../../core/types.js'
+import { checkGraphGroups, emptyGroupError, groupCycleError, unknownParentGroupError } from '../../core/graphGroupChecks.js'
 
 /** A group with every node it frames (`members`, including those of nested groups), its depth and its parent's label. */
 export type GroupShape = NetworkGroup & { members: string[]; depth: number; parentLabel?: string }
@@ -16,15 +17,7 @@ export type GroupRect = { x: number; y: number; width: number; height: number }
  * them in preorder with input-order siblings, which paints parents before their children.
  */
 export function groupShapes(list: readonly NetworkGroup[], hasNode: (id: string) => boolean): GroupShape[] {
-  const byId = new Map<string, NetworkGroup>(), members = new Set<string>()
-  for (const group of list) {
-    if (!group.id || byId.has(group.id)) throw new Error('Invalid graph group: ' + group.id)
-    byId.set(group.id, group)
-    for (const id of group.nodeIds) {
-      if (!hasNode(id) || members.has(id)) throw new Error('Invalid or repeated group member: ' + id)
-      members.add(id)
-    }
-  }
+  const { byId } = checkGraphGroups(list, hasNode)
   const children = new Map<string, NetworkGroup[]>()
   const roots: NetworkGroup[] = []
   for (const group of list) {
@@ -32,7 +25,7 @@ export function groupShapes(list: readonly NetworkGroup[], hasNode: (id: string)
       roots.push(group)
       continue
     }
-    if (!byId.has(group.parentId)) throw new Error('Unknown parent group: ' + group.parentId + ' (group ' + group.id + ')')
+    if (!byId.has(group.parentId)) throw unknownParentGroupError(group)
     let siblings = children.get(group.parentId)
     if (!siblings) children.set(group.parentId, siblings = [])
     siblings.push(group)
@@ -41,7 +34,7 @@ export function groupShapes(list: readonly NetworkGroup[], hasNode: (id: string)
     let current = group, steps = 0
     while (current.parentId !== undefined) {
       current = byId.get(current.parentId)!
-      if (current === group || ++steps > list.length) throw new Error('Graph group hierarchy contains a cycle at group: ' + group.id)
+      if (current === group || ++steps > list.length) throw groupCycleError(group.id)
     }
   }
   const order: { group: NetworkGroup; depth: number }[] = []
@@ -57,7 +50,7 @@ export function groupShapes(list: readonly NetworkGroup[], hasNode: (id: string)
     const group = order[i]!.group
     const all = [...group.nodeIds]
     for (const child of children.get(group.id) ?? []) all.push(...effective.get(child.id)!)
-    if (!all.length) throw new Error('Invalid graph group: ' + group.id)
+    if (!all.length) throw emptyGroupError(group.id)
     effective.set(group.id, all)
   }
   return order.map(({ group, depth }) => ({

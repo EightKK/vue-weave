@@ -1,6 +1,7 @@
 import { graphNeighborhood, indexGraph } from './graph.js'
 import type { GraphEdge, IdentifiedNode } from './graph.js'
 import { heapPop, heapPush } from './graphHeap.js'
+import { unknownReferenceError } from './ids.js'
 
 export interface TopologicalOrderResult {
   /** Nodes in dependency order (input order breaks ties). Nodes on or behind a cycle are omitted. */
@@ -116,8 +117,8 @@ export function shortestGraphPath(
 ): GraphPathResult | null {
   const { directed = true, weight } = options
   const index = indexGraph(nodes, edges)
-  if (!index.outgoing.has(fromId)) throw new Error(`Unknown graph node ID: ${fromId}`)
-  if (!index.outgoing.has(toId)) throw new Error(`Unknown graph node ID: ${toId}`)
+  if (!index.outgoing.has(fromId)) throw unknownReferenceError('node', 'fromId', fromId)
+  if (!index.outgoing.has(toId)) throw unknownReferenceError('node', 'toId', toId)
 
   const adjacency = new Map<string, { edge: GraphEdge; to: string; cost: number }[]>(nodes.map(node => [node.id, []]))
   for (const edge of edges) {

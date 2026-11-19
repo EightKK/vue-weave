@@ -1,7 +1,7 @@
 // Internal geometry shared by GanttChart and renderTimelineSvg. Not part of the public entry points.
 import { baselineVariance, timelineBaseline, timelineBaselineIds, timelineBaselineLimit, type TimeRange } from './timeline.js'
-import type { TimelineBar, TimelineMarkerRange } from './types.js'
-import { checkId, withContext } from './ids.js'
+import type { TimelineBand, TimelineBar, TimelineLoadRow, TimelineLoadSegment, TimelineMarker, TimelineMarkerRange } from './types.js'
+import { checkId, uniqueIds, withContext } from './ids.js'
 
 export interface SegmentPiece extends TimeRange {
   /** Completed fraction of this piece, between 0 and 1. */
@@ -80,6 +80,62 @@ export function checkNonWorkingPeriods(periods: readonly TimeRange[] | undefined
       throw new RangeError('nonWorkingPeriods must have finite endpoints with start < end')
     }
   }
+}
+
+/**
+ * Validate extra timeline columns, as `renderTimelineSvg` and GanttChart do: IDs that are non-empty strings and unique
+ * (`Invalid column ID: <value>`, `Duplicate column ID: <id>`) and widths that are finite and positive
+ * (`RangeError: Invalid timeline column width: <id>`). Returns the total width.
+ */
+export function checkTimelineColumns(columns: readonly { readonly id: string; readonly width: number }[]): number {
+  const ids = new Set<string>()
+  let total = 0
+  for (const column of columns) {
+    checkId('column', column.id, ids)
+    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
+    total += column.width
+  }
+  return total
+}
+
+/**
+ * Validate header bands, then markers, as `renderTimelineSvg` and GanttChart do: each band level finite, ordered and
+ * nonoverlapping (RangeError), marker IDs non-empty and unique (Error) and marker times finite (RangeError).
+ */
+export function checkBandsAndMarkers(
+  bands: readonly (readonly TimelineBand[])[] | undefined, markers: readonly TimelineMarker[] | undefined,
+) {
+  for (const level of bands ?? []) {
+    let previousEnd = -Infinity
+    for (const band of level) {
+      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
+        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
+      }
+      previousEnd = band.end
+    }
+  }
+  const markerIds = new Set<string>()
+  for (const item of markers ?? []) {
+    checkId('marker', item.id, markerIds)
+    if (!Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
+  }
+}
+
+/**
+ * Validate load rows, as `renderTimelineSvg` and GanttChart do: without load rows there may be no load segments;
+ * otherwise the row IDs must be non-empty and unique and `loadRowHeight` at least 16. Returns the load row IDs, or
+ * undefined when there are no load rows.
+ */
+export function checkLoadRows(
+  loadRows: readonly TimelineLoadRow[] | undefined, loadSegments: readonly TimelineLoadSegment[] | undefined, loadRowHeight: number,
+): Set<string> | undefined {
+  if (!loadRows?.length) {
+    if (loadSegments?.length) throw new Error('loadSegments require loadRows')
+    return undefined
+  }
+  const ids = uniqueIds(loadRows, 'load row')
+  if (!Number.isFinite(loadRowHeight) || loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
+  return ids
 }
 
 /**

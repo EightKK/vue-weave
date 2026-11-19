@@ -6,6 +6,7 @@ import { graphIncidentCurve } from './graphCurve.js'
 import { checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
 import { assertGraphLayoutDirection } from './graphOrient.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
+import { unknownReferenceError } from './ids.js'
 
 /**
  * A position a node already has: the top-left corner of its box, optionally with the box size and rank. A `GraphBox`
@@ -103,7 +104,7 @@ export function layoutGraphIncrementally(
   const index = indexGraph(nodes, edges)
   const fixed = new Set<string>()
   for (const id of options.fixedIds ?? []) {
-    if (!index.outgoing.has(id)) throw new Error('Unknown fixed graph node: ' + id)
+    if (!index.outgoing.has(id)) throw unknownReferenceError('node', 'fixedIds', id)
     if (!positions.has(id)) throw new Error('A fixed graph node needs a position: ' + id)
     fixed.add(id)
   }

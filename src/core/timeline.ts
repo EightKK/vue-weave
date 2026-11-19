@@ -274,9 +274,9 @@ export function editTimeRange(
 ): TimeRange {
   checkRange(range, true)
   checkRange(bounds)
-  if (!Number.isFinite(delta) || !Number.isFinite(step) || step <= 0 || !Number.isFinite(minDuration) || minDuration <= 0) {
-    throw new RangeError('Editing requires a finite displacement and positive snap/minimum duration')
-  }
+  if (!Number.isFinite(delta)) throw new RangeError('delta must be finite')
+  if (!Number.isFinite(step) || step <= 0) throw new RangeError('snap must be finite and positive')
+  if (!Number.isFinite(minDuration) || minDuration <= 0) throw new RangeError('minDuration must be finite and positive')
   if (!['move', 'start', 'end'].includes(mode)) throw new RangeError('Unknown edit mode')
   if (range.start < bounds.start || range.end > bounds.end) throw new RangeError('Editable intervals must fit inside editBounds')
   if (mode !== 'move' && range.end - range.start < minDuration) throw new RangeError('The interval is shorter than minDuration')

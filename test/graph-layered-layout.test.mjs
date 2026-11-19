@@ -64,7 +64,7 @@ test('named ports validate direction and use moved endpoint coordinates', () => 
   ]
   const graphEdges = [{ id: 'line', from: 'a', to: 'b', fromPort: 'output', toPort: 'input' }]
   assert.throws(() => indexGraph(graphNodes, [{ ...graphEdges[0], from: 'b', fromPort: 'input' }]), /Invalid port/)
-  assert.throws(() => indexGraph(graphNodes, [{ ...graphEdges[0], toPort: 'missing' }]), /Invalid port/)
+  assert.throws(() => indexGraph(graphNodes, [{ ...graphEdges[0], toPort: 'missing' }]), { name: 'Error', message: 'Unknown port in graph edge line: missing' })
   const layout = layoutLayeredGraph(graphNodes, graphEdges, { nodeWidth: 100, nodeHeight: 40 })
   const moved = applyGraphPositions(layout, graphEdges, new Map([['a', { x: 40, y: 120 }]]))
   const routed = routeGraphPorts(moved, new Map(graphNodes.map(node => [node.id, node])), graphEdges, 'LR')

@@ -127,13 +127,13 @@ test('tree and radial layouts accept cycles, empty input and explicit roots', ()
   for (const empty of [layoutTreeGraph([], [], { padding: 0 }), layoutRadialGraph([], [], { padding: 0 })]) {
     assert.ok(empty.width > 0 && empty.height > 0)
   }
-  assert.throws(() => layoutTreeGraph(cycle, e, { roots: ['zz'] }), /Unknown root/)
-  assert.throws(() => layoutRadialGraph(cycle, e, { roots: ['zz'] }), /Unknown root/)
+  assert.throws(() => layoutTreeGraph(cycle, e, { roots: ['zz'] }), { name: 'Error', message: 'Unknown node in roots: zz' })
+  assert.throws(() => layoutRadialGraph(cycle, e, { roots: ['zz'] }), { name: 'Error', message: 'Unknown node in roots: zz' })
   assert.throws(() => layoutTreeGraph(cycle, e, { nodeWidth: 0 }), RangeError)
   assert.throws(() => layoutTreeGraph(cycle, e, { rowGap: -1 }), RangeError)
   assert.throws(() => layoutTreeGraph(cycle, e, { direction: 'up' }), RangeError)
   assert.throws(() => layoutRadialGraph(cycle, e, { ringGap: Infinity }), RangeError)
-  assert.throws(() => layoutTreeGraph(cycle, edges(['a', 'zz'])), /Unknown endpoint/)
+  assert.throws(() => layoutTreeGraph(cycle, edges(['a', 'zz'])), /Unknown node in graph edge .*: zz/)
 })
 
 test('radial layout places depth rings around a centred root without overlaps', () => {
@@ -196,8 +196,8 @@ test('shortestGraphPath supports BFS, Dijkstra, undirected search and unreachabl
   assert.equal(shortestGraphPath(n, e, 'd', 'a'), null)
   assert.deepEqual(shortestGraphPath(n, e, 'd', 'a', { directed: false, weight: edge => edge.w })?.nodeIds, ['d', 'b', 'a'])
   assert.equal(shortestGraphPath(n, e, 'a', 'z', { directed: false }), null)
-  assert.throws(() => shortestGraphPath(n, e, 'a', 'nope'), /Unknown graph node/)
-  assert.throws(() => shortestGraphPath(n, e, 'nope', 'a'), Error)
+  assert.throws(() => shortestGraphPath(n, e, 'a', 'nope'), { name: 'Error', message: 'Unknown node in toId: nope' })
+  assert.throws(() => shortestGraphPath(n, e, 'nope', 'a'), { name: 'Error', message: 'Unknown node in fromId: nope' })
   assert.throws(() => shortestGraphPath(n, e, 'a', 'd', { weight: () => -1 }), RangeError)
   assert.throws(() => shortestGraphPath(n, e, 'a', 'd', { weight: () => NaN }), RangeError)
 })

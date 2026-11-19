@@ -219,9 +219,9 @@ test('layoutGraphIncrementally validates its input and ignores positions of unkn
   }
   assert.throws(() => layoutGraphIncrementally(baseNodes, baseEdges, positions, { nodeWidth: 0 }), RangeError)
   assert.throws(() => layoutGraphIncrementally(baseNodes, baseEdges, positions, { sizes: new Map([['b', { width: 10, height: -1 }]]) }), RangeError)
-  assert.throws(() => layoutGraphIncrementally(baseNodes, baseEdges, positions, { fixedIds: ['zzz'] }), /Unknown fixed graph node: zzz/)
+  assert.throws(() => layoutGraphIncrementally(baseNodes, baseEdges, positions, { fixedIds: ['zzz'] }), { name: 'Error', message: 'Unknown node in fixedIds: zzz' })
   assert.throws(() => layoutGraphIncrementally(baseNodes, baseEdges, positions, { fixedIds: ['b'] }), /needs a position: b/)
-  assert.throws(() => layoutGraphIncrementally(baseNodes, [edge('a', 'q')], positions), /Unknown endpoint/)
+  assert.throws(() => layoutGraphIncrementally(baseNodes, [edge('a', 'q')], positions), /Unknown node in graph edge .*: q/)
   assert.throws(() => layoutGraphIncrementally([...baseNodes, { id: 'a' }], baseEdges, positions), /Duplicate graph node ID/)
   // Sizes: from the position, then from `sizes`, then the defaults. Inputs are not modified.
   const sizes = new Map([['b', { width: 60, height: 30 }]])

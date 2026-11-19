@@ -11,6 +11,7 @@ import {
   buildGraphObstacleIndex, graphPolylineClear, resolveObstacleAvoidance, routeAroundObstacles, type GraphObstacleAvoidance,
   type GraphObstacleIndex, type ResolvedAvoidance,
 } from './graphObstacleRouting.js'
+import { unknownReferenceError } from './ids.js'
 
 /** How NetworkGraph and `routeGraphEdges` draw edges. `curve` is the layout's own routing. */
 export type GraphEdgeStyle = 'curve' | 'orthogonal' | 'straight'
@@ -399,7 +400,8 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
   const { direction, cornerRadius, spacing } = settings
   const style = edge.edgeStyle ?? settings.style
   const source = layout.boxes.get(edge.from), target = layout.boxes.get(edge.to)
-  if (!source || !target) throw new Error('Unknown endpoint on graph edge: ' + edge.id)
+  if (!source) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.from)
+  if (!target) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.to)
   const waypoints = edge.points ?? []
   for (const point of waypoints) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError('Graph edge waypoints must be finite: ' + edge.id)

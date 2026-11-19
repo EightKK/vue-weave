@@ -108,7 +108,7 @@ test('quantities must be finite numbers of at least 0; a zero keeps a hairline b
   assert.deepEqual([band.thickness, band.width], [0, 1])
   assert.ok(zero.paths.has('lot-a'))
   assert.equal(layoutFlowGraph(nodes, [flowEdge('lot-a', 'lot', 'a', 0)], { ...options, minBandWidth: 0 }).bands[0].width, 0)
-  assert.throws(() => layoutFlowGraph(nodes, [flowEdge('e', 'lot', 'missing', 1)], options), /Unknown endpoint on graph edge: e/)
+  assert.throws(() => layoutFlowGraph(nodes, [flowEdge('e', 'lot', 'missing', 1)], options), { name: 'Error', message: 'Unknown node in graph edge e: missing' })
   assert.throws(() => layoutFlowGraph([...nodes, node('lot')], [], options), /Duplicate graph node ID/)
   assert.throws(() => layoutFlowGraph(nodes, edges, { unit: 'pcs' }), /quantity accessor/)
   for (const bad of [

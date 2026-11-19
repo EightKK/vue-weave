@@ -164,8 +164,8 @@ test('rule input is validated', () => {
     { name: 'RangeError', message: 'Graph port rule maxConnections must be a non-negative integer: note has -2' })
   assert.throws(check({ default: { maxConnections: Infinity } }), RangeError)
   assert.throws(check({ ports: { ghost: { a: {} } } }), { name: 'Error', message: 'Unknown node in graph port rules: ghost' })
-  assert.throws(check({ ports: { sum: { zz: {} } } }), { name: 'Error', message: 'Unknown port in graph port rules: sum · zz' })
-  assert.throws(check({ ports: { note: { a: {} } } }), /Unknown port in graph port rules: note · a/)
+  assert.throws(check({ ports: { sum: { zz: {} } } }), { name: 'Error', message: 'Unknown port in graph port rules: zz (graph node sum)' })
+  assert.throws(check({ ports: { note: { a: {} } } }), { name: 'Error', message: 'Unknown port in graph port rules: a (graph node note)' })
   assert.throws(check({ nodes: { ghost: {} } }), /Unknown node in graph port rules: ghost/)
   assert.throws(check({ nodes: { note: { direction: 'sideways' } } }), /direction must be in, out or both/)
   assert.throws(check({ nodes: { note: { type: '' } } }), /type must be a nonempty string/)
@@ -173,7 +173,7 @@ test('rule input is validated', () => {
   assert.throws(check({ nodes: { note: null } }), /must be an object/)
   assert.throws(check(null), /Graph port rules must be an object/)
   // The graph itself is validated as indexGraph does.
-  assert.throws(() => createGraphConnectionChecker(nodes, [{ id: 'x', from: 'src', to: 'nowhere' }], {}), /Unknown endpoint/)
+  assert.throws(() => createGraphConnectionChecker(nodes, [{ id: 'x', from: 'src', to: 'nowhere' }], {}), { name: 'Error', message: 'Unknown node in graph edge x: nowhere' })
   // Inputs are not modified.
   const frozen = structuredClone(rules)
   graphConnectionViolations(nodes, edges, frozen)

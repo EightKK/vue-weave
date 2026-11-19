@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { GanttChart, NetworkGraph } from 'vue-weave'
+import { GanttChart, NetworkGraph, editTimeRange } from 'vue-weave'
 
 // The prop checks of the components follow the core's rules: RangeError for invalid numbers and geometry (and unknown
 // values of a string option), Error for bad references, invalid or duplicate IDs and cycles. Component-owned ID checks
@@ -31,8 +31,11 @@ const ganttCases = [
   ['pixelsPerUnit (core)', { pixelsPerUnit: 0 }, RangeError, 'pixelsPerUnit must be finite and positive'],
   ['inverted editBounds (core)', { editBounds: { start: 5, end: 1 } }, RangeError, 'A range must have finite ordered endpoints'],
   ['rowHeight', { rowHeight: 10 }, RangeError, 'rowHeight is too small for laneCount'],
-  ['snap', { snap: 0 }, RangeError, 'Invalid snap or minDuration'],
-  ['minDuration', { minDuration: -1 }, RangeError, 'Invalid snap or minDuration'],
+  ['snap', { snap: 0 }, RangeError, 'snap must be finite and positive'],
+  ['minDuration', { minDuration: -1 }, RangeError, 'minDuration must be finite and positive'],
+  ['non-finite snap', { snap: Infinity }, RangeError, 'snap must be finite and positive'],
+  ['non-finite minDuration', { minDuration: Number.NaN }, RangeError, 'minDuration must be finite and positive'],
+  ['zoom preset snap', { zoomPresets: [{ ...preset('p'), snap: 0 }], zoomPreset: 'p' }, RangeError, 'snap must be finite and positive'],
   ['tickSteps', { tickSteps: [2, 1] }, RangeError, 'tickSteps must be positive and ascending'],
   ['scale width', { scale: { width: 0, toX: t => t, toTime: x => x } }, RangeError, 'Invalid time scale width'],
   ['now', { now: Number.NaN }, RangeError, 'now must be finite'],
@@ -72,6 +75,9 @@ const ganttCases = [
   ['column before marker', { markers: [marker('')], columns: [column('')] }, Error, 'Invalid column ID: ""'],
   ['header bands before marker', { headerBands: [[band(2, 1)]], markers: [marker('')] }, RangeError, 'Timeline bands must be finite, ordered and nonoverlapping'],
   ['marker before load row', { loadRows: [loadRow('')], markers: [marker('m', Number.NaN)] }, RangeError, 'Invalid timeline marker: m'],
+  ['rowHeight before snap', { rowHeight: 10, snap: 0 }, RangeError, 'rowHeight is too small for laneCount'],
+  ['snap before minDuration', { snap: 0, minDuration: 0 }, RangeError, 'snap must be finite and positive'],
+  ['minDuration before tickSteps', { minDuration: 0, tickSteps: [] }, RangeError, 'minDuration must be finite and positive'],
 ]
 
 test('GanttChart prop checks report one class and message each through validation-error', async () => {
@@ -120,15 +126,29 @@ const graphCases = [
   ['missing custom layout path', { layout: custom(layout => layout.paths.delete('ab')) }, Error, 'Missing layout path: ab'],
   ['routingPolicy', { routingPolicy: 'keep' }, RangeError, 'Unknown routing policy: keep'],
   ['parallelEdgeSpacing', { parallelEdgeSpacing: 0 }, RangeError, 'parallelEdgeSpacing must be a positive finite number of chart units'],
-  ['empty group ID', { groups: [group('', ['a'])] }, Error, 'Invalid graph group: '],
-  ['duplicate group ID', { groups: [group('g', ['a']), group('g', ['b'])] }, Error, 'Invalid graph group: g'],
-  ['unknown group member', { groups: [group('g', ['zz'])] }, Error, 'Invalid or repeated group member: zz'],
-  ['repeated group member', { groups: [group('g', ['a']), group('h', ['a'])] }, Error, 'Invalid or repeated group member: a'],
-  ['unknown parent group', { groups: [group('g', ['a'], 'zz')] }, Error, 'Unknown parent group: zz (group g)'],
+  ['numeric node ID (core)', { nodes: [nodes[0], { id: 5, label: 'B' }], edges: [] }, Error, 'Invalid graph node ID: 5'],
+  ['duplicate node ID (core)', { nodes: [nodes[0], nodes[0]], edges: [] }, Error, 'Duplicate graph node ID: a'],
+  ['numeric edge ID (core)', { edges: [{ ...edges[0], id: 7 }] }, Error, 'Invalid graph edge ID: 7'],
+  ['duplicate edge ID (core)', { edges: [edges[0], edges[0]] }, Error, 'Duplicate graph edge ID: ab'],
+  ['unknown edge end (core)', { edges: [{ ...edges[0], to: 'zz' }] }, Error, 'Unknown node in graph edge ab: zz'],
+  ['numeric port ID (core)', { nodes: [{ ...nodes[0], ports: [{ id: 3, side: 'right' }] }, nodes[1]] }, Error, 'Invalid port ID: 3 (graph node a)'],
+  ['duplicate port ID (core)', { nodes: [{ ...nodes[0], ports: [{ id: 'p', side: 'right' }, { id: 'p', side: 'left' }] }, nodes[1]] }, Error, 'Duplicate port ID: p (graph node a)'],
+  ['unknown edge port (core)', { edges: [{ ...edges[0], fromPort: 'q' }] }, Error, 'Unknown port in graph edge ab: q'],
+  ['numeric node ID with a custom layout (core)', { nodes: [nodes[0], { id: 5, label: 'B' }], edges: [], layout: custom(() => {}) }, Error, 'Invalid graph node ID: 5'],
+  ['empty group ID', { groups: [group('', ['a'])] }, Error, 'Invalid graph group ID: ""'],
+  ['numeric group ID', { groups: [group(5, ['a'])] }, Error, 'Invalid graph group ID: 5'],
+  ['duplicate group ID', { groups: [group('g', ['a']), group('g', ['b'])] }, Error, 'Duplicate graph group ID: g'],
+  ['unknown group member', { groups: [group('g', ['zz'])] }, Error, 'Unknown node in graph group g: zz'],
+  ['repeated group member', { groups: [group('g', ['a']), group('h', ['a'])] }, Error, 'Duplicate group member ID: a (graph group h)'],
+  ['unknown parent group', { groups: [group('g', ['a'], 'zz')] }, Error, 'Unknown parent group in graph group g: zz'],
   ['group cycle', { groups: [group('x', ['a'], 'y'), group('y', ['b'], 'x')] }, Error, 'Graph group hierarchy contains a cycle at group: x'],
   ['empty group', { groups: [group('x', [])] }, Error, 'Invalid graph group: x'],
-  ['lane ID (core)', { lanes: [lane('')] }, Error, 'NetworkGraph lane IDs must be non-empty strings'],
-  ['duplicate lane ID (core)', { lanes: [lane('l'), lane('l')] }, Error, 'NetworkGraph has a duplicate lane ID: l'],
+  ['numeric group ID when collapsed', { groups: [group('g', ['a']), group(5, ['b'])], collapsedGroupIds: ['g'] }, Error, 'Invalid graph group ID: 5'],
+  ['repeated group member when collapsed', { groups: [group('g', ['a']), group('h', ['a'])], collapsedGroupIds: ['g'] }, Error, 'Duplicate group member ID: a (graph group h)'],
+  ['unknown parent group when collapsed', { groups: [group('g', ['a'], 'zz')], collapsedGroupIds: ['g'] }, Error, 'Unknown parent group in graph group g: zz'],
+  ['lane ID (core)', { lanes: [lane('')] }, Error, 'Invalid swimlane ID: ""'],
+  ['numeric lane ID (core)', { lanes: [lane(2)] }, Error, 'Invalid swimlane ID: 2'],
+  ['duplicate lane ID (core)', { lanes: [lane('l'), lane('l')] }, Error, 'Duplicate swimlane ID: l'],
   ['lane geometry (core)', { lanes: [{ ...lane('l'), width: -1 }] }, RangeError, 'NetworkGraph lane l needs finite geometry with nonnegative sizes'],
   ['edgeBands (core)', { edgeBands: new Map([['ab', { width: -1 }]]) }, RangeError, 'NetworkGraph edgeBands: the band width of edge ab must be finite and nonnegative'],
   ['selectionMode', { selectionMode: 'circle' }, RangeError, 'Unknown selection mode: circle'],
@@ -154,4 +174,50 @@ test('NetworkGraph prop checks throw one class and message each while rendering'
       return true
     }, name)
   }
+})
+
+test('GanttChart and editTimeRange report an invalid snap or minDuration with the same texts', async () => {
+  const range = { start: 0, end: hour }, bounds = { start: 0, end: 8 * hour }
+  for (const [props, args, message] of [
+    [{ snap: 0 }, [0, bounds], 'snap must be finite and positive'],
+    [{ snap: -1, minDuration: hour }, [-1, bounds, hour], 'snap must be finite and positive'],
+    [{ minDuration: 0 }, [hour, bounds, 0], 'minDuration must be finite and positive'],
+    [{ minDuration: Infinity }, [hour, bounds, Infinity], 'minDuration must be finite and positive'],
+    // Both invalid: snap is checked first.
+    [{ snap: Number.NaN, minDuration: -1 }, [Number.NaN, bounds, -1], 'snap must be finite and positive'],
+  ]) {
+    const reported = []
+    const app = createSSRApp({ render: () => h(GanttChart, { ...ganttBase, ...props, onValidationError: error => reported.push(error) }) })
+    app.config.errorHandler = () => {}
+    await renderToString(app)
+    assert.equal(reported[0]?.constructor, RangeError, message)
+    assert.equal(reported[0]?.message, message)
+    assert.throws(() => editTimeRange(range, 'end', hour, ...args), { name: 'RangeError', message })
+  }
+  // A non-finite displacement is reported before the snap; minDuration may be smaller than snap.
+  assert.throws(() => editTimeRange(range, 'move', Number.NaN, 0, bounds), { name: 'RangeError', message: 'delta must be finite' })
+  assert.deepEqual(editTimeRange(range, 'end', -hour, hour, bounds, 1000), { start: 0, end: 1000 })
+})
+
+test('NetworkGraph rejects every invalid node, edge, port, group and lane ID with the shared texts', async () => {
+  const render = props => {
+    const app = createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }) })
+    app.config.warnHandler = () => {}
+    return renderToString(app)
+  }
+  const sites = [
+    ['graph node', id => ({ nodes: [nodes[0], { id, label: 'B' }], edges: [] })],
+    ['graph edge', id => ({ edges: [{ ...edges[0], id }] })],
+    ['port', id => ({ nodes: [{ ...nodes[0], ports: [{ id, side: 'right' }] }, nodes[1]] }), ' (graph node a)'],
+    ['graph group', id => ({ groups: [group(id, ['a'])] })],
+    ['swimlane', id => ({ lanes: [lane(id)] })],
+  ]
+  for (const [kind, props, context = ''] of sites) {
+    for (const [value, shown] of [[5, '5'], [0, '0'], ['', '""'], [undefined, 'undefined'], [null, 'null'], [{}, 'object']]) {
+      await assert.rejects(render(props(value)), { name: 'Error', message: `Invalid ${kind} ID: ${shown}${context}` }, `${kind}: ${shown}`)
+    }
+  }
+  // String IDs that look like numbers are valid.
+  const html = await render({ nodes: [{ id: '0', label: 'Zero' }, { id: '5', label: 'Five' }], edges: [{ id: '1', from: '0', to: '5' }], groups: [group('2', ['0'])] })
+  assert.match(html, /Zero/)
 })

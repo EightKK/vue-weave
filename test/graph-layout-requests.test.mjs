@@ -86,7 +86,7 @@ test('buildGraphLayoutRequests makes one shown request without collapsed groups'
   assert.equal(requests.shown.edges, edges)
   assert.equal(requests.shown.direction, 'LR')
   assert.equal(requests.shown.inputKey, graphLayoutInputKey({ scope: 'shown', nodes, edges, groups }))
-  assert.throws(() => buildGraphLayoutRequests({ nodes, edges }, ''), /requestId/)
+  assert.throws(() => buildGraphLayoutRequests({ nodes, edges }, ''), { name: 'Error', message: 'Invalid graph layout request ID: ""' })
 })
 
 test('buildGraphLayoutRequests reproduces the expanded and shown layout calls of NetworkGraph', async () => {

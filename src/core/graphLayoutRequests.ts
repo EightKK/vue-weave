@@ -8,6 +8,7 @@ import { markBuiltinRoutes } from './graphGeometry.js'
 import { assertGraphLayoutDirection, isGraphLayoutDirection } from './graphOrient.js'
 import { isGraphPortSide } from './graphPortSide.js'
 import type { GraphLabels, NetworkGroup, NetworkNode } from './types.js'
+import { invalidIdError, isId } from './ids.js'
 
 /**
  * Which of the two layouts NetworkGraph asks for a request is: 'shown' lays out the nodes and edges it draws (with
@@ -169,7 +170,7 @@ export function graphLayoutInputKey(input: GraphLayoutKeyInput): string {
 export function buildGraphLayoutRequests<N extends NetworkNode, E extends GraphEdge, G extends NetworkGroup = NetworkGroup>(
   input: GraphLayoutRequestInput<N, E, G>, requestId: string,
 ): GraphLayoutRequests<N, E, G> {
-  if (typeof requestId !== 'string' || !requestId) throw new Error('A graph layout request needs a nonempty requestId')
+  if (!isId(requestId)) throw invalidIdError('graph layout request', requestId)
   const { nodes, edges, groups = [], direction = 'LR', positions, sizes, fixedIds, addedIds, settings, revision = '' } = input
   const known = new Set(groups.map(group => group.id))
   const active = input.collapsedGroupIds && groups.length ? [...new Set(input.collapsedGroupIds)].filter(id => known.has(id)) : []

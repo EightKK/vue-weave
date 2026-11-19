@@ -1,7 +1,8 @@
 // Validation of the GanttChart props. The checks run in a fixed order, so the first problem found is the one reported
 // through `validation-error`. They derive the row tree and the load histogram on the way, because those use the same
 // error boundary. ID checks use the shared texts of the core (`Invalid <kind> ID: <value>`, `Duplicate <kind> ID: <id>`),
-// and the checks that `renderTimelineSvg` also makes (load rows, header bands, markers) use its texts and classes.
+// and the checks that `renderTimelineSvg` also makes (columns, load rows, header bands, markers) are the same internal
+// checks it calls.
 import type {
   TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment, TimelineMarker,
   TimelineMarkerRange, TimelineRow, TimelineZoomPreset,
@@ -10,8 +11,10 @@ import {
   createTimeScale, createTimelineRowTree, resourceLoadHistogram, timelineLabelColumnId, validateTimelineData, type DependencyPathStyle,
   type TimeRange, type TimeScale,
 } from '../../core/timeline.js'
-import { baselineSelection, checkMarkerRanges, checkNonWorkingPeriods } from '../../core/barSegments.js'
-import { checkId, uniqueIds } from '../../core/ids.js'
+import {
+  baselineSelection, checkBandsAndMarkers, checkLoadRows, checkMarkerRanges, checkNonWorkingPeriods, checkTimelineColumns,
+} from '../../core/barSegments.js'
+import { checkId } from '../../core/ids.js'
 
 /** The props as validated: the active zoom preset already replaces the scale settings it overrides. */
 export interface GanttValidationInput<R extends TimelineRow> {
@@ -52,13 +55,8 @@ export interface GanttValidationInput<R extends TimelineRow> {
 }
 
 function validateLoad<R extends TimelineRow>(input: GanttValidationInput<R>) {
-  if (!input.loadRows?.length) {
-    if (input.loadSegments?.length) throw new Error('loadSegments require loadRows')
-    return undefined
-  }
-  const ids = uniqueIds(input.loadRows, 'load row')
-  if (!Number.isFinite(input.loadRowHeight) || input.loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
-  return resourceLoadHistogram(input.loadSegments ?? [], ids)
+  const ids = checkLoadRows(input.loadRows, input.loadSegments, input.loadRowHeight)
+  return ids && resourceLoadHistogram(input.loadSegments ?? [], ids)
 }
 
 function validatePresets<R extends TimelineRow>(input: GanttValidationInput<R>) {
@@ -72,25 +70,8 @@ function validatePresets<R extends TimelineRow>(input: GanttValidationInput<R>) 
 
 /** Extra columns, header bands (including those of the active zoom preset), markers, marker ranges and baselines. */
 function validateDisplay<R extends TimelineRow>(input: GanttValidationInput<R>) {
-  const columnIds = new Set<string>()
-  for (const column of input.columns ?? []) {
-    checkId('column', column.id, columnIds)
-    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
-  }
-  for (const level of input.headerBands ?? []) {
-    let previousEnd = -Infinity
-    for (const band of level) {
-      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
-      }
-      previousEnd = band.end
-    }
-  }
-  const markerIds = new Set<string>()
-  for (const item of input.markers ?? []) {
-    checkId('marker', item.id, markerIds)
-    if (!Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
-  }
+  checkTimelineColumns(input.columns ?? [])
+  checkBandsAndMarkers(input.headerBands, input.markers)
   if (input.markerRanges?.length) checkMarkerRanges(input.markerRanges, new Set(input.rows.map(row => row.id)))
   baselineSelection(input.bars, input.baselineIds)
 }
@@ -102,7 +83,8 @@ export function validateGanttProps<R extends TimelineRow>(input: GanttValidation
   createTimeScale(input.range, input.pixelsPerUnit)
   createTimeScale(input.bounds, 1)
   if (!Number.isFinite(input.rowHeight) || input.rowHeight < 8 + input.laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
-  if (!Number.isFinite(input.snap) || input.snap <= 0 || !Number.isFinite(input.minDuration) || input.minDuration <= 0) throw new RangeError('Invalid snap or minDuration')
+  if (!Number.isFinite(input.snap) || input.snap <= 0) throw new RangeError('snap must be finite and positive')
+  if (!Number.isFinite(input.minDuration) || input.minDuration <= 0) throw new RangeError('minDuration must be finite and positive')
   const steps = input.tickSteps
   if (!steps.length || steps.some((step, i) => !Number.isFinite(step) || step <= 0 || (i > 0 && step < steps[i - 1]!))) throw new RangeError('tickSteps must be positive and ascending')
   if (input.scale && (!Number.isFinite(input.scale.width) || input.scale.width <= 0)) throw new RangeError('Invalid time scale width')

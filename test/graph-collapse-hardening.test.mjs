@@ -87,7 +87,7 @@ test('collapseGraphGroups reports the same errors for cycles and unknown parents
     message: 'Graph group hierarchy contains a cycle at group: y',
   })
   assert.throws(() => collapseGraphGroups(nodes, [], [group('x', 'a', 'y'), group('y', 'b', 'nope')], []), {
-    name: 'Error', message: 'Unknown parent group: nope (group y)',
+    name: 'Error', message: 'Unknown parent group in graph group y: nope',
   })
 })
 

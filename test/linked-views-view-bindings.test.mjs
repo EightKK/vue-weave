@@ -78,7 +78,7 @@ test('traverseGraph follows direction, hop limit and reports unknown IDs', () =>
   assert.deepEqual(traverseGraph(graph, ['nope', 'b', 'nope'], { direction: 'forward', maxHops: 1 }).unknownIds, ['nope'])
   assert.throws(() => traverseGraph(graph, ['a'], { maxHops: -1 }), RangeError)
   assert.throws(() => traverseGraph(graph, ['a'], { maxHops: 1.5 }), RangeError)
-  assert.throws(() => traverseGraph({ nodes: gnodes, edges: [{ id: 'bad', from: 'a', to: 'zz' }] }, ['a']), /Unknown endpoint/)
+  assert.throws(() => traverseGraph({ nodes: gnodes, edges: [{ id: 'bad', from: 'a', to: 'zz' }] }, ['a']), { name: 'Error', message: 'Unknown node in graph edge bad: zz' })
 })
 
 test('traverseGraph terminates on cycles and walks a long chain without recursion', () => {

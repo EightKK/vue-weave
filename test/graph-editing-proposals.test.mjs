@@ -36,7 +36,7 @@ test('graphDeletion rejects unknown IDs and invalid graphs', () => {
   assert.throws(() => graphDeletion(nodes, edges, ['missing']), { name: 'Error', message: 'Unknown node in graph deletion: missing' })
   assert.throws(() => graphDeletion(nodes, edges, [], ['missing']), { name: 'Error', message: 'Unknown edge in graph deletion: missing' })
   assert.throws(() => graphDeletion([...nodes, { id: 'a', label: 'Again' }], edges, ['a']), /Duplicate graph node ID: a/)
-  assert.throws(() => graphDeletion(nodes, [{ id: 'x', from: 'a', to: 'nowhere' }], []), /Unknown endpoint on graph edge: x/)
+  assert.throws(() => graphDeletion(nodes, [{ id: 'x', from: 'a', to: 'nowhere' }], []), { name: 'Error', message: 'Unknown node in graph edge x: nowhere' })
 })
 
 test('removeGraphElements returns new arrays and leaves the input untouched', () => {

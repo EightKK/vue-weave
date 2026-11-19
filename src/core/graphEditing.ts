@@ -1,5 +1,6 @@
 import { indexGraph } from './graph.js'
 import type { GraphEdge, GraphPoint, IdentifiedNode } from './graph.js'
+import { duplicateIdError, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
 /**
  * A deletion proposal. `nodeIds` follows the order of the node array and `edgeIds` the order of the edge array.
@@ -20,13 +21,13 @@ export function graphDeletion(
   const index = indexGraph(nodes, edges)
   const removedNodes = new Set<string>()
   for (const id of nodeIds) {
-    if (!index.outgoing.has(id)) throw new Error('Unknown node in graph deletion: ' + id)
+    if (!index.outgoing.has(id)) throw unknownReferenceError('node', 'graph deletion', id)
     removedNodes.add(id)
   }
   const knownEdges = new Set(edges.map(edge => edge.id))
   const removedEdges = new Set<string>()
   for (const id of edgeIds) {
-    if (!knownEdges.has(id)) throw new Error('Unknown edge in graph deletion: ' + id)
+    if (!knownEdges.has(id)) throw unknownReferenceError('edge', 'graph deletion', id)
     removedEdges.add(id)
   }
   return {
@@ -89,13 +90,13 @@ export function cloneGraphElements<N extends IdentifiedNode, E extends GraphEdge
   const usedNodes = new Set(nodes.map(node => node.id))
   const requested = new Set<string>()
   for (const id of nodeIds) {
-    if (!usedNodes.has(id)) throw new Error('Unknown node in graph clone: ' + id)
+    if (!usedNodes.has(id)) throw unknownReferenceError('node', 'graph clone', id)
     requested.add(id)
   }
   const newId = (id: string, kind: 'node' | 'edge', used: Set<string>) => {
     const created = options.createId(id, kind)
-    if (typeof created !== 'string' || !created) throw new Error('createId returned an empty ' + kind + ' ID for: ' + id)
-    if (used.has(created)) throw new Error('Cloned ' + kind + ' ID is already in use: ' + created)
+    if (!isId(created)) throw inContext(invalidIdError('graph ' + kind, created), 'createId for ' + id)
+    if (used.has(created)) throw inContext(duplicateIdError('graph ' + kind, created), 'createId for ' + id)
     used.add(created)
     return created
   }

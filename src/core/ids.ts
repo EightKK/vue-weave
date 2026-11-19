@@ -1,8 +1,8 @@
-// Internal ID validation and error texts shared by the planning, timeline and data functions. Not part of the public
-// entry. An ID is a non-empty string; every other value is invalid. Failures throw an Error (never a RangeError):
+// Internal ID validation and error texts shared by the planning, timeline, data and graph functions. Not part of the
+// public entry. An ID is a non-empty string; every other value is invalid. Failures throw an Error (never a RangeError):
 //   Invalid <kind> ID: <value>
 //   Duplicate <kind> ID: <id>
-//   Unknown <kind> in <owner>: <value>         (assignment references)
+//   Unknown <kind> in <owner>: <value>         (references: assignments, graph edge ends and ports, group members, ...)
 //   Unknown dependency endpoint: <dependency ID>
 // and `withContext` appends ` (<context>)` to the message of any error thrown by a check, keeping its class.
 

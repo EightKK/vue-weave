@@ -36,13 +36,13 @@ test('nested groups validate their hierarchy and render parents before children'
   assert.doesNotMatch(html, /NaN|Infinity/)
   const onlyChildren = await render([{ id: 'outer', label: 'Outer', nodeIds: [] }, { id: 'inner', label: 'Inner', nodeIds: ['a'], parentId: 'outer' }])
   assert.doesNotMatch(onlyChildren, /NaN|Infinity/)
-  await assert.rejects(render([{ id: 'g', label: 'G', nodeIds: ['a'], parentId: 'missing' }]), /Unknown parent group: missing/)
+  await assert.rejects(render([{ id: 'g', label: 'G', nodeIds: ['a'], parentId: 'missing' }]), { name: 'Error', message: 'Unknown parent group in graph group g: missing' })
   await assert.rejects(render([
     { id: 'x', label: 'X', nodeIds: ['a'], parentId: 'y' }, { id: 'y', label: 'Y', nodeIds: ['b'], parentId: 'x' },
   ]), /cycle/)
   await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: ['a'], parentId: 'x' }]), /cycle/)
   await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: [] }]), /Invalid graph group: x/)
-  await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: ['a'] }, { id: 'y', label: 'Y', nodeIds: ['a'], parentId: 'x' }]), /repeated group member: a/)
+  await assert.rejects(render([{ id: 'x', label: 'X', nodeIds: ['a'] }, { id: 'y', label: 'Y', nodeIds: ['a'], parentId: 'x' }]), { name: 'Error', message: 'Duplicate group member ID: a (graph group y)' })
 })
 
 test('matchIds and dimmedIds dim nodes and the edges that touch them', async () => {

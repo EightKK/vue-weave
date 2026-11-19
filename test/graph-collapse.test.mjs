@@ -102,13 +102,13 @@ test('collapseGraphGroups keeps ports on visible ends, drops waypoints of re-att
   const alone = collapseGraphGroups(ported, links.slice(0, 1), [{ id: 'g', label: 'G', nodeIds: ['q', 'r'] }], ['g'])
   assert.deepEqual(alone.edges, [{ id: 'pq', from: 'p', to: 'g', fromPort: 'out', data: 7 }])
   const groups = [{ id: 'g', label: 'G', nodeIds: ['b'] }]
-  assert.throws(() => collapseGraphGroups(nodes, edges, groups, ['missing']), { name: 'Error', message: 'Unknown collapsed group: missing' })
-  assert.throws(() => collapseGraphGroups(nodes, edges, [...groups, { id: 'g', label: 'Again', nodeIds: ['c'] }], []), /Invalid graph group: g/)
-  assert.throws(() => collapseGraphGroups(nodes, edges, [{ id: 'g', label: 'G', nodeIds: ['zz'] }], []), /Invalid or repeated group member: zz/)
-  assert.throws(() => collapseGraphGroups(nodes, edges, [{ ...groups[0], parentId: 'nope' }], []), /Unknown parent group: nope/)
+  assert.throws(() => collapseGraphGroups(nodes, edges, groups, ['missing']), { name: 'Error', message: 'Unknown group in collapsedIds: missing' })
+  assert.throws(() => collapseGraphGroups(nodes, edges, [...groups, { id: 'g', label: 'Again', nodeIds: ['c'] }], []), { name: 'Error', message: 'Duplicate graph group ID: g' })
+  assert.throws(() => collapseGraphGroups(nodes, edges, [{ id: 'g', label: 'G', nodeIds: ['zz'] }], []), { name: 'Error', message: 'Unknown node in graph group g: zz' })
+  assert.throws(() => collapseGraphGroups(nodes, edges, [{ ...groups[0], parentId: 'nope' }], []), { name: 'Error', message: 'Unknown parent group in graph group g: nope' })
   assert.throws(() => collapseGraphGroups(nodes, edges, [
     { id: 'x', label: 'X', nodeIds: ['a'], parentId: 'y' }, { id: 'y', label: 'Y', nodeIds: ['b'], parentId: 'x' },
   ], []), /cycle/)
   assert.throws(() => collapseGraphGroups(nodes, edges, [{ id: 'a', label: 'Clash', nodeIds: ['b'] }], ['a']), /also a node ID: a/)
-  assert.throws(() => collapseGraphGroups(nodes, [{ id: 'x', from: 'a', to: 'zz' }], groups, ['g']), /Unknown endpoint/)
+  assert.throws(() => collapseGraphGroups(nodes, [{ id: 'x', from: 'a', to: 'zz' }], groups, ['g']), { name: 'Error', message: 'Unknown node in graph edge x: zz' })
 })

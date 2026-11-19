@@ -151,8 +151,8 @@ test('the swimlane layout lays out a 12,000-node chain without recursion', () =>
 
 test('validation errors', () => {
   assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes: ['buy', 'buy'], laneOf }), /Duplicate swimlane ID: buy/)
-  assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes: ['', 'buy'], laneOf }), /non-empty/)
-  assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes: ['buy', 'make'], laneOf }), /Unknown swimlane check for graph node measure/)
+  assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes: ['', 'buy'], laneOf }), { name: 'Error', message: 'Invalid swimlane ID: ""' })
+  assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes: ['buy', 'make'], laneOf }), { name: 'Error', message: 'Unknown swimlane in graph node measure: check' })
   assert.throws(() => layoutSwimlaneGraph([{ id: 'loose' }], [], { lanes: ['buy'], laneOf }), /Graph node has no swimlane: loose/)
   assert.throws(() => layoutSwimlaneGraph([{ id: 'loose' }], [], { lanes: ['buy'], laneOf: new Map() }), /no swimlane: loose/)
   assert.throws(() => layoutSwimlaneGraph(nodes, edges, { laneOf }), /lanes array/)
@@ -166,7 +166,7 @@ test('validation errors', () => {
   assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes, laneOf, direction: 'XY' }), RangeError)
   assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes, laneOf, crossingReduction: 'median' }), RangeError)
   assert.throws(() => layoutSwimlaneGraph(nodes, edges, { lanes, laneOf, crossingSweeps: 0 }), RangeError)
-  assert.throws(() => layoutSwimlaneGraph(nodes, [{ id: 'bad', from: 'order', to: 'nowhere' }], { lanes, laneOf }), /Unknown endpoint/)
+  assert.throws(() => layoutSwimlaneGraph(nodes, [{ id: 'bad', from: 'order', to: 'nowhere' }], { lanes, laneOf }), { name: 'Error', message: 'Unknown node in graph edge bad: nowhere' })
   assert.throws(() => graphSwimlaneAt([], { x: Number.NaN, y: 0 }), RangeError)
 })
 
@@ -201,7 +201,7 @@ test('NetworkGraph draws lanes on the server behind the graph, and the markup wi
   const rtl = await render({ layout: () => layout, lanes: layout.lanes, dir: 'rtl' })
   assert.match(rtl, new RegExp(`<text x="${layout.lanes[0].header.width - 8}"`))
   // Invalid lanes throw descriptive errors.
-  await assert.rejects(render({ lanes: [layout.lanes[0], layout.lanes[0]] }), /duplicate lane ID: buy/)
+  await assert.rejects(render({ lanes: [layout.lanes[0], layout.lanes[0]] }), { name: 'Error', message: 'Duplicate swimlane ID: buy' })
   await assert.rejects(render({ lanes: [{ ...layout.lanes[0], width: -1 }] }), RangeError)
 })
 
@@ -217,7 +217,7 @@ test('renderGraphSvg draws lane bands and titles, and nothing changes without la
   assert.doesNotMatch(without, /vw-swimlane/)
   assert.equal(renderGraphSvg(layout, nodes, edges, { lanes: undefined }), without)
   assert.throws(() => renderGraphSvg(layout, nodes, edges, { lanes: [{ ...layout.lanes[0], header: { x: 0, y: 0, width: Number.NaN, height: 1 } }] }), RangeError)
-  assert.throws(() => renderGraphSvg(layout, nodes, edges, { lanes: [{ ...layout.lanes[0], id: '' }] }), /non-empty/)
+  assert.throws(() => renderGraphSvg(layout, nodes, edges, { lanes: [{ ...layout.lanes[0], id: '' }] }), { name: 'Error', message: 'Invalid swimlane ID: ""' })
 })
 
 test('orthogonal and obstacle-avoiding routes keep edges and labels out of the lane headers', () => {

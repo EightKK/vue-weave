@@ -183,7 +183,7 @@ test('empty graphs have positive dimensions and inputs are not mutated', () => {
 })
 
 test('force layout validates references and options', () => {
-  assert.throws(() => layoutForceGraph([node('a')], [edge('x', 'a', 'missing')]), { name: 'Error', message: /Unknown endpoint/ })
+  assert.throws(() => layoutForceGraph([node('a')], [edge('x', 'a', 'missing')]), { name: 'Error', message: 'Unknown node in graph edge x: missing' })
   assert.throws(() => layoutForceGraph([node('a'), node('a')], []), /Duplicate graph node ID/)
   for (const options of [
     { iterations: 0 }, { iterations: 1.5 }, { nodeWidth: 0 }, { nodeHeight: -1 }, { padding: NaN }, { linkDistance: Infinity },

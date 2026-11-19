@@ -9,6 +9,7 @@ import {
   sameRankTurnDistance,
 } from './graphOptions.js'
 import type { GraphRect } from './graphView.js'
+import { duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
 /** One lane of a swimlane layout, in the order the caller lists it. `label` defaults to the ID. */
 export interface GraphSwimlaneSpec {
@@ -74,8 +75,8 @@ export function assertGraphSwimlaneBands(lanes: readonly GraphSwimlaneBand[], wh
   if (!Array.isArray(lanes)) throw new Error(where + ' lanes must be an array')
   const ids = new Set<string>()
   for (const lane of lanes) {
-    if (!lane || typeof lane.id !== 'string' || !lane.id) throw new Error(where + ' lane IDs must be non-empty strings')
-    if (ids.has(lane.id)) throw new Error(where + ' has a duplicate lane ID: ' + lane.id)
+    if (!isId(lane?.id)) throw invalidIdError('swimlane', lane?.id)
+    if (ids.has(lane.id)) throw duplicateIdError('swimlane', lane.id)
     ids.add(lane.id)
     if (typeof lane.label !== 'string') throw new Error(where + ' lane ' + lane.id + ' needs a string label')
     for (const rect of [lane, lane.header]) {
@@ -147,9 +148,10 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
   const lanes: { id: string; label: string }[] = []
   const laneIndex = new Map<string, number>()
   for (const item of options.lanes) {
-    const id = typeof item === 'string' ? item : item?.id
-    if (typeof id !== 'string' || !id) throw new Error('Swimlane IDs must be non-empty strings')
-    if (laneIndex.has(id)) throw new Error('Duplicate swimlane ID: ' + id)
+    // A lane is its ID or a spec with an ID; a value that is neither is shown as the invalid ID itself.
+    const id: unknown = item !== null && typeof item === 'object' ? item.id : item
+    if (!isId(id)) throw invalidIdError('swimlane', id)
+    if (laneIndex.has(id)) throw duplicateIdError('swimlane', id)
     const label = typeof item === 'string' ? id : item.label ?? id
     if (typeof label !== 'string') throw new Error('Swimlane label must be a string: ' + id)
     laneIndex.set(id, lanes.length)
@@ -165,7 +167,7 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
     const lane = typeof laneOf === 'function' ? laneOf(node) : laneOf.get(node.id)
     if (lane === undefined || lane === null || lane === '') throw new Error('Graph node has no swimlane: ' + node.id)
     const index = laneIndex.get(lane)
-    if (index === undefined) throw new Error(`Unknown swimlane ${String(lane)} for graph node ${node.id}`)
+    if (index === undefined) throw unknownReferenceError('swimlane', 'graph node ' + node.id, lane)
     laneOfNode.set(node.id, index)
   }
 

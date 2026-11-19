@@ -9,6 +9,7 @@ import {
 } from './graphOptions.js'
 import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { duplicateIdError, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 import type { GraphEdgeStyle } from './graphRouting.js'
 
 export interface GraphPort {
@@ -67,14 +68,15 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
   const portsByNode = new Map<string, Map<string, GraphPort>>()
 
   for (const { id, ports } of nodes) {
-    if (!id) throw new Error('Graph node IDs must not be empty')
-    if (outgoing.has(id)) throw new Error(`Duplicate graph node ID: ${id}`)
+    if (!isId(id)) throw invalidIdError('graph node', id)
+    if (outgoing.has(id)) throw duplicateIdError('graph node', id)
     if (ports) {
       const indexed = new Map<string, GraphPort>()
       for (const port of ports) {
+        if (!isId(port.id)) throw inContext(invalidIdError('port', port.id), 'graph node ' + id)
+        if (indexed.has(port.id)) throw inContext(duplicateIdError('port', port.id), 'graph node ' + id)
         const offset = port.offset ?? 0.5
-        if (!port.id || indexed.has(port.id)
-          || !['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
+        if (!['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
           throw new Error('Invalid graph port on node: ' + id)
         }
         assertGraphPortSide(id, port)
@@ -87,16 +89,18 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
   }
 
   for (const { id, from, to, fromPort, toPort } of edges) {
-    if (!id) throw new Error('Graph edge IDs must not be empty')
+    if (!isId(id)) throw invalidIdError('graph edge', id)
     const children = outgoing.get(from)
     const parents = incoming.get(to)
-    if (!children || !parents) throw new Error(`Unknown endpoint on graph edge: ${id}`)
+    if (!children) throw unknownReferenceError('node', 'graph edge ' + id, from)
+    if (!parents) throw unknownReferenceError('node', 'graph edge ' + id, to)
     for (const [node, portId, forbidden] of [[from, fromPort, 'target'], [to, toPort, 'source']] as const) {
       if (portId === undefined) continue
       const port = portsByNode.get(node)?.get(portId)
-      if (!port || port.direction === forbidden) throw new Error('Invalid port on graph edge: ' + id)
+      if (!port) throw unknownReferenceError('port', 'graph edge ' + id, portId)
+      if (port.direction === forbidden) throw new Error('Invalid port on graph edge: ' + id)
     }
-    if (edgeIds.has(id)) throw new Error(`Duplicate graph edge ID: ${id}`)
+    if (edgeIds.has(id)) throw duplicateIdError('graph edge', id)
     edgeIds.add(id)
     children.push(to)
     parents.push(from)

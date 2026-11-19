@@ -167,11 +167,11 @@ test('cloneGraphElements moves edge waypoints by the offset without changing the
 
 test('cloneGraphElements rejects unknown, empty, repeated and colliding IDs', () => {
   assert.throws(() => cloneGraphElements(nodes, edges, ['zz'], { createId: suffix }), { name: 'Error', message: 'Unknown node in graph clone: zz' })
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => '' }), /empty node ID for: a/)
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: () => 'same' }), /Cloned node ID is already in use: same/)
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => 'c' }), /Cloned node ID is already in use: c/)
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => '' }), { name: 'Error', message: 'Invalid graph node ID: "" (createId for a)' })
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: () => 'same' }), { name: 'Error', message: 'Duplicate graph node ID: same (createId for b)' })
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => 'c' }), { name: 'Error', message: 'Duplicate graph node ID: c (createId for a)' })
   // Edge IDs must not collide with existing edges; node and edge IDs are separate collections.
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : 'bc' }), /Cloned edge ID is already in use: bc/)
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : 'bc' }), { name: 'Error', message: 'Duplicate graph edge ID: bc (createId for ab)' })
   assert.doesNotThrow(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : id.slice(0, 1) }))
   assert.throws(() => cloneGraphElements(nodes, edges, ['a'], {}), /createId/)
   assert.throws(() => cloneGraphElements([...nodes, { id: 'a', label: 'Again' }], edges, ['a'], { createId: suffix }), /Duplicate graph node ID: a/)

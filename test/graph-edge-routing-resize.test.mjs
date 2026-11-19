@@ -25,7 +25,7 @@ test('routeGraphEdges keeps the curve layout without waypoints and validates opt
   assert.throws(() => routeGraphEdges(layout, edges, map, { style: 'zigzag' }), RangeError)
   assert.throws(() => routeGraphEdges(layout, edges, map, { style: 'orthogonal', cornerRadius: -1 }), RangeError)
   assert.throws(() => routeGraphEdges(layout, [{ ...edges[0], points: [{ x: NaN, y: 0 }] }], map), RangeError)
-  assert.throws(() => routeGraphEdges(layout, [{ id: 'x', from: 'a', to: 'zz' }], map, { style: 'straight' }), /Unknown endpoint/)
+  assert.throws(() => routeGraphEdges(layout, [{ id: 'x', from: 'a', to: 'zz' }], map, { style: 'straight' }), { name: 'Error', message: 'Unknown node in graph edge x: zz' })
   assert.throws(() => graphPolylinePath([{ x: 0, y: 0 }], Infinity), RangeError)
 })
 

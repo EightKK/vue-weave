@@ -1,5 +1,6 @@
 import { indexGraph } from './graph.js'
 import type { GraphConnection, GraphEdge, GraphPort, IdentifiedNode } from './graph.js'
+import { inContext, unknownReferenceError } from './ids.js'
 
 /** Which way connections may use an endpoint: `in` only as a target, `out` only as a source, `both` either way. */
 export type GraphPortDirection = 'in' | 'out' | 'both'
@@ -143,7 +144,7 @@ export function createGraphConnectionChecker(
   const excluded = (replacingEdgeId: string | undefined) => {
     if (replacingEdgeId === undefined) return undefined
     const edge = edgeById.get(replacingEdgeId)
-    if (!edge) throw new Error('Unknown edge in graph connection check: ' + replacingEdgeId)
+    if (!edge) throw unknownReferenceError('edge', 'graph connection check', replacingEdgeId)
     return [endKey(edge.from, edge.fromPort), endKey(edge.to, edge.toPort)] as const
   }
   const usedBy = (skip: readonly string[] | undefined) => (key: string) => {
@@ -198,15 +199,15 @@ function indexPortRules(nodes: readonly IdentifiedNode[], edges: readonly GraphE
   const fallback = rules.default === undefined ? undefined : validateRule(rules.default, 'default')
   const portRules = new Map<string, GraphPortRule>()
   for (const [nodeId, byPort] of entries(rules.ports, 'ports')) {
-    if (!nodeById.has(nodeId)) throw new Error('Unknown node in graph port rules: ' + nodeId)
+    if (!nodeById.has(nodeId)) throw unknownReferenceError('node', 'graph port rules', nodeId)
     for (const [portId, rule] of entries(byPort, 'ports of ' + nodeId)) {
-      if (!portsByNode.get(nodeId)?.has(portId)) throw new Error(`Unknown port in graph port rules: ${nodeId} · ${portId}`)
+      if (!portsByNode.get(nodeId)?.has(portId)) throw inContext(unknownReferenceError('port', 'graph port rules', portId), 'graph node ' + nodeId)
       portRules.set(endKey(nodeId, portId), validateRule(rule, nodeId + ' · ' + portId))
     }
   }
   const nodeRules = new Map<string, GraphPortRule>()
   for (const [nodeId, rule] of entries(rules.nodes, 'nodes')) {
-    if (!nodeById.has(nodeId)) throw new Error('Unknown node in graph port rules: ' + nodeId)
+    if (!nodeById.has(nodeId)) throw unknownReferenceError('node', 'graph port rules', nodeId)
     nodeRules.set(nodeId, validateRule(rule, nodeId))
   }
 
