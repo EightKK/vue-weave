@@ -1,4 +1,5 @@
 import type { TimeRange } from './timeline.js'
+import { duplicateIdError, inContext, invalidIdError, isId } from './ids.js'
 
 /**
  * Request state for partial (windowed) data loading. The time axis is cut into chunks of `chunkSize` time units
@@ -378,15 +379,15 @@ export function resolveWindowedRequest<T, L = never>(
   const pageIds = new Set<string>()
   for (const item of received) {
     const id = itemId(item)
-    if (typeof id !== 'string' || id === '') throw new Error('Windowed data items need a non-empty string ID')
-    if (pageIds.has(id)) throw new Error('Duplicate item ID in one response: ' + id)
+    if (!isId(id)) throw invalidIdError('windowed data item', id)
+    if (pageIds.has(id)) throw inContext(duplicateIdError('windowed data item', id), 'in one response')
     pageIds.add(id)
   }
   const linkIds = new Set<string>()
   for (const link of receivedLinks) {
     const id = linkId(link)
-    if (typeof id !== 'string' || id === '') throw new Error('Windowed data links need a non-empty string ID')
-    if (linkIds.has(id)) throw new Error('Duplicate link ID in one response: ' + id)
+    if (!isId(id)) throw invalidIdError('windowed data link', id)
+    if (linkIds.has(id)) throw inContext(duplicateIdError('windowed data link', id), 'in one response')
     linkIds.add(id)
   }
   // Cells of the request that received at least one item.

@@ -15,6 +15,7 @@ import type {
 import type { TimelineConstraintKind } from './types.js'
 import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
+import { checkId, uniqueIds } from './ids.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -599,11 +600,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   let histogram: ReturnType<typeof resourceLoadHistogram> | undefined
   const loadRows = options.loadRows ?? []
   if (loadRows.length) {
-    const ids = new Set<string>()
-    for (const row of loadRows) {
-      if (!row.id || ids.has(row.id)) throw new Error('Invalid or duplicate load row ID: ' + row.id)
-      ids.add(row.id)
-    }
+    const ids = uniqueIds(loadRows, 'load row')
     if (!Number.isFinite(loadRowHeight) || loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
     histogram = resourceLoadHistogram(options.loadSegments ?? [], ids)
   } else if (options.loadSegments?.length) {
@@ -622,8 +619,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   }
   const markerIds = new Set<string>()
   for (const item of options.markers ?? []) {
-    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
-    markerIds.add(item.id)
+    checkId('marker', item.id, markerIds)
+    if (!Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
   }
   const markerRanges = options.markerRanges ?? []
   checkMarkerRanges(markerRanges, new Set(rows.map(row => row.id)))

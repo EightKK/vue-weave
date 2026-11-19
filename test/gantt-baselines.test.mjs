@@ -59,13 +59,13 @@ test('validateTimelineData checks named baselines: set IDs, uniqueness, the rese
   assert.doesNotThrow(() => validateTimelineData(rows, [{ ...legacyBars[0], baselines: [{ id: 'm', start: hour, end: hour }] }]))
   const bar = baselines => [{ ...legacyBars[0], baselines }]
   assert.throws(() => validateTimelineData(rows, bar({ id: 'plan' })), { name: 'Error', message: 'baselines must be an array: x' })
-  assert.throws(() => validateTimelineData(rows, bar([{ id: '', start: 0, end: 1 }])), { name: 'Error', message: 'Invalid baseline set ID on bar: x' })
-  assert.throws(() => validateTimelineData(rows, bar([{ start: 0, end: 1 }])), { message: 'Invalid baseline set ID on bar: x' })
-  assert.throws(() => validateTimelineData(rows, bar([null])), { message: 'Invalid baseline set ID on bar: x' })
+  assert.throws(() => validateTimelineData(rows, bar([{ id: '', start: 0, end: 1 }])), { name: 'Error', message: 'Invalid baseline set ID: "" (bar x)' })
+  assert.throws(() => validateTimelineData(rows, bar([{ start: 0, end: 1 }])), { message: 'Invalid baseline set ID: undefined (bar x)' })
+  assert.throws(() => validateTimelineData(rows, bar([null])), { message: 'Invalid baseline set ID: undefined (bar x)' })
   assert.throws(() => validateTimelineData(rows, bar([{ id: '$baseline', start: 0, end: 1 }])),
     { name: 'Error', message: 'The baseline set ID $baseline is reserved for TimelineBar.baseline: x' })
   assert.throws(() => validateTimelineData(rows, bar([{ id: 'plan', start: 0, end: 1 }, { id: 'plan', start: 1, end: 2 }])),
-    { name: 'Error', message: 'Duplicate baseline set plan on bar x' })
+    { name: 'Error', message: 'Duplicate baseline set ID: plan (bar x)' })
   for (const [start, end] of [[2, 1], [Number.NaN, 1], [0, Infinity], ['0', 1]]) {
     assert.throws(() => validateTimelineData(rows, bar([{ id: 'plan', start, end }])),
       { name: 'RangeError', message: 'Baseline plan of bar x must have finite endpoints with start <= end' })
@@ -123,8 +123,8 @@ test('renderTimelineSvg rejects an invalid baselineIds selection', () => {
   assert.throws(() => renderTimelineSvg(rows, named, [], scale, { baselineIds: ['a', 'b', 'c', 'd'] }),
     { name: 'RangeError', message: 'baselineIds can select at most 3 baseline sets' })
   assert.throws(() => renderTimelineSvg(rows, named, [], scale, { baselineIds: ['plan', 'plan'] }),
-    { name: 'Error', message: 'Duplicate baseline set ID in baselineIds: plan' })
-  assert.throws(() => renderTimelineSvg(rows, named, [], scale, { baselineIds: [''] }), { message: 'Invalid baseline set ID in baselineIds: ' })
+    { name: 'Error', message: 'Duplicate baseline set ID: plan (baselineIds)' })
+  assert.throws(() => renderTimelineSvg(rows, named, [], scale, { baselineIds: [''] }), { message: 'Invalid baseline set ID: "" (baselineIds)' })
   assert.throws(() => renderTimelineSvg(rows, named, [], scale, { baselineIds: 'plan' }), { message: 'baselineIds must be an array of baseline set IDs' })
 })
 
@@ -212,7 +212,7 @@ test('GanttChart draws several baseline sets in slot order, respects baselineIds
 test('GanttChart reports an invalid baselineIds or named baseline through validation-error', async () => {
   for (const [props, message] of [
     [{ baselineIds: ['a', 'b', 'c', 'd'] }, 'baselineIds can select at most 3 baseline sets'],
-    [{ baselineIds: ['a', 'a'] }, 'Duplicate baseline set ID in baselineIds: a'],
+    [{ baselineIds: ['a', 'a'] }, 'Duplicate baseline set ID: a (baselineIds)'],
     [{ bars: [{ ...legacyBars[0], baselines: [{ id: 'p', start: 1, end: 0 }] }] }, 'Baseline p of bar x must have finite endpoints with start <= end'],
   ]) {
     const reported = []

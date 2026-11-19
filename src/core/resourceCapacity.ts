@@ -3,6 +3,7 @@
 import type { ResourceAssignment, ResourceCapacity, ResourceCapacityPeriod } from './resourceLoad.js'
 import type { TimeRange } from './timeline.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
+import { isId, unknownReferenceError } from './ids.js'
 
 /** From `time` until the next step, the resource has `capacity`. */
 export interface CapacityStep {
@@ -117,4 +118,47 @@ export function sliceWork(work: readonly TimeRange[], offset: number, duration: 
     if (before >= to) break
   }
   return result
+}
+
+/** What `createAssignmentChecker` checks assignment references against. */
+export interface AssignmentReferences {
+  /** Whether the task ID is known. Only called with valid IDs. */
+  hasTask: (id: string) => boolean
+  /** Whether the resource ID is known. Only called with valid IDs. */
+  hasResource: (id: string) => boolean
+  /** Appended to the unknown-task message, for a caller whose tasks can be missing for a reason the hint names. */
+  unknownTaskHint?: string
+  /** Check `units` (default 1) as a positive safe integer. Default true. */
+  units?: boolean
+}
+
+/**
+ * A checker for the assignments of one list, shared by every function that validates assignments, so the same defect
+ * gives the same message: an unknown resource (`Unknown resource in assignment: <id>`), then an unknown task (`Unknown
+ * task in assignment: <id>`, plus the hint), then units that are not a positive integer (RangeError), then a second
+ * assignment of the same task to the same resource (`Duplicate assignment of task <task> to resource <resource>`). IDs
+ * that are not non-empty strings are unknown. Pairs are kept in nested maps, so IDs containing any separator stay
+ * distinct.
+ */
+export function createAssignmentChecker(references: AssignmentReferences) {
+  const pairs = new Map<string, Set<string>>()
+  return (assignment: Pick<ResourceAssignment, 'resourceId' | 'taskId' | 'units'>) => {
+    const { resourceId, taskId, units = 1 } = assignment
+    if (!isId(resourceId) || !references.hasResource(resourceId)) throw unknownReferenceError('resource', 'assignment', resourceId)
+    if (!isId(taskId) || !references.hasTask(taskId)) {
+      const error = unknownReferenceError('task', 'assignment', taskId)
+      if (references.unknownTaskHint) error.message += '. ' + references.unknownTaskHint
+      throw error
+    }
+    if (references.units !== false && (!Number.isSafeInteger(units) || units <= 0)) throw new RangeError('Assignment units must be a positive integer')
+    let tasks = pairs.get(resourceId)
+    if (!tasks) pairs.set(resourceId, tasks = new Set())
+    if (tasks.has(taskId)) throw duplicateAssignmentError(taskId, resourceId)
+    tasks.add(taskId)
+  }
+}
+
+/** `Duplicate assignment of task <task> to resource <resource>`. */
+export function duplicateAssignmentError(taskId: string, resourceId: string): Error {
+  return new Error(`Duplicate assignment of task ${taskId} to resource ${resourceId}`)
 }

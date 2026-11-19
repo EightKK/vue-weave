@@ -14,7 +14,7 @@ test('O08: placing Q without its predecessor P is diagnosed, not thrown or dropp
   }
   const snapshot = JSON.stringify(input)
   // The scheduler alone rejects the link to a task that is left out.
-  assert.throws(() => scheduleTasks({ ...input, tasks: [input.tasks[1]] }), /Invalid or duplicate schedule dependency: pq/)
+  assert.throws(() => scheduleTasks({ ...input, tasks: [input.tasks[1]] }), { name: 'Error', message: 'Unknown dependency endpoint: pq' })
 
   const placement = buildPlacementInput(input, ['Q'])
   assert.equal(placement.ok, false)
@@ -59,13 +59,13 @@ test('placing a task with its predecessors keeps the links; links to unplaced su
 
 test('malformed placement input still throws', () => {
   const input = { range, tasks: [{ id: 'P', duration: 2 }, { id: 'Q', duration: 3 }], dependencies: [{ id: 'pq', from: 'P', to: 'Q' }] }
-  assert.throws(() => buildPlacementInput({ ...input, tasks: [...input.tasks, input.tasks[0]] }, ['P']), /duplicate task ID: P/)
+  assert.throws(() => buildPlacementInput({ ...input, tasks: [...input.tasks, input.tasks[0]] }, ['P']), { name: 'Error', message: 'Duplicate task ID: P' })
   assert.throws(() => buildPlacementInput(input, ['X']), /Unknown task to place: X/)
   assert.throws(() => buildPlacementInput(input, ['P', 'P']), /Duplicate task to place: P/)
-  assert.throws(() => buildPlacementInput({ ...input, dependencies: [...input.dependencies, input.dependencies[0]] }, ['P']), /duplicate schedule dependency: pq/)
+  assert.throws(() => buildPlacementInput({ ...input, dependencies: [...input.dependencies, input.dependencies[0]] }, ['P']), { name: 'Error', message: 'Duplicate dependency ID: pq' })
   assert.throws(() => buildPlacementInput({ ...input, dependencies: [{ id: 'px', from: 'P', to: 'X' }] }, ['P']), /Unknown dependency endpoint: px/)
   assert.throws(() => buildPlacementInput({ ...input, assignments: [{ taskId: 'X', resourceId: 'R1' }] }, ['P']), /Unknown task in assignment: X/)
   assert.throws(() => buildPlacementInput({
     ...input, assignments: [{ taskId: 'Q', resourceId: 'R1' }, { taskId: 'Q', resourceId: 'R1' }],
-  }, ['P']), /Duplicate resource assignment for task: Q/)
+  }, ['P']), { name: 'Error', message: 'Duplicate assignment of task Q to resource R1' })
 })

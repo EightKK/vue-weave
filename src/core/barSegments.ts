@@ -1,6 +1,7 @@
 // Internal geometry shared by GanttChart and renderTimelineSvg. Not part of the public entry points.
 import { baselineVariance, timelineBaseline, timelineBaselineIds, timelineBaselineLimit, type TimeRange } from './timeline.js'
 import type { TimelineBar, TimelineMarkerRange } from './types.js'
+import { checkId, withContext } from './ids.js'
 
 export interface SegmentPiece extends TimeRange {
   /** Completed fraction of this piece, between 0 and 1. */
@@ -88,8 +89,7 @@ export function checkNonWorkingPeriods(periods: readonly TimeRange[] | undefined
 export function checkMarkerRanges(ranges: readonly TimelineMarkerRange[] | undefined, knownRows: ReadonlySet<string>) {
   const ids = new Set<string>()
   for (const range of ranges ?? []) {
-    if (!range.id || ids.has(range.id)) throw new Error('Invalid or duplicate marker range ID: ' + range.id)
-    ids.add(range.id)
+    checkId('marker range', range.id, ids)
     if (typeof range.start !== 'number' || typeof range.end !== 'number' || !Number.isFinite(range.start)
       || !Number.isFinite(range.end) || range.end <= range.start) {
       throw new RangeError('A marker range must have finite endpoints with start < end: ' + range.id)
@@ -151,11 +151,7 @@ export function baselineSelection(bars: readonly TimelineBar[], baselineIds: rea
   }
   if (!Array.isArray(baselineIds)) throw new Error('baselineIds must be an array of baseline set IDs')
   const seen = new Set<string>()
-  for (const id of baselineIds) {
-    if (typeof id !== 'string' || !id) throw new Error('Invalid baseline set ID in baselineIds: ' + String(id))
-    if (seen.has(id)) throw new Error('Duplicate baseline set ID in baselineIds: ' + id)
-    seen.add(id)
-  }
+  for (const id of baselineIds) withContext('baselineIds', () => checkId('baseline set', id, seen))
   if (baselineIds.length > timelineBaselineLimit) {
     throw new RangeError(`baselineIds can select at most ${timelineBaselineLimit} baseline sets`)
   }

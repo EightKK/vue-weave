@@ -281,18 +281,18 @@ test('precomputed leveled results and load are used as given; overlapping load s
 test('input validation is descriptive and consistent with the scheduler', () => {
   const input = chain()
   assert.throws(() => comparePlans({ input: { ...input, tasks: [...input.tasks, { id: 'a', duration: 1 }] } }, { input }),
-    { name: 'Error', message: 'Invalid or duplicate task ID: a (current plan)' })
-  assert.throws(() => comparePlans({ input }, { input: { ...input, dependencies: [link('a', 'b'), link('a', 'b')] } }), /duplicate schedule dependency: a-b \(candidate plan\)/)
+    { name: 'Error', message: 'Duplicate task ID: a (current plan)' })
+  assert.throws(() => comparePlans({ input }, { input: { ...input, dependencies: [link('a', 'b'), link('a', 'b')] } }), { name: 'Error', message: 'Duplicate dependency ID: a-b (candidate plan)' })
   const resources = [{ id: 'm', capacity: 1 }]
   assert.throws(() => comparePlans({ input }, { input: { ...input, resources, assignments: [{ taskId: 'a', resourceId: 'm' }, { taskId: 'a', resourceId: 'm' }] } }),
-    /Duplicate resource assignment for task: a/)
-  assert.throws(() => comparePlans({ input }, { input: { ...input, resources, assignments: [{ taskId: 'a', resourceId: 'x' }] } }), /Unknown resource in assignment: x/)
-  assert.throws(() => comparePlans({ input }, { input: { ...input, resources, assignments: [{ taskId: 'q', resourceId: 'm' }] } }), /Unknown task in assignment: q/)
-  assert.throws(() => comparePlans({ input }, { input: { ...input, resources: [...resources, ...resources] } }), /duplicate resource: m/)
-  assert.throws(() => comparePlans({ input }, undefined), /candidate plan needs an input/)
-  assert.throws(() => comparePlans({ input, partial: 'yes' }, { input }), /Invalid partial/)
-  // Invalid scheduling input still throws from the scheduler.
-  assert.throws(() => comparePlans({ input: withTask(input, 'a', { duration: -1 }) }, { input }), RangeError)
+    { name: 'Error', message: 'Duplicate assignment of task a to resource m (candidate plan)' })
+  assert.throws(() => comparePlans({ input }, { input: { ...input, resources, assignments: [{ taskId: 'a', resourceId: 'x' }] } }), { name: 'Error', message: 'Unknown resource in assignment: x (candidate plan)' })
+  assert.throws(() => comparePlans({ input }, { input: { ...input, resources, assignments: [{ taskId: 'q', resourceId: 'm' }] } }), { name: 'Error', message: 'Unknown task in assignment: q (candidate plan)' })
+  assert.throws(() => comparePlans({ input }, { input: { ...input, resources: [...resources, ...resources] } }), { name: 'Error', message: 'Duplicate resource ID: m (candidate plan)' })
+  assert.throws(() => comparePlans({ input }, undefined), { name: 'Error', message: 'A plan needs an input (candidate plan)' })
+  assert.throws(() => comparePlans({ input, partial: 'yes' }, { input }), { name: 'Error', message: 'Invalid partial (current plan)' })
+  // Invalid scheduling input throws the scheduler's own error, with the plan label.
+  assert.throws(() => comparePlans({ input: withTask(input, 'a', { duration: -1 }) }, { input }), { name: 'RangeError', message: 'Invalid task duration: a (current plan)' })
 })
 
 test('partial plans make an incomplete comparison, and a moved base revision is stale', () => {

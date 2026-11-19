@@ -1,5 +1,7 @@
 import type { ResourceAssignment } from './resourceLoad.js'
 import type { ScheduleInput } from './scheduling.js'
+import { checkId, unknownEndpointError } from './ids.js'
+import { createAssignmentChecker } from './resourceCapacity.js'
 
 /** Schedule input with optional assignments, such as a `LevelResourcesInput`. */
 export interface PlacementInput extends ScheduleInput {
@@ -50,8 +52,7 @@ export function buildPlacementInput<I extends PlacementInput>(input: I, placedTa
   // Links that bind nothing in the scheduler: those touching an inactive task and those into a manual task.
   const inactive = new Set<string>(), manual = new Set<string>()
   for (const task of input.tasks) {
-    if (typeof task.id !== 'string' || !task.id || taskIds.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
-    taskIds.add(task.id)
+    checkId('task', task.id, taskIds)
     if (task.inactive === true) inactive.add(task.id)
     if (task.manual !== undefined) manual.add(task.id)
   }
@@ -66,9 +67,8 @@ export function buildPlacementInput<I extends PlacementInput>(input: I, placedTa
   const dependencies: NonNullable<I['dependencies']>[number][] = []
   const diagnostics: PlacementDiagnostic[] = [], excludedDependencyIds: string[] = []
   for (const link of input.dependencies ?? []) {
-    if (typeof link.id !== 'string' || !link.id || linkIds.has(link.id)) throw new Error('Invalid or duplicate schedule dependency: ' + link.id)
-    linkIds.add(link.id)
-    if (!taskIds.has(link.from) || !taskIds.has(link.to)) throw new Error('Unknown dependency endpoint: ' + link.id)
+    checkId('dependency', link.id, linkIds)
+    for (const end of [link.from, link.to]) if (!taskIds.has(end)) throw unknownEndpointError(link.id)
     const fromPlaced = placed.has(link.from), toPlaced = placed.has(link.to)
     if (fromPlaced && toPlaced) {
       dependencies.push(link)
@@ -80,13 +80,11 @@ export function buildPlacementInput<I extends PlacementInput>(input: I, placedTa
     }
   }
 
-  const pairs = new Set<string>()
+  // Resources are not part of a placement input, so any valid resource ID is accepted.
+  const check = createAssignmentChecker({ hasTask: id => taskIds.has(id), hasResource: () => true, units: false })
   const assignments: ResourceAssignment[] = [], excludedAssignments: ResourceAssignment[] = []
   for (const assignment of input.assignments ?? []) {
-    if (!taskIds.has(assignment.taskId)) throw new Error('Unknown task in assignment: ' + assignment.taskId)
-    const pair = JSON.stringify([assignment.taskId, assignment.resourceId])
-    if (pairs.has(pair)) throw new Error('Duplicate resource assignment for task: ' + assignment.taskId)
-    pairs.add(pair)
+    check(assignment)
     ;(placed.has(assignment.taskId) ? assignments : excludedAssignments).push(assignment)
   }
 

@@ -7,6 +7,7 @@ import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraint
 import { firstIndex, intervalsMeet } from './intervals.js'
 import { cachedDateFormat, zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
+import { duplicateIdError, inContext, invalidIdError, isId, uniqueIds } from './ids.js'
 
 export interface TimeRange {
   start: number
@@ -392,11 +393,11 @@ function checkBaselines(bar: TimelineBar) {
   if (!Array.isArray(list)) throw new Error('baselines must be an array: ' + bar.id)
   const ids = new Set<string>()
   for (const item of list as NonNullable<TimelineBar['baselines']>) {
-    if (!item || typeof item.id !== 'string' || !item.id) throw new Error('Invalid baseline set ID on bar: ' + bar.id)
+    if (!isId(item?.id)) throw inContext(invalidIdError('baseline set', item?.id), 'bar ' + bar.id)
     if (item.id === timelineBaselineId) {
       throw new Error(`The baseline set ID ${timelineBaselineId} is reserved for TimelineBar.baseline: ${bar.id}`)
     }
-    if (ids.has(item.id)) throw new Error(`Duplicate baseline set ${item.id} on bar ${bar.id}`)
+    if (ids.has(item.id)) throw inContext(duplicateIdError('baseline set', item.id), 'bar ' + bar.id)
     ids.add(item.id)
     if (typeof item.start !== 'number' || typeof item.end !== 'number' || !Number.isFinite(item.start) || !Number.isFinite(item.end)
       || item.end < item.start) {
@@ -427,14 +428,6 @@ export function validateTimelineData(
   dependencies: readonly TimelineDependency[] = [], laneCount = 1, options: TimelineDataOptions = {},
 ) {
   if (!Number.isInteger(laneCount) || laneCount <= 0) throw new RangeError('laneCount must be a positive integer')
-  function uniqueIds(items: readonly { id: string }[], kind: string) {
-    const ids = new Set<string>()
-    for (const item of items) {
-      if (!item.id || ids.has(item.id)) throw new Error('Invalid or duplicate ' + kind + ' ID: ' + item.id)
-      ids.add(item.id)
-    }
-    return ids
-  }
   const rowIds = uniqueIds(rows, 'row')
   const barIds = uniqueIds(bars, 'bar')
   uniqueIds(dependencies, 'dependency')
@@ -484,8 +477,7 @@ export function formatDependencyLag(lag: number): string {
 
 /** Build a stable preorder and validate that every row reaches a root. */
 export function createTimelineRowTree<R extends TimelineRow>(rows: readonly R[]) {
-  const ids = new Set(rows.map(row => row.id))
-  if (ids.size !== rows.length || ids.has('')) throw new Error('Invalid or duplicate row IDs')
+  const ids = uniqueIds(rows, 'row')
   const roots: R[] = []
   const children = new Map<string, R[]>()
   for (const row of rows) {

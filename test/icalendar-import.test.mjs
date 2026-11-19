@@ -179,7 +179,7 @@ test('timelineFromICalendar builds rows and bars that validate, and does not mod
   ])
   assert.doesNotThrow(() => validateTimelineData(rows, bars))
   assert.throws(() => timelineFromICalendar([{ id: 'x', summary: 'a', start: 2, end: 1 }]), RangeError)
-  assert.throws(() => timelineFromICalendar([{ id: 'x', summary: 'a', start: 1, end: 2 }, { id: 'x', summary: 'a', start: 1, end: 2 }]), /duplicate/)
+  assert.throws(() => timelineFromICalendar([{ id: 'x', summary: 'a', start: 1, end: 2 }, { id: 'x', summary: 'a', start: 1, end: 2 }]), { name: 'Error', message: 'Duplicate event ID: x' })
   assert.throws(() => timelineFromICalendar([{ id: '', summary: 'a', start: 1, end: 2 }]), Error)
   assert.throws(() => timelineFromICalendar([{ id: 'x', start: 1, end: 2 }]), /summary/)
 })

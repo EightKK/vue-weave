@@ -89,7 +89,7 @@ test('timeline schema rejects ambiguous identifiers, lanes and dependencies', ()
   const rows = [{ id: 'row', label: 'Row' }]
   const bars = [{ id: 'a', label: 'A', rowId: 'row', start: 1, end: 2 }]
   assert.doesNotThrow(() => validateTimelineData(rows, bars))
-  assert.throws(() => validateTimelineData(rows, [...bars, ...bars]), /duplicate/)
+  assert.throws(() => validateTimelineData(rows, [...bars, ...bars]), { name: 'Error', message: 'Duplicate bar ID: a' })
   assert.throws(() => validateTimelineData(rows, [{ ...bars[0], lane: 2 }]), /lane/)
   assert.throws(() => validateTimelineData(rows, bars, [{ id: 'e', from: 'a', to: 'missing' }]), /endpoint/)
   assert.throws(() => validateTimelineData(rows, [{ ...bars[0], progress: 2 }]), /Progress/)
@@ -227,7 +227,7 @@ test('invalid Gantt data reports validation-error and renders the empty state', 
   // Vue rethrows handled errors in development builds and logs them in production, so allow either.
   const html = await renderComponent(GanttChart, props).catch(() => '')
   assert.equal(errors.length, 1)
-  assert.match(errors[0].message, /duplicate/)
+  assert.equal(errors[0].message, 'Duplicate bar ID: b')
   assert.ok(!html.includes('vw-gantt-bar'))
   const valid = await renderComponent(GanttChart, { ...props, bars: [bar], onValidationError: () => assert.fail('unexpected') })
   assert.match(valid, /vw-gantt-bar/)
