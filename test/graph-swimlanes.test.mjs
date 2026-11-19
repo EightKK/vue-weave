@@ -138,7 +138,7 @@ test('cycles and self-loops terminate and share a rank inside their lanes', () =
   }
 })
 
-test('a 12,000-node chain lays out without recursion', () => {
+test('the swimlane layout lays out a 12,000-node chain without recursion', () => {
   const count = 12000
   const chainNodes = Array.from({ length: count }, (_, i) => ({ id: 'n' + i, lane: i % 3 === 0 ? 'a' : i % 3 === 1 ? 'b' : 'c' }))
   const chainEdges = Array.from({ length: count - 1 }, (_, i) => ({ id: 'e' + i, from: 'n' + i, to: 'n' + (i + 1) }))

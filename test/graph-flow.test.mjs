@@ -231,7 +231,7 @@ test('the projection is deterministic and every item maps back to the original I
   assert.deepEqual(graphFlowBands(flow).get('rework-inspect'), { width: 20, reference: true, label: 'Rework → Inspect: 10 pcs' })
 })
 
-test('a 12,000-node chain lays out without recursion', () => {
+test('the flow layout lays out a 12,000-node chain without recursion', () => {
   const chain = Array.from({ length: 12000 }, (_, i) => node('n' + i))
   const links = chain.slice(1).map((item, i) => flowEdge('e' + i, chain[i].id, item.id, 1))
   const flow = layoutFlowGraph(chain, links, { quantity, unit: 'pcs' })
