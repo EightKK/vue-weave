@@ -100,6 +100,46 @@ test('DURATION, missing end, and conflicting or invalid ends', () => {
   assert.equal(warnings.every(warning => warning.code === 'invalid-value'), true)
 })
 
+test('DURATION adds weeks and days to the local date of a TZID start, then hours as elapsed time (RFC 5545 3.3.6)', () => {
+  // US daylight saving starts on Sunday 2026-03-08 and ends on Sunday 2026-11-01.
+  const ny = (start, duration) => vevent(`UID:${start}/${duration}`, `DTSTART;TZID=America/New_York:${start}`, `DURATION:${duration}`)
+  const text = wrap(
+    ny('20260307T120000', 'P1D'), ny('20260307T120000', 'PT24H'), ny('20260307T120000', 'P1DT2H'), ny('20260301T120000', 'P1W'),
+    ny('20260307T120000', '+P1D'), ny('20261031T120000', 'P1D'), ny('20261031T120000', 'PT24H'), ny('20261031T120000', 'P1DT2H'),
+    // The local end falls in the skipped hour (moved forward, as DTSTART is) or in the repeated hour (its first occurrence).
+    ny('20260307T023000', 'P1D'), ny('20261031T013000', 'P1D'),
+    ny('20260307T120000', '-P1D'),
+    vevent('UID:utc', 'DTSTART:20260307T120000Z', 'DURATION:P1D'),
+    vevent('UID:floating', 'DTSTART:20260307T120000', 'DURATION:P1D'),
+    vevent('UID:date', 'DTSTART;VALUE=DATE:20260307', 'DURATION:P1D'),
+    vevent('UID:huge', 'DTSTART;TZID=America/New_York:20260307T120000', 'DURATION:P99999999999D'),
+  )
+  const { events, warnings } = fromICalendar(text, { utcOffsetMinutes: -300 })
+  const byId = Object.fromEntries(events.map(event => [event.id, event]))
+  const end = (start, duration) => byId[`${start}/${duration}`].end
+  assert.equal(byId['20260307T120000/P1D'].start, Date.parse('2026-03-07T12:00:00-05:00'))
+  assert.equal(end('20260307T120000', 'P1D'), Date.parse('2026-03-08T12:00:00-04:00'))
+  assert.equal(end('20260307T120000', 'PT24H'), Date.parse('2026-03-08T13:00:00-04:00'))
+  assert.equal(end('20260307T120000', 'P1DT2H'), Date.parse('2026-03-08T14:00:00-04:00'))
+  assert.equal(end('20260301T120000', 'P1W'), Date.parse('2026-03-08T12:00:00-04:00'))
+  assert.equal(end('20260307T120000', '+P1D'), Date.parse('2026-03-08T12:00:00-04:00'))
+  assert.equal(end('20261031T120000', 'P1D'), Date.parse('2026-11-01T12:00:00-05:00'))
+  assert.equal(end('20261031T120000', 'PT24H'), Date.parse('2026-11-01T11:00:00-05:00'))
+  assert.equal(end('20261031T120000', 'P1DT2H'), Date.parse('2026-11-01T14:00:00-05:00'))
+  assert.equal(end('20260307T023000', 'P1D'), Date.parse('2026-03-08T03:00:00-04:00'))
+  assert.equal(end('20261031T013000', 'P1D'), Date.parse('2026-11-01T01:30:00-04:00'))
+  assert.equal(end('20260307T120000', '-P1D'), byId['20260307T120000/-P1D'].start)
+  // UTC, floating and date starts have no daylight saving: a day is 24 hours.
+  assert.equal(byId.utc.end - byId.utc.start, day)
+  assert.equal(byId.floating.start, Date.parse('2026-03-07T12:00:00-05:00'))
+  assert.equal(byId.floating.end - byId.floating.start, day)
+  assert.equal(byId.date.end - byId.date.start, day)
+  assert.equal(byId.huge.end, byId.huge.start)
+  // toICalendar writes the resolved instants in UTC.
+  assert.match(toICalendar([byId['20260307T120000/P1D']], { timestamp: 0 }), /DTSTART:20260307T170000Z\r\nDTEND:20260308T160000Z\r\n/)
+  assert.deepEqual(warnings.map(warning => [warning.code, warning.eventId]), [['invalid-value', '20260307T120000/-P1D'], ['invalid-value', 'huge']])
+})
+
 test('RRULE events import their first instance with a warning; changed instances and broken events are skipped', () => {
   const text = wrap(
     vevent('UID:weekly', 'DTSTART:20261109T080000Z', 'DTEND:20261109T090000Z', 'RRULE:FREQ=WEEKLY;COUNT=4', 'EXDATE:20261116T080000Z', 'SUMMARY:Standup'),

@@ -72,7 +72,10 @@ export interface MsProjectResource {
   /** Unique within the project. `toMsProjectXml` numbers resources from 1 in input order and does not write this ID. */
   id: string
   name: string
-  /** `Type`: 0 material, 1 work, 2 cost. Absent counts as `'work'` where it matters. */
+  /**
+   * `Type` 0 material or 1 work; a cost resource has `IsCostResource` 1 (read also from `Type` 2). Absent counts as
+   * `'work'` where it matters.
+   */
   type?: 'work' | 'material' | 'cost'
   /** `MaxUnits` as a fraction of one full-time resource: 1 is 100 %, 2.5 is 250 %. Absent counts as 1. */
   maxUnits?: number
@@ -127,7 +130,11 @@ export interface MsProjectXmlOptions {
   utcOffsetMinutes?: number
 }
 
-const resourceTypes = { material: 0, work: 1, cost: 2 } as const
+// MSPDI Resource `Type`: 0 material, 1 work. A cost resource is `IsCostResource` 1 (Project 2007 and later); the Type
+// element reference also lists 2 for it, but the Resource element reference describes Type as work or material only.
+// So `'cost'` is written as Type 0 with IsCostResource 1, which a reader without IsCostResource sees as a material
+// resource without work capacity. Reading accepts IsCostResource 1 with any Type, and Type 2.
+const resourceTypes = { material: 0, work: 1, cost: 0 } as const
 const linkTypes: Record<TimelineDependencyType, number> = { FF: 0, FS: 1, SF: 2, SS: 3 }
 // MSPDI ConstraintType: 2 Must Start On, 4 Start No Earlier Than, 5 Start No Later Than, 6 Finish No Earlier Than and
 // 7 Finish No Later Than. Type 3 (Must Finish On) is the pair finishNoEarlierThan + finishNoLaterThan at one time.
@@ -260,7 +267,8 @@ function checkMsProjectExtras(project: MsProjectInput, taskUids: ReadonlyMap<str
       if (!Number.isInteger(shift.weekday) || shift.weekday < 0 || shift.weekday > 6) throw new RangeError('Invalid weekday in calendar ' + calendar.id)
     }
     for (const [date, shifts] of Object.entries(week.exceptions ?? {})) {
-      if (!civilDay(date)) throw new RangeError(`Invalid exception date in calendar ${calendar.id}: ${date}`)
+      // civilDay is 0 for 1970-01-01, so compare with undefined.
+      if (civilDay(date) === undefined) throw new RangeError(`Invalid exception date in calendar ${calendar.id}: ${date}`)
       for (const shift of shifts) checkWorkShift(shift, 'calendar ' + calendar.id)
     }
   }
@@ -346,7 +354,8 @@ function calendarXml(calendar: MsProjectCalendar, uid: number) {
  * Optional `calendars`, `resources` and `assignments` are written as `Calendars`, `Resources` and `Assignments` with UIDs
  * from 1 in input order. Every calendar is written as a base calendar with its complete weekly pattern (`DayType` 1 to 7,
  * Sunday first) and each exception date as a `DayType` 0 entry with a `TimePeriod`. `defaultCalendarId` and a task's
- * `calendarId` become `CalendarUID`. A resource gets `Type`, `MaxUnits` (when set) and `CalendarUID`, an assignment `Units` (default 1). These
+ * `calendarId` become `CalendarUID`. A resource gets `Type` (0 material, 1 work; a cost resource 0 with `IsCostResource` 1),
+ * `MaxUnits` (when set) and `CalendarUID`, an assignment `Units` (default 1). These
  * elements follow the MSPDI schema order but have not been opened in Microsoft Project itself.
  *
  * Not exported: a second constraint of a task (other than the Must Finish On pair), notes, custom fields, baseline
@@ -423,7 +432,8 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
       const uid = resourceUids.get(resource.id)!
       return `<Resource><UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(resource.name)}</Name>`
         + `<Type>${resourceTypes[resource.type ?? 'work']}</Type><IsNull>0</IsNull>${resource.maxUnits === undefined ? '' : `<MaxUnits>${resource.maxUnits}</MaxUnits>`}`
-        + (resource.calendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(resource.calendarId)}</CalendarUID>`) + '</Resource>'
+        + (resource.calendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(resource.calendarId)}</CalendarUID>`)
+        + (resource.type === 'cost' ? '<IsCostResource>1</IsCostResource>' : '') + '</Resource>'
     }).join('') + '</Resources>' : ''
   const assignments = project.assignments?.length
     ? '<Assignments>' + project.assignments.map((assignment, index) =>
@@ -465,8 +475,9 @@ export interface MsProjectImportTask extends MsProjectTask {
  * task to itself or of an unknown type. `percent-lag`: a lag in percent of the predecessor's duration, which was left
  * out. `working-time-lag`: a lag in working time, which was read as the same amount of elapsed time.
  * `skipped-calendar`: a calendar without a valid or with a repeated UID. `invalid-calendar`: a working time, exception
- * or base calendar reference that cannot be read or would be circular, which was left out. `unsupported-calendar`: a
- * recurring exception, an alternate work week or a day type that `WorkWeek` cannot hold, which was left out.
+ * or base calendar reference that cannot be read or would be circular, which was left out, or an exception with more
+ * than 3,660 dates, of which the first 3,660 were kept. `unsupported-calendar`: an exception recurrence that is not
+ * expanded (see `fromMsProjectXml`), an alternate work week or a day type that `WorkWeek` cannot hold, which was left out.
  * `unknown-calendar`: a calendar UID of the project, a task or a resource that no imported calendar has, which was left
  * out. `skipped-resource`: a resource without a valid UID or with a UID used before. `skipped-assignment`: an
  * assignment to a task or resource that was not imported, or repeating a task and resource pair.
@@ -590,30 +601,157 @@ function msWorkingTimes(element: XmlElement, working: boolean, warn: MsWarn, cal
   return shifts.sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
 }
 
+const dayMs = 86_400_000
+/** The day number (days since 1970-01-01) of a civil date; `month` from 0 and `day` from 1 may overflow into the next month. */
+function dayNumber(year: number, month: number, day: number) {
+  const value = new Date(0)
+  value.setUTCFullYear(year, month, day)
+  return Math.round(value.getTime() / dayMs)
+}
+/** Weekday of a day number, 0 for Sunday. */
+const weekdayOf = (day: number) => ((day + 4) % 7 + 7) % 7
+const lastDayOfMonth = (year: number, month: number) => dayNumber(year, month + 1, 0)
+/** The `position` (0 to 3 for first to fourth, 4 for last) `weekday` of a month, as a day number. */
+function positionalDay(year: number, month: number, weekday: number, position: number) {
+  if (position === 4) {
+    const last = lastDayOfMonth(year, month)
+    return last - (weekdayOf(last) - weekday + 7) % 7
+  }
+  const first = dayNumber(year, month, 1)
+  return first + (weekday - weekdayOf(first) + 7) % 7 + 7 * position
+}
+
+/**
+ * How an MSPDI calendar exception repeats inside its `TimePeriod`. `next` returns the first date of the pattern on or
+ * after a day number, which is how every kind is expanded (loops only).
+ */
+type ExceptionPattern = { contiguous: true } | { contiguous: false; next: (day: number, from: number) => number }
+
+/**
+ * Classify a calendar exception by its `Type` before any date is expanded. Returns the pattern, or the warning that
+ * leaves the exception out. The `Type` values are those of the Exception parent in the Project XML Data Interchange
+ * Schema reference ("Type Element (Multiple Parents)", learn.microsoft.com/office-project/xml-data-interchange):
+ * 1 daily, 2 yearly by day of the month, 3 yearly by position, 4 monthly by day of the month, 5 monthly by position,
+ * 6 weekly, 7 by day count, 8 by weekday count, 9 no exception type. `DaysOfWeek` is a bit mask (1 Sunday … 64
+ * Saturday), `MonthItem` 3 to 9 is Sunday to Saturday (0 day, 1 weekday, 2 weekend day), `MonthPosition` 0 to 3 is first
+ * to fourth and 4 last, and `Month` counts from 0 (January).
+ */
+function exceptionPattern(fields: ReadonlyMap<string, XmlElement>): ExceptionPattern | { code: MsProjectImportWarningCode; reason: string } {
+  const number = (name: string) => {
+    const text = fields.get(name)?.text.trim()
+    return text === undefined || text === '' ? undefined : /^\d+$/.test(text) ? Number(text) : NaN
+  }
+  const type = fields.get('Type')?.text.trim() ?? ''
+  const unreadable = (what: string) => ({ code: 'invalid-calendar' as const, reason: `its ${what} cannot be read` })
+  const unsupported = (what: string) => ({ code: 'unsupported-calendar' as const, reason: what + ' is not supported' })
+  // Without a type (which Microsoft Project always writes) or with "no exception type", the period is the exception.
+  if (type === '' || type === '9') return { contiguous: true }
+  const period = number('Period')
+  if (period !== undefined && !(period >= 0)) return unreadable('period')
+  if (type === '1' || type === '7') {
+    if (period === 0) return unreadable('period')
+    // Every N days, counted from FromDate.
+    const every = period ?? 1
+    return every === 1 ? { contiguous: true } : { contiguous: false, next: (day, from) => from + Math.ceil((day - from) / every) * every }
+  }
+  if (type === '6') {
+    const days = number('DaysOfWeek')
+    if (days === undefined || !(days >= 1 && days <= 127)) return unreadable('days of the week')
+    if (period === 0) return unreadable('period')
+    // Which weeks an interval of two or more counts from depends on Microsoft Project's week anchoring.
+    if ((period ?? 1) > 1) return unsupported('a weekly recurrence every ' + period + ' weeks')
+    return { contiguous: false, next: day => { while (!(days & (1 << weekdayOf(day)))) day++; return day } }
+  }
+  if (type === '2' || type === '3' || type === '4' || type === '5') {
+    const yearly = type === '2' || type === '3'
+    if (period === 0 && !yearly) return unreadable('period')
+    if ((period ?? 1) > 1) return unsupported(`a ${yearly ? 'yearly' : 'monthly'} recurrence with a period of ${period}`)
+    const month = number('Month')
+    if (yearly && (month === undefined || !(month <= 11))) return unreadable('month')
+    const byMonth = (pick: (year: number, month: number) => number) => (day: number) => {
+      const date = new Date(day * dayMs)
+      for (let year = date.getUTCFullYear(), index = yearly ? 0 : date.getUTCMonth(); ; ) {
+        const found = pick(year, yearly ? month! : index)
+        if (found >= day) return found
+        if (yearly || ++index === 12) {
+          year++
+          index = 0
+        }
+      }
+    }
+    if (type === '2' || type === '4') {
+      const monthDay = number('MonthDay')
+      const longest = yearly ? [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month!]! : 31
+      if (monthDay === undefined || !(monthDay >= 1 && monthDay <= longest)) return unreadable('day of the month')
+      // A day that some months or years lack (the 29th to the 31st, or 29 February) has no documented rule.
+      if (monthDay > (yearly ? longest === 29 ? 28 : longest : 28)) return unsupported(yearly ? 'a recurrence on 29 February' : 'a monthly recurrence on day ' + monthDay)
+      return { contiguous: false, next: byMonth((year, index) => dayNumber(year, index, monthDay)) }
+    }
+    const item = number('MonthItem'), position = number('MonthPosition')
+    if (item === undefined || !(item <= 9)) return unreadable('month item')
+    if (position === undefined || !(position <= 4)) return unreadable('month position')
+    if (item < 3) return unsupported('a recurrence by the position of a ' + ['day', 'weekday', 'weekend day'][item])
+    return { contiguous: false, next: byMonth((year, index) => positionalDay(year, index, item - 3, position)) }
+  }
+  return unsupported(type === '8' ? 'a recurrence by weekday count (type 8)' : `the exception type ${type}`)
+}
+
+/**
+ * Read one calendar exception (an `Exception`, or a `WeekDay` of `DayType` 0) into one-off dates. The exception is
+ * classified by `exceptionPattern` first; a contiguous one covers every day from `FromDate` to `ToDate` and a recurring
+ * one the exact dates of its pattern there. With `EnteredByOccurrences` 1 (or `Type` 7) and a valid `Occurrences`, the
+ * count governs instead of `ToDate`. An exception keeps at most `maxExceptionDays` dates.
+ */
 function msException(raw: RawCalendar, element: XmlElement, warn: MsWarn) {
   const fields = childMap(element)
   const period = fields.get('TimePeriod') ? childMap(fields.get('TimePeriod')!) : new Map<string, XmlElement>()
-  const first = msDay(period.get('FromDate')?.text.trim()), last = msDay(period.get('ToDate')?.text.trim()) ?? first
+  const first = msDay(period.get('FromDate')?.text.trim()), last = msDay(period.get('ToDate')?.text.trim())
   const working = isTrue((fields.get('DayWorking') ?? { text: '' }).text.trim())
   const calendarId = raw.id
-  const occurrences = fields.get('Occurrences')?.text.trim()
-  if (occurrences !== undefined && /^\d+$/.test(occurrences) && Number(occurrences) > 1) {
-    warn('unsupported-calendar', `A recurring exception of calendar ${calendarId} was left out`, { calendarId })
+  const name = fields.get('Name')?.text.trim()
+  const subject = name ? `The exception "${name}"` : 'An exception'
+  const pattern = exceptionPattern(fields)
+  if ('code' in pattern) {
+    warn(pattern.code, `${subject} of calendar ${calendarId} was left out: ${pattern.reason}`, { calendarId })
     return
   }
-  if (first === undefined || last === undefined || last < first) {
-    warn('invalid-calendar', `An exception of calendar ${calendarId} has no valid dates and was left out`, { calendarId })
+  const occurrencesText = fields.get('Occurrences')?.text.trim()
+  const occurrences = occurrencesText !== undefined && /^\d+$/.test(occurrencesText) ? Number(occurrencesText) : 0
+  const byCount = (isTrue(fields.get('EnteredByOccurrences')?.text.trim()) || fields.get('Type')?.text.trim() === '7') && occurrences >= 1
+  // A contiguous exception with only FromDate is that one day; a recurring one needs ToDate or a count.
+  const end = last ?? (pattern.contiguous ? first : undefined)
+  if (first === undefined || (!byCount && (end === undefined || end < first))) {
+    warn('invalid-calendar', `${subject} of calendar ${calendarId} has no valid dates and was left out`, { calendarId })
     return
   }
   const shifts = msWorkingTimes(element, working, warn, calendarId)
-  const firstTime = civilDay(first)!, lastTime = civilDay(last)!
-  const days = Math.round((lastTime - firstTime) / 86_400_000) + 1
-  if (days > maxExceptionDays) {
-    warn('invalid-calendar', `An exception of calendar ${calendarId} covers more than ${maxExceptionDays} days; only the first ${maxExceptionDays} were kept`, { calendarId })
+  const firstDay = Math.round(civilDay(first)! / dayMs)
+  const lastDay = byCount ? Infinity : Math.round(civilDay(end!)! / dayMs)
+  const limit = Math.min(byCount ? occurrences : Infinity, maxExceptionDays)
+  const days: number[] = []
+  let truncated = false
+  // Dates after the year 9999 cannot be written as YYYY-MM-DD.
+  const maxDay = Math.min(lastDay, dayNumber(9999, 11, 31))
+  if (pattern.contiguous) {
+    const count = byCount ? occurrences : lastDay - firstDay + 1
+    truncated = count > maxExceptionDays
+    for (let day = firstDay; day < firstDay + Math.min(count, maxExceptionDays) && day <= maxDay; day++) days.push(day)
+  } else {
+    for (let day = pattern.next(firstDay, firstDay); day <= maxDay; day = pattern.next(day + 1, firstDay)) {
+      if (days.length === limit) {
+        // In count mode the limit is the count unless the count is larger than the cap.
+        truncated = !byCount || occurrences > maxExceptionDays
+        break
+      }
+      days.push(day)
+    }
   }
-  for (let day = 0; day < Math.min(days, maxExceptionDays); day++) {
-    raw.exceptions.set(new Date(firstTime + day * 86_400_000).toISOString().slice(0, 10), shifts)
+  if (truncated) {
+    warn('invalid-calendar', pattern.contiguous
+      ? `${subject} of calendar ${calendarId} covers more than ${maxExceptionDays} days; only the first ${maxExceptionDays} were kept`
+      : `${subject} of calendar ${calendarId} has more than ${maxExceptionDays} dates; only the first ${maxExceptionDays} were kept`, { calendarId })
   }
+  for (const day of days) raw.exceptions.set(new Date(day * dayMs).toISOString().slice(0, 10), shifts)
 }
 
 /** Read `Calendars` and resolve base calendars into complete weeks. Loops only, so long base chains are safe. */
@@ -726,12 +864,21 @@ const decimalText = /^\d+(\.\d+)?$/
  * `LinkLag` (tenths of a minute) as elapsed milliseconds. Problems that the reader works around are listed in
  * `warnings` (see `MsProjectImportWarningCode`) instead of thrown.
  *
- * Calendars become `calendars` (`MsProjectCalendar`): the weekly working times (`DayType` 1 to 7) and the one-off
- * exceptions (`DayType` 0 entries and `Exceptions`) as a `WorkWeek`, with base calendars resolved so each week is complete.
- * The project `CalendarUID` becomes `defaultCalendarId` and a task's or resource's one `calendarId`. Resources
- * (`UID`, `Name`, `Type`, `MaxUnits`, `CalendarUID`) become `resources` and `Assignments` (`TaskUID`, `ResourceUID`,
- * `Units`) become `assignments`; `Units` and `MaxUnits` stay fractions (1 is 100 %). Recurring exceptions, alternate
- * work weeks and the exception of a working day without times are reported in `warnings` and left out.
+ * Calendars become `calendars` (`MsProjectCalendar`): the weekly working times (`DayType` 1 to 7) and the exceptions
+ * (`DayType` 0 entries and `Exceptions`) as one-off dates of a `WorkWeek`, with base calendars resolved so each week is
+ * complete. Each `Exception` is classified by its `Type` before any date is expanded. A daily exception every day
+ * (`Type` 1 or 7 with `Period` 1 or none), one without a `Type` or with `Type` 9, and a `DayType` 0 entry cover every
+ * date from `FromDate` to `ToDate`. These recurrences become their exact dates in that period: daily every N days (from
+ * `FromDate`), weekly every week on `DaysOfWeek`, monthly every month on day 1 to 28 or on the first to fourth or last
+ * Sunday to Saturday, and yearly on a day (not 29 February) or on such a position of a `Month`. With
+ * `EnteredByOccurrences` 1 (or `Type` 7) and a positive `Occurrences`, the first `Occurrences` dates from `FromDate` are
+ * taken instead of the dates up to `ToDate`. Other recurrences (weekly every two or more weeks, monthly every two or more
+ * months, days 29 to 31 or 29 February, positions of a day, weekday or weekend day, and `Type` 8) are left out with an
+ * `unsupported-calendar` warning, and an exception keeps at most 3,660 dates. The project `CalendarUID` becomes
+ * `defaultCalendarId` and a task's or resource's one `calendarId`. Resources (`UID`, `Name`, `Type`, `IsCostResource`,
+ * `MaxUnits`, `CalendarUID`) become `resources`, where `IsCostResource` 1 or `Type` 2 is a cost resource, and
+ * `Assignments` (`TaskUID`, `ResourceUID`, `Units`) become `assignments`; `Units` and `MaxUnits` stay fractions (1 is
+ * 100 %). Alternate work weeks and the exception of a working day without times are reported in `warnings` and left out.
  *
  * Not imported: notes, custom fields, baseline work and cost, lags in percent, the working-time meaning of other lags,
  * resource cost rates and availability tables, assignment work, dates and contours. Throws an Error for malformed XML (with the line and column) and for a
@@ -921,6 +1068,8 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       if (type) resource.type = type
       else warn('invalid-value', `Resource ${id} has a type that cannot be read: ${typeText}`, { resourceId: id })
     }
+    // A cost resource is flagged by IsCostResource, whatever its Type says.
+    if (isTrue(value('IsCostResource'))) resource.type = 'cost'
     const unitsText = value('MaxUnits')
     if (unitsText !== undefined) {
       if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) resource.maxUnits = Number(unitsText)
