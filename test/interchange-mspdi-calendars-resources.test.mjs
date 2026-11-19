@@ -395,3 +395,50 @@ test('toMsProjectXml accepts an exception on 1970-01-01 and other zero values', 
   assert.equal(imported.tasks[0].start, 0)
   assert.throws(() => toMsProjectXml({ ...plan, calendars: [{ id: 'c', name: 'C', week: { weekly: [], exceptions: { '1970-02-30': [] } } }] }), /Invalid exception date in calendar c: 1970-02-30/)
 })
+
+test('a working exception without readable working times is reported once and its dates stay days off', () => {
+  const timesOf = list => `<WorkingTimes>${list}</WorkingTimes>`
+  const unreadable = timesOf('<WorkingTime><FromTime>x</FromTime><ToTime>y</ToTime></WorkingTime>')
+  const valid = timesOf('<WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime>')
+  const build = (inner, { to = '2026-01-03', rec = '' } = {}) => fromMsProjectXml(mspdi(
+    `<Calendars><Calendar><UID>1</UID><Name>C</Name><IsBaseCalendar>1</IsBaseCalendar><WeekDays>${standardDays}</WeekDays><Exceptions>`
+    + `<Exception><EnteredByOccurrences>0</EnteredByOccurrences><TimePeriod><FromDate>2026-01-03T00:00:00</FromDate><ToDate>${to}T23:59:00</ToDate></TimePeriod>`
+    + `<Name>Saturday</Name>${rec}<DayWorking>1</DayWorking>${inner}</Exception></Exceptions></Calendar></Calendars>`))
+  const weekly = { to: '2026-01-31', rec: '<Type>6</Type><Period>1</Period><DaysOfWeek>64</DaysOfWeek>' }
+  const saturdays = ['2026-01-03', '2026-01-10', '2026-01-17', '2026-01-24', '2026-01-31']
+  const message = 'The exception "Saturday" of calendar 1 is a working day without working times: its dates were treated as days off'
+  const noTimes = { code: 'invalid-calendar', calendarId: '1', message }
+  const unreadableWarning = { code: 'invalid-calendar', calendarId: '1', message: 'A working time of calendar 1 cannot be read and was left out' }
+  for (const [inner, options, dates, extra] of [
+    ['', undefined, ['2026-01-03'], []],
+    [timesOf(''), undefined, ['2026-01-03'], []],
+    [unreadable, undefined, ['2026-01-03'], [unreadableWarning]],
+    ['', weekly, saturdays, []],
+    [timesOf(''), weekly, saturdays, []],
+    [unreadable, weekly, saturdays, [unreadableWarning]],
+  ]) {
+    const result = build(inner, options)
+    const exceptions = result.calendars[0].week.exceptions
+    assert.deepEqual(Object.keys(exceptions), dates)
+    assert.equal(Object.values(exceptions).every(shifts => shifts.length === 0), true)
+    // One warning for the exception, not one per expanded date.
+    assert.deepEqual(result.warnings, [...extra, noTimes])
+  }
+  // A working exception with valid times is unchanged and silent.
+  for (const [options, dates] of [[undefined, ['2026-01-03']], [weekly, saturdays]]) {
+    const result = build(valid, options)
+    assert.deepEqual(result.warnings, [])
+    const exceptions = result.calendars[0].week.exceptions
+    assert.deepEqual(Object.keys(exceptions), dates)
+    assert.equal(Object.values(exceptions).every(shifts => shifts.length === 1 && shifts[0].startMinute === 480 && shifts[0].endMinute === 720), true)
+  }
+})
+
+test('toMsProjectXml cannot write a working exception without times', () => {
+  const xml = toMsProjectXml({
+    name: 'P', tasks: [{ id: 'a', name: 'A', start: 0, end: 0 }],
+    calendars: [{ id: 'c', name: 'C', week: { weekly: [], exceptions: { '2026-01-03': [] } } }],
+  })
+  assert.match(xml, /<DayType>0<\/DayType><DayWorking>0<\/DayWorking><TimePeriod>/)
+  assert.deepEqual(fromMsProjectXml(xml).warnings, [])
+})

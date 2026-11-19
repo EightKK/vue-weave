@@ -725,6 +725,10 @@ function msException(raw: RawCalendar, element: XmlElement, warn: MsWarn) {
     return
   }
   const shifts = msWorkingTimes(element, working, warn, calendarId)
+  // Contradictory data: a working day without readable times. Its dates stay days off, as the file gives no hours.
+  if (working && !shifts.length) {
+    warn('invalid-calendar', `${subject} of calendar ${calendarId} is a working day without working times: its dates were treated as days off`, { calendarId })
+  }
   const firstDay = Math.round(civilDay(first)! / dayMs)
   const lastDay = byCount ? Infinity : Math.round(civilDay(end!)! / dayMs)
   const limit = Math.min(byCount ? occurrences : Infinity, maxExceptionDays)
@@ -878,7 +882,9 @@ const decimalText = /^\d+(\.\d+)?$/
  * `defaultCalendarId` and a task's or resource's one `calendarId`. Resources (`UID`, `Name`, `Type`, `IsCostResource`,
  * `MaxUnits`, `CalendarUID`) become `resources`, where `IsCostResource` 1 or `Type` 2 is a cost resource, and
  * `Assignments` (`TaskUID`, `ResourceUID`, `Units`) become `assignments`; `Units` and `MaxUnits` stay fractions (1 is
- * 100 %). Alternate work weeks and the exception of a working day without times are reported in `warnings` and left out.
+ * 100 %). Alternate work weeks are reported in `warnings` and left out. A working weekday without times is reported
+ * and left to the base calendar; an exception that is a working day without readable times is reported once, and its
+ * dates are days off.
  *
  * Not imported: notes, custom fields, baseline work and cost, lags in percent, the working-time meaning of other lags,
  * resource cost rates and availability tables, assignment work, dates and contours. Throws an Error for malformed XML (with the line and column) and for a
