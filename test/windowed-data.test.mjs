@@ -60,6 +60,23 @@ test('windowed data validates its options and views', () => {
   assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, { nope: true }), TypeError)
 })
 
+test('setWindowedView rejects a view row ID that is not a non-empty string with the shared Error text', () => {
+  const state = createWindowedDataState({ chunkSize: 1 })
+  for (const [value, shown] of [[5, '5'], [0, '0'], ['', '""'], [undefined, 'undefined'], [null, 'null'], [{}, 'object'], [['a'], 'array']]) {
+    assert.throws(() => setWindowedView(state, { start: 0, end: 1, rowIds: ['a', value] }), { name: 'Error', message: `Invalid view row ID: ${shown}` })
+  }
+  // The same check guards the windows of retry and coverage, and the condition-first switch never reaches it.
+  assert.throws(() => windowedCoverage(state, { start: 0, end: 1, rowIds: [1] }), { name: 'Error', message: 'Invalid view row ID: 1' })
+  assert.throws(() => retryWindowedData(state, { start: 0, end: 1, rowIds: [null] }), { name: 'Error', message: 'Invalid view row ID: null' })
+  assert.throws(() => setWindowedView(state, { start: 0, end: 1, rowIds: 'ab' }), { name: 'TypeError', message: 'View rowIds must be an array' })
+  // A repeated row ID is not an error: it is dropped and the first occurrence keeps its place.
+  const repeated = setWindowedView(state, { start: 0, end: 1, rowIds: ['b', 'a', 'b', 'a'] })
+  assert.deepEqual(repeated.state.view.rowIds, ['b', 'a'])
+  assert.deepEqual(repeated.start[0].rowIds, ['b', 'a'])
+  // Number and geometry errors stay RangeErrors.
+  assert.throws(() => setWindowedView(state, { start: NaN, end: 1, rowIds: [5] }), RangeError)
+})
+
 test('fast A to B to A: superseded requests are aborted and only the latest result is applied', async () => {
   const { calls, load } = controlledLoad()
   const view = ref({ start: 0, end: day, rowIds: ['a'] })
@@ -253,6 +270,120 @@ test('splitDanglingLinks keeps links to missing items aside and re-attaches them
   assert.deepEqual(custom.dangling[0].missingIds, ['z'])
 })
 
+test('splitDanglingLinks treats a malformed end as missing and lets a throwing accessor throw', () => {
+  const links = [{ id: 'l1', from: undefined, to: 'a' }, { id: 'l2', from: 5, to: 'a' }, { id: 'l3', from: 'a', to: '' }, { id: 'l4', from: 'a', to: 'a' }]
+  const result = splitDanglingLinks(links, new Set(['a']))
+  assert.deepEqual(result.resolved.map(link => link.id), ['l4'])
+  assert.deepEqual(result.dangling.map(item => [item.link.id, item.missingIds]), [['l1', [undefined]], ['l2', [5]], ['l3', ['']]])
+  const boom = new Error('ends')
+  assert.throws(() => splitDanglingLinks(links, new Set(['a']), { from: () => { throw boom }, to: link => link.to }), error => error === boom)
+  assert.throws(() => splitDanglingLinks(links, new Set(['a']), { from: link => link.from, to: () => { throw boom } }), error => error === boom)
+  assert.throws(() => splitDanglingLinks([null], new Set(['a'])), TypeError)
+})
+
+test('useWindowedData reports a throwing linkEnds through error and never hands out a partial split', async () => {
+  const links = [{ id: 'l1', from: 'a', to: 'b' }, { id: 'l2', from: 'b', to: 'c' }, { id: 'l3', from: 'a', to: 'z' }]
+  const items = [bar('a', undefined, 0, 1), bar('b', undefined, 0, 1), bar('c', undefined, 0, 1)]
+  const broken = ref(true)
+  let calls = 0
+  const boom = new Error('ends')
+  const linkEnds = {
+    from: (link) => {
+      calls++
+      if (broken.value && link.id === 'l2') throw boom
+      return link.from
+    },
+    to: link => link.to,
+  }
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view: ref({ start: 0, end: 1 }), load: () => ({ items, links }), chunkSize: 1, linkEnds }))
+  await flush()
+  // Nothing evaluates the accessor until the split or the error is read, and the loaded data is unaffected.
+  assert.equal(calls, 0)
+  assert.equal(data.complete.value, true)
+  assert.equal(data.status.value, 'loaded')
+  assert.equal(data.items.value.length, 3)
+  assert.equal(data.links.value.length, 3)
+  assert.equal(calls, 0)
+  // l1 was split before l2 threw, yet nothing is handed out: no resolved link, no dangling link.
+  assert.deepEqual(data.resolvedLinks.value, [])
+  assert.deepEqual(data.danglingLinks.value, [])
+  assert.deepEqual(data.resolvedLinks.value, [])
+  assert.equal(data.error.value.error, boom)
+  assert.equal('request' in data.error.value, false)
+  // Cached: repeated reads do not run the accessor again.
+  const after = calls
+  assert.equal(data.error.value, data.error.value)
+  assert.deepEqual(data.danglingLinks.value, [])
+  assert.equal(calls, after)
+  assert.equal(data.items.value.length, 3)
+  assert.equal(data.complete.value, true)
+  // It clears by itself when the split succeeds again, and the split is then complete.
+  broken.value = false
+  assert.equal(data.error.value, undefined)
+  assert.deepEqual(data.resolvedLinks.value.map(link => link.id), ['l1', 'l2'])
+  assert.deepEqual(data.danglingLinks.value.map(item => [item.link.id, item.missingIds]), [['l3', ['z']]])
+  // Failing for every link behaves the same.
+  broken.value = true
+  const all = scope.run(() => useWindowedData({
+    view: ref({ start: 0, end: 1 }), load: () => ({ items, links }), chunkSize: 1, linkEnds: { from: () => { throw boom }, to: link => link.to },
+  }))
+  await flush()
+  assert.deepEqual([all.resolvedLinks.value, all.danglingLinks.value], [[], []])
+  assert.equal(all.error.value.error, boom)
+  scope.stop()
+})
+
+test('a link-ends failure comes after request and view failures and reappears once they clear', async () => {
+  const { calls, load } = controlledLoad()
+  const boom = new Error('ends')
+  const down = new Error('down')
+  const view = ref({ start: 0, end: 1 })
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({
+    view, load, chunkSize: 1, maxCells: 5, linkEnds: { from: () => { throw boom }, to: link => link.to },
+  }))
+  calls[0].resolve({ items: [bar('a', undefined, 0, 1)], links: [{ id: 'l', from: 'a', to: 'a' }] })
+  await flush()
+  assert.equal(data.error.value.error, boom)
+  // A failed request wins; it is not lost, and the split stays empty.
+  view.value = { start: 0, end: 2 }
+  await nextTick()
+  calls[1].reject(down)
+  await flush()
+  assert.equal(data.error.value.error, down)
+  assert.equal(data.error.value.request.requestId, calls[1].request.requestId)
+  assert.deepEqual([data.resolvedLinks.value, data.danglingLinks.value], [[], []])
+  assert.equal(data.status.value, 'failed')
+  // An invalid view wins too (it replaces the request failure, as before).
+  view.value = { start: 0, end: 50 }
+  await nextTick()
+  assert.ok(data.error.value.error instanceof RangeError)
+  view.value = { start: 0, end: 2 }
+  await nextTick()
+  // A valid view clears the view error, and the link failure, which was never lost, shows again (the cell stays failed).
+  assert.equal(data.error.value.error, boom)
+  assert.equal(data.error.value.request, undefined)
+  assert.equal(data.status.value, 'failed')
+  data.retry()
+  assert.equal(data.error.value.error, boom)
+  scope.stop()
+})
+
+test('malformed link ends are dangling, not an error, and a link is resolved only when both ends are loaded', async () => {
+  const scope = effectScope()
+  const links = [{ id: 'l1', from: 'a', to: 'b' }, { id: 'l2', from: undefined, to: 'a' }, { id: 'l3', from: 7, to: 'a' }, { id: 'l4', from: '', to: 'a' }]
+  const data = scope.run(() => useWindowedData({
+    view: ref({ start: 0, end: 1 }), chunkSize: 1,
+    load: () => ({ items: [bar('a', undefined, 0, 1), bar('b', undefined, 0, 1)], links }),
+  }))
+  await flush()
+  assert.equal(data.error.value, undefined)
+  assert.deepEqual(data.resolvedLinks.value.map(link => link.id), ['l1'])
+  assert.deepEqual(data.danglingLinks.value.map(item => item.link.id), ['l2', 'l3', 'l4'])
+  scope.stop()
+})
+
 test('useWindowedData splits loaded links and re-attaches them as their ends load', async () => {
   const { calls, load } = controlledLoad()
   const view = ref({ start: 0, end: 1, rowIds: ['a'] })
@@ -296,8 +427,8 @@ test('graph expansion merges neighbour pages of a cyclic graph without duplicate
   assert.deepEqual([...state.expandedIds], ['a', 'c'])
   const cancelled = cancelGraphExpansion(beginGraphExpansion(state, ['b']), ['b'])
   assert.deepEqual(graphExpansionView(cancelled).frontierIds, ['b', 'd'])
-  assert.throws(() => mergeGraphExpansionPage(state, { nodes: [node('x'), node('x')] }), /Duplicate node ID/)
-  assert.throws(() => mergeGraphExpansionPage(state, { edges: [{ id: '', from: 'a', to: 'b' }] }), /non-empty/)
+  assert.throws(() => mergeGraphExpansionPage(state, { nodes: [node('x'), node('x')] }), { name: 'Error', message: 'Duplicate graph page node ID: x (in one page)' })
+  assert.throws(() => mergeGraphExpansionPage(state, { edges: [{ id: '', from: 'a', to: 'b' }] }), { name: 'Error', message: 'Invalid graph page edge ID: ""' })
 })
 
 test('GanttChart server markup is unchanged with a visible-window-change listener, and nothing is emitted or requested during SSR', async () => {
@@ -479,12 +610,19 @@ test('an invalid view of the same condition aborts what is in flight, keeps load
   assert.equal(data.pending.value, false)
   assert.equal(windowedCellStatus(data.state.value, 1), 'unloaded')
   assert.ok(data.error.value.error instanceof RangeError)
-  for (const invalid of [{ start: 2, end: 1 }, { start: 0, end: Infinity }, null]) {
+  for (const invalid of [{ start: 2, end: 1 }, { start: 0, end: Infinity }, null, { start: 0, end: 1, rowIds: [5] }, { start: 0, end: 1, rowIds: ['a', ''] }]) {
     view.value = invalid
     await nextTick()
     assert.equal(data.error.value.request, undefined)
     assert.equal(data.state.value.view, undefined)
+    assert.equal(data.pending.value, false)
+    assert.deepEqual(data.items.value.map(item => item.id), ['k'])
   }
+  // A view row ID that is not a non-empty string is an Error with the shared text, not a TypeError.
+  view.value = { start: 0, end: 1, rowIds: [5] }
+  await nextTick()
+  assert.equal(data.error.value.error.constructor, Error)
+  assert.equal(data.error.value.error.message, 'Invalid view row ID: 5')
   // retry and invalidate keep a view error while the view stays invalid and request nothing.
   data.retry()
   data.invalidate()
@@ -587,14 +725,25 @@ test('random interleavings keep the windowed data consistent with the current co
     }
     const randomView = () => {
       if (random() < 0.1) return { start: 3, end: 1 }
+      if (random() < 0.05) return { start: 0, end: 1, rowIds: ['a', 5] }
       const start = pick(6)
       const rows = rowsPool.filter(() => random() < 0.6)
       return { start, end: start + pick(4), rowIds: rows.length ? rows : ['a'] }
     }
     const view = ref(randomView())
     const condition = ref(conditions[pick(3)])
+    // Links get their own random stream, so the interleavings above stay what they were. `endsBroken` makes the accessor throw.
+    const linkRandom = seededRandom(seed + 10_000).random
+    const endsBroken = ref(false)
+    const linkEnds = {
+      from: (link) => {
+        if (endsBroken.value) throw new Error('ends')
+        return link.from
+      },
+      to: link => link.to,
+    }
     const scope = effectScope()
-    const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: 1, maxCells: 12 }))
+    const data = scope.run(() => useWindowedData({ view, condition, load, chunkSize: 1, maxCells: 12, linkEnds }))
     const answer = (request) => {
       const items = []
       for (const row of request.rowIds ?? []) {
@@ -603,7 +752,13 @@ test('random interleavings keep the windowed data consistent with the current co
         items.push({ id: `${request.condition}-${row}-${at}`, rowId: row, start: at, end: at + 1, condition: request.condition })
       }
       if (items.length && random() < 0.1) items.push(items[0])
-      return items
+      // Links between the items of this answer and to an item that is not loaded; an ID is stable, so repeats overlap.
+      const links = []
+      for (const [index, item] of items.entries()) {
+        if (linkRandom() < 0.5) links.push({ id: `l-${request.condition}-${item.id}`, from: item.id, to: items[(index + 1) % items.length].id })
+        if (linkRandom() < 0.3) links.push({ id: `m-${request.condition}-${item.id}`, from: item.id, to: `${request.condition}-missing` })
+      }
+      return { items, links }
     }
     const open = () => calls.filter(call => !call.settled)
     for (let step = 0; step < steps; step++) {
@@ -635,6 +790,7 @@ test('random interleavings keep the windowed data consistent with the current co
       } else if (action === 7) data.invalidate()
       else if (action === 8) data.cancel()
       else throwNext = true
+      if (linkRandom() < 0.1) endsBroken.value = !endsBroken.value
       await flush()
       const state = data.state.value
       assert.equal(state.condition, condition.value, context)
@@ -663,6 +819,24 @@ test('random interleavings keep the windowed data consistent with the current co
         }
       }
       assert.equal(data.pending.value, state.requests.size > 0, context)
+      // The split is all or nothing: while the accessor throws, nothing is handed out and the failure is reported (unless a
+      // request or view failure comes first); otherwise every link is exactly one of resolved or dangling, and a resolved
+      // link has both ends loaded.
+      const { resolvedLinks, danglingLinks } = data
+      if (endsBroken.value && data.links.value.length) {
+        assert.deepEqual([resolvedLinks.value, danglingLinks.value], [[], []], context)
+        assert.ok(data.error.value, context)
+      } else {
+        assert.equal(resolvedLinks.value.length + danglingLinks.value.length, data.links.value.length, context)
+        for (const link of resolvedLinks.value) {
+          assert.ok(state.items.has(link.from) && state.items.has(link.to), context)
+        }
+        for (const { link, missingIds } of danglingLinks.value) {
+          assert.ok(missingIds.length > 0 && missingIds.every(id => !state.items.has(id)), context)
+          assert.ok(!state.items.has(link.from) || !state.items.has(link.to), context)
+        }
+      }
+      if (!endsBroken.value || !data.links.value.length) assert.ok(!data.error.value || data.error.value.error?.message !== 'ends', context)
     }
     scope.stop()
     for (const call of calls) if (!call.settled) assert.equal(call.signal.aborted, true)

@@ -1,4 +1,5 @@
 import type { GraphEdge } from './graph.js'
+import { duplicateIdError, inContext, invalidIdError, isId } from './ids.js'
 import { splitDanglingLinks, type DanglingLink } from './windowedData.js'
 
 /**
@@ -40,14 +41,14 @@ function checkPage<N extends { id: string }, E extends GraphEdge>(page: GraphExp
   if (!page || typeof page !== 'object') throw new TypeError('A graph page must be an object')
   const nodeIds = new Set<string>()
   for (const node of page.nodes ?? []) {
-    if (typeof node?.id !== 'string' || node.id === '') throw new Error('Graph page nodes need a non-empty string ID')
-    if (nodeIds.has(node.id)) throw new Error('Duplicate node ID in one graph page: ' + node.id)
+    if (!isId(node?.id)) throw invalidIdError('graph page node', node?.id)
+    if (nodeIds.has(node.id)) throw inContext(duplicateIdError('graph page node', node.id), 'in one page')
     nodeIds.add(node.id)
   }
   const edgeIds = new Set<string>()
   for (const edge of page.edges ?? []) {
-    if (typeof edge?.id !== 'string' || edge.id === '') throw new Error('Graph page edges need a non-empty string ID')
-    if (edgeIds.has(edge.id)) throw new Error('Duplicate edge ID in one graph page: ' + edge.id)
+    if (!isId(edge?.id)) throw invalidIdError('graph page edge', edge?.id)
+    if (edgeIds.has(edge.id)) throw inContext(duplicateIdError('graph page edge', edge.id), 'in one page')
     if (typeof edge.from !== 'string' || typeof edge.to !== 'string') throw new Error('Graph page edge needs string ends: ' + edge.id)
     edgeIds.add(edge.id)
   }
