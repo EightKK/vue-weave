@@ -64,8 +64,8 @@ test('GanttChart clips marker ranges to the chart range and skips those outside 
 
 test('GanttChart reports invalid marker ranges through validation-error', async () => {
   const cases = [
-    [[freeze, { ...freeze }], Error, /Invalid or duplicate marker range ID: freeze/],
-    [[{ ...freeze, id: '' }], Error, /Invalid or duplicate marker range ID/],
+    [[freeze, { ...freeze }], Error, /^Duplicate marker range ID: freeze$/],
+    [[{ ...freeze, id: '' }], Error, /^Invalid marker range ID: ""$/],
     [[{ ...freeze, end: freeze.start }], RangeError, /finite endpoints with start < end: freeze/],
     [[{ ...freeze, end: hour }], RangeError, /start < end/],
     [[{ ...freeze, start: Number.NaN }], RangeError, /start < end/],
@@ -109,7 +109,7 @@ test('renderTimelineSvg draws marker ranges with bands, header labels, tones and
 })
 
 test('renderTimelineSvg validates marker ranges like GanttChart', () => {
-  assert.throws(() => svg({ markerRanges: [freeze, freeze] }), { name: 'Error', message: /duplicate marker range ID: freeze/ })
+  assert.throws(() => svg({ markerRanges: [freeze, freeze] }), { name: 'Error', message: 'Duplicate marker range ID: freeze' })
   assert.throws(() => svg({ markerRanges: [{ ...freeze, end: freeze.start }] }), RangeError)
   assert.throws(() => svg({ markerRanges: [{ ...freeze, start: '1' }] }), RangeError)
   assert.throws(() => svg({ markerRanges: [{ ...freeze, rowIds: ['x'] }] }), { name: 'Error', message: /Unknown row for marker range/ })

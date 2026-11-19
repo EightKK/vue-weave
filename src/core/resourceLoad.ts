@@ -2,7 +2,8 @@ import type { ScheduledTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
 import { uniteRanges } from './intervals.js'
-import { assignmentWorkRange, resourceCapacitySteps, sliceWork } from './resourceCapacity.js'
+import { assignmentWorkRange, createAssignmentChecker, resourceCapacitySteps, sliceWork } from './resourceCapacity.js'
+import { checkId } from './ids.js'
 
 /** A capacity that replaces a resource's `capacity` over a fixed half-open interval of elapsed time. */
 export interface ResourceCapacityPeriod extends TimeRange {
@@ -105,8 +106,9 @@ export function calculateResourceLoad(
   assertScheduleRange(range)
   const taskPeriods = new Map<string, TimeRange[]>()
   const taskWork = new Map<string, readonly TimeRange[]>()
+  const taskIds = new Set<string>()
   for (const task of tasks) {
-    if (!task.id || taskPeriods.has(task.id)) throw new Error('Invalid or duplicate workload task: ' + task.id)
+    checkId('task', task?.id, taskIds)
     taskPeriods.set(task.id, normalizeWorkPeriods(task.work, range))
     taskWork.set(task.id, task.work)
   }
@@ -121,8 +123,9 @@ export function calculateResourceLoad(
     if (!event) events.set(time, event = { starts: [], ends: [] })
     return event
   }
+  const resourceIds = new Set<string>()
   for (const resource of resources) {
-    if (!resource.id || byResource.has(resource.id)) throw new Error('Invalid or duplicate resource: ' + resource.id)
+    checkId('resource', resource?.id, resourceIds)
     const steps = resourceCapacitySteps(resource, range)
     const events = new Map<number, LoadEvent>()
     eventAt(events, range.start)
@@ -130,20 +133,16 @@ export function calculateResourceLoad(
     for (const step of steps) eventAt(events, step.time).capacity = step.capacity
     byResource.set(resource.id, events)
   }
-  const assigned = new Map<string, Set<string>>()
+  const check = createAssignmentChecker({
+    hasResource: id => byResource.has(id),
+    hasTask: id => taskPeriods.has(id) || inactive.has(id),
+    unknownTaskHint: 'Tasks left out of a schedule result as inactive must be listed in options.inactiveTaskIds',
+  })
   for (const assignment of assignments) {
+    check(assignment)
     const { resourceId, taskId, units = 1 } = assignment
-    const events = byResource.get(resourceId)
+    const events = byResource.get(resourceId)!
     let work = taskPeriods.get(taskId)
-    if (!events) throw new Error('Unknown resource in assignment: ' + resourceId)
-    if (!work && !inactive.has(taskId)) {
-      throw new Error('Unknown task in assignment: ' + taskId + '. Tasks left out of a schedule result as inactive must be listed in options.inactiveTaskIds')
-    }
-    if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
-    let seen = assigned.get(resourceId)
-    if (!seen) assigned.set(resourceId, seen = new Set())
-    if (seen.has(taskId)) throw new Error('Duplicate resource assignment for task: ' + taskId)
-    seen.add(taskId)
     const part = assignmentWorkRange(assignment)
     // Offsets count from the start of the task's whole work, which may begin before the range.
     if (part && work) work = normalizeWorkPeriods(sliceWork(uniteRanges(taskWork.get(taskId)!), part.offset, part.duration), range)

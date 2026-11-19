@@ -1,6 +1,7 @@
 import { subtractPeriods, uniteRanges } from './intervals.js'
+import { withContext } from './ids.js'
 import {
-  buildScheduleModel, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
+  buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
 } from './scheduleModel.js'
 import {
   scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleSuccess, type ScheduleTask,
@@ -140,17 +141,18 @@ interface Recorded {
  * Contradictions are returned as diagnostics: overlapping intervals of one task, intervals after the status date (the
  * forecast then starts after them), intervals outside working time (kept as recorded) and a finished task with positive
  * `remainingWork` (its `remainingWork` is scheduled). A forecast that cannot meet a bound or link is returned as the
- * failure in `schedule` and as a diagnostic, with the actuals still in `tasks`. Throws a RangeError for a status date or
- * an interval that is not finite, aligned with the quantum or inside `input.range`, an interval that does not end after
- * it starts, and an invalid `remainingWork`; and an Error for actuals that are not a Map, an unknown or summary task,
- * an entry without an intervals array, an invalid `finished` flag and a finished task without intervals. The arguments
- * are not modified.
+ * failure in `schedule` and as a diagnostic, with the actuals still in `tasks`. Throws a RangeError for a status date
+ * that is not finite, aligned or inside `input.range`, for an actual interval that is not finite, aligned with the
+ * horizon and quantum, of positive length or inside `input.range` (the scheduler's messages for the same defects in its
+ * input, followed by ` (actual interval of task <id>)`), and for an invalid `remainingWork`; and an Error for actuals
+ * that are not a Map, an unknown or summary task, an entry without an intervals array, an invalid `finished` flag and a
+ * finished task without intervals. The arguments are not modified.
  */
 export function rescheduleFromActuals(
   input: ScheduleInput, statusDate: number, actuals: ReadonlyMap<string, TaskActuals>,
 ): RescheduleFromActualsResult {
   const model = buildScheduleModel(input)
-  const { range, quantum } = model
+  const { quantum } = model
   checkStatusDate(model, statusDate)
   if (!isMapLike(actuals)) {
     throw new Error('Actuals must be a Map from task ID to recorded actuals, such as new Map([[\'a\', { intervals: [{ start, end }] }]])')
@@ -162,15 +164,7 @@ export function rescheduleFromActuals(
     if (!entry || typeof entry !== 'object' || !Array.isArray(entry.intervals)) throw new Error('Actuals need an intervals array: ' + id)
     for (const interval of entry.intervals) {
       if (!interval || typeof interval !== 'object') throw new Error('Invalid actual interval: ' + id)
-      const { start, end } = interval
-      if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end)) {
-        throw new RangeError('Actual intervals need finite start and end times: ' + id)
-      }
-      if (end <= start) throw new RangeError('Actual intervals must end after they start: ' + id)
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || (start - range.start) % quantum || (end - range.start) % quantum) {
-        throw new RangeError('Actual intervals must align with the horizon and quantum: ' + id)
-      }
-      if (start < range.start || end > range.end) throw new RangeError('Actual intervals must lie inside the schedule range: ' + id)
+      withContext('actual interval of task ' + id, () => checkScheduleInterval(model, interval))
     }
     const { remainingWork, finished } = entry
     if (remainingWork !== undefined && (!Number.isSafeInteger(remainingWork) || remainingWork < 0 || remainingWork % quantum)) {

@@ -91,8 +91,8 @@ test('manual dates and the inactive flag are validated like other scheduling inp
   // An inactive task is still validated in full, and still owns its ID.
   assert.throws(run({ inactive: true, duration: -1 }), { name: 'RangeError', message: 'Invalid task duration: t' })
   assert.throws(run({ inactive: true, manual: { start: 4, end: 3 } }), { name: 'RangeError', message: 'Manual dates cannot end before they start: t' })
-  assert.throws(() => scheduleTasks({ range, tasks: [{ id: 't', duration: 1, inactive: true }, { id: 't', duration: 1 }] }), /Invalid or duplicate task ID: t/)
-  assert.throws(() => scheduleTasks({ range, tasks: [{ id: 't', duration: 1, inactive: true }], dependencies: [link('t', 'zz')] }), /Invalid or duplicate schedule dependency: t-zz/)
+  assert.throws(() => scheduleTasks({ range, tasks: [{ id: 't', duration: 1, inactive: true }, { id: 't', duration: 1 }] }), { name: 'Error', message: 'Duplicate task ID: t' })
+  assert.throws(() => scheduleTasks({ range, tasks: [{ id: 't', duration: 1, inactive: true }], dependencies: [link('t', 'zz')] }), { name: 'Error', message: 'Unknown dependency endpoint: t-zz' })
   assert.equal(run({ manual: { start: 0, end: 40 } })().ok, true)
 })
 

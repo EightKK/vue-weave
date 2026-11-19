@@ -10,6 +10,8 @@ import { buildWorkPeriods, type WeeklyShift, type WorkCalendar, type WorkShift, 
 import type {
   TimelineBar, TimelineConstraintKind, TimelineConstraints, TimelineDependency, TimelineDependencyType, TimelineRow,
 } from './types.js'
+import { duplicateIdError, inContext, invalidIdError, isId } from './ids.js'
+import { createAssignmentChecker } from './resourceCapacity.js'
 
 export interface MsProjectTask {
   id: string
@@ -142,7 +144,8 @@ function checkMsProjectTasks(tasks: readonly MsProjectTask[]) {
   let previousLevel = 0
   const levels: number[] = []
   for (const task of tasks) {
-    if (typeof task.id !== 'string' || !task.id || uids.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
+    if (!isId(task.id)) throw invalidIdError('task', task.id)
+    if (uids.has(task.id)) throw duplicateIdError('task', task.id)
     checkText(task.name, 'The name of task ' + task.id)
     checkTime(task.start, 'Task start')
     checkTime(task.end, 'Task end')
@@ -229,7 +232,8 @@ function uniqueNumbered<T extends { id: string }>(items: readonly T[] | undefine
   if (items === undefined) return uids
   if (!Array.isArray(items)) throw new Error(what + 's must be an array')
   for (const item of items) {
-    if (typeof item?.id !== 'string' || !item.id || uids.has(item.id)) throw new Error(`Invalid or duplicate ${what} ID: ${item?.id}`)
+    if (!isId(item?.id)) throw invalidIdError(what, item?.id)
+    if (uids.has(item.id)) throw duplicateIdError(what, item.id)
     uids.set(item.id, uids.size + 1)
   }
   return uids
@@ -274,14 +278,10 @@ function checkMsProjectExtras(project: MsProjectInput, taskUids: ReadonlyMap<str
     }
     if (resource.calendarId !== undefined && !calendarUids.has(resource.calendarId)) throw new Error(`Unknown calendar of resource ${resource.id}: ${resource.calendarId}`)
   }
-  const pairs = new Set<string>()
+  // Units are fractions of a resource here, so only the references and pairs use the shared assignment checks.
+  const check = createAssignmentChecker({ hasTask: id => taskUids.has(id), hasResource: id => resourceUids.has(id), units: false })
   for (const assignment of project.assignments ?? []) {
-    if (!taskUids.has(assignment.taskId) || !resourceUids.has(assignment.resourceId)) {
-      throw new Error(`Unknown task or resource in assignment: ${assignment.taskId}, ${assignment.resourceId}`)
-    }
-    const key = JSON.stringify([assignment.taskId, assignment.resourceId])
-    if (pairs.has(key)) throw new Error(`Duplicate resource assignment for task: ${assignment.taskId}, ${assignment.resourceId}`)
-    pairs.add(key)
+    check(assignment)
     const units = assignment.units
     if (units !== undefined && (typeof units !== 'number' || !Number.isFinite(units) || units < 0)) {
       throw new RangeError(`Assignment units must be a finite number of at least 0: ${assignment.taskId}, ${assignment.resourceId}`)
@@ -1103,9 +1103,8 @@ export function timelineFromMsProject(project: MsProjectInput, options: MsProjec
   const setIds = new Map<string, number>()
   const setId = (number: number) => {
     const id = baselineId(number)
-    if (typeof id !== 'string' || !id || id === timelineBaselineId || (setIds.has(id) && setIds.get(id) !== number)) {
-      throw new Error('Invalid or repeated baseline set ID for baseline ' + number + ': ' + id)
-    }
+    if (!isId(id) || id === timelineBaselineId) throw inContext(invalidIdError('baseline set', id), 'baseline ' + number)
+    if (setIds.has(id) && setIds.get(id) !== number) throw inContext(duplicateIdError('baseline set', id), 'baseline ' + number)
     setIds.set(id, number)
     return id
   }

@@ -4,7 +4,8 @@ import type {
 } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { firstIndex, subtractPeriods } from './intervals.js'
-import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
+import { assertScheduleRange, integerPeriodMessage, normalizeWorkPeriods } from './workCalendar.js'
+import { checkId, unknownEndpointError } from './ids.js'
 
 export type Limits = { startLower: number; endLower: number; startUpper: number; endUpper: number }
 export type LimitKey = keyof Limits
@@ -145,6 +146,20 @@ export function checkStatusDate(model: ScheduleModel, statusDate: number) {
   model.validateTime(statusDate)
 }
 
+/**
+ * Check a recorded interval of scheduling input that needs positive length inside the schedule range, with the
+ * scheduler's own messages: both endpoints as `validateTime` checks every scheduling date (finite, integer, aligned with
+ * the horizon and quantum), then positive length as for working periods and pauses, then the range. Callers add which
+ * interval it is with `withContext`.
+ */
+export function checkScheduleInterval(model: ScheduleModel, interval: TimeRange) {
+  const { start, end } = interval
+  model.validateTime(start)
+  model.validateTime(end)
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end <= start) throw new RangeError(integerPeriodMessage)
+  if (start < model.range.start || end > model.range.end) throw new RangeError('Scheduling dates must lie inside the schedule range')
+}
+
 /** Whether a value can be read like a `ReadonlyMap`: it has `get` and is iterable. */
 export function isMapLike(value: unknown): value is ReadonlyMap<unknown, unknown> {
   const map = value as { get?: unknown; [Symbol.iterator]?: unknown } | undefined
@@ -171,8 +186,9 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   validateTime(deadline)
   const continuous = workClock([range], quantum)
   const calendars = new Map<string, WorkClock>()
+  const calendarIds = new Set<string>()
   for (const calendar of input.calendars ?? []) {
-    if (!calendar.id || calendars.has(calendar.id)) throw new Error('Invalid or duplicate calendar ID: ' + calendar.id)
+    checkId('calendar', calendar?.id, calendarIds)
     for (const period of calendar.periods) {
       validateTime(period.start)
       validateTime(period.end)
@@ -189,8 +205,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   const tasks = new Map<string, ModelTask>()
   const ids = new Set<string>(), inactive = new Set<string>()
   input.tasks.forEach((task, index) => {
-    if (!task.id || ids.has(task.id)) throw new Error('Invalid or duplicate task ID: ' + task.id)
-    ids.add(task.id)
+    checkId('task', task?.id, ids)
     if (!Number.isSafeInteger(task.duration) || task.duration < 0 || task.duration % quantum !== 0) throw new RangeError('Invalid task duration: ' + task.id)
     if (task.mode !== undefined && task.mode !== 'asap' && task.mode !== 'alap') throw new Error('Invalid scheduling mode: ' + task.id)
     const { startNoEarlierThan, startNoLaterThan, finishNoEarlierThan, finishNoLaterThan, fixedStart } = task
@@ -246,10 +261,10 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   const summaries = hierarchy?.summaries ?? []
   const linkIndex = new Map<string, number>()
   const links = new Map<string, ScheduleLink>()
+  const linkIds = new Set<string>()
   for (const link of dependencies) {
-    if (!link.id || linkIndex.has(link.id) || !ids.has(link.from) || !ids.has(link.to)) {
-      throw new Error('Invalid or duplicate schedule dependency: ' + link.id)
-    }
+    checkId('dependency', link?.id, linkIds)
+    for (const end of [link.from, link.to]) if (!ids.has(end)) throw unknownEndpointError(link.id)
     if (!['FS', 'SS', 'FF', 'SF'].includes(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
     const lag = link.lag ?? 0
     if (!Number.isSafeInteger(lag) || lag % quantum !== 0) throw new RangeError('Invalid schedule dependency lag: ' + link.id)

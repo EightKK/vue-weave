@@ -5,6 +5,9 @@ import {
 } from './scheduling.js'
 import type { ScheduleReason, ScheduleTrace } from './scheduleTrace.js'
 import { timelineBaselineId } from './timeline.js'
+import { createAssignmentChecker } from './resourceCapacity.js'
+import { buildScheduleModel } from './scheduleModel.js'
+import { invalidIdError, isId, uniqueIds, withContext } from './ids.js'
 import type { TimelineBaseline } from './types.js'
 import {
   resolveViewTargets, type EntityRef, type LoadViewTarget, type ViewBindingIndex, type ViewTarget,
@@ -260,85 +263,80 @@ function diffCollection<T extends { id: string }>(current: readonly T[], candida
 
 const pairKey = (taskId: string, resourceId: string) => JSON.stringify([taskId, resourceId])
 
-function uniqueIds(items: readonly { id: string }[] | undefined, message: string, label: string) {
-  if (items === undefined) return
-  if (!Array.isArray(items)) throw new Error(`The ${label} must be an array`)
-  const seen = new Set<string>()
-  for (const item of items) {
-    if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) throw new Error(message + (item?.id ?? '') + ` (${label})`)
-    seen.add(item.id)
-  }
-}
-
+/**
+ * Validate and prepare one plan. Every check runs inside `withContext`, so each message ends with the plan label, as
+ * in `Duplicate task ID: a (current plan)`. The scheduling input is validated by the scheduler's own rules (through
+ * `scheduleTasks`, or `buildScheduleModel` when a result is given), resources by the shared ID rule and assignments by
+ * the shared assignment checker.
+ */
 function prepare(scenario: PlanScenario, side: Side): Prepared {
-  const label = side + ' plan'
-  if (!scenario || typeof scenario !== 'object' || !scenario.input || typeof scenario.input !== 'object') {
-    throw new Error(`The ${label} needs an input`)
-  }
-  const { input } = scenario
-  if (!Array.isArray(input.tasks)) throw new Error(`The tasks of the ${label} must be an array`)
-  for (const [key, value] of [['partial', scenario.partial], ['revision', scenario.revision], ['baseRevision', scenario.baseRevision]] as const) {
-    if (value !== undefined && typeof value !== (key === 'partial' ? 'boolean' : 'string')) throw new Error(`Invalid ${key} of the ${label}`)
-  }
-  uniqueIds(input.tasks, 'Invalid or duplicate task ID: ', label)
-  uniqueIds(input.dependencies, 'Invalid or duplicate schedule dependency: ', label)
-  uniqueIds(input.calendars, 'Invalid or duplicate calendar ID: ', label)
-  uniqueIds(input.resources, 'Invalid or duplicate resource: ', label)
-  const tasks = new Map(input.tasks.map(task => [task.id, task]))
-  for (const task of input.tasks) {
-    if (task.deadline !== undefined && (typeof task.deadline !== 'number' || !Number.isFinite(task.deadline))) {
-      throw new RangeError(`Invalid task deadline: ${task.id} (${label})`)
+  return withContext(side + ' plan', () => {
+    if (!scenario || typeof scenario !== 'object' || !scenario.input || typeof scenario.input !== 'object') {
+      throw new Error('A plan needs an input')
     }
-  }
-  const resourceIds = input.resources ? new Set(input.resources.map(resource => resource.id)) : undefined
-  const assignments = new Map<string, ResourceAssignment>()
-  const resourcesByTask = new Map<string, string[]>()
-  if (input.assignments !== undefined && !Array.isArray(input.assignments)) throw new Error(`The assignments of the ${label} must be an array`)
-  for (const assignment of input.assignments ?? []) {
-    const { taskId, resourceId } = assignment ?? {}
-    if (typeof taskId !== 'string' || !tasks.has(taskId)) throw new Error(`Unknown task in assignment: ${taskId} (${label})`)
-    if (typeof resourceId !== 'string' || (resourceIds && !resourceIds.has(resourceId))) {
-      throw new Error(`Unknown resource in assignment: ${resourceId} (${label})`)
+    const { input } = scenario
+    if (!Array.isArray(input.tasks)) throw new Error('The tasks must be an array')
+    for (const [key, value] of [['partial', scenario.partial], ['revision', scenario.revision], ['baseRevision', scenario.baseRevision]] as const) {
+      if (value !== undefined && typeof value !== (key === 'partial' ? 'boolean' : 'string')) throw new Error(`Invalid ${key}`)
     }
-    const key = pairKey(taskId, resourceId)
-    if (assignments.has(key)) throw new Error(`Duplicate resource assignment for task: ${taskId} (${label})`)
-    assignments.set(key, assignment)
-    const list = resourcesByTask.get(taskId)
-    if (list) list.push(resourceId)
-    else resourcesByTask.set(taskId, [resourceId])
-  }
-
-  let result = scenario.result
-  if (result === undefined) result = scheduleTasks(input, { explain: true })
-  else {
-    if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') throw new Error(`Invalid schedule result of the ${label}`)
-    if (result.ok) {
-      for (const task of result.tasks) {
-        const source = tasks.get(task.id)
-        if (!source || source.inactive) throw new Error(`The result of the ${label} names task ${task.id}, which is not an active task of its input`)
+    for (const key of ['dependencies', 'calendars', 'resources', 'assignments'] as const) {
+      if (input[key] !== undefined && !Array.isArray(input[key])) throw new Error(`The ${key} must be an array`)
+    }
+    // The scheduler's validation is the single source for tasks, dependencies, calendars and dates.
+    let result = scenario.result
+    if (result === undefined) result = scheduleTasks(input, { explain: true })
+    else buildScheduleModel(input)
+    const tasks = new Map(input.tasks.map(task => [task.id, task]))
+    for (const task of input.tasks) {
+      if (task.deadline !== undefined && (typeof task.deadline !== 'number' || !Number.isFinite(task.deadline))) {
+        throw new RangeError('Invalid task deadline: ' + task.id)
       }
     }
-  }
-
-  let load = scenario.load
-  if (load !== undefined) {
-    if (!Array.isArray(load)) throw new Error(`The load of the ${label} must be an array of segments`)
-    checkLoad(load, label)
-  } else if (result.ok && input.resources) {
-    load = calculateResourceLoad(input.range, result.tasks, input.resources, input.assignments ?? [], {
-      ...(result.inactiveTaskIds ? { inactiveTaskIds: result.inactiveTaskIds } : {}),
+    const resourceIds = input.resources ? uniqueIds(input.resources, 'resource') : undefined
+    const check = createAssignmentChecker({
+      hasTask: id => tasks.has(id), hasResource: id => !resourceIds || resourceIds.has(id), units: false,
     })
-  }
-  return { input, tasks, assignments, resourcesByTask, result, ...(load ? { load } : {}) }
+    const assignments = new Map<string, ResourceAssignment>()
+    const resourcesByTask = new Map<string, string[]>()
+    for (const assignment of input.assignments ?? []) {
+      check(assignment ?? {} as ResourceAssignment)
+      const { taskId, resourceId } = assignment
+      assignments.set(pairKey(taskId, resourceId), assignment)
+      const list = resourcesByTask.get(taskId)
+      if (list) list.push(resourceId)
+      else resourcesByTask.set(taskId, [resourceId])
+    }
+
+    if (scenario.result !== undefined) {
+      if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') throw new Error('Invalid schedule result')
+      if (result.ok) {
+        for (const task of result.tasks) {
+          const source = tasks.get(task.id)
+          if (!source || source.inactive) throw new Error(`The result names task ${task.id}, which is not an active task of its input`)
+        }
+      }
+    }
+
+    let load = scenario.load
+    if (load !== undefined) {
+      if (!Array.isArray(load)) throw new Error('The load must be an array of segments')
+      checkLoad(load)
+    } else if (result.ok && input.resources) {
+      load = calculateResourceLoad(input.range, result.tasks, input.resources, input.assignments ?? [], {
+        ...(result.inactiveTaskIds ? { inactiveTaskIds: result.inactiveTaskIds } : {}),
+      })
+    }
+    return { input, tasks, assignments, resourcesByTask, result, ...(load ? { load } : {}) }
+  })
 }
 
 /** Segments of one resource must not overlap, so that no overload is counted twice. */
-function checkLoad(load: readonly ResourceLoadSegment[], label: string) {
+function checkLoad(load: readonly ResourceLoadSegment[]) {
   const byResource = new Map<string, ResourceLoadSegment[]>()
   for (const segment of load) {
-    if (!segment || typeof segment.resourceId !== 'string' || !segment.resourceId) throw new Error(`Invalid resource load segment (${label})`)
+    if (!segment || typeof segment.resourceId !== 'string' || !segment.resourceId) throw new Error('Invalid resource load segment')
     if (![segment.start, segment.end, segment.overload].every(Number.isFinite) || segment.end < segment.start || segment.overload < 0) {
-      throw new RangeError(`A resource load segment needs finite ordered dates and a nonnegative overload: ${segment.resourceId} (${label})`)
+      throw new RangeError(`A resource load segment needs finite ordered dates and a nonnegative overload: ${segment.resourceId}`)
     }
     const list = byResource.get(segment.resourceId)
     if (list) list.push(segment)
@@ -348,7 +346,7 @@ function checkLoad(load: readonly ResourceLoadSegment[], label: string) {
     const sorted = [...segments].sort((a, b) => a.start - b.start || a.end - b.end)
     for (let i = 1; i < sorted.length; i++) {
       if (sorted[i]!.start < sorted[i - 1]!.end) {
-        throw new RangeError(`Overlapping load segments of resource ${resourceId} would count its overload twice (${label})`)
+        throw new RangeError(`Overlapping load segments of resource ${resourceId} would count its overload twice`)
       }
     }
   }
@@ -421,9 +419,11 @@ const sameSide = (a: PlanTaskSide, b: PlanTaskSide) => sameValue(a, b)
  * cumulative overload per resource). A task whose own input or assignments differ is `edited`; a task whose input is
  * unchanged but whose result differs is listed in `consequenceTaskIds`. A plan that cannot be scheduled (cycle or
  * infeasible, a deadline failure included) is reported in `result.state` and the input differences are still returned.
- * Missing results are calculated with `scheduleTasks(input, { explain: true })`. Throws Error for duplicate or invalid
- * IDs, unknown assignment references and results that do not match their input, and RangeError for invalid deadlines or
- * load segments. The arguments are not modified.
+ * Missing results are calculated with `scheduleTasks(input, { explain: true })`. Each side is validated by the
+ * scheduler's own rules (also when its result is given) and the shared resource and assignment checks; every error of a
+ * side ends with ` (current plan)` or ` (candidate plan)` and keeps the class of its check. Throws Error for duplicate or
+ * invalid IDs, other invalid scheduling input, unknown assignment references and results that do not match their input,
+ * and RangeError for invalid numbers, deadlines or load segments. The arguments are not modified.
  */
 export function comparePlans(current: PlanScenario, candidate: PlanScenario): PlanComparison {
   const before = prepare(current, 'current')
@@ -612,6 +612,6 @@ export function planComparisonTargets(
  */
 export function planBaselines(result: ScheduleResult | LevelResourcesResult, id: string): Map<string, TimelineBaseline> {
   if (!result || result.ok !== true) throw new Error('planBaselines needs a successful schedule result')
-  if (typeof id !== 'string' || !id || id === timelineBaselineId) throw new Error('Invalid baseline set ID: ' + id)
+  if (!isId(id) || id === timelineBaselineId) throw invalidIdError('baseline set', id)
   return new Map(result.tasks.map(task => [task.id, { id, start: task.start, end: task.end }]))
 }

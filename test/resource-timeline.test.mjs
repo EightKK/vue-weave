@@ -144,13 +144,13 @@ test('links are drawn once between representative projections, with origins', ()
 test('projection rejects malformed input', () => {
   const tasks = [{ id: 'A', label: 'A', start: 0, end: 2 }]
   const base = { resources, tasks, assignments: [] }
-  assert.throws(() => projectResourceTimeline({ ...base, tasks: [...tasks, ...tasks] }), /duplicate task ID: A/)
-  assert.throws(() => projectResourceTimeline({ ...base, resources: [resources[0], resources[0]] }), /duplicate resource ID: R1/)
-  assert.throws(() => projectResourceTimeline({ ...base, assignments: [{ taskId: 'X', resourceId: 'R1' }] }), /Unknown task or resource/)
-  assert.throws(() => projectResourceTimeline({ ...base, assignments: [{ taskId: 'A', resourceId: 'R9' }] }), /Unknown task or resource/)
+  assert.throws(() => projectResourceTimeline({ ...base, tasks: [...tasks, ...tasks] }), { name: 'Error', message: 'Duplicate task ID: A' })
+  assert.throws(() => projectResourceTimeline({ ...base, resources: [resources[0], resources[0]] }), { name: 'Error', message: 'Duplicate resource ID: R1' })
+  assert.throws(() => projectResourceTimeline({ ...base, assignments: [{ taskId: 'X', resourceId: 'R1' }] }), { name: 'Error', message: 'Unknown task in assignment: X' })
+  assert.throws(() => projectResourceTimeline({ ...base, assignments: [{ taskId: 'A', resourceId: 'R9' }] }), { name: 'Error', message: 'Unknown resource in assignment: R9' })
   assert.throws(() => projectResourceTimeline({
     ...base, assignments: [{ taskId: 'A', resourceId: 'R1' }, { taskId: 'A', resourceId: 'R1', units: 2 }],
-  }), /Duplicate resource assignment for task: A/)
+  }), { name: 'Error', message: 'Duplicate assignment of task A to resource R1' })
   assert.throws(() => projectResourceTimeline({ ...base, dependencies: [{ id: 'x', from: 'A', to: 'Z' }] }), /Unknown dependency endpoint: x/)
   assert.throws(() => projectResourceTimeline({ ...base, dependencies: [{ id: 'x', from: 'A', to: 'A' }] }), /itself: x/)
   assert.throws(() => projectResourceTimeline({ ...base, unplannedTaskIds: ['A'] }), /both placed and unplanned: A/)

@@ -2,6 +2,7 @@ import type { GraphEdge } from './graph.js'
 import type { ScheduleSuccess, ScheduledTask } from './scheduling.js'
 import { formatDependencyLag } from './timeline.js'
 import type { ChartTone, NetworkNode, TimelineDependency } from './types.js'
+import { checkId } from './ids.js'
 
 export interface ScheduleGraphOptions {
   /** Node label of a task. Defaults to the task ID. */
@@ -98,8 +99,7 @@ export function scheduleToGraph(
       throw new Error(`Dependency ${dependency.id} links task ${dependency.from} to itself`)
     }
     // Dependency IDs become edge IDs, which NetworkGraph requires to be unique.
-    if (edgeIds.has(dependency.id)) throw new Error('Duplicate dependency ID: ' + dependency.id)
-    edgeIds.add(dependency.id)
+    checkId('dependency', dependency.id, edgeIds)
     const lag = dependency.lag
     if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) {
       throw new RangeError('Dependency lag must be finite: ' + dependency.id)

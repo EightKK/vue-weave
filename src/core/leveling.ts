@@ -11,7 +11,8 @@ import {
 import { scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleSuccess, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
-import { assignmentWorkRange, resourceCapacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
+import { assignmentWorkRange, createAssignmentChecker, resourceCapacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
+import { checkId } from './ids.js'
 
 export interface LevelResourcesInput extends ScheduleInput {
   resources: readonly ResourceCapacity[]
@@ -328,8 +329,9 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const holdings = explain ? new Map<string, Holding[]>() : undefined
 
   const profiles = new Map<string, Profile>()
+  const resourceIds = new Set<string>()
   for (const resource of input.resources) {
-    if (!resource.id || profiles.has(resource.id)) throw new Error('Invalid or duplicate resource: ' + resource.id)
+    checkId('resource', resource?.id, resourceIds)
     const steps = resourceCapacitySteps(resource, range, period => {
       model.validateTime(period.start)
       model.validateTime(period.end)
@@ -337,16 +339,14 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     profiles.set(resource.id, new Profile(range, steps))
   }
   const demands = new Map<string, Need[]>()
-  const assigned = new Set<string>()
+  const check = createAssignmentChecker({
+    hasResource: id => profiles.has(id),
+    hasTask: id => tasks.has(id) || model.inactive.has(id),
+  })
   for (const assignment of input.assignments) {
+    check(assignment)
     const { resourceId, taskId, units = 1 } = assignment
-    const profile = profiles.get(resourceId)
-    if (!profile) throw new Error('Unknown resource in assignment: ' + resourceId)
-    if (!tasks.has(taskId) && !model.inactive.has(taskId)) throw new Error('Unknown task in assignment: ' + taskId)
-    if (!Number.isSafeInteger(units) || units <= 0) throw new RangeError('Assignment units must be a positive integer')
-    const pair = JSON.stringify([resourceId, taskId])
-    if (assigned.has(pair)) throw new Error('Duplicate resource assignment for task: ' + taskId)
-    assigned.add(pair)
+    const profile = profiles.get(resourceId)!
     const part = assignmentWorkRange(assignment)
     if (part && (part.offset % model.quantum !== 0 || (part.duration ?? 0) % model.quantum !== 0)) {
       throw new RangeError('Assignment work offsets must align with the scheduling quantum: ' + taskId)

@@ -54,8 +54,8 @@ test('windowed data validates its options and views', () => {
   assert.throws(() => setWindowedView(state, { start: 0, end: Infinity }), RangeError)
   assert.throws(() => setWindowedView(state, { start: 0, end: 20 }), /maxCells/)
   const { state: loading, start } = setWindowedView(state, { start: 0, end: 2 })
-  assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, [{ start: 0, end: 1 }]), /non-empty string ID/)
-  assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, [bar('x', 'a', 0, 1), bar('x', 'a', 0, 1)]), /Duplicate item ID/)
+  assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, [{ start: 0, end: 1 }]), { name: 'Error', message: 'Invalid windowed data item ID: undefined' })
+  assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, [bar('x', 'a', 0, 1), bar('x', 'a', 0, 1)]), { name: 'Error', message: 'Duplicate windowed data item ID: x (in one response)' })
   assert.throws(() => resolveWindowedRequest(loading, start[0].requestId, { nope: true }), TypeError)
 })
 

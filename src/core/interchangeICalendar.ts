@@ -3,6 +3,7 @@
 import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, toSecond, wallTime } from './interchangeShared.js'
 import { zonedInstant, zoneFormat } from './timeZone.js'
 import type { TimelineBar, TimelineRow } from './types.js'
+import { checkId } from './ids.js'
 
 export interface ICalendarEvent {
   /** Unique within the calendar. Written as the event UID; make it globally unique, for example `id@example.com`. */
@@ -72,7 +73,7 @@ export function toICalendar(events: readonly ICalendarEvent[], options: ICalenda
     lines.push('NAME:' + icalText(options.calendarName), 'X-WR-CALNAME:' + icalText(options.calendarName))
   }
   for (const event of events) {
-    if (typeof event.id !== 'string' || !event.id || ids.has(event.id)) throw new Error('Invalid or duplicate event ID: ' + event.id)
+    checkId('event', event.id, ids)
     ids.add(event.id)
     const start = icalTime(event.start), end = icalTime(event.end)
     if (event.end < event.start) throw new RangeError('An event cannot end before it starts: ' + event.id)
@@ -366,7 +367,7 @@ export function timelineFromICalendar(events: readonly ICalendarEvent[]): ICalen
   const ids = new Set<string>()
   const rows: TimelineRow[] = [], bars: TimelineBar[] = []
   for (const event of events) {
-    if (typeof event.id !== 'string' || !event.id || ids.has(event.id)) throw new Error('Invalid or duplicate event ID: ' + event.id)
+    checkId('event', event.id, ids)
     ids.add(event.id)
     checkTime(event.start, 'An event time')
     checkTime(event.end, 'An event time')

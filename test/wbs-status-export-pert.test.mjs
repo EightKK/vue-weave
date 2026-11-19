@@ -249,7 +249,7 @@ test('toMsProjectXml writes an MSPDI project with outline, milestones, links and
 
 test('toMsProjectXml validates tasks, outline levels and dependencies', () => {
   const task = { id: 't', name: 'T', start: 0, end: hour }
-  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, task] }), { name: 'Error', message: /duplicate task/ })
+  assert.throws(() => toMsProjectXml({ name: 'P', tasks: [task, task] }), { name: 'Error', message: 'Duplicate task ID: t' })
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, end: -1 }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, start: Number.NaN }] }), RangeError)
   assert.throws(() => toMsProjectXml({ name: 'P', tasks: [{ ...task, outlineLevel: 2 }] }), RangeError)
@@ -307,7 +307,7 @@ test('toICalendar writes CRLF lines, UTC times, escaped text and folds at 75 oct
   assert.doesNotMatch(text, /\uFFFD/)
   assert.equal(toICalendar([], { timestamp: 0 }), 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//vue-weave//Timeline export//EN\r\nCALSCALE:GREGORIAN\r\nEND:VCALENDAR\r\n')
   assert.throws(() => toICalendar([{ id: 'a', summary: 'A', start: 2, end: 1 }], { timestamp: 0 }), RangeError)
-  assert.throws(() => toICalendar([{ id: 'a', summary: 'A', start: 0, end: 1 }, { id: 'a', summary: 'B', start: 0, end: 1 }], { timestamp: 0 }), /duplicate/)
+  assert.throws(() => toICalendar([{ id: 'a', summary: 'A', start: 0, end: 1 }, { id: 'a', summary: 'B', start: 0, end: 1 }], { timestamp: 0 }), { name: 'Error', message: 'Duplicate event ID: a' })
   assert.throws(() => toICalendar([], { timestamp: Number.NaN }), RangeError)
 })
 

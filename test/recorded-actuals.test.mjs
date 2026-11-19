@@ -174,12 +174,12 @@ test('malformed actuals throw descriptive errors that name the task', () => {
   assert.throws(call(new Map([['zz', { intervals: [] }]])), { name: 'Error', message: 'Unknown task in actuals: zz' })
   assert.throws(call(new Map([['a', {}]])), { name: 'Error', message: 'Actuals need an intervals array: a' })
   assert.throws(call(entry([null])), { name: 'Error', message: 'Invalid actual interval: a' })
-  assert.throws(call(entry([{ start: 0, end: Number.NaN }])), { name: 'RangeError', message: 'Actual intervals need finite start and end times: a' })
-  assert.throws(call(entry([{ start: 0, end: Infinity }])), { name: 'RangeError', message: /finite.*: a$/ })
-  assert.throws(call(entry([{ start: 4, end: 2 }])), { name: 'RangeError', message: 'Actual intervals must end after they start: a' })
-  assert.throws(call(entry([{ start: 2, end: 2 }])), { name: 'RangeError', message: 'Actual intervals must end after they start: a' })
-  assert.throws(call(entry([{ start: 1, end: 2 }])), { name: 'RangeError', message: 'Actual intervals must align with the horizon and quantum: a' })
-  assert.throws(call(entry([{ start: -2, end: 2 }])), { name: 'RangeError', message: 'Actual intervals must lie inside the schedule range: a' })
+  assert.throws(call(entry([{ start: 0, end: Number.NaN }])), { name: 'RangeError', message: 'Scheduling dates must align with the horizon and quantum (actual interval of task a)' })
+  assert.throws(call(entry([{ start: 0, end: Infinity }])), { name: 'RangeError', message: 'Scheduling dates must align with the horizon and quantum (actual interval of task a)' })
+  assert.throws(call(entry([{ start: 4, end: 2 }])), { name: 'RangeError', message: 'Working periods must have finite integer endpoints and positive length (actual interval of task a)' })
+  assert.throws(call(entry([{ start: 2, end: 2 }])), { name: 'RangeError', message: 'Working periods must have finite integer endpoints and positive length (actual interval of task a)' })
+  assert.throws(call(entry([{ start: 1, end: 2 }])), { name: 'RangeError', message: 'Scheduling dates must align with the horizon and quantum (actual interval of task a)' })
+  assert.throws(call(entry([{ start: -2, end: 2 }])), { name: 'RangeError', message: 'Scheduling dates must lie inside the schedule range (actual interval of task a)' })
   for (const remainingWork of [-2, 1, 1.5, Number.NaN]) {
     assert.throws(call(new Map([['a', { intervals: [], remainingWork }]])), { name: 'RangeError', message: /Remaining work .*: a$/ })
   }
