@@ -143,6 +143,8 @@ interface ICalendarProperty {
 
 const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
 const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
+// `Intl` formats instants up to ±8.64e15 ms; a zoned wall time is resolved with a day of margin on each side.
+const maxZonedWall = 8.64e15 - 2 * 86_400_000
 
 /** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
 function icalProperty(text: string, line: number): ICalendarProperty | undefined {
@@ -208,10 +210,14 @@ function icalZone(tzid: string) {
  * way as `buildWorkPeriods` (an hour skipped by daylight saving moves forward, a repeated one takes its first
  * occurrence); the nonstandard prefix of `/mozilla.org/…/Europe/Berlin` is stripped, and VTIMEZONE definitions are not
  * read. A floating time, a date and a time with an unknown TZID (reported) are wall-clock times at
- * `options.utcOffsetMinutes`. The end is DTEND, else DTSTART plus DURATION (weeks, days, hours, minutes and seconds;
- * days count 24 hours), else the start plus one day for a date and the start itself for a date-time, which is an
+ * `options.utcOffsetMinutes`. The end is DTEND, else DTSTART plus DURATION, else the start plus one day for a date and
+ * the start itself for a date-time, which is an
  * instant like the events `toICalendar` writes without DTEND. For a date, DTEND is the exclusive end, so the
- * event spans whole days as in `[start, end)`.
+ * event spans whole days as in `[start, end)`. A DURATION (weeks, days, hours, minutes and seconds; not negative) is
+ * added as RFC 5545 says: its weeks and days to the local date and time of DTSTART, then its hours, minutes and seconds as
+ * elapsed time. So with a TZID, `P1D` ends at the same local time on the next day (23 or 25 hours across a daylight
+ * saving change) while `PT24H` is 24 hours; a local end time in a skipped or repeated hour is resolved like DTSTART. For
+ * a UTC, floating or date DTSTART, a day is 24 hours.
  *
  * Recurrence is not expanded: an event with RRULE, RDATE or EXDATE is imported once, at its first instance, with the
  * rule in `recurrenceRule`, and a warning. Changed instances (RECURRENCE-ID) are skipped. Properties other than the
@@ -244,21 +250,22 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
   const stack: string[] = []
   let current: ICalendarProperty[] | undefined
   let currentLine = 0
-  const time = (property: ICalendarProperty, eventId: string): { time: number; date: boolean } | undefined => {
+  // `wall` is the local wall-clock time and `zone` the resolved TZID, for adding the days of a DURATION in local time.
+  const time = (property: ICalendarProperty, eventId: string): { time: number; date: boolean; wall: number; zone?: Intl.DateTimeFormat } | undefined => {
     const match = icalDateTime.exec(property.value.trim())
     if (!match) return undefined
     const [y, mo, d, h = 0, mi = 0, sec = 0] = match.slice(1, 7).map(part => part === undefined ? undefined : Number(part)) as number[]
     const wall = wallTime(y!, mo!, d!, h, mi, sec)
     if (wall === undefined) return undefined
     const date = match[4] === undefined
-    if (match[7] === 'Z') return { time: wall, date }
+    if (match[7] === 'Z') return { time: wall, date, wall }
     const tzid = property.params.get('TZID')
     if (tzid !== undefined && !date) {
-      const format = icalZone(tzid)
-      if (format) return { time: zonedInstant(format, wall), date }
+      const zone = icalZone(tzid)
+      if (zone) return { time: zonedInstant(zone, wall), date, wall, zone }
       warn('unknown-time-zone', `The time zone ${tzid} is unknown; the time was read as local time at the given offset`, property.line, eventId)
     }
-    return { time: wall - offset * minuteMs, date }
+    return { time: wall - offset * minuteMs, date, wall }
   }
   const finish = () => {
     const properties = current!
@@ -297,11 +304,15 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     } else if (durationProperty) {
       const match = icalDuration.exec(durationProperty.value.trim())
       const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = (match?.slice(2) ?? []).map(part => part === undefined ? undefined : Number(part)) as number[]
-      const length = match && /\d/.test(durationProperty.value)
-        ? durationMs(weeks, days, hours, minutes, seconds) : undefined
-      if (length === undefined || match![1] === '-' || !Number.isFinite(start.time + length)) {
+      // RFC 5545 3.3.6: weeks and days are nominal and are added to the local date first, then the exact hours,
+      // minutes and seconds as elapsed time. They differ only in a time zone with daylight saving.
+      const nominal = durationMs(weeks, days, 0, 0, 0), exact = durationMs(0, 0, hours, minutes, seconds)
+      const local = start.wall + nominal
+      const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
+        && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
+      if (!readable) {
         warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
-      } else end = start.time + length
+      } else end = (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact
     } else if (start.date) end = start.time + 86_400_000
     const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
     const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')

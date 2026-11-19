@@ -247,3 +247,151 @@ test('toMsProjectXml validates calendars, resources and assignments', () => {
   bad({ resources, assignments: [{ taskId: 'a', resourceId: 'r' }, { taskId: 'a', resourceId: 'r' }] }, { name: 'Error', message: 'Duplicate assignment of task a to resource r' })
   bad({ resources, assignments: [{ taskId: 'a', resourceId: 'r', units: Infinity }] }, RangeError)
 })
+
+// An Exception as Microsoft Project writes it (child order of the schema: EnteredByOccurrences, TimePeriod, Occurrences,
+// Name, Type, Period, DaysOfWeek, MonthItem, MonthPosition, Month, MonthDay, DayWorking, WorkingTimes).
+const exception = ({ entered = 0, from, to, occurrences, name = 'Holiday', type, period, daysOfWeek, monthItem, monthPosition, month, monthDay, times }) =>
+  '<Exception>' + `<EnteredByOccurrences>${entered}</EnteredByOccurrences>`
+  + `<TimePeriod><FromDate>${from}T00:00:00</FromDate><ToDate>${to}T23:59:00</ToDate></TimePeriod>`
+  + (occurrences === undefined ? '' : `<Occurrences>${occurrences}</Occurrences>`) + `<Name>${name}</Name>`
+  + (type === undefined ? '' : `<Type>${type}</Type>`) + (period === undefined ? '' : `<Period>${period}</Period>`)
+  + (daysOfWeek === undefined ? '' : `<DaysOfWeek>${daysOfWeek}</DaysOfWeek>`)
+  + (monthItem === undefined ? '' : `<MonthItem>${monthItem}</MonthItem>`) + (monthPosition === undefined ? '' : `<MonthPosition>${monthPosition}</MonthPosition>`)
+  + (month === undefined ? '' : `<Month>${month}</Month>`) + (monthDay === undefined ? '' : `<MonthDay>${monthDay}</MonthDay>`)
+  + `<DayWorking>${times ? 1 : 0}</DayWorking>`
+  + (times ? `<WorkingTimes>${times.map(([start, end]) => `<WorkingTime><FromTime>${start}</FromTime><ToTime>${end}</ToTime></WorkingTime>`).join('')}</WorkingTimes>` : '')
+  + '</Exception>'
+const exceptionCalendars = list => mspdi('<Calendars>' + list.map((item, index) =>
+  `<Calendar><UID>${index + 1}</UID><Name>C${index + 1}</Name><IsBaseCalendar>1</IsBaseCalendar><WeekDays>${standardDays}</WeekDays>`
+  + `<Exceptions>${exception(item)}</Exceptions></Calendar>`).join('') + '</Calendars>')
+
+test('calendar exceptions are classified by Type and expanded to exactly the dates they denote', () => {
+  // January 2026 starts on a Thursday.
+  const cases = [
+    [{ from: '2026-01-01', to: '2026-01-01', occurrences: 1, type: 1 }, ['2026-01-01']],
+    // A contiguous range: daily every day, entered by its number of occurrences.
+    [{ entered: 1, from: '2026-01-05', to: '2026-01-09', occurrences: 5, type: 1, period: 1 }, ['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08', '2026-01-09']],
+    // The reviewer's case: weekly on Mondays through 31 January, by end date, without Occurrences.
+    [{ from: '2026-01-01', to: '2026-01-31', type: 6, period: 1, daysOfWeek: 2 }, ['2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26']],
+    [{ from: '2026-01-01', to: '2026-01-31', occurrences: 4, type: 6, period: 1, daysOfWeek: 1 }, ['2026-01-04', '2026-01-11', '2026-01-18', '2026-01-25']],
+    // Tuesdays and Thursdays (4 + 16); the count governs and ToDate is ignored.
+    [{ entered: 1, from: '2026-01-01', to: '2026-12-31', occurrences: 4, type: 6, period: 1, daysOfWeek: 20 }, ['2026-01-01', '2026-01-06', '2026-01-08', '2026-01-13']],
+    [{ from: '2026-01-01', to: '2026-01-10', occurrences: 4, type: 1, period: 3 }, ['2026-01-01', '2026-01-04', '2026-01-07', '2026-01-10']],
+    [{ entered: 1, from: '2026-01-01', to: '2026-01-07', occurrences: 3, type: 1, period: 3 }, ['2026-01-01', '2026-01-04', '2026-01-07']],
+    [{ entered: 1, from: '2026-01-01', to: '2026-01-05', occurrences: 3, type: 7, period: 2 }, ['2026-01-01', '2026-01-03', '2026-01-05']],
+    [{ entered: 1, from: '2026-01-01', to: '2026-03-15', occurrences: 3, type: 4, period: 1, monthDay: 15 }, ['2026-01-15', '2026-02-15', '2026-03-15']],
+    [{ entered: 1, from: '2026-01-01', to: '2026-03-10', occurrences: 3, type: 5, period: 1, monthItem: 5, monthPosition: 1 }, ['2026-01-13', '2026-02-10', '2026-03-10']],
+    [{ from: '2026-01-01', to: '2026-03-31', type: 5, period: 1, monthItem: 4, monthPosition: 0 }, ['2026-01-05', '2026-02-02', '2026-03-02']],
+    [{ from: '2026-01-01', to: '2026-03-31', occurrences: 3, type: 5, period: 1, monthItem: 8, monthPosition: 4 }, ['2026-01-30', '2026-02-27', '2026-03-27']],
+    // The schema's examples: New Year's Day (Month 0 is January) and Thanksgiving, the fourth Thursday of November.
+    [{ from: '2026-01-01', to: '2028-01-01', occurrences: 3, type: 2, month: 0, monthDay: 1 }, ['2026-01-01', '2027-01-01', '2028-01-01']],
+    [{ from: '2026-11-26', to: '2028-11-30', occurrences: 3, type: 3, month: 10, monthItem: 7, monthPosition: 3 }, ['2026-11-26', '2027-11-25', '2028-11-23']],
+    // Without a Type, or with 9 (no exception type), the period is the exception.
+    [{ from: '2026-01-05', to: '2026-01-07', occurrences: 3 }, ['2026-01-05', '2026-01-06', '2026-01-07']],
+    [{ from: '2026-01-05', to: '2026-01-06', occurrences: 1, type: 9 }, ['2026-01-05', '2026-01-06']],
+    // An unusable count (0) leaves ToDate in charge.
+    [{ entered: 1, from: '2026-01-05', to: '2026-01-06', occurrences: 0, type: 1, period: 1 }, ['2026-01-05', '2026-01-06']],
+  ]
+  const imported = fromMsProjectXml(exceptionCalendars(cases.map(([item]) => item)))
+  assert.deepEqual(imported.warnings, [])
+  cases.forEach(([item, dates], index) => {
+    const exceptions = imported.calendars[index].week.exceptions
+    assert.deepEqual(Object.keys(exceptions), dates, JSON.stringify(item))
+    assert.equal(Object.values(exceptions).every(shifts => shifts.length === 0), true)
+  })
+  // A working exception gets its own times on each of its dates.
+  const working = fromMsProjectXml(exceptionCalendars([{ from: '2026-01-01', to: '2026-01-31', type: 6, period: 1, daysOfWeek: 2, times: [['09:00:00', '11:00:00']] }]))
+  assert.deepEqual(working.calendars[0].week.exceptions, Object.fromEntries(['2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26'].map(date => [date, [{ startMinute: 540, endMinute: 660 }]])))
+  const periods = buildWorkPeriods({ start: Date.parse('2026-01-12T00:00:00Z'), end: Date.parse('2026-01-14T00:00:00Z') }, working.calendars[0].week)
+  assert.deepEqual(periods.map(period => new Date(period.start).toISOString().slice(0, 16)), ['2026-01-12T09:00', '2026-01-13T08:00', '2026-01-13T13:00'])
+})
+
+test('recurrences that cannot be expanded exactly are left out with a warning naming the calendar and exception', () => {
+  const skipped = [
+    [{ from: '2026-01-01', to: '2026-02-28', type: 6, period: 2, daysOfWeek: 8, name: 'Fortnightly' }, 'unsupported-calendar', /every 2 weeks/],
+    [{ from: '2026-01-01', to: '2026-12-31', type: 4, period: 1, monthDay: 31 }, 'unsupported-calendar', /day 31/],
+    [{ from: '2026-01-01', to: '2026-12-31', type: 4, period: 2, monthDay: 15 }, 'unsupported-calendar', /period of 2/],
+    [{ from: '2026-01-01', to: '2030-12-31', type: 2, month: 1, monthDay: 29 }, 'unsupported-calendar', /29 February/],
+    [{ from: '2026-01-01', to: '2026-12-31', type: 5, period: 1, monthItem: 1, monthPosition: 0 }, 'unsupported-calendar', /weekday/],
+    [{ entered: 1, from: '2026-01-05', to: '2026-01-09', occurrences: 5, type: 8 }, 'unsupported-calendar', /weekday count/],
+    [{ from: '2026-01-05', to: '2026-01-09', type: 12 }, 'unsupported-calendar', /type 12/],
+    [{ from: '2026-01-01', to: '2026-01-31', type: 6, period: 1 }, 'invalid-calendar', /days of the week/],
+    [{ from: '2026-01-01', to: '2026-01-31', type: 6, period: 1, daysOfWeek: 128 }, 'invalid-calendar', /days of the week/],
+    [{ from: '2026-01-01', to: '2026-01-31', type: 3, month: 12, monthItem: 7, monthPosition: 3 }, 'invalid-calendar', /month/],
+    [{ from: '2026-01-01', to: '2026-01-31', type: 1, period: 0 }, 'invalid-calendar', /period/],
+  ]
+  const imported = fromMsProjectXml(exceptionCalendars(skipped.map(([item]) => item)))
+  assert.deepEqual(imported.calendars.map(calendar => calendar.week.exceptions), skipped.map(() => undefined))
+  assert.deepEqual(imported.warnings.map(warning => [warning.code, warning.calendarId]), skipped.map(([, code], index) => [code, String(index + 1)]))
+  imported.warnings.forEach((warning, index) => {
+    assert.match(warning.message, skipped[index][2])
+    assert.ok(warning.message.startsWith(`The exception "${skipped[index][0].name ?? 'Holiday'}" of calendar ${index + 1} was left out: `), warning.message)
+  })
+})
+
+test('a recurring exception keeps at most 3,660 dates, with a warning', () => {
+  const imported = fromMsProjectXml(exceptionCalendars([
+    { from: '2000-01-01', to: '2039-12-31', type: 1, period: 2 },
+    { entered: 1, from: '2026-01-01', to: '2026-01-01', occurrences: 9999, type: 6, daysOfWeek: 127 },
+  ]))
+  for (const calendar of imported.calendars) assert.equal(Object.keys(calendar.week.exceptions).length, 3660)
+  assert.deepEqual(imported.calendars[0].week.exceptions['2000-01-03'], [])
+  assert.equal(imported.calendars[0].week.exceptions['2000-01-02'], undefined)
+  assert.deepEqual(imported.warnings.map(warning => [warning.code, warning.calendarId]), [['invalid-calendar', '1'], ['invalid-calendar', '2']])
+  assert.match(imported.warnings[0].message, /more than 3660 dates/)
+})
+
+// Resources as Microsoft Project writes them: Type before IsNull and MaxUnits, IsCostResource after CalendarUID.
+const resourceXml = (uid, name, type, extra = '') => `<Resource><UID>${uid}</UID><ID>${uid}</ID><Name>${name}</Name>`
+  + (type === undefined ? '' : `<Type>${type}</Type>`) + `<IsNull>0</IsNull><Initials>${name[0]}</Initials>${extra}</Resource>`
+
+test('cost resources are read from IsCostResource, left out of work capacity, and written as Project reads them', () => {
+  const xml = mspdi('', task(1)).replace('</Project>', '<Resources>'
+    + resourceXml(1, 'Engineer', 1, '<MaxUnits>1.00</MaxUnits><CanLevel>1</CanLevel><IsGeneric>0</IsGeneric><IsCostResource>0</IsCostResource><IsBudget>0</IsBudget>')
+    + resourceXml(2, 'Concrete', 0, '<MaterialLabel>t</MaterialLabel><IsCostResource>0</IsCostResource>')
+    // The reviewer's case: a travel-expense resource with Type 1 and IsCostResource 1.
+    + resourceXml(3, 'Travel', 1, '<IsGeneric>0</IsGeneric><IsCostResource>1</IsCostResource><IsBudget>0</IsBudget>')
+    + resourceXml(4, 'Fees', 0, '<IsCostResource>1</IsCostResource>')
+    // Type 2, as an earlier build of this release wrote cost resources.
+    + resourceXml(5, 'Old cost', 2)
+    + resourceXml(6, 'Budget', 1, '<IsCostResource>1</IsCostResource><IsBudget>1</IsBudget>')
+    + resourceXml(7, 'Generic', 1, '<IsGeneric>1</IsGeneric>')
+    + '</Resources><Assignments>'
+    + [1, 2, 3, 4, 5, 6, 7].map(uid => `<Assignment><UID>${uid}</UID><TaskUID>1</TaskUID><ResourceUID>${uid}</ResourceUID><Units>1</Units></Assignment>`).join('')
+    + '</Assignments></Project>')
+  const imported = fromMsProjectXml(xml)
+  assert.deepEqual(imported.warnings, [])
+  assert.deepEqual(imported.resources.map(resource => [resource.name, resource.type]), [
+    ['Engineer', 'work'], ['Concrete', 'material'], ['Travel', 'cost'], ['Fees', 'cost'], ['Old cost', 'cost'], ['Budget', 'cost'], ['Generic', 'work'],
+  ])
+  const load = resourceLoadFromMsProject(imported)
+  assert.deepEqual(load.resources, [{ id: '1', capacity: 100 }, { id: '7', capacity: 100 }])
+  assert.deepEqual(load.assignments.map(assignment => assignment.resourceId), ['1', '7'])
+  assert.deepEqual(timelineFromMsProject(imported).resources.map(resource => resource.label), ['Engineer', 'Generic'])
+
+  const out = toMsProjectXml(imported)
+  const written = out.match(/<Resource>.*?<\/Resource>/g)
+  assert.equal(written[0], '<Resource><UID>1</UID><ID>1</ID><Name>Engineer</Name><Type>1</Type><IsNull>0</IsNull><MaxUnits>1</MaxUnits></Resource>')
+  assert.equal(written[1], '<Resource><UID>2</UID><ID>2</ID><Name>Concrete</Name><Type>0</Type><IsNull>0</IsNull></Resource>')
+  assert.equal(written[2], '<Resource><UID>3</UID><ID>3</ID><Name>Travel</Name><Type>0</Type><IsNull>0</IsNull><IsCostResource>1</IsCostResource></Resource>')
+  const again = fromMsProjectXml(out)
+  assert.deepEqual(again.resources, imported.resources)
+  assert.equal(toMsProjectXml(again), out)
+})
+
+test('toMsProjectXml accepts an exception on 1970-01-01 and other zero values', () => {
+  const plan = {
+    name: 'P', tasks: [{ id: 'a', name: 'A', start: 0, end: 0 }],
+    calendars: [{ id: 'c', name: 'C', week: { weekly: [{ weekday: 0, startMinute: 0, endMinute: 60 }], exceptions: { '1970-01-01': [], '1970-01-02': [{ startMinute: 0, endMinute: 30 }] } } }],
+    resources: [{ id: 'r', name: 'R', maxUnits: 0 }], assignments: [{ taskId: 'a', resourceId: 'r', units: 0 }],
+  }
+  const xml = toMsProjectXml(plan)
+  assert.match(xml, /<WeekDay><DayType>0<\/DayType><DayWorking>0<\/DayWorking><TimePeriod><FromDate>1970-01-01T00:00:00<\/FromDate><ToDate>1970-01-01T23:59:00<\/ToDate><\/TimePeriod><\/WeekDay>/)
+  const imported = fromMsProjectXml(xml)
+  assert.deepEqual(imported.warnings, [])
+  assert.deepEqual(imported.calendars[0].week, plan.calendars[0].week)
+  assert.equal(imported.resources[0].maxUnits, 0)
+  assert.deepEqual(imported.assignments, [{ taskId: '1', resourceId: '1', units: 0 }])
+  assert.equal(imported.tasks[0].start, 0)
+  assert.throws(() => toMsProjectXml({ ...plan, calendars: [{ id: 'c', name: 'C', week: { weekly: [], exceptions: { '1970-02-30': [] } } }] }), /Invalid exception date in calendar c: 1970-02-30/)
+})
