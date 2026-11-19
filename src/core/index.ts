@@ -96,7 +96,9 @@ export type {
   ResourceAssignmentRequest, ResourceAssignmentProposal,
 } from './resourceTimeline.js'
 export { buildPlacementInput } from './placement.js'
-export type { PlacementInput, PlacementDiagnostic, PlacementResult, PlacementRetargetedDependency } from './placement.js'
+export type {
+  PlacementInput, PlacementDiagnostic, PlacementPredecessorDiagnostic, PlacementSummaryDiagnostic, PlacementResult, PlacementRetargetedDependency,
+} from './placement.js'
 
 export * from './snapshot.js'
 export { toPlanningDiagnostics } from './scheduleDiagnostics.js'

@@ -172,9 +172,11 @@ test('a link from a placed task into an unplaced summary binds its placed leaf s
   assert.deepEqual(scheduled.criticalDependencyIds.map(id => original.get(id) ?? id), ['xp'])
   assert.deepEqual(full.criticalDependencyIds, ['xp'])
 
-  // FF and SF links into a summary are invalid in the full plan; they are only excluded.
-  const ff = buildPlacementInput({ ...input, dependencies: [{ id: 'xa', from: 'X', to: 'P', type: 'FF' }] }, ['X', 'A'])
-  assert.deepEqual([ff.ok, ff.input.dependencies, ff.excludedDependencyIds, 'retargetedDependencies' in ff], [true, [], ['xa'], false])
+  // FF and SF links into a summary are invalid in the full plan, so they throw the scheduler's error here too.
+  const ff = { ...input, dependencies: [{ id: 'xa', from: 'X', to: 'P', type: 'FF' }] }
+  const message = 'Dependency xa is FF into summary task P; only FS and SS links can end at a summary task'
+  assert.throws(() => scheduleTasks(ff), { name: 'Error', message })
+  assert.throws(() => buildPlacementInput(ff, ['X', 'A']), { name: 'Error', message })
 })
 
 test('a link from an unplaced task into an unplaced summary is a diagnostic for each placed leaf it binds', () => {
@@ -237,13 +239,15 @@ test('an inactive summary above an unplaced active summary keeps the placed subt
 })
 
 // Seeded hierarchies with bounds and inactive summaries, links into and out of summaries, ALAP and manual subtasks.
-// Some leaf subtasks are left unplaced, but only ones without links, so their durations are all that is lost; every
-// summary keeps a placed leaf. The placement input must then schedule the placed tasks exactly like the full plan
-// without those leaves and without the links reported as diagnostics (links out of unplaced summaries).
+// Some leaf subtasks are left unplaced, but only ones without links, so their durations are all that is lost. Most
+// summaries keep a placed leaf; the others, and summaries whose placed leaves are all inactive, have nothing placed to
+// span. The placement input must then schedule the placed tasks exactly like the full plan in which the unplaced leaves
+// are inactive (so a summary left without an active leaf is inactive and binds nothing) and the links reported as
+// diagnostics (links out of unplaced summaries and of placed summaries without a placed active leaf) are left out.
 test('placement inputs of seeded hierarchies schedule like the full plan', () => {
   const { random, pick } = seededRandom(5112026)
-  let compared = 0, retargets = 0, reported = 0, changed = 0
-  for (let plan = 0; plan < 400; plan++) {
+  let compared = 0, retargets = 0, reported = 0, changed = 0, emptied = 0, emptiedWithInactive = 0, emptiedNested = 0
+  for (let plan = 0; plan < 1000; plan++) {
     const count = 4 + pick(11)
     const parents = []
     for (let i = 0; i < count; i++) parents.push(i > 0 && random() < 0.6 ? pick(i) : undefined)
@@ -291,9 +295,10 @@ test('placement inputs of seeded hierarchies schedule like the full plan', () =>
     const input = { range: wide, tasks, dependencies }
     // Placement: each summary at random, every leaf that is not loose, and a loose leaf at random.
     const placedSet = new Set(parents.map((_, i) => i).filter(i => children.has(i) ? pick(2) === 0 : !loose.has(i) || pick(2) === 0))
+    // A summary without a placed leaf stays so in a third of the cases.
     for (const summary of children.keys()) {
       const leaves = leavesOf(summary)
-      if (!leaves.some(leaf => placedSet.has(leaf))) placedSet.add(leaves[0])
+      if (!leaves.some(leaf => placedSet.has(leaf)) && pick(3)) placedSet.add(leaves[0])
     }
     const placement = buildPlacementInput(input, [...placedSet].map(id))
 
@@ -301,30 +306,43 @@ test('placement inputs of seeded hierarchies schedule like the full plan', () =>
     const off = new Set()
     for (let i = 0; i < count; i++) if (tasks[i].inactive || (parents[i] !== undefined && off.has(parents[i]))) off.add(i)
     for (const summary of children.keys()) if (leavesOf(summary).every(leaf => off.has(leaf))) off.add(summary)
-    // Links out of an unplaced summary are diagnostics for what they bind among the placed tasks.
+    // A placed summary that is active but has no placed active leaf is reported, in input order, and left out.
+    const empty = new Set([...children.keys()].filter(i => placedSet.has(i) && !off.has(i) && leavesOf(i).every(leaf => !placedSet.has(leaf) || off.has(leaf))))
+    const kept = i => placedSet.has(i) && !empty.has(i)
+    const expectedSummaries = [...empty].sort((a, b) => a - b).map(i => ({ code: 'unplaced-subtasks', taskId: id(i) }))
+    emptied += empty.size
+    emptiedWithInactive += [...empty].filter(i => leavesOf(i).some(leaf => placedSet.has(leaf))).length
+    emptiedNested += [...empty].filter(i => subtree(i).some(j => empty.has(j))).length
+    // Links out of an unplaced summary or of a summary left out are diagnostics for what they bind among kept tasks.
     const expectedDiagnostics = [], lost = new Set()
     for (const item of dependencies) {
       const from = index(item.from), to = index(item.to)
-      if (!children.has(from) || placedSet.has(from)) continue
+      if (!children.has(from) || kept(from)) continue
       lost.add(item.id)
       if (off.has(from) || off.has(to)) continue
-      const targets = placedSet.has(to) ? [to] : children.has(to) ? leavesOf(to).filter(leaf => placedSet.has(leaf) && !off.has(leaf)) : []
+      const targets = kept(to) ? [to] : children.has(to) ? leavesOf(to).filter(leaf => placedSet.has(leaf) && !off.has(leaf)) : []
       for (const target of targets) {
         if (!tasks[target].manual) expectedDiagnostics.push({ code: 'unplaced-predecessor', taskId: id(target), predecessorId: item.from, dependencyId: item.id })
       }
     }
-    // In link order, then by placed task.
+    // Summary entries first; then in link order, then by placed task.
+    assert.deepEqual(placement.diagnostics.slice(0, expectedSummaries.length), expectedSummaries, 'plan ' + plan)
     const key = item => index(item.dependencyId) * 1000 + index(item.taskId)
     const sorted = list => [...list].sort((a, b) => key(a) - key(b))
-    assert.deepEqual(sorted(placement.diagnostics), sorted(expectedDiagnostics), 'plan ' + plan)
-    assert.equal(placement.ok, expectedDiagnostics.length === 0, 'plan ' + plan)
+    assert.deepEqual(sorted(placement.diagnostics.slice(expectedSummaries.length)), sorted(expectedDiagnostics), 'plan ' + plan)
+    assert.equal(placement.ok, expectedDiagnostics.length + expectedSummaries.length === 0, 'plan ' + plan)
+    assert.deepEqual(placement.unplacedTaskIds, tasks.filter((_, i) => !placedSet.has(i)).map(item => item.id), 'plan ' + plan)
     reported += expectedDiagnostics.length
     retargets += placement.retargetedDependencies?.length ?? 0
     changed += placement.input.tasks.filter(item => !tasks.includes(item)).length
 
+    // Unplaced leaves have no links, so making them inactive leaves only what they span; a summary that has no other
+    // active leaf becomes inactive and binds nothing, as the summary left out of the placement input.
     const unplacedLeaves = new Set([...loose].filter(i => !placedSet.has(i)).map(id))
     const expected = scheduleTasks({
-      range: wide, tasks: tasks.filter(item => !unplacedLeaves.has(item.id)), dependencies: dependencies.filter(item => !lost.has(item.id)),
+      range: wide,
+      tasks: tasks.map(item => unplacedLeaves.has(item.id) ? { ...item, inactive: true } : item),
+      dependencies: dependencies.filter(item => !lost.has(item.id)),
     })
     const actual = scheduleTasks(placement.input)
     assert.notEqual(expected.code, 'cycle', 'plan ' + plan)
@@ -336,13 +354,165 @@ test('placement inputs of seeded hierarchies schedule like the full plan', () =>
     const expectedById = new Map(expected.tasks.map(item => [item.id, item]))
     const fields = value => [value.start, value.end, value.latestStart, value.latestEnd, value.totalFloat, value.critical]
     for (const item of actual.tasks) assert.deepEqual(fields(item), fields(expectedById.get(item.id)), 'plan ' + plan + ' task ' + item.id)
-    assert.deepEqual(actual.tasks.map(item => item.id), expected.tasks.filter(item => placedSet.has(index(item.id))).map(item => item.id), 'plan ' + plan)
-    assert.deepEqual(actual.inactiveTaskIds ?? [], (expected.inactiveTaskIds ?? []).filter(item => placedSet.has(index(item))), 'plan ' + plan)
+    assert.deepEqual(actual.tasks.map(item => item.id), expected.tasks.filter(item => kept(index(item.id))).map(item => item.id), 'plan ' + plan)
+    // What the full plan reports inactive among the kept tasks; a summary left out is in neither list.
+    const inactiveIds = (expected.inactiveTaskIds ?? []).filter(item => kept(index(item)) && off.has(index(item)))
+    assert.deepEqual(actual.inactiveTaskIds ?? [], inactiveIds, 'plan ' + plan)
     const original = new Map((placement.retargetedDependencies ?? []).map(item => [item.id, item.dependencyId]))
     const critical = [...new Set(actual.criticalDependencyIds.map(item => original.get(item) ?? item))]
     assert.deepEqual(critical.sort(), [...expected.criticalDependencyIds].sort(), 'plan ' + plan)
     compared++
   }
   // The corpus exercises every mechanism.
-  assert.ok(compared > 200 && retargets > 50 && reported > 20 && changed > 50, JSON.stringify({ compared, retargets, reported, changed }))
+  const counts = { compared, retargets, reported, changed, emptied, emptiedWithInactive, emptiedNested }
+  assert.ok(compared > 200 && retargets > 50 && reported > 20 && changed > 50, JSON.stringify(counts))
+  assert.ok(emptied > 20 && emptiedWithInactive > 5 && emptiedNested > 5, JSON.stringify(counts))
+})
+
+test('a placed summary whose subtasks are all unplaced is a diagnostic and is left out with its links and assignments', () => {
+  const input = {
+    range: wide,
+    tasks: [{ id: 'X', duration: 3 }, { id: 'S', duration: 7 }, { id: 'A', duration: 2, parentId: 'S' }, { id: 'Y', duration: 1 }],
+    dependencies: [{ id: 'xs', from: 'X', to: 'S' }, { id: 'sy', from: 'S', to: 'Y' }],
+    resources: [{ id: 'R', capacity: 1 }],
+    assignments: [{ taskId: 'X', resourceId: 'R' }, { taskId: 'S', resourceId: 'R' }],
+  }
+  const snapshot = JSON.stringify(input)
+  // The full plan ignores the summary's own duration: S spans A.
+  assert.deepEqual(datesOf(scheduleTasks(input)), { X: [0, 3], S: [3, 5], A: [3, 5], Y: [5, 6] })
+  const placement = buildPlacementInput(input, ['X', 'S', 'Y'])
+  assert.equal(placement.ok, false)
+  // The link from S is a link from a task the input leaves out; the link into S binds no placed leaf.
+  assert.deepEqual(placement.diagnostics, [
+    { code: 'unplaced-subtasks', taskId: 'S' },
+    { code: 'unplaced-predecessor', taskId: 'Y', predecessorId: 'S', dependencyId: 'sy' },
+  ])
+  assert.deepEqual(placement.input.tasks, [input.tasks[0], input.tasks[3]])
+  assert.deepEqual([placement.input.dependencies, placement.excludedDependencyIds], [[], ['xs', 'sy']])
+  assert.deepEqual(placement.unplacedTaskIds, ['A'])
+  assert.deepEqual([placement.input.assignments, placement.excludedAssignments], [[input.assignments[0]], [input.assignments[1]]])
+  assert.equal('retargetedDependencies' in placement, false)
+  const scheduled = scheduleTasks(placement.input)
+  assert.deepEqual([datesOf(scheduled), scheduled.inactiveTaskIds], [{ X: [0, 3], Y: [0, 1] }, undefined])
+  assert.equal(levelResources(placement.input).ok, true)
+  assert.equal(JSON.stringify(input), snapshot)
+  // With a placed subtask the summary spans it as in the full plan.
+  const complete = buildPlacementInput(input, ['X', 'S', 'A', 'Y'])
+  assert.deepEqual([complete.ok, complete.diagnostics, datesOf(scheduleTasks(complete.input))], [true, [], datesOf(scheduleTasks(input))])
+})
+
+test('nested placed summaries without a placed active leaf are all left out and their subtasks move up', () => {
+  const input = {
+    range: wide,
+    tasks: [
+      { id: 'P', duration: 0 }, { id: 'C', duration: 1, parentId: 'P' }, { id: 'S', duration: 5, parentId: 'P', startNoEarlierThan: 4 },
+      { id: 'T', duration: 3, parentId: 'S' }, { id: 'A', duration: 2, parentId: 'T' }, { id: 'B', duration: 1, parentId: 'S', inactive: true },
+      { id: 'X', duration: 1 },
+    ],
+    dependencies: [{ id: 'xt', from: 'X', to: 'T' }, { id: 'sc', from: 'S', to: 'C' }],
+  }
+  const full = scheduleTasks(input)
+  assert.deepEqual([datesOf(full).S, full.inactiveTaskIds], [[4, 6], ['B']])
+  // S has only the empty summary T and the inactive B placed below it; T has nothing placed.
+  const placement = buildPlacementInput(input, ['P', 'C', 'S', 'T', 'B', 'X'])
+  assert.equal(placement.ok, false)
+  assert.deepEqual(placement.diagnostics, [
+    { code: 'unplaced-subtasks', taskId: 'S' },
+    { code: 'unplaced-subtasks', taskId: 'T' },
+    { code: 'unplaced-predecessor', taskId: 'C', predecessorId: 'S', dependencyId: 'sc' },
+  ])
+  assert.deepEqual(placement.input.tasks, [
+    input.tasks[0], input.tasks[1], { id: 'B', duration: 1, parentId: 'P', inactive: true, startNoEarlierThan: 4 }, input.tasks[6],
+  ])
+  assert.deepEqual([placement.input.dependencies, placement.excludedDependencyIds, placement.unplacedTaskIds], [[], ['xt', 'sc'], ['A']])
+  const scheduled = scheduleTasks(placement.input)
+  assert.deepEqual([datesOf(scheduled), scheduled.inactiveTaskIds], [{ P: [0, 1], C: [0, 1], X: [0, 1] }, ['B']])
+  // Placing A keeps both summaries and the plan of the full input.
+  const complete = buildPlacementInput(input, ['P', 'C', 'S', 'T', 'A', 'B', 'X'])
+  assert.deepEqual([complete.ok, datesOf(scheduleTasks(complete.input))], [true, datesOf(full)])
+})
+
+test('a placed summary whose placed subtasks are inactive stays active as in the full plan and is left out', () => {
+  const input = {
+    range: wide,
+    tasks: [{ id: 'S', duration: 9 }, { id: 'A', duration: 2, parentId: 'S', inactive: true }, { id: 'B', duration: 4, parentId: 'S' }, { id: 'Y', duration: 1 }],
+    dependencies: [{ id: 'sy', from: 'S', to: 'Y' }],
+  }
+  const full = scheduleTasks(input)
+  assert.deepEqual([datesOf(full), full.inactiveTaskIds], [{ S: [0, 4], B: [0, 4], Y: [4, 5] }, ['A']])
+  const placement = buildPlacementInput(input, ['S', 'A', 'Y'])
+  assert.equal(placement.ok, false)
+  assert.deepEqual(placement.diagnostics, [
+    { code: 'unplaced-subtasks', taskId: 'S' },
+    { code: 'unplaced-predecessor', taskId: 'Y', predecessorId: 'S', dependencyId: 'sy' },
+  ])
+  assert.deepEqual(placement.input.tasks, [{ id: 'A', duration: 2, inactive: true }, input.tasks[3]])
+  // S is not reported inactive, as the full plan does not report it.
+  const scheduled = scheduleTasks(placement.input)
+  assert.deepEqual([datesOf(scheduled), scheduled.inactiveTaskIds], [{ Y: [0, 1] }, ['A']])
+
+  // Nested: T's placed leaf is inactive and its active leaf is not placed; S's other active leaf is not placed either.
+  const nested = {
+    range: wide,
+    tasks: [
+      { id: 'S', duration: 0 }, { id: 'T', duration: 0, parentId: 'S' }, { id: 'A', duration: 2, parentId: 'T', inactive: true },
+      { id: 'B', duration: 1, parentId: 'T' }, { id: 'C', duration: 3, parentId: 'S' },
+    ],
+  }
+  assert.deepEqual(scheduleTasks(nested).inactiveTaskIds, ['A'])
+  const inner = buildPlacementInput(nested, ['S', 'T', 'A'])
+  assert.deepEqual([inner.ok, inner.diagnostics], [false, [{ code: 'unplaced-subtasks', taskId: 'S' }, { code: 'unplaced-subtasks', taskId: 'T' }]])
+  assert.deepEqual(inner.input.tasks, [{ id: 'A', duration: 2, inactive: true }])
+  assert.deepEqual(scheduleTasks(inner.input).inactiveTaskIds, ['A'])
+
+  // A summary whose active leaves are all inactive is inactive in the full plan: it stays inactive, with no diagnostic.
+  const off = { ...input, tasks: input.tasks.map(item => item.id === 'B' ? { ...item, inactive: true } : item) }
+  assert.deepEqual(scheduleTasks(off).inactiveTaskIds, ['S', 'A', 'B'])
+  const offPlacement = buildPlacementInput(off, ['S', 'A', 'Y'])
+  assert.deepEqual([offPlacement.ok, offPlacement.diagnostics], [true, []])
+  assert.deepEqual(offPlacement.input.tasks, [{ id: 'S', duration: 9, inactive: true }, input.tasks[1], input.tasks[3]])
+  assert.deepEqual(scheduleTasks(offPlacement.input).inactiveTaskIds, ['S', 'A'])
+})
+
+test('summary task rules of the full input throw the scheduler errors whether or not the tasks are placed', () => {
+  const failure = fn => {
+    try {
+      fn()
+    } catch (error) {
+      return [error.constructor, error.message]
+    }
+    return assert.fail('expected an error')
+  }
+  const tasks = [{ id: 'S', duration: 0 }, { id: 'A', duration: 2, parentId: 'S' }, { id: 'B', duration: 1 }]
+  const inputs = []
+  for (const extra of [{ fixedStart: 5 }, { startNoLaterThan: 5 }, { finishNoEarlierThan: 5 }, { manual: { start: 1, end: 2 } }, { mode: 'alap' }, { inactive: true, fixedStart: 5 }]) {
+    inputs.push({ range: wide, tasks: [{ ...tasks[0], ...extra }, tasks[1], tasks[2]] })
+  }
+  for (const link of [
+    { id: 'bs', from: 'B', to: 'S', type: 'FF' }, { id: 'bs', from: 'B', to: 'S', type: 'SF', lag: 2 }, { id: 'ss', from: 'S', to: 'S', type: 'FF' },
+    { id: 'sa', from: 'S', to: 'A' }, { id: 'as', from: 'A', to: 'S', type: 'SS' },
+  ]) inputs.push({ range: wide, tasks, dependencies: [{ id: 'ok', from: 'B', to: 'S' }, link] })
+  inputs.push({ range: wide, tasks: [...tasks, { id: 'C', duration: 1, parentId: 'Z' }] })
+  inputs.push({ range: wide, tasks: [...tasks, { id: 'C', duration: 1, parentId: 'D' }, { id: 'D', duration: 1, parentId: 'C' }] })
+  inputs.push({ range: wide, tasks: [...tasks, { id: 'C', duration: 1, parentId: '' }] })
+  inputs.push({ range: wide, tasks: [...tasks, { id: 'C', duration: 1, parentId: 5 }] })
+  for (const input of inputs) {
+    const expected = failure(() => scheduleTasks(input))
+    assert.equal(expected[0], Error)
+    for (const placed of [[], ['B'], ['A'], ['A', 'B'], ['S'], ['S', 'A', 'B']]) {
+      assert.deepEqual(failure(() => buildPlacementInput(input, placed)), expected, JSON.stringify([input, placed]))
+    }
+  }
+  // What the full plan accepts on leaves and on links from a summary is accepted whatever is placed.
+  const leaves = {
+    range: wide,
+    tasks: [
+      { id: 'S', duration: 0, startNoEarlierThan: 1, finishNoLaterThan: 90 }, { id: 'A', duration: 2, parentId: 'S', fixedStart: 4 },
+      { id: 'C', duration: 1, parentId: 'S', mode: 'alap' }, { id: 'M', duration: 1, parentId: 'S', manual: { start: 1, end: 2 } }, { id: 'B', duration: 1 },
+      { id: 'X', duration: 1 },
+    ],
+    dependencies: [{ id: 'xa', from: 'X', to: 'A', type: 'FF' }, { id: 'sb', from: 'S', to: 'B', type: 'SF' }, { id: 'xs', from: 'X', to: 'S', type: 'SS' }],
+  }
+  assert.equal(scheduleTasks(leaves).ok, true)
+  for (const placed of [[], ['B'], ['A'], ['S', 'A', 'B'], ['S', 'A', 'C', 'M', 'B']]) assert.doesNotThrow(() => buildPlacementInput(leaves, placed))
 })
