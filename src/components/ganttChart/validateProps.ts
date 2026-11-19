@@ -1,6 +1,7 @@
 // Validation of the GanttChart props. The checks run in a fixed order, so the first problem found is the one reported
 // through `validation-error`. They derive the row tree and the load histogram on the way, because those use the same
-// error boundary.
+// error boundary. ID checks use the shared texts of the core (`Invalid <kind> ID: <value>`, `Duplicate <kind> ID: <id>`),
+// and the checks that `renderTimelineSvg` also makes (load rows, header bands, markers) use its texts and classes.
 import type {
   TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment, TimelineMarker,
   TimelineMarkerRange, TimelineRow, TimelineZoomPreset,
@@ -10,6 +11,7 @@ import {
   type TimeRange, type TimeScale,
 } from '../../core/timeline.js'
 import { baselineSelection, checkMarkerRanges, checkNonWorkingPeriods } from '../../core/barSegments.js'
+import { checkId, uniqueIds } from '../../core/ids.js'
 
 /** The props as validated: the active zoom preset already replaces the scale settings it overrides. */
 export interface GanttValidationInput<R extends TimelineRow> {
@@ -54,11 +56,7 @@ function validateLoad<R extends TimelineRow>(input: GanttValidationInput<R>) {
     if (input.loadSegments?.length) throw new Error('loadSegments require loadRows')
     return undefined
   }
-  const ids = new Set<string>()
-  for (const row of input.loadRows) {
-    if (!row.id || ids.has(row.id)) throw new Error('Invalid or duplicate load row ID: ' + row.id)
-    ids.add(row.id)
-  }
+  const ids = uniqueIds(input.loadRows, 'load row')
   if (!Number.isFinite(input.loadRowHeight) || input.loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
   return resourceLoadHistogram(input.loadSegments ?? [], ids)
 }
@@ -66,9 +64,8 @@ function validateLoad<R extends TimelineRow>(input: GanttValidationInput<R>) {
 function validatePresets<R extends TimelineRow>(input: GanttValidationInput<R>) {
   const ids = new Set<string>()
   for (const preset of input.zoomPresets ?? []) {
-    if (!preset.id || ids.has(preset.id)) throw new Error('Invalid or duplicate zoom preset: ' + preset.id)
+    checkId('zoom preset', preset.id, ids)
     if (!Number.isFinite(preset.pixelsPerUnit) || preset.pixelsPerUnit <= 0) throw new RangeError('Invalid zoom preset pixelsPerUnit: ' + preset.id)
-    ids.add(preset.id)
   }
   if (input.zoomPreset !== undefined && !ids.has(input.zoomPreset)) throw new Error('Unknown zoom preset: ' + input.zoomPreset)
 }
@@ -77,24 +74,22 @@ function validatePresets<R extends TimelineRow>(input: GanttValidationInput<R>) 
 function validateDisplay<R extends TimelineRow>(input: GanttValidationInput<R>) {
   const columnIds = new Set<string>()
   for (const column of input.columns ?? []) {
-    if (!column.id || columnIds.has(column.id) || !Number.isFinite(column.width) || column.width <= 0) {
-      throw new Error('Invalid timeline column: ' + column.id)
-    }
-    columnIds.add(column.id)
+    checkId('column', column.id, columnIds)
+    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
   }
   for (const level of input.headerBands ?? []) {
     let previousEnd = -Infinity
     for (const band of level) {
       if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-        throw new Error('Timeline bands must be finite, ordered and nonoverlapping')
+        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
       }
       previousEnd = band.end
     }
   }
   const markerIds = new Set<string>()
   for (const item of input.markers ?? []) {
-    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new Error('Invalid timeline marker: ' + item.id)
-    markerIds.add(item.id)
+    checkId('marker', item.id, markerIds)
+    if (!Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
   }
   if (input.markerRanges?.length) checkMarkerRanges(input.markerRanges, new Set(input.rows.map(row => row.id)))
   baselineSelection(input.bars, input.baselineIds)

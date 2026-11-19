@@ -229,5 +229,5 @@ test('NetworkGraph rejects invalid snapping, background and guide props while re
   for (const guideThreshold of [-1, Number.NaN, Infinity]) {
     await assert.rejects(render({ alignmentGuides: true, guideThreshold }), { name: 'RangeError', message: /guideThreshold/ })
   }
-  await assert.rejects(render({ background: 'grid' }), { name: 'Error', message: 'Unknown NetworkGraph background: grid' })
+  await assert.rejects(render({ background: 'grid' }), { name: 'RangeError', message: 'Unknown NetworkGraph background: grid' })
 })
