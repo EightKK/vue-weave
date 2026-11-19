@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.6.0 - 2026-11-19
+
+This is a minor release because of the changes under "Breaking changes": error messages of input checks are unified, an ID must be a non-empty string everywhere, `layoutGridGraph` has a new default `columnGap`, and `graphRectsIntersect` no longer counts touching rectangles. Each entry below says who is affected and what to change.
+
 ### Breaking changes
 
 - Graph layouts: every built-in layout (layered, tree, radial, circular, grid, concentric, swimlane, force, flow and incremental) now reports an invalid numeric option in one format that names the option, the rule and the value: `RangeError('<option> must be <rule> (got <value>)')`, with the rules `a finite number > 0`, `a finite number ≥ 0`, `a finite number`, `an integer ≥ 1`, `a finite number in [0, 1]` and `a safe integer`. Before, the texts varied, for example `columnGap must be finite and positive (spacing may be zero)`, `rowGap must be finite and nonnegative (node sizes positive)`, `nodeWidth and nodeHeight must be finite and positive` or `crossingSweeps must be a positive integer`; now `columnGap must be a finite number ≥ 0 (got -1)` and `crossingSweeps must be an integer ≥ 1 (got 0)`. The error class (`RangeError`) and the accepted values are unchanged. What to do: update code or tests that match these messages.
