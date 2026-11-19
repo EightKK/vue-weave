@@ -419,7 +419,7 @@ const bars = plan.tasks.filter(task => !task.summary).map(task => ({ id: task.id
 | `rescheduleFromActuals` | Actuals entries for summaries throw an Error: record them on the subtasks. A summary rolls up the actual and forecast dates of its subtasks, so it starts at the earliest actual start. A started or finished subtask no longer inherits the start bounds of its summaries, as with `rescheduleFromStatusDate` |
 | `levelResources` | Levels the subtasks; summaries roll up from the leveled subtasks, are never delayed themselves and are not listed in `delays`. Assignments to a summary are accepted and take no capacity |
 | `calculateResourceLoad` | A summary's `work` is empty, so its assignments take no capacity |
-| `buildPlacementInput` | A placed subtask whose summary is not placed moves to its nearest placed ancestor, or to the top level |
+| `buildPlacementInput` | A placed subtask whose summary is not placed moves to its nearest placed ancestor, or to the top level, and keeps what binds it: the `startNoEarlierThan` and `finishNoLaterThan` of the skipped summaries become its own where tighter, an inactive one makes it `inactive: true`, and an FS or SS link into the unplaced summary binds the placed leaf subtasks (one link per leaf in `retargetedDependencies`, or an `unplaced-predecessor` diagnostic per leaf when the link comes from an unplaced task). A link from an unplaced summary is an `unplaced-predecessor` diagnostic, because its rolled-up dates are not in the plan |
 | `scheduleToGraph` | A summary is a node like any other, with its rolled-up dates and float |
 
 ## Split work
