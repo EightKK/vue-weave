@@ -222,7 +222,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
       if (pauses.length) clock = workClock(subtractPeriods(clock.periods, pauses), quantum)
     }
     if (task.inactive !== undefined && typeof task.inactive !== 'boolean') throw new Error('Invalid inactive flag: ' + task.id)
-    if (task.parentId !== undefined && (typeof task.parentId !== 'string' || !task.parentId)) throw new Error('Invalid parent task ID: ' + task.id)
+    checkParentId(task)
     let manual: TimeRange | undefined
     if (task.manual !== undefined) {
       if (typeof task.manual !== 'object' || task.manual === null) throw new Error('Manual dates must be an object with a start and an end: ' + task.id)
@@ -268,15 +268,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
     if (!['FS', 'SS', 'FF', 'SF'].includes(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
     const lag = link.lag ?? 0
     if (!Number.isSafeInteger(lag) || lag % quantum !== 0) throw new RangeError('Invalid schedule dependency lag: ' + link.id)
-    if (hierarchy && link.from !== link.to) {
-      const down = hierarchy.isAncestor(link.from, link.to)
-      if (down || hierarchy.isAncestor(link.to, link.from)) {
-        throw new Error(`Dependency ${link.id} links summary task ${down ? link.from : link.to} with its own subtask ${down ? link.to : link.from}`)
-      }
-    }
-    if (hierarchy?.isSummary(link.to) && targetFinish(link)) {
-      throw new Error(`Dependency ${link.id} is ${link.type} into summary task ${link.to}; only FS and SS links can end at a summary task`)
-    }
+    if (hierarchy) checkSummaryLink(link, hierarchy)
     linkIndex.set(link.id, linkIndex.size)
     links.set(link.id, link)
     // A link that touches an inactive task takes no part; a link into a manual task binds nothing. A link into a summary
@@ -299,15 +291,17 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   return { range, quantum, tasks, continuous, linkIndex, validateTime, inactive, leaves, summaries, links }
 }
 
+/** Check the `parentId` of one task as `buildScheduleModel` does: absent, or a non-empty string. */
+export function checkParentId(task: ScheduleTask) {
+  if (task.parentId !== undefined && (typeof task.parentId !== 'string' || !task.parentId)) throw new Error('Invalid parent task ID: ' + task.id)
+}
+
 /**
- * Validate the summary task hierarchy of `parentId` and apply it to the model: every task below an inactive task, and
- * every summary without an active leaf, becomes inactive; leaves inherit the `startNoEarlierThan` (unless their start
- * has happened) and `finishNoLaterThan` of their summaries; summaries get their children and leaf ranges. Iterative,
- * so deep hierarchies do not exhaust the call stack.
+ * Check the summary task hierarchy of `parentId` with the scheduler's errors: unknown parents, parent cycles, and what a
+ * summary task cannot have. Returns the children of each summary in input order and the top-level tasks. Expects task
+ * IDs and `parentId` values that are already checked. Iterative.
  */
-function buildHierarchy(
-  list: readonly ScheduleTask[], tasks: Map<string, ModelTask>, inactive: Set<string>, started: ReadonlySet<string> | undefined,
-) {
+export function checkSummaryHierarchy(list: readonly ScheduleTask[]) {
   const byId = new Map(list.map(task => [task.id, task]))
   const children = new Map<string, ScheduleTask[]>()
   const roots: ScheduleTask[] = []
@@ -341,6 +335,37 @@ function buildHierarchy(
     for (const key of summaryForbidden) if (task[key] !== undefined) throw new Error(`Summary task ${id} cannot have ${key}`)
     if (task.mode === 'alap') throw new Error(`Summary task ${id} cannot have mode 'alap'`)
   }
+  return { children, roots }
+}
+
+/**
+ * Check a link against a valid summary task hierarchy with the scheduler's errors: it must not link a summary with its
+ * own subtask, and only FS and SS links can end at a summary.
+ */
+export function checkSummaryLink(
+  link: ScheduleLink, hierarchy: { isSummary: (id: string) => boolean; isAncestor: (ancestor: string, id: string) => boolean },
+) {
+  if (link.from !== link.to) {
+    const down = hierarchy.isAncestor(link.from, link.to)
+    if (down || hierarchy.isAncestor(link.to, link.from)) {
+      throw new Error(`Dependency ${link.id} links summary task ${down ? link.from : link.to} with its own subtask ${down ? link.to : link.from}`)
+    }
+  }
+  if (hierarchy.isSummary(link.to) && targetFinish(link)) {
+    throw new Error(`Dependency ${link.id} is ${link.type} into summary task ${link.to}; only FS and SS links can end at a summary task`)
+  }
+}
+
+/**
+ * Validate the summary task hierarchy of `parentId` and apply it to the model: every task below an inactive task, and
+ * every summary without an active leaf, becomes inactive; leaves inherit the `startNoEarlierThan` (unless their start
+ * has happened) and `finishNoLaterThan` of their summaries; summaries get their children and leaf ranges. Iterative,
+ * so deep hierarchies do not exhaust the call stack.
+ */
+function buildHierarchy(
+  list: readonly ScheduleTask[], tasks: Map<string, ModelTask>, inactive: Set<string>, started: ReadonlySet<string> | undefined,
+) {
+  const { children, roots } = checkSummaryHierarchy(list)
   const pre = new Map<string, number>(), post = new Map<string, number>()
   const leaves: string[] = [], summaries: string[] = []
   type Frame = { task: ScheduleTask; next: number; off: boolean; first: number; startLower?: Bound; endUpper?: Bound }

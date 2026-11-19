@@ -226,7 +226,9 @@ function propose(title: string, changes: string[], next: PlanModel, focusBarId?:
     return reject(error instanceof Error ? error.message : String(error))
   }
   if (!calc.placement.ok) {
-    return reject(calc.placement.diagnostics.map(item => taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.').join(' '))
+    return reject(calc.placement.diagnostics.map(item => item.code === 'unplaced-predecessor'
+      ? taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.'
+      : taskLabel(item.taskId) + ' has no placed subtask to span. Place one of its subtasks first.').join(' '))
   }
   if (!calc.plan.ok) {
     return reject(calc.plan.code === 'cycle' ? 'The change creates a dependency cycle.'
