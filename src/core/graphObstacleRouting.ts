@@ -365,7 +365,8 @@ function assertEnd(end: GraphRouteEnd, name: string) {
 
 /**
  * Finds an axis-aligned route from `from` to `to` that keeps `clearance` (default 8) away from every obstacle
- * rectangle, leaving `from` and entering `to` perpendicular to their sides. Include the boxes of the two end nodes in
+ * rectangle, leaving `from` and entering `to` perpendicular to their sides (with a clearance of 0
+ * the route may run along the border of an end's own node, which only costs extra). Include the boxes of the two end nodes in
  * `obstacles`: the route then never runs through them. The route minimises its length plus `bendPenalty` (default 24)
  * per bend, and is deterministic for the same input. Returns the polyline from `from` to `to`, or undefined when no route
  * exists or the bounded search gives up. When every input lies at nonnegative coordinates, so does the route.

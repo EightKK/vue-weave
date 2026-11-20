@@ -716,7 +716,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
   }
-  area.push(...rangeLabels)
+  for (const label of rangeLabels) area.push(label)
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue
@@ -982,7 +982,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
   }
   // Lag labels go above the marker, now and status-date lines so a line passing through a label does not cover its text.
-  area.push(...lagLabels)
+  for (const label of lagLabels) area.push(label)
   if (histogram) {
     loadRows.forEach((row, index) => {
       const { segments, peak } = histogram.get(row.id)!
