@@ -2164,6 +2164,12 @@ watch(() => props.dependencies, () => {
   if (localDependency.value !== undefined && !props.dependencies.some(dep => dep.id === localDependency.value)) localDependency.value = undefined
 })
 watch(() => [props.connectable, props.reconnectable], () => cancelLinkDraft('source-changed'))
+// A draft fixed at a summary row (`summaryDependencies`) is stale once that row is no longer a dependency end, for
+// example when `summaryDependencies` or `showSummaries` is turned off.
+watch(summaryAnchors, anchors => {
+  const fixed = linkDraft.value?.fixed
+  if (fixed && !barById.value.has(fixed.bar) && !anchors.has(fixed.bar)) cancelLinkDraft('source-changed')
+})
 /** Cancel a connection draft only, reporting it when one was armed or dragged. */
 function cancelLinkDraft(reason: TimelineEditCancelReason) {
   const fixed = linkDraft.value?.fixed

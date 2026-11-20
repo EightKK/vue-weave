@@ -22,9 +22,13 @@
       // (named baseline sets plan and rev1 on both bars; the tooltip shows the plan variance), sets (comma-separated
       // baselineIds), pinch (pinchZoom), constraints (scheduling constraints on both bars, with constraintsEditable unless display is set;
       // the parent applies constraint edits only with apply, and rejectConstraints rejects them; "Replace bars" passes
-      // new but equal bars), ranges (two marker ranges, one restricted to Row 2, and an SVG export button).
+      // new but equal bars), ranges (two marker ranges, one restricted to Row 2, and an SVG export button), summaries (a
+      // summary row Phase over a row with Task C, drawn with showSummaries and summaryDependencies; a button turns
+      // summaryDependencies off).
       const query = new URLSearchParams(location.search)
-      const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
+      const summarized = query.has('summaries')
+      const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' },
+        ...(summarized ? [{ id: 'p', label: 'Phase' }, { id: 'pc', parentId: 'p', label: 'Phase work' }] : [])]
       const named = query.has('baselines')
       const constrained = query.has('constraints')
       const bars = shallowRef([
@@ -34,7 +38,10 @@
         { id: 'b', rowId: 'r2', label: 'Task B', start: 4, end: 6, editable: true,
           ...(named ? { baselines: [{ id: 'plan', start: 3, end: 4 }, { id: 'rev1', start: 4, end: 7 }] } : {}),
           ...(constrained ? { constraints: { startNoLaterThan: 5, finishNoEarlierThan: 7, fixedStart: 4 } } : {}) },
+        ...(summarized ? [{ id: 'c', rowId: 'pc', label: 'Task C', start: 8, end: 10 }] : []),
       ])
+      const summaryLinks = ref(true)
+      const lastCancel = ref('')
       const lastConstraint = ref('')
       const constraintEdits = ref(0)
       const variance = bar => {
@@ -92,6 +99,10 @@
               exported.value = [...svg.matchAll(/<g class="vw-gantt-range(?:-label)?"><title>([^<]*)<\/title>/g)].map(match => match[1]).join('; ')
             } }, 'Export SVG'),
           ] : []),
+          ...(summarized ? [
+            output('Last edit cancel', lastCancel.value),
+            h('button', { type: 'button', onClick: () => { summaryLinks.value = false } }, 'Turn summary links off'),
+          ] : []),
           named ? h('button', { type: 'button', onClick: () => { sets.value = ['plan'] } }, 'Show only the plan baseline') : null,
           ...(constrained ? [
             output('Last constraint edit', lastConstraint.value),
@@ -117,6 +128,10 @@
             ...(query.has('piecewise') ? {
               range: { start: 0, end: 100 }, tickSteps: [10], zoomPresets: undefined,
               scale: { width: 550, toX: t => t <= 50 ? t * 10 : 500 + (t - 50), toTime: x => x <= 500 ? x / 10 : 50 + (x - 500) },
+            } : {}),
+            ...(summarized ? {
+              showSummaries: true, summaryDependencies: summaryLinks.value,
+              onEditCancel: event => { lastCancel.value = JSON.stringify(event) },
             } : {}),
             onEdit: change => { lastEdit.value = JSON.stringify(change) },
             onDependencyDelete: () => { deletes.value++ },
