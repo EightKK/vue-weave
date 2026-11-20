@@ -842,3 +842,149 @@ test('random interleavings keep the windowed data consistent with the current co
     for (const call of calls) if (!call.settled) assert.equal(call.signal.aborted, true)
   }
 })
+
+test('a view without rows requests and walks nothing, however wide its time range is', () => {
+  const state = createWindowedDataState({ chunkSize: 1, maxCells: 10 })
+  const { state: loading, start } = setWindowedView(state, { start: 0, end: 2, rowIds: ['a'] })
+  assert.equal(start.length, 1)
+  // A filter that matches no row: no cell is needed, the request in flight is aborted and nothing is planned, even for a
+  // range of 2^52 chunks that a chunk-by-chunk walk would never finish.
+  const empty = setWindowedView(loading, { start: 0, end: 2 ** 52, rowIds: [] })
+  assert.deepEqual(empty.start, [])
+  assert.deepEqual(empty.abort, [start[0].requestId])
+  assert.equal(empty.state.requests.size, 0)
+  assert.deepEqual(empty.state.view, { start: 0, end: 2 ** 52, rowIds: [] })
+  const coverage = windowedCoverage(empty.state)
+  assert.deepEqual([coverage.total, coverage.unloaded, coverage.complete], [0, 0, false])
+  // Rows again: the view is requested as usual.
+  assert.equal(setWindowedView(empty.state, { start: 0, end: 2, rowIds: ['a'] }).start.length, 1)
+})
+
+test('windowedCoverage counts wide windows from totals and recorded cells, not cell by cell', () => {
+  let { state, start } = setWindowedView(createWindowedDataState({ chunkSize: 1 }), { start: 0, end: 3, rowIds: ['a', 'b'] })
+  ;({ state } = resolveWindowedRequest(state, start[0].requestId, [bar('x', 'a', 0, 1)]))
+  ;({ state, start } = setWindowedView(state, { start: 10, end: 11, rowIds: ['a'] }))
+  ;({ state } = rejectWindowedRequest(state, start[0].requestId, new Error('down')))
+  ;({ state, start } = setWindowedView(state, { start: 20, end: 21, rowIds: ['b'] }))
+  // A whole-extent window of 2^50 chunks and three rows: counted without walking it.
+  assert.deepEqual({ ...windowedCoverage(state, { start: 0, end: 2 ** 50, rowIds: ['a', 'b', 'c'] }) }, {
+    status: 'failed', complete: false, total: 3 * 2 ** 50, unloaded: 3 * 2 ** 50 - 8, loading: 1, empty: 5, loaded: 1, failed: 1,
+  })
+  assert.deepEqual({ ...windowedCoverage(state, { start: 0, end: 21, rowIds: ['a', 'b', 'c'] }) }, {
+    status: 'failed', complete: false, total: 63, unloaded: 55, loading: 1, empty: 5, loaded: 1, failed: 1,
+  })
+  // A window no larger than the recorded cells is looked up cell by cell, with the same result.
+  assert.deepEqual({ ...windowedCoverage(state, { start: 0, end: 3, rowIds: ['a', 'b'] }) }, {
+    status: 'loaded', complete: true, total: 6, unloaded: 0, loading: 0, empty: 5, loaded: 1, failed: 0,
+  })
+  // Rows outside the window are not counted, and cells with rows do not count for a window without rows.
+  assert.deepEqual({ ...windowedCoverage(state, { start: 0, end: 2 ** 50, rowIds: ['b'] }) },
+    { status: 'loading', complete: false, total: 2 ** 50, unloaded: 2 ** 50 - 4, loading: 1, empty: 3, loaded: 0, failed: 0 })
+  assert.equal(windowedCoverage(state, { start: -(2 ** 50), end: 2 ** 50 }).unloaded, 2 ** 51)
+  // A cell count beyond the safe integer range can not be reported exactly.
+  assert.throws(() => windowedCoverage(state, { start: 0, end: 2 ** 52, rowIds: ['a', 'b', 'c'] }), { name: 'RangeError', message: /counted exactly/ })
+})
+
+test('chunk indices and boundaries that are not representable throw RangeError instead of looping', () => {
+  // Finite times and a positive chunk size, but chunk indices beyond Number.MAX_SAFE_INTEGER, where i++ may not advance.
+  const tiny = createWindowedDataState({ chunkSize: 1e-3 })
+  const far = { start: 1e15, end: 1e15 + 1 }
+  assert.throws(() => setWindowedView(tiny, far), { name: 'RangeError', message: /safe integer range/ })
+  assert.throws(() => windowedCoverage(tiny, far), { name: 'RangeError', message: /safe integer range/ })
+  assert.throws(() => retryWindowedData(tiny, far), { name: 'RangeError', message: /safe integer range/ })
+  assert.throws(() => setWindowedView(createWindowedDataState({ chunkSize: 1 }), { start: -Number.MAX_VALUE, end: 0 }), RangeError)
+  // Padding that makes a bound overflow to infinity.
+  assert.throws(() => setWindowedView(createWindowedDataState({ chunkSize: 1, padding: Number.MAX_VALUE }), { start: -Number.MAX_VALUE, end: 0 }), RangeError)
+  // Safe indices, but an origin so large that neighbouring chunk boundaries are the same number.
+  const coarse = createWindowedDataState({ chunkSize: 1, origin: 1e300 })
+  assert.throws(() => setWindowedView(coarse, { start: 1e300, end: 1e300 }), { name: 'RangeError', message: /not distinct finite numbers/ })
+  // A throw changes nothing.
+  const { state } = setWindowedView(createWindowedDataState({ chunkSize: 1e-3 }), { start: 0, end: 1 })
+  assert.throws(() => setWindowedView(state, far), RangeError)
+  assert.equal(state.requests.size, 1)
+  // Large but representable indices still work, and their requests have exact boundaries.
+  const big = setWindowedView(createWindowedDataState({ chunkSize: 1 }), { start: 2 ** 52, end: 2 ** 52 + 3 })
+  assert.deepEqual(big.start.map(request => [request.start, request.end]), [[2 ** 52, 2 ** 52 + 3]])
+})
+
+test('useWindowedData reports an initial condition getter that throws through error and refetches once it is valid', async () => {
+  const { calls, load } = controlledLoad()
+  const boom = new Error('condition')
+  const broken = ref(true)
+  const condition = () => {
+    if (broken.value) throw boom
+    return 'v1'
+  }
+  const scope = effectScope()
+  // The call itself must not throw.
+  const data = scope.run(() => useWindowedData({ view: ref({ start: 0, end: 1 }), condition, load, chunkSize: 1 }))
+  await flush()
+  assert.equal(data.error.value.error, boom)
+  assert.equal(data.error.value.request, undefined)
+  assert.equal(calls.length, 0)
+  assert.equal(data.complete.value, false)
+  broken.value = false
+  await flush()
+  assert.equal(data.error.value, undefined)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].request.condition, 'v1')
+  calls[0].resolve([bar('k', undefined, 0, 1)])
+  await flush()
+  assert.equal(data.complete.value, true)
+  // A getter that throws later is reported the same way (the watcher does not swallow it), drops the data, and recovers.
+  broken.value = true
+  await flush()
+  assert.equal(data.error.value.error, boom)
+  assert.deepEqual(data.items.value, [])
+  assert.equal(data.complete.value, false)
+  broken.value = false
+  await flush()
+  assert.equal(data.error.value, undefined)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].request.condition, 'v1')
+  scope.stop()
+})
+
+test('useWindowedData reports an invalid initial condition and a throwing view getter without throwing', async () => {
+  const { calls, load } = controlledLoad()
+  const condition = ref(42)
+  const scope = effectScope()
+  const data = scope.run(() => useWindowedData({ view: ref({ start: 0, end: 1 }), condition, load, chunkSize: 1 }))
+  await flush()
+  assert.ok(data.error.value.error instanceof TypeError)
+  assert.equal(calls.length, 0)
+  condition.value = 'ok'
+  await flush()
+  assert.equal(data.error.value, undefined)
+  assert.equal(calls.length, 1)
+  const viewBroken = ref(true)
+  const boom = new Error('view')
+  const other = scope.run(() => useWindowedData({
+    view: () => {
+      if (viewBroken.value) throw boom
+      return { start: 0, end: 1 }
+    },
+    load, chunkSize: 1,
+  }))
+  await flush()
+  assert.equal(other.error.value.error, boom)
+  assert.equal(calls.length, 1)
+  viewBroken.value = false
+  await flush()
+  assert.equal(other.error.value, undefined)
+  assert.equal(calls.length, 2)
+  scope.stop()
+})
+
+test('useWindowedData does not throw during server rendering for an initial condition that can not be read', async () => {
+  let reported
+  const html = await renderToString(createSSRApp({
+    setup() {
+      const data = useWindowedData({ view: { start: 0, end: 1 }, condition: () => { throw new Error('nope') }, load: () => [], chunkSize: 1 })
+      reported = data.error.value?.error?.message
+      return () => h('p', String(data.status.value))
+    },
+  }))
+  assert.equal(reported, 'nope')
+  assert.equal(html, '<p>unloaded</p>')
+})
