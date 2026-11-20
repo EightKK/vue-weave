@@ -201,13 +201,14 @@ test('gantt grid lines follow every tick of a piecewise scale in both directions
     for (const zoom of ['100%', '135%']) {
       if (zoom !== '100%') await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
       await expect(page.getByRole('group', { name: 'Timeline zoom', exact: true }).getByText(zoom, { exact: true })).toBeVisible()
-      // Labels 0..90 start at their tick; the closing tick label at 100 is aligned to the other side.
-      const labels = (await edges('.vw-gantt-tick:not(.vw-is-end)'))
+      // Labels 0..40 start at their tick; from 50 on the ticks are too close for a label, so those labels (and the
+      // closing one at 100) are left out while their lines stay.
+      const labels = (await edges('.vw-gantt-tick'))
       const grid = await edges('.vw-gantt-grid-line')
       const head = await edges('.vw-gantt-tick-line')
-      expect(labels).toHaveLength(10)
+      expect(labels).toHaveLength(5)
       expect(grid).toHaveLength(11)
-      expect(grid.slice(0, 10)).toEqual(labels)
+      expect(grid.slice(0, 5)).toEqual(labels)
       expect(head).toEqual(grid)
       // The compressed half keeps a line for every tick: 50..90 are 10 units apart but only 1 px per unit.
       const gaps = grid.slice(6).map((x, i) => Math.abs(x - grid[i + 5]!))
@@ -748,5 +749,28 @@ test('compressing non-working time widens working bars and keeps edits snapped t
   await page.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).uncheck()
   const restored = (await plan.getByRole('button', { name: /^Cut order A / }).boundingBox())!.width
   expect(restored).toBeLessThan(compressedWidth)
+  expect(errors).toEqual([])
+})
+
+test('tick labels of a compressed working-time axis never overlap; squeezed ticks keep their grid lines', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openDemo(page, 'Scheduling')
+  const panel = page.getByRole('region', { name: 'Calendar-aware schedule', exact: true })
+  await panel.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).check()
+  const plan = panel.getByRole('region', { name: 'Gantt chart', exact: true }).first()
+  await expect(plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })).toBeVisible()
+  // The nights and the closed day squeeze the 12-hour ticks to a few pixels apart.
+  const labels = plan.locator('.vw-gantt-tick')
+  await expect(labels.filter({ hasText: '09 Nov 08:00' })).toHaveCount(1)
+  await expect(labels.filter({ hasText: '11 Nov 08:00' })).toHaveCount(1)
+  const boxes = await labels.evaluateAll(spans => spans.map(span => {
+    const rect = span.getBoundingClientRect()
+    return { text: span.textContent ?? '', left: rect.left, right: rect.right }
+  }).sort((a, b) => a.left - b.left))
+  expect(boxes.length).toBeGreaterThan(1)
+  for (let i = 1; i < boxes.length; i++) {
+    expect(boxes[i]!.left, `${boxes[i - 1]!.text} overlaps ${boxes[i]!.text}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
+  }
+  expect(await plan.locator('.vw-gantt-grid-line').count()).toBeGreaterThan(boxes.length)
   expect(errors).toEqual([])
 })

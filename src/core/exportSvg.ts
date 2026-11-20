@@ -8,6 +8,7 @@ import {
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
 } from './timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
+import { tickLabelsWithRoom } from './workingTimeScale.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineMarkerRange, TimelineRow,
@@ -705,9 +706,12 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       area.push(clippedText(box, rtl, [{ text: band.label, y: 17, size: 11, weight: 700, fill: theme.text, inset: 7 }]))
     }
   })
-  for (const tick of ticks) {
+  const labelled = tickLabelsWithRoom(ticks, local.toX, step, window.end)
+  ticks.forEach((tick, index) => {
     const x = X(tick)
     area.push(tag('line', { x1: x, y1: headerHeight - 40, x2: x, y2: totalHeight, stroke: theme.grid, 'stroke-width': 1 }))
+    // Labels that a non-linear scale squeezes together are left out; the grid line stays.
+    if (!labelled[index]) return
     const atEnd = tick === window.end
     // The label sits after the tick line in reading order, or before it for the closing tick.
     const after = atEnd ? rtl : !rtl
@@ -715,7 +719,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       x: after ? x + 7 : x - 7, y: headerHeight - 40 + 24, 'font-size': 11, 'font-weight': 700, fill: theme.text,
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
-  }
+  })
   for (const label of rangeLabels) area.push(label)
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {

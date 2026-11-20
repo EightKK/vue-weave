@@ -453,7 +453,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
 </script>
 
 <template>
-  <DemoPanel title-id="schedule-title" title="Calendar-aware schedule" subtitle="JST · split shifts · 10 November plant closure">
+  <DemoPanel class="schedule-panel" title-id="schedule-title" title="Calendar-aware schedule" subtitle="JST · split shifts · 10 November plant closure">
     <template #options>
       <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
       <label><input v-model="compress" type="checkbox"> Compress non-working time</label>
@@ -541,6 +541,9 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
 </template>
 
 <style scoped>
+/* Ten toggles do not fit beside the title: the toggles move below it and wrap instead of squeezing each label. */
+.schedule-panel :deep(.section-head) { flex-wrap: wrap; }
+.schedule-panel :deep(.section-head > .options) { flex-wrap: wrap; gap: 8px 16px; }
 .status-options { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .status-options input[type="range"] { vertical-align: middle; width: 180px; }
 /* Legend swatches in the colour of the slot each shown set is drawn in. */

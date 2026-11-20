@@ -83,3 +83,17 @@ export function createWorkingTimeScale(
     },
   }
 }
+
+/**
+ * Which tick labels have room on a possibly non-linear scale (internal; GanttChart and renderTimelineSvg share it).
+ * A label sits after its tick and is shown when the next tick (`tick + step`) is at least `gap` pixels further on; the
+ * closing label at `end` sits before its tick and is shown when the previous tick is at least `gap` pixels back. On a
+ * linear scale whose step keeps ticks `gap` apart every label is shown; where a working-time scale squeezes ticks
+ * together, the squeezed labels are left out, so labels never overlap. The answer for a tick depends only on its
+ * neighbours, so it does not change while the chart scrolls.
+ */
+export function tickLabelsWithRoom(ticks: readonly number[], toX: (time: number) => number, step: number, end: number, gap = 76) {
+  return ticks.map(tick => tick === end
+    ? toX(tick) - toX(tick - step) >= gap
+    : toX(tick + step) - toX(tick) >= gap)
+}
