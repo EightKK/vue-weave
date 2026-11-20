@@ -354,3 +354,18 @@ test('avoidNodes reroutes an edge that a moved unrelated box now crosses, but ne
   const plain = routeGraphEdges(moved, edges, nodesById, { style: 'orthogonal' })
   assert.equal(graphLayoutChangeMetrics(new Map(), plain, { edges: [edges[0]] }).edgeBoxIntersections, 1)
 })
+
+test('incremental layout places a new node with more anchors than a call can take arguments', () => {
+  // Math.max(...anchors) overflowed the call stack past about 120,000 anchors.
+  const count = 150000
+  const nodes = [{ id: 'hub' }], edges = [], positions = new Map()
+  for (let i = 0; i < count; i++) {
+    nodes.push({ id: 'l' + i })
+    edges.push({ id: 'e' + i, from: 'l' + i, to: 'hub' })
+    positions.set('l' + i, { x: 0, y: i * 100 })
+  }
+  const result = layoutGraphIncrementally(nodes, edges, positions)
+  assert.deepEqual(result.placedIds, ['hub'])
+  assert.equal(result.boxes.get('hub').x, 144 + 50)
+  assert.equal(result.boxes.get('hub').rank, 1)
+})
