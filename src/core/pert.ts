@@ -41,8 +41,10 @@ export interface ScheduleGraphEdgeData {
 }
 
 export interface ScheduleGraph {
-  nodes: NetworkNode[]
-  edges: GraphEdge[]
+  /** One node per task, in result order, whose `data` carries the schedule values. */
+  nodes: NetworkNode<ScheduleGraphNodeData>[]
+  /** One edge per shown dependency, whose `data` carries its type, critical flag and non-zero lag. */
+  edges: GraphEdge<ScheduleGraphEdgeData>[]
   /** IDs of the critical tasks, for example for NetworkGraph `relatedIds`. */
   criticalNodeIds: Set<string>
   /** IDs of the controlling dependencies between critical tasks (`criticalDependencyIds`). */
@@ -73,7 +75,7 @@ export function scheduleToGraph(
   const prefix = { earlyStart: 'ES', earlyFinish: 'EF', float: 'Float', ...options.labels }
   const ids = new Set<string>()
   const criticalNodeIds = new Set<string>()
-  const nodes = result.tasks.map((task): NetworkNode => {
+  const nodes = result.tasks.map((task): NetworkNode<ScheduleGraphNodeData> => {
     ids.add(task.id)
     if (task.critical) criticalNodeIds.add(task.id)
     const earlyStart = task.earliestStart ?? task.start
@@ -93,7 +95,7 @@ export function scheduleToGraph(
   const inactive = new Set(result.inactiveTaskIds ?? [])
   const shown = inactive.size
     ? dependencies.filter(dependency => !inactive.has(dependency.from) && !inactive.has(dependency.to)) : dependencies
-  const edges = shown.map((dependency): GraphEdge => {
+  const edges = shown.map((dependency): GraphEdge<ScheduleGraphEdgeData> => {
     if (!ids.has(dependency.from) || !ids.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
     if (dependency.from === dependency.to) {
       throw new Error(`Dependency ${dependency.id} links task ${dependency.from} to itself`)
@@ -108,7 +110,7 @@ export function scheduleToGraph(
     const critical = criticalLinks.has(dependency.id)
     if (critical) criticalEdgeIds.add(dependency.id)
     const data: ScheduleGraphEdgeData = { type, critical }
-    const edge: GraphEdge = { id: dependency.id, from: dependency.from, to: dependency.to, data }
+    const edge: GraphEdge<ScheduleGraphEdgeData> = { id: dependency.id, from: dependency.from, to: dependency.to, data }
     const parts: string[] = type === 'FS' ? [] : [type]
     if (lag) {
       data.lag = lag

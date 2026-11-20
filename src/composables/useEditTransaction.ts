@@ -1,4 +1,5 @@
 import { computed, shallowRef } from 'vue'
+import type { ShallowRef } from 'vue'
 import {
   beginTransaction,
   clearTransactionResult,
@@ -50,7 +51,8 @@ export function useEditTransaction<S, P>(options: UseEditTransactionOptions<S, P
   const createOperationId = options.createOperationId ?? defaultOperationId
   const history = useEditHistory<S>(options.initialState, options.historyLimit)
   const core = shallowRef(createTransactionState(options.initialState, options.initialVersion))
-  const historyReset = shallowRef<HistoryReset | undefined>(undefined)
+  // Annotated with the one-argument ShallowRef so the declaration also type-checks with Vue 3.5.0.
+  const historyReset: ShallowRef<HistoryReset | undefined> = shallowRef<HistoryReset | undefined>(undefined)
 
   const acceptedState = computed(() => core.value.acceptedState)
   const acceptedVersion = computed(() => core.value.acceptedVersion)
