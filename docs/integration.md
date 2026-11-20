@@ -248,14 +248,14 @@ The opt-in swimlanes of NetworkGraph (`lanes`) add five variables; their default
 | `--vw-lane-border` | `--vw-border` (`#c9d6df`) | Outline of bands and headers, and the minimap lane outlines |
 | `--vw-lane-title` | `--vw-text` (`#172c3b`) | Lane title text |
 
-The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge path (`vw-network-edge vw-network-band`) in `--vw-edge` with the band width, and reference (loop) bands (`vw-is-reference`) with a dash pattern, so they differ without colour. Selected bands take `--vw-edge-selected` and highlighted ones `--vw-graph-highlight`; the hit area of a band (`vw-edge-hit vw-is-band`) is as wide as the band. In forced-colors mode bands are drawn in `CanvasText`, reference bands in `GrayText` with their dashes and selected bands in `Highlight`. Four variables:
+The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge path (`vw-network-edge vw-network-band`) in `--vw-edge` with the band width, and reference (loop) bands (`vw-is-reference`) with a dash pattern, so they differ without colour. The default pattern is `10 6`, lengthened for wide bands (dash twice and gap at least three quarters of the band width) so a wide loop band reads as dashed rather than as a comb of stripes; along a straight-segment loop route the gaps are evened out so the band starts and ends with a dash at its nodes. Selected bands take `--vw-edge-selected` and highlighted ones `--vw-graph-highlight`; the hit area of a band (`vw-edge-hit vw-is-band`) is as wide as the band. In forced-colors mode bands are drawn in `CanvasText`, reference bands in `GrayText` with their dashes and selected bands in `Highlight`. Four variables:
 
 | Variable | Default | Used for |
 | --- | --- | --- |
 | `--vw-flow-band-opacity` | `.5` | Opacity of a band, so crossing bands stay readable |
 | `--vw-flow-band-active-opacity` | `.78` | Opacity of a hovered, selected or highlighted band |
 | `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
-| `--vw-flow-reference-dash` | `10 6` | Dash pattern of a reference band |
+| `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width |
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 

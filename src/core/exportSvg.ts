@@ -2,7 +2,7 @@ import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } fr
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
 import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
-import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from './graphFlow.js'
+import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
@@ -379,7 +379,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       content.push(tag('path', {
         class: band.reference ? 'vw-flow-band vw-is-reference' : 'vw-flow-band', d: layout.paths.get(edge.id)!, fill: 'none',
         stroke: strong ? highlight : theme.edge, 'stroke-width': band.width,
-        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? '10 6' : undefined,
+        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? graphReferenceDash(band.width, layout.paths.get(edge.id)) : undefined,
       }, band.label ? tag('title', {}, escapeXml(band.label)) : undefined))
       continue
     }

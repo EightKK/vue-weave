@@ -544,10 +544,10 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
    stay readable. Reference (loop) bands are dashed, which tells them apart without colour and in forced colours. */
 .vw-network-edge.vw-network-band { stroke-opacity: var(--vw-flow-band-opacity, .5); stroke-linecap: butt; stroke-linejoin: round; }
 .vw-network g:hover > .vw-network-band, .vw-edge-selected .vw-network-band, .vw-network .vw-is-highlighted .vw-network-band { stroke-opacity: var(--vw-flow-band-active-opacity, .78); }
-.vw-network-edge.vw-network-band.vw-is-reference { stroke-opacity: var(--vw-flow-reference-opacity, .35); stroke-dasharray: var(--vw-flow-reference-dash, 10 6); }
+.vw-network-edge.vw-network-band.vw-is-reference { stroke-opacity: var(--vw-flow-reference-opacity, .35); stroke-dasharray: var(--vw-flow-reference-dash, var(--vw-band-dash, 10 6)); }
 .vw-edge-hit.vw-is-band:focus-visible { stroke-opacity: .55; }
 @media (forced-colors: active) {
   .vw-network-edge.vw-network-band { stroke: CanvasText; }
-  .vw-network-edge.vw-network-band.vw-is-reference { stroke: GrayText; stroke-dasharray: 10 6; }
+  .vw-network-edge.vw-network-band.vw-is-reference { stroke: GrayText; stroke-dasharray: var(--vw-band-dash, 10 6); }
   .vw-edge-selected .vw-network-edge.vw-network-band { stroke: Highlight; stroke-opacity: .85; }
 }

@@ -871,6 +871,16 @@ test('the quantity flow demo draws named bands on one scale, never mixes units a
   // The rework loop is a dashed reference band, not part of the totals.
   await expect(band('Rework → Inspect: 10 pcs')).toBeAttached()
   await expect(stage.locator('.vw-network-band.vw-is-reference')).toHaveCount(1)
+  // Its dashes grow with its width, so the wide loop reads as a dashed band rather than a comb of stripes; its gaps
+  // are evened out so it starts and ends with a dash at its nodes.
+  const dash = await band('Rework → Inspect: 10 pcs').evaluate(hit => {
+    const path = hit.parentElement!.querySelector('.vw-network-band')!
+    const style = getComputedStyle(path)
+    return { width: Number.parseFloat(style.strokeWidth), dashes: style.strokeDasharray.split(/[\s,]+/).map(Number.parseFloat) }
+  })
+  expect(dash.width).toBeGreaterThan(20)
+  expect(dash.dashes[0]).toBeCloseTo(dash.width * 2, 1)
+  expect(dash.dashes[1]).toBeGreaterThanOrEqual(dash.width * 0.75 - 0.01)
   const totals = page.getByRole('table', { name: 'Node totals' })
   await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(0)).toHaveText('40')
   await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(1)).toHaveText('36')
