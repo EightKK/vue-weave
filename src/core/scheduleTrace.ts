@@ -207,8 +207,13 @@ export function recordSlotReasons(
     for (const bound of bindingBounds(bounds, limits, key)) {
       const base = { taskId: task.id, phase, bound: key, candidateTime, placedTime }
       if (bound.dependencyId !== undefined) {
-        const link = (latest ? allOutgoing(task) : task.incoming).find(item => item.id === bound.dependencyId)
+        // A link into a summary task is attached to each of its leaves under one ID: take the copy whose successor
+        // gave the bound, so the reason names that leaf and follows its reasons.
+        const { linkTo } = bound
+        let link = (latest ? allOutgoing(task) : task.incoming)
+          .find(item => item.id === bound.dependencyId && (!latest || linkTo === undefined || item.to === linkTo))
           ?? context.links!.get(bound.dependencyId)!
+        if (latest && linkTo !== undefined && link.to !== linkTo) link = { ...link, to: linkTo }
         boundIds.push(recorder.add({
           ...base, kind: 'dependency', dependencyId: link.id, relatedTaskIds: [latest ? link.to : link.from],
           parentReasonIds: context.linkParents(link, latest),

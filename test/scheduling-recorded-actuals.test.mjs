@@ -8,9 +8,10 @@ import { renderComponent } from './helpers/ssr.mjs'
 // Seeded plans with calendars, every link type and lag, bounds, a deadline, pauses, manual and inactive tasks, summary
 // tasks and progress entries, run through `rescheduleFromStatusDate`, `scheduleTasks` and `toPlanningDiagnostics`. The
 // digest was produced before recorded actuals were added; it must not change, because progress-percentage input is
-// scheduled exactly as before.
+// scheduled exactly as before. (It was updated once, when the trace reasons of links into summary tasks began to name
+// the leaf that binds; every date, rescheduled plan and diagnostic stayed the same.)
 test('progress-percentage rescheduling gives the same results as before recorded actuals', () => {
-  assert.equal(progressPlanDigest(), '34bc61100bf5ae7a72da95eeb5d1f500c6aa6fb699c97f42035d50bf633b9959')
+  assert.equal(progressPlanDigest(), '39dc35e5f38ea5c2a86ed4d3f6df4df827a86d964e301e4fed76dff448721548')
 })
 
 const { actualsTimelineBars, rescheduleFromActuals, scheduleTasks, timelineBaselineId } = core
