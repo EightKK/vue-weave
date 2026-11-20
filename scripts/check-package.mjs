@@ -150,17 +150,27 @@ try {
   await writeFile(join(consumer, 'typed-consumer.ts'), typedProbe)
   await writeFile(join(consumer, 'styled-consumer.ts'), `import './consumer.js'\nimport '${manifest.name}/style.css'\n`)
   await writeFile(join(consumer, 'styles.d.ts'), "declare module '*.css' {}\n")
-  for (const [module, moduleResolution] of [
-    ['ESNext', 'Bundler'],
-    ['NodeNext', 'NodeNext'],
-  ]) {
-    const compilerArguments = [
-      tsc, '--noEmit', '--strict', '--noUncheckedSideEffectImports', '--target', 'ES2022', '--lib', 'ES2022,DOM,DOM.Iterable',
-      '--module', module, '--moduleResolution', moduleResolution, '--types', 'vue',
-    ]
-    execFileSync(process.execPath, [...compilerArguments, 'consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
-    execFileSync(process.execPath, [...compilerArguments, 'typed-consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
-    execFileSync(process.execPath, [...compilerArguments, 'styled-consumer.ts', 'styles.d.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+  // The declarations must type-check against the lowest Vue the peer range allows as well as the pinned one:
+  // a type that only newer Vue declares (such as two-argument ShallowRef) would break consumers on older Vue.
+  const minimumVue = manifest.peerDependencies.vue.match(/^\^(\d+\.\d+\.\d+)$/)?.[1]
+  assert.ok(minimumVue, `Unexpected Vue peer range: ${manifest.peerDependencies.vue}`)
+  for (const vueVersion of [manifest.devDependencies.vue, minimumVue]) {
+    if (vueVersion !== manifest.devDependencies.vue) npm(['install', ...installOptions, `vue@${vueVersion}`], consumer)
+    const installedVue = JSON.parse(await readFile(join(consumer, 'node_modules/vue/package.json'), 'utf8')).version
+    assert.equal(installedVue, vueVersion, 'Consumer Vue version')
+    for (const [module, moduleResolution] of [
+      ['ESNext', 'Bundler'],
+      ['NodeNext', 'NodeNext'],
+    ]) {
+      const compilerArguments = [
+        tsc, '--noEmit', '--strict', '--noUncheckedSideEffectImports', '--target', 'ES2022', '--lib', 'ES2022,DOM,DOM.Iterable',
+        '--module', module, '--moduleResolution', moduleResolution, '--types', 'vue',
+      ]
+      execFileSync(process.execPath, [...compilerArguments, 'consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+      execFileSync(process.execPath, [...compilerArguments, 'typed-consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+      execFileSync(process.execPath, [...compilerArguments, 'styled-consumer.ts', 'styles.d.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+    }
+    console.log(`Consumer types verified with Vue ${vueVersion}`)
   }
   console.log(`Package verified: ${relative(root, tarball)} (${files.size} files)`)
   console.log(`SHA-512 integrity: ${packed.integrity}`)
