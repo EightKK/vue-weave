@@ -155,6 +155,7 @@ const defaultLevelLabels: Readonly<Record<CalendarZoomLevel, string>> = {
 export function calendarZoomPresets(range: TimeRange, options: CalendarZoomPresetOptions = {}): CalendarZoomPreset[] {
   const { locale = 'en-US', timeZone, utcOffsetMinutes, weekStartsOn = 1, levels = allLevels, labels = {} } = options
   const zone = checkZoneOptions(timeZone, utcOffsetMinutes)
+  if (!Array.isArray(levels as unknown)) throw new RangeError('levels must be an array of calendar zoom levels, such as [\'days\', \'weeks\']')
   const seen = new Set<string>()
   for (const level of levels) {
     if (!Object.hasOwn(levelSpecs, level)) throw new RangeError('Unknown calendar zoom level: ' + String(level))
@@ -184,7 +185,7 @@ export function calendarZoomPresets(range: TimeRange, options: CalendarZoomPrese
     }))
     return {
       id: level, label: labels[level] ?? defaultLevelLabels[level], pixelsPerUnit: spec.pixelsPerUnit,
-      tickSteps: spec.tickSteps, headerBands, snap: spec.snap, formatTime,
+      tickSteps: [...spec.tickSteps], headerBands, snap: spec.snap, formatTime,
     }
   })
 }
