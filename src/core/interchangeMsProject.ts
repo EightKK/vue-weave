@@ -537,7 +537,12 @@ function msDate(text: string | undefined, offset: number): number | undefined {
   if (wall === undefined) return undefined
   let minutes = offset
   if (zone === 'Z') minutes = 0
-  else if (zone) minutes = (zone[0] === '-' ? -1 : 1) * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)))
+  else if (zone) {
+    const [zoneHours, zoneMinutes] = [Number(zone.slice(1, 3)), Number(zone.slice(4, 6))]
+    // ISO 8601 offsets have at most 59 minutes; real ones are within ±18 hours.
+    if (zoneHours > 18 || zoneMinutes > 59) return undefined
+    minutes = (zone[0] === '-' ? -1 : 1) * (zoneHours * 60 + zoneMinutes)
+  }
   return wall + (fraction ? Math.round(Number(fraction) * 1000) : 0) - minutes * minuteMs
 }
 
@@ -546,7 +551,9 @@ function msDurationValue(text: string): number | undefined {
   const match = msDuration.exec(text)
   if (!match || text === 'P' || text.endsWith('T') || match[1] !== undefined || match[2] !== undefined) return undefined
   const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = match.slice(3).map(part => part === undefined ? undefined : Number(part))
-  return Math.round(durationMs(weeks, days, hours, minutes, seconds))
+  const value = Math.round(durationMs(weeks, days, hours, minutes, seconds))
+  // Hundreds of digits overflow to Infinity, which is no duration.
+  return Number.isFinite(value) ? value : undefined
 }
 
 const isTrue = (text: string | undefined) => text === '1' || text === 'true'
@@ -1032,7 +1039,7 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       const lagText = value('LinkLag')
       if (lagText !== undefined && lagText !== '0') {
         const format = value('LagFormat')
-        if (!/^[+-]?\d+$/.test(lagText)) {
+        if (!/^[+-]?\d+$/.test(lagText) || !Number.isFinite(Number(lagText) * 6000)) {
           warn('invalid-value', `The lag of the link from task ${from} to task ${id} cannot be read and was left out`, id)
         } else if (format !== undefined && percentLagFormats.has(format)) {
           warn('percent-lag', `The lag of the link from task ${from} to task ${id} is in percent and was left out`, id)

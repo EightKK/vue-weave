@@ -145,6 +145,7 @@ const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
 const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 // `Intl` formats instants up to ±8.64e15 ms; a zoned wall time is resolved with a day of margin on each side.
 const maxZonedWall = 8.64e15 - 2 * 86_400_000
+const maxTime = 8.64e15
 
 /** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
 function icalProperty(text: string, line: number): ICalendarProperty | undefined {
@@ -310,9 +311,11 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
       const local = start.wall + nominal
       const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
         && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
-      if (!readable) {
+      const sum = readable ? (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
+      // An end beyond the range of Date (±8.64e15 ms) is not a time.
+      if (!(Math.abs(sum) <= maxTime)) {
         warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
-      } else end = (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact
+      } else end = sum
     } else if (start.date) end = start.time + 86_400_000
     const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
     const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')
