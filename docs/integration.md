@@ -255,7 +255,7 @@ The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge 
 | `--vw-flow-band-opacity` | `.5` | Opacity of a band, so crossing bands stay readable |
 | `--vw-flow-band-active-opacity` | `.78` | Opacity of a hovered, selected or highlighted band |
 | `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
-| `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width |
+| `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width. NetworkGraph writes the width-scaled default to an internal inline `--vw-band-dash` on each reference band; do not set that one yourself |
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
