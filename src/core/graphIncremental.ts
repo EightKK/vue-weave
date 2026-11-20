@@ -209,12 +209,18 @@ export function layoutGraphIncrementally(
     }
     const separated = (a: FlowRect, b: FlowRect) => !(b.a1 < a.a2 + columnGap - eps && a.a1 - columnGap + eps < b.a2
       && b.c1 < a.c2 + rowGap - eps && a.c1 - rowGap + eps < b.c2)
+    const pushed = [...next.values()]
     for (const [id, moved] of next) {
       if (!separated(moved, rect)) return false
       for (const other of blockers(moved, new Set([id]))) {
         const target = next.get(other)
         if (!target || !separated(moved, target)) return false
       }
+    }
+    // Pushed boxes against each other at their new places: two boxes pushed the same way can meet there although
+    // neither meets the other's old place.
+    for (let i = 0; i < pushed.length; i++) {
+      for (let j = i + 1; j < pushed.length; j++) if (!separated(pushed[i]!, pushed[j]!)) return false
     }
     for (const [id, moved] of next) {
       flow.set(id, moved)

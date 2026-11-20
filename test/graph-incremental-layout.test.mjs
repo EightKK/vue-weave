@@ -369,3 +369,19 @@ test('incremental layout places a new node with more anchors than a call can tak
   assert.equal(result.boxes.get('hub').x, 144 + 50)
   assert.equal(result.boxes.get('hub').rank, 1)
 })
+
+test('relaxed incremental placement never pushes two boxes onto each other', () => {
+  // a and b both block n's place and are both pushed below it: each was clear of the other's old place, but both
+  // landed at y 82 on top of each other.
+  const nodes = [{ id: 'p' }, { id: 'a' }, { id: 'b' }, { id: 'n' }]
+  const edges = [{ id: 'e', from: 'p', to: 'n' }]
+  const positions = new Map([
+    ['p', { x: 0, y: 0 }],
+    ['a', { x: 194, y: 29, width: 144, height: 2 }],
+    ['b', { x: 194, y: 55, width: 144, height: 2 }],
+  ])
+  const result = layoutGraphIncrementally(nodes, edges, positions, { maxDisplacement: 100 })
+  assert.equal(graphLayoutChangeMetrics(new Map(), result).overlaps, 0)
+  assert.deepEqual(result.movedIds, [])
+  assert.deepEqual(result.boxes.get('n'), { x: 194, y: 81, width: 144, height: 58, rank: 1 })
+})
