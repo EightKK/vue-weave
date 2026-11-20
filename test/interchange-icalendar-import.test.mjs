@@ -62,14 +62,64 @@ test('fromICalendar reads UTC, floating, date and TZID times', () => {
   assert.throws(() => fromICalendar(text, { utcOffsetMinutes: 2000 }), RangeError)
 })
 
-test('a daylight-saving gap moves forward and a repeated hour takes its first occurrence', () => {
+test('a time in a daylight-saving gap takes the offset before the gap and a repeated one its first occurrence (RFC 5545 3.3.5)', () => {
   const text = wrap(
-    vevent('UID:gap', 'DTSTART;TZID=Europe/Berlin:20260329T023000', 'SUMMARY:Gap'),
-    vevent('UID:repeat', 'DTSTART;TZID=Europe/Berlin:20261025T023000', 'SUMMARY:Repeat'),
+    // The example of RFC 5545 3.3.5: 02:30 does not exist on 2007-03-11 in New York and means 07:30 UTC (local 03:30).
+    vevent('UID:rfc', 'DTSTART;TZID=America/New_York:20070311T023000', 'SUMMARY:RFC'),
+    // New York: 02:00 EST becomes 03:00 EDT on 2026-03-08, and 02:00 EDT becomes 01:00 EST on 2026-11-01.
+    vevent('UID:ny-gap', 'DTSTART;TZID=America/New_York:20260308T021500', 'DTEND;TZID=America/New_York:20260308T024500'),
+    vevent('UID:ny-into-gap', 'DTSTART;TZID=America/New_York:20260308T013000', 'DTEND;TZID=America/New_York:20260308T023000'),
+    vevent('UID:ny-repeat', 'DTSTART;TZID=America/New_York:20261101T011500', 'DTEND;TZID=America/New_York:20261101T014500'),
+    // Berlin: 02:00 CET becomes 03:00 CEST on 2026-03-29, and 03:00 CEST becomes 02:00 CET on 2026-10-25.
+    vevent('UID:berlin-gap', 'DTSTART;TZID=Europe/Berlin:20260329T021500', 'DTEND;TZID=Europe/Berlin:20260329T024500'),
+    vevent('UID:berlin-repeat', 'DTSTART;TZID=Europe/Berlin:20261025T021500', 'DTEND;TZID=Europe/Berlin:20261025T024500'),
+    vevent('UID:berlin-before', 'DTSTART;TZID=Europe/Berlin:20260329T015900', 'DTEND;TZID=Europe/Berlin:20260329T030000'),
   )
-  const [gap, repeat] = fromICalendar(text).events
-  assert.equal(gap.start, Date.parse('2026-03-29T01:00:00Z'))
-  assert.equal(repeat.start, Date.parse('2026-10-25T00:30:00Z'))
+  const { events, warnings } = fromICalendar(text)
+  assert.deepEqual(warnings, [])
+  const span = Object.fromEntries(events.map(event => [event.id, [new Date(event.start).toISOString(), new Date(event.end).toISOString()]]))
+  assert.deepEqual(span, {
+    rfc: ['2007-03-11T07:30:00.000Z', '2007-03-11T07:30:00.000Z'],
+    'ny-gap': ['2026-03-08T07:15:00.000Z', '2026-03-08T07:45:00.000Z'],
+    'ny-into-gap': ['2026-03-08T06:30:00.000Z', '2026-03-08T07:30:00.000Z'],
+    'ny-repeat': ['2026-11-01T05:15:00.000Z', '2026-11-01T05:45:00.000Z'],
+    'berlin-gap': ['2026-03-29T01:15:00.000Z', '2026-03-29T01:45:00.000Z'],
+    'berlin-repeat': ['2026-10-25T00:15:00.000Z', '2026-10-25T00:45:00.000Z'],
+    'berlin-before': ['2026-03-29T00:59:00.000Z', '2026-03-29T01:00:00.000Z'],
+  })
+})
+
+test('a day DURATION that ends in a daylight-saving gap or repeated hour resolves like DTSTART (RFC 5545 3.3.5)', () => {
+  const event = (id, zone, start, duration) => vevent(`UID:${id}`, `DTSTART;TZID=${zone}:${start}`, `DURATION:${duration}`)
+  const text = wrap(
+    event('ny-gap', 'America/New_York', '20260307T021500', 'P1D'),
+    event('ny-gap-hours', 'America/New_York', '20260307T021500', 'P1DT1H'),
+    event('ny-repeat', 'America/New_York', '20261031T011500', 'P1D'),
+    event('berlin-gap', 'Europe/Berlin', '20260322T021500', 'P1W'),
+    event('berlin-gap-hours', 'Europe/Berlin', '20260328T021500', 'P1DT30M'),
+    event('berlin-repeat', 'Europe/Berlin', '20261024T021500', 'P1D'),
+  )
+  const { events, warnings } = fromICalendar(text)
+  assert.deepEqual(warnings, [])
+  const end = Object.fromEntries(events.map(item => [item.id, new Date(item.end).toISOString()]))
+  assert.deepEqual(end, {
+    'ny-gap': '2026-03-08T07:15:00.000Z',
+    'ny-gap-hours': '2026-03-08T08:15:00.000Z',
+    'ny-repeat': '2026-11-01T05:15:00.000Z',
+    'berlin-gap': '2026-03-29T01:15:00.000Z',
+    'berlin-gap-hours': '2026-03-29T01:45:00.000Z',
+    'berlin-repeat': '2026-10-25T00:15:00.000Z',
+  })
+})
+
+test('toICalendar writes UTC times, so a daylight-saving instant survives export and import unchanged', () => {
+  const events = [
+    { id: 'gap', summary: 'Gap', start: Date.parse('2026-03-08T07:30:00Z'), end: Date.parse('2026-03-08T08:30:00Z') },
+    { id: 'repeat', summary: 'Repeat', start: Date.parse('2026-11-01T05:30:00Z'), end: Date.parse('2026-11-01T06:30:00Z') },
+  ]
+  const text = toICalendar(events, { timestamp: 0 })
+  assert.equal(text.includes('TZID'), false)
+  assert.deepEqual(fromICalendar(text).events.map(({ id, start, end }) => ({ id, start, end })), events.map(({ id, start, end }) => ({ id, start, end })))
 })
 
 test('an unknown TZID is reported and read as local time at the offset', () => {
@@ -106,7 +156,7 @@ test('DURATION adds weeks and days to the local date of a TZID start, then hours
   const text = wrap(
     ny('20260307T120000', 'P1D'), ny('20260307T120000', 'PT24H'), ny('20260307T120000', 'P1DT2H'), ny('20260301T120000', 'P1W'),
     ny('20260307T120000', '+P1D'), ny('20261031T120000', 'P1D'), ny('20261031T120000', 'PT24H'), ny('20261031T120000', 'P1DT2H'),
-    // The local end falls in the skipped hour (moved forward, as DTSTART is) or in the repeated hour (its first occurrence).
+    // The local end falls in the skipped hour (read with the offset before it, as DTSTART is) or in the repeated hour (its first occurrence).
     ny('20260307T023000', 'P1D'), ny('20261031T013000', 'P1D'),
     ny('20260307T120000', '-P1D'),
     vevent('UID:utc', 'DTSTART:20260307T120000Z', 'DURATION:P1D'),
@@ -126,7 +176,7 @@ test('DURATION adds weeks and days to the local date of a TZID start, then hours
   assert.equal(end('20261031T120000', 'P1D'), Date.parse('2026-11-01T12:00:00-05:00'))
   assert.equal(end('20261031T120000', 'PT24H'), Date.parse('2026-11-01T11:00:00-05:00'))
   assert.equal(end('20261031T120000', 'P1DT2H'), Date.parse('2026-11-01T14:00:00-05:00'))
-  assert.equal(end('20260307T023000', 'P1D'), Date.parse('2026-03-08T03:00:00-04:00'))
+  assert.equal(end('20260307T023000', 'P1D'), Date.parse('2026-03-08T03:30:00-04:00'))
   assert.equal(end('20261031T013000', 'P1D'), Date.parse('2026-11-01T01:30:00-04:00'))
   assert.equal(end('20260307T120000', '-P1D'), byId['20260307T120000/-P1D'].start)
   // UTC, floating and date starts have no daylight saving: a day is 24 hours.

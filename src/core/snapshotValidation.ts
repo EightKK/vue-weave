@@ -407,9 +407,16 @@ function validateTimelineSnapshotData(data: Rec, path: string, report: Report) {
     text(dep, 'to', at, report, true, true)
   })
   if (!report.failed) {
-    const lanes = bars.map(bar => bar.lane ?? 0)
-    const valid = lanes.every(lane => Number.isInteger(lane) && (lane as number) >= 0)
-    const laneCount = valid ? Math.max(1, ...(lanes as number[]).map(lane => lane + 1)) : 1
+    // A loop, not `Math.max(...lanes)`: spreading every bar into one call exceeds the argument limit of large timelines.
+    let laneCount = 1
+    for (const bar of bars) {
+      const lane = bar.lane ?? 0
+      if (!Number.isInteger(lane) || (lane as number) < 0) {
+        laneCount = 1
+        break
+      }
+      laneCount = Math.max(laneCount, (lane as number) + 1)
+    }
     attempt(report, 'structure', path, () => validateTimelineData(rows as never, bars as never, deps as never, laneCount))
     attempt(report, 'reference', field(data, 'rows', path), () => void createTimelineRowTree(rows as never))
   }

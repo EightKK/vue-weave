@@ -228,7 +228,9 @@ export function projectTimelineView<R extends TimelineRow, B extends TimelineBar
   const dependencies: readonly D[] = input.dependencies ?? []
   const columns = input.columns ?? []
   checkWindow(state.window)
-  const laneCount = input.laneCount ?? Math.max(1, ...bars.map(bar => (bar.lane ?? 0) + 1))
+  // A loop, not `Math.max(...lanes)`: spreading every bar into one call exceeds the argument limit of large timelines.
+  let laneCount = input.laneCount ?? 1
+  if (input.laneCount === undefined) for (const bar of bars) laneCount = Math.max(laneCount, (bar.lane ?? 0) + 1)
   validateTimelineData(rows, bars, dependencies, laneCount)
   const tree = createTimelineRowTree(rows)
   const wbs = timelineWbsCodes(rows)
