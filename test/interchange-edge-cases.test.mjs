@@ -98,3 +98,18 @@ test('fromMsProjectXml leaves out durations and lags that overflow, and rejects 
   assert.doesNotThrow(() => toMsProjectXml(imported))
   assert.doesNotThrow(() => timelineFromMsProject(imported))
 })
+
+test('fromICalendar names an event without a UID so that no later UID is taken', () => {
+  const event = (uid, summary) => 'BEGIN:VEVENT\r\n' + (uid ? `UID:${uid}\r\n` : '') + `DTSTART:20260101T000000Z\r\nSUMMARY:${summary}\r\nEND:VEVENT\r\n`
+  const text = 'BEGIN:VCALENDAR\r\n' + event(undefined, 'A') + event('event-1', 'B') + event(undefined, 'C') + event('event-3', 'D') + 'END:VCALENDAR\r\n'
+  const { events, warnings } = fromICalendar(text)
+  assert.deepEqual(events.map(item => [item.id, item.summary]), [['event-2', 'A'], ['event-1', 'B'], ['event-4', 'C'], ['event-3', 'D']])
+  assert.deepEqual(warnings.map(warning => [warning.code, warning.eventId]), [['missing-uid', 'event-2'], ['missing-uid', 'event-4']])
+})
+
+test('toMsProjectXml rejects calendar exceptions that are not an object of shift arrays', () => {
+  const project = exceptions => ({ name: 'P', tasks: [], calendars: [{ id: 'c', name: 'C', week: { weekly: [], exceptions } }] })
+  assert.throws(() => toMsProjectXml(project([['2026-01-01', []]])), /^Error: The exceptions of calendar c must be an object of dates$/)
+  assert.throws(() => toMsProjectXml(project({ '2026-01-01': null })), /^Error: The exception 2026-01-01 of calendar c must be an array of shifts$/)
+  assert.match(toMsProjectXml(project({ '2026-01-01': [] })), /<FromDate>2026-01-01T00:00:00<\/FromDate>/)
+})

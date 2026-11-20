@@ -266,9 +266,13 @@ function checkMsProjectExtras(project: MsProjectInput, taskUids: ReadonlyMap<str
       checkWorkShift(shift, 'calendar ' + calendar.id)
       if (!Number.isInteger(shift.weekday) || shift.weekday < 0 || shift.weekday > 6) throw new RangeError('Invalid weekday in calendar ' + calendar.id)
     }
+    if (week.exceptions !== undefined && (typeof week.exceptions !== 'object' || week.exceptions === null || Array.isArray(week.exceptions))) {
+      throw new Error(`The exceptions of calendar ${calendar.id} must be an object of dates`)
+    }
     for (const [date, shifts] of Object.entries(week.exceptions ?? {})) {
       // civilDay is 0 for 1970-01-01, so compare with undefined.
       if (civilDay(date) === undefined) throw new RangeError(`Invalid exception date in calendar ${calendar.id}: ${date}`)
+      if (!Array.isArray(shifts)) throw new Error(`The exception ${date} of calendar ${calendar.id} must be an array of shifts`)
       for (const shift of shifts) checkWorkShift(shift, 'calendar ' + calendar.id)
     }
   }

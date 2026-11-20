@@ -244,6 +244,13 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     warnings.push({ code, ...(eventId === undefined ? {} : { eventId }), ...(line === undefined ? {} : { line }), message })
   }
   if (!lines.some(({ text: line }) => /^BEGIN:VCALENDAR\s*$/i.test(line))) throw new Error('Not an iCalendar document: there is no BEGIN:VCALENDAR')
+  // Every UID of the file, so an ID made up for an event without one never takes the UID of a later event.
+  const uids = new Set<string>()
+  for (const { text: line } of lines) {
+    if (!/^UID[;:]/i.test(line)) continue
+    const property = icalProperty(line, 0)
+    if (property) uids.add(icalUnescape(property.value))
+  }
 
   const events: ICalendarImportEvent[] = []
   const ids = new Set<string>()
@@ -275,7 +282,9 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     const uid = find('UID')
     let id = uid === undefined ? undefined : icalUnescape(uid.value)
     if (!id) {
-      id = 'event-' + (events.length + 1)
+      let number = events.length + 1
+      while (uids.has('event-' + number) || ids.has('event-' + number)) number++
+      id = 'event-' + number
       warn('missing-uid', `The event at line ${currentLine} has no UID and was named ${id}`, currentLine, id)
     }
     const label = id
