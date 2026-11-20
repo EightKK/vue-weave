@@ -4,7 +4,8 @@ import { checkLayoutNumber, checkLayoutNumbers, defaultPadding } from './graphOp
 
 /**
  * How `layoutFlowGraph` turns quantities into pixels. `pixelsPerUnit` fixes the scale; `fitExtent` picks the largest
- * scale at which the fullest rank (its node sizes plus the gaps between them) fits into that cross-flow extent.
+ * scale at which the fullest rank (its node sizes plus the gaps between them) fits into that cross-flow extent. Boxes with
+ * a small nonzero value raised to `minNodeSize` are not part of that fit, so a rank holding them can exceed it slightly.
  */
 export type GraphFlowScale = { pixelsPerUnit: number } | { fitExtent: number }
 
