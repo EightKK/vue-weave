@@ -209,12 +209,18 @@ export function layoutGraphIncrementally(
     }
     const separated = (a: FlowRect, b: FlowRect) => !(b.a1 < a.a2 + columnGap - eps && a.a1 - columnGap + eps < b.a2
       && b.c1 < a.c2 + rowGap - eps && a.c1 - rowGap + eps < b.c2)
+    const pushed = [...next.values()]
     for (const [id, moved] of next) {
       if (!separated(moved, rect)) return false
       for (const other of blockers(moved, new Set([id]))) {
         const target = next.get(other)
         if (!target || !separated(moved, target)) return false
       }
+    }
+    // Pushed boxes against each other at their new places: two boxes pushed the same way can meet there although
+    // neither meets the other's old place.
+    for (let i = 0; i < pushed.length; i++) {
+      for (let j = i + 1; j < pushed.length; j++) if (!separated(pushed[i]!, pushed[j]!)) return false
     }
     for (const [id, moved] of next) {
       flow.set(id, moved)
@@ -246,13 +252,17 @@ export function layoutGraphIncrementally(
     const successors = index.outgoing.get(id)!.filter(other => other !== id && flow.has(other))
     const after = predecessors.length > 0
     const anchors = [...new Set(after ? predecessors : successors)]
-    let a1: number
-    if (after) a1 = Math.max(...anchors.map(other => flow.get(other)!.a2)) + columnGap
-    else a1 = Math.min(...anchors.map(other => flow.get(other)!.a1)) - columnGap - length
-    let middle = 0
-    for (const other of anchors) middle += (flow.get(other)!.c1 + flow.get(other)!.c2) / 2
+    // Loops rather than Math.max(...array), which overflows the call stack for a node with very many anchors.
+    let bound = after ? -Infinity : Infinity, anchorRank = after ? -Infinity : Infinity, middle = 0
+    for (const other of anchors) {
+      const rect = flow.get(other)!, otherRank = ranks.get(other)!
+      bound = after ? Math.max(bound, rect.a2) : Math.min(bound, rect.a1)
+      anchorRank = after ? Math.max(anchorRank, otherRank) : Math.min(anchorRank, otherRank)
+      middle += (rect.c1 + rect.c2) / 2
+    }
+    let a1 = after ? bound + columnGap : bound - columnGap - length
     let c0 = middle / anchors.length - across / 2
-    let rank = after ? Math.max(...anchors.map(other => ranks.get(other)!)) + 1 : Math.min(...anchors.map(other => ranks.get(other)!)) - 1
+    let rank = after ? anchorRank + 1 : anchorRank - 1
     if (!alongOk(a1, a1 + length)) {
       // Beside the nearest anchor along the flow, in its rank.
       const anchor = anchors.reduce((best, other) => (after ? flow.get(other)!.a2 > flow.get(best)!.a2 : flow.get(other)!.a1 < flow.get(best)!.a1) ? other : best)
