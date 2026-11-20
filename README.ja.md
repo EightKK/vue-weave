@@ -6,116 +6,97 @@
 
 [ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
 
-Vue 3でネットワークグラフやガントチャートを実装するためのライブラリです。製造のロット系譜、プロジェクト工程、設備・担当者別の予定などに利用できます。型付きコンポーネントと、フレームワークに依存しないグラフ・日程計算・設備負荷の集計機能を提供します。
+Vue 3でネットワークグラフとガントチャートを実装するためのライブラリです。関係の探索、工程フロー、製造のロット系譜、プロジェクト工程、設備・担当者別の予定などを、型付きの2つのコンポーネントで作れます。グラフ・日程計算・設備負荷の計算は、Node.js、Worker、サーバーでも動くヘッドレスのコアで行えます。
+
+- **制御されたコンポーネント。** `NetworkGraph` と `GanttChart` は渡されたデータを書き換えません。利用者の編集は変更案のイベントになり、反映するかどうかはアプリ側で決めます。
+- **計画機能を内蔵。** 稼働カレンダー、依存関係、クリティカルパス、設備負荷と平準化、実績からの再計画、計画シナリオの比較に対応し、各日程が決まった理由も説明できます。
+- **必要な機能だけを有効化。** 既定の動作はシンプルなまま、ほかの機能はpropsで有効にします。Vue以外の実行時依存はなく、サーバーサイドレンダリング、SVG・PNGの書き出し、ダークテーマ、右から左のレイアウトに対応します。
 
 ![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](.github/images/network-graph.png)
 
-![スケジューリングデモのGanttChart。非稼働時間の網掛け、クリティカルパスの枠線、余裕日数の線、分割バー、ステータス日付線、締切フラグ、完了日と余裕日数の列を表示したカレンダー対応スケジュール](.github/images/gantt-chart.png)
+![スケジューリングデモのGanttChart。ステータス日付線とイナズマ線、クリティカルパスの枠線、余裕日数の線、分割バー、リードのラベル、締切フラグ、完了日と余裕日数の列、網掛けされた工場休業日を表示したカレンダー対応スケジュール](.github/images/gantt-chart.png)
 
-## 主な機能
+## ギャラリー
 
-基本機能以外はすべてpropsで有効にします。詳細は [docs/api.md](docs/api.md)、[docs/integration.md](docs/integration.md)、[docs/scheduling.md](docs/scheduling.md) を参照してください。
+画像はすべて、このリポジトリの[デモ](#デモを起動する)の画面です。
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/process-lanes.png" alt="工程レーンのデモ。機械加工の工程を4つの部門レーン（購買、加工、検査、空の出荷レーン）に配置し、部門間の受け渡しを表す直角の辺がレーン境界をまたぎ、ミニマップにもレーンが表示されている" width="100%"><br>
+      <b>スイムレーン。</b>部門や作業区ごとのレーンを指定した順に並べます（<code>layoutSwimlaneGraph</code>、<code>lanes</code>）。
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/images/quantity-flow.png" alt="数量フローのデモ。100個のロットが2つのラインに60対40で分かれ、検査で合流し、Bラインで4個減り、10個が手戻りとして破線の帯でループするサンキー図と、工程ごとの流入量・流出量・差の表" width="100%"><br>
+      <b>数量フロー。</b>辺を数量に比例した太さの帯として、図全体で同じ縮尺で描きます（<code>layoutFlowGraph</code>、<code>edgeBands</code>）。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/linked-views.png" alt="ビュー連動のデモ。ガントチャートで「Cut order A」を選択すると、上のネットワークグラフと下のCNCセルの負荷行でも同じタスクが強調され、負荷行では赤い区間が負荷超過を示している" width="100%"><br>
+      <b>ビューの連動。</b>一つのビューで選ぶと、グラフ、ガントチャート、負荷行で同じタスクが強調されます（<code>useLinkedSelection</code>）。
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/images/plan-comparison.png" alt="計画シナリオのデモ。保守時間帯の後へ切断作業を送る候補計画を現行計画と比較し、最終完了、期限超過、割り当ての変更、CNCセルの負荷超過を表にまとめ、ガントチャートでは各候補バーの下に現行計画を細い帯で表示している" width="100%"><br>
+      <b>計画シナリオ。</b>候補計画を採用する前に現行計画と比較します（<code>comparePlans</code>）。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/diagram-styles-dark.png" alt="ダークテーマで表示したダイアグラム表現のデモ。楕円、ひし形、六角形のノード、主経路の破線のアニメーション辺、白抜き矢印や丸の端の記号、左右に振り分けた平行な辺の組を含む受注処理フロー" width="100%"><br>
+      <b>ダイアグラム表現とダークテーマ。</b>ノード形状、辺の端の記号、アニメーションする辺と平行な辺、組み込みのダークテーマ。
+    </td>
+    <td width="50%" valign="top">
+      <b>デモにはほかにも：</b>プロジェクト工程、1,000行のタイムライン、大規模グラフ、タイムライン編集、非同期レイアウト、グラフ分析、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集、表示範囲ごとに読み込む大規模な計画があります。デザインギャラリーでは、両コンポーネントをワークフロービルダー、データベーススキーマ図、組織図、ロードマップ、スプリント計画、客室予約、カレンダー表示の見た目に作り替えています。
+    </td>
+  </tr>
+</table>
+
+## 機能
+
+基本機能以外はすべてオプトインです。ここでは概要を示します。props、イベント、スロット、関数の一覧は [docs/api.md](docs/api.md) に、手順は [docs/integration.md](docs/integration.md) と [docs/scheduling.md](docs/scheduling.md) にあります。
 
 ### NetworkGraph
 
-レイアウト：
-
-- 標準レイアウトは分岐・合流、独立したノード、有向閉路、自己ループに対応し、方向を `LR`・`TB`・`RL`・`BT` から選べ、`crossingReduction: 'barycenter'` で辺の交差を減らせます。
-- `layout` 関数で配置と経路を指定できます。`layoutTreeGraph`、`layoutRadialGraph`、円形の `layoutCircularGraph`、格子状の `layoutGridGraph`、次数などで同心円に並べる `layoutConcentricGraph`、決定的な力学モデル配置の `layoutForceGraph`、アプリケーションで導入したELK.jsの結果が使えます（[ELK.jsでレイアウトする](docs/integration.md#use-elkjs-for-layout)を参照）。
-- 工程フローのスイムレーン：`layoutSwimlaneGraph` で部門や作業区ごとのレーンを指定した順に並べます。部門間の受け渡しはレーン境界をまたぐ線になります。`lanes` prop で帯とタイトルを描き、ミニマップと書き出しにも反映されます。ドラッグしたノードがどのレーンに入るかは `graphSwimlaneAt` で判定できます。
-- 数量フロー（サンキー図）：`layoutFlowGraph` で各辺を数量に比例した太さの帯として、図全体で同じ縮尺で描きます。ノードごとの流入量・流出量とその差は補正せずにそのまま報告し、単位の異なる数量は合算せず、手戻りのループは破線の参照帯にします。`edgeBands` prop は帯を実際の幅で描き、「Cut → Inspect: 60 pcs」のようなアクセシブルな名前を付けます。書き出しにも反映されます。
-
-描画：
-
-- `node`・`edge`・`group`・`minimap-node` スロットでSVG描画を変更でき、項目の横にHTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロットも使えます。
-- 箱形に加えて、ひし形・楕円・六角形のノード（`NetworkNode.shape`）。書き出しにも反映されます。
-- 辺の直角・直線表示（`edgeStyle`。辺ごとにも指定可）、ノードを避ける直角の経路（`avoidNodes`）、経由点（`GraphEdge.points`。`editableEdges` で編集）、平行な辺の振り分け（`parallelEdgeSpacing`）、辺の端の記号（`markerStart`・`markerEnd`）、流れるアニメーション（`animated`）。
-
-編集：
-
-- ノード移動、接続、複数選択、ミニマップ。
-- 辺の選択（`edgesSelectable`）、キーボードによる削除の提案（`deletable`。`removeGraphElements` で適用）、コンテキストメニューの要求（`contextMenu`）。
-- ノードと辺のラベルのその場編集（`editableLabels`。`label-edit` で提案）と、投げ縄による選択（`selectionMode: 'lasso'`）。
-- 接続のポートルール（`connectionRules`。ポートごとの型・方向・接続数の上限）。違反は理由の文で却下され、接続中は接続できる先が強調されます。読み込んだグラフは `graphConnectionViolations` で検査できます。
-- 入れ子のグループ（`parentId`）、グループを代表ノードへ折りたたむ機能（`collapsibleGroups`・`collapsedGroupIds`）、ノードのサイズ変更（`sizes`・`resizable`）。
-- グリッドへの吸着（`snapGrid`）と点・線の背景（`background`）、整列ガイド（`alignmentGuides`）、`autoPan`。
-- パレットからのドロップ（`droppable` と `node-drop` イベント。`toGraphPoint(x, y)` と `getViewportCenter()` を併用）。
-- コピー・貼り付け・複製の提案（`clipboard`。`copy-selection`・`paste-request`・`duplicate-selection` イベントを `cloneGraphElements` で適用）。
-
-表示範囲の操作：
-
-- 大規模グラフとタッチ操作：表示範囲外の描画省略（`cullOffscreen`）、ピンチズーム、縮小時に詳細を隠す表示（`lodThreshold`）。
-- 検索結果の強調（`matchIds`・`dimmedIds`）と、`focusNode(id)`・`fit({ ids })` メソッド。
+- **レイアウト：** 分岐・合流、閉路、自己ループに対応した標準の階層レイアウト（`LR`・`TB`・`RL`・`BT`。`crossingReduction: 'barycenter'` で交差を削減）。`layout` propでは、木、放射状、円形、格子、同心円、決定的な力学モデルの各配置（`layoutTreeGraph`、`layoutRadialGraph`、`layoutCircularGraph`、`layoutGridGraph`、`layoutConcentricGraph`、`layoutForceGraph`）や、アプリケーションで導入した[ELK.js](docs/integration.md#use-elkjs-for-layout)の結果を使えます。
+- **工程レーン：** `layoutSwimlaneGraph` は部門や作業区ごとのレーンを指定した順に並べます。`lanes` propで帯を描き、ミニマップと書き出しにも反映されます。ドラッグしたノードが入るレーンは `graphSwimlaneAt` で判定できます。詳しくは[Swimlanes for process flows](docs/integration.md#swimlanes-for-process-flows)を参照してください。
+- **数量フロー（サンキー図）：** `layoutFlowGraph` は各辺を数量に応じた太さにして図全体で同じ縮尺で描き、ノードごとの流入量・流出量とその差を補正せずに報告します。単位の異なる数量は合算せず、手戻りのループは破線の参照帯にします。`edgeBands` propは「Cut → Inspect: 60 pcs」のような名前付きで帯を描きます。詳しくは[Quantity flows](docs/integration.md#quantity-flows-sankey-diagrams)を参照してください。
+- **描画：** 独自のSVGを描く `node`・`edge`・`group`・`minimap-node` スロット、HTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロット。ひし形・楕円・六角形のノード、直角・直線の辺（`edgeStyle`）、ノードを避ける経路（`avoidNodes`）、経由点、端の記号、アニメーションする辺、平行な辺の振り分け。
+- **変更案としての編集：** ノードの移動、型付きのポートルール（`connectionRules`）で検査する接続と接続先のヒント、ラベルのその場編集、矩形・投げ縄による選択、入れ子で折りたためるグループ、ノードのサイズ変更、グリッドへの吸着と整列ガイド、パレットからのドロップ、クリップボード、キーボードによる削除。
+- **表示範囲の操作：** ミニマップ、大規模グラフ向けの表示範囲外の描画省略と縮小時の簡略表示、ピンチズーム、検索結果の強調（`matchIds`）、`focusNode(id)`、`fit({ ids })`。
 
 ### GanttChart
 
-表示：
-
-- 複数レーン、進捗率、マイルストーン、FS/SS/FF/SFの依存関係。階層行、ベースライン（差異付きで最大3つの名前付きセット）、多段見出し、日時マーカー。行と表示時間範囲の仮想化。
-- `formatTime`、`labels`、スロット、CSS変数による表示の調整。ポインターを載せられる `tooltip` スロット、独自のメニューを表示するための `context-menu` イベント（`contextMenu`）、`fitToBars()` メソッド。
-- 依存関係のラグ・リードのラベル表示（`lag`、`formatLag`）。ラグは日程計算にもそのまま使われます。サマリー行への依存関係とサマリー行からの依存関係を、集約バーにつないで描画することもできます（`summaryDependencies`、オプトイン）。
-- 工程行の下に表示する設備負荷のヒストグラム（`loadRows`、`loadSegments`）。`calculateResourceLoad` の出力をそのまま渡せます。
-- ズームプリセット（`zoomPresets`）、現在時刻マーカー（`showNow`）、タッチのピンチズーム（`pinchZoom`）、ポインター位置を中心にしたCtrl+ホイールのズーム（`wheelZoom`）。
-- コードフリーズや休暇などの期間の強調表示（`markerRanges`）。チャート全体または指定した行に帯を描き、見出しにラベルを表示します。
-- 基準日の線（`statusDate`）と、遅れている工程や先行している工程を示すイナズマ線（`showProgressLine`）。
-- 非稼働時間の網掛け（`nonWorkingPeriods`）。
-- バーの任意フィールド `critical`・`latestEnd`・`deadline`・`segments` による、クリティカルパスの枠線、余裕（フロート）の線、期限の目印、中断で分割された作業の表示。これらの情報はバーの名前を変えずにスクリーンリーダー向けの説明に追加されます。「手動スケジュール」のような独自の補足も、`TimelineBar.description` でこの説明とツールチップに加えられます。
-
-編集：
-
-- 依存関係の作成と付け替え（`connectable`、`reconnectable`、`validateConnection`）。
-- 複数選択と一括移動（`multiSelect`、`edits`）、行の移動（`rowDraggable`）。
-- 行の空いている部分のドラッグによる新しいバーの作成（`creatable`、`create`）。重なったバーは `assignLanes` でレーンに振り分けられます。
-- 移動に連動して動くバーをドラッグ中に表示し、移動と合わせて一つの `edits` として提案する自動スケジューリングのプレビュー（`cascade`）。
-- 進捗率のスライダー（`progressEditable`、`progress-edit`）と、バーの削除（`deletable`、`bars-delete`。`removeTimelineBars` で反映できます）。
-- ポインターやAltキーと矢印キーによる行の階層編集（`rowsReorderable`、`row-move`。`moveTimelineRow` で反映できます）。`timelineWbsCodes` はWBS列に使う行番号を求めます。
-- ポインターのドラッグや矢印キーによる列幅の変更（`columnsResizable`、`column-resize`、`labelWidth`）。
-- スケジュール制約（`TimelineBar.constraints`。名前は `ScheduleTask` と同じです）を、違反も分かる目印で表示します。ドラッグやキーボードで動かせるハンドルも使えます（`constraintsEditable`、`constraint-edit`。`applyTimelineConstraintEdit` で反映できます）。
+- **表示：** 複数レーン、進捗率、マイルストーン、ラグのラベル付きのFS/SS/FF/SF依存関係。サマリーの集約バーと、オプトインのサマリー行への依存関係を持つ階層行。差異付きで最大3つの名前付きベースライン。多段見出し、日時マーカー、期間の強調（`markerRanges`）。ステータス日付線とイナズマ線。非稼働時間の網掛け。クリティカルパスの枠線、余裕の線、期限、分割バー。`calculateResourceLoad` の出力をそのまま渡せる設備負荷のヒストグラム（`loadRows`）。
+- **変更案としての編集：** ドラッグとキーボードによる移動・伸縮、移動に連動して動くバーのプレビュー（`cascade`）、依存関係の作成と付け替え、複数選択と一括移動、ドラッグによるバーの作成、進捗率のスライダー、削除、行の階層移動、列幅の変更、スケジュール制約のハンドル、型付きのセル編集（`field-edit`）、アプリの一覧からのドロップ（`bar-drop`）。
+- **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
+- **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
 
 ### ヘッドレスコア（`vue-weave/core`）
 
-グラフ：
+- **グラフのアルゴリズムと指標：** `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`、連結成分、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）と、その結果をグループに変換する `graphCommunityGroups`。
+- **日程計算：** `buildWorkPeriods` で作るカレンダー（IANAタイムゾーンを含む）上での `scheduleTasks`。最遅開始、手動・非アクティブ・サマリーのタスク、制約、中断区間、循環や実行不能の診断に対応します。`scheduleTasks(input, { explain: true })` は各タスクの開始が決まった理由をトレースし、`toPlanningDiagnostics` は問題を一覧にします。
+- **リソース：** `calculateResourceLoad` と `levelResources`。時間とともに変わる能力（`capacityPeriods`）や、タスクの一部だけを占める割り当て（`workOffset`、`workDuration`）にも対応します。`projectResourceTimeline` はリソース別に計画を表示し、`buildPlacementInput` は未計画タスクを計算から除きます。
+- **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](docs/scheduling.md#compare-plan-scenarios)を参照してください。
+- **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
 
-- グラフのアルゴリズム：`topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`。
-- グラフの指標：連結成分（`graphComponents`）、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）、検出結果を `NetworkGraph` のグループに変換する `graphCommunityGroups`。
-- グラフの形状：`collapseGraphGroups`・`routeGraphEdges`・`applyGraphSizes` は、コンポーネントのpropsと同じ形状を計算します。
+### ビューの連動・大規模データ・保存
 
-日程計算：
+- **ビューの連動：** `useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。`revealNode`、`revealBar`、`revealLinkedTarget` は折り畳まれたグループや行の中も含めて項目へ移動し、`timelineBarsInRange` と `resolveTimeRangeTargets` はある時間範囲に作業していた対象を強調します。詳しくは[Linking views](docs/integration.md#linking-views)を参照してください。
+- **大規模データ：** `useWindowedData` はアプリの `load` 関数を通じて表示中の範囲だけを取得し、中断、重複排除、再試行に対応します。グラフ展開ヘルパーと `layoutGraphIncrementally` は、表示中のノードを動かさずにグラフを1ホップずつ読み込みます。`useAsyncGraphLayout` はWorkerでレイアウトを計算し、`routingPolicy="preserve"` はエンジンの配線を保持します。詳しくは[Loading only what is visible](docs/integration.md#loading-only-what-is-visible)を参照してください。
+- **表示と保存：** 行を検索・並べ替える `useTimelineView`、Undo／Redoの `useEditHistory`、サーバーのアダプターを通じて版競合も扱いながら保存する `useEditTransaction`、版付きで検証されたJSONとして保存・復元する `serializeWeaveSnapshot` と `restoreWeaveSnapshot`。
 
-- カレンダーと日程計算：`buildWorkPeriods`、`scheduleTasks`、`calculateResourceLoad`。循環や実行不能の診断、最遅開始（`mode: 'alap'`）、中断区間（pauses）、手動スケジュールのタスク（`manual`）と非アクティブなタスク（`inactive`）、サマリータスク（`parentId`）、IANAタイムゾーンの稼働カレンダー（`WorkWeek.timeZone`）にも対応します。
-- `levelResources` による設備負荷の平準化。時間とともに変わる能力（`capacityPeriods`）と、タスクの一部だけを占める割り当て（`workOffset`・`workDuration`）にも対応します。
-- `propagateEdit`（結果はそのまま `cascade` の戻り値に使えます）と `rescheduleFromStatusDate` による計画の更新。
-- `rescheduleFromActuals` による実績からの再計画：記録された実績区間をそのまま保ち、残作業だけを予測します。`actualsTimelineBars` で計画・実績・予測を1行に表示できます。
-- チャート向けの補助関数：`scheduledBarFields`、`invertWorkPeriods`、日程を `NetworkGraph` 用のPERT図に変換する `scheduleToGraph`。
-- カレンダー表示：`calendarZoomPresets` はIANAタイムゾーンに沿った時・日・週・月・四半期・年のズームプリセットを作り、`intlTimeFormatter` と `calendarBands`（`locale`）はサーバーとクライアントで一致するロケール対応のラベルを作ります。
-
-データ交換：
-
-- `toMsProjectXml`、`toICalendar`、`toCsv` で計画を書き出します。
-- `parseCsv` と `timelineFromCsvTable` でCSVファイルを行とバーとして読み込みます。
-- `fromMsProjectXml` と `timelineFromMsProject` でMicrosoft ProjectのXMLファイルを行・バー・ベースライン・依存関係として読み込みます。カレンダー、リソース、割り当ても読み取ります。
-- `fromICalendar` と `timelineFromICalendar` でiCalendarファイルを読み込みます。
-
-### 計画・連動・保存
-
-- ビューの連動：`useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。利用者が操作したビューだけが選択を持ち、ほかのビューには表示専用の強調（`highlightedNodeIds`、`highlightedEdgeIds`、`highlightedBarIds`、`highlightedLoadTargets`）を渡します。
-- 対象の通知と移動：`target-enter`、`target-leave`、`target-activate` イベントが指している対象を通知し、`revealNode`、`revealBar`、`revealLinkedTarget` が折り畳まれたグループや行の中も含めてその対象へ移動します。
-- 時間範囲：`timelineBarsInRange`、`resolveTimeRangeTargets`、または `timeRange` オプションで、その範囲に作業していた対象（分割バーは作業区間で判定）と、必要に応じてグラフ上で関連する対象を強調します。
-- リソースビュー：`projectResourceTimeline` は割り当てたリソースごとにタスクを表示し、負荷を二重に数えません。`resolveResourceTimelineEdit` は別の行へのドラッグを割当の変更に変換し、`buildPlacementInput` は未計画タスクを計算から除きます。GanttChart はアプリの一覧からのドロップを受け付けます（`droppable`、`bar-drop`）。
-- 理由の説明：`scheduleTasks(input, { explain: true })` と `levelResources` は各タスクの日程が決まった理由をトレースとして返します。`toPlanningDiagnostics` は循環、実行不能なタスク、負荷超過、平準化で解決できなかったタスクを、関係するタスクとリソースとともに一覧にします。
-- 計画シナリオの比較：`comparePlans` は候補計画を現行計画と比較します。入力の差分（編集したタスク、依存関係、カレンダー、割り当て、能力）と計算結果の差分（最終完了、結果として動いたタスク、クリティカルの変化、期限超過、リソースごとの累積負荷超過）を分けて返します。`planComparisonTargets` と `planBaselines` で既存のハイライトとベースラインセットに表示できます。
-- 非同期レイアウト：`useAsyncGraphLayout` はWorkerなど任意の非同期エンジンでレイアウトを計算し、そろった最新のフレームだけを表示します。`routingPolicy="preserve"` はポート付きの辺を含めてエンジンの配線を保持します。
-- 部分読み込み：GanttChart は描画中の範囲を `visible-window-change` で通知し、`useWindowedData` はアプリの `load` 関数を通じて表示中の期間と行だけを取得します。中断、重複排除、範囲ごとの状態、再試行に対応します。
-- グラフの段階的な読み込み：`splitDanglingLinks` とグラフ展開ヘルパーは、未読み込みの項目を指すリンクをコンポーネントに渡さないようにします。`layoutGraphIncrementally` は、新しく読み込んだページを表示中のノードを動かさずにその周りへ配置します。
-- 型付きセル・検索・保存ビュー：`field` を持つ列は型付きの値を提案し（`field-edit`、`cell-editor` スロット）、`useTimelineView` は行の表示用コピーを検索・並べ替えます。
-- 保存：`useEditTransaction` はアダプター経由で文書ごとに一つずつ保存し、受理・拒否・版競合・結果不明を区別します。Undo／Redo もサーバーへ送ります。`serializeWeaveSnapshot` と `restoreWeaveSnapshot` はデータと表示設定を版付きで検証されたJSONとして保存・復元します。
-- デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
-
-### 書き出し・テーマ・RTL
+### 書き出し・テーマ・アクセシビリティ
 
 - どちらのコンポーネントも `exportSvg(options)` と `exportPng(options)` を提供し、サーバーでは `renderGraphSvg` と `renderTimelineSvg` がSVGを生成します。
-- 組み込みのダークテーマ（`vw-theme-dark`）と、`prefers-color-scheme` に従う `vw-theme-auto`。強制カラー、モーション低減、印刷にも対応します。
+- 組み込みのダークテーマ（`vw-theme-dark`）と、`prefers-color-scheme` に従う `vw-theme-auto`。`--vw-*` のCSS変数で見た目を調整できます。強制カラー、モーション低減、印刷にも対応します。
 - `dir="rtl"`（または `auto`）による右から左のレイアウト。
+- キーボード操作とARIA名を備えています。検証の範囲は[対応状況](#対応状況)を参照してください。
+
+```ts
+const svg = chart.value!.exportSvg({ title: 'Plan' })
+const png = await chart.value!.exportPng({ scale: 2 })
+```
 
 ## 対応状況
 
@@ -242,15 +223,6 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 ホバー、負荷行、折り畳まれた項目への移動は [Linking views](docs/integration.md#linking-views) を、`useEditTransaction` は [Saving through a server](docs/integration.md#saving-through-a-server) を参照してください。
 
-## 書き出し・表示方向・テーマ
-
-どちらのコンポーネントも、テンプレートrefの `exportSvg(options)` と `exportPng(options)` でチャート全体を保存でき、サーバーでは `vue-weave/core` が同じSVGを生成します。右から左の表示には `dir="rtl"`（または `auto`）を指定します。コンポーネントまたはその祖先に `vw-theme-dark` を付けるとダークテーマ、`vw-theme-auto` を付けると `prefers-color-scheme` に従います。詳細は[組み込みガイド](docs/integration.md)を参照してください。
-
-```ts
-const svg = chart.value!.exportSvg({ title: 'Plan' })
-const png = await chart.value!.exportPng({ scale: 2 })
-```
-
 ## デモを起動する
 
 ホスト型のデモはありません。Node.js 22.18以降とnpmを用意し、ローカルで起動します。cloneしたソースやGitHubのソースZIPのフォルダーで次を実行します。
@@ -261,7 +233,7 @@ npm run build:demo
 npm start
 ```
 
-デモには製造、プロジェクト工程、1,000行の予定、大規模グラフ、タイムライン編集、日程計算に加え、ビューの連動、非同期レイアウト、ダイアグラム表現（ノード形状、エッジ端の記号、アニメーションと平行エッジ）、グラフ分析（連結成分、コミュニティ、中心性の順位）、工程のスイムレーン、数量フロー、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集、表示範囲ごとに読み込む大規模な計画があり、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** も用意しています。**Edit graph**、**Planning overlays**、**Scheduling** などの切り替えで、上記のオプション機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけでワークフロービルダー、データベーススキーマ図、組織図、プロダクトロードマップ、スプリント計画、客室予約カレンダー、期間を強調したカレンダー表示の見た目に作り替えています。編集結果はデモ画面内の状態として保持します。
+デモには例ごとのページ（[ギャラリー](#ギャラリー)を参照）、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** があります。**Edit graph** や **Planning overlays** などの切り替えで、上記のオプトイン機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけで作り替えています。編集結果はデモ画面内の状態として保持します。デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
 
 Windowsでは代わりに `Start.cmd` をダブルクリックしても起動できます。`preview/` が現在のソースからビルドされたものであればそのまま表示し、そうでなければ先にビルドします。インストール済みの依存関係が `package-lock.json` と一致しない場合は、ビルドの前に `npm ci` も実行します。`npm start` は `preview/` をそのまま表示します。
 
