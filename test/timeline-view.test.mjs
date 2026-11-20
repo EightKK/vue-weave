@@ -178,3 +178,11 @@ test('useTimelineView projects reactively without touching the source', () => {
   assert.equal('window' in view.state.value, false)
   assert.equal(rows.length, 6)
 })
+
+test('projectTimelineView derives the lane count of 200,000 bars without spreading them into one call', () => {
+  const many = Array.from({ length: 200_000 }, (_, i) => ({ id: 'x' + i, rowId: 'a', label: 'X', start: i, end: i + 1, lane: i % 4 }))
+  const result = projectTimelineView({ rows, bars: many }, createTimelineViewState())
+  assert.equal(result.bars.length, 200_000)
+  // The bars use lanes 0 to 3, so an explicit count of 3 lanes rejects them.
+  assert.throws(() => projectTimelineView({ rows, bars: many, laneCount: 3 }, createTimelineViewState()), /lane/i)
+})
