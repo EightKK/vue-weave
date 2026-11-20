@@ -30,6 +30,10 @@ export interface AsyncGraphFrame<N extends NetworkNode = NetworkNode, E extends 
   direction: GraphLayoutDirection
   positions?: ReadonlyMap<string, GraphPoint>
   sizes?: ReadonlyMap<string, GraphNodeSize>
+  /** Pinned nodes for an incremental engine, as given in the input. */
+  fixedIds?: ReadonlySet<string>
+  /** New nodes for an incremental engine, as given in the input. */
+  addedIds?: ReadonlySet<string>
   settings?: unknown
   /** Input keys of the frame's requests; `expanded` only while a group is collapsed. */
   inputKeys: { shown: string; expanded?: string }
@@ -190,6 +194,7 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
       revision: shown.revision, nodes: input.nodes, edges: input.edges, groups: input.groups ?? [],
       collapsedGroupIds: new Set(input.collapsedGroupIds ?? []), direction: shown.direction,
       ...shown.positions && { positions: shown.positions }, ...shown.sizes && { sizes: shown.sizes },
+      ...shown.fixedIds && { fixedIds: shown.fixedIds }, ...shown.addedIds && { addedIds: shown.addedIds },
       ...shown.settings !== undefined && { settings: shown.settings },
       inputKeys: { shown: shown.inputKey, ...expanded && { expanded: expanded.inputKey } },
     }

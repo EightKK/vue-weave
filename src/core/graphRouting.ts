@@ -3,9 +3,15 @@ import {
   type IdentifiedNode,
 } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
-import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
-import { assertGraphPortSide } from './graphPortSide.js'
+import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
+import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
 import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape } from './graphShapes.js'
+import {
+  buildGraphObstacleIndex, graphPolylineClear, resolveObstacleAvoidance, routeAroundObstacles, type GraphObstacleAvoidance,
+  type GraphObstacleIndex, type ResolvedAvoidance,
+} from './graphObstacleRouting.js'
+import { unknownReferenceError } from './ids.js'
 
 /** How NetworkGraph and `routeGraphEdges` draw edges. `curve` is the layout's own routing. */
 export type GraphEdgeStyle = 'curve' | 'orthogonal' | 'straight'
@@ -35,6 +41,12 @@ export interface GraphEdgeRouteOptions {
    * Default undefined: parallel edges are drawn on top of each other.
    */
   parallelSpacing?: number
+  /**
+   * Opt-in: orthogonal edges without waypoints go around the node boxes, `true` for the defaults or the settings (see
+   * `findOrthogonalRoute`). Every box of the layout is an obstacle, collapsed-group proxies included. An edge that has no
+   * route around the boxes keeps the plain orthogonal route. Default undefined: routes do not avoid boxes.
+   */
+  avoidNodes?: boolean | GraphObstacleAvoidance
 }
 
 /**
@@ -71,7 +83,6 @@ export function graphParallelSlots(edges: readonly GraphEdge[]): Map<string, Gra
 type Side = GraphPort['side']
 type Anchor = GraphPoint & { side: Side }
 
-const normals: Record<Side, readonly [number, number]> = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] }
 // Length of the straight piece an orthogonal route keeps before it turns away from a node side.
 const stub = 16
 
@@ -84,7 +95,7 @@ function format(value: number) {
 }
 
 function sidePoint(box: GraphBox, side: Side, offset = 0.5): Anchor {
-  return { ...graphPortAnchor(box, { id: '', side, offset }), side }
+  return { ...graphSideAnchor(box, side, offset), side }
 }
 
 // Where the ray from the box centre towards a point leaves the box.
@@ -269,14 +280,6 @@ function halfway(points: readonly GraphPoint[]): GraphPoint {
   return points[0] ?? { x: 0, y: 0 }
 }
 
-function onBorder(box: GraphBox, point: GraphPoint) {
-  const near = (a: number, b: number) => Math.abs(a - b) <= 0.5
-  const withinX = point.x >= box.x - 0.5 && point.x <= box.x + box.width + 0.5
-  const withinY = point.y >= box.y - 0.5 && point.y <= box.y + box.height + 0.5
-  return ((near(point.x, box.x) || near(point.x, box.x + box.width)) && withinY)
-    || ((near(point.y, box.y) || near(point.y, box.y + box.height)) && withinX)
-}
-
 /**
  * One routed edge: its path, label anchor and the polyline (or curve control points) it was drawn through, and its
  * route metadata when it was drawn rather than kept.
@@ -296,6 +299,8 @@ interface RouteSettings {
   /** The parallel spacing; undefined leaves parallel edges as they are. */
   spacing?: number
   slots?: ReadonlyMap<string, GraphParallelSlot>
+  /** Obstacle avoidance of orthogonal edges, with the obstacle index built on first use. */
+  avoid?: { settings: ResolvedAvoidance; index: () => GraphObstacleIndex }
 }
 
 function centre(box: GraphBox): GraphPoint {
@@ -395,7 +400,8 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
   const { direction, cornerRadius, spacing } = settings
   const style = edge.edgeStyle ?? settings.style
   const source = layout.boxes.get(edge.from), target = layout.boxes.get(edge.to)
-  if (!source || !target) throw new Error('Unknown endpoint on graph edge: ' + edge.id)
+  if (!source) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.from)
+  if (!target) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.to)
   const waypoints = edge.points ?? []
   for (const point of waypoints) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError('Graph edge waypoints must be finite: ' + edge.id)
@@ -417,7 +423,8 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
     const path = layout.paths.get(edge.id)
     if (path !== undefined && /^M[\d\s.,eE+-]+(?:[HV][\d\s.,eE+-]+)+$/.test(path)) {
       const ends = graphPathEndpoints(path)
-      if (ends && onBorder(source, ends.start) && onBorder(target, ends.end)) {
+      if (ends && isOnGraphBoxSide(source, ends.start) && isOnGraphBoxSide(target, ends.end)
+        && (!settings.avoid || graphPolylineClear(settings.avoid.index(), axisPathPoints(path), new Set([edge.from, edge.to])))) {
         const label = layout.edgeLabels.get(edge.id)
         return { path, label: label ?? ends.start, points: [] }
       }
@@ -435,7 +442,7 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
   let through: readonly GraphPoint[] = waypoints
   if (edge.from === edge.to && !waypoints.length) {
     // A self-loop is a bracket on the direction's outgoing side, or between its ports.
-    const side: Side = direction === 'LR' ? 'right' : direction === 'RL' ? 'left' : direction === 'TB' ? 'bottom' : 'top'
+    const side = graphFlowSides(direction).exit
     if (slot) points = nestedLoop(source, side, slot, spacing!)
     else {
       const a = fromPort ?? sidePoint(source, side, 0.35)
@@ -450,7 +457,10 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
       points = connectThrough(a, waypoints, b)
     } else {
       const [fromSide, toSide] = defaultSides(source, target, direction)
-      points = connect(fromPort ?? sidePoint(source, fromSide), toPort ?? sidePoint(target, toSide))
+      const a = fromPort ?? sidePoint(source, fromSide), b = toPort ?? sidePoint(target, toSide)
+      const avoided = settings.avoid && routeAroundObstacles(settings.avoid.index(), a, b, settings.avoid.settings.bendPenalty)
+      // The route keeps the sides of its ends, which `sides` below reads from the first and last point.
+      points = avoided ? [a, ...avoided.slice(1, -1), b] : connect(a, b)
     }
   } else {
     if (slot) through = [parallelWaypoint(source, target, slot, spacing!, direction)]
@@ -492,16 +502,41 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
 }
 
 function validateRouteOptions(options: GraphEdgeRouteOptions) {
-  const { style = 'curve', direction = 'LR', cornerRadius = 0, policy = 'builtin', parallelSpacing } = options
+  const { style = 'curve', direction = 'LR', cornerRadius = 0, policy = 'builtin', parallelSpacing, avoidNodes } = options
   if (!edgeStyles.includes(style)) throw new RangeError('Unknown edge style: ' + style)
   if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
-  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
+  assertGraphLayoutDirection(direction)
   if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
   if (parallelSpacing !== undefined && !(Number.isFinite(parallelSpacing) && parallelSpacing > 0)) {
     throw new RangeError('parallelSpacing must be a positive finite number of chart units')
   }
-  return { style, direction, cornerRadius, policy, spacing: parallelSpacing }
+  return { style, direction, cornerRadius, policy, spacing: parallelSpacing, avoid: resolveObstacleAvoidance(avoidNodes) }
 }
+
+// The points of an absolute path of M, H and V commands, such as a long-edge bypass lane.
+function axisPathPoints(path: string): GraphPoint[] {
+  const tokens = path.match(/[MHV]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) ?? []
+  const points: GraphPoint[] = []
+  let command = '', x = 0, y = 0
+  for (let i = 0; i < tokens.length;) {
+    const token = tokens[i]!
+    if (token === 'M' || token === 'H' || token === 'V') {
+      command = token
+      i++
+      continue
+    }
+    if (command === 'M') {
+      x = Number(tokens[i++])
+      y = Number(tokens[i++])
+    } else if (command === 'H') x = Number(tokens[i++])
+    else y = Number(tokens[i++])
+    points.push({ x, y })
+  }
+  return points
+}
+
+// Obstacle indexes by box map, for callers that route the edges of one immutable box map in several calls.
+const obstacleIndexes = new WeakMap<ReadonlyMap<string, GraphBox>, Map<number, GraphObstacleIndex>>()
 
 /**
  * Reroutes the edges of a finished layout (after positions and sizes) in an edge style: the `style` option, or the
@@ -516,7 +551,9 @@ function validateRouteOptions(options: GraphEdgeRouteOptions) {
  * over when the layout has it, with the entries of redrawn edges replaced. Throws Error for an unknown endpoint,
  * RangeError for a non-finite waypoint, an unknown style (of the options or of an edge), direction or policy, a bad
  * corner radius or a parallel spacing that is not a positive finite number. Boxes are kept; width and height grow to
- * include the routes.
+ * include the routes. With `avoidNodes`, orthogonal edges without waypoints (self-loops excepted) are routed around every
+ * box of the layout with `findOrthogonalRoute`, and a bypass lane is kept only while it crosses no other box; an edge
+ * without such a route keeps the plain orthogonal route. A bad `avoidNodes` value throws RangeError.
  */
 export function routeGraphEdges(
   layout: GraphLayout, edges: readonly GraphEdge[], nodes: ReadonlyMap<string, IdentifiedNode>, options: GraphEdgeRouteOptions = {},
@@ -526,20 +563,33 @@ export function routeGraphEdges(
 
 /**
  * Internal: `routeGraphEdges` with the parallel slots of another edge list, so NetworkGraph can route a few edges of a
- * graph the way the whole graph routes them. Without `parallelSpacing` the slots are ignored.
+ * graph the way the whole graph routes them. Without `parallelSpacing` the slots are ignored. With `reuseObstacles`, the
+ * obstacle index of `avoidNodes` is cached per box map, which the caller must then never change.
  */
 export function routeGraphEdgesWithSlots(
   layout: GraphLayout, edges: readonly GraphEdge[], nodes: ReadonlyMap<string, IdentifiedNode>, options: GraphEdgeRouteOptions,
-  slots: ReadonlyMap<string, GraphParallelSlot> | undefined,
+  slots: ReadonlyMap<string, GraphParallelSlot> | undefined, reuseObstacles = false,
 ): GraphLayout {
-  const { style, direction, cornerRadius, policy, spacing } = validateRouteOptions(options)
+  const { style, direction, cornerRadius, policy, spacing, avoid: avoidance } = validateRouteOptions(options)
   for (const edge of edges) {
     if (edge.edgeStyle !== undefined && !edgeStyles.includes(edge.edgeStyle)) {
       throw new RangeError(`Unknown edge style on graph edge ${edge.id}: ${String(edge.edgeStyle)}`)
     }
   }
   const active = spacing === undefined ? undefined : slots
-  const settings: RouteSettings = { style, direction, cornerRadius, spacing, slots: active }
+  let obstacles: GraphObstacleIndex | undefined
+  const avoid = avoidance && {
+    settings: avoidance,
+    index: () => {
+      if (obstacles) return obstacles
+      const cache = reuseObstacles ? obstacleIndexes.get(layout.boxes) ?? new Map<number, GraphObstacleIndex>() : undefined
+      if (cache) obstacleIndexes.set(layout.boxes, cache)
+      obstacles = cache?.get(avoidance.clearance) ?? buildGraphObstacleIndex(layout.boxes, avoidance.clearance)
+      cache?.set(avoidance.clearance, obstacles)
+      return obstacles
+    },
+  }
+  const settings: RouteSettings = { style, direction, cornerRadius, spacing, slots: active, avoid }
   if (style === 'curve' && !edges.some(edge => edge.points?.length || (edge.edgeStyle ?? style) !== 'curve' || active?.has(edge.id))) {
     return layout
   }

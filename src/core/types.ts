@@ -4,6 +4,7 @@ import type { EditMode, TimeRange } from './timeline.js'
 import type { TimelineFieldSpec } from './fieldEditing.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
 import type { GraphRect } from './graphView.js'
+import type { GraphEdgeBand } from './graphFlow.js'
 
 export type ChartTone = 'teal' | 'blue' | 'amber' | 'violet'
 
@@ -215,6 +216,20 @@ export interface TimelineMarker {
   label: string
 }
 
+/**
+ * A highlighted half-open time range `[start, end)` (GanttChart `markerRanges`): a shaded band across the chart body
+ * with its label in the header. `end` must be greater than `start`; use a `TimelineMarker` for a single point in time.
+ */
+export interface TimelineMarkerRange extends TimeRange {
+  /** Unique among the marker ranges of a chart. */
+  id: string
+  label: string
+  /** Colour of the band and its label. Defaults to the `--vw-range-*` colours. */
+  tone?: ChartTone
+  /** Shade only these rows. Every ID must name a row. Defaults to the full height, including load rows. */
+  rowIds?: readonly string[]
+}
+
 export interface TimelineDependency {
   id: string
   from: string
@@ -281,6 +296,14 @@ export interface GraphLabels {
   bottomRight?: string
   /** Announced when `validateNodeResize` returns false. Default "This resize was rejected." */
   resizeRejected?: string
+  /** Name prefix of the inline label editor (`editableLabels`), followed by the node label or the edge label or ID. Default "Edit label of". */
+  editLabel?: string
+  /** Announced when `validateLabelEdit` returns false. Default "This label change was rejected." */
+  labelRejected?: string
+  /** Name prefix of the `node-toolbar` slot's group, followed by the node label. Default "Node actions". */
+  nodeToolbar?: string
+  /** Name prefix of the `edge-toolbar` slot's group, followed by the edge label or ID. Default "Edge actions". */
+  edgeToolbar?: string
 }
 
 export interface GanttLabels {
@@ -399,7 +422,57 @@ export interface NetworkEdgeSlot<E extends GraphEdge = GraphEdge> {
   dimmed?: boolean
   /** The current camera scale, for level-of-detail rendering in custom edge slots. */
   scale: number
+  /** The band drawing of the edge from the `edgeBands` prop; absent for an edge without a band. */
+  band?: GraphEdgeBand
 }
+
+/** Props of the NetworkGraph `node-toolbar` slot, shown for the only selected node. `N` types the node. */
+export interface NetworkNodeToolbarSlot<N extends NetworkNode = NetworkNode> {
+  node: N
+  /** The node box in chart coordinates. */
+  box: GraphBox
+  /** The current camera scale. */
+  scale: number
+}
+
+/** Props of the NetworkGraph `edge-toolbar` slot, shown for the selected edge. `E` types the edge. */
+export interface NetworkEdgeToolbarSlot<E extends GraphEdge = GraphEdge> {
+  edge: E
+  /** The anchor in chart coordinates: the edge label position, else the middle between the path ends. */
+  point: GraphPoint
+  /** The current camera scale. */
+  scale: number
+}
+
+/** Props of the NetworkGraph `group` slot, which draws a group frame and label in chart coordinates. `G` types the group. */
+export interface NetworkGroupSlot<G extends NetworkGroup = NetworkGroup> {
+  group: G
+  /** The frame in chart coordinates, including the label strip at its top. */
+  box: GraphRect
+  /** Nesting depth: 0 for a group without `parentId`. */
+  depth: number
+}
+
+/** Props of the NetworkGraph `minimap-node` slot, which draws one node in the minimap in chart coordinates. */
+export interface NetworkMinimapNodeSlot<N extends NetworkNode = NetworkNode> {
+  node: N
+  box: GraphBox
+  selected: boolean
+}
+
+/**
+ * A label proposal from NetworkGraph (`editableLabels`). `before` is the current label (empty for an edge without one)
+ * and `after` the text typed, unchanged. Set the node's or edge's `label` to accept it.
+ */
+export interface GraphLabelEdit {
+  kind: 'node' | 'edge'
+  id: string
+  before: string
+  after: string
+}
+
+/** How a NetworkGraph `boxSelect` drag selects: a rectangle (`box`) or a free-form outline (`lasso`). */
+export type GraphSelectionMode = 'box' | 'lasso'
 
 /** A waypoint proposal from NetworkGraph (`editableEdges`). Set the edge's `points` to `after` to accept it. */
 export interface GraphEdgeReshape {
@@ -692,8 +765,20 @@ export interface CalendarBandOptions {
   step?: number
   /** First day of a week, 0 = Sunday to 6 = Saturday. Defaults to 1 (Monday). */
   weekStartsOn?: number
-  /** Label for an unclipped band. Times are epoch milliseconds; `local` holds the local fields of `start`. */
+  /** Label for an unclipped band. Times are epoch milliseconds; `local` holds the local fields of `start`. Wins over `locale`. */
   label?: (start: number, end: number, local: CalendarBandLocalTime) => string
+  /**
+   * BCP 47 locale (or list) for labels formatted with `Intl.DateTimeFormat` from the local date and time of each band
+   * start. Without `locale` and `labelFormat`, labels are ISO-like (`2026-03-29`, `2026-03`, `09:00`). With only
+   * `labelFormat`, the locale is `en-US`; the runtime's default locale is never used, so labels match on server and client.
+   */
+  locale?: string | readonly string[]
+  /**
+   * `Intl.DateTimeFormat` options for locale-aware labels. Its `timeZone` is ignored: the band's own local time is
+   * formatted. Defaults by unit: hour `{ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }`, day and week
+   * `{ year: 'numeric', month: 'short', day: 'numeric' }`, month `{ year: 'numeric', month: 'long' }`, year `{ year: 'numeric' }`.
+   */
+  labelFormat?: Intl.DateTimeFormatOptions
 }
 
 /** Text direction of a component. `auto` follows the inherited CSS direction after mounting. */

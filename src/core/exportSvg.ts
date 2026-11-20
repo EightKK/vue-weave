@@ -1,6 +1,8 @@
 import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } from './graph.js'
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
+import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
+import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
@@ -8,11 +10,12 @@ import {
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
-  TimelineMarker, TimelineRow,
+  TimelineMarker, TimelineMarkerRange, TimelineRow,
 } from './types.js'
 import type { TimelineConstraintKind } from './types.js'
-import { checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
-import { baselineLayout, baselineSelection, baselineStrips } from './barSegments.js'
+import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
+import { baselineLayout, baselineSelection, baselineStrips, checkBandsAndMarkers, checkLoadRows, checkTimelineColumns } from './barSegments.js'
+import { checkId } from './ids.js'
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -61,6 +64,12 @@ export interface SvgExportTheme {
   constraint?: string
   /** Violated constraint markers (`--vw-constraint-violated`). Defaults to `defaultSvgExportTheme.constraintViolated`. */
   constraintViolated?: string
+  /** Fill of marker ranges without a tone (`--vw-range`). Defaults to `defaultSvgExportTheme.range`. */
+  range?: string
+  /** Label text of marker ranges without a tone (`--vw-range-ink`). Defaults to `defaultSvgExportTheme.rangeInk`. */
+  rangeInk?: string
+  /** Edge line of marker range labels without a tone (`--vw-range-line`). Defaults to `defaultSvgExportTheme.rangeLine`. */
+  rangeLine?: string
   tones: Record<ChartTone, SvgToneColors>
 }
 
@@ -76,6 +85,7 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
   load: '#6b96c5', loadOverload: '#b4441c', loadCapacity: '#31495b', dependencyHighlight: '#a74f08',
   nonWorking: '#eaeff3', critical: '#b42318', float: '#5b7083', deadline: '#a74f08', status: '#1f7a4d',
   baseline2: '#9a4c95', baseline3: '#23806f', constraint: '#a1246e', constraintViolated: '#c4161c',
+  range: '#f9efdc', rangeInk: '#764908', rangeLine: '#b58848',
   tones: {
     teal: { ink: '#115e58', line: '#5d9c93', pale: '#e1f2ee', solid: '#2b756b' },
     blue: { ink: '#1d4d84', line: '#6b96c5', pale: '#e6effa', solid: '#29609a' },
@@ -215,6 +225,11 @@ export interface GraphSvgGroup {
 export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> extends SvgExportOptions {
   /** Group rectangles drawn behind the nodes. */
   groups?: readonly GraphSvgGroup[]
+  /**
+   * Swimlane bands drawn behind the groups, edges and nodes, each with its title clipped to its header area, for
+   * example the `lanes` of a `layoutSwimlaneGraph` result. Throws like NetworkGraph `lanes` for invalid lanes.
+   */
+  lanes?: readonly GraphSwimlaneBand[]
   /** Node IDs drawn in the selected style. */
   selectedIds?: Iterable<string>
   /** Node IDs whose box gets the highlight outline, like NetworkGraph `highlightedNodeIds`. Unknown IDs are ignored. */
@@ -231,6 +246,13 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
   nodeDetail?: (node: N) => string | undefined
   /** Edge label text. Defaults to `edge.label`. */
   edgeLabel?: (edge: E) => string | undefined
+  /**
+   * Edges drawn as bands with real width, like the NetworkGraph `edgeBands` prop (for example `graphFlowBands` of a
+   * `layoutFlowGraph` result): a translucent stroke of the band width without markers, dashed for a reference band,
+   * with the band label as its `<title>`. Bands are drawn widest first, before the other edges, so thin bands stay
+   * visible. Unknown IDs are ignored. Throws RangeError for a width that is not finite and at least 0.
+   */
+  edgeBands?: ReadonlyMap<string, GraphEdgeBand>
 }
 
 /**
@@ -264,22 +286,28 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     include(box.x, box.y, box.width, box.height)
   }
   const edgeText = options.edgeLabel ?? ((edge: GraphEdge) => edge.label)
+  const bands = options.edgeBands
+  if (bands) assertGraphEdgeBands(bands, 'renderGraphSvg')
   for (const edge of edges) {
     const path = layout.paths.get(edge.id)
     if (path === undefined) throw new Error('Missing layout path: ' + edge.id)
     const bounds = graphPathBounds(path)
-    if (bounds) include(bounds.x, bounds.y, bounds.width, bounds.height)
+    const half = (bands?.get(edge.id)?.width ?? 0) / 2
+    if (bounds) include(bounds.x - half, bounds.y - half, bounds.width + 2 * half, bounds.height + 2 * half)
     const label = layout.edgeLabels.get(edge.id)
     if (label && edgeText(edge)) include(label.x - 60, label.y - 14, 120, 20)
   }
   const groupIds = new Set<string>()
   for (const group of options.groups ?? []) {
-    if (!group.id || groupIds.has(group.id)) throw new Error('Invalid or duplicate export group: ' + group.id)
+    checkId('export group', group.id, groupIds)
     if (![group.x, group.y, group.width, group.height].every(Number.isFinite) || group.width < 0 || group.height < 0) {
       throw new RangeError('Invalid export group geometry: ' + group.id)
     }
-    groupIds.add(group.id)
     include(group.x, group.y, group.width, group.height)
+  }
+  if (options.lanes !== undefined) {
+    assertGraphSwimlaneBands(options.lanes, 'renderGraphSvg')
+    for (const lane of options.lanes) include(lane.x, lane.y, lane.width, lane.height)
   }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
@@ -293,7 +321,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const nodeDetail = options.nodeDetail ?? ((node: N) => node.detail)
   const arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
   // The highlight marker is only written when a drawn edge uses it, so an export without highlights is unchanged.
-  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id))
+  const anyHighlightedEdge = edges.some(edge => highlightedEdges.has(edge.id) && !bands?.has(edge.id))
   // Other markers, and start markers, are also only written when an edge uses them.
   type Marker = Exclude<GraphEdgeMarker, 'none'>
   const markerId = (kind: Marker, end: 'start' | 'end', strong: boolean) => kind === 'arrow' && end === 'end'
@@ -301,6 +329,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     : prefix + (end === 'start' ? '-start-' : '-') + kind + (strong ? '-highlight' : '')
   const markers = new Map<string, { kind: Marker; end: 'start' | 'end'; strong: boolean }>()
   for (const edge of edges) {
+    if (bands?.has(edge.id)) continue
     const strong = highlightedEdges.has(edge.id)
     for (const end of ['start', 'end'] as const) {
       const kind = graphEdgeMarker(edge, end)
@@ -324,6 +353,16 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
+  // Lanes: alternating band fills, a header with a solid border and the title clipped to the header.
+  options.lanes?.forEach((lane, index) => {
+    const { header } = lane
+    content.push(tag('g', { class: 'vw-swimlane' }, tag('title', {}, escapeXml(lane.label)) + tag('rect', {
+      x: lane.x, y: lane.y, width: lane.width, height: lane.height,
+      fill: index % 2 ? theme.surfaceMuted : theme.surface, stroke: theme.border,
+    }) + (header.width > 0 && header.height > 0 ? tag('rect', {
+      x: header.x, y: header.y, width: header.width, height: header.height, fill: theme.surfaceMuted, stroke: theme.border, 'stroke-width': 1.5,
+    }) : '') + clippedText(header, rtl, [{ text: lane.label, y: Math.min(header.height / 2, 14) + 4, size: 12, weight: 700, fill: theme.text, inset: 8 }])))
+  })
   for (const group of options.groups ?? []) {
     content.push(tag('g', {}, tag('rect', {
       x: group.x, y: group.y, width: group.width, height: group.height, rx: 10,
@@ -333,8 +372,17 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
     }, escapeXml(group.label))))
   }
-  for (const edge of edges) {
+  for (const edge of bands ? graphBandOrder(edges, bands) : edges) {
     const strong = highlightedEdges.has(edge.id)
+    const band = bands?.get(edge.id)
+    if (band) {
+      content.push(tag('path', {
+        class: band.reference ? 'vw-flow-band vw-is-reference' : 'vw-flow-band', d: layout.paths.get(edge.id)!, fill: 'none',
+        stroke: strong ? highlight : theme.edge, 'stroke-width': band.width,
+        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? '10 6' : undefined,
+      }, band.label ? tag('title', {}, escapeXml(band.label)) : undefined))
+      continue
+    }
     const start = graphEdgeMarker(edge, 'start'), end = graphEdgeMarker(edge, 'end')
     content.push(tag('path', {
       d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,
@@ -410,8 +458,19 @@ export interface TimelineSvgOptions<R extends TimelineRow = TimelineRow, B exten
   columns?: readonly TimelineColumn<R>[]
   /** Draw rollup bars on parent rows without bars of their own. */
   showSummaries?: boolean
+  /**
+   * As GanttChart `summaryDependencies`: a dependency end may name a summary row instead of a bar. Such an end joins
+   * the start or finish edge of the row's rollup bar, so it is drawn only with `showSummaries` and when the row has a
+   * rollup (descendant bars and no bar of its own); otherwise the dependency is left out. Default false.
+   */
+  summaryDependencies?: boolean
   headerBands?: readonly (readonly TimelineBand[])[]
   markers?: readonly TimelineMarker[]
+  /**
+   * Highlighted half-open ranges, as GanttChart `markerRanges`: a band across the body (or across `rowIds` only) with
+   * its label at the bottom of the header, drawn with its tone or the `range` theme colours at 70% opacity.
+   */
+  markerRanges?: readonly TimelineMarkerRange[]
   /** Time of a "now" line. */
   now?: number
   /** Tick interval. Defaults to the first of `tickSteps` that is at least 76 px wide. */
@@ -483,7 +542,8 @@ const bandHeight = 26
 
 /**
  * Build a standalone SVG document of a timeline with the default rendering: row headings and columns, header bands
- * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, the now line and load rows.
+ * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, marker ranges, the now line and
+ * load rows.
  * Every displayed row is included (collapsed descendants are omitted) unless `rowRange` narrows it. Runs without a DOM.
  */
 export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
@@ -492,7 +552,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
 ): string {
   const rowHeight = options.rowHeight ?? 66
   const laneCount = options.laneCount ?? 1
-  validateTimelineData(rows, bars, dependencies, laneCount)
+  validateTimelineData(rows, bars, dependencies, laneCount, { summaryDependencies: options.summaryDependencies })
   const { prefix, theme, rtl, font, background } = common(options)
   if (!Number.isFinite(rowHeight) || rowHeight < 8 + laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
   const labelWidth = options.labelWidth ?? 154
@@ -509,14 +569,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   if (!Number.isFinite(offset) || !Number.isFinite(axisWidth) || axisWidth <= 0) throw new RangeError('The exported time window has no width')
 
   const columns = options.columns ?? []
-  const columnIds = new Set<string>()
-  let columnsWidth = 0
-  for (const column of columns) {
-    if (!column.id || columnIds.has(column.id)) throw new Error('Invalid timeline column: ' + column.id)
-    if (!Number.isFinite(column.width) || column.width <= 0) throw new RangeError('Invalid timeline column width: ' + column.id)
-    columnIds.add(column.id)
-    columnsWidth += column.width
-  }
+  const columnsWidth = checkTimelineColumns(columns)
 
   const tree = createTimelineRowTree(rows)
   const collapsed = new Set(options.collapsedIds ?? [])
@@ -536,35 +589,14 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const summaries = options.showSummaries || columns.length ? summarizeTimelineRows(tree, bars) : undefined
 
   const loadRowHeight = options.loadRowHeight ?? 44
-  let histogram: ReturnType<typeof resourceLoadHistogram> | undefined
   const loadRows = options.loadRows ?? []
-  if (loadRows.length) {
-    const ids = new Set<string>()
-    for (const row of loadRows) {
-      if (!row.id || ids.has(row.id)) throw new Error('Invalid or duplicate load row ID: ' + row.id)
-      ids.add(row.id)
-    }
-    if (!Number.isFinite(loadRowHeight) || loadRowHeight < 16) throw new RangeError('loadRowHeight must be at least 16')
-    histogram = resourceLoadHistogram(options.loadSegments ?? [], ids)
-  } else if (options.loadSegments?.length) {
-    throw new Error('loadSegments require loadRows')
-  }
+  const loadRowIds = checkLoadRows(loadRows, options.loadSegments, loadRowHeight)
+  const histogram = loadRowIds && resourceLoadHistogram(options.loadSegments ?? [], loadRowIds)
 
   const bands = options.headerBands ?? []
-  for (const level of bands) {
-    let previousEnd = -Infinity
-    for (const band of level) {
-      if (!Number.isFinite(band.start) || !Number.isFinite(band.end) || band.end <= band.start || band.start < previousEnd) {
-        throw new RangeError('Timeline bands must be finite, ordered and nonoverlapping')
-      }
-      previousEnd = band.end
-    }
-  }
-  const markerIds = new Set<string>()
-  for (const item of options.markers ?? []) {
-    if (!item.id || markerIds.has(item.id) || !Number.isFinite(item.time)) throw new RangeError('Invalid timeline marker: ' + item.id)
-    markerIds.add(item.id)
-  }
+  checkBandsAndMarkers(bands, options.markers)
+  const markerRanges = options.markerRanges ?? []
+  checkMarkerRanges(markerRanges, new Set(rows.map(row => row.id)))
   if (options.now !== undefined && !Number.isFinite(options.now)) throw new RangeError('now must be finite')
   if (options.statusDate !== undefined && !Number.isFinite(options.statusDate)) throw new RangeError('statusDate must be finite')
   checkNonWorkingPeriods(options.nonWorkingPeriods)
@@ -641,6 +673,29 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     if (end <= start) continue
     area.push(tag('rect', { ...span(start, end), y: headerHeight, height: totalHeight - headerHeight, fill: theme.nonWorking }))
   }
+  // Marker ranges: the body band goes behind the grid and bars; its header label is drawn after the ticks below.
+  const rangeLabels: string[] = []
+  for (const item of markerRanges) {
+    const start = Math.max(item.start, window.start), end = Math.min(item.end, window.end)
+    if (end <= start) continue
+    const box = span(start, end)
+    const colors = item.tone === undefined ? { pale: theme.range, line: theme.rangeLine, ink: theme.rangeInk } : toneColors(theme, item.tone)
+    const fills = item.rowIds
+      ? [...new Set(item.rowIds)].flatMap(rowId => {
+        const index = rowIndex.get(rowId)
+        return index === undefined ? [] : [{ y: headerHeight + index * rowHeight, height: rowHeight }]
+      })
+      : [{ y: headerHeight, height: totalHeight - headerHeight }]
+    const title = tag('title', {}, escapeXml(`${item.label} ${format(item.start)}–${format(item.end)}`))
+    if (fills.length) {
+      area.push(tag('g', { class: 'vw-gantt-range' }, title
+        + fills.map(fill => tag('rect', { ...box, ...fill, fill: colors.pale, 'fill-opacity': 0.7 })).join('')))
+    }
+    const strip = { ...box, y: headerHeight - 13, height: 13 }
+    rangeLabels.push(tag('g', { class: 'vw-gantt-range-label' }, title + tag('rect', { ...strip, fill: colors.pale })
+      + tag('line', { x1: box.x, y1: strip.y + 1, x2: box.x + box.width, y2: strip.y + 1, stroke: colors.line, 'stroke-width': 2 })
+      + clippedText(strip, rtl, [{ text: item.label, y: 10, size: 10, weight: 650, fill: colors.ink, inset: 4 }])))
+  }
   bands.forEach((level, index) => {
     for (const band of level) {
       const start = Math.max(band.start, window.start), end = Math.min(band.end, window.end)
@@ -661,6 +716,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
   }
+  area.push(...rangeLabels)
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue
@@ -668,10 +724,13 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     if (!list) barsByRow.set(bar.rowId, list = [])
     list.push(bar)
   }
+  // Drawn rollup bars by row ID, the ends of `summaryDependencies` links.
+  const rollups = new Map<string, TimeRange>()
   shown.forEach((item, index) => {
     const top = headerHeight + index * rowHeight
     const own = barsByRow.get(item.row.id) ?? []
     const summary = item.hasChildren && options.showSummaries && !own.length ? summaries?.get(item.row.id) : undefined
+    if (summary && options.summaryDependencies) rollups.set(item.row.id, summary)
     if (summary && intersectsWindow(summary, window)) {
       const box = span(summary.start, summary.end)
       const w = Math.max(3, box.width)
@@ -848,13 +907,23 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   const lagLabels: string[] = []
   const formatLag = options.formatLag ?? formatDependencyLag
   const barById = new Map(bars.map(bar => [bar.id, bar]))
+  // A dependency end: a bar, or with `summaryDependencies` the rollup bar of a summary row, centred in its row.
+  const linkEnd = (id: string) => {
+    const bar = barById.get(id)
+    if (bar) {
+      const index = rowIndex.get(bar.rowId)
+      return index === undefined ? undefined : { range: bar as TimeRange, index, offset: laneTop(bar) + barHeight / 2 }
+    }
+    const rollup = rollups.get(id)
+    return rollup && { range: rollup, index: rowIndex.get(id)!, offset: rowHeight / 2 }
+  }
   for (const dep of dependencies) {
-    const source = barById.get(dep.from)!, target = barById.get(dep.to)!
-    const sourceIndex = rowIndex.get(source.rowId), targetIndex = rowIndex.get(target.rowId)
-    if (sourceIndex === undefined || targetIndex === undefined) continue
-    const ends = dependencyTimes(source, target, dep.type)
-    const y1 = headerHeight + sourceIndex * rowHeight + laneTop(source) + barHeight / 2
-    const y2 = headerHeight + targetIndex * rowHeight + laneTop(target) + barHeight / 2
+    const source = linkEnd(dep.from), target = linkEnd(dep.to)
+    if (!source || !target) continue
+    const sourceIndex = source.index, targetIndex = target.index
+    const ends = dependencyTimes(source.range, target.range, dep.type)
+    const y1 = headerHeight + sourceIndex * rowHeight + source.offset
+    const y2 = headerHeight + targetIndex * rowHeight + target.offset
     const strong = highlighted.has(dep.id)
     paths.push(tag('path', {
       d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2), options.dependencyStyle), fill: 'none',

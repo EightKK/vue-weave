@@ -10,6 +10,8 @@ import { createTransactionStore, type ServerMode } from './adapters/transactionS
 import SaveStatus from './components/SaveStatus.vue'
 import TypedCellEditor from './components/TypedCellEditor.vue'
 import { formatTime, hour, origin } from './data'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
 
 // Server-confirmed editing of one document: every user action is one transaction that the mock server accepts, rejects,
 // answers with a version conflict, or leaves unknown. Undo and redo restore history snapshots through the same server.
@@ -192,10 +194,7 @@ async function loadJson() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="persistence-title">
-    <div class="section-head">
-      <div><h2 id="persistence-title">Saved editing</h2><p>Server-confirmed transactions, snapshot undo and redo, and JSON save and load · UTC</p></div>
-    </div>
+  <DemoPanel title-id="persistence-title" title="Saved editing" subtitle="Server-confirmed transactions, snapshot undo and redo, and JSON save and load · UTC">
     <div class="persist-grid">
       <fieldset class="server">
         <legend>Mock server response</legend>
@@ -220,15 +219,15 @@ async function loadJson() {
       <template #row-heading>Task</template>
       <template #cell-editor="slot"><TypedCellEditor v-bind="slot" /></template>
     </GanttChart>
-    <p class="status" role="status" aria-label="Last action">{{ notice }}</p>
+    <StatusLine label="Last action">{{ notice }}</StatusLine>
     <p v-if="resetNotice" class="status" role="status" aria-label="History reset">{{ resetNotice }}</p>
     <p v-if="view.projection.value.removedDependencyCount" class="hint">{{ view.projection.value.removedDependencyCount }} dependency link(s) hidden by the search.</p>
     <div class="json">
       <div class="options"><button type="button" @click="saveJson">Save JSON</button><button type="button" @click="loadJson">Load JSON</button></div>
       <label class="json-box">Snapshot JSON <textarea v-model="json" rows="8" spellcheck="false" /></label>
-      <p class="status" role="status" aria-label="JSON status">{{ jsonNotice }}</p>
+      <StatusLine label="JSON status">{{ jsonNotice }}</StatusLine>
     </div>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

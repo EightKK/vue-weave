@@ -95,9 +95,18 @@
 .vw-network-node.vw-is-draggable { cursor: grab; }
 .vw-connect-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: crosshair; }
 .vw-connect-handle.vw-is-active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); outline: none; }
+/* Opt-in connection rule hints (NetworkGraph `connectionRules`) while a connection is in progress: a valid target is
+   larger and filled, an invalid one hollow, dashed and faded, so the two differ without colour. */
+.vw-connect-handle.vw-is-valid-target { r: 7.5px; fill: var(--vw-connect-valid, #1d7a4f); stroke: var(--vw-surface, #fff); stroke-width: 2.5px; }
+.vw-connect-handle.vw-is-invalid-target { fill: var(--vw-surface, #fff); stroke: var(--vw-connect-invalid, #a8361f); stroke-dasharray: 2 2; opacity: .65; cursor: not-allowed; }
+.vw-connect-handle.vw-is-valid-target:focus-visible, .vw-connect-handle.vw-is-invalid-target:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; opacity: 1; }
+@media (forced-colors: active) {
+  .vw-connect-handle.vw-is-valid-target { fill: Highlight; stroke: CanvasText; }
+  .vw-connect-handle.vw-is-invalid-target { fill: Canvas; stroke: GrayText; opacity: 1; }
+}
 .vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); }
 .vw-minimap svg { display: block; width: 100%; height: 100%; }
-.vw-minimap rect { fill: var(--vw-edge, #76929f); }
+.vw-minimap rect:where(:not(.vw-minimap-custom *)) { fill: var(--vw-edge, #76929f); }
 .vw-minimap rect.vw-is-selected { fill: var(--vw-accent, #245e96); }
 .vw-minimap .vw-minimap-window { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .vw-gantt-head { height: var(--vw-header-height, 40px); }
@@ -115,14 +124,42 @@
 .vw-gantt-baseline-3 { background: var(--vw-baseline-3, #23806f); }
 .vw-gantt-marker { position: absolute; z-index: 2; top: var(--vw-header-height, 40px); bottom: 0; border-left: 1px dashed var(--vw-marker, #a74f08); pointer-events: none; }
 .vw-gantt-marker span { display: inline-block; padding: 2px 5px; background: var(--vw-marker, #a74f08); color: #fff; white-space: nowrap; font-size: 10px; }
-.vw-network-group rect { fill: var(--vw-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vw-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
-.vw-network-group text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
+.vw-network-group:where(:not(.vw-has-slot)) rect { fill: var(--vw-surface-muted, #eef4f8); fill-opacity: .7; stroke: var(--vw-border, #a9bac8); stroke-dasharray: 4 3; pointer-events: none; }
+.vw-network-group:where(:not(.vw-has-slot)) text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
 .vw-network-group text[role="button"] { cursor: grab; }
 .vw-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .vw-edge-hit.vw-is-active { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
 .vw-reconnect-handle { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); stroke-width: 2px; cursor: crosshair; }
 .vw-connection-preview { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
 .vw-box-selection { fill: var(--vw-accent, #245e96); fill-opacity: .14; stroke: var(--vw-accent, #245e96); pointer-events: none; }
+/* Opt-in lasso selection (selectionMode 'lasso'), inline label editor (editableLabels), toolbar slots and group slot of NetworkGraph. */
+.vw-lasso-selection { fill: var(--vw-accent, #245e96); fill-opacity: .1; stroke: var(--vw-accent, #245e96); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.vw-network.vw-labels-editable .vw-edge-label { pointer-events: auto; cursor: text; }
+.vw-label-editor { position: absolute; z-index: 3; min-width: 0; height: 28px; padding: 3px 7px; transform: translateY(-50%); border: 2px solid var(--vw-accent, #245e96); border-radius: 5px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); font: inherit; font-size: 13px; text-align: start; box-shadow: 0 3px 10px rgb(15 35 50 / 18%); }
+.vw-label-editor.vw-is-edge { width: var(--vw-label-editor-width, 140px); transform: translate(-50%, -50%); }
+.vw-label-editor:focus { outline: none; }
+.vw-node-toolbar, .vw-edge-toolbar { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 16px); padding: 3px; transform: translate(-50%, calc(-100% - var(--vw-toolbar-offset, 8px))); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 3px 10px rgb(15 35 50 / 16%); font-size: 12px; }
+.vw-node-toolbar.vw-is-below, .vw-edge-toolbar.vw-is-below { transform: translate(-50%, var(--vw-toolbar-offset, 8px)); }
+.vw-network-group .vw-group-handle { fill: transparent; stroke: none; pointer-events: all; outline: none; }
+.vw-network-group .vw-group-handle[role="button"] { cursor: grab; }
+.vw-network-group .vw-group-handle:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 2px; }
+/* Opt-in swimlanes of NetworkGraph (`lanes`): bands behind the graph, a header with a solid border and the title. They
+   never take the pointer, so panning, box selection and drops work over them. */
+.vw-swimlane rect, .vw-swimlane text { pointer-events: none; }
+.vw-swimlane-band { fill: var(--vw-lane-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1px; }
+.vw-swimlane.vw-is-alternate .vw-swimlane-band { fill: var(--vw-lane-fill-alternate, var(--vw-surface-muted, #f1f5f8)); }
+.vw-swimlane-header { fill: var(--vw-lane-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1.5px; }
+.vw-swimlane-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 12px; font-weight: 700; user-select: none; }
+.vw-network.vw-rtl .vw-swimlane-title text { direction: rtl; unicode-bidi: embed; }
+.vw-minimap .vw-minimap-lane { fill: none; stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+@media (forced-colors: active) {
+  /* Colours collapse, so bands keep a solid outline, alternate bands a dashed one and headers a thicker border. */
+  .vw-swimlane-band, .vw-swimlane-header { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-swimlane.vw-is-alternate .vw-swimlane-band { fill: Canvas; stroke-dasharray: 6 3; }
+  .vw-swimlane-header { stroke-width: 2.5px; }
+  .vw-swimlane-title text { forced-color-adjust: none; fill: CanvasText; }
+  .vw-minimap .vw-minimap-lane { fill: none; stroke: GrayText; }
+}
 
 .vw-gantt-corner.vw-column-group, .vw-gantt-row-label.vw-column-group { padding: 0; display: flex; flex-direction: row; justify-content: flex-start; gap: 0; }
 .vw-column-group > .vw-name-column { flex: 0 0 var(--vw-row-label-width); width: var(--vw-row-label-width); padding: 0 9px; display: flex; align-items: center; }
@@ -320,7 +357,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
   --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
   --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
-  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
   --vw-dimmed-opacity: .4;
   --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
 }
@@ -338,7 +375,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
     --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
     --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
     --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
-  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80;
+  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
     --vw-dimmed-opacity: .4;
     --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
   }
@@ -360,8 +397,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-links path.vw-is-highlighted { stroke: CanvasText; stroke-width: 3px; stroke-dasharray: 6 3; }
   .vw-gantt-links path.vw-is-selected { stroke: Highlight; stroke-width: 3.5px; }
   .vw-gantt-lag-layer .vw-gantt-lag { forced-color-adjust: none; fill: CanvasText; stroke: Canvas; }
-  .vw-network-node rect, .vw-network-node .vw-node-shape, .vw-network-group rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
-  .vw-network-node text, .vw-network-group text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
+  .vw-network-node rect, .vw-network-node .vw-node-shape, .vw-network-group:where(:not(.vw-has-slot)) rect { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-network-node text, .vw-network-group:where(:not(.vw-has-slot)) text, .vw-edge-label { forced-color-adjust: none; fill: CanvasText; stroke: none; }
   .vw-network-node.vw-is-related rect, .vw-network-node.vw-is-related .vw-node-shape { stroke: Highlight; stroke-width: 2.5px; }
   .vw-network-node:hover rect, .vw-network-node:focus-visible rect, .vw-network-node:hover .vw-node-shape, .vw-network-node:focus-visible .vw-node-shape { stroke: Highlight; stroke-width: 4px; }
   .vw-network-node.vw-is-selected rect, .vw-network-node.vw-is-selected .vw-node-shape { fill: Highlight; stroke: CanvasText; stroke-width: 4px; }
@@ -401,7 +438,9 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-edge-hit.vw-is-selected { stroke: Highlight; stroke-opacity: .6; }
   .vw-edge-hit:focus-visible, .vw-dependency-hit:focus-visible { stroke: Highlight; stroke-opacity: 1; }
   .vw-edge-selected .vw-network-edge { stroke: Highlight; stroke-width: 3.5px; }
-  .vw-network-tooltip { border-color: CanvasText; box-shadow: none; }
+  .vw-network-tooltip, .vw-node-toolbar, .vw-edge-toolbar, .vw-label-editor { border-color: CanvasText; box-shadow: none; }
+  .vw-lasso-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .2; stroke: Highlight; }
+  .vw-network-group .vw-group-handle:focus-visible { forced-color-adjust: none; stroke: Highlight; }
   .vw-connection-preview, .vw-gantt-link-preview path { stroke: Highlight; }
   .vw-box-selection { forced-color-adjust: none; fill: Highlight; fill-opacity: .25; stroke: Highlight; }
   .vw-minimap rect { fill: CanvasText; }
@@ -445,7 +484,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 @media print {
   .vw-network, .vw-gantt, .vw-network *, .vw-gantt * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .vw-zoom-tools, .vw-gantt-zoom, .vw-gantt-presets, .vw-minimap, .vw-bar-handle, .vw-gantt-link-handle, .vw-gantt-reconnect-handle,
-  .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
+  .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-lasso-selection, .vw-node-toolbar, .vw-edge-toolbar, .vw-label-editor, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
   .vw-network-tooltip, .vw-gantt-progress-handle, .vw-gantt-tooltip, .vw-gantt-create-button, .vw-gantt-create-preview, .vw-gantt-cascade-preview, .vw-guides,
   .vw-group-toggle, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle, .vw-row-move-handle, .vw-gantt-row-drop, .vw-column-resize { display: none !important; }
   .vw-gantt-toolbar { display: none; }
@@ -479,4 +518,36 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-field-cell { border-color: CanvasText; }
   .vw-field-cell:focus-visible { outline-color: Highlight; }
   .vw-cell-input[aria-invalid="true"] { border: 2px dashed CanvasText; }
+}
+
+/* GanttChart marker ranges (`markerRanges`): a translucent band under the bars, across the body or across single rows,
+   and a label strip at the bottom of the time header. Positions use the inline-start side, so they need no RTL rules. */
+.vw-gantt-range { position: absolute; z-index: 1; top: var(--vw-header-height, 40px); bottom: 0; background: var(--vw-range, #f9efdc); opacity: var(--vw-range-opacity, .7); pointer-events: none; }
+.vw-gantt-range.vw-is-row { bottom: auto; }
+.vw-gantt-range > span { display: none; }
+.vw-gantt-range-label { position: absolute; bottom: 0; box-sizing: border-box; height: 13px; padding: 0 4px; overflow: hidden; border-top: 2px solid var(--vw-range-line, #b58848); background: var(--vw-range, #f9efdc); color: var(--vw-range-ink, #764908); font-size: 9.5px; font-weight: 650; line-height: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.vw-gantt-range.vw-has-tone, .vw-gantt-range-label.vw-has-tone { background: var(--vw-item-pale, var(--vw-range, #f9efdc)); }
+.vw-gantt-range-label.vw-has-tone { border-top-color: var(--vw-item-line, var(--vw-range-line, #b58848)); color: var(--vw-item-ink, var(--vw-range-ink, #764908)); }
+.vw-theme-dark { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
+}
+@media (forced-colors: active) {
+  .vw-gantt-range, .vw-gantt-range.vw-has-tone { forced-color-adjust: none; opacity: 1; background: repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 9px); }
+  .vw-gantt-range-label, .vw-gantt-range-label.vw-has-tone { forced-color-adjust: none; background: Canvas; color: CanvasText; border-top-color: CanvasText; }
+}
+/* Marker ranges print with the chart (the print rules above keep their exact colours); a band keeps its translucency. */
+@media print {
+  .vw-gantt-range-label { break-inside: avoid; }
+}
+/* Opt-in quantity bands (NetworkGraph edgeBands): the edge path stroked with the band width, translucent so crossings
+   stay readable. Reference (loop) bands are dashed, which tells them apart without colour and in forced colours. */
+.vw-network-edge.vw-network-band { stroke-opacity: var(--vw-flow-band-opacity, .5); stroke-linecap: butt; stroke-linejoin: round; }
+.vw-network g:hover > .vw-network-band, .vw-edge-selected .vw-network-band, .vw-network .vw-is-highlighted .vw-network-band { stroke-opacity: var(--vw-flow-band-active-opacity, .78); }
+.vw-network-edge.vw-network-band.vw-is-reference { stroke-opacity: var(--vw-flow-reference-opacity, .35); stroke-dasharray: var(--vw-flow-reference-dash, 10 6); }
+.vw-edge-hit.vw-is-band:focus-visible { stroke-opacity: .55; }
+@media (forced-colors: active) {
+  .vw-network-edge.vw-network-band { stroke: CanvasText; }
+  .vw-network-edge.vw-network-band.vw-is-reference { stroke: GrayText; stroke-dasharray: 10 6; }
+  .vw-edge-selected .vw-network-edge.vw-network-band { stroke: Highlight; stroke-opacity: .85; }
 }

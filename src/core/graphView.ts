@@ -1,4 +1,5 @@
 import type { GraphLayout, GraphPoint } from './graph.js'
+import { svgPathArgumentCounts } from './graphSpatial.js'
 import type { GraphViewport } from './types.js'
 
 /** An axis-aligned rectangle in graph (world) coordinates. */
@@ -44,12 +45,21 @@ export function graphViewportRect(
   }
 }
 
-/** Whether two rectangles overlap or touch. */
+/**
+ * Whether the interiors of two rectangles overlap: on each axis, each rectangle starts strictly before the other ends
+ * (open intervals, compared exactly, without a tolerance). Rectangles that only touch, along an edge or at a corner,
+ * do not intersect. A rectangle of zero width or height (a segment or a point) intersects a rectangle whose interior it
+ * passes through, but not one whose border it only lies on, and never another zero-size rectangle at the same place.
+ */
 export function graphRectsIntersect(a: GraphRect, b: GraphRect): boolean {
-  return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
-const argumentCounts: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 }
+// Closed-interval variant for culling: true also when the rectangles only touch.
+function rectsMeet(a: GraphRect, b: GraphRect): boolean {
+  return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
+}
+
 const pathNumber = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y
 
 /** SVG path whitespace (space, tab, line feed, form feed, carriage return) or a comma. */
@@ -133,7 +143,7 @@ function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?:
     cursor++
     const command = token.toUpperCase()
     const relative = token !== command
-    const count = argumentCounts[command]
+    const count = svgPathArgumentCounts[command]
     if (count === undefined) throw new Error('Unsupported SVG path command: ' + token)
     // Path data must begin with a moveto.
     if (!started && command !== 'M') throw invalid()
@@ -274,13 +284,15 @@ export function graphLayoutBounds(layout: Pick<GraphLayout, 'boxes' | 'paths' | 
 }
 
 /**
- * Selects the nodes and edges whose bounds intersect `view`. IDs listed in `keep` are always included when they
- * exist, which lets a caller retain the selected, focused or currently edited elements.
+ * Selects the nodes and edges whose bounds intersect or touch `view` (closed intervals, unlike graphRectsIntersect): the
+ * bounds leave out the stroke width, so an element whose bounds only touch the view edge can still draw into it. IDs
+ * listed in `keep` are always included when they exist, which lets a caller retain the selected, focused or currently
+ * edited elements.
  */
 export function cullGraphElements(bounds: GraphBounds, view: GraphRect, keep: GraphCullKeep = {}): GraphVisibleIds {
   const nodes = new Set<string>(), edges = new Set<string>()
-  for (const [id, rect] of bounds.nodes) if (graphRectsIntersect(rect, view)) nodes.add(id)
-  for (const [id, rect] of bounds.edges) if (graphRectsIntersect(rect, view)) edges.add(id)
+  for (const [id, rect] of bounds.nodes) if (rectsMeet(rect, view)) nodes.add(id)
+  for (const [id, rect] of bounds.edges) if (rectsMeet(rect, view)) edges.add(id)
   for (const id of keep.nodes ?? []) if (bounds.nodes.has(id)) nodes.add(id)
   for (const id of keep.edges ?? []) if (bounds.edges.has(id)) edges.add(id)
   return { nodes, edges }

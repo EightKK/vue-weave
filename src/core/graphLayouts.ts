@@ -1,16 +1,14 @@
 import { indexGraph } from './graph.js'
-import type { GraphBox, GraphEdge, GraphLayout, GraphLayoutDirection, IdentifiedNode } from './graph.js'
-import { orientGraphLayout } from './graphOrient.js'
+import type { GraphBox, GraphEdge, GraphLayout, GraphLayoutOptions, IdentifiedNode } from './graph.js'
+import { assertGraphLayoutDirection, graphDirectionOrientation, isVerticalDirection, orientGraphLayout } from './graphOrient.js'
+import {
+  checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
+  sameRankTurnDistance,
+} from './graphOptions.js'
+import { unknownReferenceError } from './ids.js'
 
-export interface GraphTreeLayoutOptions {
-  direction?: GraphLayoutDirection
-  nodeWidth?: number
-  nodeHeight?: number
-  /** Distance between depth levels. */
-  columnGap?: number
-  /** Distance between adjacent leaves. */
-  rowGap?: number
-  padding?: number
+/** Options of `layoutTreeGraph`: the shared layout options (`columnGap` between depth levels, `rowGap` between adjacent leaves) plus roots. */
+export interface GraphTreeLayoutOptions extends GraphLayoutOptions {
   /** Node IDs placed first as tree roots. Remaining roots are nodes without incoming edges, then any node left over in a cycle. */
   roots?: readonly string[]
 }
@@ -25,14 +23,6 @@ export interface GraphRadialLayoutOptions {
   roots?: readonly string[]
 }
 
-function checkNumbers(values: Record<string, number>, positive: readonly string[]) {
-  for (const [name, value] of Object.entries(values)) {
-    if (!Number.isFinite(value) || value < 0 || (positive.includes(name) && value === 0)) {
-      throw new RangeError(name + ' must be finite and positive (spacing may be zero)')
-    }
-  }
-}
-
 interface Forest {
   roots: string[]
   /** Breadth-first discovery order; parents always precede their children. */
@@ -44,7 +34,7 @@ interface Forest {
 // Breadth-first spanning forest. Edges that do not become tree edges (cross, back, forward, self) stay routed but do not place nodes.
 function spanningForest(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], requested: readonly string[] = []): Forest {
   const index = indexGraph(nodes, edges)
-  for (const id of requested) if (!index.outgoing.has(id)) throw new Error(`Unknown root node ID: ${id}`)
+  for (const id of requested) if (!index.outgoing.has(id)) throw unknownReferenceError('node', 'roots', id)
   const hasParent = new Set<string>()
   for (const { from, to } of edges) if (from !== to) hasParent.add(to)
 
@@ -79,7 +69,7 @@ function routeEdge(edge: GraphEdge, source: GraphBox, target: GraphBox, columnGa
   const y1 = source.y + source.height / 2
   const y2 = target.y + target.height / 2
   if (edge.from === edge.to) {
-    const turn = x1 + Math.min(24, Math.max(6, columnGap / 2))
+    const turn = x1 + sameRankTurnDistance(columnGap)
     const endY = y2 - target.height / 3
     paths.set(edge.id, `M ${x1} ${y1} C ${turn + 6} ${y1}, ${turn + 6} ${endY}, ${x1} ${endY}`)
     labels.set(edge.id, { x: turn + 9, y: (y1 + endY) / 2 })
@@ -157,15 +147,18 @@ export function layoutTreeGraph(
   edges: readonly GraphEdge[],
   options: GraphTreeLayoutOptions = {},
 ): GraphLayout {
-  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20, roots } = options
-  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
-  checkNumbers({ nodeWidth, nodeHeight, columnGap, rowGap, padding }, ['nodeWidth', 'nodeHeight'])
-  const vertical = direction === 'TB' || direction === 'BT'
+  const {
+    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = defaultRowGap,
+    padding = defaultPadding, roots,
+  } = options
+  assertGraphLayoutDirection(direction)
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, padding })
+  const vertical = isVerticalDirection(direction)
   const base = vertical
     ? leftToRightTree(nodes, edges, roots, nodeHeight, nodeWidth, columnGap, rowGap, padding)
     : leftToRightTree(nodes, edges, roots, nodeWidth, nodeHeight, columnGap, rowGap, padding)
   if (direction === 'LR') return base
-  return orientGraphLayout(base, { transpose: vertical, flipX: direction === 'RL', flipY: direction === 'BT' })
+  return orientGraphLayout(base, graphDirectionOrientation(direction))
 }
 
 function borderPoint(box: GraphBox, toward: { x: number; y: number }) {
@@ -185,8 +178,8 @@ export function layoutRadialGraph(
   edges: readonly GraphEdge[],
   options: GraphRadialLayoutOptions = {},
 ): GraphLayout {
-  const { nodeWidth = 144, nodeHeight = 58, ringGap = 40, padding = 20, roots } = options
-  checkNumbers({ nodeWidth, nodeHeight, ringGap, padding }, ['nodeWidth', 'nodeHeight'])
+  const { nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, ringGap = 40, padding = defaultPadding, roots } = options
+  checkLayoutSizes(nodeWidth, nodeHeight, { ringGap, padding })
   const forest = spanningForest(nodes, edges, roots)
   const empty: GraphLayout = { boxes: new Map(), paths: new Map(), edgeLabels: new Map(), width: Math.max(1, 2 * padding), height: Math.max(1, 2 * padding) }
   if (!nodes.length) return empty
@@ -373,10 +366,13 @@ export function layoutCircularGraph<N extends IdentifiedNode>(
   edges: readonly GraphEdge[],
   options: GraphCircularLayoutOptions<N> = {},
 ): GraphLayout {
-  const { nodeWidth = 144, nodeHeight = 58, nodeGap = 40, padding = 20, radius, startAngle = -Math.PI / 2, clockwise = true, sort } = options
-  checkNumbers({ nodeWidth, nodeHeight, nodeGap, padding }, ['nodeWidth', 'nodeHeight'])
-  if (!Number.isFinite(startAngle)) throw new RangeError('startAngle must be finite')
-  if (radius !== undefined && (!Number.isFinite(radius) || radius <= 0)) throw new RangeError('radius must be finite and positive')
+  const {
+    nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, nodeGap = 40, padding = defaultPadding, radius, startAngle = -Math.PI / 2,
+    clockwise = true, sort,
+  } = options
+  checkLayoutSizes(nodeWidth, nodeHeight, { nodeGap, padding })
+  checkLayoutNumber('startAngle', startAngle, 'finite')
+  if (radius !== undefined) checkLayoutNumber('radius', radius, 'positive')
   indexGraph(nodes, edges)
   const ordered = sort ? nodes.slice().sort(sort) : nodes
   const count = ordered.length
@@ -403,10 +399,10 @@ export function layoutGridGraph(
   edges: readonly GraphEdge[],
   options: GraphGridLayoutOptions = {},
 ): GraphLayout {
-  const { nodeWidth = 144, nodeHeight = 58, columnGap = 40, rowGap = 24, padding = 20 } = options
-  checkNumbers({ nodeWidth, nodeHeight, columnGap, rowGap, padding }, ['nodeWidth', 'nodeHeight'])
+  const { nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = defaultRowGap, padding = defaultPadding } = options
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, padding })
   const columns = options.columns ?? Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
-  if (!Number.isInteger(columns) || columns < 1) throw new RangeError('columns must be a positive integer')
+  checkLayoutNumber('columns', columns, 'positiveInteger')
   indexGraph(nodes, edges)
   const centres = new Map<string, { x: number; y: number }>()
   const ranks = new Map<string, number>()
@@ -429,10 +425,13 @@ export function layoutConcentricGraph<N extends IdentifiedNode>(
   edges: readonly GraphEdge[],
   options: GraphConcentricLayoutOptions<N> = {},
 ): GraphLayout {
-  const { nodeWidth = 144, nodeHeight = 58, ringGap = 40, padding = 20, level, levelWidth, startAngle = -Math.PI / 2 } = options
-  checkNumbers({ nodeWidth, nodeHeight, ringGap, padding }, ['nodeWidth', 'nodeHeight'])
-  if (levelWidth !== undefined && (!Number.isFinite(levelWidth) || levelWidth <= 0)) throw new RangeError('levelWidth must be finite and positive')
-  if (!Number.isFinite(startAngle)) throw new RangeError('startAngle must be finite')
+  const {
+    nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, ringGap = 40, padding = defaultPadding, level, levelWidth,
+    startAngle = -Math.PI / 2,
+  } = options
+  checkLayoutSizes(nodeWidth, nodeHeight, { ringGap, padding })
+  if (levelWidth !== undefined) checkLayoutNumber('levelWidth', levelWidth, 'positive')
+  checkLayoutNumber('startAngle', startAngle, 'finite')
   indexGraph(nodes, edges)
   const degree = new Map<string, number>(nodes.map(node => [node.id, 0]))
   for (const { from, to } of edges) {

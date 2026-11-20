@@ -1,5 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import type { GraphCollapseResult } from './graphCollapse.js'
+import { duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
 export type GraphTraversalDirection = 'forward' | 'backward' | 'both'
 
@@ -42,10 +43,11 @@ export function traverseGraph(
   const incoming = new Map<string, { edge: string; node: string }[]>()
   const seenEdges = new Set<string>()
   for (const { id, from, to } of graph.edges) {
-    if (!id) throw new Error('Graph edge IDs must not be empty')
-    if (seenEdges.has(id)) throw new Error('Duplicate graph edge ID: ' + id)
+    if (!isId(id)) throw invalidIdError('graph edge', id)
+    if (seenEdges.has(id)) throw duplicateIdError('graph edge', id)
     seenEdges.add(id)
-    if (!nodeIds.has(from) || !nodeIds.has(to)) throw new Error('Unknown endpoint on graph edge: ' + id)
+    if (!nodeIds.has(from)) throw unknownReferenceError('node', 'graph edge ' + id, from)
+    if (!nodeIds.has(to)) throw unknownReferenceError('node', 'graph edge ' + id, to)
     for (const [map, key, node] of [[outgoing, from, to], [incoming, to, from]] as const) {
       const list = map.get(key)
       if (list) list.push({ edge: id, node })

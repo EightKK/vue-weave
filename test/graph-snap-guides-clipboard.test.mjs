@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
 import { cloneGraphElements, graphAlignmentGuides, snapGraphPoint } from 'vue-weave/core'
 import { NetworkGraph, cloneGraphElements as rootClone, graphAlignmentGuides as rootGuides } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const rect = (x, y, width = 100, height = 40) => ({ x, y, width, height })
 
@@ -168,11 +167,11 @@ test('cloneGraphElements moves edge waypoints by the offset without changing the
 
 test('cloneGraphElements rejects unknown, empty, repeated and colliding IDs', () => {
   assert.throws(() => cloneGraphElements(nodes, edges, ['zz'], { createId: suffix }), { name: 'Error', message: 'Unknown node in graph clone: zz' })
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => '' }), /empty node ID for: a/)
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: () => 'same' }), /Cloned node ID is already in use: same/)
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => 'c' }), /Cloned node ID is already in use: c/)
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => '' }), { name: 'Error', message: 'Invalid graph node ID: "" (createId for a)' })
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: () => 'same' }), { name: 'Error', message: 'Duplicate graph node ID: same (createId for b)' })
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a'], { createId: () => 'c' }), { name: 'Error', message: 'Duplicate graph node ID: c (createId for a)' })
   // Edge IDs must not collide with existing edges; node and edge IDs are separate collections.
-  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : 'bc' }), /Cloned edge ID is already in use: bc/)
+  assert.throws(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : 'bc' }), { name: 'Error', message: 'Duplicate graph edge ID: bc (createId for ab)' })
   assert.doesNotThrow(() => cloneGraphElements(nodes, edges, ['a', 'b'], { createId: (id, kind) => kind === 'node' ? id + '2' : id.slice(0, 1) }))
   assert.throws(() => cloneGraphElements(nodes, edges, ['a'], {}), /createId/)
   assert.throws(() => cloneGraphElements([...nodes, { id: 'a', label: 'Again' }], edges, ['a'], { createId: suffix }), /Duplicate graph node ID: a/)
@@ -189,7 +188,7 @@ test('cloneGraphElements leaves its input untouched', () => {
   assert.notEqual(result.positions.get('node:a'), positions.get('a'))
 })
 
-const render = (props, slots) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 
 test('NetworkGraph markup is unchanged by the editing props and the none background', async () => {
   const plain = await render({})
@@ -230,5 +229,5 @@ test('NetworkGraph rejects invalid snapping, background and guide props while re
   for (const guideThreshold of [-1, Number.NaN, Infinity]) {
     await assert.rejects(render({ alignmentGuides: true, guideThreshold }), { name: 'RangeError', message: /guideThreshold/ })
   }
-  await assert.rejects(render({ background: 'grid' }), { name: 'Error', message: 'Unknown NetworkGraph background: grid' })
+  await assert.rejects(render({ background: 'grid' }), { name: 'RangeError', message: 'Unknown NetworkGraph background: grid' })
 })

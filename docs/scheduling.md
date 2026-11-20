@@ -48,7 +48,8 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 - The four links constrain the named successor endpoint to be at or after the predecessor endpoint plus `lag`. FS connects finish to start. SS connects start to start. FF connects finish to finish. SF connects start to finish. A positive lag is elapsed waiting time, and a negative lag permits overlap. A start at the end of a shift advances to the next available start. A finish lower bound that falls in a break advances to the next feasible completion tick.
 - Bounds are `startNoEarlierThan`, `startNoLaterThan`, `finishNoEarlierThan`, `finishNoLaterThan`, `fixedStart`, and the project `deadline`. A fixed start for positive work must be in a working period. The deadline is a hard upper bound.
 - Tasks with `manual` dates stay where they are and `inactive` tasks take no part; see [Manual and inactive tasks](#manual-and-inactive-tasks). `tasks` in a result is in input order without inactive tasks.
-- Invalid references or values throw. Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
+- Tasks with a `parentId` form a hierarchy of summary tasks; see [Summary tasks](#summary-tasks).
+- Invalid references or values throw. IDs of tasks, dependencies, calendars, resources and assignments' references must be non-empty strings, unique within their collection; the messages follow one format, such as `Invalid task ID: 5`, `Duplicate dependency ID: d1` or `Unknown dependency endpoint: d1` (see [Validation and errors](api.md#validation-and-errors)). Cycles return `{ ok: false, code: 'cycle', cycles }`. A task with no feasible slot returns `{ ok: false, code: 'infeasible', taskId, constraints, dependencyIds }`. See [Diagnose failures](#diagnose-failures). Failed results carry no partial dates. The solver accepts directed acyclic dependency graphs.
 - The forward pass finds earliest dates. The backward pass holds the earliest project finish as its upper limit and finds latest dates. Total float is the task's own working time between those starts, or elapsed time for a milestone. workFloat is always working time on the task's calendar: it equals totalFloat for tasks and, for a milestone, the calendar's working time between its earliest and latest points. Use workFloat to compare milestones with tasks. A zero-float task is critical. A critical link binds two critical tasks after projecting the dependency endpoint onto the successor calendar. The result can contain multiple controlling chains and individually constrained critical tasks.
 
 ## Show a plan in GanttChart
@@ -174,15 +175,109 @@ Tasks with `manual` dates keep them whatever their progress; their outgoing link
 
 The status date must be finite, inside `input.range` and aligned with the quantum (`RangeError`). Progress values outside 0 to 1 throw a `RangeError` and progress for an unknown task throws an `Error`. When the done work of a task ahead of plan does not fit between the horizon start and the status date, a `RangeError` is thrown. GanttChart can show the status date with the `statusDate` prop and the progress with `showProgressLine`.
 
+## Reschedule from recorded actuals
+
+`rescheduleFromStatusDate` and `rescheduleFromActuals` answer different questions, and neither changes the other's results:
+
+| | `rescheduleFromStatusDate(input, statusDate, progress)` | `rescheduleFromActuals(input, statusDate, actuals)` |
+| --- | --- | --- |
+| Input per task | A completed share from 0 to 1 | Recorded actual intervals `[start, end)`, an optional `remainingWork` and an optional `finished` flag |
+| Done work | `progress × duration`, placed from the planned start (or ending at the status date) on the task's calendar | Exactly the recorded intervals, also on breaks, holidays or after the status date |
+| Remaining work | `duration` minus the done work | `remainingWork`, or by default `duration` minus the elapsed length of the actuals (overlaps once), at least 0 |
+| Result | A `ScheduleResult` | A `RescheduleFromActualsResult`: the forecast `schedule`, the original `plan`, per-task `actual` and `remaining` work, and diagnostics |
+
+Use the progress share when only a percentage is known. Use recorded actuals when the shop floor reports when work actually ran, for example "10:10–10:40 and 11:20–12:00". The library standardises only time and quantity: it never derives remaining work from good-piece counts or shop-floor percentages. Convert those to `remainingWork` yourself, in the task's working-time units; when you omit it, the default rule above applies.
+
+```ts
+import { actualsTimelineBars, rescheduleFromActuals } from 'vue-weave/core'
+
+// a (4 units) → b (4 units), continuous time. a started late at 2, stopped at 3, resumed at 5 and ran until 6.
+const result = rescheduleFromActuals(input, 7, new Map([
+  ['a', { intervals: [{ start: 2, end: 3 }, { start: 5, end: 6 }] }],
+]))
+// a: actual [[2, 3], [5, 6]] as recorded, 2 units performed, 2 remaining at [7, 9); b now runs [9, 13).
+const bars = actualsTimelineBars(result, { label: id => names.get(id)! })
+```
+
+The rules per task:
+
+- **Not started** (no entry, or no intervals). The task starts no earlier than the status date, like progress 0, with every own bound and link. An explicit `remainingWork` replaces its duration.
+- **In progress** (intervals and remaining work). The remaining work starts no earlier than the status date or the end of the last actual interval, whichever is later, and is placed on the task's calendar and pauses. Its start has happened, so, as for a started task in `rescheduleFromStatusDate`, its `startNoEarlierThan`, `startNoLaterThan`, `fixedStart`, `mode`, incoming FS and SS links and the start bounds inherited from its summaries no longer apply, even when its predecessors are unfinished. Incoming FF and SF links (with lag), `finishNoEarlierThan`, `finishNoLaterThan` and the deadline still bind its finish: the remaining work then resumes later. Outgoing SS and SF links use its first actual start; FS and FF links use its forecast finish.
+- **Finished** (`finished: true`, or no remaining work). The task spans its actuals and ends at its last actual end. Like a manual task, it ignores every incoming link and own bound, and only the project deadline can make it infeasible. Successors follow its last actual end. Pass `remainingWork` to keep a task that overran its duration open.
+
+Actuals are facts, so contradictions in them are reported as diagnostics and never corrected: overlapping intervals of one task (`actual-overlap`, an error; the overlap counts once), an interval after the status date (`actual-after-status-date`, a warning; the remaining work then starts after it), an interval outside the task's working time after pauses (`actual-outside-calendar`, a warning; the result's `offCalendar` lists the parts) and a finished task with positive `remainingWork` (`actual-contradiction`, an error; the explicit `remainingWork` is scheduled). Malformed numbers throw instead: a status date or interval that is not finite, aligned with the quantum or inside the range, an interval that does not end after it starts, and an invalid `remainingWork` throw a RangeError. An interval error is the scheduler's own message for the same defect in its input, with the task as context, for example `Scheduling dates must align with the horizon and quantum (actual interval of task a)`.
+
+When the remaining work cannot meet a bound or link, for example a `finishNoLaterThan` or the deadline, `ok` is false, `schedule` is the `infeasible` (or `cycle`) failure with the input's task and link IDs, `diagnostics` ends with its `schedule-infeasible` entry, and `tasks` still holds every task's actuals, with the span of its actuals as its dates. Nothing is thrown.
+
+Manual tasks keep their manual dates: their actuals are kept and checked, but do not move them. Summary tasks roll up the actual and forecast dates of their subtasks; an actuals entry for a summary throws an Error. Entries of inactive tasks are validated and ignored. `explain` is not supported; schedule `input` itself for a trace of the plan.
+
+### Show plan, actuals and forecast in GanttChart
+
+`actualsTimelineBars(result, options?)` composes existing bar features, so no new chart prop is needed. On each task's row, the recorded actuals are a solid bar named `<label> · actual` (several intervals become `segments`), the remaining work is an outline bar named `<label> · forecast`, and the original plan is the baseline of the first bar. Solid and outline also differ in forced-colors mode, and each bar's `description` says "Recorded actual work" or "Remaining work forecast", so screen readers hear which part is which. SVG and PNG export draw the same bars. Pass `baselineId: 'plan'` with GanttChart `baselineIds` and `baselineLabel` to call the strip "Original plan", and add a legend in the `legend` slot. Show summary rows with `showSummaries`.
+
+The scheduling demo's **Recorded actuals** option shows a finished task that overran, a late start that ran into the lunch break and resumed, an upward revision of remaining work (**Welding needs 3 h more**) and unstarted successors whose forecast moves while every actual bar stays where it was.
+
 ## Network diagram
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Edges are labelled with the link type when it is not FS and with a non-zero `lag`, formatted by `formatLag` (default `formatDependencyLag`, such as `SS +2 h`). Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).
 
 ## Compare demand with capacity
 
-Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available. Each assignment requests positive integer units and applies to every work segment of the task. Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
+Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available, unless the resource has `capacityPeriods` (see [Capacity that changes over time](#capacity-that-changes-over-time)). Each assignment requests positive integer units and applies to every work segment of the task, unless it covers only part of the work (see [Assignments for part of a task](#assignments-for-part-of-a-task)). Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
 
 The sweep reports load, available capacity, excess units and active task IDs for every event interval. Work that falls outside the equipment calendar appears as demand against zero capacity. Conflicts are diagnostic. `levelResources` provides a baseline leveling heuristic, described in [Level resources](#level-resources). Optimization, setup sequencing and other leveling policies remain the planning application's concern.
+
+### Capacity that changes over time
+
+`capacityPeriods` on a resource gives it a different capacity over fixed elapsed intervals, for example a second crew in a peak week, a reduced shift or a maintenance stop:
+
+```ts
+const resources = [{
+  id: 'press', capacity: 2, periods: workingTime,
+  capacityPeriods: [
+    { start: monday6, end: monday14, capacity: 3 }, // extra operator
+    { start: tuesday10, end: tuesday12, capacity: 0 }, // maintenance
+  ],
+}]
+```
+
+- Each period is half-open `[start, end)` in absolute time, with integer endpoints, `end > start` and a nonnegative integer `capacity`. Periods of one resource must not overlap; adjacent periods are fine. A violation throws a RangeError that names the resource. `levelResources` also requires the endpoints to align with the quantum, as it does for `periods`.
+- Inside a capacity period its `capacity` applies; outside every capacity period the resource's `capacity` applies. Outside the availability `periods` the capacity stays 0, whatever the capacity periods say: a capacity period does not make a closed resource available.
+- `calculateResourceLoad` splits its segments wherever the capacity changes, so each segment's `capacity` and `overload` hold for its whole interval. A task that needs 3 units from 13:00 to 15:00 on a resource with capacity 2 until 14:00 and 3 after is overloaded by exactly 1 unit from 13:00 to 14:00 and not after. A capacity of 0 during downtime overloads only the work that falls into it; idle time needs nothing. A capacity period with the same capacity as its surroundings does not split a segment.
+- GanttChart draws the capacity line of each load segment at that segment's `capacity`, so the line steps with the capacity when you pass the output of `calculateResourceLoad` as `loadSegments`. `renderTimelineSvg` draws the same line.
+- `levelResources` reserves capacity against the same step function, so leveling and the load calculation agree at every instant: a plan without `unresolvedTaskIds` has no overload.
+
+### Assignments for part of a task
+
+An assignment with `workOffset` or `workDuration` needs its resource only for part of the task's work, such as "the machine for the whole operation, one operator only for the first 30 minutes":
+
+```ts
+const assignments = [
+  { resourceId: 'machine', taskId: 'turn' },
+  { resourceId: 'operator', taskId: 'turn', workDuration: 30 * minute },
+  { resourceId: 'inspector', taskId: 'turn', workOffset: 90 * minute, workDuration: 15 * minute },
+]
+```
+
+- Both values are working time of the task, measured along its scheduled `work` segments in the units of the plan's times: `workOffset` from the start of the task's work (default 0, a nonnegative integer) and `workDuration` from there (a positive integer, default the rest of the work). Calendar breaks, pauses and leveling splits are skipped, so a 30-minute part that reaches lunch continues after lunch. `assignmentWorkPeriods(work, assignment)` returns the elapsed periods of the part.
+- The part is relative to the task, so it moves with the task. Capacity periods, in contrast, are fixed in absolute time: use them for what the resource can supply when, and partial assignments for what a task needs during its work.
+- A part that reaches beyond the task's work is clipped to it. A part that starts at or after the end of the work takes no capacity. This keeps an assignment valid when the task gets shorter. Negative or fractional values, or a `workDuration` of 0, throw a RangeError. `levelResources` also requires both values to be multiples of the quantum.
+- `calculateResourceLoad` adds the assignment's units only during its part, and lists the task in a segment's `taskIds` only there. Offsets count from the start of the whole work even when `range` starts later.
+- `levelResources` checks and reserves each resource only during its part of the work at each candidate placement. Two tasks that each need the single operator for their first hour can overlap after that hour. A `splittable` task pauses only where a resource it needs at that point of its work is short. A manual task is checked only over each part.
+- `projectResourceTimeline` shows the whole task on the row of a partially assigned resource: a bar is the task, not the part. The load is computed from the scheduled tasks and the assignments, so nothing is counted twice. Use `assignmentWorkPeriods` to draw the part yourself, for example as `segments` of that projection. A replacement with `proposeResourceAssignment` keeps the part.
+
+Leveling remains the heuristic described in [Level resources](#level-resources): with time-varying capacity and partial assignments it still places one task at a time at its earliest feasible start, and does not search for an optimal plan.
+
+### Other functions that read resources and assignments
+
+| Function | Capacity periods and partial assignments |
+| --- | --- |
+| `calculateResourceLoad`, `levelResources` | Use both, as described above |
+| `toPlanningDiagnostics` | Reads the overload of each load segment, which already reflects both |
+| `buildPlacementInput` | Copies resources and the assignments of placed tasks unchanged |
+| `projectResourceTimeline`, `proposeResourceAssignment` | Accept partial assignments; one bar per assignment for the whole task; a replacement keeps the part |
+| `parseWeaveSnapshot`, `restoreWeaveSnapshot` | A planning snapshot keeps both and reports invalid values as `structure` diagnostics |
+| `resourceLoadFromMsProject`, `timelineFromMsProject` | Never produce them: the Microsoft Project import does not read resource availability tables or assignment contours |
 
 ## Time-zone calendars
 
@@ -259,6 +354,7 @@ const plan = scheduleTasks({
 | `propagateEdit` | An edit moves the manual dates (see [Propagate an edit](#propagate-an-edit)) | Editing one throws an Error |
 | `levelResources` | Never moved. Their capacity is reserved first, before any other task; one that finds too little capacity at its dates keeps them and is listed in `unresolvedTaskIds`, with its overload in `overloads` | Left out with their assignments |
 | `rescheduleFromStatusDate` | Keep their dates whatever their progress | Progress entries are accepted and ignored |
+| `rescheduleFromActuals` | Keep their manual dates; their actuals are kept, checked and reported, and `remaining` is empty | Actuals entries are validated and ignored |
 | `calculateResourceLoad` | Their `work` counts like any other | Pass `{ inactiveTaskIds: result.inactiveTaskIds }` so their assignments take no capacity instead of throwing |
 | `buildPlacementInput` | A link from an unplaced task into a placed manual task is excluded without a diagnostic | Links that touch them are excluded without a diagnostic |
 | `scheduleToGraph` | A node with zero float, never critical | Left out with the links that touch them |
@@ -266,6 +362,65 @@ const plan = scheduleTasks({
 | Snapshots | Stored and restored as they are | `inactive` must be a boolean |
 
 `fromMsProjectXml` reads both flags from Microsoft Project files (`Manual` 1 and `Active` 0). Its tasks have `manual: true` rather than dates, so pass `{ start: task.start, end: task.end }` as `ScheduleTask.manual`; see [Microsoft Project import](api.md#microsoft-project-import).
+
+## Summary tasks
+
+`ScheduleTask.parentId` makes a task a subtask of another task, which becomes a summary task. The hierarchy is opt-in: a plan without `parentId` is scheduled exactly as before, and its result has neither `summary` nor `parentId` fields. Summaries can be nested to any depth; the calculation uses loops, not recursion.
+
+```ts
+const plan = scheduleTasks({
+  range: { start: 0, end: 100 },
+  tasks: [
+    { id: 'design', duration: 2 },
+    { id: 'build', duration: 0 },                    // a summary: its duration is ignored
+    { id: 'frame', duration: 3, parentId: 'build' },
+    { id: 'wiring', duration: 1, parentId: 'build' },
+    { id: 'inspect', duration: 1 },
+  ],
+  dependencies: [
+    { id: 'design-build', from: 'design', to: 'build' }, // binds frame and wiring
+    { id: 'build-inspect', from: 'build', to: 'inspect' }, // waits for the later of the two
+  ],
+})
+// build [2, 5) with summary: true; frame [2, 5) and wiring [2, 3) with parentId 'build'; inspect [5, 6).
+```
+
+**Dates.** A summary's `start` and `end` are the earliest start and the latest finish of its subtasks, after ALAP placement; `latestStart` and `latestEnd` span their latest dates the same way. Its own `duration`, `calendarId`, `pauses`, `splittable` and `priority` are ignored (they are still validated), and its `work` is empty, so it takes no resource capacity. A summary whose subtasks are all inactive is inactive itself, and an inactive summary makes all of its subtasks inactive; both are listed in `inactiveTaskIds`.
+
+**Links into a summary** (the summary is the successor) follow Microsoft Project:
+
+- FS and SS links bind the start of every leaf subtask, at any depth, as if the link were drawn to each of them. Each subtask still has its own links and bounds.
+- FF and SF links into a summary throw an Error. Microsoft Project does not allow them either: a summary's finish is the result of its subtasks, not something a link can push. Link to the subtask that should finish instead.
+- A manual subtask keeps its dates; each link into its summary that they violate is listed in `manualConflicts` with the subtask's ID.
+
+**Links from a summary** (the summary is the predecessor) use its rolled-up dates: FS and FF the finish of its latest subtask, SS and SF the start of its earliest subtask. Any link type may start at a summary.
+
+**Constraints.** A summary's `startNoEarlierThan` binds the start of every subtask and its `finishNoLaterThan` the finish of every subtask; nested summaries combine theirs. When a subtask cannot meet an inherited bound, the `infeasible` failure names the subtask and the constraint, and with `explain` the `constraint` reason has the summary in `relatedTaskIds`. `fixedStart`, `startNoLaterThan`, `finishNoEarlierThan`, `manual` and `mode: 'alap'` on a summary throw an Error, because they would hold only one of its subtasks. Put them on the subtasks.
+
+**Backward pass, float and critical path.** The backward pass works on the subtasks. An FS or FF link from a summary gives every subtask a latest finish; an SS or SF link from a summary gives a latest start only to the subtasks whose earliest start is the summary's earliest start, because only they start the summary (the others may slip without moving it). A summary's `totalFloat` and `workFloat` are the smallest of its subtasks that are not manual, or 0 when all of them are manual, and it is `critical` when any subtask is critical. A link into a summary is in `criticalDependencyIds` when both ends are critical and it binds a critical subtask.
+
+**Validation and cycles.** These throw an Error that names the tasks: a `parentId` that is not a non-empty string, an unknown parent (`Unknown parent task x of task a`), parent IDs that form a cycle (`The parent IDs of these tasks form a cycle: a → b → a`), and a link between a summary and one of its own subtasks, in either direction (`Dependency l links summary task S with its own subtask a`). Inactive tasks are validated too. A summary's dates depend on all of its subtasks, so a chain of links from a subtask back to its summary (for example `S → x` and `x → a` with `a` in `S`) is a `cycle` failure listing the summary, the subtask and the links, like any other cycle; `toPlanningDiagnostics` reports it as `schedule-cycle`.
+
+**Draw the links.** GanttChart draws links to and from a summary task with the opt-in `summaryDependencies` prop, together with `showSummaries`. Give the summary task a row and no bar (`rowId: task.id` for the other tasks, as in [Show a plan in GanttChart](#show-a-plan-in-ganttchart)), and pass the same `dependencies`: an end that names the summary is drawn to the start or finish edge of its rollup bar, following the link type, and it moves with the subtasks. Highlight the plan's `criticalDependencyIds` as for other links. Without `summaryDependencies` the chart rejects such links as unknown endpoints. With `connectable`, the rollup bar gets link handles too; the chart proposes any type, so reject FF and SF links into a summary in `validateConnection` (or report the Error `scheduleTasks` throws). See [Dependencies on summary rows](api.md#dependencies-on-summary-rows).
+
+```ts
+const bars = plan.tasks.filter(task => !task.summary).map(task => ({ id: task.id, rowId: task.id, label: labels.get(task.id)!, ...scheduledBarFields(task) }))
+// <GanttChart :rows="rows" :bars="bars" :dependencies="dependencies" show-summaries summary-dependencies
+//   :highlighted-dependency-ids="new Set(plan.criticalDependencyIds)" />
+```
+
+**Progress.** The scheduler does not take progress for a summary. Use `summarizeTimelineRows` to roll up the progress of the bars below a GanttChart row; it weights each subtask by its length.
+
+| Function | Summary tasks |
+| --- | --- |
+| `scheduleTasks` | Dates, latest dates, float and critical flag rolled up from the subtasks; `summary: true`, and `parentId` on subtasks |
+| `propagateEdit` | Editing a summary throws an Error: edit its subtasks, and `changes` lists the summaries whose rolled-up dates move with them |
+| `rescheduleFromStatusDate` | Progress entries for summaries are accepted and ignored. A started or finished subtask no longer inherits the start bounds of its summaries (links into them and their `startNoEarlierThan`), like its own; unstarted subtasks still do |
+| `rescheduleFromActuals` | Actuals entries for summaries throw an Error: record them on the subtasks. A summary rolls up the actual and forecast dates of its subtasks, so it starts at the earliest actual start. A started or finished subtask no longer inherits the start bounds of its summaries, as with `rescheduleFromStatusDate` |
+| `levelResources` | Levels the subtasks; summaries roll up from the leveled subtasks, are never delayed themselves and are not listed in `delays`. Assignments to a summary are accepted and take no capacity |
+| `calculateResourceLoad` | A summary's `work` is empty, so its assignments take no capacity |
+| `buildPlacementInput` | A placed subtask whose summary is not placed moves to its nearest placed ancestor, or to the top level, and keeps what binds it: the `startNoEarlierThan` and `finishNoLaterThan` of the skipped summaries become its own where tighter, an inactive one makes it `inactive: true`, and an FS or SS link into the unplaced summary binds the placed leaf subtasks (one link per leaf in `retargetedDependencies`, or an `unplaced-predecessor` diagnostic per leaf when the link comes from an unplaced task). A link from an unplaced summary is an `unplaced-predecessor` diagnostic, because its rolled-up dates are not in the plan. A placed summary that is active in the full plan but has no placed active leaf subtask (all its active subtasks are unplaced, even if inactive subtasks are placed) has nothing placed to span: it is an `unplaced-subtasks` diagnostic, the result is not `ok`, and it is left out like an unplaced summary instead of being scheduled with its own `duration`. The summary rules above are checked on the whole input, so an input that `scheduleTasks` rejects throws the same Error whichever tasks are placed |
+| `scheduleToGraph` | A summary is a node like any other, with its rolled-up dates and float |
 
 ## Split work
 
@@ -292,11 +447,15 @@ The result has the fields of a successful `scheduleTasks` result for the leveled
 - `overloads`: the overloaded segments of `calculateResourceLoad` for the leveled plan. The list is empty when every task was resolved.
 - `unresolvedTaskIds`: tasks that kept an overload, in input order.
 
+Capacity periods and partial assignments take part in steps 4 and 5: a task needs each resource only during its part of the work, against the capacity valid at each time. See [Compare demand with capacity](#compare-demand-with-capacity).
+
 Leveling ignores `mode` and omits it from `leveledTasks`, because placing a task later after capacity is reserved would reintroduce conflicts. The deadline, the horizon and every task bound remain hard limits. The unleveled project finish is not a limit, so the leveled `finish` can be later. `calculateResourceLoad` remains the diagnostic for any plan.
 
 ## Try the demo
 
 Open **Scheduling** and focus **Cut order A**. Press Right Arrow once to move its requested start from 08:00 to 09:00. Inspection moves to 13:00, projected finish moves from 16:00 to 17:00, and the CNC overlap grows from one to two resource-hours. Press Right Arrow again to see packing finish on 11 November after the 10 November closure. Further moves beyond the horizon leave the accepted plan on screen. **Reset schedule** restores the original dates.
+
+Check **Summary task links** to add a small plan with a summary task. Its links end at the **Build phase** rollup bar; drag **Frame** to move the rollup bar and its links, select a link with Enter and remove it with Delete, or drag from a rollup handle to add one. FF and SF links into the summary are rejected with a message.
 
 The status date slider (09 Nov 12:00 by default) draws the status-date line, and **Show progress line** draws the progress line from the reported progress: cutting order A is done, B is half done and inspection a quarter done. **Reschedule from status date** applies `rescheduleFromStatusDate`: B keeps its first hour and finishes after lunch, inspection keeps its first half hour and continues at 13:00, and packing moves to 14:30–16:30. At 09 Nov 08:00 the done hour of cutting order B cannot fit before the status date, so the demo catches the `RangeError` and reports it instead of changing the plan. The next edit recalculates the plan from the requested starts. **Export MS Project XML**, **Export iCalendar** and **Export CSV** save the current plan with `toMsProjectXml`, `toICalendar` and `toCsv`, and **Network diagram** shows it as a NetworkGraph built with `scheduleToGraph`.
 
@@ -375,3 +534,53 @@ Keep the three kinds of deadline apart:
 - `TimelineBar.deadline` is only drawn by GanttChart and never takes part in scheduling.
 
 `toPlanningDiagnostics(result, load?)` lists cycles and infeasible tasks of a failure, or unresolved tasks and overloaded segments of a success. Each entry of `manualConflicts` becomes a `manual-conflict` warning (the task, then the link), listed before the unresolved tasks and overloads; the plan is still valid, so it is not an error. Its `reasonIds` hold the task's `manual` reason of the `earliest` phase when the result was calculated with `explain`. A failure lists only its own problems, so an earlier successful plan is never shown as current. `propagateEdit` and `rescheduleFromStatusDate` do not take the option.
+
+## Compare plan scenarios
+
+`comparePlans(current, candidate)` compares a candidate plan with the current plan, for example after equipment maintenance is planned and the planner tries to push work later on the same equipment or to move it to other equipment. Keep three layers apart:
+
+- **Input**: each plan is a `PlanScenario` whose `input` is the `scheduleTasks` input with optional `resources` and `assignments`. The candidate is a separate draft of the input; the current plan stays where it is (in `useEditHistory` or `useEditTransaction`) and does not change while comparing.
+- **Computed result**: each side's schedule and load. Pass a precomputed `result` (for example from `levelResources`) and `load`, or let `comparePlans` calculate `scheduleTasks(input, { explain: true })` and `calculateResourceLoad`. The comparison itself is computed too: recalculate it whenever either plan changes, never store it.
+- **View projection**: `planComparisonTargets` turns compared tasks into the targets of the existing highlight props through your view bindings, and `planBaselines` turns the current plan into a baseline set for the candidate's bars.
+
+```ts
+import { comparePlans, planBaselines, planComparisonTargets, scheduleTasks } from 'vue-weave/core'
+
+const comparison = comparePlans(
+  { input: currentInput, revision: acceptedVersion },
+  { input: candidateInput, baseRevision: candidateBaseVersion },
+)
+comparison.input.tasks.changed            // [{ id: 'cutA', fields: ['startNoEarlierThan'] }]
+comparison.input.resources.changed        // [{ id: 'cnc', fields: ['periods'] }]
+comparison.result.editedTaskIds           // tasks the planner changed (fields or assignments)
+comparison.result.consequenceTaskIds      // tasks with unchanged input whose dates, critical flag or state moved
+comparison.result.finish                  // { current, candidate, shift }
+comparison.result.overload                // cumulative overload per resource, both sides
+
+// Draw the current plan under the candidate bars with the existing baseline sets.
+const before = planBaselines(scheduleTasks(currentInput), 'current')
+const bars = candidateTasks.map(task => ({ ...barOf(task), baselines: [before.get(task.id)!] }))
+// <GanttChart :bars="bars" :baseline-ids="['current']" ... />
+```
+
+What the comparison means:
+
+- A task is **edited** when its own fields or its assignments differ (or it was added or removed). A task whose input is unchanged but whose result differs is a **consequence**. A changed dependency, calendar or resource is reported in `input` but does not make a task edited.
+- When one side has no schedule (a cycle, or an infeasible plan such as a missed project `deadline`), `result.state` says so, `result.comparable` is false and the input differences are still returned; nothing throws. Its finish is undefined.
+- Invalid input throws the scheduler's own error (or that of the shared resource and assignment checks) with the side appended, for example `Duplicate task ID: a (candidate plan)`, so one message text covers both `scheduleTasks` and `comparePlans`. A side with a precomputed `result` is validated the same way.
+- Summary tasks are compared by their rolled-up dates, so a summary usually appears as a consequence of its subtasks. Manual tasks keep their dates; a link they now violate appears as a gained `manual-conflict` violation. Inactive tasks have the side state `inactive`.
+- `deadline` violations come from `PlanComparisonTask.deadline`, a due time like `TimelineBar.deadline` that the scheduler ignores. The hard `ScheduleInput.deadline` and `finishNoLaterThan` make a plan infeasible instead.
+- Cumulative overload is the sum of `overload * (end - start)` over one resource's load segments, in your capacity units times your time units. It is never summed across resources. A task assigned to two resources counts once in each resource and never twice in one; overlapping segments of one resource in a supplied `load` throw a RangeError.
+- `reasons` are each side's own trace reasons of a task. They explain that plan's dates; they are not a claim that one change caused the difference.
+
+### Adopting or discarding a candidate
+
+The library leaves the decision to the application. The contract the demo follows:
+
+1. Creating a candidate records the revision of the current plan it was derived from (`baseRevision`), and remembers the selection of the moment.
+2. Comparing never changes the current plan. If the current plan advances (another planner's save, a server refresh), recalculate `comparePlans` against the new current plan; `comparison.revision.stale` is then true, and the candidate must not be adopted as it is.
+3. Adopting is one bulk change: commit the whole candidate input with one `history.commit(...)`, or one `useEditTransaction.submit(changes)` with all changes, so that one Undo reverts the adoption.
+4. Discarding drops the draft. The current plan was never touched; restore the remembered selection.
+5. When a plan is only partly loaded (for example a windowed load of a large plan), set `partial: true` on that side. `comparison.complete` is then false; show the comparison as incomplete and do not adopt from it.
+
+Try it in the demo: open **Linked views** and check **Compare plan scenarios**.

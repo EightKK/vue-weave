@@ -1,5 +1,6 @@
 import { indexGraph } from './graph.js'
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
+import { checkLayoutNumber, checkLayoutSizes, defaultNodeHeight, defaultNodeWidth, defaultPadding } from './graphOptions.js'
 
 export interface GraphForceLayoutOptions {
   nodeWidth?: number
@@ -381,18 +382,13 @@ function groupBounds(members: readonly number[], xs: Float64Array, ys: Float64Ar
 
 function checkOptions(options: GraphForceLayoutOptions) {
   const {
-    nodeWidth = 144, nodeHeight = 58, padding = 20, iterations = 300, linkDistance = 180,
+    nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, padding = defaultPadding, iterations = 300, linkDistance = 180,
     repulsion = 600, gravity = 0.05, nodeGap = 16, seed = 1,
   } = options
-  const finite = { nodeWidth, nodeHeight, padding, linkDistance, repulsion, nodeGap }
-  for (const [name, value] of Object.entries(finite)) {
-    if (!Number.isFinite(value) || value < 0 || ((name === 'nodeWidth' || name === 'nodeHeight') && value === 0)) {
-      throw new RangeError(name + ' must be finite and nonnegative (nodeWidth and nodeHeight positive)')
-    }
-  }
-  if (!Number.isInteger(iterations) || iterations < 1) throw new RangeError('iterations must be a positive integer')
-  if (!Number.isFinite(gravity) || gravity < 0 || gravity > 1) throw new RangeError('gravity must be in [0, 1]')
-  if (!Number.isSafeInteger(seed)) throw new RangeError('seed must be an integer')
+  checkLayoutSizes(nodeWidth, nodeHeight, { padding, linkDistance, repulsion, nodeGap })
+  checkLayoutNumber('iterations', iterations, 'positiveInteger')
+  checkLayoutNumber('gravity', gravity, 'unitInterval')
+  checkLayoutNumber('seed', seed, 'safeInteger')
   for (const [id, point] of options.initialPositions ?? []) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError('Initial position must be finite: ' + id)
   }

@@ -37,6 +37,9 @@ export function assertScheduleRange(range: TimeRange) {
     || !Number.isSafeInteger(range.end - range.start)) throw new RangeError('Invalid scheduling horizon')
 }
 
+/** The RangeError text of a scheduling period without safe integer endpoints and positive length. */
+export const integerPeriodMessage = 'Working periods must have finite integer endpoints and positive length'
+
 /** Clip, sort and unite half-open working periods without modifying the inputs. */
 export function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeRange): TimeRange[] {
   assertScheduleRange(range)
@@ -53,7 +56,7 @@ function mergePeriods(periods: readonly TimeRange[], range: TimeRange, integers:
   for (const period of periods) {
     if (!valid(period.start) || !valid(period.end) || period.end <= period.start) {
       throw new RangeError(integers
-        ? 'Working periods must have finite integer endpoints and positive length'
+        ? integerPeriodMessage
         : 'Working periods must have finite endpoints and positive length')
     }
     const start = Math.max(period.start, range.start), end = Math.min(period.end, range.end)

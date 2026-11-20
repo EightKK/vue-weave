@@ -2,6 +2,8 @@ import type { ResourceAssignment } from './resourceLoad.js'
 import { propagateEdit, type ScheduleEdit, type ScheduleInput } from './scheduling.js'
 import { assignLanes, type EditMode, type TimeRange } from './timeline.js'
 import type { TimelineBar, TimelineCascade, TimelineDependency, TimelineEdit, TimelineRow } from './types.js'
+import { checkId, isId, uniqueIds, unknownEndpointError, unknownReferenceError } from './ids.js'
+import { createAssignmentChecker, duplicateAssignmentError } from './resourceCapacity.js'
 
 /** A resource shown as one row of a resource timeline. The row ID is the resource ID. */
 export interface ResourceTimelineResource<D = unknown> {
@@ -23,7 +25,10 @@ export interface ResourceTimelineInput<D = unknown, R = unknown> {
   resources: readonly ResourceTimelineResource<R>[]
   /** Placed tasks, for example built with `scheduledBarFields` from a schedule. */
   tasks: readonly ResourceTimelineTask<D>[]
-  /** Task-resource pairs. Each task gets one bar in the row of every resource assigned to it. */
+  /**
+   * Task-resource pairs. Each task gets one bar in the row of every resource assigned to it, for the whole task even
+   * when the assignment covers only part of its work.
+   */
   assignments: readonly ResourceAssignment[]
   /** Task-level links, such as the `ScheduleLink` array passed to the scheduler. They use task IDs, not bar IDs. */
   dependencies?: readonly TimelineDependency[]
@@ -78,15 +83,6 @@ export function resourceTimelineBarId(taskId: string, resourceId: string): strin
   return JSON.stringify([taskId, resourceId])
 }
 
-function uniqueIds(items: readonly { id: string }[], kind: string) {
-  const ids = new Set<string>()
-  for (const item of items) {
-    if (typeof item.id !== 'string' || !item.id || ids.has(item.id)) throw new Error('Invalid or duplicate ' + kind + ' ID: ' + item.id)
-    ids.add(item.id)
-  }
-  return ids
-}
-
 /**
  * Project tasks onto resource rows for GanttChart. A task assigned to several resources is shown once per resource;
  * the task itself stays one input item, so dates and resource load are not multiplied. Throws an Error for duplicate
@@ -100,22 +96,20 @@ export function projectResourceTimeline<D = unknown, R = unknown>(
   uniqueIds(resources, 'resource')
   uniqueIds(tasks, 'task')
   const unplanned = new Set<string>()
-  for (const id of unplannedTaskIds) {
-    if (typeof id !== 'string' || !id || unplanned.has(id)) throw new Error('Invalid or duplicate unplanned task ID: ' + id)
-    unplanned.add(id)
-  }
+  for (const id of unplannedTaskIds) checkId('unplanned task', id, unplanned)
   const resourceIndex = new Map(resources.map((resource, index) => [resource.id, index]))
   const taskById = new Map(tasks.map(task => [task.id, task]))
   for (const id of unplanned) if (taskById.has(id)) throw new Error('A task cannot be both placed and unplanned: ' + id)
 
   const assigned = new Map<string, Set<string>>()
-  for (const { taskId, resourceId } of assignments) {
-    if (!resourceIndex.has(resourceId) || (!taskById.has(taskId) && !unplanned.has(taskId))) {
-      throw new Error('Unknown task or resource in assignment: ' + taskId + ', ' + resourceId)
-    }
+  const check = createAssignmentChecker({
+    hasResource: id => resourceIndex.has(id), hasTask: id => taskById.has(id) || unplanned.has(id), units: false,
+  })
+  for (const assignment of assignments) {
+    check(assignment)
+    const { taskId, resourceId } = assignment
     let set = assigned.get(taskId)
     if (!set) assigned.set(taskId, set = new Set())
-    if (set.has(resourceId)) throw new Error('Duplicate resource assignment for task: ' + taskId)
     set.add(resourceId)
   }
 
@@ -145,7 +139,7 @@ export function projectResourceTimeline<D = unknown, R = unknown>(
   const omittedDependencyIds: string[] = [], hiddenDependencyIds: string[] = []
   for (const link of dependencies) {
     for (const end of [link.from, link.to]) {
-      if (!taskById.has(end) && !unplanned.has(end)) throw new Error('Unknown dependency endpoint: ' + link.id)
+      if (!taskById.has(end) && !unplanned.has(end)) throw unknownEndpointError(link.id)
     }
     if (link.from === link.to) throw new Error('A dependency cannot link a task to itself: ' + link.id)
     const fromIds = taskBarIds.get(link.from) ?? [], toIds = taskBarIds.get(link.to) ?? []
@@ -362,7 +356,7 @@ export type ResourceAssignmentRequest =
 export type ResourceAssignmentProposal =
   | {
     ok: true
-    /** The new assignment list. A replacement keeps the position and units of the replaced assignment. */
+    /** The new assignment list. A replacement keeps the position, units and work part of the replaced assignment. */
     assignments: ResourceAssignment[]
     added: readonly ResourceAssignment[]
     removed: readonly ResourceAssignment[]
@@ -381,17 +375,15 @@ export function proposeResourceAssignment(state: ResourceAssignmentState, reques
   const key = (taskId: string, resourceId: string) => JSON.stringify([taskId, resourceId])
   for (const { taskId, resourceId } of assignments) {
     const id = key(taskId, resourceId)
-    if (keys.has(id)) throw new Error('Duplicate resource assignment for task: ' + taskId)
+    if (keys.has(id)) throw duplicateAssignmentError(taskId, resourceId)
     keys.add(id)
   }
   const resources = state.resourceIds && new Set(state.resourceIds), tasks = state.taskIds && new Set(state.taskIds)
   const checkTask = (taskId: string) => {
-    if (typeof taskId !== 'string' || !taskId || (tasks && !tasks.has(taskId))) throw new Error('Unknown task in assignment: ' + taskId)
+    if (!isId(taskId) || (tasks && !tasks.has(taskId))) throw unknownReferenceError('task', 'assignment', taskId)
   }
   const checkResource = (resourceId: string) => {
-    if (typeof resourceId !== 'string' || !resourceId || (resources && !resources.has(resourceId))) {
-      throw new Error('Unknown resource in assignment: ' + resourceId)
-    }
+    if (!isId(resourceId) || (resources && !resources.has(resourceId))) throw unknownReferenceError('resource', 'assignment', resourceId)
   }
   const alreadyAssigned = (taskId: string, resourceId: string) =>
     ({ ok: false as const, code: 'already-assigned' as const, reason: 'The task is already assigned to the resource: ' + taskId + ', ' + resourceId })

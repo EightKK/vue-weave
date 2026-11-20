@@ -2,7 +2,7 @@
 // it, so the two modules do not depend on each other at load time.
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, GraphPort, IdentifiedNode } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
-import { isGraphPortSide } from './graphPortSide.js'
+import { graphSideAnchor, isGraphPortSide } from './graphPortSide.js'
 
 /**
  * How the core routing functions and NetworkGraph treat the edge paths of a layout. 'builtin' (the default) redraws
@@ -39,12 +39,16 @@ function near(a: number, b: number) {
   return Math.abs(a - b) <= tolerance
 }
 
-function finitePoint(point: GraphPoint | undefined): point is GraphPoint {
+/** Internal: whether a value is a point with finite coordinates. */
+export function isFiniteGraphPoint(point: GraphPoint | undefined): point is GraphPoint {
   return !!point && Number.isFinite(point.x) && Number.isFinite(point.y)
 }
 
-// Whether a point lies on one side of a box, or on any side when `side` is undefined.
-function onSide(box: GraphBox, point: GraphPoint, side: GraphPort['side'] | undefined) {
+/**
+ * Internal: whether a point lies on one side of a box, or on any side when `side` is undefined, within half a chart
+ * unit.
+ */
+export function isOnGraphBoxSide(box: GraphBox, point: GraphPoint, side?: GraphPort['side']): boolean {
   const withinX = point.x >= box.x - tolerance && point.x <= box.x + box.width + tolerance
   const withinY = point.y >= box.y - tolerance && point.y <= box.y + box.height + tolerance
   const sides = {
@@ -58,13 +62,10 @@ function onSide(box: GraphBox, point: GraphPoint, side: GraphPort['side'] | unde
 // side), or on the box border (on the given side) without a port.
 function endFits(box: GraphBox, node: IdentifiedNode | undefined, point: GraphPoint, portId: string | undefined, side: GraphPort['side'] | undefined) {
   if (side !== undefined && !isGraphPortSide(side)) return false
-  if (portId === undefined) return onSide(box, point, side)
+  if (portId === undefined) return isOnGraphBoxSide(box, point, side)
   const port = node?.ports?.find(item => item.id === portId)
   if (!port || !isGraphPortSide(port.side) || (side !== undefined && side !== port.side)) return false
-  const offset = port.offset ?? 0.5
-  const anchor = port.side === 'left' || port.side === 'right'
-    ? { x: box.x + (port.side === 'right' ? box.width : 0), y: box.y + box.height * offset }
-    : { x: box.x + box.width * offset, y: box.y + (port.side === 'bottom' ? box.height : 0) }
+  const anchor = graphSideAnchor(box, port.side, port.offset ?? 0.5)
   return near(point.x, anchor.x) && near(point.y, anchor.y)
 }
 
@@ -91,7 +92,7 @@ export function isGraphRouteValid(layout: GraphLayout, nodes: ReadonlyMap<string
   const route = layout.routes?.get(edge.id)
   let start: GraphPoint, end: GraphPoint
   if (route) {
-    if (!finitePoint(route.start) || !finitePoint(route.end) || !(route.points ?? []).every(finitePoint)) return false
+    if (!isFiniteGraphPoint(route.start) || !isFiniteGraphPoint(route.end) || !(route.points ?? []).every(isFiniteGraphPoint)) return false
     if (route.fromPort !== edge.fromPort || route.toPort !== edge.toPort) return false
     if (drawn && !(near(drawn.start.x, route.start.x) && near(drawn.start.y, route.start.y)
       && near(drawn.end.x, route.end.x) && near(drawn.end.y, route.end.y))) return false

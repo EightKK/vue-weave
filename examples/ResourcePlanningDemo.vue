@@ -13,6 +13,8 @@ import PlanningInspector from './components/PlanningInspector.vue'
 import SaveStatus from './components/SaveStatus.vue'
 import { BACKLOG_MIME, type InspectorField, type PlaceRequest } from './components/types'
 import { formatTime, hour, origin } from './data'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
 
 // One plan, shown by resource. Tasks A and B need the same press, so the press is overloaded until one of them moves.
 // The plan is the single source of truth (tasks, assignments, placed IDs); the chart rows are a projection of it.
@@ -224,7 +226,9 @@ function propose(title: string, changes: string[], next: PlanModel, focusBarId?:
     return reject(error instanceof Error ? error.message : String(error))
   }
   if (!calc.placement.ok) {
-    return reject(calc.placement.diagnostics.map(item => taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.').join(' '))
+    return reject(calc.placement.diagnostics.map(item => item.code === 'unplaced-predecessor'
+      ? taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.'
+      : taskLabel(item.taskId) + ' has no placed subtask to span. Place one of its subtasks first.').join(' '))
   }
   if (!calc.plan.ok) {
     return reject(calc.plan.code === 'cycle' ? 'The change creates a dependency cycle.'
@@ -395,22 +399,19 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="resource-planning-title">
-    <div class="section-head">
-      <div><h2 id="resource-planning-title">Resource planning</h2><p>One plan shown by resource · a task with two resources has two bars but one set of dates · UTC</p></div>
-      <div class="options">
-        <label>Capacity policy
-          <select v-model="policy" @change="proposal = undefined">
-            <option value="warn">Warn about overload (scheduleTasks)</option>
-            <option value="reject">Reject added overload (scheduleTasks)</option>
-            <option value="level">Level resources (levelResources)</option>
-          </select>
-        </label>
-        <button type="button" :disabled="!canUndo" @click="undo">Undo planning change</button>
-        <button type="button" :disabled="!canRedo" @click="redo">Redo planning change</button>
-        <label><input v-model="serverBacked" type="checkbox" :disabled="saving"> Save through the mock server</label>
-      </div>
-    </div>
+  <DemoPanel title-id="resource-planning-title" title="Resource planning" subtitle="One plan shown by resource · a task with two resources has two bars but one set of dates · UTC">
+    <template #options>
+      <label>Capacity policy
+        <select v-model="policy" @change="proposal = undefined">
+          <option value="warn">Warn about overload (scheduleTasks)</option>
+          <option value="reject">Reject added overload (scheduleTasks)</option>
+          <option value="level">Level resources (levelResources)</option>
+        </select>
+      </label>
+      <button type="button" :disabled="!canUndo" @click="undo">Undo planning change</button>
+      <button type="button" :disabled="!canRedo" @click="redo">Redo planning change</button>
+      <label><input v-model="serverBacked" type="checkbox" :disabled="saving"> Save through the mock server</label>
+    </template>
     <div v-if="serverBacked" class="rp-server">
       <fieldset class="server">
         <legend>Mock server response</legend>
@@ -444,7 +445,7 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
           <p v-if="saving && tx.pendingTransaction.value">Saving to the server. The chart and the load still show the accepted plan.</p>
           <div class="options"><button type="button" :disabled="saving" @click="apply">Apply change</button><button type="button" :disabled="saving" @click="discard">Discard preview</button></div>
         </section>
-        <p class="status" role="status" aria-label="Planning notice">{{ notice }}</p>
+        <StatusLine label="Planning notice">{{ notice }}</StatusLine>
         <details class="proposal-log">
           <summary>Received proposals</summary>
           <ol aria-label="Received proposals"><li v-for="(entry, index) in proposalLog" :key="index">{{ entry }}</li></ol>
@@ -464,7 +465,7 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
         </fieldset>
       </aside>
     </div>
-  </section>
+  </DemoPanel>
 </template>
 
 <style scoped>

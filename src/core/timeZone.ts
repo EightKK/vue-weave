@@ -1,4 +1,5 @@
-// Internal IANA time-zone helpers shared by `buildWorkPeriods` and `calendarBands`. Not exported from index.ts.
+// Internal IANA time-zone and Intl formatting helpers shared by `buildWorkPeriods`, `calendarBands` and the calendar
+// formatters (`calendarFormat.ts`). Not exported from index.ts.
 //
 // A "wall" time is a local wall-clock time expressed as if it were UTC: epoch milliseconds whose UTC fields are the
 // local date and time. Offsets are local wall-clock time minus UTC, in milliseconds.
@@ -21,6 +22,24 @@ export function zoneFormat(timeZone: string) {
       throw new RangeError('Invalid time zone: ' + timeZone)
     }
     zoneFormats.set(timeZone, format)
+  }
+  return format
+}
+
+const dateFormats = new Map<string, Intl.DateTimeFormat>()
+
+/**
+ * A cached `Intl.DateTimeFormat` for a locale and options, so label formatting does not build a formatter per call.
+ * Invalid locales or options throw the RangeError (or TypeError) of `Intl.DateTimeFormat`.
+ */
+export function cachedDateFormat(locale: string | readonly string[], options: Intl.DateTimeFormatOptions) {
+  const key = JSON.stringify([locale, options])
+  let format = dateFormats.get(key)
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale as string | string[], options)
+    // A bounded cache: label formats come from a few presets, but callers can pass arbitrary options.
+    if (dateFormats.size >= 256) dateFormats.clear()
+    dateFormats.set(key, format)
   }
   return format
 }

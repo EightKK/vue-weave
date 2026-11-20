@@ -64,7 +64,7 @@ export type { UseEditTransactionOptions, HistoryReset } from './composables/useE
 export { useLinkedSelection, revealLinkedTarget } from './composables/useLinkedSelection.js'
 export type {
   LinkedGraphSets, LinkedLoadSets, LinkedTimelineSets, LinkedViewName, UseLinkedSelectionOptions, RevealLinkedTargetOptions,
-  LinkedRevealResult,
+  LinkedRevealResult, LinkedTimeRange,
 } from './composables/useLinkedSelection.js'
 export { useAsyncGraphLayout, graphLayoutWorkerAdapter } from './composables/useAsyncGraphLayout.js'
 export type {
@@ -72,3 +72,5 @@ export type {
   AsyncGraphGestureListeners,
   GraphLayoutWorkerPort, GraphLayoutWorkerAdapterOptions,
 } from './composables/useAsyncGraphLayout.js'
+export { useWindowedData } from './composables/useWindowedData.js'
+export type { UseWindowedDataOptions, WindowedData, WindowedDataLoader, WindowedDataError } from './composables/useWindowedData.js'

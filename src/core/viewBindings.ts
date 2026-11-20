@@ -1,3 +1,5 @@
+import { inContext, invalidIdError, isId } from './ids.js'
+
 /** An application-defined entity. `kind` keeps equal IDs of different kinds apart. */
 export interface EntityRef {
   kind: string
@@ -96,20 +98,23 @@ function targetKey(target: ViewTarget): string {
 }
 
 function checkEntity(entity: EntityRef): void {
-  if (!entity || typeof entity.kind !== 'string' || typeof entity.id !== 'string' || !entity.kind || !entity.id) {
+  if (!entity || typeof entity.kind !== 'string' || !entity.kind) {
     throw new Error('Invalid entity reference: kind and id must be non-empty strings')
   }
+  if (!isId(entity.id)) throw invalidIdError('entity', entity.id)
 }
 
 function checkTarget(target: ViewTarget): void {
   if (!target) throw new Error('Invalid view target')
   if (target.view === 'load') {
-    if (!target.resourceId) throw new Error('Invalid load target: resourceId must not be empty')
+    if (!isId(target.resourceId)) throw inContext(invalidIdError('resource', target.resourceId), 'load target')
     if (!Number.isFinite(target.start) || !Number.isFinite(target.end) || target.end < target.start) {
       throw new RangeError('Invalid load target range for resource ' + target.resourceId)
     }
-  } else if ((target.view !== 'graph' && target.view !== 'timeline') || !target.kind || typeof target.id !== 'string' || !target.id) {
+  } else if ((target.view !== 'graph' && target.view !== 'timeline') || !target.kind) {
     throw new Error('Invalid view target')
+  } else if (!isId(target.id)) {
+    throw invalidIdError('view target', target.id)
   }
 }
 

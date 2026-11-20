@@ -4,8 +4,10 @@ import type {
 } from './types.js'
 import type { TimelineBaselineVariance } from './types.js'
 import type { TimelineConstraintEdit, TimelineConstraintKind, TimelineConstraints } from './types.js'
-import { zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
+import { firstIndex, intervalsMeet } from './intervals.js'
+import { cachedDateFormat, zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
+import { duplicateIdError, inContext, invalidIdError, isId, uniqueIds } from './ids.js'
 
 export interface TimeRange {
   start: number
@@ -272,9 +274,9 @@ export function editTimeRange(
 ): TimeRange {
   checkRange(range, true)
   checkRange(bounds)
-  if (!Number.isFinite(delta) || !Number.isFinite(step) || step <= 0 || !Number.isFinite(minDuration) || minDuration <= 0) {
-    throw new RangeError('Editing requires a finite displacement and positive snap/minimum duration')
-  }
+  if (!Number.isFinite(delta)) throw new RangeError('delta must be finite')
+  if (!Number.isFinite(step) || step <= 0) throw new RangeError('snap must be finite and positive')
+  if (!Number.isFinite(minDuration) || minDuration <= 0) throw new RangeError('minDuration must be finite and positive')
   if (!['move', 'start', 'end'].includes(mode)) throw new RangeError('Unknown edit mode')
   if (range.start < bounds.start || range.end > bounds.end) throw new RangeError('Editable intervals must fit inside editBounds')
   if (mode !== 'move' && range.end - range.start < minDuration) throw new RangeError('The interval is shorter than minDuration')
@@ -391,11 +393,11 @@ function checkBaselines(bar: TimelineBar) {
   if (!Array.isArray(list)) throw new Error('baselines must be an array: ' + bar.id)
   const ids = new Set<string>()
   for (const item of list as NonNullable<TimelineBar['baselines']>) {
-    if (!item || typeof item.id !== 'string' || !item.id) throw new Error('Invalid baseline set ID on bar: ' + bar.id)
+    if (!isId(item?.id)) throw inContext(invalidIdError('baseline set', item?.id), 'bar ' + bar.id)
     if (item.id === timelineBaselineId) {
       throw new Error(`The baseline set ID ${timelineBaselineId} is reserved for TimelineBar.baseline: ${bar.id}`)
     }
-    if (ids.has(item.id)) throw new Error(`Duplicate baseline set ${item.id} on bar ${bar.id}`)
+    if (ids.has(item.id)) throw inContext(duplicateIdError('baseline set', item.id), 'bar ' + bar.id)
     ids.add(item.id)
     if (typeof item.start !== 'number' || typeof item.end !== 'number' || !Number.isFinite(item.start) || !Number.isFinite(item.end)
       || item.end < item.start) {
@@ -404,25 +406,28 @@ function checkBaselines(bar: TimelineBar) {
   }
 }
 
+/** Options of `validateTimelineData`. */
+export interface TimelineDataOptions {
+  /**
+   * Accept a dependency end that names a summary row (a row other rows have as `parentId`) when no bar has that ID, as
+   * GanttChart `summaryDependencies` and `renderTimelineSvg` `summaryDependencies` draw them. Default false: every
+   * dependency end must be a bar ID.
+   */
+  summaryDependencies?: boolean
+}
+
 /**
  * Validate once per input change. IDs must be unique within each collection (rows, bars, dependencies); a row and a
  * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
  * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.) Throws a RangeError for a
- * dependency `lag` that is not a finite number.
+ * dependency `lag` that is not a finite number. With `options.summaryDependencies`, a dependency end may also be the ID
+ * of a summary row; an ID that is both a bar ID and a row ID always means the bar.
  */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
-  dependencies: readonly TimelineDependency[] = [], laneCount = 1,
+  dependencies: readonly TimelineDependency[] = [], laneCount = 1, options: TimelineDataOptions = {},
 ) {
   if (!Number.isInteger(laneCount) || laneCount <= 0) throw new RangeError('laneCount must be a positive integer')
-  function uniqueIds(items: readonly { id: string }[], kind: string) {
-    const ids = new Set<string>()
-    for (const item of items) {
-      if (!item.id || ids.has(item.id)) throw new Error('Invalid or duplicate ' + kind + ' ID: ' + item.id)
-      ids.add(item.id)
-    }
-    return ids
-  }
   const rowIds = uniqueIds(rows, 'row')
   const barIds = uniqueIds(bars, 'bar')
   uniqueIds(dependencies, 'dependency')
@@ -444,8 +449,12 @@ export function validateTimelineData(
     if (bar.segments !== undefined) checkSegments(bar)
     if (bar.constraints !== undefined) checkConstraints(bar)
   }
+  // Summary rows (rows with child rows) that a dependency may end at with `summaryDependencies`.
+  const summaryIds = new Set<string>()
+  if (options.summaryDependencies) for (const row of rows) if (row.parentId !== undefined) summaryIds.add(row.parentId)
+  const known = (id: string) => barIds.has(id) || summaryIds.has(id)
   for (const dependency of dependencies) {
-    if (!barIds.has(dependency.from) || !barIds.has(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
+    if (!known(dependency.from) || !known(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
     if (dependency.from === dependency.to) {
       throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
     }
@@ -468,8 +477,7 @@ export function formatDependencyLag(lag: number): string {
 
 /** Build a stable preorder and validate that every row reaches a root. */
 export function createTimelineRowTree<R extends TimelineRow>(rows: readonly R[]) {
-  const ids = new Set(rows.map(row => row.id))
-  if (ids.size !== rows.length || ids.has('')) throw new Error('Invalid or duplicate row IDs')
+  const ids = uniqueIds(rows, 'row')
   const roots: R[] = []
   const children = new Map<string, R[]>()
   for (const row of rows) {
@@ -620,27 +628,9 @@ export interface AssignLanesResult<B extends TimelineBar = TimelineBar> {
   rowLaneCounts: Map<string, number>
 }
 
-/**
- * Whether two intervals of one row may not share a lane. Bars are half-open, so touching bars fit in one lane; a
- * milestone conflicts with every bar that contains its time and with milestones at the same time.
- */
-function lanesConflict(a: TimeRange, b: TimeRange) {
-  const pointA = a.start === a.end, pointB = b.start === b.end
-  if (pointA && pointB) return a.start === b.start
-  if (pointA) return b.start <= a.start && a.start < b.end
-  if (pointB) return a.start <= b.start && b.start < a.end
-  return a.start < b.end && b.start < a.end
-}
-
 /** Index of the first interval in a start-sorted lane that starts after `time`. */
 function startsAfter(lane: readonly TimeRange[], time: number) {
-  let low = 0, high = lane.length
-  while (low < high) {
-    const middle = (low + high) >>> 1
-    if (lane[middle]!.start > time) high = middle
-    else low = middle + 1
-  }
-  return low
+  return firstIndex(lane.length, index => lane[index]!.start > time)
 }
 
 /**
@@ -669,7 +659,7 @@ export function assignLanes<B extends TimelineBar>(bars: readonly B[], options: 
         const items = placed[lane]
         if (!items) return true
         const next = startsAfter(items, bar.start)
-        return !(next > 0 && lanesConflict(items[next - 1]!, bar)) && !(next < items.length && lanesConflict(items[next]!, bar))
+        return !(next > 0 && intervalsMeet(items[next - 1]!, bar)) && !(next < items.length && intervalsMeet(items[next]!, bar))
       }
       for (const index of indexes) {
         const bar = bars[index]!
@@ -690,7 +680,7 @@ export function assignLanes<B extends TimelineBar>(bars: readonly B[], options: 
       for (const index of order) {
         const bar = bars[index]!
         let lane = 0
-        while (lane < last.length && lanesConflict(last[lane]!, bar)) lane++
+        while (lane < last.length && intervalsMeet(last[lane]!, bar)) lane++
         last[lane] = bar
         lanes[index] = lane
       }
@@ -712,6 +702,14 @@ function pad(value: number) {
 
 const hourMs = 3_600_000
 const maxCalendarBands = 10000
+/** Default `Intl.DateTimeFormat` options of locale-aware `calendarBands` labels, by unit. */
+const calendarLabelFormats: Readonly<Record<CalendarBandUnit, Intl.DateTimeFormatOptions>> = {
+  hour: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+  day: { year: 'numeric', month: 'short', day: 'numeric' },
+  week: { year: 'numeric', month: 'short', day: 'numeric' },
+  month: { year: 'numeric', month: 'long' },
+  year: { year: 'numeric' },
+}
 
 /** A band boundary: the instant and the local wall time there, expressed as if it were UTC. */
 interface BandBoundary {
@@ -721,7 +719,8 @@ interface BandBoundary {
 
 /**
  * Build one header band level from calendar units in epoch milliseconds. Bands are aligned to a fixed UTC offset or
- * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries.
+ * to local time in an IANA `timeZone`, clipped to the range and labelled from their unclipped boundaries: ISO-like by
+ * default, with `Intl.DateTimeFormat` when `locale` or `labelFormat` is set, or by a custom `label` function.
  *
  * With `timeZone`, day, week, month and year bands start at the first instant of their local date: local midnight,
  * or the end of a daylight-saving gap that skips midnight. A local date that the zone skips entirely has no band.
@@ -731,7 +730,7 @@ interface BandBoundary {
  */
 export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options: CalendarBandOptions = {}): TimelineBand[] {
   checkRange(range)
-  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label } = options
+  const { utcOffsetMinutes, timeZone, step = 1, weekStartsOn = 1, label, locale, labelFormat } = options
   if (!['hour', 'day', 'week', 'month', 'year'].includes(unit)) throw new RangeError('Unknown calendar band unit: ' + unit)
   if (timeZone !== undefined && utcOffsetMinutes !== undefined) {
     throw new RangeError('Specify either timeZone or utcOffsetMinutes, not both')
@@ -745,6 +744,10 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
   }
   if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
   const format = timeZone === undefined ? undefined : zoneFormat(timeZone)
+  // Locale-aware labels format the local wall time of the band start, which is expressed as if it were UTC.
+  const intlLabel = !label && (locale !== undefined || labelFormat !== undefined)
+    ? cachedDateFormat(locale ?? 'en-US', { ...(labelFormat ?? calendarLabelFormats[unit]), timeZone: 'UTC' })
+    : undefined
   const offset = fixedOffset * minuteMs
   // Zone rules are looked up up to two days around an instant, so it must stay inside the Date range.
   const checkZoneTime = (time: number) => {
@@ -804,6 +807,7 @@ export function calendarBands(range: TimeRange, unit: CalendarBandUnit, options:
     return fromCivil(year + step, 0)
   }
   function defaultLabel(wall: number) {
+    if (intlLabel) return intlLabel.format(wall)
     const date = new Date(wall)
     const ymd = String(date.getUTCFullYear()).padStart(4, '0') + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate())
     if (unit === 'hour') return pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes())

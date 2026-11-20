@@ -1,46 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import {
   defaultSvgExportTheme, graphPathEndpoints, layoutLayeredGraph, renderGraphSvg, routeGraphEdges, routeGraphPorts,
 } from 'vue-weave/core'
 import { NetworkGraph } from 'vue-weave'
+import { byId, centre, deepFreeze as freeze, onBorder, polyline } from './helpers/builders.mjs'
+import { renderComponent } from './helpers/ssr.mjs'
 
-const byId = list => new Map(list.map(item => [item.id, item]))
-const freeze = value => {
-  if (value && typeof value === 'object') {
-    for (const item of Object.values(value)) freeze(item)
-    Object.freeze(value)
-  }
-  return value
-}
-// The points of a path drawn with M, L, H and V commands only.
-function polyline(path) {
-  const tokens = path.match(/[MLHV]|[-+]?\d*\.?\d+(?:e[-+]?\d+)?/gi)
-  const points = []
-  let command = '', x = 0, y = 0
-  for (let i = 0; i < tokens.length;) {
-    if (/[MLHV]/.test(tokens[i])) command = tokens[i++]
-    if (command === 'M' || command === 'L') {
-      x = Number(tokens[i++])
-      y = Number(tokens[i++])
-    } else if (command === 'H') x = Number(tokens[i++])
-    else if (command === 'V') y = Number(tokens[i++])
-    else throw new Error('Unexpected command ' + command + ' in ' + path)
-    points.push({ x, y })
-  }
-  return points
-}
-const centre = box => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
 // Signed distance of a point from the line through a and b, positive on the side of the normal (a.y - b.y, b.x - a.x).
 const side = (a, b, point) => ((a.y - b.y) * (point.x - a.x) + (b.x - a.x) * (point.y - a.y)) / Math.hypot(b.x - a.x, b.y - a.y)
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 0.02, `${message ?? ''} ${actual} ≉ ${expected}`)
-const onBorder = (box, point) => {
-  const near = (a, b) => Math.abs(a - b) <= 0.01
-  return ((near(point.x, box.x) || near(point.x, box.x + box.width)) && point.y >= box.y - 0.01 && point.y <= box.y + box.height + 0.01)
-    || ((near(point.y, box.y) || near(point.y, box.y + box.height)) && point.x >= box.x - 0.01 && point.x <= box.x + box.width + 0.01)
-}
 
 // A and X in the first rank, B in the second between them (so A to B is a diagonal) and C in the third. The layout is
 // made without the back edge, which would put A and B in one rank, and gets a straight path from B to A.
@@ -307,7 +277,7 @@ test('renderGraphSvg draws diamond, ellipse and hexagon nodes with centred text 
   assert.match(tall, /<text x="72" y="55" text-anchor="middle"[^>]*>Prepare/)
 })
 
-const render = (props, slots) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 
 test('NetworkGraph server markup is unchanged by default values of the edge and shape fields', async () => {
   const plain = await render({ edgesSelectable: true })

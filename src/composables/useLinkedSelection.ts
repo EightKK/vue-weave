@@ -4,6 +4,11 @@ import {
   buildViewBindingIndex, resolveEntityRefs, resolveViewTargets,
 } from '../core/viewBindings.js'
 import type { EntityRef, LoadViewTarget, RevealResult, ViewBinding, ViewTarget } from '../core/viewBindings.js'
+import { resolveTimeRangeTargets, timelineBarsInRange } from '../core/timeRangeTargets.js'
+import type {
+  TimelineBarActivity, TimelineBarsInRangeOptions, TimeRangeTargets, TimeRangeTargetsOptions,
+} from '../core/timeRangeTargets.js'
+import type { TimeRange } from '../core/timeline.js'
 
 export type LinkedViewName = ViewTarget['view']
 
@@ -15,6 +20,20 @@ export interface UseLinkedSelectionOptions {
    * that owns the selection. It is not called for hover or for a repeated identical selection.
    */
   onSelect?: (entities: readonly EntityRef[], owner: LinkedViewName | undefined) => void
+  /**
+   * An optional time range to explore. The bars worked on in it (`timelineBarsInRange`) and their entities' targets are
+   * added to the `highlighted*` sets; what `traversal` reaches from them goes to the separate `related*` sets. Display
+   * only: it never changes the selection. Undefined, or leaving the option out, changes nothing.
+   */
+  timeRange?: MaybeRefOrGetter<LinkedTimeRange | undefined>
+}
+
+/** Input of the `timeRange` option of `useLinkedSelection`. */
+export interface LinkedTimeRange extends TimelineBarsInRangeOptions, TimeRangeTargetsOptions {
+  /** The half-open range `[start, end)`; `start === end` is an instant. */
+  range: TimeRange
+  /** The bars to test, usually the bars given to GanttChart. */
+  bars: readonly TimelineBarActivity[]
 }
 
 /** What to pass to a graph view: its own selection and display-only highlights. */
@@ -26,6 +45,13 @@ export interface LinkedGraphSets {
   highlightedNodeIds: ReadonlySet<string>
   highlightedEdgeIds: ReadonlySet<string>
   highlightedGroupIds: ReadonlySet<string>
+  /**
+   * Nodes, edges and groups related to a `timeRange` by traversal, without selected or highlighted ones. Empty without
+   * `timeRange`. Use for NetworkGraph `relatedIds` or your own styling.
+   */
+  relatedNodeIds: ReadonlySet<string>
+  relatedEdgeIds: ReadonlySet<string>
+  relatedGroupIds: ReadonlySet<string>
 }
 
 /** What to pass to a timeline view. */
@@ -34,12 +60,18 @@ export interface LinkedTimelineSets {
   highlightedBarIds: ReadonlySet<string>
   highlightedDependencyIds: ReadonlySet<string>
   highlightedRowIds: ReadonlySet<string>
+  /** Bars, dependencies and rows related to a `timeRange` by traversal, without selected or highlighted ones. */
+  relatedBarIds: ReadonlySet<string>
+  relatedDependencyIds: ReadonlySet<string>
+  relatedRowIds: ReadonlySet<string>
 }
 
 /** Load targets are time ranges; resolve them against current segments with `resolveLoadTargets`. */
 export interface LinkedLoadSets {
   selected: readonly LoadViewTarget[]
   highlighted: readonly LoadViewTarget[]
+  /** Load targets related to a `timeRange` by traversal, without selected or highlighted ones. */
+  related: readonly LoadViewTarget[]
 }
 
 interface Snapshot {
@@ -120,11 +152,20 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
 
   const selectedEntities = computed(() => resolveEntityRefs(index.value, selection.value.targets).entities)
 
+  const timeRange = computed<TimeRangeTargets | undefined>(() => {
+    const input = toValue(options.timeRange)
+    if (!input) return undefined
+    const active = timelineBarsInRange(input.bars, input.range, { rowIds: input.rowIds })
+    return resolveTimeRangeTargets(index.value, active.map(bar => bar.id), { graph: input.graph, traversal: input.traversal })
+  })
+
   const linked = computed(() => {
     // Re-resolve from entities, so changed bindings are picked up without a new selection.
     const entities = [...selectedEntities.value, ...(hover.value?.entities ?? [])]
-    return resolveViewTargets(index.value, entities).targets
+    const targets = resolveViewTargets(index.value, entities).targets
+    return timeRange.value ? [...targets, ...timeRange.value.activeTargets] : targets
   })
+  const related = computed(() => timeRange.value?.relatedTargets ?? [])
 
   const graph = computed<LinkedGraphSets>(() => {
     const own = selection.value.owner === 'graph' ? selection.value.targets : []
@@ -137,7 +178,16 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
       else if (t.kind === 'edge' && !selectedEdgeIds.has(t.id)) highlightedEdgeIds.add(t.id)
       else if (t.kind === 'group') highlightedGroupIds.add(t.id)
     }
-    return { selectedNodeIds, selectedEdgeIds, highlightedNodeIds, highlightedEdgeIds, highlightedGroupIds }
+    const relatedNodeIds = new Set<string>(), relatedEdgeIds = new Set<string>(), relatedGroupIds = new Set<string>()
+    for (const t of related.value) {
+      if (t.view !== 'graph') continue
+      if (t.kind === 'node' && !selectedNodeIds.has(t.id) && !highlightedNodeIds.has(t.id)) relatedNodeIds.add(t.id)
+      else if (t.kind === 'edge' && !selectedEdgeIds.has(t.id) && !highlightedEdgeIds.has(t.id)) relatedEdgeIds.add(t.id)
+      else if (t.kind === 'group' && !highlightedGroupIds.has(t.id)) relatedGroupIds.add(t.id)
+    }
+    return {
+      selectedNodeIds, selectedEdgeIds, highlightedNodeIds, highlightedEdgeIds, highlightedGroupIds, relatedNodeIds, relatedEdgeIds, relatedGroupIds,
+    }
   })
 
   const timeline = computed<LinkedTimelineSets>(() => {
@@ -151,15 +201,29 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
       else if (t.kind === 'dependency') highlightedDependencyIds.add(t.id)
       else if (t.kind === 'row') highlightedRowIds.add(t.id)
     }
-    return { selectedBarIds, highlightedBarIds, highlightedDependencyIds, highlightedRowIds }
+    const relatedBarIds = new Set<string>(), relatedDependencyIds = new Set<string>(), relatedRowIds = new Set<string>()
+    for (const t of related.value) {
+      if (t.view !== 'timeline') continue
+      if (t.kind === 'bar' && !selectedBarIds.has(t.id) && !highlightedBarIds.has(t.id)) relatedBarIds.add(t.id)
+      else if (t.kind === 'dependency' && !highlightedDependencyIds.has(t.id)) relatedDependencyIds.add(t.id)
+      else if (t.kind === 'row' && !highlightedRowIds.has(t.id)) relatedRowIds.add(t.id)
+    }
+    return {
+      selectedBarIds, highlightedBarIds, highlightedDependencyIds, highlightedRowIds, relatedBarIds, relatedDependencyIds, relatedRowIds,
+    }
   })
 
   const load = computed<LinkedLoadSets>(() => {
     const selected = selection.value.owner === 'load'
       ? selection.value.targets.filter((t): t is LoadViewTarget => t.view === 'load')
       : []
-    const highlighted = linked.value.filter((t): t is LoadViewTarget => t.view === 'load' && !selected.some(s => sameTarget(s, t)))
-    return { selected, highlighted }
+    const highlighted: LoadViewTarget[] = []
+    for (const t of linked.value) {
+      if (t.view === 'load' && !selected.some(s => sameTarget(s, t)) && !highlighted.some(h => sameTarget(h, t))) highlighted.push(t)
+    }
+    const others = [...selected, ...highlighted]
+    const relatedLoad = related.value.filter((t): t is LoadViewTarget => t.view === 'load' && !others.some(s => sameTarget(s, t)))
+    return { selected, highlighted, related: relatedLoad }
   })
 
   return {
@@ -169,6 +233,8 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     selectedEntities,
     /** The hovered entities. */
     hoveredEntities: computed(() => hover.value?.entities ?? []),
+    /** What the `timeRange` option resolves to (active and related bars, entities and targets), or undefined without one. */
+    timeRange,
     graph,
     timeline,
     load,

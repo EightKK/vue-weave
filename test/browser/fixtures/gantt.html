@@ -22,7 +22,7 @@
       // (named baseline sets plan and rev1 on both bars; the tooltip shows the plan variance), sets (comma-separated
       // baselineIds), pinch (pinchZoom), constraints (scheduling constraints on both bars, with constraintsEditable unless display is set;
       // the parent applies constraint edits only with apply, and rejectConstraints rejects them; "Replace bars" passes
-      // new but equal bars).
+      // new but equal bars), ranges (two marker ranges, one restricted to Row 2, and an SVG export button).
       const query = new URLSearchParams(location.search)
       const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
       const named = query.has('baselines')
@@ -67,6 +67,8 @@
       if (interactions) window.ganttChart = chart
       const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value))
       const controlled = query.has('controlled')
+      const ranges = query.has('ranges')
+      const exported = ref('')
       const sets = ref(query.has('sets') ? (query.get('sets') ? query.get('sets').split(',') : []) : undefined)
 
       createApp({
@@ -83,6 +85,13 @@
           output('Last delete', lastDelete.value),
           output('Last context menu', lastMenu.value),
           h('button', { type: 'button', onClick: () => chart.value.fitToBars(['b'], { padding: 0 }) }, 'Fit Task B'),
+          ...(ranges ? [
+            output('Exported ranges', exported.value),
+            h('button', { type: 'button', onClick: () => {
+              const svg = chart.value.exportSvg()
+              exported.value = [...svg.matchAll(/<g class="vw-gantt-range(?:-label)?"><title>([^<]*)<\/title>/g)].map(match => match[1]).join('; ')
+            } }, 'Export SVG'),
+          ] : []),
           named ? h('button', { type: 'button', onClick: () => { sets.value = ['plan'] } }, 'Show only the plan baseline') : null,
           ...(constrained ? [
             output('Last constraint edit', lastConstraint.value),
@@ -93,7 +102,11 @@
             ref: chart,
             rows, bars: bars.value, dependencies, range, tickSteps, zoomPresets, pixelsPerUnit: 50, snap: 1, formatTime: String,
             height: 240, autoScroll: false, connectable: true, reconnectable: true,
-            markers: [{ id: 'm', time: 5, label: 'Review' }], showNow: true, now: query.has('now') ? Number(query.get('now')) : 3, dir: query.has('rtl') ? 'rtl' : query.has('auto') ? 'auto' : undefined,
+            markers: [{ id: 'm', time: 5, label: 'Review' }],
+            ...(ranges ? { markerRanges: [
+              { id: 'hold', start: 1, end: 3, label: 'Hold' },
+              { id: 'row-hold', start: 4, end: 7, label: 'Row hold', tone: 'teal', rowIds: ['r2'] },
+            ] } : {}), showNow: true, now: query.has('now') ? Number(query.get('now')) : 3, dir: query.has('rtl') ? 'rtl' : query.has('auto') ? 'auto' : undefined,
             readonly: query.has('readonly'), rowDraggable: query.has('rowDraggable'), wheelZoom: query.has('wheel'), pinchZoom: query.has('pinch'),
             class: query.has('dark') ? 'vw-theme-dark' : undefined,
             ...(query.has('lag') ? { formatLag: lag => (lag > 0 ? '+' : '') + lag + ' u' } : {}),

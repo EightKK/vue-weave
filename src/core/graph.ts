@@ -1,9 +1,15 @@
-import { flipGraphLayout } from './graphOrient.js'
+import { assertGraphLayoutDirection, graphDirectionOrientation, graphFlowSides, isVerticalDirection, orientGraphLayout } from './graphOrient.js'
 import { reduceCrossings } from './graphCrossings.js'
 import { graphPathEndpoints } from './graphView.js'
-import { assertGraphPortSide, isGraphPortSide } from './graphPortSide.js'
+import { assertGraphPortSide, graphSideAnchor, isGraphPortSide } from './graphPortSide.js'
+import { heapPop, heapPush } from './graphHeap.js'
+import {
+  checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
+  sameRankTurnDistance,
+} from './graphOptions.js'
 import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { duplicateIdError, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 import type { GraphEdgeStyle } from './graphRouting.js'
 
 export interface GraphPort {
@@ -62,14 +68,15 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
   const portsByNode = new Map<string, Map<string, GraphPort>>()
 
   for (const { id, ports } of nodes) {
-    if (!id) throw new Error('Graph node IDs must not be empty')
-    if (outgoing.has(id)) throw new Error(`Duplicate graph node ID: ${id}`)
+    if (!isId(id)) throw invalidIdError('graph node', id)
+    if (outgoing.has(id)) throw duplicateIdError('graph node', id)
     if (ports) {
       const indexed = new Map<string, GraphPort>()
       for (const port of ports) {
+        if (!isId(port.id)) throw inContext(invalidIdError('port', port.id), 'graph node ' + id)
+        if (indexed.has(port.id)) throw inContext(duplicateIdError('port', port.id), 'graph node ' + id)
         const offset = port.offset ?? 0.5
-        if (!port.id || indexed.has(port.id)
-          || !['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
+        if (!['source', 'target', 'both'].includes(port.direction ?? 'both') || !Number.isFinite(offset) || offset < 0 || offset > 1) {
           throw new Error('Invalid graph port on node: ' + id)
         }
         assertGraphPortSide(id, port)
@@ -82,16 +89,18 @@ export function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly Gra
   }
 
   for (const { id, from, to, fromPort, toPort } of edges) {
-    if (!id) throw new Error('Graph edge IDs must not be empty')
+    if (!isId(id)) throw invalidIdError('graph edge', id)
     const children = outgoing.get(from)
     const parents = incoming.get(to)
-    if (!children || !parents) throw new Error(`Unknown endpoint on graph edge: ${id}`)
+    if (!children) throw unknownReferenceError('node', 'graph edge ' + id, from)
+    if (!parents) throw unknownReferenceError('node', 'graph edge ' + id, to)
     for (const [node, portId, forbidden] of [[from, fromPort, 'target'], [to, toPort, 'source']] as const) {
       if (portId === undefined) continue
       const port = portsByNode.get(node)?.get(portId)
-      if (!port || port.direction === forbidden) throw new Error('Invalid port on graph edge: ' + id)
+      if (!port) throw unknownReferenceError('port', 'graph edge ' + id, portId)
+      if (port.direction === forbidden) throw new Error('Invalid port on graph edge: ' + id)
     }
-    if (edgeIds.has(id)) throw new Error(`Duplicate graph edge ID: ${id}`)
+    if (edgeIds.has(id)) throw duplicateIdError('graph edge', id)
     edgeIds.add(id)
     children.push(to)
     parents.push(from)
@@ -252,12 +261,23 @@ export type GraphLayoutDirection = 'LR' | 'TB' | 'RL' | 'BT'
 /** Ordering heuristic that reduces edge crossings between adjacent ranks. */
 export type GraphCrossingReduction = 'none' | 'barycenter' | 'median'
 
+/**
+ * Options shared by the rank-based layouts (layered, tree, swimlane and incremental). Defaults: direction LR, nodes
+ * 144 by 58, columnGap 50, rowGap 24, padding 20. Sizes must be finite numbers > 0 and gaps and padding finite
+ * numbers ≥ 0, otherwise the layout throws a RangeError that names the option.
+ */
 export interface GraphLayoutOptions {
+  /** Flow direction: ranks grow along it. Default 'LR'. */
   direction?: GraphLayoutDirection
+  /** Width of a node box. Default 144. */
   nodeWidth?: number
+  /** Height of a node box. Default 58. */
   nodeHeight?: number
+  /** Free space between ranks along the flow (between depth levels in the tree layout). Default 50. */
   columnGap?: number
+  /** Free space between neighbouring boxes of one rank across the flow (between adjacent leaves in the tree layout, between nodes of one lane in one rank in the swimlane layout). Default 24. */
   rowGap?: number
+  /** Margin around the layout. Default 20. */
   padding?: number
 }
 
@@ -271,33 +291,8 @@ export interface GraphLayeredLayoutOptions extends GraphLayoutOptions {
 
 type LaneEntry = [end: number, lane: number]
 
-function heapPush<T>(heap: T[], item: T, before: (a: T, b: T) => boolean) {
-  let i = heap.push(item) - 1
-  while (i > 0) {
-    const parent = (i - 1) >> 1
-    if (!before(item, heap[parent]!)) break
-    heap[i] = heap[parent]!
-    i = parent
-  }
-  heap[i] = item
-}
-
-function heapPop<T>(heap: T[], before: (a: T, b: T) => boolean): T | undefined {
-  const top = heap[0]
-  const last = heap.pop()
-  if (last === undefined || heap.length === 0) return top
-  let i = 0
-  for (;;) {
-    let child = 2 * i + 1
-    if (child >= heap.length) break
-    if (child + 1 < heap.length && before(heap[child + 1]!, heap[child]!)) child++
-    if (!before(heap[child]!, last)) break
-    heap[i] = heap[child]!
-    i = child
-  }
-  heap[i] = last
-  return top
-}
+const laneBefore = (a: LaneEntry, b: LaneEntry) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+const numberBefore = (a: number, b: number) => a < b
 
 /**
  * Interval-graph colouring of the horizontal spans of long edges (rank jump above one).
@@ -316,10 +311,10 @@ function assignLongEdgeLanes(edges: readonly GraphEdge[], ranks: ReadonlyMap<str
   const free: number[] = []
   let count = 0
   for (const span of spans) {
-    while (active.length && active[0]![0] <= span.start) heapPush(free, heapPop(active, (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]))![1], (a, b) => a < b)
-    const lane = free.length ? heapPop(free, (a, b) => a < b)! : count++
+    while (active.length && active[0]![0] <= span.start) heapPush(free, heapPop(active, laneBefore)![1], numberBefore)
+    const lane = free.length ? heapPop(free, numberBefore)! : count++
     lanes.set(span.id, lane)
-    heapPush(active, [span.end, lane], (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]))
+    heapPush(active, [span.end, lane], laneBefore)
   }
   return { lanes, count }
 }
@@ -336,30 +331,27 @@ export function layoutLayeredGraph(
   edges: readonly GraphEdge[],
   options: GraphLayeredLayoutOptions = {},
 ): GraphLayout {
-  const { direction = 'LR', nodeWidth = 144, nodeHeight = 58, columnGap = 50, rowGap = 24, padding = 20, crossingReduction = 'none', crossingSweeps = 8 } = options
-  if (!['LR', 'TB', 'RL', 'BT'].includes(direction)) throw new RangeError('Unknown layout direction')
+  const {
+    direction = 'LR', nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, columnGap = defaultColumnGap, rowGap = defaultRowGap,
+    padding = defaultPadding, crossingReduction = 'none', crossingSweeps = 8,
+  } = options
+  assertGraphLayoutDirection(direction)
   if (!['none', 'barycenter', 'median'].includes(crossingReduction)) throw new RangeError('Unknown crossingReduction method')
-  if (!Number.isInteger(crossingSweeps) || crossingSweeps < 1) throw new RangeError('crossingSweeps must be a positive integer')
-  for (const [name, value] of Object.entries({ nodeWidth, nodeHeight, columnGap, rowGap, padding })) {
-    if (!Number.isFinite(value) || value < 0 || ((name === 'nodeWidth' || name === 'nodeHeight') && value === 0)) {
-      throw new RangeError(name + ' must be finite and positive (spacing may be zero)')
-    }
-  }
-  if (direction === 'RL' || direction === 'BT') {
-    const base = layoutLayeredGraph(nodes, edges, { ...options, direction: direction === 'RL' ? 'LR' : 'TB' })
-    return flipGraphLayout(base, direction === 'RL' ? 'x' : 'y')
-  }
-  if (direction === 'TB') {
-    const base = layoutLayeredGraph(nodes, edges, { ...options, direction: 'LR', nodeWidth: nodeHeight, nodeHeight: nodeWidth })
-    return {
-      boxes: new Map([...base.boxes].map(([id, box]) => [id, {
-        x: box.y, y: box.x, width: box.height, height: box.width, rank: box.rank,
-      }])),
-      paths: new Map([...base.paths].map(([id, path]) => [id, transposePath(path)])),
-      edgeLabels: new Map([...base.edgeLabels].map(([id, point]) => [id, { x: point.y, y: point.x }])),
-      width: base.height, height: base.width,
-    }
-  }
+  checkLayoutNumber('crossingSweeps', crossingSweeps, 'positiveInteger')
+  checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, padding })
+  if (direction === 'LR') return leftToRightLayered(nodes, edges, nodeWidth, nodeHeight, columnGap, rowGap, padding, crossingReduction, crossingSweeps)
+  // Other directions lay out the left-to-right drawing (with swapped node sizes for TB and BT) and turn it.
+  const vertical = isVerticalDirection(direction)
+  const base = leftToRightLayered(
+    nodes, edges, vertical ? nodeHeight : nodeWidth, vertical ? nodeWidth : nodeHeight, columnGap, rowGap, padding, crossingReduction, crossingSweeps,
+  )
+  return orientGraphLayout(base, graphDirectionOrientation(direction))
+}
+
+function leftToRightLayered(
+  nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], nodeWidth: number, nodeHeight: number, columnGap: number, rowGap: number,
+  padding: number, crossingReduction: GraphCrossingReduction, crossingSweeps: number,
+): GraphLayout {
   const ranks = computeRanks(indexGraph(nodes, edges))
   const columns: string[][] = []
 
@@ -403,7 +395,7 @@ export function layoutLayeredGraph(
     edgeLabels.set(edge.id, { x: (x1 + target.x) / 2, y: (y1 + y2) / 2 - 7 })
 
     if (jump === 0) {
-      const turn = x1 + Math.min(24, columnGap / 2)
+      const turn = x1 + sameRankTurnDistance(columnGap)
       const endY = edge.from === edge.to ? y2 - target.height / 3 : y2
       routeRight = Math.max(routeRight, turn)
       edgeLabels.set(edge.id, { x: turn + 9, y: (y1 + endY) / 2 })
@@ -429,18 +421,6 @@ export function layoutLayeredGraph(
     // Empty zero-padding layouts still need a measurable axis, including after TB transposition.
     height: layoutHeight === 0 ? 1 : layoutHeight,
   }
-}
-
-// Only absolute M, C, H and V commands generated above are transposed.
-function transposePath(path: string): string {
-  return path.replace(/([MCHV]) ([^MCHV]+)/g, (_match, command: string, values: string) => {
-    const numbers = values.replaceAll(',', ' ').trim().split(/\s+/).map(Number)
-    if (command === 'H') return 'V ' + numbers.join(' ') + ' '
-    if (command === 'V') return 'H ' + numbers.join(' ') + ' '
-    const result: number[] = []
-    for (let i = 0; i < numbers.length; i += 2) result.push(numbers[i + 1]!, numbers[i]!)
-    return command + ' ' + result.join(' ') + ' '
-  }).trim()
 }
 
 export interface GraphPoint {
@@ -476,11 +456,7 @@ export interface GraphGroup {
 /** The point of a port on a box side. Throws Error when `port.side` is not left, right, top or bottom. */
 export function graphPortAnchor(box: GraphBox, port: GraphPort): GraphPoint {
   if (!isGraphPortSide(port.side)) throw new Error(`Invalid graph port ${port.id}: side ${String(port.side)}, expected left, right, top or bottom`)
-  const offset = port.offset ?? 0.5
-  if (port.side === 'left' || port.side === 'right') {
-    return { x: box.x + (port.side === 'right' ? box.width : 0), y: box.y + box.height * offset }
-  }
-  return { x: box.x + box.width * offset, y: box.y + (port.side === 'bottom' ? box.height : 0) }
+  return graphSideAnchor(box, port.side, port.offset ?? 0.5)
 }
 
 /**
@@ -497,9 +473,8 @@ export function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string
     assertGraphPortSide(edge[end], port)
     return { ...graphPortAnchor(box, port), side: port.side }
   }
-  const side: GraphPort['side'] = direction === 'TB' ? (end === 'from' ? 'bottom' : 'top')
-    : direction === 'BT' ? (end === 'from' ? 'top' : 'bottom')
-    : direction === 'RL' ? (end === 'from' ? 'left' : 'right') : (end === 'from' ? 'right' : 'left')
+  const sides = graphFlowSides(direction)
+  const side = end === 'from' ? sides.exit : sides.entry
   const id = (edge as Partial<GraphEdge>).id
   const path = typeof id === 'string' ? layout.paths.get(id) : undefined
   const drawn = path === undefined ? undefined : graphPathEndpoints(path)

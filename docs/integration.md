@@ -131,6 +131,58 @@ function resize({ id, before, after }: GraphNodeResize) {
 
 A collapsed group is drawn as a proxy node with the group's ID. Moves of the proxy arrive as moves of its members and deletions as deletions of its members, but selection and connection proposals carry the proxy ID, so reject or map them in `validateConnection`. `collapseGraphGroups` from the core entry computes the same view, for example to map the proxy back to its members in a context menu. Custom node slots can use the `scale` slot prop for their own level of detail. The handles use the classes `vw-group-toggle`, `vw-waypoint-handle`, `vw-waypoint-add` and `vw-resize-handle` and take their colours from `--vw-accent` and `--vw-surface`; no further theme variables are needed.
 
+## Swimlanes for process flows
+
+To draw a process with one lane per department or work centre, lay it out with `layoutSwimlaneGraph` and pass its lanes to the `lanes` prop. Hand-overs between departments then read as edges that cross a lane boundary.
+
+```ts
+const swimlanes = computed(() => layoutSwimlaneGraph(steps.value, links.value, {
+  lanes: departments.value.map(item => ({ id: item.id, label: item.name })), // the order you list is the order drawn
+  laneOf: step => step.data.department,
+  direction: direction.value,
+}))
+const layout: GraphLayoutFunction = () => swimlanes.value
+```
+
+```vue
+<NetworkGraph :nodes="steps" :edges="links" :layout="layout" :lanes="swimlanes.lanes" :options="{ direction }"
+  edge-style="orthogonal" avoid-nodes draggable @node-move="moveStep" />
+```
+
+- Keep the lane list in application state. Lanes without steps still get a band, so the order stays stable as steps are added; to hide a lane, remove it from the list. Every step needs a lane that is in the list (otherwise the layout throws); keep an explicit "Unassigned" lane if your data can lack one.
+- The component never reassigns a lane. On `node-move`, call `graphSwimlaneAt(swimlanes.value.lanes, { ...change.after, width, height })` and apply your domain rule: change the step's department and lay out again, or refuse the move. `undefined` means the box would be outside every lane. The demo's Process lanes example (`examples/SwimlaneDemo.vue`) does this.
+- Use `edgeStyle: 'orthogonal'` with `avoidNodes` when edges skip ranks, so they go around the steps in between. Lane headers are not obstacles for `avoidNodes`; they sit before the first rank, so routes and edge labels between steps stay out of them.
+- `exportSvg`, `exportPng` and `renderGraphSvg({ lanes })` draw the bands and titles. Long titles are clipped to the header; the full title is the lane's accessible name and, in exports, its `<title>`.
+
+## Quantity flows (Sankey diagrams)
+
+To show how much flows along each edge, such as a lot that splits and merges again or a cost allocated across departments, project the quantities with `layoutFlowGraph` and draw its bands with the `edgeBands` prop. Every band is as thick as its quantity on one scale for the whole picture, and keeps the original edge ID.
+
+```ts
+const flow = computed(() => layoutFlowGraph(steps.value, transfers.value, {
+  quantity: transfer => transfer.data.amount,
+  unit: transfer => transfer.data.unit, // every edge states its unit
+  displayUnit: unit.value, // only this unit is drawn and summed
+  direction: direction.value,
+  scale: { fitExtent: 320 }, // or { pixelsPerUnit: 2 } for a fixed scale across pictures
+}))
+const layout: GraphLayoutFunction = () => flow.value
+const shown = computed(() => transfers.value.filter(transfer => flow.value.paths.has(transfer.id)))
+const bands = computed(() => graphFlowBands(flow.value))
+```
+
+```vue
+<NetworkGraph :nodes="steps" :edges="shown" :layout="layout" :edge-bands="bands" :options="{ direction }"
+  edges-selectable @update:selected-edge-ids="showTransfer" />
+```
+
+- **Units are never added.** Edges in another unit are left out of the picture and listed in `flow.excluded` with their ID, unit and quantity; show that list next to the graph, as the demo does, so nothing disappears silently. Convert units in your own data before the projection if a conversion is meaningful.
+- **Differences are yours to explain.** `flow.nodes` reports `inflow`, `outflow` and `difference` per node as given; the layout never balances them. Name the difference in your domain (scrap, stock, yield, rounding) or add the missing edges.
+- **Loops are references.** An edge that closes a cycle, such as a rework loop, and a self-loop come back as `reference: true` bands, drawn dashed below the picture and counted in `referenceInflow` and `referenceOutflow`, not in the totals. To show rework as forward flow over time, give each period its own node copies before the projection.
+- **Zero quantities** keep a 1-unit hairline band (`minBandWidth`) that can still be selected.
+- Band names come from `label`, for example "Cut → Inspect: 60 pcs"; pass `nodeLabel` and `formatQuantity` to localize them. Thin node boxes leave little room for text: draw labels next to the boxes in a `node` slot, as the demo does, and remember that exports use the default node drawing.
+- `exportSvg`, `exportPng` and `renderGraphSvg(flow, nodes, shown, { edgeBands: bands })` draw the same bands, each with its label as `<title>`. The demo's Quantity flow example (`examples/QuantityFlowDemo.vue`) shows a split, a merge, a yield loss, a rework loop and a unit switch.
+
 ## Custom content
 
 The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and elements with the class `vw-node-shape` (the outline of the default diamond, ellipse and hexagon nodes), and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
@@ -171,6 +223,41 @@ NetworkGraph editing aids add two variables, used only when the matching prop is
 | --- | --- | --- |
 | `--vw-background-pattern` | `--vw-grid` (`#c7d6df`) | Dots or lines of the `background` pattern |
 | `--vw-guide` | `#c2255c` | Dashed alignment guides (`vw-guide`) drawn with `alignmentGuides` |
+
+NetworkGraph port rules (`connectionRules`) mark the connection handles while a connection or reconnection is in progress: a valid target (`.vw-connect-handle.vw-is-valid-target`) is drawn larger and filled, and an invalid one (`.vw-connect-handle.vw-is-invalid-target`) hollow with a dashed outline and faded, so the two differ without colour. In forced-colors mode valid targets are filled with `Highlight` and invalid ones outlined in `GrayText`. The rules add two variables, with values in the built-in dark themes:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-connect-valid` | `#1d7a4f` (dark `#6fd0a0`) | Fill of connection handles that are valid targets |
+| `--vw-connect-invalid` | `#a8361f` (dark `#ff8a80`) | Dashed outline of connection handles that are not valid targets |
+
+The opt-in label editor, lasso and toolbar slots of NetworkGraph use the theme colours: the lasso outline (`vw-lasso-selection`) is drawn in `--vw-accent`, and the label editor (`vw-label-editor`) and the toolbar containers (`vw-node-toolbar`, `vw-edge-toolbar`) use `--vw-surface`, `--vw-border`, `--vw-text` and, for the editor's border, `--vw-accent`. They add two length variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-label-editor-width` | `140px` | Width of the label editor of an edge (`vw-label-editor.vw-is-edge`); a node's editor takes the node's on-screen width, at least 120 pixels |
+| `--vw-toolbar-offset` | `8px` | Gap between a node or edge and the container of the `node-toolbar` or `edge-toolbar` slot |
+
+The opt-in swimlanes of NetworkGraph (`lanes`) add five variables; their defaults follow the theme variables, so the built-in dark theme applies to them. Each lane is a `vw-swimlane` group (every second one also `vw-is-alternate`) with a `vw-swimlane-band`, a `vw-swimlane-header` and the title in `vw-swimlane-title`; the minimap draws `vw-minimap-lane` outlines.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-lane-fill` | `--vw-surface` (`#ffffff`) | Fill of a lane band |
+| `--vw-lane-fill-alternate` | `--vw-surface-muted` (`#f1f5f8`) | Fill of every second lane band (`vw-is-alternate`) |
+| `--vw-lane-header-fill` | `--vw-surface-hover` (`#e4ecf2`) | Fill of a lane header |
+| `--vw-lane-border` | `--vw-border` (`#c9d6df`) | Outline of bands and headers, and the minimap lane outlines |
+| `--vw-lane-title` | `--vw-text` (`#172c3b`) | Lane title text |
+
+The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge path (`vw-network-edge vw-network-band`) in `--vw-edge` with the band width, and reference (loop) bands (`vw-is-reference`) with a dash pattern, so they differ without colour. Selected bands take `--vw-edge-selected` and highlighted ones `--vw-graph-highlight`; the hit area of a band (`vw-edge-hit vw-is-band`) is as wide as the band. In forced-colors mode bands are drawn in `CanvasText`, reference bands in `GrayText` with their dashes and selected bands in `Highlight`. Four variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-flow-band-opacity` | `.5` | Opacity of a band, so crossing bands stay readable |
+| `--vw-flow-band-active-opacity` | `.78` | Opacity of a hovered, selected or highlighted band |
+| `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
+| `--vw-flow-reference-dash` | `10 6` | Dash pattern of a reference band |
+
+With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
 
@@ -218,6 +305,15 @@ Scheduling constraints (`TimelineBar.constraints`) add two variables. Their mark
 | `--vw-constraint` | `#a1246e` | Constraint markers and handles (`vw-gantt-constraint`); the `constraint` export theme colour |
 | `--vw-constraint-violated` | `#c4161c` | A constraint that the bar's dates break (`vw-gantt-constraint.vw-is-violated`, drawn with a dashed stem); the `constraintViolated` export theme colour |
 
+Marker ranges (`markerRanges`) add four variables. A range draws a band (`vw-gantt-range`, with `vw-is-row` when it covers single rows) under the bars and a label strip at the bottom of the time header (`vw-gantt-range-label`). A range with a `tone` adds `vw-tone-<tone> vw-has-tone` to both and uses that tone's `--vw-<tone>-pale`, `-line` and `-ink` instead of the first three variables.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-range` | `#f9efdc` | Fill of the band and the label strip of a range without a tone; the `range` export theme colour |
+| `--vw-range-line` | `#b58848` | Top edge of the label strip; the `rangeLine` export theme colour |
+| `--vw-range-ink` | `#764908` | Label text; the `rangeInk` export theme colour |
+| `--vw-range-opacity` | `0.7` | Opacity of the band, so grid lines and non-working shading stay visible through it (the export uses 0.7) |
+
 Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) with `--vw-border`, and with `--vw-accent` while hovered, dragged or focused; it adds no variable. The width of the row label column is the existing `--vw-row-label-width` (default 154px, 106px on narrow screens); the `labelWidth` prop sets it on the chart canvas.
 
 `GanttChart` also sets layout variables on its canvas element (`vw-gantt-canvas`) for its own stylesheet. A host stylesheet can read them, for example to place an overlay on the timeline, but setting them on an ancestor has no effect because the component sets them itself:
@@ -262,15 +358,15 @@ The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-au
 
 ### Built-in dark theme
 
-Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, `--vw-range`, `--vw-range-line`, `--vw-range-ink`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
 
 ### Media queries
 
-- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), node shapes (like node rectangles), hollow edge markers (`Canvas` inside an outline in the edge colour), the status-date line (a thick `CanvasText` line), the progress line (dashed `CanvasText`), dependency lag labels (`CanvasText` on a `Canvas` halo) and scheduling constraint markers and handles (`CanvasText` on a `Canvas` halo, a violated one with a dashed stem, a focused handle with a `Highlight` outline), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
+- `@media (forced-colors: active)`: always on. Nodes, bars, edges, dependency lines, handles, progress, load overload (hatched), capacity line, the now marker, non-working shading (hatched with `GrayText`), critical outlines (double border), float lines, deadline indicators, late outlines (dashed), segments, the progress slider, the tooltip border, the create and cascade previews (`Highlight` outlines without fill), the row drop indicator, the column resize separators (`CanvasText`), the graph background pattern (`GrayText`), alignment guides (`Highlight`), node shapes (like node rectangles), hollow edge markers (`Canvas` inside an outline in the edge colour), the status-date line (a thick `CanvasText` line), the progress line (dashed `CanvasText`), dependency lag labels (`CanvasText` on a `Canvas` halo), marker range bands (hatched with `CanvasText`) and labels (`CanvasText` on `Canvas`) scheduling constraint markers and handles (`CanvasText` on a `Canvas` halo, a violated one with a dashed stem, a focused handle with a `Highlight` outline) and swimlanes (`Canvas` bands outlined in `CanvasText`, every second band dashed, headers with a thicker border and `CanvasText` titles), selection and focus use system colours (`CanvasText`, `Highlight`, `HighlightText`, `GrayText`) with `forced-color-adjust: none` on the affected elements. Selection is also shown by outline or thicker strokes, not colour alone.
 - `@media (prefers-reduced-motion: reduce)`: the stylesheet disables transitions and animations inside both components; animated graph edges stay dashed but still. Drag auto-scroll in `GanttChart` runs through `requestAnimationFrame` in JavaScript and is not affected.
-- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines and the scheduling constraint markers (also those drawn as handles) are printed, animated graph edges print dashed without motion, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
+- `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines, marker ranges and the scheduling constraint markers (also those drawn as handles) are printed, animated graph edges print dashed without motion, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
@@ -342,7 +438,9 @@ Accept a `column-resize` proposal by setting the column's `width`, or `labelWidt
 
 To import a plan from CSV, read the file in the browser (`await file.text()`) or on a server, then call `timelineFromCsvTable(parseCsv(text), { parseTime })` and commit the returned rows and bars as one history entry. The importer assigns its own row and bar IDs, so map them to your records or keep a lookup by label when you merge an import into existing data. Catch its errors and show the message, which names the CSV line.
 
-A Microsoft Project XML file (MSPDI, "Save as XML") imports the same way: `fromMsProjectXml(text, { utcOffsetMinutes })` returns the tasks, links and `warnings` about what could not be imported, and `timelineFromMsProject(project)` turns them into rows, bars and dependencies to commit as one history entry. Row and bar IDs are the file's task UIDs, summary tasks become parent rows without bars, and links to summary tasks are listed in `hiddenDependencyIds`. Show the warnings next to the result; malformed XML throws an Error that names the line and column.
+A Microsoft Project XML file (MSPDI, "Save as XML") imports the same way: `fromMsProjectXml(text, { utcOffsetMinutes })` returns the tasks, links and `warnings` about what could not be imported, and `timelineFromMsProject(project)` turns them into rows, bars and dependencies to commit as one history entry. Row and bar IDs are the file's task UIDs, summary tasks become parent rows without bars, and links to summary tasks are listed in `hiddenDependencyIds`, or, with `timelineFromMsProject(project, { summaryDependencies: true })`, kept in `dependencies` for a chart with `show-summaries` and `summary-dependencies`. Show the warnings next to the result; malformed XML throws an Error that names the line and column. The result also carries the file's calendars, resources and assignments when it has them: `workCalendarsFromMsProject` and `resourceLoadFromMsProject` turn them into the inputs of `scheduleTasks`, `levelResources`, `calculateResourceLoad` and `projectResourceTimeline`, and `timelineFromMsProject` exposes the resources and assignments for a resource timeline directly. Calendar exceptions become one-off dates: date ranges and the recurrences that can be expanded exactly (every N days, weekly on given days, monthly or yearly on a day or a weekday position) become exactly their dates, and the others are left out with an `unsupported-calendar` warning that names the calendar and the exception (see the table in [Microsoft Project import](api.md#microsoft-project-import)). Cost resources (`IsCostResource` 1) are imported as `type: 'cost'` and have no work capacity. `toMsProjectXml` writes a cost resource as `Type` 0 with `IsCostResource` 1 and the import also accepts `Type` 2, but Microsoft's schema pages disagree on this encoding and neither form has been opened in Microsoft Project itself. The exported calendars, resources and assignments follow the MSPDI schema order but have not been opened in Microsoft Project either.
+
+An iCalendar file imports with `fromICalendar(text, { utcOffsetMinutes })` and `timelineFromICalendar(events)`. Time zones that `Intl` knows are applied (a `DURATION` of days, such as `P1D`, ends at the same local time on the next day even across a daylight saving change, while `PT24H` is 24 hours), recurring events are imported once with a warning, and the warnings list what was skipped; show them next to the result.
 
 The `context-menu` event only reports what was targeted, the time and row under the pointer and the client coordinates. Render your own menu there (for example `role="menu"` with `role="menuitem"` entries), move focus into it, close it on Escape and return focus to the element that had it. Menu actions can reuse the same accept functions as the keyboard proposals.
 
@@ -350,7 +448,34 @@ The `context-menu` event only reports what was targeted, the time and row under 
 
 A TimeScale exposes width, toX(time) and toTime(x). It must map range.start to 0 and range.end to width, be finite and strictly increasing, and provide mutually inverse mappings over the range. It should also extrapolate beyond the range when tick or interval calculations require it. The Gantt component applies zoom to that mapping and uses its inverse for pointer displacement.
 
-For example, a piecewise scale can give working hours more visual space while retaining a small positive width for other hours. A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
+A piecewise scale can give working hours more visual space while retaining a small positive width for other hours. `createWorkingTimeScale` builds one from the chart range, working periods and a base width:
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { GanttChart, buildWorkPeriods, createWorkingTimeScale } from 'vue-weave'
+
+const hour = 3_600_000
+const range = { start: Date.UTC(2026, 10, 9), end: Date.UTC(2026, 10, 16) }
+const periods = buildWorkPeriods(range, {
+  timeZone: 'Europe/Berlin',
+  weekly: [1, 2, 3, 4, 5].map(weekday => ({ weekday, startMinute: 9 * 60, endMinute: 17 * 60 })),
+})
+// 40 px per working hour; nights and weekends keep 10 % of that (4 px per hour).
+const scale = computed(() => createWorkingTimeScale(range, periods, 40 / hour, 0.1))
+</script>
+
+<template><GanttChart :rows="rows" :bars="bars" :range="range" :scale="scale" :snap="hour" /></template>
+```
+
+The helper follows the contract above: `toX(range.start)` is 0, `toX(range.end)` is `width`, both mappings are strictly increasing and continuous, they are exact inverses at segment boundaries (within rounding elsewhere), and outside the range they continue with the slope of the nearest edge segment, so a drag past either edge still inverts. Each call is a binary search over the breakpoints, so thousands of periods are fine.
+
+- `nonWorkingRatio` (default 0.1) must be in `(0, 1]`. Zero is rejected with a `RangeError`: a collapsed interval maps all its times to one pixel, so `toTime` could not invert pointer positions and an edit inside it would have no defined time. If you need a hidden gap, keep a small positive ratio. A ratio of 1 gives the linear scale.
+- Periods are clipped to the range, and unsorted, overlapping or touching periods are united; they are not rejected. Periods outside the range are ignored. With no working period in range the whole axis is compressed uniformly.
+- Changing the ratio or `pixelsPerUnit` moves bars on screen but never changes their times, and snapping, `minDuration` and edit proposals work on time, so they stay on the same grid. A gesture is one pointer position in pixels, so a drag over non-working time covers more time per pixel than one over working time.
+- The scale does not know the text direction. GanttChart positions bars and ticks from the inline start edge, so the same scale works with `dir="rtl"`; use `mirrorTimeScale` only for your own renderers.
+
+A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
 
 ## Reusing calculations
 
@@ -408,6 +533,7 @@ async function showInGraph(nodeId: string) {
 - Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
 - For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached, and `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
+- To explore a time range (what ran on machine X between 14:00 and 16:00), pass `timeRange: { range, bars, rowIds, graph, traversal }` to `useLinkedSelection`. Bars are tested by their work `segments` when they have them, so a pause covering the range does not count. Active tasks join the highlight sets and related tasks the `related*` sets, for example `:related-ids="linked.graph.value.relatedNodeIds"` on NetworkGraph. Nothing is selected, so Delete never removes them. `timelineBarsInRange` and `resolveTimeRangeTargets` do the same in core; see [Time range exploration](api.md#time-range-exploration).
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
 
 ## Search, sort and saved views
@@ -420,7 +546,7 @@ For typed editing, give a column a `field` spec. A `time` field needs an explici
 
 ## Use ELK.js for layout
 
-The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes. Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
+The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes and each other (the opt-in `avoidNodes` prop routes orthogonal edges around node boxes, but each edge on its own). Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
 
 ELK lays out asynchronously, and NetworkGraph's `layout` prop is synchronous. Compute the layout in the application (in a worker, with ELK's `workerUrl`, for large graphs), then pass the nodes, the edges and a `layout` function that returns the cached result together, so that the chart never sees data without matching geometry.
 
@@ -521,6 +647,51 @@ Notes:
 - With `collapsedGroupIds`, NetworkGraph calls `layout` with the collapsed view (proxy nodes and merged edges) and with the expanded graph; a cached result covers only the graph it was computed for. Lay out both, or use the built-in layouts for collapsible groups.
 - `org.eclipse.elk.direction` `DOWN`, `LEFT` or `UP` correspond to `TB`, `RL` and `BT`; number the layers by `y` for vertical directions.
 
+### Incremental layouts with an external engine
+
+When the graph grows (a new node, a page of a [graph expansion](#expanding-a-graph-one-hop-at-a-time)), an engine that supports incremental layout can keep the nodes the user was looking at. Pass the information through `useAsyncGraphLayout`: `positions` (the boxes on display), `fixedIds` (nodes that must not move) and `addedIds` (nodes new since the last layout) are optional fields of the input, copied to every request, and part of the input key. Requests without them are exactly as before, so existing adapters keep working.
+
+```ts
+import { computed, shallowRef } from 'vue'
+import { useAsyncGraphLayout, type GraphLayoutRequest } from 'vue-weave'
+
+const shownBoxes = shallowRef(new Map()) // the boxes on display, updated when a frame is shown
+const input = computed(() => {
+  const addedIds = new Set(nodes.value.filter(node => !shownBoxes.value.has(node.id)).map(node => node.id))
+  return { nodes: nodes.value, edges: edges.value, positions: shownBoxes.value, fixedIds: pinned.value, addedIds }
+})
+const graph = useAsyncGraphLayout({ input, adapter: request => layoutWithElk(request) })
+
+// Forward the incremental fields to ELK. The layered algorithm's interactive strategies read the input coordinates of
+// the nodes to keep their layers and order; check the option names against the ELK reference of the version you use.
+async function layoutWithElk(request: GraphLayoutRequest) {
+  const graphInput = toElkGraph(request.nodes, request.edges)
+  if (request.positions?.size) {
+    graphInput.layoutOptions = {
+      ...graphInput.layoutOptions,
+      'org.eclipse.elk.layered.layering.strategy': 'INTERACTIVE',
+      'org.eclipse.elk.layered.cycleBreaking.strategy': 'INTERACTIVE',
+      'org.eclipse.elk.layered.crossingMinimization.semiInteractive': 'true',
+    }
+    for (const child of graphInput.children ?? []) {
+      const position = request.positions.get(child.id)
+      if (position) Object.assign(child, { x: position.x, y: position.y })
+    }
+  }
+  const layout = fromElkGraph(await elk.layout(graphInput))
+  // ELK treats these coordinates as hints and does not pin nodes; put the fixed ones back, or fail the request.
+  for (const id of request.fixedIds ?? []) {
+    const box = layout.boxes.get(id), position = request.positions?.get(id)
+    if (box && position && (box.x !== position.x || box.y !== position.y)) throw new Error('The engine moved a pinned node: ' + id)
+  }
+  return layout
+}
+```
+
+- Which options an engine offers differs: yFiles and similar engines take incremental hints for the added nodes and exact fixed positions, ELK layered uses the coordinates as ordering hints. An engine that cannot honour `fixedIds` should fail the request (as above) rather than silently move pinned nodes.
+- In the `shown` request of a collapsed view, `fixedIds` and `addedIds` are passed as given; IDs of members hidden in a collapsed group are not nodes of that request and are ignored.
+- Without an engine, `layoutGraphIncrementally` from `vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
@@ -549,7 +720,7 @@ The timeline then runs from right to left and its row headings sit on the right.
 
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
-The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels; choose `options.direction: 'RL'` to lay out ranks from right to left.
+The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels (swimlane titles included); choose `options.direction: 'RL'` to lay out ranks from right to left.
 
 ## Saving and restoring a view
 
@@ -625,7 +796,7 @@ const frame = computed(() => graph.display.value!)
 - A failure keeps the last display and sets `error` with the revision and input key that failed. With the default `provisional: true` that display can be the provisional frame of the failed input (`display.source === 'provisional'`): consistent, with the previous boxes and temporary routes for the new edges. Show that the routes are temporary, or set `provisional: false` to keep the last frame the engine produced.
 - When only edges change (for example after a `connect` is accepted), the frame is shown at once with the previous boxes and temporary routes from `completeGraphLayout` (`source: 'provisional'`, `temporaryEdgeIds`) until the engine answers.
 
-A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
+A Worker receives `{ type: 'request', request }` and answers `{ type: 'success', requestId, inputKey, scope, layout }` or `{ type: 'failure', requestId, inputKey, scope, message }`; `{ type: 'cancel', requestId, inputKey }` asks it to stop. Check incoming messages with `parseGraphLayoutMessage` (structured clone keeps the Maps), or, when messages travel as JSON text, convert with `graphLayoutMessageToJson` and read with `graphLayoutMessageFromJson`, which turn each Map into an array of entries and back. Pass `positions` and `sizes` (and the incremental `fixedIds` and `addedIds`, see [Incremental layouts with an external engine](#incremental-layouts-with-an-external-engine)) in the input only when the engine honours them; they are then part of the input key. An engine that cannot place fixed nodes should fail the request with a message saying so rather than ignore them.
 
 ### Preserving external routes
 
@@ -652,3 +823,94 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+## Loading only what is visible
+
+GanttChart renders only the rows and the time window on screen, and NetworkGraph can cull what is off screen, but both still validate and index every item they are given. For plans or graphs too large to fetch at once, load only what is shown. The library stays controlled: GanttChart reports what it renders, `useWindowedData` keeps the request state, and your `load` function fetches. Nothing is requested during server rendering.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { GanttChart, useWindowedData, type TimelineBar, type TimelineDependency, type TimelineVisibleWindow } from 'vue-weave'
+
+const day = 86_400_000
+// `rows` (the whole row skeleton), `range` (the whole plan) and `planVersion` come from your application.
+const view = ref<TimelineVisibleWindow>()
+const filter = ref('all')
+const plan = useWindowedData<TimelineBar, TimelineDependency>({
+  view,
+  condition: () => `${filter.value}@${planVersion.value}`, // results for another filter or version are never attached
+  chunkSize: 7 * day,       // requests are aligned to weeks...
+  origin: range.start,
+  padding: day,             // ...and a day of padding means small scrolls do not refetch
+  load: async (request, { signal }) => {
+    const query = new URLSearchParams({ from: String(request.start), to: String(request.end), rows: request.rowIds!.join(','), filter: filter.value })
+    const response = await fetch(`/api/plan/bars?${query}`, { signal })
+    if (!response.ok) throw new Error(`Loading failed (${response.status})`)
+    return response.json() // { items: TimelineBar[], links: TimelineDependency[] }
+  },
+})
+</script>
+
+<template>
+  <p role="status">{{ plan.status.value }}</p>
+  <button v-if="plan.coverage.value.failed" type="button" @click="plan.retry()">Retry</button>
+  <GanttChart :rows="rows" :bars="plan.items.value" :dependencies="plan.resolvedLinks.value" :range="range" readonly
+    @visible-window-change="view = $event" />
+</template>
+```
+
+- **What is requested.** The window (`[start, end)`, half-open like every interval in the library) is padded, aligned to chunks, and split into cells of one chunk of one row. Only cells that are not loaded, loading or failed are requested; adjacent chunks with the same missing rows share one request. A request asks for the items that overlap `[start, end)`; because chunks are half-open, a bar that ends at midnight is not fetched for the next day, and a milestone at midnight belongs to the next day.
+- **Rows.** The row skeleton (`rows`) is passed whole; it is what scrolling and collapsing work on. `rowIds` in the event are the rendered rows after collapsing, with overscan. To fetch child rows on expansion, watch `expandedIds` (or `update:collapsedIds`) and load the children of newly expanded rows yourself; collapsing a row while its children's bars load aborts the requests that no longer cover a visible row.
+- **Superseded and stale responses.** Scrolling away aborts requests whose cells are all out of view (`signal` aborts; pass it to `fetch`), and a late answer to an aborted or superseded request is ignored even when it arrives. A fast scroll from A to B and back to A issues a new request for A, and only that one's answer is applied. Answers are matched by request ID and by condition, so an answer that arrives although your `load` ignored the abort, or a rejection after an abort, changes nothing and is not reported as `error`.
+- **Condition changes come first.** When the condition and the view change together, the condition is processed first: every request of the old condition is aborted and all its items, links and cell states are dropped before the new view is checked. So even if the new view is invalid, nothing of the old plant, filter or plan version stays on display or arrives later.
+- **Invalid views.** A view with more cells than `maxCells` (default 100000), a non-finite view or one with `end < start` is not thrown from the watcher: it is reported through `error` without a `request`, every request in flight is aborted, no view is current (`status` is `unloaded`, `complete` is false) and the data of the current condition stays. The error clears as soon as a valid view is set; `retry()` and `invalidate()` request nothing while the view is invalid. A row ID in `rowIds` that is not a non-empty string is invalid in the same way (`Invalid view row ID: <value>`); a repeated one is dropped. The core `setWindowedView` throws `RangeError` for the same views (an `Error` for a bad row ID) and then changes nothing; to switch the condition anyway, call `setWindowedView(state, undefined, condition)` first.
+- **Duplicates.** A bar spanning two chunks is returned by both requests; items and links are merged by ID, so it is kept once (the later answer replaces it).
+- **Status.** `status` (and `coverageOf(window)` for any window, for example one row) distinguishes `unloaded`, `loading`, `loaded-empty` (fetched, nothing there), `loaded` and `failed`. A failed request keeps everything already loaded on display; its cells stay `failed` until `retry()`. `invalidate()` refetches the view while the current items stay on display; a new `condition` drops everything, because data for another filter or version must not be mixed in.
+- **Dangling links.** A dependency loaded with one bar may point to a bar that is not loaded. The components throw for links to unknown items, so bind `resolvedLinks`; `danglingLinks` holds the rest with their `missingIds`, and they move to `resolvedLinks` as soon as the missing bar arrives. Outside the composable, `splitDanglingLinks(links, presentIds)` does the same split. If your `linkEnds` accessor throws, the failure is reported through `error` (after a failed request or an invalid view, which come first), `resolvedLinks` and `danglingLinks` are both empty rather than partly filled, and the loaded items and links stay; it clears when the split works again. A link whose end is `undefined` or not a string is dangling, not an error.
+- **Memory.** Loaded items are kept until the condition changes or `resetWindowedData`; to bound memory, change the condition or keep your own cache in `load`.
+
+Partial data cannot determine deadlines, critical paths, total load or plan comparisons. `complete` is true only when every cell of the current view has loaded, which says nothing about the rest of the plan. Run `scheduleTasks`, `levelResources`, `calculateResourceLoad` and comparisons on complete inputs (on the server, or in the client over the full data set) and display their results as data, or label any figure computed over the loaded part as partial. Totals must not change when the user scrolls; the demo's counters show fetched versus total items and say so.
+
+### Expanding a graph one hop at a time
+
+For a graph, load the neighbourhood of the selected nodes and grow it on request. The graph expansion helpers merge pages, deduplicate nodes and edges (cycles and shared neighbours come back from several pages), remember which nodes have been expanded and keep edges to nodes that are not loaded out of the component input:
+
+```ts
+import { shallowRef, computed } from 'vue'
+import { beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, mergeGraphExpansionPage } from 'vue-weave'
+
+const graph = shallowRef(createGraphExpansion({ nodes: [selectedNode] }))
+const shown = computed(() => graphExpansionView(graph.value)) // bind shown.nodes and shown.edges to NetworkGraph
+
+async function expand(id: string) {
+  graph.value = beginGraphExpansion(graph.value, [id])
+  try {
+    const page = await api.neighbours(id) // { nodes, edges } one hop around id
+    graph.value = mergeGraphExpansionPage(graph.value, page, [id])
+  } catch (error) {
+    graph.value = cancelGraphExpansion(graph.value, [id])
+  }
+}
+```
+
+`shown.dangling` lists edges waiting for a node, and `shown.frontierIds` the loaded nodes not expanded yet. By default each expansion gives NetworkGraph a larger graph, which it lays out again, so existing nodes can move. To keep them where they are, place each page around the boxes on display with `layoutGraphIncrementally` and pass the result through a `layout` function of stable identity:
+
+```ts
+import { graphLayoutChangeMetrics, layoutGraphIncrementally, layoutLayeredGraph, type GraphLayoutFunction } from 'vue-weave'
+
+const first = layoutLayeredGraph(shown.value.nodes, shown.value.edges)
+const kept = shallowRef(layoutGraphIncrementally(shown.value.nodes, shown.value.edges, first.boxes, { previousLayout: first }))
+// Bind `:layout="keepLayout"` and keep this function: a new function would re-fit the camera.
+const keepLayout: GraphLayoutFunction = (nodes, edges) =>
+  layoutGraphIncrementally(nodes, edges, kept.value.boxes, { previousLayout: kept.value })
+
+watch(shown, ({ nodes, edges }) => {
+  const next = layoutGraphIncrementally(nodes, edges, kept.value.boxes, { previousLayout: kept.value })
+  // A diagnostic: the nodes that were on display did not move.
+  console.assert(graphLayoutChangeMetrics(kept.value.boxes, next).maxDisplacement === 0)
+  kept.value = next
+})
+```
+
+Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).

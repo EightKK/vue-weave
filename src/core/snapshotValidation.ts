@@ -3,9 +3,11 @@ import { createTimelineRowTree, validateTimelineData, timelineLabelColumnId } fr
 import { indexGraph } from './graph.js'
 import { scheduleTasks, type ScheduleResult } from './scheduling.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
+import { assignmentWorkRange, capacityPeriodsOf, duplicateAssignmentError } from './resourceCapacity.js'
 import type {
   JsonValue, SnapshotCodec, SnapshotDiagnostic, SnapshotDiagnosticCode, SnapshotDiagnosticSeverity,
 } from './snapshot.js'
+import { duplicateIdError, invalidIdError, isId } from './ids.js'
 
 type Rec = Record<string, unknown>
 
@@ -254,13 +256,16 @@ function list(rec: Rec, key: string, path: string, report: Report, required: boo
   return value
 }
 
-/** Items that are records with a nonempty string `id`. Reports the rest and returns only well-formed items. */
-function records(items: unknown[] | undefined, path: string, report: Report, withId = true): Rec[] {
+/**
+ * Items that are records, each with a valid `id` (a non-empty string) unless `kind` is false. Reports the rest, an
+ * invalid ID with the shared `Invalid <kind> ID: <value>` text, and returns only well-formed items.
+ */
+function records(items: unknown[] | undefined, path: string, report: Report, kind: string | false): Rec[] {
   const out: Rec[] = []
   items?.forEach((item, i) => {
     const at = path + '[' + i + ']'
     if (!isRecord(item)) report.error('structure', at, 'Must be an object')
-    else if (withId && (typeof item.id !== 'string' || !item.id)) report.error('structure', at + '.id', 'Must be a nonempty string')
+    else if (kind !== false && !isId(item.id)) report.error('structure', at + '.id', invalidIdError(kind, item.id).message)
     else out.push(item)
   })
   return out
@@ -315,9 +320,9 @@ function validateGraphData(data: Rec, path: string, report: Report) {
   const nodeList = list(data, 'nodes', path, report, true)
   const edgeList = list(data, 'edges', path, report, true)
   const groupList = list(data, 'groups', path, report, false)
-  const nodes = records(nodeList, field(data, 'nodes', path), report)
-  const edges = records(edgeList, field(data, 'edges', path), report)
-  const groups = records(groupList, field(data, 'groups', path), report)
+  const nodes = records(nodeList, field(data, 'nodes', path), report, 'node')
+  const edges = records(edgeList, field(data, 'edges', path), report, 'edge')
+  const groups = records(groupList, field(data, 'groups', path), report, 'group')
   nodes.forEach((node, i) => {
     const at = field(data, 'nodes', path) + '[' + i + ']'
     text(node, 'label', at, report, true)
@@ -338,7 +343,7 @@ function validateGraphData(data: Rec, path: string, report: Report) {
   const nodeIds = idSet(nodes)
   const groupIds = new Set<string>()
   for (const group of groups) {
-    if (groupIds.has(group.id as string)) report.error('duplicate', field(data, 'groups', path), 'Duplicate group ID: ' + String(group.id))
+    if (groupIds.has(group.id as string)) report.error('duplicate', field(data, 'groups', path), duplicateIdError('group', group.id as string).message)
     groupIds.add(group.id as string)
   }
   groups.forEach((group, i) => {
@@ -382,9 +387,9 @@ function validateTimelineSnapshotData(data: Rec, path: string, report: Report) {
   const rowList = list(data, 'rows', path, report, true)
   const barList = list(data, 'bars', path, report, true)
   const depList = list(data, 'dependencies', path, report, false)
-  const rows = records(rowList, field(data, 'rows', path), report)
-  const bars = records(barList, field(data, 'bars', path), report)
-  const deps = records(depList, field(data, 'dependencies', path), report)
+  const rows = records(rowList, field(data, 'rows', path), report, 'row')
+  const bars = records(barList, field(data, 'bars', path), report, 'bar')
+  const deps = records(depList, field(data, 'dependencies', path), report, 'dependency')
   rows.forEach((row, i) => {
     text(row, 'label', field(data, 'rows', path) + '[' + i + ']', report, true)
     text(row, 'parentId', field(data, 'rows', path) + '[' + i + ']', report, false, true)
@@ -432,13 +437,13 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
   const taskList = list(data, 'tasks', path, report, true)
   const resourceList = list(data, 'resources', path, report, true)
   const assignmentList = list(data, 'assignments', path, report, true)
-  const tasks = records(taskList, field(data, 'tasks', path), report)
-  const resources = records(resourceList, field(data, 'resources', path), report)
+  const tasks = records(taskList, field(data, 'tasks', path), report, 'task')
+  const resources = records(resourceList, field(data, 'resources', path), report, 'resource')
   const assignments = records(assignmentList, field(data, 'assignments', path), report, false)
   const calendars = list(data, 'calendars', path, report, false)
   const deps = list(data, 'dependencies', path, report, false)
-  records(calendars, field(data, 'calendars', path), report)
-  records(deps, field(data, 'dependencies', path), report)
+  records(calendars, field(data, 'calendars', path), report, 'calendar')
+  records(deps, field(data, 'dependencies', path), report, 'dependency')
   tasks.forEach((task, i) => {
     const at = field(data, 'tasks', path) + '[' + i + ']'
     num(task, 'priority', at, report, 'finite')
@@ -462,7 +467,7 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
   const resourceIds = new Set<string>()
   resources.forEach((resource, i) => {
     const at = field(data, 'resources', path) + '[' + i + ']'
-    if (resourceIds.has(resource.id as string)) report.error('duplicate', at, 'Duplicate resource ID: ' + String(resource.id))
+    if (resourceIds.has(resource.id as string)) report.error('duplicate', at, duplicateIdError('resource', resource.id as string).message)
     resourceIds.add(resource.id as string)
     const capacity = resource.capacity
     if (typeof capacity !== 'number' || !Number.isSafeInteger(capacity) || capacity < 0) {
@@ -470,6 +475,9 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
     }
     const periods = list(resource, 'periods', at, report, false)
     if (periods && rangeOk) attempt(report, 'structure', at + '.periods', () => void normalizeWorkPeriods(periods as never, range as never))
+    if (resource.capacityPeriods !== undefined) {
+      attempt(report, 'structure', at + '.capacityPeriods', () => void capacityPeriodsOf(resource as never))
+    }
   })
   const pairs = new Set<string>()
   const pairKey = (taskId: string, resourceId: string) => JSON.stringify([taskId, resourceId])
@@ -481,11 +489,12 @@ function validatePlanningData(data: Rec, path: string, report: Report) {
     if (units !== undefined && (typeof units !== 'number' || !Number.isSafeInteger(units) || units <= 0)) {
       report.error('structure', at + '.units', 'Must be a positive safe integer')
     }
+    attempt(report, 'structure', at, () => void assignmentWorkRange(assignment as never))
     if (taskId === undefined || resourceId === undefined) return
     if (!taskIds.has(taskId)) report.error('reference', at + '.taskId', 'Unknown task in assignment: ' + taskId)
     if (!resourceIds.has(resourceId)) report.error('reference', at + '.resourceId', 'Unknown resource in assignment: ' + resourceId)
     const key = pairKey(taskId, resourceId)
-    if (pairs.has(key)) report.error('duplicate', at, 'Duplicate assignment of task ' + taskId + ' to resource ' + resourceId)
+    if (pairs.has(key)) report.error('duplicate', at, duplicateAssignmentError(taskId, resourceId).message)
     pairs.add(key)
   })
   const placed = new Set<string>()
@@ -543,8 +552,8 @@ function uniqueIds(rec: Rec, key: string, path: string, report: Report, known: R
   const seen = new Set<string>()
   ids?.forEach((id, i) => {
     const at = field(rec, key, path) + '[' + i + ']'
-    if (typeof id !== 'string' || !id) report.error('structure', at, 'Must be a nonempty string')
-    else if (seen.has(id)) report.error('duplicate', at, 'Duplicate ' + kind + ' ID: ' + id)
+    if (!isId(id)) report.error('structure', at, invalidIdError(kind, id).message)
+    else if (seen.has(id)) report.error('duplicate', at, duplicateIdError(kind, id).message)
     else if (known && !known.has(id)) report.error('reference', at, 'Unknown ' + kind + ' ID: ' + id)
     if (typeof id === 'string') seen.add(id)
   })
@@ -576,7 +585,7 @@ function validateTimelineView(view: Rec, path: string, report: Report, rowIds: R
   }
   const columnIds = new Set<string>([timelineLabelColumnId])
   const seenColumns = new Set<string>()
-  const columns = records(list(view, 'columns', path, report, false), field(view, 'columns', path), report)
+  const columns = records(list(view, 'columns', path, report, false), field(view, 'columns', path), report, 'column')
   columns.forEach((column, i) => {
     const at = field(view, 'columns', path) + '[' + i + ']'
     checkKeys(column, ['id', 'registryId', 'visible', 'width', 'editorId', 'rendererId'], at, report)

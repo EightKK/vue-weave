@@ -11,9 +11,10 @@ import {
   type TimelineBar, type TimelineLoadSegment, type ViewBinding, type ViewTarget, type ViewTargetEvent,
 } from '../src'
 import GraphContextToolbar from './components/GraphContextToolbar.vue'
+import ScenarioComparison from './components/ScenarioComparison.vue'
+import DemoPanel from './components/DemoPanel.vue'
+import { hour, origin } from './data'
 
-const hour = 3_600_000
-const origin = Date.UTC(2026, 10, 9, 8)
 const range = { start: origin, end: origin + 12 * hour }
 const names: Record<string, string> = { prep: 'Prepare stock', cutA: 'Cut order A', cutB: 'Cut order B', inspect: 'Inspect', pack: 'Pack' }
 const tasks: ScheduleTask[] = [
@@ -71,7 +72,48 @@ const bindings: ViewBinding[] = [
   }),
 ]
 const index = buildViewBindingIndex(bindings)
-const linked = useLinkedSelection({ bindings })
+// Plan scenario comparison (opt-in): a separate panel with its own copy of this plan, see ScenarioComparison.vue.
+const scenariosOpen = ref(false)
+
+// Time range exploration (opt-in): the bars worked on in [start, end) highlight their tasks in every view, and the
+// chosen traversal adds related tasks, shown in the graph through `relatedIds`. Display only: nothing is selected.
+const rangeEnabled = ref(false)
+const rangeStart = ref('10:30')
+const rangeEnd = ref('11:30')
+const rangeResource = ref('')
+const rangeRelation = ref<'active' | 'successors' | 'predecessors' | 'neighbours'>('active')
+const clockTime = (text: string) => {
+  const match = /^(\d\d):(\d\d)$/.exec(text)
+  return match ? Date.UTC(2026, 10, 9, Number(match[1]), Number(match[2])) : Number.NaN
+}
+const rangeError = computed(() => {
+  if (!rangeEnabled.value) return ''
+  const start = clockTime(rangeStart.value), end = clockTime(rangeEnd.value)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'Enter a start and an end time.'
+  return end < start ? 'The range end is before its start.' : ''
+})
+const timeRange = computed(() => {
+  if (!rangeEnabled.value || rangeError.value) return undefined
+  const traversal = { active: undefined, successors: { direction: 'forward' }, predecessors: { direction: 'backward' }, neighbours: { direction: 'both', maxHops: 1 } } as const
+  return {
+    range: { start: clockTime(rangeStart.value), end: clockTime(rangeEnd.value) },
+    bars,
+    rowIds: rangeResource.value ? assignments.filter(item => item.resourceId === rangeResource.value).map(item => item.taskId) : undefined,
+    graph: network,
+    traversal: traversal[rangeRelation.value],
+  }
+})
+const linked = useLinkedSelection({ bindings, timeRange })
+const rangeSummary = computed(() => {
+  if (!rangeEnabled.value) return 'Time range off.'
+  if (rangeError.value) return rangeError.value
+  const result = linked.timeRange.value
+  if (!result) return ''
+  const taskNames = (entities: readonly EntityRef[]) => entities.filter(entity => entity.kind === 'task').map(entity => names[entity.id]).join(', ')
+  const active = taskNames(result.activeEntities)
+  const related = taskNames(result.relatedEntities)
+  return `Active ${rangeStart.value}–${rangeEnd.value}: ${active || 'none'}.` + (rangeRelation.value === 'active' ? '' : ` Related: ${related || 'none'}.`)
+})
 
 const graph = useTemplateRef<InstanceType<typeof NetworkGraph>>('graph')
 const gantt = useTemplateRef<InstanceType<typeof GanttChart>>('gantt')
@@ -245,10 +287,7 @@ async function expandAndShow() {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="linked-title" @keydown.esc="clear">
-    <div class="section-head">
-      <div><h2 id="linked-title">Linked planning views</h2><p>Act in any view; the others highlight the same tasks. Escape clears the selection.</p></div>
-    </div>
+  <DemoPanel title-id="linked-title" title="Linked planning views" subtitle="Act in any view; the others highlight the same tasks. Escape clears the selection." @keydown.esc="clear">
     <div class="options linked-options" role="group" aria-label="Linked view controls">
       <label>Impact range
         <select v-model="impactDirection" aria-label="Impact direction">
@@ -274,6 +313,26 @@ async function expandAndShow() {
       <button type="button" @click="counterpart('timeline')">Go to timeline</button>
       <button type="button" @click="clear">Clear selection</button>
     </div>
+    <div class="options linked-options" role="group" aria-label="Time range controls">
+      <label><input v-model="rangeEnabled" type="checkbox"> Explore a time range</label>
+      <label>From <input v-model="rangeStart" type="time" aria-label="Range start" :disabled="!rangeEnabled"></label>
+      <label>To <input v-model="rangeEnd" type="time" aria-label="Range end" :disabled="!rangeEnabled"></label>
+      <label>Resource
+        <select v-model="rangeResource" aria-label="Range resource" :disabled="!rangeEnabled">
+          <option value="">All rows</option>
+          <option v-for="resource in resources" :key="resource.id" :value="resource.id">{{ resource.label }}</option>
+        </select>
+      </label>
+      <label>Show
+        <select v-model="rangeRelation" aria-label="Range relation" :disabled="!rangeEnabled">
+          <option value="active">Active only</option>
+          <option value="successors">With successors</option>
+          <option value="predecessors">With predecessors</option>
+          <option value="neighbours">With direct neighbours</option>
+        </select>
+      </label>
+    </div>
+    <p class="status linked-status" role="status" aria-label="Time range result">{{ rangeSummary }}</p>
     <p class="status linked-status" role="status" aria-label="Linked selection">{{ summary }}</p>
     <p class="status linked-status" role="status" aria-label="Navigation message">
       <span>{{ message }}</span>
@@ -284,7 +343,7 @@ async function expandAndShow() {
       <NetworkGraph ref="graph" :nodes="graphNodes" :edges="graphEdges" :groups="graphGroups" collapsible-groups deletable
         :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="300" edges-selectable
         :selected-ids="graphSets.selectedNodeIds" :selected-edge-ids="graphSets.selectedEdgeIds"
-        :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges"
+        :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges" :related-ids="graphSets.relatedNodeIds"
         :labels="{ region: 'Linked network diagram' }"
         @target-enter="enter" @target-leave="leave" @target-activate="activate"
         @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" @delete="onGraphDelete" />
@@ -307,7 +366,7 @@ async function expandAndShow() {
       @target-enter="enter" @target-leave="leave" @target-activate="activate"
       @bars-delete="onDelete" @update:collapsed-ids="setRowsCollapsed">
       <template #row-heading>Task</template>
-      <template #legend><span class="hint">Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks.</span></template>
+      <template #legend><span class="hint">Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks. A time range highlights the tasks worked on in it; related tasks are marked in the graph only.</span></template>
     </GanttChart>
     <p class="hint">
       <output aria-label="Graph tasks">Graph tasks: {{ graphNodes.length }}</output>
@@ -316,7 +375,9 @@ async function expandAndShow() {
       <output aria-label="Delete proposals">Delete proposals: {{ deleteProposals.length }}</output>
       <span v-if="deleteProposals.length"> (last: {{ deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join(', ') }}; the demo does not apply them)</span>
     </p>
-  </section>
+    <p class="hint"><label><input v-model="scenariosOpen" type="checkbox"> Compare plan scenarios</label></p>
+    <ScenarioComparison v-if="scenariosOpen" />
+  </DemoPanel>
 </template>
 
 <style scoped>

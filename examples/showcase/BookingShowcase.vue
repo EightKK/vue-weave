@@ -4,10 +4,10 @@ import {
   GanttChart, calendarBands, type TimeRange, type TimelineBar, type TimelineEdit, type TimelineMarker, type TimelineRow,
   type TimelineSelectDetail, type TimelineZoomState,
 } from '../../src'
+import { day } from '../data'
 
 // Fixed dates in UTC milliseconds keep the calendar deterministic. Day 0 is Monday 23 November 2026; stays run from
 // noon on the arrival day to noon on the departure day, and "today" is Wednesday 25 November at noon.
-const day = 86_400_000
 const start = Date.UTC(2026, 10, 23)
 const range: TimeRange = { start, end: start + 14 * day }
 const noon = (offset: number) => start + offset * day + day / 2

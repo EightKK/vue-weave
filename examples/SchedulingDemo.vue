@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, formatDependencyLag, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate,
+  GanttChart, NetworkGraph, buildWorkPeriods, calculateResourceLoad, createWorkingTimeScale, formatDependencyLag, invertWorkPeriods, propagateEdit, rescheduleFromStatusDate,
   scheduleTasks, scheduleToGraph, scheduledBarFields, toPlanningDiagnostics, timelineConstraints, timelineCsvTable, toCsv, toICalendar, toMsProjectXml,
   type ResourceAssignment, type ScheduleConstraintName, type ScheduleInput, type ScheduleLink, type ScheduleManualConflict, type ScheduleResult,
   type ScheduleTask, type ScheduledTask, type TimelineBar, type TimelineColumn, type TimelineConstraintEdit, type TimelineEdit,
 } from '../src'
 import { download } from './download'
 import PlanningDiagnostics from './components/PlanningDiagnostics.vue'
+import SummaryLinksDemo from './SummaryLinksDemo.vue'
+import ActualsDemo from './ActualsDemo.vue'
+import DemoPanel from './components/DemoPanel.vue'
+import StatusLine from './components/StatusLine.vue'
+import { hour } from './data'
 
-const hour = 3_600_000
 const local = (value: string) => Date.parse(value + '+09:00')
 const range = { start: local('2026-11-09T08:00:00'), end: local('2026-11-11T17:00:00') }
 const shifts = buildWorkPeriods(range, {
@@ -26,6 +30,14 @@ const nonWorking = invertWorkPeriods(shifts, range)
 // A display-only due date: packing must finish before the dispatch cut-off or the bar is marked late.
 const deadlines = new Map([['pack', local('2026-11-09T17:00:00')]])
 const shade = ref(true)
+// "Compress non-working time" swaps the linear axis for a working-time scale: working hours get twice the width and
+// breaks, nights and the closure keep a tenth of it. Times, snapping and edits are unchanged; only x positions differ.
+const compress = ref(false)
+const workingScale = computed(() => compress.value ? createWorkingTimeScale(range, shifts, 36 / hour, 0.1) : undefined)
+// "Summary task links" adds a separate, opt-in example of links to and from a summary task (GanttChart summaryDependencies).
+const summaryLinks = ref(false)
+// "Recorded actuals" adds a separate, opt-in example of rescheduling from recorded actual intervals (rescheduleFromActuals).
+const recordedActuals = ref(false)
 const showCritical = ref(true)
 const originalTasks: ScheduleTask[] = [
   { id: 'cut-a', duration: 3 * hour },
@@ -441,21 +453,21 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
 </script>
 
 <template>
-  <section class="planning-panel" aria-labelledby="schedule-title">
-    <div class="section-head">
-      <div><h2 id="schedule-title">Calendar-aware schedule</h2><p>JST · split shifts · 10 November plant closure</p></div>
-      <div class="options">
-        <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
-        <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
-        <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
-        <label><input v-model="compareBaselines" type="checkbox"> Compare baseline sets</label>
-        <label><input type="checkbox" :checked="showConstraints" @change="toggleConstraints"> Show scheduling constraints</label>
-        <label><input type="checkbox" :checked="manualInspection" @change="toggleManualInspection"> Schedule inspection manually</label>
-        <label><input type="checkbox" :checked="orderBCancelled" @change="toggleOrderB"> Cancel order B (inactive)</label>
-        <button type="button" @click="exportSchedule">Export schedule SVG</button>
-        <button type="button" @click="reset">Reset schedule</button>
-      </div>
-    </div>
+  <DemoPanel title-id="schedule-title" title="Calendar-aware schedule" subtitle="JST · split shifts · 10 November plant closure">
+    <template #options>
+      <label><input v-model="shade" type="checkbox"> Shade non-working time</label>
+      <label><input v-model="compress" type="checkbox"> Compress non-working time</label>
+      <label><input v-model="showCritical" type="checkbox"> Show critical path and float</label>
+      <label><input v-model="showNetwork" type="checkbox"> Network diagram</label>
+      <label><input v-model="compareBaselines" type="checkbox"> Compare baseline sets</label>
+      <label><input type="checkbox" :checked="showConstraints" @change="toggleConstraints"> Show scheduling constraints</label>
+      <label><input type="checkbox" :checked="manualInspection" @change="toggleManualInspection"> Schedule inspection manually</label>
+      <label><input type="checkbox" :checked="orderBCancelled" @change="toggleOrderB"> Cancel order B (inactive)</label>
+      <label><input v-model="summaryLinks" type="checkbox"> Summary task links</label>
+      <label><input v-model="recordedActuals" type="checkbox"> Recorded actuals</label>
+      <button type="button" @click="exportSchedule">Export schedule SVG</button>
+      <button type="button" @click="reset">Reset schedule</button>
+    </template>
     <div class="options status-options" role="group" aria-label="Status date and exports">
       <label>Status date <input v-model.number="statusDate" type="range" :min="range.start" :max="range.end" :step="hour"
         :aria-valuetext="format(statusDate)"></label>
@@ -480,7 +492,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       <div><dt>Resource overload</dt><dd data-testid="schedule-overload">{{ overloadHours }} resource-hour{{ overloadHours === 1 ? '' : 's' }}</dd></div>
     </dl>
     <GanttChart ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="chartDependencies" :highlighted-dependency-ids="criticalLinks"
-      :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour"
+      :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour" :scale="workingScale"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"
       :status-date="statusDate" :show-progress-line="showProgressLine" :baseline-ids="baselineIds" :baseline-label="baselineLabel"
@@ -492,7 +504,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
         v-if="manualInspection"> The violet bar keeps its manual dates: move or resize it, and links into it are checked instead of moving it.</template><template
         v-if="orderBCancelled"> The pale bar is inactive and takes no part in the plan.</template></span></template>
     </GanttChart>
-    <p class="status" role="status">{{ notice }}</p>
+    <StatusLine>{{ notice }}</StatusLine>
     <section v-if="manualInspection" class="manual-conflicts" aria-labelledby="manual-conflicts-title">
       <h3 id="manual-conflicts-title">Manual date conflicts</h3>
       <ul v-if="manualConflicts.length">
@@ -502,11 +514,10 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
     </section>
     <NetworkGraph v-if="showNetwork" :nodes="network.nodes" :edges="network.edges" :related-ids="network.criticalNodeIds"
       :options="{ nodeWidth: 300, nodeHeight: 58 }" :height="300" :labels="{ region: 'Schedule network diagram' }" />
-  </section>
-  <section class="planning-panel" aria-labelledby="load-title">
-    <div class="section-head"><div><h2 id="load-title">Resource demand and capacity</h2><p>Demand uses work segments. Breaks and closed dates consume zero work.</p></div></div>
+  </DemoPanel>
+  <DemoPanel title-id="load-title" title="Resource demand and capacity" subtitle="Demand uses work segments. Breaks and closed dates consume zero work.">
     <GanttChart :rows="resources" :bars="loadBars" :range="range" :columns="resourceColumns" :header-bands="[headerBands[0]!]"
-      :row-height="48" :height="213" :pixels-per-unit="18 / hour" :tick-steps="[4 * hour, 6 * hour, 12 * hour]"
+      :row-height="48" :height="213" :pixels-per-unit="18 / hour" :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :scale="workingScale"
       :format-time="format" :non-working-periods="shade ? nonWorking : undefined" readonly :show-controls="false">
       <template #row-heading>Equipment</template>
       <template #legend><span class="hint">Demand / available units · Amber indicates overload</span></template>
@@ -524,7 +535,9 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
     <p v-else class="status">No capacity conflicts in the current plan.</p>
     <PlanningDiagnostics v-if="diagnostics.length" :diagnostics="diagnostics" :task-label="id => labels.get(id) ?? id"
       :resource-label="id => resources.find(resource => resource.id === id)?.label ?? id" :dependency-label="dependencyLabel" :format-time="format" @activate="revealDiagnostic" />
-  </section>
+  </DemoPanel>
+  <SummaryLinksDemo v-if="summaryLinks" />
+  <ActualsDemo v-if="recordedActuals" />
 </template>
 
 <style scoped>

@@ -1,5 +1,7 @@
 import type { GraphEdge } from './graph.js'
 import type { NetworkGroup, NetworkNode } from './types.js'
+import { checkGraphGroups, emptyGroupError, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
+import { unknownReferenceError } from './ids.js'
 
 /** A collapsed group as `collapseGraphGroups` reports it. */
 export interface GraphCollapsedGroup {
@@ -77,16 +79,7 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
   options: GraphCollapseOptions = {},
 ): GraphCollapseResult<N, E> {
   const nodeIds = new Set(nodes.map(node => node.id))
-  const byId = new Map<string, NetworkGroup>()
-  const memberOf = new Map<string, string>()
-  for (const group of groups) {
-    if (!group.id || byId.has(group.id)) throw new Error('Invalid graph group: ' + group.id)
-    byId.set(group.id, group)
-    for (const id of group.nodeIds) {
-      if (!nodeIds.has(id) || memberOf.has(id)) throw new Error('Invalid or repeated group member: ' + id)
-      memberOf.set(id, group.id)
-    }
-  }
+  const { byId, memberOf } = checkGraphGroups(groups, id => nodeIds.has(id))
   // Check every parent chain once: a chain stops at a root or at a group already known to reach one, so the whole
   // hierarchy is checked in linear time. The first group in input order whose chain fails is reported.
   const reachesRoot = new Set<string>()
@@ -96,12 +89,12 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
     const onChain = new Set<string>()
     let current: NetworkGroup = group
     while (!reachesRoot.has(current.id)) {
-      if (onChain.has(current.id)) throw new Error('Graph group hierarchy contains a cycle at group: ' + group.id)
+      if (onChain.has(current.id)) throw groupCycleError(group.id)
       onChain.add(current.id)
       chain.push(current)
       if (current.parentId === undefined) break
       const parent = byId.get(current.parentId)
-      if (!parent) throw new Error('Unknown parent group: ' + current.parentId + ' (group ' + current.id + ')')
+      if (!parent) throw unknownParentGroupError(current)
       current = parent
     }
     for (const item of chain) reachesRoot.add(item.id)
@@ -113,7 +106,7 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
   }
   const collapsed = new Set<string>()
   for (const id of collapsedIds) {
-    if (!byId.has(id)) throw new Error('Unknown collapsed group: ' + id)
+    if (!byId.has(id)) throw unknownReferenceError('group', 'collapsedIds', id)
     collapsed.add(id)
   }
   // The outermost collapsed ancestor (or the group itself) of every group. A loop climbs to the nearest group whose
@@ -147,7 +140,7 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
   }
   for (const proxy of proxies.values()) {
     if (nodeIds.has(proxy.id) && !owners.has(proxy.id)) throw new Error('Collapsed group ID is also a node ID: ' + proxy.id)
-    if (!proxy.nodeIds.length) throw new Error('Invalid graph group: ' + proxy.id)
+    if (!proxy.nodeIds.length) throw emptyGroupError(proxy.id)
   }
   const detail = options.detail ?? ((group: GraphCollapsedGroup) => group.nodeIds.length + (group.nodeIds.length === 1 ? ' node' : ' nodes'))
   const visible: (N | NetworkNode)[] = []
@@ -171,7 +164,8 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
   const merged = new Map<string, { index: number; edges: E[] }>()
   const hiddenEdgeIds: string[] = []
   for (const edge of edges) {
-    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) throw new Error('Unknown endpoint on graph edge: ' + edge.id)
+    if (!nodeIds.has(edge.from)) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.from)
+    if (!nodeIds.has(edge.to)) throw unknownReferenceError('node', 'graph edge ' + edge.id, edge.to)
     const from = owners.get(edge.from), to = owners.get(edge.to)
     if (from === undefined && to === undefined) {
       result.push(edge)

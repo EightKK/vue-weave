@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { GanttChart, calendarBands, type TimelineBar, type TimelineEdit, type TimelineRow, type TimelineSelectDetail } from '../../src'
+import { day } from '../data'
 
 // A calm product roadmap: initiatives with their projects as child rows, pastel status pills and milestone diamonds.
 // Everything is restyled through slots, --vw-* variables and .sc-roadmap-scoped overrides of the vw- classes.
@@ -11,7 +12,6 @@ interface BarData { status: Status; people: readonly Person[] }
 interface RoadmapRow extends TimelineRow<RowData> { data: RowData }
 interface RoadmapBar extends TimelineBar<BarData> { data: BarData }
 
-const day = 86_400_000
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 /** Midnight UTC of a day in 2027, so the data never depends on the local clock or time zone. */

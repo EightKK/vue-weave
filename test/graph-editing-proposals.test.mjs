@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createSSRApp, h } from 'vue'
-import { renderToString } from 'vue/server-renderer'
+import { h } from 'vue'
 import { graphDeletion, removeGraphElements } from 'vue-weave/core'
 import { NetworkGraph, graphDeletion as rootGraphDeletion } from 'vue-weave'
+import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'Alpha', detail: 'first' },
@@ -36,7 +36,7 @@ test('graphDeletion rejects unknown IDs and invalid graphs', () => {
   assert.throws(() => graphDeletion(nodes, edges, ['missing']), { name: 'Error', message: 'Unknown node in graph deletion: missing' })
   assert.throws(() => graphDeletion(nodes, edges, [], ['missing']), { name: 'Error', message: 'Unknown edge in graph deletion: missing' })
   assert.throws(() => graphDeletion([...nodes, { id: 'a', label: 'Again' }], edges, ['a']), /Duplicate graph node ID: a/)
-  assert.throws(() => graphDeletion(nodes, [{ id: 'x', from: 'a', to: 'nowhere' }], []), /Unknown endpoint on graph edge: x/)
+  assert.throws(() => graphDeletion(nodes, [{ id: 'x', from: 'a', to: 'nowhere' }], []), { name: 'Error', message: 'Unknown node in graph edge x: nowhere' })
 })
 
 test('removeGraphElements returns new arrays and leaves the input untouched', () => {
@@ -66,7 +66,7 @@ test('removeGraphElements drops edges of removed nodes even when the deletion om
   assert.throws(() => removeGraphElements(nodes, edges, { nodeIds: [], edgeIds: ['zz'] }), /Unknown edge in graph deletion: zz/)
 })
 
-const render = (props, slots) => renderToString(createSSRApp({ render: () => h(NetworkGraph, { nodes, edges, ...props }, slots) }))
+const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
 
 test('NetworkGraph markup is unchanged when the new props are absent or off', async () => {
   const plain = await render({})

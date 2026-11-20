@@ -3,39 +3,21 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { NetworkGraph, GanttChart, useEditHistory, layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGraph, layoutConcentricGraph, layoutForceGraph, graphDeletion, removeGraphElements, type GraphCrossingReduction, type GraphLayoutFunction, type GraphLayoutDirection, type TimelineEdit, type TimelineColumn, type TimelineCellEdit, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphReconnect, type GraphContextMenu, type GraphContextMenuTarget, type GraphDeletion, type GraphEdge, type NetworkGroup } from '../src'
 import { cloneGraphElements, snapGraphPoint, type GraphCloneResult, type GraphClipboardSelection, type GraphDrop, type GraphPaste, type NetworkNode } from '../src'
 import { collapseGraphGroups, type GraphEdgeReshape, type GraphEdgeStyle, type GraphNodeResize, type GraphNodeSize } from '../src'
+import type { GraphLabelEdit } from '../src'
 import { makeExample, range, hour, formatTime } from './data'
-import SchedulingDemo from './SchedulingDemo.vue'
-import GanttEditingDemo from './GanttEditingDemo.vue'
-import LinkedPlanningDemo from './LinkedPlanningDemo.vue'
-import AsyncGraphDemo from './AsyncGraphDemo.vue'
-import DiagramStylesDemo from './DiagramStylesDemo.vue'
-import GraphAnalysisDemo from './GraphAnalysisDemo.vue'
-import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
-import PersistenceDemo from './PersistenceDemo.vue'
-import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
-import SchemaShowcase from './showcase/SchemaShowcase.vue'
-import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
-import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
-import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
-import BookingShowcase from './showcase/BookingShowcase.vue'
+import PortRulesDemo from './PortRulesDemo.vue'
+import { demos, demosIn } from './demos'
 import { download, imageSize } from './download'
+import StatusLine from './components/StatusLine.vue'
+import { unusedNumber } from './ids'
 
 const releaseLine = __VUE_WEAVE_VERSION__.split('.').slice(0, 2).join('.')
 
 const preset = ref('manufacturing')
-// The design gallery restyles both components with slots, CSS variables and the vw- classes only; each showcase keeps its own state.
-const showcases = [
-  { id: 'workflow', label: 'Workflow builder', component: WorkflowShowcase },
-  { id: 'schema', label: 'Database schema', component: SchemaShowcase },
-  { id: 'org', label: 'Org chart', component: OrgChartShowcase },
-  { id: 'roadmap', label: 'Product roadmap', component: RoadmapShowcase },
-  { id: 'sprint', label: 'Sprint plan', component: SprintGanttShowcase },
-  { id: 'booking', label: 'Room bookings', component: BookingShowcase },
-]
-const showcase = computed(() => showcases.find(item => item.id === preset.value))
-// Demos that keep their own state and ignore the graph and timeline controls of this page.
-const standalone = computed(() => showcase.value !== undefined
-  || ['scheduling', 'editing', 'resource-planning', 'persistence', 'linked', 'async', 'diagram', 'analysis'].includes(preset.value))
+const datasets = demosIn('dataset'), standaloneDemos = demosIn('standalone'), showcases = demosIn('gallery')
+// A standalone demo or showcase replaces the graph and timeline of this page and ignores their controls.
+const activeDemo = computed(() => demos.find(item => item.id === preset.value)?.component)
+const standalone = computed(() => activeDemo.value !== undefined)
 // One history entry holds the data, saved positions and sizes and the collapsed groups, so Undo and Redo cover them all.
 type DemoState = {
   data: ReturnType<typeof makeExample>; positions: ReadonlyMap<string, GraphPoint>; sizes: ReadonlyMap<string, GraphNodeSize>; collapsed: ReadonlySet<string>
@@ -175,8 +157,7 @@ function validateConnection({ from, to, fromPort, toPort }: GraphConnection, rep
     && edge.fromPort === fromPort && edge.toPort === toPort)) return 'This connection already exists.'
 }
 function commitConnection(connection: GraphConnection) {
-  let number = data.value.edges.length + 1
-  while (data.value.edges.some(edge => edge.id === 'connection-' + number)) number++
+  const number = unusedNumber(data.value.edges, 'connection-', data.value.edges.length + 1)
   const edges = [...data.value.edges, { id: 'connection-' + number, ...connection }]
   commitState({ data: { ...data.value, edges }, positions: positions.value })
   status.value = 'Connected ' + connection.from + ' to ' + connection.to + '.'
@@ -329,6 +310,24 @@ watch(graphEditing, () => closeMenu(false))
 const gridSize = 20
 const snapToGrid = ref(false)
 const alignmentGuides = ref(false)
+// Inline label editing, lasso selection and the toolbar, group and minimap slots. The graph proposes a new label; the
+// demo trims it and commits it as one history entry.
+const labelEditing = ref(false)
+const lassoSelect = ref(false)
+const typedPorts = ref(false)
+const itemSlots = ref(false)
+function validateLabel(change: GraphLabelEdit) {
+  if (!change.after.trim()) return 'A label cannot be empty.'
+}
+function commitLabel(change: GraphLabelEdit) {
+  const label = change.after.trim(), current = data.value
+  commitState({
+    data: change.kind === 'node'
+      ? { ...current, nodes: current.nodes.map(node => node.id === change.id ? { ...node, label } : node) }
+      : { ...current, edges: current.edges.map(edge => edge.id === change.id ? { ...edge, label } : edge) },
+  })
+  status.value = 'Renamed ' + change.kind + ' ' + change.id + ' to ' + label + '.'
+}
 const paletteType = 'application/x-vue-weave-node'
 const paletteItems = [{ kind: 'operation', label: 'Add operation' }, { kind: 'lot', label: 'Add lot' }] as const
 type PaletteKind = typeof paletteItems[number]['kind']
@@ -343,8 +342,7 @@ function startPaletteDrag(event: DragEvent, kind: PaletteKind) {
 // Centres a new 144 x 58 node on the point, on the grid when snapping, and never at negative coordinates.
 function addNode(kind: PaletteKind, center: GraphPoint) {
   const prefix = kind === 'operation' ? 'Operation' : 'Lot'
-  let number = 1
-  while (data.value.nodes.some(node => node.id === kind + '-' + number)) number++
+  const number = unusedNumber(data.value.nodes, kind + '-')
   const id = kind + '-' + number
   const node: NetworkNode = kind === 'operation'
     ? { id, label: prefix + ' ' + number, detail: 'New operation', shape: 'rounded' }
@@ -510,16 +508,8 @@ function commit(change: TimelineEdit) {
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
-        <button v-for="item in [{ id: 'manufacturing', label: 'Manufacturing' }, { id: 'project', label: 'Project delivery' }, { id: 'scale', label: '1,000 resources' }, { id: 'large', label: 'Large graph' }]"
-          :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
-        <button type="button" :aria-pressed="preset === 'scheduling'" @click="preset = 'scheduling'">Scheduling</button>
-        <button type="button" :aria-pressed="preset === 'editing'" @click="preset = 'editing'">Timeline editing</button>
-        <button type="button" :aria-pressed="preset === 'linked'" @click="preset = 'linked'">Linked views</button>
-        <button type="button" :aria-pressed="preset === 'async'" @click="preset = 'async'">Async layout</button>
-        <button type="button" :aria-pressed="preset === 'diagram'" @click="preset = 'diagram'">Diagram styles</button>
-        <button type="button" :aria-pressed="preset === 'analysis'" @click="preset = 'analysis'">Graph analysis</button>
-        <button type="button" :aria-pressed="preset === 'resource-planning'" @click="preset = 'resource-planning'">Resource planning</button>
-        <button type="button" :aria-pressed="preset === 'persistence'" @click="preset = 'persistence'">Saved editing</button>
+        <button v-for="item in datasets" :key="item.id" :aria-pressed="preset === item.id" @click="preset = item.id; reset()">{{ item.label }}</button>
+        <button v-for="item in standaloneDemos" :key="item.id" type="button" :aria-pressed="preset === item.id" @click="preset = item.id">{{ item.label }}</button>
         <!-- The scheduling and timeline editing demos keep their own state; these buttons act on the graph and timeline above. -->
         <button v-if="!standalone" type="button" :disabled="!canUndo" @click="undo">Undo</button>
         <button v-if="!standalone" type="button" :disabled="!canRedo" @click="redo">Redo</button>
@@ -528,15 +518,7 @@ function commit(change: TimelineEdit) {
         <span id="gallery-nav-label" class="gallery-label">Design gallery</span>
         <button v-for="item in showcases" :key="item.id" type="button" :aria-pressed="preset === item.id" @click="preset = item.id">{{ item.label }}</button>
       </nav>
-      <component :is="showcase.component" v-if="showcase" />
-      <SchedulingDemo v-else-if="preset === 'scheduling'" />
-      <GanttEditingDemo v-else-if="preset === 'editing'" />
-      <LinkedPlanningDemo v-else-if="preset === 'linked'" />
-      <AsyncGraphDemo v-else-if="preset === 'async'" />
-      <DiagramStylesDemo v-else-if="preset === 'diagram'" />
-      <GraphAnalysisDemo v-else-if="preset === 'analysis'" />
-      <ResourcePlanningDemo v-else-if="preset === 'resource-planning'" />
-      <PersistenceDemo v-else-if="preset === 'persistence'" />
+      <component :is="activeDemo" v-if="activeDemo" />
       <template v-else>
       <section>
         <div class="section-head"><div><h2>Network</h2><p>{{ data.nodes.length }} nodes · {{ data.edges.length }} edges</p></div>
@@ -548,6 +530,10 @@ function commit(change: TimelineEdit) {
           <label v-if="preset === 'manufacturing'"><input v-model="collapsibleGroups" type="checkbox"> Collapsible groups</label>
           <label><input v-model="editableEdges" type="checkbox"> Editable edges</label>
           <label><input v-model="resizableNodes" type="checkbox"> Resizable nodes</label>
+          <label><input v-model="labelEditing" type="checkbox"> Edit labels</label>
+          <label><input v-model="lassoSelect" type="checkbox"> Lasso selection</label>
+          <label><input v-model="itemSlots" type="checkbox"> Item toolbars</label>
+          <label><input v-model="typedPorts" type="checkbox"> Typed ports</label>
           <label>Edge style <select v-model="edgeStyle"><option>curve</option><option>orthogonal</option><option>straight</option></select></label>
           <div class="graph-palette" role="group" aria-label="Node palette">
             <button v-for="item in paletteItems" :key="item.kind" type="button" class="palette-chip" draggable="true"
@@ -571,10 +557,26 @@ function commit(change: TimelineEdit) {
           :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize"
           :validate-node-resize="validateResize" @node-resize-rejected="(_change, reason) => status = reason" :lod-threshold="graphEditing ? 0.5 : undefined"
           :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
+          :editable-labels="graphEditing && labelEditing" :validate-label-edit="validateLabel" @label-edit="commitLabel"
+          @label-edit-rejected="(_change, reason) => status = reason" :selection-mode="graphEditing && lassoSelect ? 'lasso' : 'box'"
           @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason">
           <template v-if="custom" #node="{ node, box, selected: active }">
             <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vw-surface, #fff)' }" />
             <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
+          </template>
+          <template v-if="graphEditing && itemSlots" #node-toolbar="{ node }">
+            <button type="button" @click="fitSelection({ kind: 'node', id: node.id })">Frame</button>
+            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'node', id: node.id }))">Remove</button>
+          </template>
+          <template v-if="graphEditing && itemSlots" #edge-toolbar="{ edge }">
+            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'edge', id: edge.id }))">Remove</button>
+          </template>
+          <template v-if="graphEditing && itemSlots" #group="{ group: item, box, depth }">
+            <rect class="demo-group-frame" :x="box.x" :y="box.y" :width="box.width" :height="box.height" rx="12" />
+            <text class="demo-group-label" :x="box.x + 10" :y="box.y + 15">{{ item.label }}{{ depth ? ' (nested)' : '' }}</text>
+          </template>
+          <template v-if="graphEditing && itemSlots" #minimap-node="{ box, selected: active }">
+            <circle class="demo-minimap-node" :class="{ 'is-selected': active }" :cx="box.x + box.width / 2" :cy="box.y + box.height / 2" :r="Math.min(box.width, box.height) / 2" />
           </template>
           <template v-if="graphEditing" #tooltip="{ target }">
             <template v-if="target.kind === 'node'"><strong>{{ target.node.label }}</strong><br>{{ target.node.detail ?? 'No detail' }} · {{ degree(target.node.id) }}</template>
@@ -582,6 +584,7 @@ function commit(change: TimelineEdit) {
           </template>
         </NetworkGraph>
         <p v-if="graphEditing" class="hint">Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions. Ctrl+C, Ctrl+V and Ctrl+D (⌘ on macOS) copy, paste and duplicate nodes.</p>
+        <PortRulesDemo v-if="graphEditing && typedPorts" />
         <div v-if="menu" ref="menuElement" class="graph-menu" role="menu" :aria-label="menu.label"
           :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeydown" @contextmenu.prevent>
           <button v-for="item in menu.items" :key="item.label" type="button" role="menuitem" tabindex="-1" @click="runMenuItem(item)">{{ item.label }}</button>
@@ -602,7 +605,7 @@ function commit(change: TimelineEdit) {
           <template #legend><span class="hint">Drag to move · Drag ends to resize · Focus a bar to edit with arrow keys</span></template>
           <template #row-heading>Resource</template>
         </GanttChart>
-        <p class="status" role="status">{{ status }}</p>
+        <StatusLine>{{ status }}</StatusLine>
         <output class="vw-sr-only" aria-label="Select events">{{ selectCount }}</output>
       </section>
       </template>
