@@ -499,3 +499,184 @@ test('graphLayoutWorkerAdapter matches responses by requestId and inputKey and c
   }
   assert.throws(() => graphLayoutWorkerAdapter({}, { transport: 'xml' }), RangeError)
 })
+
+// A small graph whose group holds both nodes: collapsed, it needs a `shown` and an `expanded` layout.
+const pairNodes = [{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }]
+const pairEdges = [{ id: 'xy', from: 'x', to: 'y' }]
+const pairGroups = [{ id: 'pair', label: 'Pair', nodeIds: ['x', 'y'] }]
+const pairInput = collapsed => ({ nodes: pairNodes, edges: pairEdges, groups: pairGroups, collapsedGroupIds: new Set(collapsed ? ['pair'] : []) })
+
+test('useAsyncGraphLayout completes a frame with any cacheSize and requests each layout once', async () => {
+  for (const cacheSize of [0, 1, 2, undefined]) {
+    for (const collapsed of [false, true]) {
+      const requests = []
+      const adapter = (request) => {
+        requests.push(request.scope)
+        return layoutFor(request)
+      }
+      const graph = useAsyncGraphLayout({ input: shallowRef(pairInput(collapsed)), adapter, ...cacheSize !== undefined && { cacheSize } })
+      await settle()
+      const label = `cacheSize ${cacheSize}, ${collapsed ? 'collapsed' : 'expanded'}`
+      assert.deepEqual(requests.sort(), collapsed ? ['expanded', 'shown'] : ['shown'], label)
+      assert.equal(graph.pending.value, false, label)
+      assert.equal(graph.error.value, undefined, label)
+      assert.equal(graph.display.value.source, 'layout', label)
+      assert.equal(graph.display.value.collapsedGroupIds.size, collapsed ? 1 : 0, label)
+      assert.equal(!!graph.display.value.layouts.expanded, collapsed, label)
+      graph.dispose()
+    }
+  }
+})
+
+test('useAsyncGraphLayout holds the results and failures of a collapsed frame apart from the cache, in any arrival order', async () => {
+  const outcomes = [['ok', 'ok'], ['ok', 'fail'], ['fail', 'ok'], ['fail', 'fail']]
+  for (const cacheSize of [0, 1, undefined]) {
+    for (const first of ['shown', 'expanded']) {
+      for (const [firstOutcome, secondOutcome] of outcomes) {
+        const label = `cacheSize ${cacheSize}, ${first} ${firstOutcome} then ${secondOutcome}`
+        const { calls, adapter } = manualAdapter()
+        const input = shallowRef(pairInput(true))
+        const graph = useAsyncGraphLayout({ input, adapter, ...cacheSize !== undefined && { cacheSize } })
+        await settle()
+        assert.equal(calls.length, 2, label)
+        const order = first === 'shown' ? calls : [...calls].reverse()
+        const answer = (call, outcome) => outcome === 'ok' ? call.resolve(layoutFor(call.request)) : call.reject(new Error('failed ' + call.request.scope))
+        answer(order[0], firstOutcome)
+        await settle()
+        assert.equal(graph.display.value, undefined, label + ': one scope is not enough')
+        answer(order[1], secondOutcome)
+        await settle()
+        // Nothing is requested again for the same input, whatever the cache holds.
+        assert.equal(calls.length, 2, label)
+        assert.equal(graph.pending.value, false, label)
+        if (firstOutcome === 'ok' && secondOutcome === 'ok') {
+          assert.equal(graph.display.value.source, 'layout', label)
+          assert.equal(graph.error.value, undefined, label)
+          graph.dispose()
+          continue
+        }
+        assert.equal(graph.display.value, undefined, label)
+        const lastFailed = secondOutcome === 'fail' ? order[1] : order[0]
+        assert.equal(graph.error.value.scope, lastFailed.request.scope, label)
+        assert.equal(graph.error.value.requestId, lastFailed.request.requestId, label)
+        // A new input clears the error and asks again for what the cache does not hold.
+        input.value = pairInput(true)
+        await settle()
+        assert.equal(graph.error.value, undefined, label)
+        assert.equal(graph.pending.value, true, label)
+        const succeeded = [firstOutcome, secondOutcome].filter(outcome => outcome === 'ok').length
+        const again = calls.slice(2)
+        assert.equal(again.length, cacheSize === 0 ? 2 : 2 - succeeded, label)
+        for (const call of again) call.resolve(layoutFor(call.request))
+        await settle()
+        assert.equal(calls.length, 2 + again.length, label)
+        assert.equal(graph.pending.value, false, label)
+        assert.equal(graph.error.value, undefined, label)
+        assert.equal(graph.display.value.source, 'layout', label)
+        assert.equal(graph.display.value.revision, graph.desired.value.revision, label)
+        graph.dispose()
+      }
+    }
+  }
+})
+
+test('useAsyncGraphLayout with cacheSize 0 still delivers a result in flight to a newer input with the same key', async () => {
+  const { calls, adapter } = manualAdapter()
+  const input = shallowRef(pairInput(false))
+  const graph = useAsyncGraphLayout({ input, adapter, cacheSize: 0 })
+  await settle()
+  input.value = pairInput(false)
+  await settle()
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].signal.aborted, false)
+  calls[0].resolve(layoutFor(calls[0].request))
+  await settle()
+  assert.equal(graph.display.value.source, 'layout')
+  assert.equal(graph.display.value.groups, input.value.groups)
+  assert.equal(graph.pending.value, false)
+  // Without a cache, a later input with the same key is computed again.
+  input.value = pairInput(false)
+  await settle()
+  assert.equal(calls.length, 2)
+  assert.equal(graph.pending.value, true)
+  graph.dispose()
+})
+
+test('graphLayoutWorkerAdapter checks the scope and removes its listeners on every path', async () => {
+  const { shown, expanded } = buildGraphLayoutRequests(pairInput(true), '1')
+  // A signal whose listeners can be counted.
+  function countedSignal() {
+    const controller = new AbortController()
+    const listeners = new Set()
+    const signal = {
+      get aborted() { return controller.signal.aborted },
+      addEventListener: (type, listener) => {
+        listeners.add(listener)
+        controller.signal.addEventListener(type, listener)
+      },
+      removeEventListener: (type, listener) => {
+        listeners.delete(listener)
+        controller.signal.removeEventListener(type, listener)
+      },
+    }
+    return { controller, listeners, signal }
+  }
+  for (const transport of ['clone', 'json']) {
+    const listeners = new Set(), posted = []
+    let failPost
+    const port = {
+      postMessage: (message) => {
+        if (failPost?.(message)) throw new Error('DataCloneError')
+        posted.push(transport === 'json' ? graphLayoutMessageFromJson(JSON.parse(message)) : message)
+      },
+      addEventListener: (_type, listener) => listeners.add(listener),
+      removeEventListener: (_type, listener) => listeners.delete(listener),
+    }
+    const reply = (message) => {
+      const data = transport === 'json' ? JSON.stringify(graphLayoutMessageToJson(message)) : message
+      for (const listener of [...listeners]) listener({ data })
+    }
+    const adapter = graphLayoutWorkerAdapter(port, { transport })
+    const run = async (label, request, act, expectation) => {
+      const counted = countedSignal()
+      const result = adapter(request, counted.signal)
+      await act(counted)
+      if (expectation instanceof RegExp) await assert.rejects(result, expectation, label)
+      else assert.deepEqual(await result, expectation, label)
+      assert.equal(listeners.size, 0, `${transport} ${label}: port listeners`)
+      assert.equal(counted.listeners.size, 0, `${transport} ${label}: signal listeners`)
+    }
+    const response = (request, scope, type = 'success') => type === 'success'
+      ? { type, requestId: request.requestId, inputKey: request.inputKey, scope, layout: layoutFor(request) }
+      : { type, requestId: request.requestId, inputKey: request.inputKey, scope, message: 'engine failed' }
+
+    await run('success', shown, () => reply(response(shown, 'shown')), layoutFor(shown))
+    await run('expanded success', expanded, () => reply(response(expanded, 'expanded')), layoutFor(expanded))
+    await run('failure', shown, () => reply(response(shown, 'shown', 'failure')), /engine failed/)
+    await run('success with another scope', shown, () => reply(response(shown, 'expanded')), /scope expanded, expected shown/)
+    await run('failure with another scope', expanded, () => reply(response(expanded, 'shown', 'failure')), /scope shown, expected expanded/)
+    await run('malformed', shown, () => {
+      const data = { type: 'success', requestId: shown.requestId }
+      for (const listener of [...listeners]) listener({ data: transport === 'json' ? JSON.stringify(data) : data })
+    }, /Invalid graph layout message/)
+    await run('abort', shown, ({ controller }) => controller.abort(), /cancelled/)
+    assert.deepEqual(posted.at(-1), { type: 'cancel', requestId: shown.requestId, inputKey: shown.inputKey })
+    // A port that cannot post the cancel message still ends the request cleanly.
+    failPost = message => (typeof message === 'string' ? JSON.parse(message) : message).type === 'cancel'
+    await run('abort with a failing cancel post', shown, ({ controller }) => controller.abort(), /cancelled/)
+    // A request that cannot be posted rejects with the post error and leaves nothing attached.
+    failPost = () => true
+    await run('post exception', shown, () => {}, /DataCloneError/)
+    failPost = undefined
+    const aborted = countedSignal()
+    aborted.controller.abort()
+    await assert.rejects(adapter(shown, aborted.signal), /cancelled/)
+    assert.equal(listeners.size, 0)
+    assert.equal(aborted.listeners.size, 0)
+    // Answers after the first one change nothing.
+    await run('late answers', shown, () => {
+      reply(response(shown, 'shown'))
+      reply(response(shown, 'shown', 'failure'))
+    }, layoutFor(shown))
+  }
+})

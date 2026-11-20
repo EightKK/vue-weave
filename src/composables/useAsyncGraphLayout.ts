@@ -93,7 +93,14 @@ export interface UseAsyncGraphLayoutOptions<N extends NetworkNode = NetworkNode,
    * edges, until the adapter's result arrives.
    */
   provisional?: boolean
-  /** Number of computed layouts kept for reuse, by scope and input key. Default 32. */
+  /**
+   * Default 32. The number of computed layouts kept for reuse by later inputs, by scope and input key, least recently
+   * used first out: an input whose key was computed before (expanding a group again, undoing an edit) is shown without
+   * a request. 0 keeps none, so every new input is requested even if an earlier one had the same key. The cache never
+   * decides whether the current input is complete: the layouts and failures of the desired frame are held with the
+   * frame until the input changes, so any size, 0 included, shows a frame once all its layouts have arrived, and a
+   * failed request is not repeated until the input changes.
+   */
   cacheSize?: number
 }
 
@@ -118,7 +125,11 @@ export interface AsyncGraphLayout<N extends NetworkNode = NetworkNode, E extends
   gestureListeners: Readonly<AsyncGraphGestureListeners>
   /** True while a gesture reported through `gestureListeners` is in flight or the `gesture` option is true. */
   gesturing: Readonly<Ref<boolean>>
-  /** The last failure of the desired frame; cleared when the input changes. */
+  /**
+   * The last failure of the desired frame; cleared when the input changes. A failed request is not repeated for the
+   * same input, so the frame is not shown (and `pending` is false) until the input changes, even when its other scope
+   * succeeds.
+   */
   error: Readonly<ShallowRef<AsyncGraphLayoutError | undefined>>
   /** Stops waiting for the requests in flight (aborting their signals) and discards their results. */
   cancel: () => void
@@ -158,7 +169,13 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
   // Computed layouts by scope and input key, in least recently used order.
   const cache = shallowReactive(new Map<string, GraphLayout>())
   const inflight = new Map<string, { controller: AbortController }>()
-  let current: { frame: AsyncGraphFrame<N, E, G>; requests: Requests<N, E, G> } | undefined
+  // The desired frame with the layouts and failures of its own requests by scope, independent of the reuse cache.
+  let current: {
+    frame: AsyncGraphFrame<N, E, G>
+    requests: Requests<N, E, G>
+    results: Map<GraphLayoutScope, GraphLayout>
+    failures: Map<GraphLayoutScope, AsyncGraphLayoutError>
+  } | undefined
   let waiting: AsyncGraphDisplayFrame<N, E, G> | undefined
   let sequence = 0, started = false, disposed = false
 
@@ -200,24 +217,34 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
     }
   }
 
-  // Shows the current frame when all its layouts are cached; otherwise starts the missing requests and, when allowed,
-  // shows a provisional frame made from the displayed layouts.
+  // The current frame's request with this cache key, if any.
+  function wanted(key: string) {
+    return current && scopes(current.requests).find(request => cacheKey(request) === key)
+  }
+
+  // Shows the current frame when all its layouts are ready (received for this frame or reused from the cache);
+  // otherwise starts the missing requests and, when allowed, shows a provisional frame made from the displayed layouts.
+  // A frame with a failed request waits for a new input and repeats nothing.
   function resolve() {
     if (!current || disposed || !started) return
-    const { frame, requests } = current
+    const { frame, requests, results, failures } = current
     const layouts: Partial<Record<GraphLayoutScope, GraphLayout>> = {}
-    let complete = true
+    const missing: AnyRequest<N, E, G>[] = []
     for (const request of scopes(requests)) {
-      const key = cacheKey(request)
-      const layout = cached(key)
-      if (layout) {
-        layouts[request.scope] = layout
-        continue
+      let layout = results.get(request.scope)
+      if (!layout) {
+        layout = cached(cacheKey(request))
+        if (layout) results.set(request.scope, layout)
       }
-      complete = false
-      if (!inflight.has(key)) start(request)
+      if (layout) layouts[request.scope] = layout
+      else missing.push(request)
     }
-    if (complete) {
+    if (failures.size) {
+      pending.value = false
+      return
+    }
+    for (const request of missing) if (!inflight.has(cacheKey(request))) start(request)
+    if (!missing.length) {
       pending.value = false
       show({ ...frame, layouts: { shown: layouts.shown!, ...layouts.expanded && { expanded: layouts.expanded } }, source: 'layout', temporaryEdgeIds: [] })
       return
@@ -263,6 +290,9 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
         return
       }
       remember(key, checked)
+      const target = wanted(key)
+      if (!target || !current) return
+      current.results.set(target.scope, checked)
       resolve()
     }, (reason: unknown) => {
       if (inflight.get(key) === entry) inflight.delete(key)
@@ -272,10 +302,14 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
   }
 
   function fail(request: AnyRequest<N, E, G>, reason: unknown) {
-    // Only a failure of the desired frame is reported; an older request's failure no longer matters.
-    if (!current || !scopes(current.requests).some(item => cacheKey(item) === cacheKey(request))) return
+    // Only a failure of the desired frame is reported; an older request's failure no longer matters. The desired
+    // request can be a newer one with the same key that reused this request in flight: report it as that request.
+    const failed = wanted(cacheKey(request))
+    if (!failed || !current) return
+    const failure = { revision: failed.revision, requestId: failed.requestId, inputKey: failed.inputKey, scope: failed.scope, error: reason }
+    current.failures.set(failed.scope, failure)
     pending.value = false
-    error.value = { revision: request.revision, requestId: request.requestId, inputKey: request.inputKey, scope: request.scope, error: reason }
+    error.value = failure
   }
 
   function abortExcept(keep: ReadonlySet<string>) {
@@ -302,7 +336,7 @@ export function useAsyncGraphLayout<N extends NetworkNode, E extends GraphEdge, 
       return
     }
     const frame = makeFrame(input, requests)
-    current = { frame, requests }
+    current = { frame, requests, results: new Map(), failures: new Map() }
     desired.value = frame
     abortExcept(new Set(scopes(requests).map(cacheKey)))
     resolve()
@@ -391,8 +425,10 @@ export interface GraphLayoutWorkerAdapterOptions {
 /**
  * An adapter for `useAsyncGraphLayout` that posts each request to a Worker as a 'request' message, resolves with the
  * matching 'success' message (same `requestId` and `inputKey`), rejects with the 'failure' message, and posts a 'cancel'
- * message when the request is aborted. Messages for other requests are ignored; a malformed message for this request
- * rejects it. The caller creates the Worker.
+ * message when the request is aborted. Messages for other requests are ignored; a malformed message for this request,
+ * or a response with its `requestId` and `inputKey` but another `scope`, rejects it. When posting the request throws,
+ * the request rejects with that error. However a request ends (response, failure, abort or a failed post), its
+ * listeners on the port and the signal are removed. The caller creates the Worker.
  */
 export function graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options: GraphLayoutWorkerAdapterOptions = {}): AsyncGraphLayoutAdapter<any, any, any> {
   const { transport = 'clone' } = options
@@ -400,10 +436,20 @@ export function graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options: G
   const send = (message: GraphLayoutWorkerMessage) =>
     port.postMessage(transport === 'json' ? JSON.stringify(graphLayoutMessageToJson(message)) : message)
   return (request, signal) => new Promise<GraphLayout>((resolve, reject) => {
-    const { requestId, inputKey } = request
-    const finish = () => {
+    const { requestId, inputKey, scope } = request
+    const cancelled = () => new Error('Graph layout request cancelled: ' + requestId)
+    if (signal.aborted) {
+      reject(cancelled())
+      return
+    }
+    let settled = false
+    // The one exit of a request: removes both listeners once, then settles the promise.
+    const end = (outcome: () => void) => {
+      if (settled) return
+      settled = true
       port.removeEventListener('message', listener)
       signal.removeEventListener('abort', abort)
+      outcome()
     }
     const listener = (event: { data: unknown }) => {
       let message: GraphLayoutWorkerMessage
@@ -420,28 +466,33 @@ export function graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options: G
             raw = null
           }
         }
-        if (raw && typeof raw === 'object' && raw.requestId === requestId) {
-          finish()
-          reject(reason)
-        }
+        if (raw && typeof raw === 'object' && raw.requestId === requestId) end(() => reject(reason))
         return
       }
       if (message.type === 'request' || message.type === 'cancel' || message.requestId !== requestId || message.inputKey !== inputKey) return
-      finish()
-      if (message.type === 'success') resolve(message.layout)
-      else reject(new Error(message.message))
+      if (message.scope !== scope) {
+        end(() => reject(new Error('Graph layout response for request ' + requestId + ' has scope ' + message.scope + ', expected ' + scope)))
+        return
+      }
+      if (message.type === 'success') end(() => resolve(message.layout))
+      else end(() => reject(new Error(message.message)))
     }
-    const abort = () => {
-      finish()
-      send({ type: 'cancel', requestId, inputKey })
-      reject(new Error('Graph layout request cancelled: ' + requestId))
-    }
-    if (signal.aborted) {
-      reject(new Error('Graph layout request cancelled: ' + requestId))
-      return
-    }
+    const abort = () => end(() => {
+      reject(cancelled())
+      // The cancel message is only a hint and the result is discarded either way, so a port that can no longer post
+      // (a terminated Worker, for example) does not turn the abort into an uncaught error.
+      try {
+        send({ type: 'cancel', requestId, inputKey })
+      } catch {
+        // Ignored, see above.
+      }
+    })
     port.addEventListener('message', listener)
     signal.addEventListener('abort', abort)
-    send({ type: 'request', request: request as GraphLayoutRequest })
+    try {
+      send({ type: 'request', request: request as GraphLayoutRequest })
+    } catch (reason) {
+      end(() => reject(reason))
+    }
   })
 }
