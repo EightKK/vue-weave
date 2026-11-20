@@ -219,6 +219,19 @@ test('explain names the summary a subtask inherits a constraint from', () => {
   assert.deepEqual(result.trace.taskReasonIds.get('S'), [])
 })
 
+test('explain names the subtask that bounds the latest dates of a link into a summary', () => {
+  // x -> S binds both leaves; only l2 (finishNoLaterThan 4) limits the latest finish of x.
+  const result = scheduleTasks({
+    range, tasks: [task('x', 2), task('y', 20), task('S', 0), sub('l1', 2, 'S'), sub('l2', 2, 'S', { finishNoLaterThan: 4 })],
+    dependencies: [link('x', 'S')],
+  }, { explain: true })
+  assert.deepEqual([byId(result, 'x').latestEnd, byId(result, 'l1').latestStart, byId(result, 'l2').latestStart], [2, 18, 2])
+  const reasons = result.trace.reasons.filter(reason => reason.taskId === 'x' && reason.phase === 'latest')
+  assert.deepEqual(reasons.map(reason => [reason.kind, reason.dependencyId, reason.relatedTaskIds]), [['dependency', 'x-S', ['l2']]])
+  const own = new Set(result.trace.taskReasonIds.get('l2'))
+  assert.ok(reasons[0].parentReasonIds.length > 0 && reasons[0].parentReasonIds.every(id => own.has(id)))
+})
+
 test('propagateEdit cascades subtask edits through summaries and refuses summary edits', () => {
   const input = {
     range, tasks: [task('S', 0), sub('a', 2, 'S'), sub('b', 3, 'S'), task('y', 1)], dependencies: [link('a', 'b'), link('S', 'y')],

@@ -11,9 +11,12 @@ export type Limits = { startLower: number; endLower: number; startUpper: number;
 export type LimitKey = keyof Limits
 /**
  * A bound without a constraint or dependency is a leveling horizon bound. `summaryId` names the summary task that a
- * subtask inherits a constraint from.
+ * subtask inherits a constraint from. `linkTo` names the successor whose dates give an upper dependency bound: a link
+ * into a summary task is attached to each of its leaves under the same ID, so the ID alone does not name the leaf.
  */
-export type Bound = { value: number; constraint?: ScheduleConstraintName; dependencyId?: string; summaryId?: string }
+export type Bound = {
+  value: number; constraint?: ScheduleConstraintName; dependencyId?: string; summaryId?: string; linkTo?: string
+}
 export type Bounds = Record<LimitKey, Bound[]>
 export type Slot = TimeRange & { workStart: number }
 
@@ -478,7 +481,7 @@ function addSuccessorUpper(task: ModelTask, placed: ReadonlyMap<string, TimeRang
   for (const link of task.outgoing) {
     const successor = placed.get(link.to)!
     const value = (targetFinish(link) ? successor.end : successor.start) - (link.lag ?? 0)
-    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
+    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id, linkTo: link.to })
   }
 }
 
@@ -491,7 +494,7 @@ export function addManualUpper(model: ScheduleModel, task: ModelTask, own: TimeR
     const manual = model.tasks.get(link.to)!.manual!
     const value = (targetFinish(link) ? manual.end : manual.start) - (link.lag ?? 0)
     if ((sourceFinish(link) ? own.end : own.start) > value) continue
-    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id })
+    ;(sourceFinish(link) ? end : start).push({ value, dependencyId: link.id, linkTo: link.to })
   }
 }
 
