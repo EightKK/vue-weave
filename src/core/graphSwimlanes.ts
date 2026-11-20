@@ -261,7 +261,8 @@ function leftToRight(
   const flowEnd = Math.max(nodesRight + lanePadding, routeRight + 6)
   const laneList: GraphSwimlane[] = lanes.map((lane, index) => {
     const nodeIds: string[] = []
-    for (let rank = 0; rank < rankCount; rank++) nodeIds.push(...cells.get(rank * laneCount + index) ?? [])
+    // A loop rather than push(...cell), which overflows the call stack for a cell with very many nodes.
+    for (let rank = 0; rank < rankCount; rank++) for (const id of cells.get(rank * laneCount + index) ?? []) nodeIds.push(id)
     return {
       id: lane.id, label: lane.label, index, nodeIds,
       x: padding, y: laneTop[index]!, width: flowEnd - padding, height: thickness[index]!,

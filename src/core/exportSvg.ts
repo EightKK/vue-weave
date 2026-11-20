@@ -2,12 +2,13 @@ import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } fr
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
 import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
-import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from './graphFlow.js'
+import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
   summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
 } from './timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
+import { tickLabelsWithRoom } from './workingTimeScale.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
   TimelineMarker, TimelineMarkerRange, TimelineRow,
@@ -379,7 +380,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       content.push(tag('path', {
         class: band.reference ? 'vw-flow-band vw-is-reference' : 'vw-flow-band', d: layout.paths.get(edge.id)!, fill: 'none',
         stroke: strong ? highlight : theme.edge, 'stroke-width': band.width,
-        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? '10 6' : undefined,
+        'stroke-opacity': band.reference ? 0.35 : strong ? 0.7 : 0.5, 'stroke-dasharray': band.reference ? graphReferenceDash(band.width, layout.paths.get(edge.id)) : undefined,
       }, band.label ? tag('title', {}, escapeXml(band.label)) : undefined))
       continue
     }
@@ -705,9 +706,12 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       area.push(clippedText(box, rtl, [{ text: band.label, y: 17, size: 11, weight: 700, fill: theme.text, inset: 7 }]))
     }
   })
-  for (const tick of ticks) {
+  const labelled = tickLabelsWithRoom(ticks, local.toX, step, window.end)
+  ticks.forEach((tick, index) => {
     const x = X(tick)
     area.push(tag('line', { x1: x, y1: headerHeight - 40, x2: x, y2: totalHeight, stroke: theme.grid, 'stroke-width': 1 }))
+    // Labels that a non-linear scale squeezes together are left out; the grid line stays.
+    if (!labelled[index]) return
     const atEnd = tick === window.end
     // The label sits after the tick line in reading order, or before it for the closing tick.
     const after = atEnd ? rtl : !rtl
@@ -715,8 +719,8 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       x: after ? x + 7 : x - 7, y: headerHeight - 40 + 24, 'font-size': 11, 'font-weight': 700, fill: theme.text,
       'text-anchor': after ? 'start' : 'end',
     }, escapeXml(format(tick))))
-  }
-  area.push(...rangeLabels)
+  })
+  for (const label of rangeLabels) area.push(label)
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue
@@ -982,7 +986,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
       tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
   }
   // Lag labels go above the marker, now and status-date lines so a line passing through a label does not cover its text.
-  area.push(...lagLabels)
+  for (const label of lagLabels) area.push(label)
   if (histogram) {
     loadRows.forEach((row, index) => {
       const { segments, peak } = histogram.get(row.id)!

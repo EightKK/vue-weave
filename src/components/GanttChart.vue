@@ -19,6 +19,7 @@ import type { CreateValidator, TimelineCascade, TimelineCreate } from '../core/t
 import type { RowMoveValidator, TimelineRowMove } from '../core/types.js'
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
+import { tickLabelsWithRoom } from '../core/workingTimeScale.js'
 import { progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
@@ -60,7 +61,7 @@ const props = withDefaults(defineProps<{
   range: TimeRange
   /** Base linear time scale in pixels per time unit. Default: 80 pixels per hour, in milliseconds. */
   pixelsPerUnit?: number
-  /** Candidate tick intervals in time units, positive and ascending. The first step that keeps tick labels at least 76 px apart is used. Default: 30 minutes, 1, 2, 4 and 24 hours, in milliseconds. */
+  /** Candidate tick intervals in time units, positive and ascending. The first step that keeps tick labels at least 76 px apart is used; where no step does (a squeezed part of a non-linear `scale`), labels without 76 px before the next tick are left out. Default: 30 minutes, 1, 2, 4 and 24 hours, in milliseconds. */
   tickSteps?: readonly number[]
   /** Step in time units that edit displacements snap to; also the default minimum duration. Default: 900000 (15 minutes in milliseconds). */
   snap?: number
@@ -912,6 +913,12 @@ const nowTime = computed(() => {
 const ticks = computed(() => timeTicks(timeWindow.value, tickStep.value, stableRange.value.start))
 // Grid lines are drawn at each tick's own x (as exportSvg does), so non-linear scales stay aligned with the labels.
 const tickXs = computed(() => ticks.value.map(tick => ({ tick, x: axis.value.toX(tick) })))
+// Tick labels with room before the next tick; a working-time scale squeezes ticks in non-working time together, and
+// those labels are left out (their tick and grid lines stay) so labels never overlap.
+const tickLabels = computed(() => {
+  const shown = tickLabelsWithRoom(ticks.value, axis.value.toX, tickStep.value, stableRange.value.end)
+  return tickXs.value.filter((_, index) => shown[index])
+})
 // Kept for custom stylesheets that read --vw-grid-step; the built-in styles no longer use it.
 const gridStep = computed(() => axis.value.toX(stableRange.value.start + tickStep.value) - axis.value.toX(stableRange.value.start))
 type BarPreview = { range: TimeRange; rowShift: number; mode: EditMode }
@@ -2164,6 +2171,12 @@ watch(() => props.dependencies, () => {
   if (localDependency.value !== undefined && !props.dependencies.some(dep => dep.id === localDependency.value)) localDependency.value = undefined
 })
 watch(() => [props.connectable, props.reconnectable], () => cancelLinkDraft('source-changed'))
+// A draft fixed at a summary row (`summaryDependencies`) is stale once that row is no longer a dependency end, for
+// example when `summaryDependencies` or `showSummaries` is turned off.
+watch(summaryAnchors, anchors => {
+  const fixed = linkDraft.value?.fixed
+  if (fixed && !barById.value.has(fixed.bar) && !anchors.has(fixed.bar)) cancelLinkDraft('source-changed')
+})
 /** Cancel a connection draft only, reporting it when one was armed or dragged. */
 function cancelLinkDraft(reason: TimelineEditCancelReason) {
   const fixed = linkDraft.value?.fixed
@@ -3224,7 +3237,7 @@ onUnmounted(() => {
           </div>
           <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
             <span v-for="line in headLines" :key="line.key" :class="line.classes" :style="line.style" :role="line.role" :aria-label="line.name" :title="line.name" :aria-hidden="line.hidden">{{ line.text }}</span>
-            <span v-for="{ tick, x } in tickXs" :key="tick" class="vw-gantt-tick" :class="{ 'vw-is-end': tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
+            <span v-for="{ tick, x } in tickLabels" :key="tick" class="vw-gantt-tick" :class="{ 'vw-is-end': tick === range.end }" :style="{ [inlineSide]: `${x}px` }"><slot name="tick" :time="tick" :label="formatTime(tick)">{{ formatTime(tick) }}</slot></span>
           </div>
           <div v-for="(level, index) in shownBands" :key="index" class="vw-gantt-band-level"
             :style="{ top: (index * bandHeight) + 'px', height: bandHeight + 'px' }">

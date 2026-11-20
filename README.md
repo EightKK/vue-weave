@@ -6,116 +6,97 @@
 
 [Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
 
-Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, production views, project schedules and resource timelines with typed components and framework-independent graph, scheduling and resource-load calculations.
+Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, process flows, production views, project schedules and resource timelines from two typed components, and do the graph, scheduling and resource-load calculations in a headless core that also runs in Node.js, workers and on servers.
+
+- **Two controlled components.** `NetworkGraph` and `GanttChart` never change your data. A user edit becomes a proposal event, and your code decides whether to apply it.
+- **Planning built in.** Calendars, dependencies, critical path, resource load and leveling, recorded actuals and plan scenario comparison, with an explanation of every date.
+- **Opt-in features.** The defaults stay simple; everything else is a prop. No runtime dependencies besides Vue, server-side rendering, SVG and PNG export, a dark theme and right-to-left layouts.
 
 ![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](.github/images/network-graph.png)
 
-![GanttChart in the scheduling demo: a calendar-aware schedule with non-working time, critical-path outlines, float lines, split bars, a status-date line, a deadline flag and Finish and Float columns](.github/images/gantt-chart.png)
+![GanttChart in the scheduling demo: a calendar-aware schedule with a status date and progress line, critical-path outlines, float lines, split bars, a lead label, a deadline flag, Finish and Float columns, and a shaded plant closure day](.github/images/gantt-chart.png)
 
-## Highlights
+## Gallery
 
-Everything beyond the basics is opt-in through props. Details are in [docs/api.md](docs/api.md), [docs/integration.md](docs/integration.md) and [docs/scheduling.md](docs/scheduling.md).
+All screenshots are from the [demo app](#run-the-demo) in this repository.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/process-lanes.png" alt="Process lanes demo: a machining process in four department lanes (Purchasing, Machining, Inspection and an empty Shipping lane), with orthogonal hand-over edges crossing the lane boundaries and the lanes repeated in the minimap" width="100%"><br>
+      <b>Swimlanes.</b> One lane per department or work centre, in your order (<code>layoutSwimlaneGraph</code>, <code>lanes</code>).
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/images/quantity-flow.png" alt="Quantity flow demo: a Sankey diagram of a lot of 100 pieces that splits 60/40 between two lines, merges at inspection, loses 4 pieces on line B and loops 10 pieces through rework as a dashed band, with a table of inflow, outflow and difference per step" width="100%"><br>
+      <b>Quantity flows.</b> Edges drawn as bands as wide as their quantity, on one scale (<code>layoutFlowGraph</code>, <code>edgeBands</code>).
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/linked-views.png" alt="Linked views demo: Cut order A is selected in the Gantt chart, and the same task is highlighted in the network graph above and in the CNC cell load row below, where a red segment marks an overload" width="100%"><br>
+      <b>Linked views.</b> Select in one view and the graph, Gantt chart and load rows highlight the same task (<code>useLinkedSelection</code>).
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/images/plan-comparison.png" alt="Plan scenarios demo: a candidate plan that pushes the cutting work after a maintenance window, compared with the current plan in a table of final completion, deadline misses, changed assignments and CNC cell overload, and a Gantt chart that shows the current plan as a strip below each candidate bar" width="100%"><br>
+      <b>Plan scenarios.</b> Compare a candidate plan with the current one before adopting it (<code>comparePlans</code>).
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/images/diagram-styles-dark.png" alt="Diagram styles demo in the dark theme: an order fulfilment flow with ellipse, diamond and hexagon nodes, dashed animated main-path edges, open-arrow and circle edge markers, and a pair of parallel edges spread apart" width="100%"><br>
+      <b>Diagram styles and dark theme.</b> Node shapes, edge markers, animated and parallel edges, and the built-in dark theme.
+    </td>
+    <td width="50%" valign="top">
+      <b>More in the demo:</b> project delivery, a 1,000-row timeline, a large graph, timeline editing, an asynchronous layout, graph analysis, resource planning with unplanned tasks, saved editing against a simulated server, a large plan loaded window by window, and a design gallery that restyles both components as a workflow builder, a database schema, an org chart, a roadmap, a sprint plan, room bookings and calendar views.
+    </td>
+  </tr>
+</table>
+
+## Features
+
+Everything beyond the basics is opt-in. This is an overview; the full list of props, events, slots and functions is in [docs/api.md](docs/api.md), with guides in [docs/integration.md](docs/integration.md) and [docs/scheduling.md](docs/scheduling.md).
 
 ### NetworkGraph
 
-Layout:
-
-- Built-in layout for branches, merges, disconnected nodes, directed cycles and self-loops, with `LR`, `TB`, `RL` or `BT` direction and `crossingReduction: 'barycenter'`.
-- Your own placement and routing through a `layout` function, for example `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, the deterministic `layoutForceGraph`, or ELK.js installed by your application (see [Use ELK.js for layout](docs/integration.md#use-elkjs-for-layout)).
-- Swimlanes for process flows: `layoutSwimlaneGraph` gives each department or work centre a lane in your order, so hand-overs cross lane boundaries. The `lanes` prop draws the bands and titles, also in the minimap and exports, and `graphSwimlaneAt` maps a dragged node to a lane.
-- Quantity flows (Sankey diagrams): `layoutFlowGraph` draws each edge as a band as thick as its quantity, on one scale. It reports per-node inflow, outflow and their difference as given, never adds quantities in different units, and turns rework loops into dashed reference bands. The `edgeBands` prop draws the bands with real width and accessible names such as "Cut → Inspect: 60 pcs", also in exports.
-
-Drawing:
-
-- Custom SVG through the `node`, `edge`, `group` and `minimap-node` slots, plus `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML next to an item.
-- Diamond, ellipse and hexagon nodes besides boxes (`NetworkNode.shape`), also in exports.
-- Orthogonal or straight edges (`edgeStyle`, also per edge), orthogonal routes around the nodes (`avoidNodes`), waypoints (`GraphEdge.points`, edited with `editableEdges`), parallel edges spread apart (`parallelEdgeSpacing`), end markers (`markerStart`, `markerEnd`) and flowing edges (`animated`).
-
-Editing:
-
-- Node moves, connections, multiple selection and the minimap.
-- Edge selection (`edgesSelectable`), keyboard deletion proposals (`deletable`, applied with `removeGraphElements`) and context-menu requests (`contextMenu`).
-- Inline label editing of nodes and edges (`editableLabels`, proposed through `label-edit`) and lasso selection (`selectionMode: 'lasso'`).
-- Port rules for connections (`connectionRules`: type, direction and connection limit per port), with readable rejection reasons and valid-target hints while connecting; `graphConnectionViolations` audits loaded graphs.
-- Nested groups (`parentId`), collapsing into proxy nodes (`collapsibleGroups`, `collapsedGroupIds`) and node resizing (`sizes`, `resizable`).
-- Snap to grid (`snapGrid`) with a dotted or lined `background`, `alignmentGuides` and `autoPan`.
-- Palette drops (`droppable`, the `node-drop` event, `toGraphPoint(x, y)` and `getViewportCenter()`).
-- Copy, paste and duplicate proposals (`clipboard` with the `copy-selection`, `paste-request` and `duplicate-selection` events, applied with `cloneGraphElements`).
-
-Navigation:
-
-- Large graphs and touch: viewport culling (`cullOffscreen`), pinch zoom, and level of detail when zoomed out (`lodThreshold`).
-- Search highlighting (`matchIds`, `dimmedIds`) and the `focusNode(id)` and `fit({ ids })` methods.
+- **Layouts:** a built-in layered layout (`LR`, `TB`, `RL` or `BT`, with `crossingReduction: 'barycenter'`) that handles branches, merges, cycles and self-loops. Through the `layout` prop: tree, radial, circular, grid, concentric and deterministic force layouts (`layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, `layoutForceGraph`), or [ELK.js](docs/integration.md#use-elkjs-for-layout) installed by your application.
+- **Process lanes:** `layoutSwimlaneGraph` gives each department or work centre a lane in your order; the `lanes` prop draws the bands, also in the minimap and exports, and `graphSwimlaneAt` finds the lane a node was dragged to. See [Swimlanes for process flows](docs/integration.md#swimlanes-for-process-flows).
+- **Quantity flows (Sankey diagrams):** `layoutFlowGraph` sizes each edge by its quantity on one scale, reports inflow, outflow and their difference per node as given, never adds different units, and draws rework loops as dashed reference bands; the `edgeBands` prop renders them with names such as "Cut → Inspect: 60 pcs". See [Quantity flows](docs/integration.md#quantity-flows-sankey-diagrams).
+- **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), waypoints, end markers, animated edges and spread parallel edges.
+- **Editing as proposals:** node moves, connections checked against typed port rules (`connectionRules`) with valid-target hints, inline label editing, box or lasso selection, nested and collapsible groups, node resizing, snap to grid with alignment guides, palette drops, clipboard, and keyboard deletion.
+- **Navigation:** minimap, viewport culling and level of detail for large graphs, pinch zoom, search highlighting (`matchIds`), `focusNode(id)` and `fit({ ids })`.
 
 ### GanttChart
 
-Display:
-
-- Multiple lanes, progress, milestones and FS/SS/FF/SF dependencies; row groups, baselines (up to three named baseline sets with variance), header bands and date markers; row and time-window virtualization.
-- Presentation through `formatTime`, `labels`, slots and CSS variables, plus a hoverable `tooltip` slot, a `context-menu` event (`contextMenu`) and a `fitToBars()` method.
-- Lag or lead labels on dependencies (`lag`, `formatLag`), which the scheduler applies too, and opt-in dependencies to and from summary rows, drawn to their rollup bars (`summaryDependencies`).
-- A resource load histogram under the task rows (`loadRows`, `loadSegments`), which accepts the output of `calculateResourceLoad`.
-- Zoom presets (`zoomPresets`), a now marker (`showNow`), touch pinch zoom (`pinchZoom`) and Ctrl+wheel zoom around the pointer (`wheelZoom`).
-- Highlighted time ranges such as a code freeze or holidays (`markerRanges`), across the chart or on chosen rows, with a header label.
-- A status-date line (`statusDate`) and a progress line (`showProgressLine`) that shows which tasks are behind or ahead.
-- Non-working time shading (`nonWorkingPeriods`).
-- Critical outlines, float lines, deadline indicators and split bars through the optional bar fields `critical`, `latestEnd`, `deadline` and `segments`, described to screen readers without changing bar names. Your own text per bar, such as "Manually scheduled", joins that description and the tooltip through `TimelineBar.description`.
-
-Editing:
-
-- Dependency creation and reconnection (`connectable`, `reconnectable`, `validateConnection`).
-- Multiple selection with batch moves (`multiSelect`, `edits`) and row moves (`rowDraggable`).
-- Drag to create bars (`creatable`, `create`), stacked without overlap by `assignLanes`.
-- Auto-scheduling previews (`cascade`) that show the bars a move would push and propose them with it as one `edits` batch.
-- Progress sliders (`progressEditable`, `progress-edit`) and bar deletion (`deletable`, `bars-delete`, accepted with `removeTimelineBars`).
-- Row hierarchy editing by pointer or Alt+arrow keys (`rowsReorderable`, `row-move`, accepted with `moveTimelineRow`), with `timelineWbsCodes` for a WBS column.
-- Column resizing by pointer or arrow keys (`columnsResizable`, `column-resize`, `labelWidth`).
-- Scheduling constraints (`TimelineBar.constraints`, named as in `ScheduleTask`) drawn as markers that show violations, with optional drag and keyboard handles (`constraintsEditable`, `constraint-edit`, accepted with `applyTimelineConstraintEdit`).
+- **Display:** multiple lanes, progress, milestones and FS/SS/FF/SF dependencies with lag labels; row groups with summary rollups and optional summary dependencies; up to three named baseline sets with variance; header bands, date markers and highlighted ranges (`markerRanges`); a status-date line and progress line; non-working time shading; critical outlines, float lines, deadlines and split bars; a resource load histogram (`loadRows`) that accepts `calculateResourceLoad` output.
+- **Editing as proposals:** drag and keyboard moves and resizes, auto-scheduling previews of the bars a move would push (`cascade`), dependency creation and reconnection, multiple selection and batch moves, drag to create, progress sliders, deletion, row hierarchy moves, column resizing, scheduling constraint handles, typed cell editors (`field-edit`), and drops from your own lists (`bar-drop`).
+- **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
+- **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
 
 ### Headless core (`vue-weave/core`)
 
-Graphs:
+- **Graph algorithms and metrics:** `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes`, `filterGraph`, connected components, degree, betweenness and PageRank centrality, and Louvain communities (`detectGraphCommunities`) that `graphCommunityGroups` turns into groups.
+- **Scheduling:** `scheduleTasks` on calendars from `buildWorkPeriods`, including IANA time zones, as-late-as-possible, manual, inactive and summary tasks, constraints, pauses and cycle and infeasibility diagnostics. `scheduleTasks(input, { explain: true })` traces why each task starts when it does, and `toPlanningDiagnostics` lists the problems.
+- **Resources:** `calculateResourceLoad` and `levelResources`, with capacity that changes over time (`capacityPeriods`) and assignments that cover only part of a task (`workOffset`, `workDuration`); `projectResourceTimeline` shows a plan by resource, and `buildPlacementInput` keeps unplanned tasks out of the calculation.
+- **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](docs/scheduling.md#compare-plan-scenarios).
+- **Interchange:** Microsoft Project XML (including calendars, resources and assignments), iCalendar and CSV import and export (`fromMsProjectXml`, `toMsProjectXml`, `fromICalendar`, `toICalendar`, `parseCsv`, `toCsv`), and `scheduleToGraph` for a PERT network diagram.
 
-- Graph algorithms: `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes` and `filterGraph`.
-- Graph metrics: connected components (`graphComponents`), degree, betweenness and PageRank centrality, Louvain community detection (`detectGraphCommunities`) and `graphCommunityGroups`, which turns communities into `NetworkGraph` groups.
-- Graph geometry: `collapseGraphGroups`, `routeGraphEdges` and `applyGraphSizes` compute the same shapes as the component props.
+### Linked views, large data and saving
 
-Scheduling:
+- **Linked views:** `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings; `revealNode`, `revealBar` and `revealLinkedTarget` move to an item, also inside collapsed groups and rows; `timelineBarsInRange` and `resolveTimeRangeTargets` highlight what was worked on in a time range. See [Linking views](docs/integration.md#linking-views).
+- **Large data:** `useWindowedData` fetches only the visible window through your `load` function, with aborts, deduplication and retry; graph expansion helpers and `layoutGraphIncrementally` load a graph one hop at a time without moving the nodes on display; `useAsyncGraphLayout` runs a layout in a Worker, and `routingPolicy="preserve"` keeps the engine's routes. See [Loading only what is visible](docs/integration.md#loading-only-what-is-visible).
+- **Views and saving:** `useTimelineView` for searched and sorted rows, `useEditHistory` for undo and redo, `useEditTransaction` to save through your server adapter with conflict handling, and `serializeWeaveSnapshot` and `restoreWeaveSnapshot` for versioned, validated JSON.
 
-- Calendars and scheduling: `buildWorkPeriods`, `scheduleTasks` and `calculateResourceLoad`, with cycle and infeasibility diagnostics, as-late-as-possible tasks (`mode: 'alap'`), pauses, manually scheduled (`manual`) and inactive (`inactive`) tasks, summary tasks (`parentId`), and IANA time-zone calendars (`WorkWeek.timeZone`).
-- Resource leveling with `levelResources`, against capacity that can change over time (`capacityPeriods`) and with assignments that can cover only part of a task (`workOffset`, `workDuration`).
-- Plan updates with `propagateEdit` (ready to return from `cascade`) and `rescheduleFromStatusDate`.
-- Replanning from recorded actual intervals with `rescheduleFromActuals`: actuals are kept as recorded and the remaining work is forecast; `actualsTimelineBars` shows plan, actual and forecast on one row.
-- Chart helpers: `scheduledBarFields`, `invertWorkPeriods` and `scheduleToGraph`, which turns a schedule into a PERT network diagram for `NetworkGraph`.
-- Calendar views: `calendarZoomPresets` builds ready hour, day, week, month, quarter and year zoom presets in an IANA time zone, and `intlTimeFormatter` and `calendarBands` (`locale`) give locale-aware labels that match on server and client.
+### Export, themes and accessibility
 
-Interchange:
-
-- `toMsProjectXml`, `toICalendar` and `toCsv` export plans.
-- `parseCsv` with `timelineFromCsvTable` imports a CSV file as rows and bars.
-- `fromMsProjectXml` with `timelineFromMsProject` imports a Microsoft Project XML file as rows, bars, baselines and dependencies, and also reads its calendars, resources and assignments.
-- `fromICalendar` with `timelineFromICalendar` imports an iCalendar file.
-
-### Planning, linking and saving
-
-- Linked views: `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings. The view the user acts in keeps the selection, and the others get display-only highlights (`highlightedNodeIds`, `highlightedEdgeIds`, `highlightedBarIds`, `highlightedLoadTargets`).
-- Pointing and moving: `target-enter`, `target-leave` and `target-activate` events report what the user points at, and `revealNode`, `revealBar` and `revealLinkedTarget` move to it, also out of collapsed groups and rows.
-- Time ranges: `timelineBarsInRange`, `resolveTimeRangeTargets` or the `timeRange` option highlight what was worked on in a range, using the work segments of split bars, and optionally what is related to it in the graph.
-- Resource views: `projectResourceTimeline` shows a task once per assigned resource without counting its load twice, `resolveResourceTimelineEdit` turns a drag to another row into an assignment change, and `buildPlacementInput` keeps unplanned tasks out of the calculation. GanttChart accepts drops from your own lists (`droppable`, `bar-drop`).
-- Explanations: `scheduleTasks(input, { explain: true })` and `levelResources` return a trace of why each task starts when it does; `toPlanningDiagnostics` lists cycles, infeasible tasks, overloads and unresolved leveling with their tasks and resources.
-- Plan scenarios: `comparePlans` compares a candidate plan with the current one. It keeps input differences (edited tasks, links, calendars, assignments, capacity) apart from result differences (final completion, tasks that moved as a consequence, critical changes, deadline misses and cumulative overload per resource). `planComparisonTargets` and `planBaselines` show it with the existing highlights and baseline sets.
-- Asynchronous layouts: `useAsyncGraphLayout` runs a layout in a Worker or any async engine and shows only complete, current frames; `routingPolicy="preserve"` keeps the engine's routes, port edges included.
-- Partial loading: GanttChart reports the window it renders (`visible-window-change`), and `useWindowedData` fetches only the visible weeks and rows through your `load` function, with aborts, deduplication, per-window status and retry.
-- Loading a graph piece by piece: `splitDanglingLinks` and the graph expansion helpers keep links to items that are not loaded out of the components, and `layoutGraphIncrementally` places each new page around the nodes on display without moving them.
-- Typed cells, search and saved views: columns with a `field` propose typed values (`field-edit`, `cell-editor` slot), and `useTimelineView` searches and sorts a display copy of the rows.
-- Saving: `useEditTransaction` saves one document at a time through your adapter and tells accepted, rejected, conflicting and unknown results apart, with undo and redo sent to the server. `serializeWeaveSnapshot` and `restoreWeaveSnapshot` store data and view settings as versioned, validated JSON.
-- The backlog, inspector, diagnostics list and toolbar of the demo are examples in `examples/components/`, not part of the package.
-
-### Export, themes, RTL
-
-- `exportSvg(options)` and `exportPng(options)` on both components, and `renderGraphSvg` and `renderTimelineSvg` for server-side SVG.
-- Built-in dark theme (`vw-theme-dark`) and `vw-theme-auto`, which follows `prefers-color-scheme`; forced colors, reduced motion and print styles.
+- `exportSvg(options)` and `exportPng(options)` on both components, and `renderGraphSvg` and `renderTimelineSvg` for SVG on a server.
+- A built-in dark theme (`vw-theme-dark`) and `vw-theme-auto`, which follows `prefers-color-scheme`; theming through `--vw-*` CSS variables; forced colors, reduced motion and print styles.
 - Right-to-left layouts with `dir="rtl"` (or `auto`).
+- Keyboard operation and ARIA names are built in; see [Status and support](#status-and-support) for what has been tested.
+
+```ts
+const svg = chart.value!.exportSvg({ title: 'Plan' })
+const png = await chart.value!.exportPng({ scale: 2 })
+```
 
 ## Status and support
 
@@ -242,15 +223,6 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 See [Linking views](docs/integration.md#linking-views) for hover, load rows and moving to collapsed items, and [Saving through a server](docs/integration.md#saving-through-a-server) for `useEditTransaction`.
 
-## Export, direction and themes
-
-Both components expose `exportSvg(options)` and `exportPng(options)` on their template ref, and `vue-weave/core` can build the same SVG on a server. Set `dir="rtl"` (or `auto`) for right-to-left layouts. Add `vw-theme-dark` to a component or an ancestor for the dark theme, or `vw-theme-auto` to follow `prefers-color-scheme`. See [integration](docs/integration.md).
-
-```ts
-const svg = chart.value!.exportSvg({ title: 'Plan' })
-const png = await chart.value!.exportPng({ scale: 2 })
-```
-
 ## Run the demo
 
 There is no hosted demo. Run it locally with Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
@@ -261,7 +233,7 @@ npm run build:demo
 npm start
 ```
 
-The demo covers manufacturing, project delivery, a 1,000-row timeline, a large graph, timeline editing and scheduling, plus linked views, an asynchronous layout, diagram styles (node shapes, edge markers, animated and parallel edges), graph analysis (components, communities and centrality rankings), process lanes, quantity flows, resource planning with unplanned tasks, saved editing against a simulated server and a large plan loaded window by window, with export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph**, **Planning overlays** and **Scheduling** turn on the opt-in features described above. The **Design gallery** row restyles the same two components as a workflow builder, a database schema diagram, an org chart, a product roadmap, a sprint plan, a room booking calendar and calendar views with highlighted ranges, using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state.
+The demo has one page per example (listed under [Gallery](#gallery)), export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph** and **Planning overlays** turn on the opt-in features described above. The **Design gallery** row restyles the same two components using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state. The backlog, inspector, diagnostics list and toolbar of the demo are examples in `examples/components/`, not part of the package.
 
 On Windows you can double-click `Start.cmd` instead. It serves `preview/` when it was built from the current sources, and otherwise builds it first, running `npm ci` beforehand if the installed dependencies do not match `package-lock.json`. `npm start` serves `preview/` as it is.
 

@@ -441,3 +441,23 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   }
   expect(errors).toEqual([])
 })
+
+test('Gantt: turning summaryDependencies off cancels a connection armed from a rollup bar', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?summaries=1')
+  const fromPhase = chart.getByRole('button', { name: 'Start dependency from finish of Phase', exact: true })
+  await fromPhase.press('Enter')
+  await expect(fromPhase).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart.getByRole('button', { name: 'Connect dependency to start of Task B', exact: true })).toHaveCount(1)
+
+  // The summary row is no longer a dependency end: the armed connection ends without a proposal.
+  await page.getByRole('button', { name: 'Turn summary links off', exact: true }).click()
+  await expect(out('Last edit cancel')).toHaveText('{"reason":"source-changed","barIds":["p"]}')
+  await expect(fromPhase).toHaveCount(0)
+  const taskB = chart.getByRole('button', { name: 'Start dependency from start of Task B', exact: true })
+  await expect(taskB).toHaveCount(1)
+  await taskB.press('Enter')
+  await expect(taskB).toHaveAttribute('aria-pressed', 'true')
+  await expect(out('Connections')).toHaveText('0')
+  expect(errors).toEqual([])
+})

@@ -126,6 +126,19 @@ test('calendarZoomPresets use a fixed offset and validate their options', () => 
   assert.throws(() => calendarZoomPresets(spring, { levels: ['days', 'days'] }), { name: 'Error', message: /Duplicate calendar zoom level: days/ })
   assert.throws(() => calendarZoomPresets(spring, { timeZone: 'Nowhere/Land' }), RangeError)
   assert.throws(() => calendarZoomPresets({ start: 1, end: 1 }), RangeError)
+  for (const levels of ['days', new Set(['days']), null]) {
+    assert.throws(() => calendarZoomPresets(spring, { levels }), { name: 'RangeError', message: /levels must be an array/ })
+  }
+})
+
+test('calendarZoomPresets return fresh tick steps on every call', () => {
+  const [first] = calendarZoomPresets(spring, { levels: ['days'] })
+  const steps = [...first.tickSteps]
+  first.tickSteps.push(1)
+  first.tickSteps.length = 0
+  const [second] = calendarZoomPresets(spring, { levels: ['days'] })
+  assert.deepEqual(second.tickSteps, steps)
+  assert.notEqual(second.tickSteps, first.tickSteps)
 })
 
 test('calendarZoomPresets plug into GanttChart zoomPresets', async () => {

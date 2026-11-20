@@ -4,7 +4,8 @@ import { checkLayoutNumber, checkLayoutNumbers, defaultPadding } from './graphOp
 
 /**
  * How `layoutFlowGraph` turns quantities into pixels. `pixelsPerUnit` fixes the scale; `fitExtent` picks the largest
- * scale at which the fullest rank (its node sizes plus the gaps between them) fits into that cross-flow extent.
+ * scale at which the fullest rank (its node sizes plus the gaps between them) fits into that cross-flow extent. Boxes with
+ * a small nonzero value raised to `minNodeSize` are not part of that fit, so a rank holding them can exceed it slightly.
  */
 export type GraphFlowScale = { pixelsPerUnit: number } | { fitExtent: number }
 
@@ -414,6 +415,40 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
  */
 export function graphFlowBands(flow: Pick<GraphFlowLayout, 'bands'>): Map<string, GraphEdgeBand> {
   return new Map(flow.bands.map(band => [band.edgeId, { width: band.width, reference: band.reference, label: band.label }]))
+}
+
+/**
+ * The default dash pattern of a reference band of the given drawn width: `10 6` for thin bands, lengthened with the
+ * width (dash twice, gap at least three quarters of it) so a wide band reads as a dashed band rather than a comb of
+ * stripes. For a straight-segment path (`M`/`L` commands, as `layoutFlowGraph` routes loops) the gaps are evened out so
+ * the band starts and ends with a dash at its nodes.
+ */
+export function graphReferenceDash(width: number, path?: string) {
+  const round = (value: number) => Math.round(value * 100) / 100
+  const dash = Math.max(10, width * 2)
+  let gap = Math.max(6, width * 0.75)
+  const length = path === undefined ? undefined : polylineLength(path)
+  if (length !== undefined) {
+    const count = Math.floor((length + gap) / (dash + gap))
+    if (count > 1) gap = (length - count * dash) / (count - 1)
+  }
+  return `${round(dash)} ${round(gap)}`
+}
+
+/** The length of a path made only of absolute `M` and `L` commands, or undefined for any other path. */
+function polylineLength(path: string) {
+  if (!/^\s*M[\s\d.,eE+-]*(L[\s\d.,eE+-]*)*$/.test(path)) return undefined
+  let length = 0, last: [number, number] | undefined
+  for (const match of path.matchAll(/([ML])([^ML]*)/g)) {
+    const command = match[1], numbers = match[2]!.trim().split(/[\s,]+/).filter(Boolean).map(Number)
+    if (numbers.length % 2 || numbers.some(value => !Number.isFinite(value))) return undefined
+    for (let i = 0; i < numbers.length; i += 2) {
+      const point: [number, number] = [numbers[i]!, numbers[i + 1]!]
+      if (last && !(command === 'M' && i === 0)) length += Math.hypot(point[0] - last[0], point[1] - last[1])
+      last = point
+    }
+  }
+  return length
 }
 
 /** Validates an `edgeBands` map: every width finite and at least 0. Throws RangeError naming the edge. */

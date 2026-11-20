@@ -89,6 +89,12 @@ This is a minor release because of the changes under "Breaking changes": error m
 - Graph neighbourhood expansion: `createGraphExpansion`, `beginGraphExpansion`, `cancelGraphExpansion`, `mergeGraphExpansionPage` and `graphExpansionView` merge one-hop pages, track expanded nodes and keep dangling edges out of NetworkGraph's input. They place nothing themselves; to keep the shown nodes in place, place each page with `layoutGraphIncrementally` (see Graph core).
 - Asynchronous layouts: optional `fixedIds` and `addedIds` (`ReadonlySet<string>`) on `GraphLayoutRequestInput`, `GraphLayoutRequest`, `GraphLayoutKeyInput` and `AsyncGraphFrame`, carried through `buildGraphLayoutRequests`, `useAsyncGraphLayout` and the Worker messages (ID arrays in JSON), so an adapter can forward pinned and new nodes to an incremental layout engine. They enter the input key only when present: requests and keys without them are unchanged.
 
+### Fixed
+
+- `fromMsProjectXml` leaves out a `Duration` or `LinkLag` too large to be a finite number, with an `invalid-value` warning, instead of importing `Infinity`, which made `toMsProjectXml` and `timelineFromMsProject` throw on the imported plan. A date-time whose zone offset is more than 18 hours or 59 minutes is unreadable, and its task is skipped with a `skipped-task` warning.
+- `renderTimelineSvg` no longer throws "Maximum call stack size exceeded" for a chart with very many range or lag labels.
+- GanttChart and `renderTimelineSvg` tick labels no longer overlap where no `tickSteps` entry keeps every tick 76 px apart, such as the squeezed non-working time of a `createWorkingTimeScale` axis or another non-linear `scale`: a label without 76 px of room before the next tick is left out, and its grid line stays. Charts whose step fits everywhere are unchanged.
+
 ### Examples
 
 - New standalone demos:

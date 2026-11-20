@@ -354,3 +354,34 @@ test('avoidNodes reroutes an edge that a moved unrelated box now crosses, but ne
   const plain = routeGraphEdges(moved, edges, nodesById, { style: 'orthogonal' })
   assert.equal(graphLayoutChangeMetrics(new Map(), plain, { edges: [edges[0]] }).edgeBoxIntersections, 1)
 })
+
+test('incremental layout places a new node with more anchors than a call can take arguments', () => {
+  // Math.max(...anchors) overflowed the call stack past about 120,000 anchors.
+  const count = 150000
+  const nodes = [{ id: 'hub' }], edges = [], positions = new Map()
+  for (let i = 0; i < count; i++) {
+    nodes.push({ id: 'l' + i })
+    edges.push({ id: 'e' + i, from: 'l' + i, to: 'hub' })
+    positions.set('l' + i, { x: 0, y: i * 100 })
+  }
+  const result = layoutGraphIncrementally(nodes, edges, positions)
+  assert.deepEqual(result.placedIds, ['hub'])
+  assert.equal(result.boxes.get('hub').x, 144 + 50)
+  assert.equal(result.boxes.get('hub').rank, 1)
+})
+
+test('relaxed incremental placement never pushes two boxes onto each other', () => {
+  // a and b both block n's place and are both pushed below it: each was clear of the other's old place, but both
+  // landed at y 82 on top of each other.
+  const nodes = [{ id: 'p' }, { id: 'a' }, { id: 'b' }, { id: 'n' }]
+  const edges = [{ id: 'e', from: 'p', to: 'n' }]
+  const positions = new Map([
+    ['p', { x: 0, y: 0 }],
+    ['a', { x: 194, y: 29, width: 144, height: 2 }],
+    ['b', { x: 194, y: 55, width: 144, height: 2 }],
+  ])
+  const result = layoutGraphIncrementally(nodes, edges, positions, { maxDisplacement: 100 })
+  assert.equal(graphLayoutChangeMetrics(new Map(), result).overlaps, 0)
+  assert.deepEqual(result.movedIds, [])
+  assert.deepEqual(result.boxes.get('n'), { x: 194, y: 81, width: 144, height: 58, rank: 1 })
+})

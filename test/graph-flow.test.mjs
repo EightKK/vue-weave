@@ -247,7 +247,22 @@ test('renderGraphSvg draws bands with their widths, reference bands dashed, and 
   assert.equal((svg.match(/<path class="vw-flow-band/g) ?? []).length, edges.length)
   assert.match(svg, /<path class="vw-flow-band" d="[^"]+" fill="none" stroke="[^"]+" stroke-width="120" stroke-opacity="0.5"><title>Line A → Inspect: 60 pcs<\/title><\/path>/)
   assert.match(svg, /stroke-width="72"[^>]*><title>Line B → Inspect: 36 pcs/)
-  assert.match(svg, /<path class="vw-flow-band vw-is-reference"[^>]*stroke-width="20" stroke-opacity="0.35" stroke-dasharray="10 6"><title>Rework → Inspect: 10 pcs/)
+  const loop = svg.match(/<path class="vw-flow-band vw-is-reference"[^>]*stroke-width="20" stroke-opacity="0.35" stroke-dasharray="([\d.]+) ([\d.]+)"><title>Rework → Inspect: 10 pcs/)
+  assert.ok(loop)
+  // The dash grows with a wide band so it does not read as a comb of stripes, and the gaps are evened out so the loop
+  // starts and ends with a dash at its nodes instead of ending in a gap beside the target.
+  const [dash, gap] = loop.slice(1).map(Number)
+  assert.equal(dash, 40)
+  assert.ok(gap >= 15, `gap ${gap}`)
+  const points = [...flow.paths.get('rework-inspect').matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map(match => [Number(match[1]), Number(match[2])])
+  const length = points.slice(1).reduce((total, point, i) => total + Math.hypot(point[0] - points[i][0], point[1] - points[i][1]), 0)
+  const count = Math.round((length + gap) / (dash + gap))
+  assert.ok(Math.abs(count * dash + (count - 1) * gap - length) < 0.05 * count, 'whole dashes')
+  // A thin band keeps the short dash; a band along a curve keeps the plain pattern.
+  const thinReference = renderGraphSvg(flow, nodes, edges, { edgeBands: new Map([['lot-a', { width: 4, reference: true }]]) })
+  assert.match(thinReference, /class="vw-flow-band vw-is-reference"[^>]*stroke-width="4" stroke-opacity="0.35" stroke-dasharray="10 6"/)
+  const curved = renderGraphSvg(flow, nodes, edges, { edgeBands: new Map([['lot-a', { width: 20, reference: true }]]) })
+  assert.match(curved, /class="vw-flow-band vw-is-reference"[^>]*stroke-width="20" stroke-opacity="0.35" stroke-dasharray="40 15"/)
   // Bands have no markers, and the widest band comes first.
   assert.doesNotMatch(svg, /vw-flow-band[^>]*marker-end/)
   const widths = [...svg.matchAll(/class="vw-flow-band[^"]*"[^>]*stroke-width="([\d.]+)"/g)].map(match => Number(match[1]))
@@ -279,7 +294,7 @@ test('NetworkGraph draws bands with real width and named hit areas on the server
   const html = await render({ layout: () => flow, edgeBands: graphFlowBands(flow), edgesSelectable: true })
   assert.equal((html.match(/class="vw-network-edge vw-network-band/g) ?? []).length, edges.length)
   assert.match(html, /<path class="vw-network-edge vw-network-band" d="[^"]+" style="stroke-width:120px;"/)
-  assert.match(html, /<path class="vw-network-edge vw-network-band vw-is-reference" d="[^"]+" style="stroke-width:20px;"/)
+  assert.match(html, /<path class="vw-network-edge vw-network-band vw-is-reference" d="[^"]+" style="stroke-width:20px;--vw-band-dash:40 [\d.]+;"/)
   assert.match(html, /class="vw-edge-hit vw-is-band" style="stroke-width:120px;"[^>]*aria-label="Select edge Line A → Inspect: 60 pcs"/)
   assert.match(html, /aria-label="Select edge Rework → Inspect: 10 pcs"/)
   // Bands never get markers, and the widest is drawn first.

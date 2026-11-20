@@ -29,7 +29,7 @@ import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
 import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from '../core/graphSwimlanes.js'
-import { assertGraphEdgeBands, graphBandOrder, type GraphEdgeBand } from '../core/graphFlow.js'
+import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from '../core/graphFlow.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import { keep, keepIds, sameGeometry, sameRecord } from './networkGraph/equality.js'
 import { placeBox, sortExtents, type Extent } from './networkGraph/previewGeometry.js'
@@ -2556,7 +2556,7 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
     renderSlot(slots, 'edge', { edge, path, selected, related, highlighted: Boolean(item.highlighted), dimmed, scale: shared.scale, ...band && { band } }, () => [
       band ? h('path', {
         class: ['vw-network-edge vw-network-band', { 'vw-is-related': related, 'vw-is-reference': Boolean(band.reference) }], d: path,
-        style: { strokeWidth: bandWidth },
+        style: band.reference ? { strokeWidth: bandWidth, '--vw-band-dash': graphReferenceDash(band.width, path) } : { strokeWidth: bandWidth },
       }) : h('path', {
         class: ['vw-network-edge', { 'vw-is-related': related, 'vw-is-animated': Boolean(edge.animated) }], d: path,
         'marker-start': markerUrl(shared.marker, edge, 'start'), 'marker-end': markerUrl(shared.marker, edge, 'end'),

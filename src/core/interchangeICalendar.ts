@@ -145,6 +145,7 @@ const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
 const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 // `Intl` formats instants up to ±8.64e15 ms; a zoned wall time is resolved with a day of margin on each side.
 const maxZonedWall = 8.64e15 - 2 * 86_400_000
+const maxTime = 8.64e15
 
 /** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
 function icalProperty(text: string, line: number): ICalendarProperty | undefined {
@@ -243,6 +244,13 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     warnings.push({ code, ...(eventId === undefined ? {} : { eventId }), ...(line === undefined ? {} : { line }), message })
   }
   if (!lines.some(({ text: line }) => /^BEGIN:VCALENDAR\s*$/i.test(line))) throw new Error('Not an iCalendar document: there is no BEGIN:VCALENDAR')
+  // Every UID of the file, so an ID made up for an event without one never takes the UID of a later event.
+  const uids = new Set<string>()
+  for (const { text: line } of lines) {
+    if (!/^UID[;:]/i.test(line)) continue
+    const property = icalProperty(line, 0)
+    if (property) uids.add(icalUnescape(property.value))
+  }
 
   const events: ICalendarImportEvent[] = []
   const ids = new Set<string>()
@@ -274,7 +282,9 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     const uid = find('UID')
     let id = uid === undefined ? undefined : icalUnescape(uid.value)
     if (!id) {
-      id = 'event-' + (events.length + 1)
+      let number = events.length + 1
+      while (uids.has('event-' + number) || ids.has('event-' + number)) number++
+      id = 'event-' + number
       warn('missing-uid', `The event at line ${currentLine} has no UID and was named ${id}`, currentLine, id)
     }
     const label = id
@@ -310,9 +320,11 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
       const local = start.wall + nominal
       const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
         && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
-      if (!readable) {
+      const sum = readable ? (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
+      // An end beyond the range of Date (±8.64e15 ms) is not a time.
+      if (!(Math.abs(sum) <= maxTime)) {
         warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
-      } else end = (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact
+      } else end = sum
     } else if (start.date) end = start.time + 86_400_000
     const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
     const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')

@@ -421,7 +421,8 @@ export interface TimelineDataOptions {
  * bar may share an ID. Throws an Error for a dependency from a bar to itself, naming the dependency and the bar.
  * (`scheduleTasks`, which takes its own links, reports such a link as a cycle instead.) Throws a RangeError for a
  * dependency `lag` that is not a finite number. With `options.summaryDependencies`, a dependency end may also be the ID
- * of a summary row; an ID that is both a bar ID and a row ID always means the bar.
+ * of a summary row; an ID that is both a bar ID and a row ID always means the bar. As in `scheduleTasks`, a dependency
+ * between a summary row and a bar or summary row below it throws an Error.
  */
 export function validateTimelineData(
   rows: readonly TimelineRow[], bars: readonly TimelineBar[],
@@ -453,10 +454,28 @@ export function validateTimelineData(
   const summaryIds = new Set<string>()
   if (options.summaryDependencies) for (const row of rows) if (row.parentId !== undefined) summaryIds.add(row.parentId)
   const known = (id: string) => barIds.has(id) || summaryIds.has(id)
+  // The row of a dependency end: a bar's row, or the summary row itself.
+  const barRows = summaryIds.size ? new Map(bars.map(bar => [bar.id, bar.rowId])) : undefined
+  const rowParents = summaryIds.size ? new Map(rows.map(row => [row.id, row.parentId])) : undefined
+  const rowOf = (id: string) => barRows!.get(id) ?? id
+  /** Whether the summary row `summary` lies above `row`. The step limit ends the walk on a parent cycle. */
+  const above = (summary: string, row: string) => {
+    let id = rowParents!.get(row)
+    for (let steps = 0; id !== undefined && steps < rows.length; steps++) {
+      if (id === summary) return true
+      id = rowParents!.get(id)
+    }
+    return false
+  }
   for (const dependency of dependencies) {
     if (!known(dependency.from) || !known(dependency.to)) throw new Error('Unknown dependency endpoint: ' + dependency.id)
     if (dependency.from === dependency.to) {
       throw new Error('A dependency cannot link a bar to itself: ' + dependency.id + ' on bar ' + dependency.from)
+    }
+    // As in `scheduleTasks`, a summary cannot be linked with anything inside it.
+    for (const [summary, other] of [[dependency.from, dependency.to], [dependency.to, dependency.from]] as const) {
+      if (barIds.has(summary) || !summaryIds.has(summary) || !above(summary, rowOf(other))) continue
+      throw new Error(`Dependency ${dependency.id} links summary row ${summary} with its own subtask ${other}`)
     }
     if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type')
     const lag = dependency.lag
