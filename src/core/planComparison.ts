@@ -34,7 +34,8 @@ export interface PlanScenario {
   input: PlanComparisonInput
   /**
    * The result of `scheduleTasks` or `levelResources` for `input`, for example a leveled plan. When omitted,
-   * `comparePlans` calculates `scheduleTasks(input, { explain: true })`.
+   * `comparePlans` calculates `scheduleTasks(input, { explain: true })`. A successful result must cover the task set of
+   * `input` exactly (see `comparePlans`); recalculate it whenever `input` changes.
    */
   result?: ScheduleResult | LevelResourcesResult
   /**
@@ -284,8 +285,8 @@ function prepare(scenario: PlanScenario, side: Side): Prepared {
     }
     // The scheduler's validation is the single source for tasks, dependencies, calendars and dates.
     let result = scenario.result
+    const model = result === undefined ? undefined : buildScheduleModel(input)
     if (result === undefined) result = scheduleTasks(input, { explain: true })
-    else buildScheduleModel(input)
     const tasks = new Map(input.tasks.map(task => [task.id, task]))
     for (const task of input.tasks) {
       if (task.deadline !== undefined && (typeof task.deadline !== 'number' || !Number.isFinite(task.deadline))) {
@@ -307,15 +308,7 @@ function prepare(scenario: PlanScenario, side: Side): Prepared {
       else resourcesByTask.set(taskId, [resourceId])
     }
 
-    if (scenario.result !== undefined) {
-      if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') throw new Error('Invalid schedule result')
-      if (result.ok) {
-        for (const task of result.tasks) {
-          const source = tasks.get(task.id)
-          if (!source || source.inactive) throw new Error(`The result names task ${task.id}, which is not an active task of its input`)
-        }
-      }
-    }
+    if (model) checkResult(input, tasks, model.inactive, result)
 
     let load = scenario.load
     if (load !== undefined) {
@@ -328,6 +321,49 @@ function prepare(scenario: PlanScenario, side: Side): Prepared {
     }
     return { input, tasks, assignments, resourcesByTask, result, ...(load ? { load } : {}) }
   })
+}
+
+/**
+ * Check that a given result was calculated from the task set of its input. Only a successful result lists tasks, so
+ * only it is checked: every result task must be an active task of the input, no task may appear twice, every active
+ * task of the input must appear, and `inactiveTaskIds` must list exactly the inactive tasks of the input (the tasks
+ * marked `inactive` and the subtasks of an inactive summary), each once. This detects a result calculated before a
+ * task was added, removed, activated or deactivated; it cannot detect a result for an older version of the same tasks
+ * (for example a changed duration), which needs a revision shared by the result and its input.
+ */
+function checkResult(
+  input: PlanComparisonInput, tasks: ReadonlyMap<string, PlanComparisonTask>, inactive: ReadonlySet<string>,
+  result: ScheduleResult | LevelResourcesResult,
+) {
+  if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') throw new Error('Invalid schedule result')
+  if (!result.ok) return
+  if (!Array.isArray(result.tasks)) throw new Error('Invalid schedule result')
+  const seen = new Set<string>()
+  for (const task of result.tasks) {
+    const id = task?.id
+    if (typeof id !== 'string' || !tasks.has(id) || inactive.has(id)) {
+      throw new Error(`The result names task ${id}, which is not an active task of its input`)
+    }
+    if (seen.has(id)) throw new Error(`The result lists task ${id} more than once`)
+    seen.add(id)
+  }
+  for (const task of input.tasks) {
+    if (!inactive.has(task.id) && !seen.has(task.id)) {
+      throw new Error(`The result has no entry for task ${task.id}, an active task of its input; recalculate it from this input`)
+    }
+  }
+  const listed = result.inactiveTaskIds ?? []
+  if (!Array.isArray(listed)) throw new Error('Invalid schedule result')
+  const inactiveSeen = new Set<string>()
+  for (const id of listed) {
+    if (!inactive.has(id) || inactiveSeen.has(id)) {
+      throw new Error(`The result lists task ${id} as inactive, which is not an inactive task of its input`)
+    }
+    inactiveSeen.add(id)
+  }
+  for (const id of inactive) {
+    if (!inactiveSeen.has(id)) throw new Error(`The result does not list task ${id} as inactive, an inactive task of its input; recalculate it from this input`)
+  }
 }
 
 /** Segments of one resource must not overlap, so that no overload is counted twice. */
@@ -424,6 +460,15 @@ const sameSide = (a: PlanTaskSide, b: PlanTaskSide) => sameValue(a, b)
  * side ends with ` (current plan)` or ` (candidate plan)` and keeps the class of its check. Throws Error for duplicate or
  * invalid IDs, other invalid scheduling input, unknown assignment references and results that do not match their input,
  * and RangeError for invalid numbers, deadlines or load segments. The arguments are not modified.
+ *
+ * A given successful `result` must match the task set of its input: each active task (not `inactive` and not under an
+ * inactive summary) appears exactly once in `result.tasks`, no other task appears, and `inactiveTaskIds` lists exactly
+ * the inactive tasks. Otherwise an Error is thrown, so a result calculated before a task was added, removed or
+ * (de)activated is rejected instead of being compared as a complete plan. The check compares task sets only: a result
+ * calculated for an earlier version of the same tasks (a changed duration, dependency or calendar) cannot be detected
+ * and is compared as given; keep a revision shared by the input and its result, or omit `result`, when that matters. A
+ * failed result (cycle or infeasible) lists no tasks and is checked only for its shape. A `partial` plan is checked the
+ * same way: its result must have been calculated from the loaded input it is passed with.
  */
 export function comparePlans(current: PlanScenario, candidate: PlanScenario): PlanComparison {
   const before = prepare(current, 'current')
