@@ -43,6 +43,26 @@ test('validateTimelineData accepts summary row ends only with summaryDependencie
   assert.throws(() => validateTimelineData(rows, bars, [{ id: 'SS', from: 'S', to: 'S' }], 1, { summaryDependencies: true }), /cannot link a bar to itself: SS/)
 })
 
+test('a summary row cannot be linked with a bar or summary row below it, as in scheduleTasks', async () => {
+  const options = { summaryDependencies: true }
+  // S above bar a; T above summary U and bar c (two levels down).
+  for (const [from, to, summary, other] of [['S', 'a', 'S', 'a'], ['a', 'S', 'S', 'a'], ['T', 'c', 'T', 'c'], ['U', 'T', 'T', 'U']]) {
+    const link = [{ id: 'x', from, to }]
+    const message = `Dependency x links summary row ${summary} with its own subtask ${other}`
+    assert.throws(() => validateTimelineData(rows, bars, link, 1, options), { name: 'Error', message })
+    assert.throws(() => renderTimelineSvg(rows, bars, link, createTimeScale(range, pixels), { showSummaries: true, summaryDependencies: true }), { message })
+    await assert.rejects(() => render({ dependencies: link, summaryDependencies: true }), { message })
+    // The scheduler rejects the same link between a summary task and its own subtask.
+    const tasks = rows.map(row => ({ id: row.id, duration: 0, ...(row.parentId ? { parentId: row.parentId } : {}) }))
+    assert.throws(() => scheduleTasks({ range, tasks, dependencies: link }), /links summary task .* with its own subtask/)
+  }
+  // Links next to the subtree, between sibling subtrees, and a bar whose ID is also a row ID stay valid.
+  assert.doesNotThrow(() => validateTimelineData(rows, bars, [{ id: 'Sc', from: 'S', to: 'c' }, { id: 'aU', from: 'a', to: 'U' }], 1, options))
+  const shared = [{ id: 'P', label: 'P' }, { id: 'q', label: 'q', parentId: 'P' }]
+  const sharedBars = [{ id: 'P', rowId: 'q', label: 'P bar', start: 0, end: hour }, { id: 'q', rowId: 'q', label: 'q', start: hour, end: 2 * hour }]
+  assert.doesNotThrow(() => validateTimelineData(shared, sharedBars, [{ id: 'Pq', from: 'P', to: 'q' }], 1, options))
+})
+
 test('GanttChart rejects summary row ends without summaryDependencies', async () => {
   await assert.rejects(() => render({ dependencies: [{ id: 'Sd', from: 'S', to: 'd' }] }), { message: 'Unknown dependency endpoint: Sd' })
 })
