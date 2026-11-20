@@ -1,7 +1,7 @@
 // iCalendar (RFC 5545): `toICalendar`, `fromICalendar` and `timelineFromICalendar`. Pure string builders and readers
 // without a DOM. Re-exported by `interchange.ts`.
 import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, toSecond, wallTime } from './interchangeShared.js'
-import { zonedInstant, zoneFormat } from './timeZone.js'
+import { rfc5545ZonedInstant, zoneFormat } from './timeZone.js'
 import type { TimelineBar, TimelineRow } from './types.js'
 import { checkId } from './ids.js'
 
@@ -207,9 +207,11 @@ function icalZone(tzid: string) {
  *
  * Each VEVENT becomes an `ICalendarImportEvent` with `id` (UID), `summary` (SUMMARY, empty when missing), `description`
  * when DESCRIPTION is present, `start` and `end` in epoch milliseconds. DTSTART and DTEND may be UTC (`Z`), floating,
- * have a `TZID` parameter or be dates (`VALUE=DATE`). A UTC time is exact. A TZID is resolved with `Intl` in the same
- * way as `buildWorkPeriods` (an hour skipped by daylight saving moves forward, a repeated one takes its first
- * occurrence); the nonstandard prefix of `/mozilla.org/…/Europe/Berlin` is stripped, and VTIMEZONE definitions are not
+ * have a `TZID` parameter or be dates (`VALUE=DATE`). A UTC time is exact. A TZID is resolved with `Intl` as RFC 5545
+ * section 3.3.5 says: a local time skipped by a daylight-saving gap is read with the UTC offset before the gap
+ * (`DTSTART;TZID=America/New_York:20070311T023000` is 07:30 UTC, local 03:30), and a repeated local time takes its
+ * first occurrence. This differs from `buildWorkPeriods` and editing, which move a skipped time to the transition. The
+ * nonstandard prefix of `/mozilla.org/…/Europe/Berlin` is stripped, and VTIMEZONE definitions are not
  * read. A floating time, a date and a time with an unknown TZID (reported) are wall-clock times at
  * `options.utcOffsetMinutes`. The end is DTEND, else DTSTART plus DURATION, else the start plus one day for a date and
  * the start itself for a date-time, which is an
@@ -270,7 +272,7 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     const tzid = property.params.get('TZID')
     if (tzid !== undefined && !date) {
       const zone = icalZone(tzid)
-      if (zone) return { time: zonedInstant(zone, wall), date, wall, zone }
+      if (zone) return { time: rfc5545ZonedInstant(zone, wall), date, wall, zone }
       warn('unknown-time-zone', `The time zone ${tzid} is unknown; the time was read as local time at the given offset`, property.line, eventId)
     }
     return { time: wall - offset * minuteMs, date, wall }
@@ -320,7 +322,7 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
       const local = start.wall + nominal
       const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
         && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
-      const sum = readable ? (start.zone ? zonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
+      const sum = readable ? (start.zone ? rfc5545ZonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
       // An end beyond the range of Date (±8.64e15 ms) is not a time.
       if (!(Math.abs(sum) <= maxTime)) {
         warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
