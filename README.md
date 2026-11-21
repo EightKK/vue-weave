@@ -79,6 +79,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Resources:** `calculateResourceLoad` and `levelResources`, with capacity that changes over time (`capacityPeriods`) and assignments that cover only part of a task (`workOffset`, `workDuration`); `projectResourceTimeline` shows a plan by resource, and `buildPlacementInput` keeps unplanned tasks out of the calculation.
 - **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](docs/scheduling.md#compare-plan-scenarios).
 - **Interchange:** Microsoft Project XML (including calendars, resources and assignments), iCalendar and CSV import and export (`fromMsProjectXml`, `toMsProjectXml`, `fromICalendar`, `toICalendar`, `parseCsv`, `toCsv`), and `scheduleToGraph` for a PERT network diagram.
+- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`).
 
 ### Linked views, large data and saving
 

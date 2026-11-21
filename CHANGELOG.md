@@ -4,6 +4,8 @@
 
 No changes yet.
 
+- Graph interchange (core): `toMermaid` and `fromMermaid` (Mermaid flowcharts with shapes, subgraphs as nested groups, chains, `&` lists, every link form and edge labels; IDs Mermaid cannot hold are encoded and decoded), `toGraphMl` and `fromGraphMl` (own keys for labels, details, shapes, tones, positions, sizes, markers and waypoints, nested graphs as groups, yEd labels, geometry, shapes and arrows), and `toDrawio`, `fromDrawio` and `fromDrawioAsync` (uncompressed `mxfile` export with container groups; import of uncompressed and, asynchronously, compressed pages, chosen by index or name). The readers return the NetworkGraph props with `warnings` (`GraphInterchangeImport`), never expand XML entities and bound their work with `maxItems` and `maxInflatedLength`. Shapes and markers are mapped through one table per format; unknown shapes become boxes with a warning. See [Graph interchange](docs/api.md#graph-interchange). The demo gallery has a "Diagram import/export" example.
+
 ## 0.6.0 - 2026-11-19
 
 This is a minor release because of the changes under "Breaking changes": error messages of input checks are unified, an ID must be a non-empty string everywhere, `layoutGridGraph` has a new default `columnGap`, and `graphRectsIntersect` no longer counts touching rectangles. Each entry below says who is affected and what to change.

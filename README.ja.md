@@ -79,6 +79,7 @@ Vue 3でネットワークグラフとガントチャートを実装するため
 - **リソース：** `calculateResourceLoad` と `levelResources`。時間とともに変わる能力（`capacityPeriods`）や、タスクの一部だけを占める割り当て（`workOffset`、`workDuration`）にも対応します。`projectResourceTimeline` はリソース別に計画を表示し、`buildPlacementInput` は未計画タスクを計算から除きます。
 - **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](docs/scheduling.md#compare-plan-scenarios)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
+- **ダイアグラムファイル：** NetworkGraphの図を、Mermaidフローチャート、GraphML（yEdを含む）、draw.ioで読み込み・書き出し。入れ子のグループ、形状、位置、サイズに対応（`fromMermaid`、`toMermaid`、`fromGraphMl`、`toGraphMl`、`fromDrawio`、圧縮ファイル用の `fromDrawioAsync`、`toDrawio`）。
 
 ### ビューの連動・大規模データ・保存
 
