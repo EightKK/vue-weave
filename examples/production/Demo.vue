@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue'
 import { copy, type Language } from './copy'
+import ApprovalFlow from './ApprovalFlow.vue'
+import WorkSheet from './WorkSheet.vue'
 import LotFlow from './LotFlow.vue'
 import ProductionPlan from './ProductionPlan.vue'
 
-const view = ref<'planning' | 'lot'>('planning')
+const view = ref<'planning' | 'lot' | 'approval' | 'sheet'>('planning')
 const language = ref<Language>(navigator.language.startsWith('ja') ? 'ja' : 'en')
 const theme = ref<'light' | 'dark'>()
 const text = computed(() => copy[language.value])
@@ -22,7 +24,7 @@ function toggleTheme() {
       <div class="production-header-inner">
         <a class="production-brand" href="./"><span class="production-mark" aria-hidden="true"><i></i><i></i><i></i></span>Vue Weave</a>
         <nav class="production-nav" :aria-label="language === 'ja' ? 'デモ' : 'Demos'">
-          <button v-for="item in (['planning', 'lot'] as const)" :key="item" type="button"
+          <button v-for="item in (['planning', 'lot', 'approval', 'sheet'] as const)" :key="item" type="button"
             :aria-current="view === item ? 'page' : undefined" @click="view = item">{{ text[item] }}</button>
         </nav>
         <div class="production-header-actions">
@@ -41,7 +43,9 @@ function toggleTheme() {
     <main class="production-page">
       <KeepAlive>
         <ProductionPlan v-if="view === 'planning'" :text="text" />
-        <LotFlow v-else :text="text" :is-japanese="language === 'ja'" />
+        <LotFlow v-else-if="view === 'lot'" :text="text" :is-japanese="language === 'ja'" />
+        <ApprovalFlow v-else-if="view === 'approval'" :ja="language === 'ja'" />
+        <WorkSheet v-else :ja="language === 'ja'" />
       </KeepAlive>
     </main>
   </div>

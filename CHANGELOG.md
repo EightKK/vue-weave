@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-No changes yet.
+- Added opt-in spreadsheet selection, TSV clipboard and fill-down with atomic edit proposals on GanttChart.
+- Added interactive approval workflow and schedule sheet examples to the bilingual demo homepage.
 
 ## 1.0.0 - 2026-11-21
 

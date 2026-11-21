@@ -1,7 +1,7 @@
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
-import type { TimelineFieldSpec } from './fieldEditing.js'
+import type { TimelineFieldSpec, TimelineFieldEdit } from './fieldEditing.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
 import type { GraphRect } from './graphView.js'
 import type { GraphEdgeBand } from './graphFlow.js'
@@ -182,6 +182,13 @@ export interface TimelineColumn<R extends TimelineRow = TimelineRow> {
   editable?: boolean | ((row: R) => boolean)
   /** Optional typed field definition. Leave it unset to keep the plain text cell behaviour. */
   field?: TimelineFieldSpec<R>
+}
+
+/** One controlled spreadsheet operation; apply both lists as a single transaction. */
+export interface TimelineSheetEdit<R extends TimelineRow = TimelineRow> {
+  action: 'paste' | 'fill'
+  fieldEdits: TimelineFieldEdit<R>[]
+  cellEdits: TimelineCellEdit[]
 }
 
 export interface TimelineCellEdit {

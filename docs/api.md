@@ -1987,3 +1987,9 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+### Spreadsheet mode on GanttChart
+
+`spreadsheet?: boolean` defaults to false. It enables range selection and clipboard operations on the extra columns, in displayed row and column order, including off-screen rows and excluding descendants of collapsed rows. The row heading and time axis sit outside the range. Custom `cell` and `cell-editor` slots retain ownership of the cells and supersede spreadsheet interaction. Direct edits use the usual single-cell events.
+
+`sheet-edit(batch: TimelineSheetEdit<R>)` proposes an entire paste or fill. The batch contains `action` (`paste` or `fill`), `cellEdits` for plain columns and `fieldEdits` for typed columns. Unchanged cells are omitted. No individual edit events fire for a batch. Paste starts at the upper-left selected cell. A single pasted value fills the entire selection. Typed values use the column's field formatter and parser, including validators. Copy quotes embedded tabs, quotes and newlines. A read-only target, an invalid field, a validator rejection, a ragged clipboard or a rectangle exceeding the table rejects the entire operation. `sheet-edit-rejected(reason: string)` reports the reason. Fill repeats values from the first row without extrapolation.
