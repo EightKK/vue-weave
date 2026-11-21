@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (198)
+## Entry `.`: runtime exports (201)
 
 - `GanttChart: object`
 - `NetworkGraph: object`
@@ -14,6 +14,7 @@ in public signatures, so changes to them can break consumers too.
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
+- `applyTimelineSheetEdit: function`
 - `assignLanes: function`
 - `assignmentWorkPeriods: function`
 - `baselineVariance: function`
@@ -61,6 +62,7 @@ in public signatures, so changes to them can break consumers too.
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatSheetText: function`
 - `fromICalendar: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
@@ -123,6 +125,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
 - `planBaselines: function`
@@ -206,7 +209,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (467)
+## Entry `.`: type-only exports (469)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -619,6 +622,8 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowMove`
 - `TimelineRowPosition`
 - `TimelineSelectDetail`
+- `TimelineSheetAppliers`
+- `TimelineSheetChanges`
 - `TimelineSheetEdit`
 - `TimelineSnapshotData`
 - `TimelineSnapshotInput`
@@ -676,13 +681,14 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (188)
+## Entry `./core`: runtime exports (191)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
+- `applyTimelineSheetEdit: function`
 - `assignLanes: function`
 - `assignmentWorkPeriods: function`
 - `baselineVariance: function`
@@ -730,6 +736,7 @@ in public signatures, so changes to them can break consumers too.
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatSheetText: function`
 - `fromICalendar: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
@@ -791,6 +798,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
 - `planBaselines: function`
@@ -867,7 +875,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (438)
+## Entry `./core`: type-only exports (440)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1258,6 +1266,8 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowMove`
 - `TimelineRowPosition`
 - `TimelineSelectDetail`
+- `TimelineSheetAppliers`
+- `TimelineSheetChanges`
 - `TimelineSheetEdit`
 - `TimelineSnapshotData`
 - `TimelineSnapshotInput`
@@ -1535,6 +1545,7 @@ validateEdits?: BatchEditValidator;
 validateFieldEdit?: (change: TimelineFieldEdit<R>) => boolean | string | void;
 validateProgressEdit?: ProgressEditValidator;
 validateRowMove?: RowMoveValidator;
+validateSheetEdit?: (change: TimelineSheetEdit<R>) => boolean | string | void;
 visibleWindowDelay?: number;
 wheelZoom?: boolean;
 zoomPreset?: string;
@@ -1574,7 +1585,7 @@ zoomPresets?: readonly TimelineZoomPreset[];
 (evt: "row-move-rejected", change: TimelineRowMove, reason: string) => void
 (evt: "select", id: string, detail: TimelineSelectDetail) => void
 (evt: "sheet-edit", change: TimelineSheetEdit<R>) => void
-(evt: "sheet-edit-rejected", reason: string) => void
+(evt: "sheet-edit-rejected", reason: string, change?: TimelineSheetEdit<R> | undefined) => void
 (evt: "target-activate", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-enter", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-leave", event: ViewTargetEvent<ViewTarget>) => void
@@ -2277,6 +2288,11 @@ interface GanttLabels {
     createRejected?: string;
     moveRow?: string;
     moveRowKeysHint?: string;
+    sheetHint?: string;
+    sheetReadOnly?: string;
+    sheetRagged?: string;
+    sheetOutside?: string;
+    sheetRejected?: string;
     rowMoveRejected?: string;
     statusDate?: string;
     resizeColumn?: string;
@@ -6273,11 +6289,29 @@ interface TimelineSelectDetail {
 }
 ```
 
+### `TimelineSheetAppliers`
+
+```ts
+interface TimelineSheetAppliers<R extends TimelineRow = TimelineRow> {
+    field?: (row: R, edit: TimelineFieldEdit<R>) => R;
+    cell?: (row: R, edit: TimelineCellEdit) => R;
+}
+```
+
+### `TimelineSheetChanges`
+
+```ts
+interface TimelineSheetChanges<R extends TimelineRow = TimelineRow> {
+    fieldEdits?: readonly TimelineFieldEdit<R>[];
+    cellEdits?: readonly TimelineCellEdit[];
+}
+```
+
 ### `TimelineSheetEdit`
 
 ```ts
 interface TimelineSheetEdit<R extends TimelineRow = TimelineRow> {
-    action: 'paste' | 'fill';
+    action: 'paste' | 'fill' | 'clear';
     fieldEdits: TimelineFieldEdit<R>[];
     cellEdits: TimelineCellEdit[];
 }
@@ -6989,6 +7023,12 @@ function applyGraphSizes(layout: GraphLayout, edges: readonly GraphEdge[], sizes
 function applyTimelineConstraintEdit<B extends TimelineBar>(bars: readonly B[], change: TimelineConstraintEdit): B[];
 ```
 
+### `applyTimelineSheetEdit`
+
+```ts
+function applyTimelineSheetEdit<R extends TimelineRow>(rows: readonly R[], change: TimelineSheetChanges<R>, appliers: TimelineSheetAppliers<R>): R[];
+```
+
 ### `assignLanes`
 
 ```ts
@@ -7289,6 +7329,12 @@ function formatDependencyLag(lag: number): string;
 
 ```ts
 function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): string;
+```
+
+### `formatSheetText`
+
+```ts
+function formatSheetText(records: readonly (readonly string[])[]): string;
 ```
 
 ### `fromICalendar`
@@ -7687,6 +7733,12 @@ function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): FieldParse
 
 ```ts
 function parseGraphLayoutMessage(value: unknown): GraphLayoutWorkerMessage;
+```
+
+### `parseSheetText`
+
+```ts
+function parseSheetText(text: string): string[][];
 ```
 
 ### `parseTimelineViewState`

@@ -93,20 +93,25 @@ const bars = computed(() => rows.value.filter(leaf).map(row => {
 const dependencies = computed(() => links(history.state.value))
 const critical = computed(() => new Set(plan.value.criticalDependencyIds))
 
-// Every change goes through `commit`: it schedules the new tasks first and refuses the whole change when that fails.
+// Every change goes through `plan`: it schedules the new tasks first and refuses the whole change when that fails.
 const message = ref('')
-function commit(change: (rows: Row[]) => Row[]) {
-  let next: Task[]
-  try { next = change(rows.value).map(row => row.task) } catch (error) { return void (message.value = (error as Error).message) }
-  let result: ScheduleResult
-  try { result = schedule(next) } catch (error) { return void (message.value = (error as Error).message) }
-  if (!result.ok) {
-    message.value = result.code === 'cycle'
-      ? t(`先行関係が循環するため取り消しました（タスク ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}）。`, `Rejected: the predecessors would form a cycle (tasks ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}).`)
-      : t('計画期間に収まらないため取り消しました。', 'Rejected: the plan would not fit in the project window.')
-    return
+function planChange(change: (rows: Row[]) => Row[]): { tasks: Task[] } | { reason: string } {
+  let next: Task[], result: ScheduleResult
+  try {
+    next = change(rows.value).map(row => row.task)
+    result = schedule(next)
+  } catch (error) {
+    return { reason: (error as Error).message }
   }
-  history.commit(next)
+  if (result.ok) return { tasks: next }
+  return { reason: result.code === 'cycle'
+    ? t(`先行関係が循環するため取り消しました（タスク ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}）。`, `Rejected: the predecessors would form a cycle (tasks ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}).`)
+    : t('計画期間に収まらないため取り消しました。', 'Rejected: the plan would not fit in the project window.') }
+}
+function commit(change: (rows: Row[]) => Row[]) {
+  const planned = planChange(change)
+  if ('reason' in planned) return void (message.value = planned.reason)
+  history.commit(planned.tasks)
   message.value = ''
 }
 // Writes one typed edit into a row's task. Throwing here rejects the whole batch before anything is committed.
@@ -129,7 +134,14 @@ function writeField(row: Row, edit: TimelineFieldEdit<Row>): Row {
 }
 // A single cell edit and a whole paste, fill or clear batch use the same helper, so they commit as one undo step each.
 const applyField = (edit: TimelineFieldEdit<Row>) => commit(current => applyTimelineSheetEdit(current, { fieldEdits: [edit] }, { field: writeField }))
-const applySheet = (batch: TimelineSheetEdit<Row>) => commit(current => applyTimelineSheetEdit(current, batch, { field: writeField }))
+const sheetChange = (batch: TimelineSheetEdit<Row>) => (current: Row[]) => applyTimelineSheetEdit(current, batch, { field: writeField })
+const applySheet = (batch: TimelineSheetEdit<Row>) => commit(sheetChange(batch))
+// `validateSheetEdit` checks a whole paste, fill or clear before it is proposed; the chart then emits
+// `sheet-edit-rejected` with the reason instead of `sheet-edit`.
+function checkSheet(batch: TimelineSheetEdit<Row>) {
+  const planned = planChange(sheetChange(batch))
+  return 'reason' in planned ? planned.reason : true
+}
 // A bar move sets the start constraint; a resize sets the duration in working days.
 function applyBar(edit: TimelineEdit) {
   commit(current => current.map(row => row.id !== edit.id ? row : { ...row, task: { ...row.task,
@@ -149,7 +161,7 @@ const checkDuration = (edit: TimelineFieldEdit<Row>) =>
     <GanttChart spreadsheet show-summaries summary-dependencies :rows="rows" :columns="columns" :bars="bars" :dependencies="dependencies"
       :highlighted-dependency-ids="critical" :range="range" :non-working-periods="weekends" :pixels-per-unit="22" :tick-steps="[7]"
       :snap="1" :min-duration="1" :format-time="formatDay" :height="480" :row-height="36" :label-width="150" :labels="{ rows: t('タスク', 'Task') }"
-      :validate-field-edit="checkDuration" @edit="applyBar" @field-edit="applyField" @sheet-edit="applySheet"
+      :validate-field-edit="checkDuration" :validate-sheet-edit="checkSheet" @edit="applyBar" @field-edit="applyField" @sheet-edit="applySheet"
       @field-edit-rejected="(_, reason) => message = reason" @sheet-edit-rejected="reason => message = reason" />
     <p class="production-caption sheet-status" role="status" :aria-label="t('編集結果', 'Edit result')">{{ message }}</p>
     <p class="production-caption">{{ t('ダブルクリック・Enter・F2・文字入力でセルを編集。Shift＋クリックまたはShift＋矢印キーで範囲選択。Ctrl / ⌘＋C・X・Vでコピー・切り取り・貼り付け、Deleteで消去、Ctrl / ⌘＋Dで先頭行の値を下にコピー。選択範囲の右下をドラッグしてもコピーできます。先行はタスク番号で入力します。',

@@ -932,12 +932,33 @@ Every node that was on display keeps its box exactly; each new node goes next to
 
 ## Spreadsheet editing in a schedule
 
-Enable `spreadsheet` on a Gantt chart with extra columns. Click a cell and Shift-click another, drag across cells, or use Shift and the arrow keys to select a rectangle. Double-click, Enter or F2 opens the existing single-cell editor. Copy and paste use the system clipboard (tab-separated text). Ctrl/Cmd+D copies the top row of each selected column down the selection. Drag the corner handle down to extend the same values into additional rows.
+Turn on `spreadsheet` on a Gantt chart with editable `columns`, and the cells work like a spreadsheet: select a rectangle with Shift+click, a mouse drag or Shift+arrows, copy, cut and paste tab-separated text with other spreadsheet applications, clear with Delete, fill down with Ctrl/Cmd+D or the corner handle, and type to edit a cell. Each operation arrives as one `sheet-edit` proposal (see [Spreadsheet editing](api.md#spreadsheet-editing) for every key and rule).
 
 ```vue
-<GanttChart spreadsheet :rows="rows" :columns="columns" :bars="bars" :range="range"
-  @field-edit="change => apply([change])"
-  @sheet-edit="batch => apply(batch.fieldEdits)" />
+<script setup lang="ts">
+import { GanttChart, applyTimelineSheetEdit, useEditHistory, type TimelineFieldEdit, type TimelineSheetChanges } from '@eightkk/vue-weave'
+
+const history = useEditHistory(initialRows)
+// One helper applies a single field edit and a whole paste, fill or clear, so each is one undo step.
+function apply(change: TimelineSheetChanges<Row>) {
+  history.commit(applyTimelineSheetEdit(history.state.value, change, {
+    field: (row, edit) => ({ ...row, [edit.fieldId]: edit.after }),
+    cell: (row, edit) => ({ ...row, [edit.columnId]: edit.after }),
+  }))
+}
+// Checks the batch as a whole, for example a total or a dependency cycle across several cells.
+const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 40 || 'More than 40 hours in total'
+</script>
+
+<template>
+  <GanttChart spreadsheet :rows="history.state.value" :columns="columns" :bars="bars" :range="range"
+    :validate-sheet-edit="checkSheet"
+    @field-edit="(edit: TimelineFieldEdit<Row>) => apply({ fieldEdits: [edit] })"
+    @cell-edit="edit => apply({ cellEdits: [edit] })"
+    @sheet-edit="apply"
+    @sheet-edit-rejected="reason => message = reason" />
+  <p role="status">{{ message }}</p>
+</template>
 ```
 
-This example uses only typed fields. The parent applies the changes to its own rows and derives the bars from those rows. For a mixture of plain and typed columns, commit both `batch.cellEdits` and `batch.fieldEdits` as one history or server transaction. A parent can reject the whole proposal (for example when two new dates conflict). See [the complete schedule sheet](../examples/production/WorkSheet.vue).
+The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.
