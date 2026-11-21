@@ -551,3 +551,26 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-network-edge.vw-network-band.vw-is-reference { stroke: GrayText; stroke-dasharray: var(--vw-band-dash, 10 6); }
   .vw-edge-selected .vw-network-edge.vw-network-band { stroke: Highlight; stroke-opacity: .85; }
 }
+
+/* BPMN and flowchart nodes, pools and dashed edges (NetworkGraph). Opt in through the node fields, `pools` and `GraphEdge.dashed`. */
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { fill: none; stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-network-node:where(:hover, :focus-visible, .vw-is-selected, .vw-is-related):where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-item-ink); }
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-shape.vw-node-event-end, .vw-network-node:where(:not(.vw-is-unstyled)) rect.vw-node-event-end { stroke-width: 3.5px; }
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-marker { fill: none; stroke: var(--vw-item-ink); stroke-linecap: round; stroke-linejoin: round; }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-marker, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-on-solid, #fff); }
+.vw-node-marker { pointer-events: none; }
+.vw-network-node .vw-node-label-below { paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; stroke-linejoin: round; }
+.vw-network-node:where(:not(.vw-is-unstyled)) text.vw-node-label-below, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text.vw-node-label-below { fill: var(--vw-text, #172c3b); }
+.vw-network-edge.vw-is-dashed { stroke-dasharray: 5 4; }
+.vw-swimlane-pool rect, .vw-swimlane-pool text { pointer-events: none; }
+.vw-swimlane-pool-band { fill: var(--vw-pool-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
+.vw-swimlane-pool-header { fill: var(--vw-pool-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
+.vw-swimlane-pool-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 13px; font-weight: 700; user-select: none; }
+.vw-network.vw-rtl .vw-swimlane-pool-title text { direction: rtl; unicode-bidi: embed; }
+@media (forced-colors: active) {
+  .vw-network-node .vw-node-shape-detail, .vw-network-node .vw-node-marker { forced-color-adjust: none; fill: none; stroke: CanvasText; }
+  .vw-network-node.vw-is-selected .vw-node-shape-detail, .vw-network-node.vw-is-selected .vw-node-marker { stroke: HighlightText; }
+  .vw-network-node text.vw-node-label-below, .vw-network-node.vw-is-selected text.vw-node-label-below { fill: CanvasText; stroke: Canvas; }
+  .vw-swimlane-pool-band, .vw-swimlane-pool-header { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; stroke-width: 2.5px; }
+  .vw-swimlane-pool-title text { forced-color-adjust: none; fill: CanvasText; }
+}

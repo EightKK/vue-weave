@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-No changes yet.
+- NetworkGraph and `renderGraphSvg`: opt-in flowchart and BPMN node shapes (`NetworkFlowchartShape`, part of `NetworkNodeShape`): `circle`, `stadium`, `parallelogram`, `document`, `cylinder` and `data-object`, with edge ends on their outlines (also for orthogonal routes) and the same drawing in exportSvg and exportPng. Unknown shapes still draw a box.
+- NetworkGraph and `renderGraphSvg`: opt-in BPMN node decorations: `NetworkNode.event` (`start`, `intermediate` with a double border, `end` with a thick border), `NetworkNode.marker` (`NetworkNodeMarker`: the gateway symbols `exclusive`, `parallel`, `inclusive` and `event-based`, the event symbols `message` and `timer`, and the task types `user`, `service` and `manual`; decorative and `aria-hidden`) and `NetworkNode.labelPosition: 'below'` (`NetworkNodeLabelPosition`) for labels under small shapes. Accessible names stay the label and detail.
+- `GraphEdge.dashed` draws an edge with a static dash pattern (class `vw-is-dashed`), and the new edge marker `'hollow-arrow'` is a triangle filled with the graph background, for BPMN message flows (`{ dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' }`). `collapseGraphGroups` keeps `dashed` on merged edges when they agree.
+- `layoutSwimlaneGraph`: opt-in `pools` (`GraphSwimlanePoolSpec`), `poolHeaderSize` and `poolGap` options and a `pools` result (`GraphSwimlanePool`) for BPMN participants around consecutive lanes; NetworkGraph has a `pools` prop (`GraphSwimlanePoolBand`) that draws each pool as a named group with a rotated title around its lanes, and `renderGraphSvg` a `pools` option. New CSS variables `--vw-pool-fill`, `--vw-pool-header-fill` and `--vw-pool-border`. Without pools the layout result and markup are unchanged.
+- Demo: a BPMN process example (a purchase order between a Customer pool and a Supplier pool with Sales and Warehouse lanes) and a small flowchart.
 
 ## 0.6.0 - 2026-11-19
 

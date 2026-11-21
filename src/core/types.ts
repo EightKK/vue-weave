@@ -23,6 +23,15 @@ export interface NetworkNode<D = unknown> extends IdentifiedNode {
   shape?: NetworkNodeShape
   /** False hides the NetworkGraph resize handles of this node (`resizable`). */
   resizable?: boolean
+  /**
+   * Decorative BPMN symbol drawn by the default renderer and `renderGraphSvg`: a gateway or event symbol in the centre
+   * or a task type icon in the top inline-start corner. Hidden from assistive technology. Unknown values draw nothing.
+   */
+  marker?: NetworkNodeMarker
+  /** BPMN event border drawn by the default renderer and `renderGraphSvg`: `start` thin, `intermediate` double, `end` thick. */
+  event?: NetworkNodeEvent
+  /** Where the default renderer and `renderGraphSvg` draw the label and detail. Default `'inside'`; `'below'` draws them under the box, unclipped. */
+  labelPosition?: NetworkNodeLabelPosition
   /** Application data. The components pass it through untouched. */
   data?: D
 }
@@ -31,7 +40,28 @@ export interface NetworkNode<D = unknown> extends IdentifiedNode {
  * The outline of a node in its layout box. `box` (the default) and `rounded` are rectangles with small and large corner
  * radii; `diamond`, `ellipse` and `hexagon` are drawn inside the box and centre the label and detail text.
  */
-export type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon'
+export type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon' | NetworkFlowchartShape
+
+/**
+ * Flowchart and BPMN outlines, drawn inside the node box like `diamond`: `circle` (a true circle centred in the box, a
+ * BPMN event), `stadium` (terminator), `parallelogram` (input or output), `document` (wavy bottom), `cylinder` (data
+ * store or database) and `data-object` (folded corner).
+ */
+export type NetworkFlowchartShape = 'circle' | 'stadium' | 'parallelogram' | 'document' | 'cylinder' | 'data-object'
+
+/**
+ * BPMN symbols of `NetworkNode.marker`. Gateways: `exclusive` (×), `parallel` (+), `inclusive` (○) and `event-based`
+ * (a pentagon in a double circle). Events: `message` (envelope) and `timer` (clock). Task types, drawn in the corner:
+ * `user`, `service` and `manual`.
+ */
+export type NetworkNodeMarker =
+  | 'exclusive' | 'parallel' | 'inclusive' | 'event-based' | 'message' | 'timer' | 'user' | 'service' | 'manual'
+
+/** BPMN event borders of `NetworkNode.event`. */
+export type NetworkNodeEvent = 'start' | 'intermediate' | 'end'
+
+/** Positions of the default node label (`NetworkNode.labelPosition`). */
+export type NetworkNodeLabelPosition = 'inside' | 'below'
 
 /**
  * A custom NetworkGraph layout. `N` and `E` type the nodes and edges it receives; with collapsed groups they include

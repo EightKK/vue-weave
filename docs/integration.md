@@ -154,6 +154,50 @@ const layout: GraphLayoutFunction = () => swimlanes.value
 - Use `edgeStyle: 'orthogonal'` with `avoidNodes` when edges skip ranks, so they go around the steps in between. Lane headers are not obstacles for `avoidNodes`; they sit before the first rank, so routes and edge labels between steps stay out of them.
 - `exportSvg`, `exportPng` and `renderGraphSvg({ lanes })` draw the bands and titles. Long titles are clipped to the header; the full title is the lane's accessible name and, in exports, its `<title>`.
 
+## BPMN processes and flowcharts
+
+The default renderer can draw a BPMN process or a classic flowchart without slots. Node fields choose the shape (`circle`, `stadium`, `parallelogram`, `document`, `cylinder`, `data-object`, plus the earlier `diamond`, `ellipse` and `hexagon`), a BPMN event border (`event: 'start' | 'intermediate' | 'end'`), a decorative symbol (`marker`: gateway, event or task type) and where the label goes (`labelPosition: 'below'` for small events and gateways). Edges add `dashed` and the `hollow-arrow` marker for message flows. Pools (BPMN participants) come from the `pools` option of `layoutSwimlaneGraph` and the `pools` prop.
+
+```ts
+const event = (id: string, label: string, kind: NetworkNodeEvent, lane: string): NetworkNode<{ lane: string }> =>
+  ({ id, label, shape: 'circle', event: kind, labelPosition: 'below', data: { lane } })
+const nodes = [
+  event('received', 'Order received', 'start', 'sales'),
+  { id: 'check', label: 'Check order', shape: 'rounded', marker: 'user', data: { lane: 'sales' } },
+  { id: 'accept', label: 'Accept?', shape: 'diamond', marker: 'exclusive', labelPosition: 'below', data: { lane: 'sales' } },
+  { id: 'orders', label: 'Orders', shape: 'cylinder', data: { lane: 'sales' } },
+  event('closed', 'Order closed', 'end', 'customer'),
+]
+// Sequence flows keep the default arrow; message flows cross pools.
+const messageFlow = (id: string, from: string, to: string): GraphEdge =>
+  ({ id, from, to, dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' })
+const swimlanes = computed(() => layoutSwimlaneGraph(nodes, edges, {
+  lanes: ['customer', 'sales', 'warehouse'],
+  pools: [{ id: 'buyer', label: 'Customer', lanes: ['customer'] }, { id: 'supplier', label: 'Supplier', lanes: ['sales', 'warehouse'] }],
+  laneOf: node => node.data?.lane,
+}))
+```
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :pools="swimlanes.pools"
+  edge-style="orthogonal" connectable @connect="addFlow" />
+```
+
+- Layouts give every node the same box. Circles and diamonds look right in square boxes, so a custom `layout` function can shrink the boxes of events and gateways around their centres and keep the rest of `layoutSwimlaneGraph`'s result. Use `edge-style="orthogonal"` or `"straight"` then: those styles route every edge from the boxes and end it on the shape's outline, while the layout's own curve paths still end on the old box sides. The demo's BPMN process example (`examples/BpmnDemo.vue`) does this.
+- Labels below a shape are not part of its box. Leave room with `rowGap` and `lanePadding`; long labels can overlap neighbours or edges, and the halo keeps them readable.
+- Markers, event borders and shapes are decorative: the accessible name is the label (plus `detail`). If assistive technology users need the BPMN type, put it into `detail` or a tooltip.
+- Connecting, selecting, dragging and deleting work as for every node; whether a new connection is a sequence flow or a message flow (for example, by comparing the pools of its ends) is the application's decision in `validateConnection` and `@connect`.
+- Ports and connection handles stay on the node box, as for the other shapes.
+- `exportSvg`, `exportPng` and `renderGraphSvg({ lanes, pools })` draw the same shapes, markers, labels, dashed edges and pools.
+
+The pools add three variables, the other new parts reuse the node and edge colours. Event borders, the cylinder rim and the data object fold (`vw-node-shape-detail`) use the node's `--vw-<tone>-line` (`--vw-<tone>-ink` when hovered, focused, selected or related), markers (`vw-node-marker`) the node ink (`--vw-on-solid` when selected), labels below (`vw-node-label-below`) `--vw-text` on a `--vw-surface-muted` halo, and dashed edges (`vw-network-edge vw-is-dashed`) the edge colour. In forced-colors mode markers and lines are `CanvasText` (`HighlightText` on a selected node), labels below `CanvasText` on a `Canvas` halo, and pools `Canvas` outlined in `CanvasText` with `CanvasText` titles.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-pool-fill` | `--vw-surface` (`#ffffff`) | Fill of a pool frame (`vw-swimlane-pool-band`) |
+| `--vw-pool-header-fill` | `--vw-surface-hover` (`#e4ecf2`) | Fill of a pool title band (`vw-swimlane-pool-header`) |
+| `--vw-pool-border` | `--vw-muted` (`#4c6371`) | Outline of pool frames and title bands; titles use `--vw-lane-title` |
+
 ## Quantity flows (Sankey diagrams)
 
 To show how much flows along each edge, such as a lot that splits and merges again or a cost allocated across departments, project the quantities with `layoutFlowGraph` and draw its bands with the `edgeBands` prop. Every band is as thick as its quantity on one scale for the whole picture, and keeps the original edge ID.

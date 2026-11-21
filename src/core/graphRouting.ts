@@ -6,7 +6,7 @@ import { graphPathEndpoints } from './graphView.js'
 import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
 import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
-import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape } from './graphShapes.js'
+import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape, isGraphFlowchartShape } from './graphShapes.js'
 import {
   buildGraphObstacleIndex, graphPolylineClear, resolveObstacleAvoidance, routeAroundObstacles, type GraphObstacleAvoidance,
   type GraphObstacleIndex, type ResolvedAvoidance,
@@ -477,12 +477,15 @@ function routeEdge(layout: GraphLayout, edge: GraphEdge, nodes: ReadonlyMap<stri
     // The route of the reverse direction is the same route reversed, whose left is the other side.
     points = shiftRoute(points, slot.reversed ? -offset : offset)
   }
-  if ((slot && style === 'orthogonal') || (edge.from === edge.to && !waypoints.length)) {
-    // Self-loops and spread orthogonal edges leave their sides away from the middle, so an end that is not at a port is
-    // moved along its first (or last) leg onto the node's outline shape.
+  const flowchart = (id: string) => isGraphFlowchartShape(graphOutlineShape(nodes.get(id)))
+  const spreadOrLoop = (slot && style === 'orthogonal') || (edge.from === edge.to && !waypoints.length)
+  if (spreadOrLoop || (style === 'orthogonal' && (flowchart(edge.from) || flowchart(edge.to)))) {
+    // Self-loops and spread orthogonal edges leave their sides away from the middle, and flowchart shapes need not touch
+    // the middle of a side, so an end that is not at a port is moved along its first (or last) leg onto the outline.
     const attach = (point: GraphPoint, next: GraphPoint | undefined, id: string, side: Side | undefined) => {
       const shape = graphOutlineShape(nodes.get(id))
-      if (!shape || !side || !next || (horizontal(side) ? next.y !== point.y : next.x !== point.x)) return point
+      if (!shape || (!spreadOrLoop && !isGraphFlowchartShape(shape))) return point
+      if (!side || !next || (horizontal(side) ? next.y !== point.y : next.x !== point.x)) return point
       return graphOutlineAlong(layout.boxes.get(id)!, shape, point, side)
     }
     const last = points.length - 1

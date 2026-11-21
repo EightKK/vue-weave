@@ -40,6 +40,40 @@ export interface GraphSwimlane extends GraphSwimlaneBand {
 export interface GraphSwimlaneLayout extends GraphLayout {
   /** Every lane in the caller's order, empty lanes included. */
   lanes: GraphSwimlane[]
+  /** Every pool in display order; only present with the `pools` option. */
+  pools?: GraphSwimlanePool[]
+}
+
+/**
+ * A pool (BPMN participant) of a swimlane layout: a container around consecutive lanes with a title band at the flow
+ * start. `label` defaults to the ID.
+ */
+export interface GraphSwimlanePoolSpec {
+  id: string
+  label?: string
+  /** IDs of the pool's lanes. They must be consecutive in the `lanes` order; their order here does not matter. */
+  lanes: readonly string[]
+}
+
+/**
+ * The drawn geometry of one pool: the rectangle around its lanes (title band included) and the title band, in layout
+ * coordinates. NetworkGraph `pools` and `renderGraphSvg` `pools` take this shape. A title band that is taller than it
+ * is wide shows its title rotated, reading from bottom to top.
+ */
+export interface GraphSwimlanePoolBand extends GraphRect {
+  id: string
+  label: string
+  /** The title band at the flow start of the pool; it lies inside the pool. A zero size draws no title band. */
+  header: GraphRect
+  /** IDs of the pool's lanes in display order. NetworkGraph draws these lanes inside the pool's group. */
+  laneIds: readonly string[]
+}
+
+/** A pool of a `layoutSwimlaneGraph` result: its band plus its position in display order. */
+export interface GraphSwimlanePool extends GraphSwimlanePoolBand {
+  /** Position in display order, from 0. */
+  index: number
+  laneIds: string[]
 }
 
 /**
@@ -65,6 +99,38 @@ export interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = Identifie
   crossingReduction?: 'none' | 'barycenter'
   /** Maximum number of alternating sweeps of the crossing reduction. Default 8. */
   crossingSweeps?: number
+  /**
+   * Pools (BPMN participants) around the lanes, opt-in. With pools, every lane belongs to exactly one pool, the lanes of
+   * a pool are consecutive in `lanes`, each pool gets a title band of `poolHeaderSize` before the lane headers, and
+   * pools are `poolGap` apart. The lane of a pool with a single lane gets no header of its own (a zero-size header).
+   */
+  pools?: readonly GraphSwimlanePoolSpec[]
+  /** Thickness of a pool's title band along the flow. Default 32. */
+  poolHeaderSize?: number
+  /** Free space between neighbouring pools, in place of `laneGap`. Default 24. */
+  poolGap?: number
+}
+
+/**
+ * Throws a descriptive error for a pool list that cannot be drawn: an empty or repeated ID, a label that is not a string
+ * or a `laneIds` value that is not an array of IDs (Error), or a pool or title band that is not finite or has a
+ * negative size (RangeError). `where` names the caller in the message.
+ */
+export function assertGraphSwimlanePools(pools: readonly GraphSwimlanePoolBand[], where: string): void {
+  if (!Array.isArray(pools)) throw new Error(where + ' pools must be an array')
+  const ids = new Set<string>()
+  for (const pool of pools) {
+    if (!isId(pool?.id)) throw invalidIdError('swimlane pool', pool?.id)
+    if (ids.has(pool.id)) throw duplicateIdError('swimlane pool', pool.id)
+    ids.add(pool.id)
+    if (typeof pool.label !== 'string') throw new Error(where + ' pool ' + pool.id + ' needs a string label')
+    if (!Array.isArray(pool.laneIds) || !pool.laneIds.every(isId)) throw new Error(where + ' pool ' + pool.id + ' needs an array of lane IDs')
+    for (const rect of [pool, pool.header]) {
+      if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height < 0) {
+        throw new RangeError(where + ' pool ' + pool.id + ' needs finite geometry with nonnegative sizes')
+      }
+    }
+  }
 }
 
 /**
@@ -104,6 +170,8 @@ export function graphSwimlaneAt<L extends GraphSwimlaneBand>(lanes: readonly L[]
 }
 
 interface Sizes {
+  poolHeaderSize: number
+  poolGap: number
   along: number
   across: number
   columnGap: number
@@ -144,6 +212,8 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
   checkLayoutNumber('crossingSweeps', crossingSweeps, 'positiveInteger')
   checkLayoutSizes(nodeWidth, nodeHeight, { columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding })
   if (typeof laneOf !== 'function' && !(laneOf instanceof Map)) throw new Error('laneOf must be a function or a Map')
+  const { poolHeaderSize = 32, poolGap = 24 } = options
+  if (options.pools !== undefined) checkLayoutSizes(nodeWidth, nodeHeight, { poolHeaderSize, poolGap })
 
   const lanes: { id: string; label: string }[] = []
   const laneIndex = new Map<string, number>()
@@ -157,6 +227,8 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
     laneIndex.set(id, lanes.length)
     lanes.push({ id, label })
   }
+
+  const pools = options.pools === undefined ? undefined : resolvePools(options.pools, laneIndex, lanes)
 
   // Ranks of the layered layout (strongly connected components share one rank); it also validates the graph.
   const ranks = new Map<string, number>()
@@ -173,9 +245,9 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
 
   const sizes: Sizes = {
     along: vertical ? nodeHeight : nodeWidth, across: vertical ? nodeWidth : nodeHeight,
-    columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding,
+    columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding, poolHeaderSize, poolGap,
   }
-  const base = leftToRight(nodes, edges, lanes, laneOfNode, ranks, sizes, crossingReduction === 'barycenter' ? crossingSweeps : 0)
+  const base = leftToRight(nodes, edges, lanes, laneOfNode, ranks, sizes, crossingReduction === 'barycenter' ? crossingSweeps : 0, pools)
   if (direction === 'LR') return base
   const orientation = graphDirectionOrientation(direction)
   const oriented = orientGraphLayout(base, orientation)
@@ -183,15 +255,54 @@ export function layoutSwimlaneGraph<N extends IdentifiedNode>(
   return {
     ...oriented,
     lanes: base.lanes.map(lane => ({ ...lane, ...turn(lane), header: turn(lane.header), nodeIds: lane.nodeIds })),
+    ...base.pools && { pools: base.pools.map(pool => ({ ...pool, ...turn(pool), header: turn(pool.header), laneIds: pool.laneIds })) },
   }
+}
+
+// The pool of each lane, by lane position, and the pools in display order. Throws for invalid pools.
+function resolvePools(specs: readonly GraphSwimlanePoolSpec[], laneIndex: ReadonlyMap<string, number>, lanes: readonly { id: string }[]) {
+  if (!Array.isArray(specs)) throw new Error('layoutSwimlaneGraph pools must be an array')
+  const poolOf = new Array<number>(lanes.length).fill(-1)
+  const list: { id: string; label: string; first: number; last: number }[] = []
+  const ids = new Set<string>()
+  for (const spec of specs) {
+    const id: unknown = spec?.id
+    if (!isId(id)) throw invalidIdError('swimlane pool', id)
+    if (ids.has(id)) throw duplicateIdError('swimlane pool', id)
+    ids.add(id)
+    const label = spec.label ?? id
+    if (typeof label !== 'string') throw new Error('Swimlane pool label must be a string: ' + id)
+    if (!Array.isArray(spec.lanes) || !spec.lanes.length) throw new Error('Swimlane pool needs at least one lane: ' + id)
+    let first = Infinity, last = -1
+    for (const lane of spec.lanes) {
+      const index = laneIndex.get(lane)
+      if (index === undefined) throw unknownReferenceError('swimlane', 'swimlane pool ' + id, lane)
+      if (poolOf[index] !== -1) throw new Error('Swimlane ' + lane + ' is in more than one pool')
+      poolOf[index] = list.length
+      first = Math.min(first, index)
+      last = Math.max(last, index)
+    }
+    if (last - first + 1 !== spec.lanes.length) throw new Error('The lanes of swimlane pool ' + id + ' must be consecutive')
+    list.push({ id, label, first, last })
+  }
+  const missing = poolOf.indexOf(-1)
+  if (missing >= 0) throw new Error('Swimlane ' + lanes[missing]!.id + ' is in no pool')
+  // Display order follows the lanes; renumber the pools of the lanes accordingly.
+  const order = list.map((_, index) => index).sort((a, b) => list[a]!.first - list[b]!.first)
+  const position = new Array<number>(list.length)
+  order.forEach((pool, index) => { position[pool] = index })
+  return { laneToPool: poolOf.map(pool => position[pool]!), pools: order.map(pool => list[pool]!) }
 }
 
 // The layout with the flow from left to right and the lanes stacked from top to bottom.
 function leftToRight(
   nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], lanes: readonly { id: string; label: string }[],
   laneOfNode: ReadonlyMap<string, number>, ranks: ReadonlyMap<string, number>, sizes: Sizes, sweeps: number,
+  pools?: ReturnType<typeof resolvePools>,
 ): GraphSwimlaneLayout {
   const { along, across, columnGap, rowGap, laneGap, lanePadding, minLaneSize, headerSize, padding } = sizes
+  // Pools add a title band before the lane headers and their own gap between lanes of different pools.
+  const poolHeader = pools ? sizes.poolHeaderSize : 0
   const laneCount = lanes.length
   let rankCount = 0
   for (const rank of ranks.values()) rankCount = Math.max(rankCount, rank + 1)
@@ -213,6 +324,7 @@ function leftToRight(
   const laneTop: number[] = []
   let cursor = padding
   for (let lane = 0; lane < laneCount; lane++) {
+    if (pools && lane > 0 && pools.laneToPool[lane] !== pools.laneToPool[lane - 1]) cursor += sizes.poolGap - laneGap
     laneTop.push(cursor)
     cursor += thickness[lane]! + laneGap
   }
@@ -229,7 +341,7 @@ function leftToRight(
 
   if (sweeps > 0) reduceLaneCrossings(cells, edges, ranks, position, place, rankCount, laneCount, sweeps)
 
-  const flowStart = padding + headerSize + lanePadding
+  const flowStart = padding + poolHeader + headerSize + lanePadding
   const boxes = new Map<string, GraphBox>()
   for (const { id } of nodes) {
     const rank = ranks.get(id)!
@@ -263,15 +375,24 @@ function leftToRight(
     const nodeIds: string[] = []
     // A loop rather than push(...cell), which overflows the call stack for a cell with very many nodes.
     for (let rank = 0; rank < rankCount; rank++) for (const id of cells.get(rank * laneCount + index) ?? []) nodeIds.push(id)
+    const pool = pools?.pools[pools.laneToPool[index]!]
+    const start = padding + poolHeader
     return {
       id: lane.id, label: lane.label, index, nodeIds,
-      x: padding, y: laneTop[index]!, width: flowEnd - padding, height: thickness[index]!,
-      header: { x: padding, y: laneTop[index]!, width: headerSize, height: thickness[index]! },
+      x: start, y: laneTop[index]!, width: flowEnd - start, height: thickness[index]!,
+      header: { x: start, y: laneTop[index]!, width: pool && pool.first === pool.last ? 0 : headerSize, height: thickness[index]! },
+    }
+  })
+  const poolList: GraphSwimlanePool[] | undefined = pools?.pools.map((pool, index) => {
+    const y = laneTop[pool.first]!, height = laneTop[pool.last]! + thickness[pool.last]! - y
+    return {
+      id: pool.id, label: pool.label, index, laneIds: lanes.slice(pool.first, pool.last + 1).map(lane => lane.id),
+      x: padding, y, width: flowEnd - padding, height, header: { x: padding, y, width: poolHeader, height },
     }
   })
   const bottom = laneCount ? laneTop[laneCount - 1]! + thickness[laneCount - 1]! : padding
   return {
-    boxes, paths, edgeLabels, lanes: laneList,
+    boxes, paths, edgeLabels, lanes: laneList, ...poolList && { pools: poolList },
     width: Math.max(1, flowEnd + padding),
     height: Math.max(1, bottom + padding),
   }
