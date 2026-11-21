@@ -99,6 +99,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Interchange exports](#interchange-exports)
   - [Microsoft Project import](#microsoft-project-import)
   - [iCalendar import](#icalendar-import)
+  - [Graph interchange](#graph-interchange)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
 - [Linked views](#linked-views)
   - [Time range exploration](#time-range-exploration)
@@ -1255,6 +1256,8 @@ Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry al
 | fromMsProjectXml(xml, options?), timelineFromMsProject(project, options?) | Microsoft Project XML import: an `MsProjectImport` with tasks, links, calendars, resources, assignments and warnings, then GanttChart rows, bars and links; see [Microsoft Project import](#microsoft-project-import) |
 | workCalendarsFromMsProject(project, range), resourceLoadFromMsProject(project, options?) | Imported calendars as `WorkCalendar[]`, and imported resources and assignments as the shapes of `calculateResourceLoad`, `levelResources` and `projectResourceTimeline`; see [Microsoft Project import](#microsoft-project-import) |
 | fromICalendar(text, options?), timelineFromICalendar(events) | iCalendar import: an `ICalendarImport` with events and warnings, then GanttChart rows and bars; see [iCalendar import](#icalendar-import) |
+| toMermaid(graph, options?), toGraphMl(graph, options?), toDrawio(graph, options?) | NetworkGraph nodes, edges, nested groups, positions and sizes as a Mermaid flowchart, GraphML or an uncompressed draw.io file; see [Graph interchange](#graph-interchange) |
+| fromMermaid(text, options?), fromGraphMl(xml, options?), fromDrawio(xml, options?), fromDrawioAsync(xml, options?) | Diagram import: a `GraphInterchangeImport` with the NetworkGraph props and warnings; `fromDrawioAsync` also reads compressed draw.io pages; see [Graph interchange](#graph-interchange) |
 | calculateResourceLoad(range, tasks, resources, assignments, options?) | Compare scheduled work with capacity over half-open intervals. Segments with the same tasks may share one `taskIds` array. `options.inactiveTaskIds` ignores the assignments of inactive tasks |
 | assignmentWorkPeriods(work, assignment) | The elapsed periods of a task's `work` that an assignment covers: all of it, or the part given by `workOffset` and `workDuration`, clipped to the work |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
@@ -1778,6 +1781,66 @@ const { rows, bars } = timelineFromICalendar(events)
 ```
 
 Related exported types: `ICalendarImportWarningCode`.
+
+### Graph interchange
+
+The core entry writes and reads NetworkGraph diagrams in three diagram formats, as strings, without a DOM or dependencies: Mermaid flowcharts, GraphML (including yEd files) and draw.io (diagrams.net). The writers take a `GraphInterchangeInput` (`nodes`, `edges`, optional `groups`, and `positions` with top-left corners and `sizes`, as the NetworkGraph props) and check it as NetworkGraph does, with the same Errors and RangeErrors; they never change it. The readers return a `GraphInterchangeImport`: `nodes`, `edges`, `groups` (nested with `parentId`, parents first, only groups with nodes), `positions` and `sizes` (Maps, empty for Mermaid), `direction` (Mermaid only, `TD` read as `TB`) and `warnings`. An import is itself a `GraphInterchangeInput`, so it can be written again, and its fields go straight into NetworkGraph:
+
+```ts
+import { fromDrawioAsync, toMermaid } from '@eightkk/vue-weave/core'
+
+const diagram = await fromDrawioAsync(await file.text())
+for (const warning of diagram.warnings) console.warn(warning.code, warning.message)
+// <NetworkGraph :nodes="diagram.nodes" :edges="diagram.edges" :groups="diagram.groups"
+//   :positions="diagram.positions" :sizes="diagram.sizes" />
+const mermaid = toMermaid(diagram, { direction: 'TD' })
+```
+
+| Export | Behavior |
+| --- | --- |
+| toMermaid(graph, options?) | A `flowchart` (`MermaidOptions.direction` `TD`, `TB`, `LR`, `RL` or `BT`, default `LR`). Nodes are declared once with their shape and quoted label (then `<br>` and the detail when there is one); groups become nested `subgraph id["label"] … end` blocks with their direct members; edges follow, with labels as `\|"label"\|`. `MermaidOptions.edgeIds` writes edge IDs as `a e1@--> b` (Mermaid 11.6 and later; default false). Positions, sizes, tones, ports, waypoints and edge styles have no Mermaid form |
+| fromMermaid(text, options?) | Reads the subset of the flowchart syntax described under **Mermaid reading** |
+| toGraphMl(graph, options?) | GraphML with `<key>` definitions for the node `label`, `detail`, `shape`, `tone`, `x`, `y`, `width` and `height` and the edge `label`, `markerStart`, `markerEnd`, `edgeStyle`, `animated` and `points` (`x,y x,y …`). Groups are nodes with a nested `<graph>` (ID `<group>:`) that holds their members and nested groups; edges are in the top-level graph. `GraphMlOptions.directed` (default true) sets `edgedefault` |
+| fromGraphMl(xml, options?) | Reads those keys (matched by `attr.name`; `name` is also read as the label; `<default>` values apply; other keys are ignored) and yEd graphics: the first `y:NodeLabel` (its first line as label, the rest as detail), `y:Geometry`, the `y:Shape` type or `y:GenericNode` configuration, and the `y:EdgeLabel`, `y:Arrows` and `y:Path` points of edges. A node with a nested graph is a group. In an undirected graph (`edgedefault="undirected"`, or `directed="false"` on the edge) an edge without a marker gets `markerEnd: 'none'` |
+| toDrawio(graph, options?) | An uncompressed `mxfile` with one page (`DrawioOptions.pageName`, default `Page-1`). Nodes are vertex cells with the label (and a line break and the detail) as value, a shape style, the tone as draw.io fill and stroke colours plus `vwTone`, and their geometry (default size 144 by 58; nodes without a position are placed with `layoutLayeredGraph` in `DrawioOptions.direction`, default `LR`). Groups are container cells around their members, whose geometry is relative to the container. Edges carry `endArrow` and `startArrow`, the edge style, `flowAnimation=1` and their waypoints |
+| fromDrawio(xml, options?) | Reads an uncompressed `mxfile` (the first page, or `DrawioImportOptions.page` by zero-based index or by name) or a bare `mxGraphModel`. HTML labels (`html=1`) lose their markup and keep their line breaks; the first line is the label and the rest the detail. A vertex that contains vertices is a group (containers, swimlanes and `group` cells), and child geometry is made absolute. `UserObject` and `object` wrappers and text cells on edges (edge labels) are read. A compressed page throws an Error that points to `fromDrawioAsync` |
+| fromDrawioAsync(xml, options?) | `fromDrawio` that also inflates compressed pages (base64, raw deflate and URI encoding), the default of draw.io files, with the standard `DecompressionStream('deflate-raw')` of browsers, workers and Node.js (an Error where the runtime has none). `DrawioAsyncImportOptions.maxInflatedLength` (default 20,000,000 characters) bounds the inflated page; beyond it the promise rejects with a RangeError |
+
+**Shapes and markers.** Each format maps the NetworkGraph shapes through one table, so a new shape is a new row:
+
+| `shape` | Mermaid | draw.io style | Also read from |
+| --- | --- | --- | --- |
+| `box` (default) | `id["…"]` | `rounded=0` | Mermaid `rect`, `proc`; yEd `rectangle`; draw.io `text`, `label` |
+| `rounded` | `id("…")` | `rounded=1` | Mermaid `rounded`, `event`; yEd `roundrectangle` |
+| `diamond` | `id{"…"}` | `rhombus` | Mermaid `diam`, `decision`; yEd `diamond` and the flowchart `decision` |
+| `ellipse` | `id(("…"))` | `ellipse` | Mermaid `circle`; yEd `ellipse` |
+| `hexagon` | `id{{"…"}}` | `shape=hexagon` | Mermaid `hex`, `prepare`; yEd `hexagon` |
+
+Other shapes in a file (Mermaid stadiums, cylinders and parallelograms, yEd octagons, draw.io `cylinder3`, …) are read as boxes with an `unsupported-shape` warning, and a shape the writers do not know is written as a box. The readers leave `shape` unset for boxes, except for GraphML's own `shape` key. Markers: Mermaid has `-->` for an arrow end (also for `open-arrow` and `diamond`, which have no Mermaid form), `---` for `markerEnd: 'none'`, `--o` for `circle` and `--x` for `bar`, with a matching start (`<-->`, `o--o`, `x--x`) when `markerStart` has the same form; draw.io uses `classic`, `open`, `oval`, `diamond`, `dash` and `none`; the yEd arrow types `standard`, `delta`, `plain`, `white_delta`, `circle`, `transparent_circle`, `diamond`, `white_diamond`, `dash` and `skewed_dash` are read, and other ends become arrows with an `unsupported-style` warning.
+
+**Mermaid reading.** The text starts with `flowchart` or `graph` (also `flowchart-elk`) and an optional direction; `%%` comment lines, `%%{…}%%` directives and front matter are skipped, and statements end at a line break or `;`. Read: node declarations with every Mermaid delimiter (`[ ]`, `( )`, `{ }`, `(( ))`, `{{ }}`, `([ ])`, `[[ ]]`, `[( )]`, `[/ /]`, `> ]`, …), quoted or unquoted text and `@{ shape: …, label: … }`; chains (`a --> b --> c`) and `&` lists (`a & b --> c`, every pair); the links `-->`, `---`, `-.->`, `-.-`, `==>`, `===` and their longer forms, with `o` and `x` ends, `<` starts, `|label|` or `-- label -->` text and `id@` edge IDs; and nested `subgraph id[title] … end` blocks as groups (`subgraph title` uses the title as ID, `subgraph "title"` gets `subGraph<n>`). Entity codes (`#35;`, `#quot;`) are decoded. A node belongs to the first subgraph it is mentioned in, or to a subgraph nested in that one; a mention in another subgraph is reported as `group-member`. The line style of dotted and thick links is not kept. Edges get the IDs `e1`, `e2`, … unless they have an `id@`. Ignored with an `unsupported-statement` warning (with its `line`): `classDef`, `class`, `:::class`, `style`, `click`, `linkStyle`, `direction` inside a subgraph, `accTitle`, `accDescr`, front matter and invisible `~~~` links. Another diagram type (`sequenceDiagram`, `classDiagram`, …) throws `Unsupported Mermaid diagram type: <type>`, and syntax the reader cannot follow throws `Invalid Mermaid flowchart at line <n>, column <n>: <reason>`.
+
+**IDs.** Mermaid IDs cannot be quoted, so `toMermaid` writes an ID that is not ASCII letters, digits and underscores, is a Mermaid keyword (`end`, `graph`, `subgraph`, `style`, `class`, …) or starts with `vw_` as `vw_` followed by its letters and digits, with every other character as `_<hex code point>_`: `a b` becomes `vw_a_20_b` and `end` becomes `vw_end`. `fromMermaid` decodes IDs of that form, so IDs round-trip. Nodes and groups share one ID space in Mermaid and GraphML, and all cells share one in draw.io: a group (or draw.io edge) whose ID another item already has is written with a suffix (`_g` in Mermaid, `-2` in GraphML and draw.io). GraphML and draw.io edges without an ID get `e1`, `e2`, … (skipping IDs in use).
+
+**Round trips.** `fromGraphMl(toGraphMl(graph))` gives back every node, edge and group field listed above, and the positions and sizes exactly. `fromDrawio(toDrawio(graph))` does too, except that `box` shapes come back unset and every node gets a size. `fromMermaid(toMermaid(graph))` keeps IDs, labels, details, shapes, groups, edge labels and the markers that have a Mermaid form; nodes come back in declaration order (ungrouped nodes first). No format writes ports, `data`, `draggable`, `deletable`, `resizable` or the ports of edges.
+
+**Warnings** (`GraphInterchangeWarning`: `code`, optional `id` of the node, edge or group, `line` for Mermaid, an English `message`):
+
+| code | Cause and handling |
+| --- | --- |
+| `unsupported-statement` | A Mermaid statement that is read but ignored (see **Mermaid reading**) |
+| `unsupported-shape` | A shape NetworkGraph does not draw: read as a box |
+| `unsupported-style` | An edge end NetworkGraph does not draw: read as an arrow |
+| `unsupported-element` | GraphML hyperedges, ports and further top-level graphs; draw.io elements and cells that are neither a vertex nor an edge: left out |
+| `skipped-node`, `skipped-group` | A node or group without an ID or with an ID used before, and a group without any node (also through nested groups): left out |
+| `skipped-edge` | An edge with an ID used before, without both ends, or with an end that is not an imported node (a group or a missing node): left out |
+| `group-member` | A Mermaid node mentioned in a second subgraph: it stays in the first |
+| `invalid-value` | An unreadable or non-positive coordinate, size or waypoint, or an unknown tone or edge style: left out |
+| `shifted-positions` | Coordinates below 0 (yEd and draw.io allow them, NetworkGraph does not): every position and waypoint moves by the same amount |
+
+**Untrusted files.** The GraphML and draw.io readers use the XML reader of `fromMsProjectXml` (see **Reading** under [Microsoft Project import](#microsoft-project-import)): a `DOCTYPE` is skipped, declared entities are never expanded and nothing outside the text is loaded. All readers walk nested groups and chains with loops, and `GraphInterchangeImportOptions.maxItems` (default 100,000) bounds the nodes, edges and groups together; past it the reader throws a RangeError. The readers throw an Error for malformed XML (with the line and column), a document of another kind (`Not a GraphML document`, `Not a draw.io document`, `Not a Mermaid flowchart`), a draw.io page that does not exist and a value that is not a string.
+
+Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `MermaidOptions`, `GraphMlOptions`, `DrawioOptions`, `DrawioImportOptions`, `DrawioAsyncImportOptions`.
 
 ### Network diagram from a schedule
 

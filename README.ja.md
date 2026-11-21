@@ -222,6 +222,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#compare-plan-scenarios)を参照してください。
 - **アーンドバリュー：** `computeEarnedValue` はステータス日時点のPV・EV・ACと、SV・CV・SPI・CPI・EAC・ETC・VAC・TCPIをタスク別と合計で計算します。計画価値は稼働カレンダー上で積み上げ、Sカーブ用の累積系列も返します。`rollupEarnedValue` はサマリー行を集計します。詳しくは[Earned value management](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#earned-value-management)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
+- **ダイアグラムファイル：** NetworkGraphの図を、Mermaidフローチャート、GraphML（yEdを含む）、draw.ioで読み込み・書き出し。入れ子のグループ、形状、位置、サイズに対応（`fromMermaid`、`toMermaid`、`fromGraphMl`、`toGraphMl`、`fromDrawio`、圧縮ファイル用の `fromDrawioAsync`、`toDrawio`）。
 
 ### ビューの連動・大規模データ・保存
 

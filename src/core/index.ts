@@ -78,6 +78,11 @@ export type {
   ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline,
   CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
+export { toMermaid, fromMermaid, toGraphMl, fromGraphMl, toDrawio, fromDrawio, fromDrawioAsync } from './interchange.js'
+export type {
+  GraphInterchangeInput, GraphInterchangeImport, GraphInterchangeImportOptions, GraphInterchangeWarning, GraphInterchangeWarningCode,
+  MermaidDirection, MermaidOptions, GraphMlOptions, DrawioOptions, DrawioImportOptions, DrawioAsyncImportOptions,
+} from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
 

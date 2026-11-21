@@ -10,6 +10,7 @@ import QuantityFlowDemo from './QuantityFlowDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
 import LargePlanDemo from './LargePlanDemo.vue'
+import GraphInterchangeDemo from './GraphInterchangeDemo.vue'
 import DiagramEditorDemo from './DiagramEditorDemo.vue'
 import TaskBoardDemo from './TaskBoardDemo.vue'
 import EarnedValueDemo from './EarnedValueDemo.vue'
@@ -58,6 +59,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'resource-planning', label: 'Resource planning', group: 'standalone', component: ResourcePlanningDemo },
   { id: 'persistence', label: 'Saved editing', group: 'standalone', component: PersistenceDemo },
   { id: 'large-plan', label: 'Large plan', group: 'standalone', component: LargePlanDemo },
+  { id: 'interchange', label: 'Diagram import/export', group: 'standalone', component: GraphInterchangeDemo },
   { id: 'event-calendar', label: 'Event calendar', group: 'standalone', component: EventCalendarDemo },
   { id: 'diagram-editor', label: 'Diagram editor', group: 'standalone', component: DiagramEditorDemo },
   { id: 'task-board', label: 'Task board', group: 'standalone', component: TaskBoardDemo },

@@ -770,6 +770,28 @@ async function layoutWithElk(request: GraphLayoutRequest) {
 - In the `shown` request of a collapsed view, `fixedIds` and `addedIds` are passed as given; IDs of members hidden in a collapsed group are not nodes of that request and are ignored.
 - Without an engine, `layoutGraphIncrementally` from `@eightkk/vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
 
+## Diagram files: Mermaid, GraphML and draw.io
+
+To open a diagram drawn elsewhere, read the file as text and pass it to `fromMermaid`, `fromGraphMl` or `fromDrawioAsync` (which also reads the compressed pages draw.io saves by default). The result holds the NetworkGraph props, so commit `nodes`, `edges`, `groups`, `positions` and `sizes` as one history entry and show `warnings` to the user: they say what the file contained that NetworkGraph cannot draw (styling, other shapes, ports) and what was left out.
+
+```ts
+import { fromDrawioAsync, fromGraphMl, fromMermaid, toDrawio } from '@eightkk/vue-weave/core'
+
+async function openDiagram(file: File) {
+  const text = await file.text()
+  const diagram = file.name.endsWith('.graphml') ? fromGraphMl(text)
+    : file.name.endsWith('.drawio') ? await fromDrawioAsync(text)
+      : fromMermaid(text)
+  history.commit({ nodes: diagram.nodes, edges: diagram.edges, groups: diagram.groups, positions: diagram.positions, sizes: diagram.sizes })
+  return diagram.warnings
+}
+
+// Save the current state for draw.io; nodes the user never moved are placed with the layered layout.
+const xml = toDrawio({ nodes, edges, groups, positions, sizes }, { pageName: 'Process', direction: 'LR' })
+```
+
+A Mermaid file has no coordinates, so NetworkGraph lays it out; use the returned `direction` in `options`. GraphML and draw.io keep the positions and sizes of every node. Keep accepted `node-move`, `nodes-move` and `node-resize` proposals in `positions` and `sizes` so the next export carries them. The readers walk groups and chains with loops, bound their work with `maxItems`, and never expand XML entities; bound the size of uploaded files yourself as well. See [Graph interchange](api.md#graph-interchange) for the mapping of shapes, markers and IDs.
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
