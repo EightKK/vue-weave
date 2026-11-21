@@ -199,7 +199,7 @@ export function lagLabelPoint(x1: number, y1: number, x2: number, y2: number, so
  * `timelineBaselineLimit`) and used as given, also for IDs that no bar has, so a set keeps its slot while data changes.
  * Without it, the first `timelineBaselineLimit` IDs of `timelineBaselineIds`. `described` is true when `baselineIds` is
  * given or a bar has named `baselines`; only then do titles and descriptions carry the variance, so charts with only
- * `TimelineBar.baseline` render as before.
+ * `TimelineBar.baseline` draw one strip per bar without variance.
  */
 export function baselineSelection(bars: readonly TimelineBar[], baselineIds: readonly string[] | undefined) {
   if (baselineIds === undefined) {

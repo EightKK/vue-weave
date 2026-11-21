@@ -315,7 +315,7 @@ Set `mode: 'alap'` on a task to place it as late as possible. The default is `'a
 
 ## Manual and inactive tasks
 
-Two task fields mirror Microsoft Project. They are opt-in: a plan without them is scheduled exactly as before, and its result has neither `manualConflicts` nor `inactiveTaskIds`.
+Two task fields mirror Microsoft Project. They are opt-in: a plan without them schedules every task automatically and as active, and its result has neither `manualConflicts` nor `inactiveTaskIds`.
 
 ```ts
 const plan = scheduleTasks({
@@ -365,7 +365,7 @@ const plan = scheduleTasks({
 
 ## Summary tasks
 
-`ScheduleTask.parentId` makes a task a subtask of another task, which becomes a summary task. The hierarchy is opt-in: a plan without `parentId` is scheduled exactly as before, and its result has neither `summary` nor `parentId` fields. Summaries can be nested to any depth; the calculation uses loops, not recursion.
+`ScheduleTask.parentId` makes a task a subtask of another task, which becomes a summary task. The hierarchy is opt-in: a plan without `parentId` has no summary tasks, and its result has neither `summary` nor `parentId` fields. Summaries can be nested to any depth; the calculation uses loops, not recursion.
 
 ```ts
 const plan = scheduleTasks({
