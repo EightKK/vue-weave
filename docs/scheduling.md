@@ -217,6 +217,37 @@ Manual tasks keep their manual dates: their actuals are kept and checked, but do
 
 The scheduling demo's **Recorded actuals** option shows a finished task that overran, a late start that ran into the lunch break and resumed, an upward revision of remaining work (**Welding needs 3 h more**) and unstarted successors whose forecast moves while every actual bar stays where it was.
 
+## Earned value management
+
+`computeEarnedValue(tasks, options)` measures a plan's performance at a status date with earned value management (EVM). Each task brings its budget (BAC), its planned (baseline) dates, its progress share from 0 to 1 and its actual cost so far. It does not schedule: take the baseline from the plan you committed to, for example a `scheduleTasks` result or the `baseline` of a `TimelineBar`, not from today's forecast, or the schedule variance disappears.
+
+```ts
+import { computeEarnedValue, rollupEarnedValue } from 'vue-weave/core'
+
+const result = computeEarnedValue([
+  { id: 'design', budget: 10000, start: designStart, end: designEnd, progress: 0.4, actualCost: 5000, calendarId: 'office' },
+  { id: 'build', budget: 20000, start: buildStart, end: buildEnd },
+], { statusDate, calendars: [{ id: 'office', periods }], series: { step: day } })
+result.totals.spi // budget-weighted schedule performance index, or undefined before any planned value
+const engineering = rollupEarnedValue(result.tasks.filter(task => engineeringIds.has(task.id)))
+```
+
+The three base values:
+
+- **Planned value (PV)** is the budget of the work the plan scheduled before the status date: `budget ×` the share of `[start, end)` that lies before the status date. With a calendar the share is measured in working time, so nothing accrues during nights, weekends or holidays; without one it is elapsed time. A task whose planned dates contain no working time of its calendar falls back to elapsed time. Before its start a task has PV 0, from its end on its whole budget. A milestone (`start === end`) accrues its whole budget at its start, so its PV is the budget once the status date reaches it.
+- **Earned value (EV)** is the budget of the work done: `progress × budget`. Progress is a share of the budget, so it must reflect how much of the task's value is complete, not only how much time has passed.
+- **Actual cost (AC)** is the cost spent so far, in the same unit as the budget.
+
+The derived indicators: schedule variance `SV = EV − PV` and cost variance `CV = EV − AC` (negative is late or over budget); `SPI = EV / PV` and `CPI = EV / AC` (below 1 is late or over budget); the estimate to complete `ETC`, the estimate at completion `EAC = AC + ETC`, the variance at completion `VAC = BAC − EAC`; and the to-complete performance index `TCPI = (BAC − EV) / (BAC − AC)`, the cost efficiency the remaining work needs to finish on budget. `eacMethod` chooses how the remaining work `BAC − EV` is forecast: `'cpi'` (default, `ETC = (BAC − EV) / CPI`, so `EAC = BAC / CPI` once costs are recorded), `'cpi-spi'` (`ETC = (BAC − EV) / (CPI × SPI)`, when lateness also costs money) or `'budget'` (`ETC = BAC − EV`, when the variance so far was a one-off).
+
+A ratio whose denominator is zero is undefined and left out of the result, never NaN or Infinity: SPI before any planned value, CPI before any cost, TCPI once the budget is spent (`AC ≥ BAC`) and `percentComplete` for a zero budget. For the ETC, an undefined CPI or SPI counts as 1, so a task without recorded cost is forecast at its budget rate; a CPI of 0 (cost but no progress) leaves ETC, EAC and VAC undefined while work remains. Once a task is complete, ETC is 0 and EAC equals AC.
+
+Totals and summary rows add up BAC, PV, EV and AC and derive the indicators from the sums (`rollupEarnedValue`), so a total SPI or CPI is weighted by budget, and a total EAC can differ from the sum of the task EACs. Pass only leaf tasks to `computeEarnedValue`; a summary task's budget is the sum of its subtasks' budgets, and including both counts it twice. Note also that SPI returns to 1 when all work is done, however late: compare finish dates as well, for example with `comparePlans` or `rescheduleFromStatusDate`.
+
+The `series` option returns the cumulative values for an S-curve, every `step` across the plan. PV is defined at every point. EV and AC are defined only up to the status date and come from each task's `history`: records `{ time, progress, actualCost? }` before the status date, followed by its status-date values. Between records the values hold as steps; before a task's first record it contributes 0, so a task without history adds its EV and AC only at the status date. The status date is always one of the points. The library does not forecast a curve after the status date; the demo draws a straight line from AC at the status date to the EAC.
+
+To show the figures in GanttChart, return them from `columns` (`TimelineColumn.value`), with `rollupEarnedValue` for rows that have child rows and `showSummaries` for their rollup bars, and set the chart's `statusDate`. The **Earned value** demo combines KPI tiles, an S-curve in inline SVG, EVM columns and a status date slider.
+
 ## Network diagram
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Edges are labelled with the link type when it is not FS and with a non-zero `lag`, formatted by `formatLag` (default `formatDependencyLag`, such as `SS +2 h`). Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).

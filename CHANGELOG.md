@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-No changes yet.
+- Earned value management: `computeEarnedValue(tasks, options)` returns PV, EV, AC, SV, CV, SPI, CPI, ETC, EAC, VAC, TCPI and percent complete per task and in total at a status date, with planned value accrued over a work calendar (or linearly), milestones at their start, three EAC methods (`cpi`, `cpi-spi`, `budget`), undefined instead of NaN or Infinity for zero denominators, and an optional cumulative PV/EV/AC series for S-curves (EV and AC from per-task `history` records). `rollupEarnedValue` sums any group, such as a summary row. New exports: `computeEarnedValue`, `rollupEarnedValue`, `maxEarnedValuePoints` and the `EarnedValue*` types. New **Earned value** demo. See [Earned value management](docs/scheduling.md#earned-value-management).
 
 ## 0.6.0 - 2026-11-19
 

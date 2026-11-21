@@ -143,3 +143,8 @@ export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncre
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
 } from './graphIncremental.js'
+export { computeEarnedValue, rollupEarnedValue, maxEarnedValuePoints } from './earnedValue.js'
+export type {
+  EarnedValueRecord, EarnedValueTask, EarnedValueEacMethod, EarnedValueSeriesOptions, EarnedValueOptions, EarnedValueAmounts,
+  EarnedValueMetrics, EarnedValueTaskResult, EarnedValuePoint, EarnedValueResult,
+} from './earnedValue.js'

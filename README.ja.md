@@ -78,6 +78,7 @@ Vue 3でネットワークグラフとガントチャートを実装するため
 - **日程計算：** `buildWorkPeriods` で作るカレンダー（IANAタイムゾーンを含む）上での `scheduleTasks`。最遅開始、手動・非アクティブ・サマリーのタスク、制約、中断区間、循環や実行不能の診断に対応します。`scheduleTasks(input, { explain: true })` は各タスクの開始が決まった理由をトレースし、`toPlanningDiagnostics` は問題を一覧にします。
 - **リソース：** `calculateResourceLoad` と `levelResources`。時間とともに変わる能力（`capacityPeriods`）や、タスクの一部だけを占める割り当て（`workOffset`、`workDuration`）にも対応します。`projectResourceTimeline` はリソース別に計画を表示し、`buildPlacementInput` は未計画タスクを計算から除きます。
 - **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](docs/scheduling.md#compare-plan-scenarios)を参照してください。
+- **アーンドバリュー：** `computeEarnedValue` はステータス日時点のPV・EV・ACと、SV・CV・SPI・CPI・EAC・ETC・VAC・TCPIをタスク別と合計で計算します。計画価値は稼働カレンダー上で積み上げ、Sカーブ用の累積系列も返します。`rollupEarnedValue` はサマリー行を集計します。詳しくは[Earned value management](docs/scheduling.md#earned-value-management)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
 
 ### ビューの連動・大規模データ・保存
