@@ -537,6 +537,26 @@ function cellValue(row: R, column: TimelineColumn<R>) {
 function composing(event: KeyboardEvent) {
   return event.isComposing || event.keyCode === 229
 }
+/**
+ * Text being edited in the built-in cell inputs (plain and typed), by cell key, with the source text it edits. The
+ * inputs show the draft instead of the source text, so a re-render during an edit (or an input method composition)
+ * keeps what was typed. A commit or Escape ends the draft; new source text for the cell discards it, which cancels the
+ * edit. Deliberately not reactive: the input already shows the text, and typing must not re-render the chart.
+ */
+const cellDrafts = new Map<string, { text: string; source: string }>()
+/** The text a built-in cell input shows: its draft while one is in progress for this source text, else the source text. */
+function cellInputText(key: string, source: string) {
+  const draft = cellDrafts.get(key)
+  if (draft && draft.source === source) return draft.text
+  cellDrafts.delete(key)
+  return source
+}
+function recordCellDraft(event: Event, key: string, source: string) {
+  cellDrafts.set(key, { text: (event.currentTarget as HTMLInputElement).value, source })
+}
+function plainCellText(row: R, column: TimelineColumn<R>) {
+  return String(cellValue(row, column))
+}
 /** Enter in a plain cell input commits through `change` by leaving the input. */
 function cellEnter(event: KeyboardEvent) {
   if (composing(event)) return
@@ -550,13 +570,15 @@ function cancelCell(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
   if (composing(event)) return
   event.preventDefault()
   const input = event.currentTarget as HTMLInputElement
-  input.value = String(cellValue(row, column))
+  cellDrafts.delete(cellKey(row, column))
+  input.value = plainCellText(row, column)
   input.blur()
 }
 function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   const before = cellValue(row, column)
   const after = input.value
+  cellDrafts.delete(cellKey(row, column))
   input.value = String(before)
   if (!canEditCell(row, column) || String(before) === after) return
   const change: TimelineCellEdit = { rowId: row.id, columnId: column.id, before, after }
@@ -713,6 +735,7 @@ function commitFieldInput(event: Event, row: R, column: TimelineColumn<R>) {
   const shown = formatFieldValue(field, before)
   if (!canEditCell(row, column) || input.value === shown) {
     if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+    cellDrafts.delete(key)
     input.value = shown
     return
   }
@@ -724,6 +747,7 @@ function commitFieldInput(event: Event, row: R, column: TimelineColumn<R>) {
     return
   }
   if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+  cellDrafts.delete(key)
   input.value = shown
   proposeField(row, column, before, parsed.value, 'keyboard')
 }
@@ -738,14 +762,30 @@ function cancelFieldInput(event: KeyboardEvent, row: R, column: TimelineColumn<R
   if (composing(event)) return
   event.preventDefault()
   const input = event.currentTarget as HTMLInputElement
+  const key = cellKey(row, column)
+  cellDrafts.delete(key)
   input.value = fieldText(row, column)
-  if (fieldInputError.value?.key === cellKey(row, column)) fieldInputError.value = undefined
+  if (fieldInputError.value?.key === key) fieldInputError.value = undefined
 }
 // New rows or columns, or a row hidden by collapsing, cancel an open cell editor.
 watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed], () => {
   const state = cellEditor.value
   if (!state) return
   cancelCellEditor(rowById.value.has(state.rowId) && !rowOrder.value.has(state.rowId) ? 'hidden' : 'source-changed')
+})
+// New source text for a cell with a draft, or a row that is hidden or gone, discards the draft (and its parse error)
+// before the next render, so the input shows the source text again.
+watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed, summaries], () => {
+  for (const [key, draft] of cellDrafts) {
+    const [rowId, columnId] = JSON.parse(key) as [string, string]
+    const row = rowOrder.value.has(rowId) ? rowById.value.get(rowId) as R | undefined : undefined
+    const column = props.columns?.find(item => item.id === columnId)
+    const current = row && column && canEditCell(row, column)
+      ? (column.field ? fieldText(row, column) : plainCellText(row, column)) : undefined
+    if (current === draft.source) continue
+    cellDrafts.delete(key)
+    if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+  }
 })
 const displayedRows = computed(() => {
   const result: typeof tree.value = []
@@ -3395,12 +3435,16 @@ onUnmounted(() => {
                 </template>
                 <input v-else-if="column.field && canEditCell(row.row, column)" class="vw-cell-input vw-field-input" type="text"
                   :data-vw-cell="cellKey(row.row, column)"
-                  :aria-label="row.row.label + ' · ' + column.label" :value="fieldText(row.row, column)"
+                  :aria-label="row.row.label + ' · ' + column.label"
+                  :value="cellInputText(cellKey(row.row, column), fieldText(row.row, column))"
                   :aria-invalid="fieldInputError?.key === cellKey(row.row, column) ? 'true' : undefined"
+                  @input="recordCellDraft($event, cellKey(row.row, column), fieldText(row.row, column))"
                   @change="commitFieldInput($event, row.row, column)" @keydown.enter="fieldInputEnter($event, row.row, column)"
                   @keydown.esc="cancelFieldInput($event, row.row, column)">
                 <input v-else-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
-                  :aria-label="row.row.label + ' · ' + column.label" :value="cellValue(row.row, column)"
+                  :aria-label="row.row.label + ' · ' + column.label"
+                  :value="cellInputText(cellKey(row.row, column), plainCellText(row.row, column))"
+                  @input="recordCellDraft($event, cellKey(row.row, column), plainCellText(row.row, column))"
                   @change="commitCell($event, row.row, column)" @keydown.enter="cellEnter"
                   @keydown.esc="cancelCell($event, row.row, column)">
                 <span v-else :title="String(cellValue(row.row, column))">{{ cellValue(row.row, column) }}</span>

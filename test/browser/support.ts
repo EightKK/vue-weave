@@ -150,4 +150,11 @@ export async function openLinkedGanttFixture(page: Page, search = '') {
   return { chart, out, json }
 }
 
-export type LinkedFixture = { replaceBars(): void; highlight(ids: string[]): void }
+export type LinkedFixture = {
+  replaceBars(): void
+  highlight(ids: string[]): void
+  /** Replace one row with its `data` merged with `patch`, as new source data. */
+  setRowData(rowId: string, patch: Record<string, unknown>): void
+  /** Change `rowHeight`, which re-renders the chart without new rows, bars or columns. */
+  rerender(): void
+}
