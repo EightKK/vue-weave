@@ -222,7 +222,7 @@ The scheduling demo's **Recorded actuals** option shows a finished task that ove
 `computeEarnedValue(tasks, options)` measures a plan's performance at a status date with earned value management (EVM). Each task brings its budget (BAC), its planned (baseline) dates, its progress share from 0 to 1 and its actual cost so far. It does not schedule: take the baseline from the plan you committed to, for example a `scheduleTasks` result or the `baseline` of a `TimelineBar`, not from today's forecast, or the schedule variance disappears.
 
 ```ts
-import { computeEarnedValue, rollupEarnedValue } from 'vue-weave/core'
+import { computeEarnedValue, rollupEarnedValue } from '@eightkk/vue-weave/core'
 
 const result = computeEarnedValue([
   { id: 'design', budget: 10000, start: designStart, end: designEnd, progress: 0.4, actualCost: 5000, calendarId: 'office' },

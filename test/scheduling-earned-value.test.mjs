@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { computeEarnedValue, maxEarnedValuePoints, rollupEarnedValue } from 'vue-weave/core'
+import { computeEarnedValue, maxEarnedValuePoints, rollupEarnedValue } from '@eightkk/vue-weave/core'
 
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-9, `${message ?? ''} expected ${expected}, got ${actual}`)
 
