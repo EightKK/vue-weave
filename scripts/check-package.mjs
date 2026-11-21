@@ -99,10 +99,13 @@ try {
     import { createSSRApp, h } from 'vue'
     import { renderToString } from 'vue/server-renderer'
     import { NetworkGraph, GanttChart, TaskBoard, useEditHistory } from '${manifest.name}'
+    import { GraphPalette, PropertyInspector } from '${manifest.name}'
     assert.equal(typeof useEditHistory, 'function')
     for (const [component, props] of [
       [NetworkGraph, { nodes: [], edges: [] }],
       [GanttChart, { rows: [], bars: [], range: { start: 0, end: 10 } }],
+      [GraphPalette, { items: [{ id: 'step', label: 'Step', shape: 'diamond' }] }],
+      [PropertyInspector, { item: { id: 'a' }, fields: [{ id: 'id', kind: 'text', label: 'ID', get: item => item.id }] }],
       [TaskBoard, { columns: [{ id: 'todo', label: 'To do' }], cards: [] }],
     ]) assert.ok((await renderToString(createSSRApp({ render: () => h(component, props) }))).length > 0)
     assert.match(readFileSync(new URL(import.meta.resolve('${manifest.name}/style.css')), 'utf8'), /\\.vw-/)
@@ -126,6 +129,7 @@ try {
     import {
       NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
       type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
+      GraphPalette, PropertyInspector, readPaletteDrop, type InspectorChange,
       TaskBoard, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardExposed,
     } from '${manifest.name}'
     interface MyData { owner: string }
@@ -156,6 +160,12 @@ try {
     const chartRef = undefined as GanttChartExposed<TimelineRow, TimelineBar<MyData>> | undefined
     chartRef?.exportSvg({ barLabel: bar => bar.data?.owner ?? bar.label })
     void h(NetworkGraph, { nodes, edges })
+    // The diagram editor parts infer their item types the same way.
+    const palette = new GraphPalette({ items: [{ id: 'p', label: 'P', data: { owner: 'Ada' } }] })
+    assertType<Equal<Parameters<NonNullable<typeof palette.$slots.item>>[0]['item']['data'], { owner: string } | undefined>>()
+    const inspector = new PropertyInspector({ item: nodes[0]!, fields: [{ id: 'owner', kind: 'text', label: 'Owner', get: node => node.data?.owner ?? null }] })
+    assertType<Equal<Parameters<NonNullable<typeof inspector.$props.onChange>>[0], InspectorChange>>()
+    void readPaletteDrop(null)
     const cards: TaskBoardCard<MyData>[] = [{ id: 'c', columnId: 'todo', label: 'Card', data: { owner: 'Ada' } }]
     const board = new TaskBoard({ columns: [{ id: 'todo', label: 'To do' }], cards })
     type CardSlot = Parameters<NonNullable<typeof board.$slots.card>>[0]
