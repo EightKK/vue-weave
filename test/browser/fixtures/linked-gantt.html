@@ -17,8 +17,8 @@
       import { GanttChart } from 'vue-weave'
 
       // GanttChart opt-in props for linked views and typed editing: highlightedBarIds, loadSelectable, droppable,
-      // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel
-      // and revealBar. The parent applies nothing unless a test asks for it, so every event payload stays visible.
+      // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel,
+      // revealBar and keyboard activation of row headings. The parent applies nothing unless a test asks for it, so every event payload stays visible.
       const query = new URLSearchParams(location.search)
       const rows = shallowRef([
         { id: 'r1', label: 'Row 1', data: { effort: 3 } },
@@ -48,9 +48,18 @@
         id: 'effort', label: 'Effort', width: 90, value: row => row.data.effort ?? '', editable: true,
         field: { id: 'effort', kind: 'number', get: row => row.data.effort, min: 0 },
       }
+      // With ?builtin, a multiple select whose text shows labels, to commit unedited text and labels back.
+      const stage = {
+        id: 'stage', label: 'Stage', width: 150, value: row => row.data.stage?.join(', ') ?? '', editable: true,
+        field: {
+          id: 'stage', kind: 'select', multiple: true, get: row => row.data.stage ?? null,
+          choices: [{ value: 1, label: 'Machining' }, { value: 2, label: 'Inspection' }, { value: 3, label: 'Cut, weld' }],
+        },
+      }
+      rows.value[0].data.stage = [1, 2]
       // Stable props: a new collapsed set or column list would cancel gestures, as new source data does.
       const collapsedIds = new Set(['P'])
-      const columns = [effort]
+      const columns = query.has('builtin') ? [effort, stage] : [effort]
       const dependencies = [{ id: 'ab', from: 'a', to: 'b' }]
       const loadRows = [{ id: 'dev', label: 'Developers' }]
       const loadSegments = [{ resourceId: 'dev', start: 2, end: 6, load: 2, capacity: 1 }, { resourceId: 'dev', start: 6, end: 12, load: 1, capacity: 1 }]

@@ -636,6 +636,56 @@ test('gantt bars and selectable load segments report target events by pointer an
   expect(errors).toEqual([])
 })
 
+test('gantt row headings activate rows from the keyboard through one roving tab stop', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, json } = await openLinkedGanttFixture(page)
+  await page.mouse.move(0, 0)
+  const heading = (name: string) => chart.getByRole('button', { name, exact: true })
+  await expect(heading('Row 1')).toHaveAttribute('tabindex', '0')
+  await expect(heading('Row 2')).toHaveAttribute('tabindex', '-1')
+
+  // Keyboard focus reaches the heading column once, through the first heading.
+  await heading('Row 1').focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(heading('Row 1')).toBeFocused()
+  await expect.poll(() => json('Last target enter')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r1' }, source: 'keyboard' })
+  await page.keyboard.press('Enter')
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r1' }, source: 'keyboard' })
+
+  await page.keyboard.press('ArrowDown')
+  await expect(heading('Row 2')).toBeFocused()
+  await expect(heading('Row 2')).toHaveAttribute('tabindex', '0')
+  await expect(heading('Row 1')).toHaveAttribute('tabindex', '-1')
+  await page.keyboard.press(' ')
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r2' }, source: 'keyboard' })
+
+  // End moves to the last displayed row, scrolling it into the rendered window; Home returns to the first.
+  await page.keyboard.press('End')
+  await expect(heading('Last row')).toBeFocused()
+  await expect(heading('Last row')).toBeInViewport()
+  await page.keyboard.press('Home')
+  await expect(heading('Row 1')).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(heading('Row 1')).toBeFocused()
+
+  // Tab leaves the heading for the row's other controls and never stops on another heading.
+  const stops: (string | null)[] = []
+  for (let index = 0; index < 6; index++) {
+    await page.keyboard.press('Tab')
+    stops.push(await page.evaluate(() => document.activeElement?.getAttribute('data-vw-row-heading') ?? null))
+  }
+  expect(stops).toEqual([null, null, null, null, null, null])
+
+  // The expand toggle keeps its own Enter without activating the row; a click on the heading still reports a pointer
+  // activation.
+  await chart.getByRole('button', { name: 'Expand Parent', exact: true }).press('Enter')
+  expect(await json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r2' }, source: 'keyboard' })
+  await heading('Parent').click()
+  await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'P' }, source: 'pointer' })
+  expect(errors).toEqual([])
+})
+
 test('gantt revealBar scrolls to an off-screen bar and focuses it, and reports collapsed and unknown bars', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, json } = await openLinkedGanttFixture(page)
@@ -747,7 +797,7 @@ test('compressing non-working time widens working bars and keeps edits snapped t
   await expect(plan.getByRole('button', { name: /^Cut order A 09 Nov \d\d:00–09 Nov \d\d:00$/ })).toBeVisible()
 
   await page.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).uncheck()
-  const restored = (await plan.getByRole('button', { name: /^Cut order A / }).boundingBox())!.width
+  const restored = (await plan.getByRole('button', { name: /^Cut order A \d\d Nov/ }).boundingBox())!.width
   expect(restored).toBeLessThan(compressedWidth)
   expect(errors).toEqual([])
 })

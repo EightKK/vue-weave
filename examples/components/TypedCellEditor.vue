@@ -28,6 +28,17 @@ const hint = computed(() => {
   if (kind === 'number') return integer ? 'Whole number' : 'Number'
   return ''
 })
+// Enter and Escape that confirm or cancel an input method conversion belong to the input method, not to the editor.
+function textKeys(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    props.commitText(text.value)
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    props.cancel()
+  }
+}
 function choose(event: Event) {
   const selected = (event.target as HTMLSelectElement).value
   props.commit(props.field.choices?.find(choice => String(choice.value) === selected)?.value ?? null)
@@ -45,7 +56,7 @@ function choose(event: Event) {
     </select>
     <input v-else v-model="text" type="text" :inputmode="field.kind === 'number' || field.kind === 'duration' ? 'decimal' : undefined" :aria-label="name"
       :aria-invalid="validation.ok ? undefined : 'true'" :aria-describedby="error ? errorId : undefined" :placeholder="hint"
-      @keydown.enter.prevent="commitText(text)" @keydown.escape.prevent="cancel()">
+      @keydown="textKeys">
     <span v-if="error" :id="errorId" class="error" role="alert">{{ error }}</span>
   </span>
 </template>

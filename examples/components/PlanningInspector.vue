@@ -40,6 +40,10 @@ function commitText(field: InspectorField) {
   if (!parsed.ok) { errors[field.spec.id] = parsed.error; return }
   propose(field, parsed.value)
 }
+/** Enter and Escape of an input method conversion belong to the input method. */
+function composing(event: KeyboardEvent) {
+  return event.isComposing || event.keyCode === 229
+}
 function cancel(field: InspectorField) {
   drafts[field.spec.id] = formatFieldValue(field.spec, current(field))
   delete errors[field.spec.id]
@@ -62,7 +66,8 @@ function cancel(field: InspectorField) {
         </select>
         <input v-else :id="'inspect-' + field.spec.id" v-model="drafts[field.spec.id]" type="text" :aria-invalid="errors[field.spec.id] ? 'true' : undefined"
           :aria-describedby="errors[field.spec.id] ? 'inspect-error-' + field.spec.id : undefined"
-          @keydown.enter.prevent="commitText(field)" @keydown.escape="cancel(field)" @change="commitText(field)">
+          @keydown.enter="!composing($event) && ($event.preventDefault(), commitText(field))"
+          @keydown.escape="!composing($event) && cancel(field)" @change="commitText(field)">
         <span v-if="errors[field.spec.id]" :id="'inspect-error-' + field.spec.id" class="error" role="alert">{{ errors[field.spec.id] }}</span>
       </div>
     </template>
