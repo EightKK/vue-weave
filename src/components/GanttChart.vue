@@ -48,6 +48,9 @@ import {
   rowChildren as rowChildList, rowDropAt, rowMoveForKey, rowPosition as rowPositionIn, type RowDrop,
 } from './ganttChart/rowMoves.js'
 
+import { useSheet } from './ganttChart/sheet.js'
+import type { TimelineSheetEdit } from '../core/types.js'
+
 const props = withDefaults(defineProps<{
   /** Rows of the chart, in display order. Each has an ID, label, optional detail, optional `parentId` for hierarchy, and opaque data. Required. */
   rows: readonly R[]
@@ -85,6 +88,8 @@ const props = withDefaults(defineProps<{
   markerRanges?: readonly TimelineMarkerRange[]
   /** Extra sticky columns next to the row label, each with an ID, label, pixel width, `value(row, summary)` and optional `editable`. */
   columns?: readonly TimelineColumn<R>[]
+  /** Enables rectangular selection, clipboard and fill-down on the built-in extra columns. */
+  spreadsheet?: boolean
   /** Draws an aggregated interval on parent rows that have no bar of their own. Opt-in. Default: false. */
   showSummaries?: boolean
   /**
@@ -278,6 +283,8 @@ const emit = defineEmits<{
   /** The set of collapsed row IDs changed; supports `v-model:collapsed-ids`. */
   'update:collapsedIds': [ids: Set<string>]
   /** Proposal to change a column cell; `after` is a string the parent converts and applies. */
+  'sheet-edit': [change: TimelineSheetEdit<R>]
+  'sheet-edit-rejected': [reason: string]
   'cell-edit': [change: TimelineCellEdit]
   /** A cell edit was rejected by `validateCellEdit`; carries the proposal and the reason. */
   'cell-edit-rejected': [change: TimelineCellEdit, reason: string]
@@ -768,6 +775,7 @@ function cancelFieldInput(event: KeyboardEvent, row: R, column: TimelineColumn<R
   cellDrafts.delete(key)
   input.value = fieldText(row, column)
   if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+  finishSheetInput(event, row, column)
 }
 // New rows or columns, or a row hidden by collapsing, cancel an open cell editor.
 watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed], () => {
@@ -814,6 +822,46 @@ const displayedRows = computed(() => {
   }
   return result
 })
+const sheet = useSheet<R>({
+  rows: () => displayedRows.value, columns: () => props.columns ?? [],
+  editable: canEditCell, value: cellValue,
+  validateField: change => rejection(props.validateFieldEdit?.(change)),
+  validateCell: change => rejection(props.validateCellEdit?.(change)),
+  propose: change => {
+    notice.value = ''
+    emit('sheet-edit', change)
+  },
+  reject: reason => {
+    notice.value = reason
+    emit('sheet-edit-rejected', reason)
+  },
+  focus: (index, key) => {
+    if (scroller.value) scrollRowIntoView(scroller.value, index)
+    syncViewport()
+    void focusCell(key)
+  },
+})
+watch([() => props.spreadsheet, () => props.readonly], sheet.reset)
+watch([displayedRows, () => props.columns], sheet.refresh)
+function finishSheetInput(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
+  if (composing(event) || sheet.editing.value !== cellKey(row, column)) return
+  if (event.key === 'Enter' && fieldInputError.value?.key === sheet.editing.value) return
+  const key = sheet.editing.value
+  sheet.editing.value = undefined
+  void focusCell(key)
+}
+async function editSheetCell(row: R, column: TimelineColumn<R>) {
+  if (!canEditCell(row, column)) return
+  const key = cellKey(row, column)
+  sheet.editing.value = key
+  await focusCell(key)
+}
+function sheetButtonFocus(row: R, column: TimelineColumn<R>) {
+  if (sheet.end.value?.row !== row.id || sheet.end.value.column !== column.id) sheet.select(row.id, column.id, false)
+}
+function leaveSheetCell(event: FocusEvent, row: R, column: TimelineColumn<R>) {
+  if (event.target instanceof HTMLInputElement && sheet.editing.value === cellKey(row, column)) sheet.editing.value = undefined
+}
 /** Accessible name of a row's expand toggle. */
 function toggleName(row: TimelineRow) {
   return `${collapsed.value.has(row.id) ? messages.value.expandRow : messages.value.collapseRow} ${row.label}`
@@ -3439,8 +3487,22 @@ onUnmounted(() => {
               </slot>
             </div>
             </div>
-            <div v-for="column in columns" :key="column.id" class="vw-extra-column" :style="{ width: shownColumnWidth(column) + 'px' }">
-              <slot name="cell" :row="row.row" :column="column" :value="cellValue(row.row, column)" :summary="summaries?.get(row.row.id)">
+            <div v-for="(column, columnIndex) in columns" :key="column.id" class="vw-extra-column" :class="{ 'vw-sheet-column': spreadsheet }" :style="{ width: shownColumnWidth(column) + 'px' }"
+              @focusout="spreadsheet && leaveSheetCell($event, row.row, column)"
+              @keydown.enter="finishSheetInput($event, row.row, column)" @keydown.esc="finishSheetInput($event, row.row, column)"
+              @dragover="sheet.fillSource.value && $event.preventDefault()" @drop="sheet.dropFill($event, row.index)">
+              <button v-if="spreadsheet && !$slots.cell && !$slots['cell-editor'] && sheet.editing.value !== cellKey(row.row, column)"
+                type="button" class="vw-sheet-cell" :aria-pressed="!!sheet.selected(row.index, columnIndex)"
+                :aria-label="row.row.label + ' · ' + column.label + ' ' + cellValue(row.row, column)"
+                :data-vw-cell="cellKey(row.row, column)"
+                @pointerdown.stop="sheet.startDrag($event, row.row.id, column.id)" @pointerup="sheet.finishPointer"
+                @pointerenter="sheet.extendDrag($event, row.row.id, column.id)"
+                @focus="sheetButtonFocus(row.row, column)"
+                @keydown="sheet.keys($event, row.row.id, column.id)"
+                @dblclick="editSheetCell(row.row, column)" @keydown.enter.stop.prevent="editSheetCell(row.row, column)"
+                @keydown.f2.prevent="editSheetCell(row.row, column)" @copy="sheet.copy" @paste="sheet.paste"
+              >{{ cellValue(row.row, column) }}</button>
+              <slot v-else name="cell" :row="row.row" :column="column" :value="cellValue(row.row, column)" :summary="summaries?.get(row.row.id)">
                 <template v-if="column.field && $slots['cell-editor'] && canEditCell(row.row, column)">
                   <div v-if="editingCell(row.row, column)" class="vw-field-editor" :data-vw-cell-editor="cellKey(row.row, column)"
                     @keydown="cellEditorKeys">
@@ -3460,6 +3522,7 @@ onUnmounted(() => {
                   @change="commitFieldInput($event, row.row, column)" @keydown.enter="fieldInputEnter($event, row.row, column)"
                   @keydown.esc="cancelFieldInput($event, row.row, column)">
                 <input v-else-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
+                  :data-vw-cell="spreadsheet ? cellKey(row.row, column) : undefined"
                   :aria-label="row.row.label + ' · ' + column.label"
                   :value="cellInputText(cellKey(row.row, column), plainCellText(row.row, column))"
                   @input="recordCellDraft($event, cellKey(row.row, column), plainCellText(row.row, column))"
@@ -3467,6 +3530,8 @@ onUnmounted(() => {
                   @keydown.esc="cancelCell($event, row.row, column)">
                 <span v-else :title="String(cellValue(row.row, column))">{{ cellValue(row.row, column) }}</span>
               </slot>
+              <span v-if="spreadsheet && !readonly && !slots.cell && !slots['cell-editor'] && !sheet.editing.value && sheet.bounds.value?.bottom === row.index && sheet.bounds.value.right === columnIndex"
+                class="vw-sheet-fill" draggable="true" aria-hidden="true" @pointerdown.stop @dragstart.stop="sheet.startFill" @dragend="sheet.endFill" />
             </div>
           </div>
           <div v-if="row.summary && intersectsWindow(row.summary, timeWindow)" class="vw-gantt-summary"

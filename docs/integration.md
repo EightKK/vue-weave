@@ -929,3 +929,15 @@ watch(shown, ({ nodes, edges }) => {
 ```
 
 Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).
+
+## Spreadsheet editing in a schedule
+
+Enable `spreadsheet` on a Gantt chart with extra columns. Click a cell and Shift-click another, drag across cells, or use Shift and the arrow keys to select a rectangle. Double-click, Enter or F2 opens the existing single-cell editor. Copy and paste use the system clipboard (tab-separated text). Ctrl/Cmd+D copies the top row of each selected column down the selection. Drag the corner handle down to extend the same values into additional rows.
+
+```vue
+<GanttChart spreadsheet :rows="rows" :columns="columns" :bars="bars" :range="range"
+  @field-edit="change => apply([change])"
+  @sheet-edit="batch => apply(batch.fieldEdits)" />
+```
+
+This example uses only typed fields. The parent applies the changes to its own rows and derives the bars from those rows. For a mixture of plain and typed columns, commit both `batch.cellEdits` and `batch.fieldEdits` as one history or server transaction. A parent can reject the whole proposal (for example when two new dates conflict). See [the complete schedule sheet](../examples/production/WorkSheet.vue).

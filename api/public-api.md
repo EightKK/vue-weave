@@ -206,7 +206,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (466)
+## Entry `.`: type-only exports (467)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -619,6 +619,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowMove`
 - `TimelineRowPosition`
 - `TimelineSelectDetail`
+- `TimelineSheetEdit`
 - `TimelineSnapshotData`
 - `TimelineSnapshotInput`
 - `TimelineSnapshotV1`
@@ -866,7 +867,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (437)
+## Entry `./core`: type-only exports (438)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1257,6 +1258,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowMove`
 - `TimelineRowPosition`
 - `TimelineSelectDetail`
+- `TimelineSheetEdit`
 - `TimelineSnapshotData`
 - `TimelineSnapshotInput`
 - `TimelineSnapshotV1`
@@ -1516,6 +1518,7 @@ showNow?: boolean;
 showProgressLine?: boolean;
 showSummaries?: boolean;
 snap?: number;
+spreadsheet?: boolean;
 statusDate?: number;
 stickyBandLabels?: boolean;
 summaryDependencies?: boolean;
@@ -1570,6 +1573,8 @@ zoomPresets?: readonly TimelineZoomPreset[];
 (evt: "row-move", change: TimelineRowMove) => void
 (evt: "row-move-rejected", change: TimelineRowMove, reason: string) => void
 (evt: "select", id: string, detail: TimelineSelectDetail) => void
+(evt: "sheet-edit", change: TimelineSheetEdit<R>) => void
+(evt: "sheet-edit-rejected", reason: string) => void
 (evt: "target-activate", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-enter", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-leave", event: ViewTargetEvent<ViewTarget>) => void
@@ -6265,6 +6270,16 @@ interface TimelineRowPosition {
 ```ts
 interface TimelineSelectDetail {
     dragged: boolean;
+}
+```
+
+### `TimelineSheetEdit`
+
+```ts
+interface TimelineSheetEdit<R extends TimelineRow = TimelineRow> {
+    action: 'paste' | 'fill';
+    fieldEdits: TimelineFieldEdit<R>[];
+    cellEdits: TimelineCellEdit[];
 }
 ```
 
