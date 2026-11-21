@@ -270,6 +270,15 @@ The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge 
 | `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
 | `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width. NetworkGraph writes the width-scaled default to an internal inline `--vw-band-dash` on each reference band; do not set that one yourself |
 
+The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-border`, `--vw-text`, `--vw-muted`, `--vw-accent` and the tone families through `vw-tone-*` on each card), so the built-in dark theme and your own theme apply to it. It adds four variables; the built-in dark themes set `--vw-board-wip-warning` to `#ff8a80` and `--vw-board-drop` to `#82badf`. The board lays its columns out in a CSS grid with logical properties, so `dir="rtl"` (or an inherited right-to-left direction) places the first column on the right without extra rules. In forced-colors mode cards are outlined in `CanvasText`, the selection and focus in `Highlight`, and the drop indicator is `Highlight` (dashed `CanvasText` when the drop would exceed a WIP limit).
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-board-column-width` | `232px` (`196px` below 700 px) | Minimum width of a column; columns share any extra width |
+| `--vw-board-cell-min-height` | `64px` | Minimum height of a cell, so an empty cell stays a drop target |
+| `--vw-board-wip-warning` | `#a8361f` (dark `#ff8a80`) | Over-limit warning text, the count badge of a column at or over its limit and the tint of its cells |
+| `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
+
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.

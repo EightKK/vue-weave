@@ -22,6 +22,7 @@ const entries = [
 const components = [
   { name: 'NetworkGraph', file: 'dist/types/components/NetworkGraph.vue.d.ts' },
   { name: 'GanttChart', file: 'dist/types/components/GanttChart.vue.d.ts' },
+  { name: 'TaskBoard', file: 'dist/types/components/TaskBoard.vue.d.ts' },
 ]
 const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed })
 const byName = (a, b) => a < b ? -1 : a > b ? 1 : 0

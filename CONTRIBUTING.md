@@ -68,7 +68,7 @@ npm run test:package
 
 ### Public API baseline
 
-[`api/public-api.md`](https://github.com/EightKK/vue-weave/blob/v1.0.0/api/public-api.md) records the public API of the built package: the runtime and type-only export names of `@eightkk/vue-weave` and `@eightkk/vue-weave/core`, the normalized declaration of every export (and of the non-exported types that public signatures refer to), the props, emits, slots and exposed members of both components, and the `--vw-*` custom properties in `dist/style.css`. `test:package` fails with a per-item diff when the installed tarball differs from it. To check or regenerate it locally:
+[`api/public-api.md`](https://github.com/EightKK/vue-weave/blob/v1.0.0/api/public-api.md) records the public API of the built package: the runtime and type-only export names of `@eightkk/vue-weave` and `@eightkk/vue-weave/core`, the normalized declaration of every export (and of the non-exported types that public signatures refer to), the props, emits, slots and exposed members of every component, and the `--vw-*` custom properties in `dist/style.css`. `test:package` fails with a per-item diff when the installed tarball differs from it. To check or regenerate it locally:
 
 ```sh
 npm run build && node scripts/api-baseline.mjs           # check

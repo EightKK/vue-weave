@@ -5,12 +5,14 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (201)
+## Entry `.`: runtime exports (208)
 
 - `GanttChart: object`
 - `NetworkGraph: object`
+- `TaskBoard: object`
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
@@ -20,6 +22,7 @@ in public signatures, so changes to them can break consumers too.
 - `baselineVariance: function`
 - `beginGraphExpansion: function`
 - `beginTransaction: function`
+- `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
 - `buildViewBindingIndex: function`
@@ -36,6 +39,7 @@ in public signatures, so changes to them can break consumers too.
 - `collectScheduleReasons: function`
 - `comparePlans: function`
 - `completeGraphLayout: function`
+- `computeEarnedValue: function`
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
@@ -98,6 +102,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
 - `graphViewportRect: function`
+- `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
 - `intersectsWindow: function`
@@ -116,6 +121,7 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
@@ -160,6 +166,7 @@ in public signatures, so changes to them can break consumers too.
 - `restoreWeaveSnapshot: function`
 - `retryWindowedData: function`
 - `revealLinkedTarget: function`
+- `rollupEarnedValue: function`
 - `routeGraphEdges: function`
 - `routeGraphPorts: function`
 - `scheduleTasks: function`
@@ -209,7 +216,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (469)
+## Entry `.`: type-only exports (493)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -243,6 +250,16 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `EarnedValueAmounts`
+- `EarnedValueEacMethod`
+- `EarnedValueMetrics`
+- `EarnedValueOptions`
+- `EarnedValuePoint`
+- `EarnedValueRecord`
+- `EarnedValueResult`
+- `EarnedValueSeriesOptions`
+- `EarnedValueTask`
+- `EarnedValueTaskResult`
 - `EditMode`
 - `EditTransaction`
 - `EditValidator`
@@ -572,6 +589,20 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardCard`
+- `TaskBoardCardMove`
+- `TaskBoardCardMoveValidator`
+- `TaskBoardCell`
+- `TaskBoardColumn`
+- `TaskBoardColumnStatus`
+- `TaskBoardComponent`
+- `TaskBoardExposed`
+- `TaskBoardGroups`
+- `TaskBoardLabels`
+- `TaskBoardLane`
+- `TaskBoardMoveCancel`
+- `TaskBoardMoveCancelReason`
+- `TaskBoardPosition`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -681,10 +712,11 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (191)
+## Entry `./core`: runtime exports (197)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
@@ -694,6 +726,7 @@ in public signatures, so changes to them can break consumers too.
 - `baselineVariance: function`
 - `beginGraphExpansion: function`
 - `beginTransaction: function`
+- `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
 - `buildViewBindingIndex: function`
@@ -710,6 +743,7 @@ in public signatures, so changes to them can break consumers too.
 - `collectScheduleReasons: function`
 - `comparePlans: function`
 - `completeGraphLayout: function`
+- `computeEarnedValue: function`
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
@@ -771,6 +805,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
 - `graphViewportRect: function`
+- `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
 - `intersectsWindow: function`
@@ -789,6 +824,7 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
@@ -832,6 +868,7 @@ in public signatures, so changes to them can break consumers too.
 - `resourceTimelineCascade: function`
 - `restoreWeaveSnapshot: function`
 - `retryWindowedData: function`
+- `rollupEarnedValue: function`
 - `routeGraphEdges: function`
 - `routeGraphPorts: function`
 - `scheduleTasks: function`
@@ -875,7 +912,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (440)
+## Entry `./core`: type-only exports (462)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -903,6 +940,16 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `EarnedValueAmounts`
+- `EarnedValueEacMethod`
+- `EarnedValueMetrics`
+- `EarnedValueOptions`
+- `EarnedValuePoint`
+- `EarnedValueRecord`
+- `EarnedValueResult`
+- `EarnedValueSeriesOptions`
+- `EarnedValueTask`
+- `EarnedValueTaskResult`
 - `EditMode`
 - `EditTransaction`
 - `EditValidator`
@@ -1217,6 +1264,18 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardCard`
+- `TaskBoardCardMove`
+- `TaskBoardCardMoveValidator`
+- `TaskBoardCell`
+- `TaskBoardColumn`
+- `TaskBoardColumnStatus`
+- `TaskBoardGroups`
+- `TaskBoardLabels`
+- `TaskBoardLane`
+- `TaskBoardMoveCancel`
+- `TaskBoardMoveCancelReason`
+- `TaskBoardPosition`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -1667,6 +1726,59 @@ scrollToRow: (id: string) => void;
 scrollToTime: (time: number) => void;
 ```
 
+## Component `TaskBoard`: props
+
+```ts
+autoScroll?: boolean;
+cards: readonly C[];
+columns: readonly TaskBoardColumn[];
+dir?: ChartDirection;
+height?: number | string;
+labels?: Partial<TaskBoardLabels>;
+lanes?: readonly TaskBoardLane[];
+readonly?: boolean;
+selectedId?: string;
+validateCardMove?: TaskBoardCardMoveValidator;
+```
+
+## Component `TaskBoard`: emits
+
+```ts
+(evt: "card-activate", id: string) => void
+(evt: "card-move", change: TaskBoardCardMove) => void
+(evt: "card-move-cancel", event: TaskBoardMoveCancel) => void
+(evt: "card-move-rejected", change: TaskBoardCardMove, reason: string) => void
+(evt: "update:selectedId", id: string) => void
+(evt: "validation-error", error: Error) => void
+```
+
+## Component `TaskBoard`: slots
+
+```ts
+'column-header'(props: {
+    column: TaskBoardColumn;
+    status: TaskBoardColumnStatus;
+}): unknown;
+card(props: {
+    card: C;
+    selected: boolean;
+    moving: boolean;
+    column: TaskBoardColumn;
+    lane?: TaskBoardLane;
+}): unknown;
+empty(props: {
+    column?: TaskBoardColumn;
+    lane?: TaskBoardLane;
+}): unknown;
+```
+
+## Component `TaskBoard`: exposed
+
+```ts
+cancelMove: () => void;
+focusCard: (id: string) => boolean;
+```
+
 ## CSS custom properties: defined
 
 - `--vw-accent`
@@ -1682,6 +1794,9 @@ scrollToTime: (time: number) => void;
 - `--vw-blue-line`
 - `--vw-blue-pale`
 - `--vw-blue-solid`
+- `--vw-board-column-width`
+- `--vw-board-drop`
+- `--vw-board-wip-warning`
 - `--vw-border`
 - `--vw-cascade`
 - `--vw-connect-invalid`
@@ -1732,6 +1847,8 @@ scrollToTime: (time: number) => void;
 - `--vw-axis-width`
 - `--vw-band-dash`
 - `--vw-bar-highlight`
+- `--vw-board-cell-min-height`
+- `--vw-board-column-count`
 - `--vw-constraint-reach`
 - `--vw-edge-animation-duration`
 - `--vw-edge-selected`
@@ -2077,6 +2194,117 @@ interface DanglingLink<L> {
 
 ```ts
 type DependencyPathStyle = 'orthogonal' | 'rounded' | 'curve';
+```
+
+### `EarnedValueAmounts`
+
+```ts
+interface EarnedValueAmounts {
+    bac: number;
+    pv: number;
+    ev: number;
+    ac: number;
+}
+```
+
+### `EarnedValueEacMethod`
+
+```ts
+type EarnedValueEacMethod = 'cpi' | 'cpi-spi' | 'budget';
+```
+
+### `EarnedValueMetrics`
+
+```ts
+interface EarnedValueMetrics extends EarnedValueAmounts {
+    sv: number;
+    cv: number;
+    spi?: number;
+    cpi?: number;
+    eac?: number;
+    etc?: number;
+    vac?: number;
+    tcpi?: number;
+    percentComplete?: number;
+}
+```
+
+### `EarnedValueOptions`
+
+```ts
+interface EarnedValueOptions {
+    statusDate: number;
+    calendars?: readonly WorkCalendar[];
+    defaultCalendarId?: string;
+    eacMethod?: EarnedValueEacMethod;
+    series?: EarnedValueSeriesOptions;
+}
+```
+
+### `EarnedValuePoint`
+
+```ts
+interface EarnedValuePoint {
+    time: number;
+    pv: number;
+    ev?: number;
+    ac?: number;
+}
+```
+
+### `EarnedValueRecord`
+
+```ts
+interface EarnedValueRecord {
+    time: number;
+    progress: number;
+    actualCost?: number;
+}
+```
+
+### `EarnedValueResult`
+
+```ts
+interface EarnedValueResult {
+    statusDate: number;
+    eacMethod: EarnedValueEacMethod;
+    tasks: readonly EarnedValueTaskResult[];
+    totals: EarnedValueMetrics;
+    series: readonly EarnedValuePoint[];
+}
+```
+
+### `EarnedValueSeriesOptions`
+
+```ts
+interface EarnedValueSeriesOptions {
+    step: number;
+    start?: number;
+    end?: number;
+}
+```
+
+### `EarnedValueTask`
+
+```ts
+interface EarnedValueTask {
+    id: string;
+    budget: number;
+    start: number;
+    end: number;
+    progress?: number;
+    actualCost?: number;
+    calendarId?: string;
+    history?: readonly EarnedValueRecord[];
+}
+```
+
+### `EarnedValueTaskResult`
+
+```ts
+interface EarnedValueTaskResult extends EarnedValueMetrics {
+    id: string;
+}
 ```
 
 ### `EditMode`
@@ -5760,6 +5988,164 @@ interface TaskActuals {
 }
 ```
 
+### `TaskBoard`
+
+```ts
+const TaskBoard: TaskBoardComponent;
+```
+
+### `TaskBoardCard`
+
+```ts
+interface TaskBoardCard<D = unknown> {
+    id: string;
+    columnId: string;
+    laneId?: string;
+    label: string;
+    detail?: string;
+    tone?: ChartTone;
+    draggable?: boolean;
+    data?: D;
+}
+```
+
+### `TaskBoardCardMove`
+
+```ts
+interface TaskBoardCardMove {
+    id: string;
+    before: TaskBoardPosition;
+    after: TaskBoardPosition;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TaskBoardCardMoveValidator`
+
+```ts
+type TaskBoardCardMoveValidator = (change: TaskBoardCardMove) => boolean | string | void;
+```
+
+### `TaskBoardCell`
+
+```ts
+interface TaskBoardCell<C extends TaskBoardCard = TaskBoardCard> {
+    columnId: string;
+    laneId?: string;
+    cards: C[];
+}
+```
+
+### `TaskBoardColumn`
+
+```ts
+interface TaskBoardColumn {
+    id: string;
+    label: string;
+    detail?: string;
+    wipLimit?: number;
+}
+```
+
+### `TaskBoardColumnStatus`
+
+```ts
+interface TaskBoardColumnStatus {
+    id: string;
+    count: number;
+    wipLimit?: number;
+    atLimit: boolean;
+    overLimit: boolean;
+}
+```
+
+### `TaskBoardComponent`
+
+```ts
+type TaskBoardComponent = (new <C extends TaskBoardCard = TaskBoardCard>(props: {
+    columns: readonly TaskBoardColumn[];
+    cards: readonly C[];
+} & Record<string, unknown>) => SfcInstance<TaskBoardSfc<C & TaskBoardCard>>) & SfcDefaultComponent<TaskBoardSfc<TaskBoardCard>>;
+```
+
+### `TaskBoardExposed`
+
+```ts
+type TaskBoardExposed<C extends TaskBoardCard = TaskBoardCard> = SfcExposed<TaskBoardSfc<C>>;
+```
+
+### `TaskBoardGroups`
+
+```ts
+interface TaskBoardGroups<C extends TaskBoardCard = TaskBoardCard> {
+    rows: {
+        laneId?: string;
+        cells: TaskBoardCell<C>[];
+    }[];
+    columns: TaskBoardColumnStatus[];
+    positions: Map<string, TaskBoardPosition>;
+}
+```
+
+### `TaskBoardLabels`
+
+```ts
+interface TaskBoardLabels {
+    region: string;
+    empty: string;
+    emptyCell: string;
+    card: string;
+    cards: string;
+    wipLimit: string;
+    overLimit: string;
+    moveHint: string;
+    moveRejected: string;
+    pickedUp: string;
+    moved: string;
+    moveCancelled: string;
+    position: string;
+    of: string;
+    lane: string;
+}
+```
+
+### `TaskBoardLane`
+
+```ts
+interface TaskBoardLane {
+    id: string;
+    label: string;
+    detail?: string;
+}
+```
+
+### `TaskBoardMoveCancel`
+
+```ts
+interface TaskBoardMoveCancel {
+    id: string;
+    before: TaskBoardPosition;
+    reason: TaskBoardMoveCancelReason;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TaskBoardMoveCancelReason`
+
+```ts
+type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change';
+```
+
+### `TaskBoardPosition`
+
+```ts
+interface TaskBoardPosition {
+    columnId: string;
+    laneId?: string;
+    index: number;
+}
+```
+
 ### `TimeRange`
 
 ```ts
@@ -7005,6 +7391,15 @@ interface WorkWeek {
 function actualsTimelineBars(result: RescheduleFromActualsResult, options?: ActualsTimelineBarOptions): TimelineBar[];
 ```
 
+### `applyBoardCardMove`
+
+```ts
+function applyBoardCardMove<C extends TaskBoardCard>(cards: readonly C[], move: TaskBoardCardMove, board?: {
+    columns?: readonly TaskBoardColumn[];
+    lanes?: readonly TaskBoardLane[];
+}): C[];
+```
+
 ### `applyGraphPositions`
 
 ```ts
@@ -7059,6 +7454,14 @@ function beginGraphExpansion<N extends {
 
 ```ts
 function beginTransaction<S>(state: TransactionCoreState<S>, pending: Omit<PendingTransaction, 'epoch' | 'baseVersion'>, candidate: S): TransactionCoreState<S> | undefined;
+```
+
+### `boardCardPosition`
+
+```ts
+function boardCardPosition(cards: readonly TaskBoardCard[], id: string, options?: {
+    lanes?: boolean;
+}): TaskBoardPosition;
 ```
 
 ### `buildGraphLayoutRequests`
@@ -7157,6 +7560,12 @@ function comparePlans(current: PlanScenario, candidate: PlanScenario): PlanCompa
 
 ```ts
 function completeGraphLayout(layout: GraphLayout, nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options?: GraphLayoutCompletionOptions): GraphLayoutCompletion;
+```
+
+### `computeEarnedValue`
+
+```ts
+function computeEarnedValue(tasks: readonly EarnedValueTask[], options: EarnedValueOptions): EarnedValueResult;
 ```
 
 ### `countGraphCrossings`
@@ -7565,6 +7974,12 @@ function graphViewportRect(camera: GraphViewport, size: {
 }, overscan?: number): GraphRect;
 ```
 
+### `groupBoardCards`
+
+```ts
+function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[]): TaskBoardGroups<C>;
+```
+
 ### `indentTimelineRow`
 
 ```ts
@@ -7677,6 +8092,12 @@ function levelResources(input: LevelResourcesInput, options: ScheduleOptions & {
     explain: true;
 }): ExplainedLevelResourcesResult;
 function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult;
+```
+
+### `maxEarnedValuePoints`
+
+```ts
+const maxEarnedValuePoints = 100000;
 ```
 
 ### `mergeGraphExpansionPage`
@@ -7958,6 +8379,14 @@ function retryWindowedData<T, L = never>(state: WindowedDataState<T, L>, window?
 
 ```ts
 function revealLinkedTarget(options: RevealLinkedTargetOptions): Promise<LinkedRevealResult>;
+```
+
+### `rollupEarnedValue`
+
+```ts
+function rollupEarnedValue(items: readonly EarnedValueAmounts[], options?: {
+    eacMethod?: EarnedValueEacMethod;
+}): EarnedValueMetrics;
 ```
 
 ### `routeGraphEdges`
@@ -8407,4 +8836,10 @@ interface SnapshotBase {
         readonly [namespace: string]: JsonValue;
     };
 }
+```
+
+### Internal `TaskBoardSfc (dist/types/index.d.ts)`
+
+```ts
+type TaskBoardSfc<C extends TaskBoardCard> = typeof TaskBoardVue<C>;
 ```

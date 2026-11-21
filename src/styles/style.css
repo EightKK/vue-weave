@@ -568,3 +568,62 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   background: var(--vw-accent); border: 1px solid var(--vw-surface); cursor: crosshair; touch-action: none;
 }
 @media (pointer: coarse) { .vw-sheet-fill { width: 16px; height: 16px; } }
+
+/* TaskBoard (kanban): status columns × optional swimlanes in a CSS grid. Logical properties follow the text direction,
+   so `dir="rtl"` places the first column on the right without extra rules. */
+.vw-board { --vw-board-column-width: 232px; color: var(--vw-text, #172c3b); font-family: inherit; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: var(--vw-surface-muted, #f6f9fb); }
+.vw-board * { box-sizing: border-box; }
+.vw-board button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-board-scroll { overflow: auto; scrollbar-width: thin; border-radius: inherit; }
+.vw-board-scroll:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
+.vw-board-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; }
+.vw-board-grid { display: grid; grid-template-columns: repeat(var(--vw-board-column-count, 1), minmax(var(--vw-board-column-width), 1fr)); gap: 0 10px; padding: 0 10px 10px; min-width: min-content; }
+.vw-board-column-head { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 4px 8px; background: var(--vw-surface-muted, #f6f9fb); border-bottom: 2px solid var(--vw-border, #d8e2e9); font-size: 12px; }
+.vw-board-column-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vw-board-column-title strong, .vw-board-column-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-board-column-title small, .vw-board-lane-title small { color: var(--vw-muted, #4c6371); font-size: 10.5px; font-weight: 500; }
+.vw-board-count { padding: 1px 7px; border-radius: 999px; background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vw-board-column-head.vw-is-at-limit .vw-board-count { border-color: var(--vw-board-wip-warning, #a8361f); }
+.vw-board-column-head.vw-is-over-limit { border-bottom-color: var(--vw-board-wip-warning, #a8361f); }
+.vw-board-column-head.vw-is-over-limit .vw-board-count { background: var(--vw-board-wip-warning, #a8361f); border-color: var(--vw-board-wip-warning, #a8361f); color: var(--vw-on-solid, #fff); }
+.vw-board-wip-warning { flex-basis: 100%; color: var(--vw-board-wip-warning, #a8361f); font-size: 10.5px; font-weight: 700; }
+.vw-board-wip-warning::before { content: "▲ "; }
+.vw-board-lane-head { grid-column: 1 / -1; padding: 12px 4px 4px; border-bottom: 1px dashed var(--vw-border, #d8e2e9); font-size: 12px; }
+.vw-board-lane-title { position: sticky; inset-inline-start: 4px; display: inline-flex; align-items: baseline; gap: 8px; }
+.vw-board-cell { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px 4px; min-height: var(--vw-board-cell-min-height, 64px); list-style: none; border-radius: 6px; }
+.vw-board-cell.vw-is-over-limit { background: color-mix(in srgb, var(--vw-board-wip-warning, #a8361f) 7%, transparent); }
+.vw-board-cell.vw-is-target { outline: 1px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: -1px; }
+.vw-board-card-item { display: block; }
+.vw-board-card { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: start; border: 1px solid var(--vw-item-line); border-inline-start-width: 4px; border-radius: 6px; background: var(--vw-surface, #fff); font-size: 12px; user-select: none; }
+.vw-board-card:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-board-card:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
+.vw-board-card.vw-is-movable { cursor: grab; touch-action: none; }
+.vw-board-card.vw-is-selected { border-color: var(--vw-item-solid); box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
+.vw-board-card.vw-is-dragging { position: relative; z-index: 3; cursor: grabbing; opacity: .92; box-shadow: 0 6px 18px rgb(0 0 0 / .22); }
+.vw-board-card.vw-is-picked { outline: 2px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: 2px; }
+.vw-board-card-label { font-weight: 650; color: var(--vw-item-ink); overflow-wrap: anywhere; }
+.vw-board-card-detail { color: var(--vw-muted, #4c6371); font-size: 11px; }
+.vw-board-drop { height: 4px; margin-block: -1px; border-radius: 2px; background: var(--vw-board-drop, var(--vw-accent, #245e96)); }
+.vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, var(--vw-board-wip-warning, #a8361f) 0 6px, transparent 6px 9px); }
+.vw-board-cell-empty { padding: 10px 4px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 11px; border: 1px dashed var(--vw-border, #d8e2e9); border-radius: 6px; }
+.vw-theme-dark { --vw-board-wip-warning: #ff8a80; --vw-board-drop: #82badf; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-board-wip-warning: #ff8a80; --vw-board-drop: #82badf; }
+}
+@media (max-width: 700px) {
+  .vw-board { --vw-board-column-width: 196px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vw-board, .vw-board * { transition: none !important; animation: none !important; }
+}
+@media (forced-colors: active) {
+  .vw-board { border-color: CanvasText; }
+  .vw-board-card { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .vw-board-card-label, .vw-board-card-detail { color: CanvasText; }
+  .vw-board-card.vw-is-selected { outline: 3px solid Highlight; outline-offset: 2px; box-shadow: none; }
+  .vw-board-card:focus-visible, .vw-board-card.vw-is-picked { outline: 3px solid Highlight; }
+  .vw-board-drop { forced-color-adjust: none; background: Highlight; }
+  .vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, CanvasText 0 6px, transparent 6px 9px); }
+  .vw-board-column-head.vw-is-over-limit .vw-board-count { forced-color-adjust: none; background: CanvasText; color: Canvas; }
+  .vw-board-cell.vw-is-over-limit { background: none; outline: 1px dashed CanvasText; }
+}

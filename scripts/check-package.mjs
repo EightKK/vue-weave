@@ -98,11 +98,12 @@ try {
     import { readFileSync } from 'node:fs'
     import { createSSRApp, h } from 'vue'
     import { renderToString } from 'vue/server-renderer'
-    import { NetworkGraph, GanttChart, useEditHistory } from '${manifest.name}'
+    import { NetworkGraph, GanttChart, TaskBoard, useEditHistory } from '${manifest.name}'
     assert.equal(typeof useEditHistory, 'function')
     for (const [component, props] of [
       [NetworkGraph, { nodes: [], edges: [] }],
       [GanttChart, { rows: [], bars: [], range: { start: 0, end: 10 } }],
+      [TaskBoard, { columns: [{ id: 'todo', label: 'To do' }], cards: [] }],
     ]) assert.ok((await renderToString(createSSRApp({ render: () => h(component, props) }))).length > 0)
     assert.match(readFileSync(new URL(import.meta.resolve('${manifest.name}/style.css')), 'utf8'), /\\.vw-/)
     const exportedManifest = JSON.parse(readFileSync(new URL(import.meta.resolve('${manifest.name}/package.json')), 'utf8'))
@@ -125,6 +126,7 @@ try {
     import {
       NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
       type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
+      TaskBoard, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardExposed,
     } from '${manifest.name}'
     interface MyData { owner: string }
     type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
@@ -154,6 +156,14 @@ try {
     const chartRef = undefined as GanttChartExposed<TimelineRow, TimelineBar<MyData>> | undefined
     chartRef?.exportSvg({ barLabel: bar => bar.data?.owner ?? bar.label })
     void h(NetworkGraph, { nodes, edges })
+    const cards: TaskBoardCard<MyData>[] = [{ id: 'c', columnId: 'todo', label: 'Card', data: { owner: 'Ada' } }]
+    const board = new TaskBoard({ columns: [{ id: 'todo', label: 'To do' }], cards })
+    type CardSlot = Parameters<NonNullable<typeof board.$slots.card>>[0]
+    assertType<Equal<CardSlot['card']['data'], MyData | undefined>>()
+    assertType<Equal<Parameters<NonNullable<typeof board.$props['onCard-move']>>[0], TaskBoardCardMove>>()
+    const boardRef = undefined as TaskBoardExposed<TaskBoardCard<MyData>> | undefined
+    boardRef?.focusCard('c')
+    void h(TaskBoard, { columns: [], cards })
   `
   await writeFile(join(consumer, 'consumer.ts'), typeProbe)
   await writeFile(join(consumer, 'typed-consumer.ts'), typedProbe)

@@ -2,6 +2,8 @@ import './styles/style.css'
 import type { ComponentPublicInstance, DefineComponent } from 'vue'
 import NetworkGraphVue from './components/NetworkGraph.vue'
 import GanttChartVue from './components/GanttChart.vue'
+import TaskBoardVue from './components/TaskBoard.vue'
+import type { TaskBoardCard, TaskBoardColumn } from './core/taskBoard.js'
 import type { GraphEdge } from './core/graph.js'
 import type { NetworkGroup, NetworkNode, TimelineBar, TimelineRow } from './core/types.js'
 
@@ -74,3 +76,14 @@ export type {
 } from './composables/useAsyncGraphLayout.js'
 export { useWindowedData } from './composables/useWindowedData.js'
 export type { UseWindowedDataOptions, WindowedData, WindowedDataLoader, WindowedDataError } from './composables/useWindowedData.js'
+
+// TaskBoard: a third controlled component, generic over its card type like the two above.
+type TaskBoardSfc<C extends TaskBoardCard> = typeof TaskBoardVue<C>
+/** Methods that TaskBoard exposes on its template ref. `C` is the card type of the board. */
+export type TaskBoardExposed<C extends TaskBoardCard = TaskBoardCard> = SfcExposed<TaskBoardSfc<C>>
+/** The type of the `TaskBoard` component. In a template, the card type is inferred from `cards`. */
+export type TaskBoardComponent = (new <C extends TaskBoardCard = TaskBoardCard>(
+  props: { columns: readonly TaskBoardColumn[]; cards: readonly C[] } & Record<string, unknown>,
+) => SfcInstance<TaskBoardSfc<C & TaskBoardCard>>)
+  & SfcDefaultComponent<TaskBoardSfc<TaskBoardCard>>
+export const TaskBoard = TaskBoardVue as unknown as TaskBoardComponent
