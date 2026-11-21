@@ -74,16 +74,32 @@ By submitting a contribution, you agree to provide it under this project's [MIT 
 
 ## Versioning
 
-Versions follow [Semantic Versioning](https://semver.org/). While the version is 0.x, a minor release (0.x.0) can contain breaking changes and a patch release (0.x.y) contains only backward-compatible fixes. Breaking changes are listed under "Breaking changes" in the changelog entry of the release that introduces them.
+Versions follow [Semantic Versioning](https://semver.org/). From 1.0.0, breaking changes are made only in a major release, a minor release adds backward-compatible features, and a patch release contains only backward-compatible fixes. [Compatibility and versioning](docs/api.md#compatibility-and-versioning) defines the public API this applies to. Breaking changes are listed under "Breaking changes" in the changelog entry of the release that introduces them.
 
 ## Prepare a release
 
-Releases are made manually by a maintainer as GitHub Releases. The package is not published to npm, and CI never publishes.
+A maintainer makes each release by hand: a GitHub Release and a manual npm publication of the same verified tarball, from the maintainer's own npm account with two-factor authentication. Agents and CI never publish.
 
-1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. Update the tarball name in the install instructions of `README.md` and `README.ja.md`. Review package metadata and distribution rights for source, examples and assets.
+1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. In `README.md` and `README.ja.md`, update the tarball name in the install instructions and the `v<version>` tag in the absolute image and document URLs (npm shows the README without the repository, so those links point at the release tag). Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
 3. Verify that private vulnerability reporting is enabled under the repository's **Settings > Advanced Security**. GitHub offers it only for public repositories, so enable it as soon as the repository is public. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
-4. Run `npm run prepare:release` (below), then create the `v<version>` tag and a GitHub Release from the checked revision. Attach `artifacts/<name>-<version>.tgz`, `artifacts/<name>-<version>-source-demo.tar.gz` and `artifacts/SHA256SUMS`, and use the changelog entry as the release notes.
+4. Run `npm run prepare:release` (below). Its verified package tarball, `<path-to-verified-tgz>` in the next steps, is the only file that is published; do not run `npm pack` or `npm publish` in the checkout again, because that rebuilds the package.
+5. Create the `v<version>` tag on the checked revision and push it, so the tag-pinned README links resolve.
+6. Publish the verified tarball to npm, entering the one-time password when npm asks for it (or passing `--otp <code>`):
+
+   ```sh
+   npm publish <path-to-verified-tgz> --access public
+   ```
+
+7. Check that the registry holds the same bytes. The integrity npm reports must equal the local SHA-512 of the tarball:
+
+   ```sh
+   npm view vue-weave@<version> dist.integrity
+   node -e "console.log('sha512-' + require('node:crypto').createHash('sha512').update(require('node:fs').readFileSync(process.argv[1])).digest('base64'))" <path-to-verified-tgz>
+   ```
+
+   A published version cannot be replaced. If the values differ, deprecate the version with `npm deprecate` and release a new patch version.
+8. Create the GitHub Release from the `v<version>` tag. Attach the same tarball bytes that were published, the matching offline-demo archive and `SHA256SUMS` from the verified candidate, and use the changelog entry as the release notes.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 
