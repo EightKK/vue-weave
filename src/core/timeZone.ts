@@ -85,3 +85,20 @@ export function zonedInstant(format: Intl.DateTimeFormat, wall: number) {
   // Gap: the offset changes from `before` to `after` between these two instants.
   return zoneTransition(format, wall - after, wall - before, before)
 }
+
+/**
+ * Resolve a local wall-clock time (expressed as if it were UTC) to an instant by the rules of RFC 5545 section 3.3.5,
+ * for iCalendar import only: a wall time skipped by a forward transition is read with the offset before the
+ * transition (so `02:30` in a gap from `02:00` to `03:00` is the instant of `03:30` after it), and a repeated wall time
+ * resolves to its first occurrence. Work calendars and editing keep `zonedInstant`, which moves a skipped time to the
+ * transition instead.
+ */
+export function rfc5545ZonedInstant(format: Intl.DateTimeFormat, wall: number) {
+  const before = zoneOffset(format, wall - dayMs), after = zoneOffset(format, wall + dayMs)
+  if (before === after) return wall - before
+  const first = wall - Math.max(before, after), second = wall - Math.min(before, after)
+  if (wall - zoneOffset(format, first) === first) return first
+  if (wall - zoneOffset(format, second) === second) return second
+  // Gap: use the offset in effect before the transition.
+  return wall - before
+}

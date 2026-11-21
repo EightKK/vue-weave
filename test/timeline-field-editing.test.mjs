@@ -85,8 +85,11 @@ test('duration units scale the typed value and negatives are rejected by default
 
 test('select and checkbox fields', () => {
   const select = { id: 's', kind: 'select', get: () => null, choices: [{ value: 'a', label: 'A' }, { value: 2 }], multiple: true }
-  assert.deepEqual(parseFieldValue(select, 'a'), { ok: true, value: 'a' })
-  assert.deepEqual(parseFieldValue(select, '2'), { ok: true, value: 2 })
+  // A multiple select always reads text as an array, even a single entry.
+  assert.deepEqual(parseFieldValue(select, 'a'), { ok: true, value: ['a'] })
+  assert.deepEqual(parseFieldValue(select, '2'), { ok: true, value: [2] })
+  assert.deepEqual(parseFieldValue({ ...select, multiple: false }, 'a'), { ok: true, value: 'a' })
+  assert.deepEqual(parseFieldValue({ ...select, multiple: false }, '2'), { ok: true, value: 2 })
   assert.equal(parseFieldValue(select, 'z').code, 'choice')
   assert.equal(validateFieldValue(select, ['a', 2]).ok, true)
   assert.equal(validateFieldValue(select, ['a', 'z']).code, 'choice')

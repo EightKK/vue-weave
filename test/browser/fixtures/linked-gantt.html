@@ -17,8 +17,8 @@
       import { GanttChart } from 'vue-weave'
 
       // GanttChart opt-in props for linked views and typed editing: highlightedBarIds, loadSelectable, droppable,
-      // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel
-      // and revealBar. The parent applies nothing unless a test asks for it, so every event payload stays visible.
+      // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel,
+      // revealBar and keyboard activation of row headings. The parent applies nothing unless a test asks for it, so every event payload stays visible.
       const query = new URLSearchParams(location.search)
       const rows = shallowRef([
         { id: 'r1', label: 'Row 1', data: { effort: 3 } },
@@ -44,13 +44,32 @@
         counts.value = { ...counts.value, [name]: (counts.value[name] ?? 0) + 1 }
       }
       const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value ?? ''))
+      // Effort values that the field reads from state outside `rows`, as a `field.get` that reads another ref would.
+      const externalEffort = ref({})
       const effort = {
         id: 'effort', label: 'Effort', width: 90, value: row => row.data.effort ?? '', editable: true,
-        field: { id: 'effort', kind: 'number', get: row => row.data.effort, min: 0 },
+        field: { id: 'effort', kind: 'number', get: row => (row.id in externalEffort.value ? externalEffort.value[row.id] : row.data.effort), min: 0 },
       }
+      // With ?builtin, a multiple select whose text shows labels, to commit unedited text and labels back.
+      const stage = {
+        id: 'stage', label: 'Stage', width: 150, value: row => row.data.stage?.join(', ') ?? '', editable: true,
+        field: {
+          id: 'stage', kind: 'select', multiple: true, get: row => row.data.stage ?? null,
+          choices: [{ value: 1, label: 'Machining' }, { value: 2, label: 'Inspection' }, { value: 3, label: 'Cut, weld' }],
+        },
+      }
+      // With ?builtin&plain, a plain text column next to the field columns; the parent applies its cell-edit.
+      const note = { id: 'note', label: 'Note', width: 140, value: row => row.data.note ?? '', editable: true }
+      rows.value[0].data.stage = [1, 2]
+      rows.value[0].data.note = 'Machine 01'
       // Stable props: a new collapsed set or column list would cancel gestures, as new source data does.
       const collapsedIds = new Set(['P'])
-      const columns = [effort]
+      const columns = query.has('builtin') ? [effort, stage, ...(query.has('plain') ? [note] : [])] : [effort]
+      const setRowData = (rowId, patch) => {
+        rows.value = rows.value.map(row => row.id === rowId ? { ...row, data: { ...row.data, ...patch } } : row)
+      }
+      // Changes a prop that re-renders the chart without touching rows or columns.
+      const rowHeight = ref(undefined)
       const dependencies = [{ id: 'ab', from: 'a', to: 'b' }]
       const loadRows = [{ id: 'dev', label: 'Developers' }]
       const loadSegments = [{ resourceId: 'dev', start: 2, end: 6, load: 2, capacity: 1 }, { resourceId: 'dev', start: 6, end: 12, load: 1, capacity: 1 }]
@@ -60,6 +79,9 @@
         replaceBars: () => { bars.value = bars.value.map(bar => ({ ...bar })) },
         replaceRows: () => { rows.value = rows.value.map(row => ({ ...row })) },
         highlight: ids => { highlighted.value = new Set(ids) },
+        setRowData,
+        rerender: () => { rowHeight.value = (rowHeight.value ?? 66) + 2 },
+        setExternalEffort: (rowId, value) => { externalEffort.value = { ...externalEffort.value, [rowId]: value } },
       }
       const editor = props => [
         h('input', {
@@ -72,16 +94,17 @@
       createApp({
         render: () => h('main', [
           ...['Last edit', 'Last delete', 'Last target enter', 'Last target leave', 'Last target activate', 'Last drop', 'Last field edit',
-            'Last cancel', 'Reveal result'].map(name => output(name, outputs.value[name])),
+            'Last cell edit', 'Last cancel', 'Reveal result'].map(name => output(name, outputs.value[name])),
           output('Field edits', counts.value['Last field edit'] ?? 0),
           output('Cancels', counts.value['Last cancel'] ?? 0),
+          output('Cell edits', counts.value['Last cell edit'] ?? 0),
           output('Edits', (counts.value['Last edit'] ?? 0)),
           h('button', { type: 'button', onClick: () => reveal('far', { focus: true }) }, 'Reveal far task'),
           h('button', { type: 'button', onClick: () => reveal('hid') }, 'Reveal hidden task'),
           h('button', { type: 'button', onClick: () => reveal('nope') }, 'Reveal unknown task'),
           h('button', { type: 'button', onClick: () => window.linkedFixture.replaceRows() }, 'Replace rows'),
           h(GanttChart, {
-            ref: chart, rows: rows.value, bars: bars.value, dependencies,
+            ref: chart, rows: rows.value, bars: bars.value, dependencies, rowHeight: rowHeight.value,
             range: { start: 0, end: 200 }, tickSteps: [5], pixelsPerUnit: 20, snap: 1, formatTime: String, height: 300,
             autoScroll: false, collapsedIds, columns,
             selectedIds: selected.value, multiSelect: true, deletable: true, connectable: true,
@@ -98,6 +121,10 @@
             onTargetActivate: event => record('Last target activate', event),
             onBarDrop: event => record('Last drop', { time: event.time, rowId: event.rowId, text: event.dataTransfer?.getData('text/plain') }),
             onFieldEdit: change => record('Last field edit', change),
+            onCellEdit: change => {
+              record('Last cell edit', change)
+              setRowData(change.rowId, { [change.columnId]: change.after })
+            },
             onEditCancel: event => record('Last cancel', event),
           }, query.has('builtin') ? undefined : { 'cell-editor': editor }),
         ]),

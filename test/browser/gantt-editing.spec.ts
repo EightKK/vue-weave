@@ -1298,6 +1298,171 @@ test('gantt built-in field input parses the text and emits field-edit only', asy
   expect(errors).toEqual([])
 })
 
+/**
+ * Dispatch a keydown that an input method composition produces: `isComposing`, or the keyCode 229 that some browsers
+ * send for the key that ends a composition. Returns whether a handler prevented its default action.
+ */
+async function compositionKey(target: ReturnType<Page['getByRole']>, key: 'Enter' | 'Escape', legacy = false) {
+  return target.evaluate((element, { key, legacy }) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, isComposing: !legacy })
+    if (legacy) Object.defineProperty(event, 'keyCode', { value: 229 })
+    element.dispatchEvent(event)
+    return event.defaultPrevented
+  }, { key, legacy })
+}
+
+test('gantt cell inputs leave Enter and Escape of an input method composition to the input method', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin')
+  const input = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await input.fill('12')
+  for (const legacy of [false, true]) {
+    expect(await compositionKey(input, 'Enter', legacy)).toBe(false)
+    expect(await compositionKey(input, 'Escape', legacy)).toBe(false)
+  }
+  await expect(input).toHaveValue('12')
+  await expect(input).toBeFocused()
+  await expect(out('Field edits')).toHaveText('0')
+  // Only a later Enter outside the composition commits.
+  await input.press('Enter')
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r2', columnId: 'effort', fieldId: 'effort', before: null, after: 12, source: 'keyboard' })
+  await expect(out('Field edits')).toHaveText('1')
+
+  // A cell-editor slot stays open on a composition's Escape.
+  const { chart: slotted, out: slottedOut } = await openLinkedGanttFixture(page)
+  await slotted.getByRole('button', { name: 'Row 1 · Effort 3', exact: true }).click()
+  const editor = slotted.getByRole('textbox', { name: 'Effort editor', exact: true })
+  await expect(editor).toBeFocused()
+  await editor.fill('4')
+  expect(await compositionKey(editor, 'Escape')).toBe(false)
+  expect(await compositionKey(editor, 'Escape', true)).toBe(false)
+  await expect(editor).toBeFocused()
+  await expect(editor).toHaveValue('4')
+  await expect(slottedOut('Cancels')).toHaveText('0')
+  await editor.press('Escape')
+  await expect(slottedOut('Cancels')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('gantt plain cell inputs keep composed text on Enter and Escape of an input method', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('/')
+  await page.getByLabel('Planning overlays').check()
+  const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
+  await expect(input).toHaveValue('Machine 01')
+  await input.fill('Machine 01 かこう')
+  expect(await compositionKey(input, 'Enter')).toBe(false)
+  expect(await compositionKey(input, 'Escape', true)).toBe(false)
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('Machine 01 かこう')
+  await input.press('Escape')
+  await expect(input).toHaveValue('Machine 01')
+  expect(errors).toEqual([])
+})
+
+test('a typed cell drops its parse error when its source value changes outside the props', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openLinkedGanttFixture(page, '?builtin')
+  const effort = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await effort.fill('oops')
+  await effort.press('Enter')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.setExternalEffort('r2', 2))
+  await expect(effort).toHaveValue('2')
+  await expect(effort).not.toHaveAttribute('aria-invalid', 'true')
+  // The cell edits normally again.
+  await effort.fill('3')
+  await effort.press('Enter')
+  await expect(effort).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('gantt cell inputs keep typed and composed text through re-renders until commit or cancel', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin&plain')
+  const fixture = (action: 'rerender' | 'note' | 'effort') => page.evaluate(action => {
+    const linked = (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture
+    if (action === 'rerender') linked.rerender()
+    else if (action === 'note') linked.setRowData('r1', { note: 'Changed' })
+    else linked.setRowData('r2', { effort: 7 })
+  }, action)
+
+  // Plain cell: composed text survives the composition's Enter and a re-render; a later Enter commits it.
+  const note = chart.getByRole('textbox', { name: 'Row 1 · Note', exact: true })
+  await expect(note).toHaveValue('Machine 01')
+  await note.fill('Machine 01 かこう')
+  expect(await compositionKey(note, 'Enter')).toBe(false)
+  await fixture('rerender')
+  await expect(note).toHaveValue('Machine 01 かこう')
+  await expect(note).toBeFocused()
+  await expect(out('Cell edits')).toHaveText('0')
+  await note.press('Enter')
+  await expect.poll(() => json('Last cell edit')).toEqual({ rowId: 'r1', columnId: 'note', before: 'Machine 01', after: 'Machine 01 かこう' })
+  await expect(note).toHaveValue('Machine 01 かこう')
+  // Escape after a re-render restores the source text.
+  await note.fill('Draft')
+  await fixture('rerender')
+  await expect(note).toHaveValue('Draft')
+  await note.press('Escape')
+  await expect(note).toHaveValue('Machine 01 かこう')
+  await expect(out('Cell edits')).toHaveText('1')
+  // New source text for the cell discards the draft.
+  await note.fill('Other')
+  await fixture('note')
+  await expect(note).toHaveValue('Changed')
+  await fixture('rerender')
+  await expect(note).toHaveValue('Changed')
+  await note.press('Enter')
+  await expect(out('Cell edits')).toHaveText('1')
+
+  // Typed field input: the same for composed text, and unreadable text stays for correction through re-renders.
+  const effort = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await effort.fill('12')
+  expect(await compositionKey(effort, 'Enter')).toBe(false)
+  await fixture('rerender')
+  await expect(effort).toHaveValue('12')
+  await effort.fill('twelve')
+  await effort.press('Enter')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await fixture('rerender')
+  await expect(effort).toHaveValue('twelve')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await effort.press('Escape')
+  await expect(effort).toHaveValue('')
+  await expect(effort).not.toHaveAttribute('aria-invalid', 'true')
+  await effort.fill('12')
+  await fixture('rerender')
+  await effort.press('Enter')
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r2', columnId: 'effort', fieldId: 'effort', before: null, after: 12, source: 'keyboard' })
+  // New source data for the field discards the draft.
+  await effort.fill('5')
+  await fixture('effort')
+  await expect(effort).toHaveValue('7')
+  await fixture('rerender')
+  await expect(effort).toHaveValue('7')
+  await expect(out('Field edits')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('gantt built-in field input ends an unedited commit without a proposal and reads choice labels back', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin')
+  const stage = chart.getByRole('textbox', { name: 'Row 1 · Stage', exact: true })
+  await expect(stage).toHaveValue('Machining, Inspection')
+  await stage.press('Enter')
+  await expect(stage).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('0')
+  await stage.fill('Inspection, "Cut, weld"')
+  await stage.press('Enter')
+  await expect.poll(() => json('Last field edit')).toEqual({ rowId: 'r1', columnId: 'stage', fieldId: 'stage', before: [1, 2], after: [2, 3], source: 'keyboard' })
+  await stage.fill('Machining, Painting')
+  await stage.press('Enter')
+  await expect(stage).toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
 test('gantt edit-cancel reports gestures and cell editors cancelled by new source data', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, out, json } = await openLinkedGanttFixture(page)

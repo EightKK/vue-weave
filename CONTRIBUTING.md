@@ -64,7 +64,18 @@ npm run test:package
 
 `check` type-checks the library and examples, builds the library, runs core/SSR tests and rebuilds the demo. Run browser tests after changes to components, styles, examples or accessible names. Browser regression fixtures also load the built library from `dist/`; build both the library and demo first, or use `check` as above. The Playwright server needs port 4173 free; the specs share that one static server and run on two workers (`workers: 2` in `playwright.config.ts`), so a test must not depend on another test, on run order or on server state; `CHROMIUM_PATH` can select an existing Chromium installation. Accessible-name changes may require updating the matching spec file in `test/browser/`, whose files are split by area and share their fixtures and helpers through `test/browser/support.ts`.
 
-`test:package` builds and packs the actual release files, rejects unexpected files (including declaration files not reachable from the two public entry declarations: `build` prunes internal ones from `dist/types`), installs the tarball into a temporary consumer, checks core use without Vue, then checks Vue SSR, stylesheet resolution and strict TypeScript consumption with `noUncheckedSideEffectImports`. It uses the project's existing TypeScript compiler and installs the pinned development Vue version into the consumer; registry access or a populated npm cache is required. It removes that temporary consumer and retains the reviewed tarball in `artifacts/`. It never publishes or changes the repository lockfile. CI runs it on the Node/OS package matrix. Run it after package, declaration, build or export changes and before a release.
+`test:package` builds and packs the actual release files, rejects unexpected files (including declaration files not reachable from the two public entry declarations: `build` prunes internal ones from `dist/types`), installs the tarball into a temporary consumer, checks core use without Vue, then checks Vue SSR, stylesheet resolution, strict TypeScript consumption (`noUncheckedSideEffectImports`, library checks on) of the same tarball twice, with the pinned development Vue version and again with the minimum version of the `vue` peer range (`^3.5.0`, so Vue 3.5.0), so the declarations cannot rely on types that only newer Vue releases declare, and finally the [public API baseline](#public-api-baseline). It uses the project's existing TypeScript compiler and installs both Vue versions into the consumer in turn; registry access or a populated npm cache is required. It removes that temporary consumer and retains the reviewed tarball in `artifacts/package-check/`, apart from the verified release sets in `artifacts/release/`, which it never writes. It never publishes or changes the repository lockfile. CI runs it on the Node/OS package matrix. Run it after package, declaration, build or export changes and before a release.
+
+### Public API baseline
+
+[`api/public-api.md`](https://github.com/EightKK/vue-weave/blob/v1.0.0/api/public-api.md) records the public API of the built package: the runtime and type-only export names of `vue-weave` and `vue-weave/core`, the normalized declaration of every export (and of the non-exported types that public signatures refer to), the props, emits, slots and exposed members of both components, and the `--vw-*` custom properties in `dist/style.css`. `test:package` fails with a per-item diff when the installed tarball differs from it. To check or regenerate it locally:
+
+```sh
+npm run build && node scripts/api-baseline.mjs           # check
+npm run build && node scripts/api-baseline.mjs --update  # rewrite from dist/
+```
+
+Regenerate it in the pull request that changes the API, and review its diff like code: from 1.0, removing or changing an export, a declaration, a prop, an event, a slot, an exposed member or a custom property is a breaking change, and only additions fit a minor release. Documentation comments are not part of the baseline.
 
 Include the checks run and any failures or unverified behavior in the pull request. Explain the user-visible result, relevant compatibility constraints and documentation changes.
 
@@ -74,16 +85,32 @@ By submitting a contribution, you agree to provide it under this project's [MIT 
 
 ## Versioning
 
-Versions follow [Semantic Versioning](https://semver.org/). While the version is 0.x, a minor release (0.x.0) can contain breaking changes and a patch release (0.x.y) contains only backward-compatible fixes. Breaking changes are listed under "Breaking changes" in the changelog entry of the release that introduces them.
+Versions follow [Semantic Versioning](https://semver.org/). From 1.0.0, breaking changes are made only in a major release, a minor release adds backward-compatible features, and a patch release contains only backward-compatible fixes. [Compatibility and versioning](docs/api.md#compatibility-and-versioning) defines the public API this applies to. Breaking changes are listed under "Breaking changes" in the changelog entry of the release that introduces them.
 
 ## Prepare a release
 
-Releases are made manually by a maintainer as GitHub Releases. The package is not published to npm, and CI never publishes.
+A maintainer makes each release by hand: a GitHub Release and a manual npm publication of the same verified tarball, from the maintainer's own npm account with two-factor authentication. Agents and CI never publish.
 
-1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. Update the tarball name in the install instructions of `README.md` and `README.ja.md`. Review package metadata and distribution rights for source, examples and assets.
+1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. In `README.md` and `README.ja.md`, update the tarball name in the install instructions and the `v<version>` tag in the absolute image and document URLs (npm shows the README without the repository, so those links point at the release tag). Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
 3. Verify that private vulnerability reporting is enabled under the repository's **Settings > Advanced Security**. GitHub offers it only for public repositories, so enable it as soon as the repository is public. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
-4. Run `npm run prepare:release` (below), then create the `v<version>` tag and a GitHub Release from the checked revision. Attach `artifacts/<name>-<version>.tgz`, `artifacts/<name>-<version>-source-demo.tar.gz` and `artifacts/SHA256SUMS`, and use the changelog entry as the release notes.
+4. Run `npm run prepare:release` (below). Its verified package tarball, `artifacts/release/<version>/vue-weave-<version>.tgz` (`<path-to-verified-tgz>` in the next steps), is the only file that is published; do not run `npm pack` or `npm publish` in the checkout again, because that rebuilds the package.
+5. Create the `v<version>` tag on the checked revision and push it, so the tag-pinned README links resolve.
+6. Publish the verified tarball to npm, entering the one-time password when npm asks for it (or passing `--otp <code>`):
+
+   ```sh
+   npm publish <path-to-verified-tgz> --access public
+   ```
+
+7. Check that the registry holds the same bytes. The integrity npm reports must equal the local SHA-512 of the tarball:
+
+   ```sh
+   npm view vue-weave@<version> dist.integrity
+   node -e "console.log('sha512-' + require('node:crypto').createHash('sha512').update(require('node:fs').readFileSync(process.argv[1])).digest('base64'))" <path-to-verified-tgz>
+   ```
+
+   A published version cannot be replaced. If the values differ, deprecate the version with `npm deprecate` and release a new patch version.
+8. Create the GitHub Release from the `v<version>` tag. Attach the same tarball bytes that were published, `vue-weave-<version>-source-demo.tar.gz` and `SHA256SUMS` from `artifacts/release/<version>/`, and use the changelog entry as the release notes.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 
@@ -91,6 +118,6 @@ To prepare matching local package and offline-demo candidates, install Chromium 
 npm run prepare:release
 ```
 
-This command reruns the full check, browser tests, package-consumer tests and dependency audit. It requires registry access (or a populated npm cache), Chromium and a `tar` executable, which is supplied by current Windows and Linux environments. It uses an explicit source-file allowlist, rejects symlinks, and excludes `.git`, `node_modules`, local settings, credentials and test output. It checks that source files stay unchanged during verification, creates an archive with the generated `preview/`, compares every extracted file against the source inventory, and smoke-tests the extracted demo without installing dependencies. It then replaces the local candidates, `artifacts/SHA256SUMS` and `artifacts/release-verification.json` together. The verification record lists file hashes and outstanding publication checks; it does not certify distribution rights, Git history or hosted settings. No publishing, tags or repository changes are performed. Review the allowlisted source files for confidential content before sharing them. GitHub's generated source ZIP omits ignored `preview/` and requires a demo build.
+This command reruns the full check, browser tests, package-consumer tests (including the public API baseline) and dependency audit. It requires registry access (or a populated npm cache), Chromium and a `tar` executable, which is supplied by current Windows and Linux environments. It uses an explicit source-file allowlist, rejects symlinks, and excludes `.git`, `node_modules`, local settings, credentials and test output. It checks that source files stay unchanged during verification, creates an archive with the generated `preview/`, compares every extracted file against the source inventory, and smoke-tests the extracted demo without installing dependencies. Each run writes all of its files (tarball, source archive, `SHA256SUMS` and `release-verification.json`) into a new candidate directory `artifacts/.candidate-*`, then checks that the checksums and the record match the files. Only then does it move that set into `artifacts/release/<version>/` with two directory renames, replacing the previous set for that version as a whole. If any step fails, the candidate is deleted and the previous verified set stays unchanged; a run that is killed can leave a `.candidate-*` directory, which is safe to delete. `VW_RELEASE_FAIL_AT=after-package`, `before-promote` or `during-promote` simulates a failure at that point, and `test/release-candidate.test.mjs` covers these cases. The verification record lists file hashes and outstanding publication checks; it does not certify distribution rights, Git history or hosted settings. No publishing, tags or repository changes are performed. Review the allowlisted source files for confidential content before sharing them. GitHub's generated source ZIP omits ignored `preview/` and requires a demo build.
 
 To host a public demo, serve the static files from `preview/` with the relevant third-party notices. The local preview server binds to `127.0.0.1`.

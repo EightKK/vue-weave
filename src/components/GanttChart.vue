@@ -529,15 +529,56 @@ function canEditCell(row: R, column: TimelineColumn<R>) {
 function cellValue(row: R, column: TimelineColumn<R>) {
   return column.value(row, summaries.value?.get(row.id))
 }
+/**
+ * Whether a key belongs to an input method composition (for example the Enter that confirms a Japanese conversion).
+ * Such keys are left to the input method: they neither commit nor cancel an edit. keyCode 229 covers browsers that
+ * end the composition before dispatching that key.
+ */
+function composing(event: KeyboardEvent) {
+  return event.isComposing || event.keyCode === 229
+}
+/**
+ * Text being edited in the built-in cell inputs (plain and typed), by cell key, with the source text it edits. The
+ * inputs show the draft instead of the source text, so a re-render during an edit (or an input method composition)
+ * keeps what was typed. A commit or Escape ends the draft; new source text for the cell discards it, which cancels the
+ * edit. Deliberately not reactive: the input already shows the text, and typing must not re-render the chart.
+ */
+const cellDrafts = new Map<string, { text: string; source: string }>()
+/** The text a built-in cell input shows: its draft while one is in progress for this source text, else the source text. */
+function cellInputText(key: string, source: string) {
+  const draft = cellDrafts.get(key)
+  if (draft && draft.source === source) return draft.text
+  cellDrafts.delete(key)
+  return source
+}
+function recordCellDraft(event: Event, key: string, source: string) {
+  cellDrafts.set(key, { text: (event.currentTarget as HTMLInputElement).value, source })
+}
+function plainCellText(row: R, column: TimelineColumn<R>) {
+  return String(cellValue(row, column))
+}
+/** Enter in a plain cell input commits through `change` by leaving the input. */
+function cellEnter(event: KeyboardEvent) {
+  if (composing(event)) return
+  event.preventDefault()
+  ;(event.currentTarget as HTMLInputElement).blur()
+}
 function cancelCell(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
+  // Escape during a composition cancels the composition only; keep the text and focus. Do not let the region's Escape
+  // handler see it either.
+  event.stopPropagation()
+  if (composing(event)) return
+  event.preventDefault()
   const input = event.currentTarget as HTMLInputElement
-  input.value = String(cellValue(row, column))
+  cellDrafts.delete(cellKey(row, column))
+  input.value = plainCellText(row, column)
   input.blur()
 }
 function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   const before = cellValue(row, column)
   const after = input.value
+  cellDrafts.delete(cellKey(row, column))
   input.value = String(before)
   if (!canEditCell(row, column) || String(before) === after) return
   const change: TimelineCellEdit = { rowId: row.id, columnId: column.id, before, after }
@@ -547,8 +588,8 @@ function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
 }
 
 // Typed field editing (`TimelineColumn.field`). Such a column emits `field-edit` only, never `cell-edit`. A `cell` slot
-// owns the cell as before; otherwise the `cell-editor` slot edits it, or the built-in text input parses the text with
-// the field. Columns without `field` render and behave exactly as before.
+// owns the cell; otherwise the `cell-editor` slot edits it, or the built-in text input parses the text with
+// the field. Columns without `field` render and behave as plain columns.
 type CellEditorState = {
   rowId: string; columnId: string; before: FieldValue; draft: FieldValue; validation: FieldCheck; source: ViewTargetSource
 }
@@ -565,7 +606,10 @@ function editingCell(row: TimelineRow, column: TimelineColumn<R>) {
 function fieldText(row: R, column: TimelineColumn<R>) {
   return formatFieldValue(column.field!, column.field!.get(row))
 }
-const dataSelectors = { vwBar: '[data-vw-bar]', vwRowHandle: '[data-vw-row-handle]', vwCell: '[data-vw-cell]', vwCellEditor: '[data-vw-cell-editor]' }
+const dataSelectors = {
+  vwBar: '[data-vw-bar]', vwRowHandle: '[data-vw-row-handle]', vwCell: '[data-vw-cell]', vwCellEditor: '[data-vw-cell-editor]',
+  vwRowHeading: '[data-vw-row-heading]',
+}
 /** The rendered element whose data attribute holds `value`. Values are compared directly, so IDs need no CSS escaping. */
 function dataElement(attribute: keyof typeof dataSelectors, value: string) {
   for (const element of scroller.value?.querySelectorAll<HTMLElement>(dataSelectors[attribute]) ?? []) {
@@ -639,6 +683,11 @@ function commitCellEditor(value: FieldValue, source?: ViewTargetSource): FieldCh
     return { ok: false, code: 'invalid', error: messages.value.rejected }
   }
   const { state, row, column } = target
+  // An unchanged value closes the editor without a proposal, even when the current value would not pass validation.
+  if (fieldValuesEqual(state.before, value)) {
+    closeCellEditor(true)
+    return { ok: true }
+  }
   const result = proposeField(row, column, state.before, value, source ?? state.source)
   if (result.ok) closeCellEditor(true)
   else cellEditor.value = { ...state, draft: value, validation: result }
@@ -647,6 +696,8 @@ function commitCellEditor(value: FieldValue, source?: ViewTargetSource): FieldCh
 function commitCellEditorText(text: string, source?: ViewTargetSource): FieldCheck {
   const target = editorTarget()
   if (!target) return commitCellEditor(null, source)
+  // The formatted current value, committed unedited, keeps the current value as it is.
+  if (text === formatFieldValue(target.field, target.state.before)) return commitCellEditor(target.state.before, source)
   const parsed = parseFieldValue(target.field, text)
   if (parsed.ok) return commitCellEditor(parsed.value, source)
   notice.value = parsed.error
@@ -666,41 +717,93 @@ function cellEditorKeys(event: KeyboardEvent) {
   // action so that the same Enter or Space does not activate the button and open the editor again.
   if (!cellEditor.value) return event.preventDefault()
   if (event.key !== 'Escape' || event.defaultPrevented) return
-  event.preventDefault()
+  // Escape during an input method composition cancels the composition only; the editor stays open.
   event.stopPropagation()
+  if (composing(event)) return
+  event.preventDefault()
   cancelCellEditor('escape')
 }
-/** The built-in field input: Enter or a change parses the text with the field and proposes the value. */
+/**
+ * The built-in field input: Enter or a change parses the text with the field and proposes the value. Text left as the
+ * current value is shown ends the edit without a proposal.
+ */
 function commitFieldInput(event: Event, row: R, column: TimelineColumn<R>) {
   const input = event.currentTarget as HTMLInputElement
   const field = column.field!
   const before = field.get(row)
   const key = cellKey(row, column)
-  if (!canEditCell(row, column)) {
-    input.value = formatFieldValue(field, before)
+  const shown = formatFieldValue(field, before)
+  if (!canEditCell(row, column) || input.value === shown) {
+    if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+    cellDrafts.delete(key)
+    input.value = shown
     return
   }
   const parsed = parseFieldValue(field, input.value)
   if (!parsed.ok) {
-    // Keep the text so it can be corrected; the reason is announced and the input is marked invalid.
+    // Keep the text so it can be corrected; the reason is announced and the input is marked invalid. The error belongs
+    // to this draft and goes with it when the source text changes.
+    cellDrafts.set(key, { text: input.value, source: shown })
     fieldInputError.value = { key, error: parsed.error }
     notice.value = parsed.error
     return
   }
   if (fieldInputError.value?.key === key) fieldInputError.value = undefined
-  input.value = formatFieldValue(field, before)
+  cellDrafts.delete(key)
+  input.value = shown
   proposeField(row, column, before, parsed.value, 'keyboard')
 }
+function fieldInputEnter(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
+  // The Enter that confirms an input method conversion keeps the text and focus; a later Enter commits.
+  if (composing(event)) return
+  event.preventDefault()
+  commitFieldInput(event, row, column)
+}
 function cancelFieldInput(event: KeyboardEvent, row: R, column: TimelineColumn<R>) {
+  event.stopPropagation()
+  if (composing(event)) return
+  event.preventDefault()
   const input = event.currentTarget as HTMLInputElement
+  const key = cellKey(row, column)
+  cellDrafts.delete(key)
   input.value = fieldText(row, column)
-  if (fieldInputError.value?.key === cellKey(row, column)) fieldInputError.value = undefined
+  if (fieldInputError.value?.key === key) fieldInputError.value = undefined
 }
 // New rows or columns, or a row hidden by collapsing, cancel an open cell editor.
 watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed], () => {
   const state = cellEditor.value
   if (!state) return
   cancelCellEditor(rowById.value.has(state.rowId) && !rowOrder.value.has(state.rowId) ? 'hidden' : 'source-changed')
+})
+// New source text for a cell with a draft, or a row that is hidden or gone, discards the draft (and its parse error)
+// before the next render, so the input shows the source text again.
+watch([() => props.rows, () => props.columns, () => props.readonly, () => props.collapsedIds, localCollapsed, summaries], () => {
+  for (const [key, draft] of cellDrafts) {
+    const [rowId, columnId] = JSON.parse(key) as [string, string]
+    const row = rowOrder.value.has(rowId) ? rowById.value.get(rowId) as R | undefined : undefined
+    const column = props.columns?.find(item => item.id === columnId)
+    const current = row && column && canEditCell(row, column)
+      ? (column.field ? fieldText(row, column) : plainCellText(row, column)) : undefined
+    if (current === draft.source) continue
+    cellDrafts.delete(key)
+    if (fieldInputError.value?.key === key) fieldInputError.value = undefined
+  }
+})
+// The cell with a parse error is watched on its own: its source text can change without new props (a `field.get` that
+// reads other reactive state), and the error belongs to the draft of the old text.
+watch(() => {
+  const error = fieldInputError.value
+  if (!error) return true
+  const draft = cellDrafts.get(error.key)
+  const [rowId, columnId] = JSON.parse(error.key) as [string, string]
+  const row = rowOrder.value.has(rowId) ? rowById.value.get(rowId) as R | undefined : undefined
+  const column = props.columns?.find(item => item.id === columnId)
+  return Boolean(draft && row && column?.field && canEditCell(row, column) && fieldText(row, column) === draft.source)
+}, current => {
+  if (current) return
+  const key = fieldInputError.value!.key
+  cellDrafts.delete(key)
+  fieldInputError.value = undefined
 })
 const displayedRows = computed(() => {
   const result: typeof tree.value = []
@@ -1017,7 +1120,7 @@ const shownRows = computed(() => {
   })
 })
 
-// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as before.
+// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as a plain bar.
 type BarOverlay = {
   description?: string
   late: boolean
@@ -1312,7 +1415,7 @@ const baselineText = computed<BaselineTextOptions>(() => ({
 type ShownBaseline = { key: string; className: string; style: Record<string, string>; title: string; set?: string }
 /**
  * The baseline strips of a row inside the visible time window. With only `TimelineBar.baseline` (no named sets and no
- * `baselineIds`) each is drawn exactly as before; otherwise one strip per selected set, with its slot class, set ID and
+ * `baselineIds`) each is drawn as a single baseline strip; otherwise one strip per selected set, with its slot class, set ID and
  * variance title.
  */
 function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
@@ -2884,6 +2987,40 @@ function blurTarget(target: ViewTarget) {
 function clickSource(event: MouseEvent): ViewTargetSource {
   return event.detail === 0 ? 'keyboard' : 'pointer'
 }
+// Row heading text: one Tab stop for the whole heading column (a roving tabindex). Enter or Space activates the row as
+// a click does; the arrow keys, Home and End move between the headings of the displayed rows.
+const headingFocusId = ref<string>()
+/** The heading in the tab order: the one focused last while it is rendered, else the first rendered one. */
+const tabbableHeadingId = computed(() => {
+  const rows = shownRows.value
+  const id = headingFocusId.value
+  return id !== undefined && rows.some(item => item.row.id === id) ? id : rows[0]?.row.id
+})
+async function focusRowHeading(index: number) {
+  const row = displayedRows.value[index]?.row
+  const el = scroller.value
+  if (!row || !el) return
+  headingFocusId.value = row.id
+  scrollRowIntoView(el, index)
+  syncViewport()
+  await nextTick()
+  dataElement('vwRowHeading', row.id)?.focus({ preventScroll: true })
+}
+function rowHeadingKeys(event: KeyboardEvent, row: TimelineRow) {
+  // Keys of controls inside a `row` slot belong to those controls.
+  if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return
+  const index = rowOrder.value.get(row.id)
+  if (index === undefined) return
+  const last = displayedRows.value.length - 1
+  const next = { ArrowUp: index - 1, ArrowDown: index + 1, Home: 0, End: last }[event.key]
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    activateTarget(rowTarget(row.id), 'keyboard')
+  } else if (next !== undefined) {
+    event.preventDefault()
+    if (next >= 0 && next <= last && next !== index) void focusRowHeading(next)
+  }
+}
 function loadSegmentKeys(event: KeyboardEvent, target: ViewTarget) {
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
@@ -2944,7 +3081,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   if (typeof padding !== 'number' || !Number.isFinite(padding) || padding < 0) throw new RangeError('padding must be finite and nonnegative')
   const chosen: TimelineBar[] = []
   if (ids === undefined) {
-    for (const { row } of displayedRows.value) chosen.push(...barsByRow.value.get(row.id) ?? [])
+    for (const { row } of displayedRows.value) for (const bar of barsByRow.value.get(row.id) ?? []) chosen.push(bar)
   } else {
     for (const id of ids) {
       const bar = barById.value.get(id)
@@ -3293,7 +3430,9 @@ onUnmounted(() => {
               <button v-if="row.creatable" type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
                 @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
             </template>
-            <div class="vw-row-content" @click="activateTarget(rowTarget(row.row.id), 'pointer')">
+            <div class="vw-row-content" role="button" :tabindex="row.row.id === tabbableHeadingId ? 0 : -1" :data-vw-row-heading="row.row.id"
+              @click="activateTarget(rowTarget(row.row.id), 'pointer')" @focus="headingFocusId = row.row.id"
+              @keydown="rowHeadingKeys($event, row.row)">
               <slot name="row" :row="row.row" :index="row.index" :depth="row.depth" :expanded="!collapsed.has(row.row.id)">
                 <strong>{{ row.row.label }}</strong>
                 <small v-if="row.row.detail">{{ row.row.detail }}</small>
@@ -3314,14 +3453,18 @@ onUnmounted(() => {
                 </template>
                 <input v-else-if="column.field && canEditCell(row.row, column)" class="vw-cell-input vw-field-input" type="text"
                   :data-vw-cell="cellKey(row.row, column)"
-                  :aria-label="row.row.label + ' · ' + column.label" :value="fieldText(row.row, column)"
+                  :aria-label="row.row.label + ' · ' + column.label"
+                  :value="cellInputText(cellKey(row.row, column), fieldText(row.row, column))"
                   :aria-invalid="fieldInputError?.key === cellKey(row.row, column) ? 'true' : undefined"
-                  @change="commitFieldInput($event, row.row, column)" @keydown.enter.prevent="commitFieldInput($event, row.row, column)"
-                  @keydown.esc.stop.prevent="cancelFieldInput($event, row.row, column)">
+                  @input="recordCellDraft($event, cellKey(row.row, column), fieldText(row.row, column))"
+                  @change="commitFieldInput($event, row.row, column)" @keydown.enter="fieldInputEnter($event, row.row, column)"
+                  @keydown.esc="cancelFieldInput($event, row.row, column)">
                 <input v-else-if="canEditCell(row.row, column)" class="vw-cell-input" type="text"
-                  :aria-label="row.row.label + ' · ' + column.label" :value="cellValue(row.row, column)"
-                  @change="commitCell($event, row.row, column)" @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-                  @keydown.esc.stop.prevent="cancelCell($event, row.row, column)">
+                  :aria-label="row.row.label + ' · ' + column.label"
+                  :value="cellInputText(cellKey(row.row, column), plainCellText(row.row, column))"
+                  @input="recordCellDraft($event, cellKey(row.row, column), plainCellText(row.row, column))"
+                  @change="commitCell($event, row.row, column)" @keydown.enter="cellEnter"
+                  @keydown.esc="cancelCell($event, row.row, column)">
                 <span v-else :title="String(cellValue(row.row, column))">{{ cellValue(row.row, column) }}</span>
               </slot>
             </div>

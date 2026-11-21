@@ -25,7 +25,9 @@ export interface UseWindowedDataOptions<T, L = never> extends WindowedDataOption
   view: MaybeRefOrGetter<WindowedView | undefined>
   /**
    * A token for everything else the data depends on: a filter, a query, a data version. When it changes, every request
-   * is aborted and all loaded data is dropped, so results for another condition are never attached. Default `''`.
+   * is aborted and all loaded data is dropped, so results for another condition are never attached. Default `''`. A value
+   * that is not a string, or a getter that throws, is reported through `error` (never thrown) and drops all data until a
+   * valid condition is read again.
    */
   condition?: MaybeRefOrGetter<string>
   /** Fetches a request. Supplied by the application; may return the items, `{ items, links }` or a promise of either. */
@@ -56,9 +58,12 @@ export interface WindowedData<T, L = never> {
   /**
    * The current failure of the current condition, or undefined. Per-cell failures are in `state`. Precedence, from the
    * first that applies: (1) a failed request (`{ request, error }`), cleared by `retry`, `invalidate` or a new condition;
-   * (2) an invalid view (such as one with more than `maxCells` cells) or condition, reported without `request` and not
-   * thrown: the state then has no view and nothing in flight (`complete` false) and keeps the data of the current
-   * condition (an invalid condition drops all data), cleared when a valid view is set; (3) a `linkEnds` accessor that
+   * (2) an invalid view (such as one with more than `maxCells` cells, or chunk indices beyond the safe integer range) or
+   * condition (not a string), or a `view` or `condition` getter that throws, reported without `request` and never thrown,
+   * not even by the `useWindowedData` call when the first read of `condition` fails: the state then has no view and
+   * nothing in flight (`complete` false) and keeps the data of the current condition (an invalid condition drops all
+   * data). It clears when a valid condition and view are read again (on the next change, or when requests start), and
+   * the view is then requested again; (3) a `linkEnds` accessor that
    * throws, reported as `{ error }` without `request`: `resolvedLinks` and `danglingLinks` are then both empty (never a
    * partial split), while `items`, `links`, `status` and `complete` are unaffected. (3) is derived from the loaded links
    * and clears by itself as soon as the split succeeds again (new links, or whatever the accessor reads changed); while (1)
@@ -90,9 +95,18 @@ export interface WindowedData<T, L = never> {
  */
 export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T, L>): WindowedData<T, L> {
   const { load, linkEnds } = options
-  const state = shallowRef(createWindowedDataState<T, L>(options, toValue(options.condition) ?? ''))
   // The last failure of a request, the view or the condition. `error` (below) derives from it and from the link split.
   const failure = shallowRef<WindowedDataError>()
+  // An initial condition that can not be read is reported, not thrown: the state starts without data under `''`, and the
+  // condition is read again (and the error cleared once it is valid) when requests start and whenever it changes.
+  // Invalid options still throw: they are a programming error, not a value that can recover.
+  let initialCondition = ''
+  try {
+    initialCondition = readCondition()
+  } catch (reason) {
+    failure.value = { error: reason }
+  }
+  const state = shallowRef(createWindowedDataState<T, L>(options, initialCondition))
   const controllers = new Map<string, AbortController>()
   let started = false
   let disposed = false
@@ -167,12 +181,17 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
    * than `maxCells` cells, non-finite, `end < start`) or an invalid condition is reported through `error`, never thrown.
    * Returns false when the view or condition was rejected.
    */
+  function readCondition() {
+    const condition: unknown = toValue(options.condition) ?? ''
+    if (typeof condition !== 'string') throw new TypeError('condition must be a string')
+    return condition
+  }
+
   function update() {
     if (!started || disposed) return true
-    let condition: unknown
+    let condition: string
     try {
-      condition = toValue(options.condition) ?? ''
-      if (typeof condition !== 'string') throw new TypeError('condition must be a string')
+      condition = readCondition()
     } catch (reason) {
       // The condition is unknown, so no data of any condition can be shown.
       const reset = resetWindowedData(state.value)
@@ -195,7 +214,17 @@ export function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T,
   }
 
   const scope = getCurrentScope()
-  const stop = watch(() => [toValue(options.view), toValue(options.condition)] as const, update)
+  // The watch source only tracks the view and the condition; `update` reads and checks them. A getter that throws is
+  // caught here (a fresh token each time, so the watcher still runs) and `update` reads it again and reports it through
+  // `error`, instead of the watcher swallowing it and skipping the update.
+  const track = (source: MaybeRefOrGetter<unknown>) => {
+    try {
+      return toValue(source)
+    } catch {
+      return {}
+    }
+  }
+  const stop = watch(() => [track(options.view), track(options.condition)], update)
 
   function begin() {
     started = true

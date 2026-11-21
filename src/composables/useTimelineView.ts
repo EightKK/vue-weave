@@ -1,5 +1,5 @@
 import { computed, shallowRef, toValue } from 'vue'
-import type { MaybeRefOrGetter } from 'vue'
+import type { MaybeRefOrGetter, ShallowRef } from 'vue'
 import { createTimelineViewState, parseTimelineViewState, projectTimelineView, resolveTimelineColumns } from '../core/timelineView.js'
 import type { TimelineViewInput, TimelineViewSort, TimelineViewState } from '../core/timelineView.js'
 import type { TimeRange } from '../core/timeline.js'
@@ -12,7 +12,8 @@ import type { TimelineBar, TimelineDependency, TimelineRow } from '../core/types
 export function useTimelineView<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar, D extends TimelineDependency = TimelineDependency>(
   source: MaybeRefOrGetter<TimelineViewInput<R, B, D>>, initial?: TimelineViewState,
 ) {
-  const state = shallowRef<TimelineViewState>(initial ?? createTimelineViewState(toValue(source).columns))
+  // Annotated with the one-argument ShallowRef so the declaration also type-checks with Vue 3.5.0.
+  const state: ShallowRef<TimelineViewState> = shallowRef<TimelineViewState>(initial ?? createTimelineViewState(toValue(source).columns))
   const projection = computed(() => projectTimelineView(toValue(source), state.value))
   /** The visible columns in the saved order, with saved widths applied. Pass it to GanttChart's `columns`. */
   const columns = computed(() => resolveTimelineColumns(state.value, toValue(source).columns ?? []).columns)

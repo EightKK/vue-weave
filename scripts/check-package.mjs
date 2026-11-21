@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkApiBaseline } from './api-baseline.mjs'
 import { reachableDeclarations } from './declaration-graph.mjs'
 
 // Run through npm run test:package so the build is fresh and npm's CLI path is available.
@@ -13,7 +14,13 @@ const npmCli = process.env.npm_execpath
 assert.ok(npmCli, 'Run this check with npm run test:package')
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const artifacts = join(root, 'artifacts')
-await mkdir(artifacts, { recursive: true })
+// The reviewed tarball goes to artifacts/package-check/ by default, away from the verified release sets in
+// artifacts/release/. prepare:release sets VW_PACK_DESTINATION to its own candidate directory inside artifacts/.
+const destination = resolve(process.env.VW_PACK_DESTINATION || join(artifacts, 'package-check'))
+const destinationPath = relative(artifacts, destination)
+assert.ok(destinationPath && !destinationPath.startsWith('..') && !isAbsolute(destinationPath), 'VW_PACK_DESTINATION must be inside artifacts/')
+assert.ok(destinationPath.split(sep)[0] !== 'release', 'VW_PACK_DESTINATION must not be a verified release set')
+await mkdir(destination, { recursive: true })
 
 function npm(args, cwd, capture = false) {
   return execFileSync(process.execPath, [npmCli, ...args], {
@@ -26,7 +33,7 @@ function npm(args, cwd, capture = false) {
 
 // Inspect the actual tarball inventory before installing any of its contents.
 const [packed] = JSON.parse(npm([
-  'pack', '--ignore-scripts', '--json', '--pack-destination', artifacts,
+  'pack', '--ignore-scripts', '--json', '--pack-destination', destination,
 ], root, true))
 const files = new Set(packed.files.map(file => file.path))
 for (const path of files) {
@@ -42,8 +49,8 @@ for (const path of [
   'LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'README.ja.md',
 ]) assert.ok(files.has(path), `Missing package file: ${path}`)
 
-const tarball = resolve(artifacts, packed.filename)
-assert.equal(dirname(tarball), resolve(artifacts), 'Tarball must stay in artifacts/')
+const tarball = resolve(destination, packed.filename)
+assert.equal(dirname(tarball), destination, 'Tarball must stay in its destination')
 const temporaryRoot = await realpath(tmpdir())
 const consumer = await mkdtemp(join(temporaryRoot, 'vw-consumer-'))
 const resolvedConsumer = await realpath(consumer)
@@ -84,6 +91,8 @@ try {
   execFileSync(process.execPath, [tsc, '--project', 'tsconfig.core.json'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
 
   npm(['install', ...installOptions, `vue@${manifest.devDependencies.vue}`], consumer)
+  // Export names, declarations, component surfaces and CSS custom properties must match api/public-api.md.
+  await checkApiBaseline(join(consumer, 'node_modules', manifest.name))
   const ssrProbe = `
     import assert from 'node:assert/strict'
     import { readFileSync } from 'node:fs'
@@ -150,17 +159,27 @@ try {
   await writeFile(join(consumer, 'typed-consumer.ts'), typedProbe)
   await writeFile(join(consumer, 'styled-consumer.ts'), `import './consumer.js'\nimport '${manifest.name}/style.css'\n`)
   await writeFile(join(consumer, 'styles.d.ts'), "declare module '*.css' {}\n")
-  for (const [module, moduleResolution] of [
-    ['ESNext', 'Bundler'],
-    ['NodeNext', 'NodeNext'],
-  ]) {
-    const compilerArguments = [
-      tsc, '--noEmit', '--strict', '--noUncheckedSideEffectImports', '--target', 'ES2022', '--lib', 'ES2022,DOM,DOM.Iterable',
-      '--module', module, '--moduleResolution', moduleResolution, '--types', 'vue',
-    ]
-    execFileSync(process.execPath, [...compilerArguments, 'consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
-    execFileSync(process.execPath, [...compilerArguments, 'typed-consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
-    execFileSync(process.execPath, [...compilerArguments, 'styled-consumer.ts', 'styles.d.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+  // The declarations must type-check against the lowest Vue the peer range allows as well as the pinned one:
+  // a type that only newer Vue declares (such as two-argument ShallowRef) would break consumers on older Vue.
+  const minimumVue = manifest.peerDependencies.vue.match(/^\^(\d+\.\d+\.\d+)$/)?.[1]
+  assert.ok(minimumVue, `Unexpected Vue peer range: ${manifest.peerDependencies.vue}`)
+  for (const vueVersion of [manifest.devDependencies.vue, minimumVue]) {
+    if (vueVersion !== manifest.devDependencies.vue) npm(['install', ...installOptions, `vue@${vueVersion}`], consumer)
+    const installedVue = JSON.parse(await readFile(join(consumer, 'node_modules/vue/package.json'), 'utf8')).version
+    assert.equal(installedVue, vueVersion, 'Consumer Vue version')
+    for (const [module, moduleResolution] of [
+      ['ESNext', 'Bundler'],
+      ['NodeNext', 'NodeNext'],
+    ]) {
+      const compilerArguments = [
+        tsc, '--noEmit', '--strict', '--noUncheckedSideEffectImports', '--target', 'ES2022', '--lib', 'ES2022,DOM,DOM.Iterable',
+        '--module', module, '--moduleResolution', moduleResolution, '--types', 'vue',
+      ]
+      execFileSync(process.execPath, [...compilerArguments, 'consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+      execFileSync(process.execPath, [...compilerArguments, 'typed-consumer.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+      execFileSync(process.execPath, [...compilerArguments, 'styled-consumer.ts', 'styles.d.ts'], { cwd: consumer, stdio: 'inherit', windowsHide: true })
+    }
+    console.log(`Consumer types verified with Vue ${vueVersion}`)
   }
   console.log(`Package verified: ${relative(root, tarball)} (${files.size} files)`)
   console.log(`SHA-512 integrity: ${packed.integrity}`)

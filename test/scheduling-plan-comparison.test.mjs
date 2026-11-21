@@ -338,3 +338,53 @@ test('a long chain is compared without recursion', () => {
   const comparison = comparePlans({ input: current }, { input: withTask(current, 't0', { duration: 2 }) })
   assert.equal(comparison.result.consequenceTaskIds.length, 2999)
 })
+
+test('a successful result must cover the task set of its input exactly', () => {
+  const current = { range: { start: 0, end: 30 }, tasks: [{ id: 'a', duration: 2 }] }
+  const candidate = { ...current, tasks: [...current.tasks, { id: 'b', duration: 12 }] }
+  // A result calculated before task b was added is rejected instead of being compared as a complete plan.
+  const stale = scheduleTasks(current)
+  assert.throws(() => comparePlans({ input: current }, { input: candidate, result: stale }), {
+    name: 'Error', message: 'The result has no entry for task b, an active task of its input; recalculate it from this input (candidate plan)',
+  })
+  const fresh = comparePlans({ input: current }, { input: candidate, result: scheduleTasks(candidate) })
+  assert.equal(fresh.complete, true)
+  assert.deepEqual(fresh.result.state.candidate, { status: 'scheduled', finish: 12 })
+  assert.deepEqual(fresh.result.tasks.find(task => task.id === 'b').candidate, { state: 'scheduled', start: 0, end: 12, critical: true })
+
+  // A removed task, a task listed twice and a result that is not a task list.
+  assert.throws(() => comparePlans({ input: candidate }, { input: current, result: scheduleTasks(candidate) }),
+    { name: 'Error', message: 'The result names task b, which is not an active task of its input (candidate plan)' })
+  const twice = scheduleTasks(candidate)
+  assert.throws(() => comparePlans({ input: candidate, result: { ...twice, tasks: [...twice.tasks, twice.tasks[0]] } }, { input: candidate }),
+    { name: 'Error', message: 'The result lists task a more than once (current plan)' })
+  assert.throws(() => comparePlans({ input: current, result: { ...stale, tasks: 'a' } }, { input: current }),
+    { name: 'Error', message: 'Invalid schedule result (current plan)' })
+
+  // Inactive tasks: a result calculated before b was deactivated, or before it was activated again, is rejected.
+  const deactivated = withTask(candidate, 'b', { inactive: true })
+  assert.throws(() => comparePlans({ input: current }, { input: deactivated, result: scheduleTasks(candidate) }),
+    { name: 'Error', message: 'The result names task b, which is not an active task of its input (candidate plan)' })
+  assert.throws(() => comparePlans({ input: current }, { input: deactivated, result: stale }),
+    { name: 'Error', message: 'The result does not list task b as inactive, an inactive task of its input; recalculate it from this input (candidate plan)' })
+  assert.throws(() => comparePlans({ input: current }, { input: candidate, result: scheduleTasks(deactivated) }),
+    { name: 'Error', message: 'The result has no entry for task b, an active task of its input; recalculate it from this input (candidate plan)' })
+  assert.throws(() => comparePlans({ input: current }, { input: candidate, result: { ...scheduleTasks(candidate), inactiveTaskIds: ['x'] } }),
+    { name: 'Error', message: 'The result lists task x as inactive, which is not an inactive task of its input (candidate plan)' })
+  const matching = comparePlans({ input: current }, { input: deactivated, result: scheduleTasks(deactivated) })
+  assert.deepEqual(matching.result.tasks.find(task => task.id === 'b').candidate, { state: 'inactive' })
+
+  // The subtasks of an inactive summary are inactive too.
+  const nested = { range: { start: 0, end: 30 }, tasks: [{ id: 's', duration: 0, inactive: true }, { id: 'c', parentId: 's', duration: 1 }, { id: 'a', duration: 2 }] }
+  assert.deepEqual(scheduleTasks(nested).inactiveTaskIds, ['s', 'c'])
+  assert.equal(comparePlans({ input: nested, result: scheduleTasks(nested) }, { input: nested }).empty, true)
+  assert.throws(() => comparePlans({ input: nested, result: { ...scheduleTasks(nested), inactiveTaskIds: ['s'] } }, { input: nested }),
+    /does not list task c as inactive/)
+
+  // A failed result lists no tasks and is checked for its shape only. A change that keeps the task IDs, such as a
+  // longer duration, cannot be detected: the stale finish of 12 is compared as given.
+  const cycle = { ok: false, code: 'cycle', cycles: [] }
+  assert.equal(comparePlans({ input: current }, { input: candidate, result: cycle }).result.state.candidate.status, 'cycle')
+  const longer = withTask(candidate, 'b', { duration: 20 })
+  assert.equal(comparePlans({ input: current }, { input: longer, result: scheduleTasks(candidate) }).result.finish.candidate, 12)
+})

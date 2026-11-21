@@ -749,7 +749,7 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     }
     for (const bar of own) {
       if (!baselines.described) {
-        // Only `TimelineBar.baseline`: drawn exactly as before named baseline sets existed.
+        // Only `TimelineBar.baseline`: one strip below the bar, without variance in the title.
         if (!baselines.ids.length || !bar.baseline || !intersectsWindow(bar.baseline, window)) continue
         const box = span(bar.baseline.start, bar.baseline.end)
         area.push(tag('rect', {

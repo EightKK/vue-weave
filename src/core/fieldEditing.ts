@@ -25,9 +25,17 @@ export interface TimelineFieldSpec<R extends TimelineRow = TimelineRow> {
   /** Custom formatter. It replaces the built-in formatter for the kind. */
   format?: (value: FieldValue) => string
   required?: boolean
-  /** Allowed options for `select`. */
+  /**
+   * Allowed options for `select`. The built-in formatter shows a choice's `label` (else its value) and the built-in
+   * parser reads a label or a value back; see {@link parseFieldValue} for how duplicate labels are resolved.
+   */
   choices?: readonly FieldChoice[]
-  /** `select` only: accept an array of choices. */
+  /**
+   * `select` only: accept an array of choices. The built-in formatter joins the entries with `, ` and writes an entry
+   * that is empty, contains a comma or a double quote, or starts or ends with whitespace in double quotes, with inner
+   * quotes doubled (as in CSV). The built-in parser splits the text at unquoted commas and reads each entry like a
+   * single selection.
+   */
   multiple?: boolean
   /** Inclusive lower bound for `number`, `time` and `duration`. */
   min?: number
@@ -40,7 +48,8 @@ export interface TimelineFieldSpec<R extends TimelineRow = TimelineRow> {
   /**
    * `time` only: IANA time zone name (for example `Asia/Tokyo`) used for text without an offset. Daylight saving
    * is applied; a skipped wall time resolves to the transition and a repeated one to its earlier occurrence.
-   * Takes precedence over `utcOffsetMinutes`.
+   * The built-in formatter appends the offset (for example `2026-11-01 01:30 -05:00`) to a wall time that occurs
+   * twice, so formatted text parses back to the same instant. Takes precedence over `utcOffsetMinutes`.
    */
   timeZone?: string
   /**
@@ -140,9 +149,29 @@ function parseTimeText(text: string, defaultOffset: number | undefined, format?:
   return Number.isFinite(time) ? time : undefined
 }
 
+const dayMs = 86_400_000
+
+/**
+ * Whether a local wall time (expressed as if it were UTC) occurs twice in a zone, as it does when clocks go back.
+ * Zone rules change at most once within two days, so there are at most two candidate offsets.
+ */
+function repeatedWallTime(format: Intl.DateTimeFormat, wall: number) {
+  const before = zoneOffset(format, wall - dayMs), after = zoneOffset(format, wall + dayMs)
+  if (before === after) return false
+  return [before, after].every(offset => zoneOffset(format, wall - offset) === offset)
+}
+
+/** `±HH:MM` for an offset in milliseconds, or undefined when it is not a whole number of minutes. */
+function offsetText(offset: number) {
+  if (offset % 60000 !== 0) return undefined
+  const minutes = Math.abs(offset / 60000)
+  return (offset < 0 ? '-' : '+') + String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0')
+}
+
 function formatTimeText(time: number, offset: number | Intl.DateTimeFormat): string | undefined {
   if (typeof offset !== 'number' && !Number.isFinite(time)) return undefined
-  const date = new Date(time + (typeof offset === 'number' ? offset * 60000 : zoneOffset(offset, time)))
+  const zoned = typeof offset === 'number' ? undefined : zoneOffset(offset, time)
+  const date = new Date(time + (zoned ?? (offset as number) * 60000))
   if (Number.isNaN(date.getTime())) return undefined
   const year = date.getUTCFullYear()
   if (year < 0 || year > 9999) return undefined
@@ -153,7 +182,177 @@ function formatTimeText(time: number, offset: number | Intl.DateTimeFormat): str
   const millis = date.getUTCMilliseconds()
   if (seconds || millis) text += ':' + pad(seconds)
   if (millis) text += '.' + pad(millis, 3)
+  // A repeated wall time (clocks going back) names its offset, so that the text identifies one instant.
+  if (zoned !== undefined && repeatedWallTime(offset as Intl.DateTimeFormat, time + zoned)) {
+    const suffix = offsetText(zoned)
+    if (suffix) text += ' ' + suffix
+  }
   return text
+}
+
+/** Text of one choice as the built-in formatter shows it: its label, else its value. */
+function choiceText(choice: FieldChoice) {
+  return choice.label ?? String(choice.value)
+}
+
+type FieldFailure = { ok: false; code: FieldErrorCode; error: string }
+
+/** Choices grouped by the text that names them, so that each lookup takes constant time. */
+interface ChoiceIndex {
+  byLabel: Map<string, FieldChoice[]>
+  byValue: Map<string, FieldChoice[]>
+  /** The first choice with each value, as `Array.prototype.find` would return it. */
+  byIdentity: Map<FieldPrimitive, FieldChoice>
+}
+
+function indexChoices(choices: readonly FieldChoice[]): ChoiceIndex {
+  const byLabel = new Map<string, FieldChoice[]>()
+  const byValue = new Map<string, FieldChoice[]>()
+  const byIdentity = new Map<FieldPrimitive, FieldChoice>()
+  const add = (map: Map<string, FieldChoice[]>, key: string, choice: FieldChoice) => {
+    const list = map.get(key)
+    if (list) list.push(choice)
+    else map.set(key, [choice])
+  }
+  for (const choice of choices) {
+    add(byLabel, choiceText(choice), choice)
+    add(byValue, String(choice.value), choice)
+    if (!byIdentity.has(choice.value)) byIdentity.set(choice.value, choice)
+  }
+  return { byLabel, byValue, byIdentity }
+}
+
+/**
+ * The choice that `text` names. A label (or, for a choice without one, its value) shown by exactly one choice wins;
+ * otherwise the text is compared with the values. Text that still matches several choices is rejected as ambiguous
+ * rather than resolved to one of them.
+ */
+function matchChoice(index: ChoiceIndex, text: string): { ok: true; choice: FieldChoice } | FieldFailure {
+  const byLabel = index.byLabel.get(text)
+  if (byLabel?.length === 1) return { ok: true, choice: byLabel[0]! }
+  const byValue = index.byValue.get(text)
+  if (byValue?.length === 1) return { ok: true, choice: byValue[0]! }
+  if ((byLabel?.length ?? 0) > 1 || (byValue?.length ?? 0) > 1) {
+    return fail('choice', 'Several choices match ' + JSON.stringify(text) + '; enter the value of one of them')
+  }
+  return fail('choice', 'Not one of the choices: ' + text)
+}
+
+const isSpace = (char: string | undefined) => char !== undefined && char.trim() === ''
+
+/**
+ * Split multiple-choice text into entries. Entries are separated by commas; whitespace around an entry is ignored.
+ * An entry that starts with a double quote runs to the closing quote, with `""` standing for one quote, so it can
+ * contain commas, quotes and leading or trailing whitespace. A quote inside an unquoted entry is an ordinary
+ * character. The scan is linear in the length of the text.
+ */
+function splitChoiceEntries(text: string): { ok: true; entries: string[] } | FieldFailure {
+  const entries: string[] = []
+  let at = 0
+  for (;;) {
+    while (isSpace(text[at])) at++
+    let entry = ''
+    if (text[at] === '"') {
+      let from = ++at
+      for (;;) {
+        const quote = text.indexOf('"', at)
+        if (quote < 0) return fail('invalid', 'A quoted entry has no closing quote: ' + text.trim())
+        entry += text.slice(from, quote)
+        if (text[quote + 1] !== '"') {
+          at = quote + 1
+          break
+        }
+        entry += '"'
+        at = from = quote + 2
+      }
+      while (isSpace(text[at])) at++
+      if (at < text.length && text[at] !== ',') return fail('invalid', 'Text follows a closing quote: ' + text.trim())
+    } else {
+      const comma = text.indexOf(',', at)
+      const end = comma < 0 ? text.length : comma
+      entry = text.slice(at, end).trim()
+      at = end
+      if (entry === '') return fail('invalid', 'An entry between commas is empty: ' + text.trim())
+    }
+    entries.push(entry)
+    if (at >= text.length) return { ok: true, entries }
+    at++ // past the comma
+  }
+}
+
+/** A multiple-choice entry, quoted when it is empty, contains a comma or a quote, or starts or ends with whitespace. */
+function quoteEntry(text: string) {
+  const plain = text !== '' && !text.includes(',') && !text.includes('"') && text.trim() === text
+  return plain ? text : '"' + text.replaceAll('"', '""') + '"'
+}
+
+function parseSelect(spec: TimelineFieldSpec<any>, text: string): FieldParseResult {
+  const index = selectIndex(spec)
+  if (!spec.multiple) {
+    const match = matchChoice(index, text)
+    return match.ok ? { ok: true, value: match.choice.value } : match
+  }
+  const split = splitChoiceEntries(text)
+  if (!split.ok) return split
+  const values: FieldPrimitive[] = []
+  for (const entry of split.entries) {
+    const match = matchChoice(index, entry)
+    if (!match.ok) return match
+    values.push(match.choice.value)
+  }
+  return { ok: true, value: values }
+}
+
+/**
+ * Text for one selected value that {@link matchChoice} resolves back to a choice with that value: the label where it
+ * names the choice, else the value. Unquoted text (a single select) is trimmed when it is read, and empty text reads
+ * as no value, so it names no choice there. `undefined` when neither text names the choice.
+ */
+function namingText(index: ChoiceIndex, choice: FieldChoice, quoted: boolean): string | undefined {
+  for (const text of [choiceText(choice), String(choice.value)]) {
+    const read = quoted ? text : text.trim()
+    if (!quoted && read === '') continue
+    const match = matchChoice(index, read)
+    if (match.ok && Object.is(match.choice.value, choice.value)) return text
+  }
+  return undefined
+}
+
+/**
+ * Throw when a choice has no text that names it: its label and its value text both read as other choices (or as no
+ * value). Such a choice could be shown but never read back, so the built-in parser and formatter refuse the spec
+ * instead of turning the value into another one.
+ */
+function checkNameableChoices(spec: TimelineFieldSpec<any>, index: ChoiceIndex, quoted: boolean) {
+  for (const choice of index.byIdentity.values()) {
+    if (namingText(index, choice, quoted) === undefined) {
+      throw new Error('Choice ' + JSON.stringify(choice.value) + ' of select field ' + spec.id + ' has no text that names it: '
+        + 'its label and its value read as other choices; give it a label that no other choice shows or has as its value')
+    }
+  }
+}
+
+function selectIndex(spec: TimelineFieldSpec<any>) {
+  const index = indexChoices(spec.choices!)
+  checkNameableChoices(spec, index, !!spec.multiple)
+  return index
+}
+
+/**
+ * Text for a select value that the built-in parser reads back. Each value is shown by its label where the label names
+ * it, else by its value. In a multiple select the entries are joined with `, ` and quoted where needed (see
+ * {@link quoteEntry}), so that every entry reads back by itself. A value that is not among the choices is shown as is
+ * (it fails `validateFieldValue`). The work is linear in the number of choices and values.
+ */
+function formatSelect(spec: TimelineFieldSpec<any>, value: FieldValue): string {
+  const index = selectIndex(spec)
+  const text = (item: FieldPrimitive, quoted: boolean) => {
+    const choice = index.byIdentity.get(item)
+    return choice ? namingText(index, choice, quoted)! : String(item)
+  }
+  if (!spec.multiple && !Array.isArray(value)) return text(value as FieldPrimitive, false)
+  const items: readonly FieldPrimitive[] = Array.isArray(value) ? value : [value as FieldPrimitive]
+  return items.map(item => quoteEntry(text(item, true))).join(', ')
 }
 
 function isCustomError(value: unknown): value is { error: string } {
@@ -163,6 +362,17 @@ function isCustomError(value: unknown): value is { error: string } {
 /**
  * Read editor text into a field value. Empty text (after trimming) is `null`, or a `required` error;
  * `0` and negative numbers are values, not empty. The result is also checked with {@link validateFieldValue}.
+ *
+ * The built-in parsers read what {@link formatFieldValue} writes, so formatting a valid value and parsing the text
+ * gives the same value back:
+ * - `select`: a choice's label, or its value. A label that exactly one choice shows wins over a value. Text that
+ *   matches several choices (a shared label with no single matching value) is a `choice` error; the formatter then
+ *   shows values instead. With `multiple`, the text is split at unquoted commas into an array, in order. An entry in
+ *   double quotes (`"Cut, weld"`, with `""` for a quote inside) is read exactly, commas and surrounding whitespace
+ *   included; unquoted entries are trimmed. An empty unquoted entry (`a,,b`) or an unclosed quote is `invalid`.
+ *   Throws an Error when some choice has no text that names it (its label and value both read as other choices).
+ * - `time` with `timeZone`: a trailing offset (`-05:00`, `Z`) picks one occurrence of a repeated wall time; without
+ *   one, the earlier occurrence is used.
  */
 export function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): FieldParseResult {
   checkSpec(spec)
@@ -206,9 +416,9 @@ export function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): Fie
         break
       }
       case 'select': {
-        const choice = spec.choices!.find(item => String(item.value) === trimmed)
-        if (!choice) return fail('choice', 'Not one of the choices: ' + trimmed)
-        value = choice.value
+        const parsed = parseSelect(spec, trimmed)
+        if (!parsed.ok) return parsed
+        value = parsed.value
         break
       }
       default:
@@ -255,11 +465,17 @@ export function validateFieldValue(spec: TimelineFieldSpec<any>, value: FieldVal
   }
 }
 
-/** Turn a field value into editor text. `null` becomes an empty string; `0` stays `0`. */
+/**
+ * Turn a field value into editor text. `null` becomes an empty string; `0` stays `0`. The built-in formats read back
+ * with {@link parseFieldValue}: a `select` shows each choice by its label unless the label does not name it (then by
+ * its value), a multiple `select` quotes entries that contain a comma, a quote or surrounding whitespace, and a `time`
+ * with `timeZone` appends the offset to a wall time that occurs twice.
+ */
 export function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): string {
   checkSpec(spec)
   if (spec.format) return spec.format(value)
   if (value === null) return ''
+  if (spec.kind === 'select') return formatSelect(spec, value)
   if (Array.isArray(value)) return value.map(item => formatFieldValue(spec, item)).join(', ')
   switch (spec.kind) {
     case 'time':
@@ -269,10 +485,6 @@ export function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue
       return String(value)
     case 'duration':
       return typeof value === 'number' ? String(value / (spec.unitSize ?? 1)) + (spec.unitLabel ?? '') : String(value)
-    case 'select': {
-      const choice = spec.choices!.find(item => item.value === value)
-      return choice ? choice.label ?? String(choice.value) : String(value)
-    }
     default:
       return String(value)
   }

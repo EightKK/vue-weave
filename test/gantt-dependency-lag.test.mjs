@@ -79,7 +79,7 @@ test('GanttChart labels a non-zero lag on the connector and describes the depend
   })
   assert.match(lead, /<text id="[^"]+" class="vw-gantt-lag vw-is-highlighted" x="44" y="132" text-anchor="start" aria-label="Verzug −1\.5 h">−1\.5 h<\/text>/)
   // Without connectable or reconnectable the dependency layer is decorative, as before.
-  assert.doesNotMatch(lead, /role="button" tabindex="0"|aria-describedby="[^"]*lag/)
+  assert.doesNotMatch(lead, /class="vw-dependency-hit[^>]*role="button"|aria-describedby="[^"]*lag/)
 
   const custom = await render({ dependencies: link({ lag: 3 }), formatLag: lag => `${lag} units` })
   assert.match(custom, />3 units<\/text>/)

@@ -208,14 +208,38 @@ export function createWindowedDataState<T, L = never>(options: WindowedDataOptio
 
 const cellKey = (chunk: number, row: string | undefined) => row === undefined ? String(chunk) : chunk + '\u0000' + row
 
-/** Chunk indices `[first, last]` covering the half-open window, extended by `padding`. A zero-width window covers its chunk. */
+/**
+ * Chunk indices `[first, last]` covering the half-open window, extended by `padding`. A zero-width window covers its
+ * chunk. Throws RangeError when an index is not a safe integer (a window too far from `origin` for `chunkSize`): beyond
+ * `Number.MAX_SAFE_INTEGER` neighbouring indices are no longer distinct numbers, so they can be neither keyed nor walked.
+ */
 function chunkSpan(options: Grid, start: number, end: number, padding: number) {
   const { chunkSize, origin } = options
   const from = start - padding
   const to = end + padding
   const first = Math.floor((from - origin) / chunkSize)
-  const last = to > from ? Math.ceil((to - origin) / chunkSize) - 1 : first
-  return { first, last: Math.max(first, last) }
+  const last = Math.max(first, to > from ? Math.ceil((to - origin) / chunkSize) - 1 : first)
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) {
+    throw new RangeError(`The window [${start}, ${end}) needs chunk indices outside the safe integer range: use a larger chunkSize or an origin closer to the window`)
+  }
+  return { first, last }
+}
+
+/**
+ * Checks that the chunk boundaries `origin + k * chunkSize` of the chunks `[first, last]` are finite and strictly
+ * increasing, so every request spans a non-empty interval and no two chunks share a boundary. Walks the chunks once; the
+ * caller bounds their number (`maxCells`) first.
+ */
+function checkChunkBoundaries(options: Grid, first: number, last: number) {
+  const { chunkSize, origin } = options
+  let previous = origin + first * chunkSize
+  for (let chunk = first; chunk <= last; chunk++) {
+    const next = origin + (chunk + 1) * chunkSize
+    if (!Number.isFinite(previous) || !Number.isFinite(next) || !(next > previous)) {
+      throw new RangeError(`The boundaries of chunk ${chunk} are not distinct finite numbers: use a larger chunkSize or an origin closer to the view`)
+    }
+    previous = next
+  }
 }
 
 function normalizeView(view: WindowedView) {
@@ -238,7 +262,10 @@ function normalizeView(view: WindowedView) {
   return { start, end, rowIds }
 }
 
-/** The cell keys a window covers, in chunk then row order. */
+/**
+ * The chunks and rows a window covers and its cell count, computed without walking the chunks. `count` is 0 for an empty
+ * `rowIds` and may exceed `Number.MAX_SAFE_INTEGER`; callers that walk or report the cells check it first.
+ */
 function windowCells(options: Grid, view: { start: number; end: number; rowIds?: readonly string[] }, padding: number) {
   const { first, last } = chunkSpan(options, view.start, view.end, padding)
   const rows = view.rowIds
@@ -251,7 +278,10 @@ function windowCells(options: Grid, view: { start: number; end: number; rowIds?:
  * are all outside the new view are aborted, and their cells become `unloaded` again; a request that still covers some
  * needed cell keeps running. A different `condition` (a filter, a query, a data version) aborts everything and drops all
  * cells, items and links, so results for another condition are never attached. `view` undefined keeps the cells and data
- * but aborts every request. Throws RangeError for a non-finite view, `end < start` or more than `maxCells` cells, Error
+ * but aborts every request. A view with an empty `rowIds` needs no cell: it requests nothing and aborts every request.
+ * The work is bounded by `maxCells`. Throws RangeError for a non-finite view, `end < start`, more than `maxCells` cells,
+ * or a view so far from `origin` for `chunkSize` that its chunk indices are not safe integers or its chunk boundaries
+ * (`origin + k * chunkSize`) are not distinct finite numbers, Error
  * (`Invalid view row ID: <value>`) for a row ID that is not a non-empty string (a repeated row ID is dropped, not an
  * error), and TypeError for a view that is not an object, `rowIds` that is not an array or a condition that is not a
  * string. A throw changes nothing: the given state
@@ -270,8 +300,10 @@ export function setWindowedView<T, L = never>(
   if (normalized) {
     span = windowCells(options, normalized, options.padding)
     if (span.count > options.maxCells) throw new RangeError(`The view needs ${span.count} cells, more than maxCells (${options.maxCells})`)
+    // A view without rows (`rowIds: []`, such as a filter that matches nothing) needs no cell, so no chunk is walked.
+    if (span.count > 0) checkChunkBoundaries(options, span.first, span.last)
     needed = new Set()
-    for (let chunk = span.first; chunk <= span.last; chunk++) {
+    if (span.count > 0) for (let chunk = span.first; chunk <= span.last; chunk++) {
       if (!span.rows) needed.add(cellKey(chunk, undefined))
       else for (const row of span.rows) needed.add(cellKey(chunk, row))
     }
@@ -300,7 +332,7 @@ export function setWindowedView<T, L = never>(
   }
   let sequence = state.sequence
   const start: WindowedDataRequest[] = []
-  if (normalized && span) {
+  if (normalized && span && span.count > 0) {
     // Missing rows per chunk; adjacent chunks with the same missing rows share one request.
     let group: { first: number; last: number; rows: string[] | undefined; signature: string } | undefined
     const flush = () => {
@@ -529,24 +561,47 @@ export function windowedCellStatus<T, L>(state: WindowedDataState<T, L>, time: n
 /**
  * Status counts of the cells that a window covers, without padding: by default the current view. `complete` is true
  * only when every one of them has loaded. To know whether data is complete for the whole plan, pass its whole extent
- * (its range and every row ID).
+ * (its range and every row ID). The window is not limited by `maxCells`: `total` is computed from the chunk and row
+ * counts and `unloaded` is what the recorded cells leave, so the work is bounded by the smaller of the window's cell
+ * count and the number of recorded cells, never by the width of the window alone. Throws like `setWindowedView` for an
+ * invalid window, and RangeError when its chunk indices are not safe integers or its cell count exceeds
+ * `Number.MAX_SAFE_INTEGER`.
  */
 export function windowedCoverage<T, L>(state: WindowedDataState<T, L>, window: WindowedView | undefined = state.view): WindowedCoverage {
   const coverage: WindowedCoverage = { status: 'unloaded', complete: false, total: 0, unloaded: 0, loading: 0, empty: 0, loaded: 0, failed: 0 }
   if (!window) return coverage
   const view = normalizeView(window)
-  const { first, last, rows } = windowCells(state.options, view, 0)
-  for (let chunk = first; chunk <= last; chunk++) {
-    for (const row of rows ?? [undefined]) {
-      const status = state.cells.get(cellKey(chunk, row))?.status ?? 'unloaded'
-      coverage.total++
-      if (status === 'unloaded') coverage.unloaded++
-      else if (status === 'loading') coverage.loading++
-      else if (status === 'loaded-empty') coverage.empty++
-      else if (status === 'loaded') coverage.loaded++
-      else coverage.failed++
+  const { first, last, rows, count } = windowCells(state.options, view, 0)
+  if (!Number.isSafeInteger(count)) throw new RangeError(`The window [${view.start}, ${view.end}) has more cells than can be counted exactly`)
+  const tally = (status: WindowedCellStatus) => {
+    if (status === 'loading') coverage.loading++
+    else if (status === 'loaded-empty') coverage.empty++
+    else if (status === 'loaded') coverage.loaded++
+    else if (status === 'failed') coverage.failed++
+  }
+  if (count <= state.cells.size) {
+    // A window no larger than what is recorded: look its cells up.
+    if (count > 0) for (let chunk = first; chunk <= last; chunk++) {
+      for (const row of rows ?? [undefined]) {
+        const cell = state.cells.get(cellKey(chunk, row))
+        if (cell) tally(cell.status)
+      }
+    }
+  } else {
+    // A wider window: only the recorded cells inside it can be anything but unloaded. Cells with and without rows are
+    // kept apart, as in `setWindowedView`.
+    const rowSet = rows ? new Set(rows) : undefined
+    for (const [key, cell] of state.cells) {
+      const separator = key.indexOf('\u0000')
+      if ((separator >= 0) !== (rowSet !== undefined)) continue
+      const chunk = Number(separator < 0 ? key : key.slice(0, separator))
+      if (chunk < first || chunk > last) continue
+      if (rowSet && !rowSet.has(key.slice(separator + 1))) continue
+      tally(cell.status)
     }
   }
+  coverage.total = count
+  coverage.unloaded = count - coverage.loading - coverage.empty - coverage.loaded - coverage.failed
   coverage.status = coverage.failed ? 'failed' : coverage.loading ? 'loading' : coverage.unloaded ? 'unloaded'
     : coverage.loaded ? 'loaded' : 'loaded-empty'
   coverage.complete = coverage.total > 0 && coverage.empty + coverage.loaded === coverage.total

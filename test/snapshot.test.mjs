@@ -387,3 +387,17 @@ test('a planning snapshot keeps business task IDs, never the bar IDs of a resour
   assert.equal(rejected.ok, false)
   assert.deepEqual(codes(rejected), ['reference'])
 })
+
+test('a timeline with 200,000 bars saves, parses and restores', () => {
+  // More bars than a function call takes as arguments: the lane count must not be computed by spreading them.
+  const rows = Array.from({ length: 1000 }, (_, i) => ({ id: 'r' + i, label: 'Row ' + i }))
+  const bars = Array.from({ length: 200_000 }, (_, i) => ({
+    id: 'b' + i, rowId: 'r' + (i % 1000), label: 'Bar ' + i, start: i, end: i + 2, ...(i % 3 ? { lane: i % 3 } : {}),
+  }))
+  const text = serializeWeaveSnapshot({ kind: 'timeline', data: { rows, bars, range: { start: 0, end: 200_002 } } })
+  const restored = restore(parse(text))
+  assert.equal(restored.bars.length, 200_000)
+  assert.deepEqual(restored.bars[199_999], bars[199_999])
+  assert.equal(restored.bars[3].lane, undefined)
+  assert.equal(restored.rows.length, 1000)
+})
