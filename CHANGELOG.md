@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+- Added opt-in spreadsheet editing on GanttChart (`spreadsheet`): rectangular selection, copy, cut and paste as tab-separated text, Delete to clear, fill down with Ctrl/Cmd+D or a pointer and touch fill handle, typing to edit and spreadsheet navigation keys. Each operation is one `sheet-edit` proposal (`TimelineSheetEdit`, actions `paste`, `fill` and `clear`), checked as a whole by the new `validateSheetEdit` prop and reported by `sheet-edit-rejected(reason, change?)`. New optional `GanttLabels` fields `sheetHint`, `sheetReadOnly`, `sheetRagged`, `sheetOutside` and `sheetRejected` localize the texts.
+- Added core helpers `parseSheetText`, `formatSheetText` and `applyTimelineSheetEdit` (with the types `TimelineSheetChanges` and `TimelineSheetAppliers`).
+- Added an auto-scheduled project plan sheet and an approval workflow editor to the bilingual demo homepage.
 
 ## 1.0.0 - 2026-11-21
 

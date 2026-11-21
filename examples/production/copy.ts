@@ -3,7 +3,7 @@ export type Language = 'ja' | 'en'
 export const copy = {
   ja: {
     language: '表示言語', themeLight: 'ライト', themeDark: 'ダーク', gallery: 'サンプル集',
-    planning: '製造計画', lot: 'ロットの流れ', code: '実装例', source: 'GitHub でコードを見る', close: '閉じる',
+    approval: '承認フロー', sheet: '工程表', planning: '製造計画', lot: 'ロットの流れ', code: '実装例', source: 'GitHub でコードを見る', close: '閉じる',
     introPlan: 'ガントチャートのバーを動かすと、後工程と出荷時刻への影響を確認できます。',
     introLot: 'ロット L-100 の各工程で、個数と原価を切り替えて表示できます。',
     maintenance: 'CNC設備の保守', outage: '10:00〜13:00は稼働停止', graph: '工程図', gantt: 'ガントチャート',
@@ -29,7 +29,7 @@ export const copy = {
   },
   en: {
     language: 'Language', themeLight: 'Light', themeDark: 'Dark', gallery: 'Examples',
-    planning: 'Production planning', lot: 'Lot flow', code: 'View code', source: 'View source on GitHub', close: 'Close',
+    approval: 'Approval workflow', sheet: 'Schedule sheet', planning: 'Production planning', lot: 'Lot flow', code: 'View code', source: 'View source on GitHub', close: 'Close',
     introPlan: 'Move a bar to see how the change affects later operations and the shipping time.',
     introLot: 'Follow lot L-100 through production. Switch between units and cost at each step.',
     maintenance: 'CNC maintenance', outage: 'Unavailable from 10:00 to 13:00', graph: 'Process graph', gantt: 'Gantt chart',

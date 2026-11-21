@@ -8,6 +8,7 @@ export type { WorkCalendar, WorkShift, WeeklyShift, WorkWeek } from './workCalen
 export * from './scheduling.js'
 export * from './resourceLoad.js'
 export * from './fieldEditing.js'
+export * from './sheetEditing.js'
 export * from './timelineView.js'
 export { intlTimeFormatter, calendarZoomPresets } from './calendarFormat.js'
 export type { IntlTimeFormatterOptions, CalendarZoomLevel, CalendarZoomPresetOptions, CalendarZoomPreset } from './calendarFormat.js'

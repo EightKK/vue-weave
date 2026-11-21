@@ -102,6 +102,21 @@ export async function openTimelineEditing(page: Page) {
   return { errors, chart, status }
 }
 
+/** Opens the spreadsheet fixture (fixtures/gantt-sheet.html) and returns the chart, a cell by name and the logged events. */
+export async function openGanttSheetFixture(page: Page, search = '') {
+  await serveFixture(page, 'gantt-sheet-test', 'gantt-sheet.html')
+  await page.goto('/gantt-sheet-test/' + search)
+  const chart = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect(chart).toBeVisible()
+  const cell = (name: string) => chart.getByRole('button', { name, exact: true })
+  const events = async () => {
+    const text = await page.getByRole('status', { name: 'Events', exact: true }).textContent()
+    return (text ?? '').split('\n').filter(Boolean).map(line => JSON.parse(line) as unknown[])
+  }
+  const clearEvents = () => page.getByRole('button', { name: 'Clear log', exact: true }).click()
+  return { chart, cell, events, clearEvents }
+}
+
 export async function openGanttFixture(page: Page, search: string) {
   await serveFixture(page, 'gantt-test', 'gantt.html')
   await page.goto('/gantt-test/' + search)

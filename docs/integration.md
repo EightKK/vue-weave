@@ -929,3 +929,36 @@ watch(shown, ({ nodes, edges }) => {
 ```
 
 Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).
+
+## Spreadsheet editing in a schedule
+
+Turn on `spreadsheet` on a Gantt chart with editable `columns`, and the cells work like a spreadsheet: select a rectangle with Shift+click, a mouse drag or Shift+arrows, copy, cut and paste tab-separated text with other spreadsheet applications, clear with Delete, fill down with Ctrl/Cmd+D or the corner handle, and type to edit a cell. Each operation arrives as one `sheet-edit` proposal (see [Spreadsheet editing](api.md#spreadsheet-editing) for every key and rule).
+
+```vue
+<script setup lang="ts">
+import { GanttChart, applyTimelineSheetEdit, useEditHistory, type TimelineFieldEdit, type TimelineSheetChanges } from '@eightkk/vue-weave'
+
+const history = useEditHistory(initialRows)
+// One helper applies a single field edit and a whole paste, fill or clear, so each is one undo step.
+function apply(change: TimelineSheetChanges<Row>) {
+  history.commit(applyTimelineSheetEdit(history.state.value, change, {
+    field: (row, edit) => ({ ...row, [edit.fieldId]: edit.after }),
+    cell: (row, edit) => ({ ...row, [edit.columnId]: edit.after }),
+  }))
+}
+// Checks the batch as a whole, for example a total or a dependency cycle across several cells.
+const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 40 || 'More than 40 hours in total'
+</script>
+
+<template>
+  <GanttChart spreadsheet :rows="history.state.value" :columns="columns" :bars="bars" :range="range"
+    :validate-sheet-edit="checkSheet"
+    @field-edit="(edit: TimelineFieldEdit<Row>) => apply({ fieldEdits: [edit] })"
+    @cell-edit="edit => apply({ cellEdits: [edit] })"
+    @sheet-edit="apply"
+    @sheet-edit-rejected="reason => message = reason" />
+  <p role="status">{{ message }}</p>
+</template>
+```
+
+The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.

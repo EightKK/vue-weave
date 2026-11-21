@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gantt spreadsheet fixture</title>
+    <link rel="stylesheet" href="/gantt-sheet-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/gantt-sheet-test/vue.js", "@eightkk/vue-weave": "/gantt-sheet-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { GanttChart, applyTimelineSheetEdit } from '@eightkk/vue-weave'
+
+      // Spreadsheet mode over three columns: Owner (plain, editable), Hours (typed number 0–24, optional) and Code
+      // (read-only). The parent applies every proposal with applyTimelineSheetEdit. Query parameters: readonly, slot
+      // (a `cell` slot owns the cells), droppable (bar-drop is logged), rtl, limit (validateSheetEdit rejects a batch
+      // whose total hours exceed 30). Events are logged in order to the "Events" status as JSON lines.
+      const query = new URLSearchParams(location.search)
+      const initial = () => [
+        { id: 'p', label: 'Phase', owner: 'Pam', hours: 8 },
+        { id: 'a', parentId: 'p', label: 'Alpha', owner: 'Ann', hours: 1 },
+        { id: 'b', parentId: 'p', label: 'Beta', owner: 'Ben', hours: 2 },
+        { id: 'c', label: 'Gamma', owner: 'Cy', hours: 3 },
+        { id: 'd', label: 'Delta', owner: 'Di', hours: 4 },
+      ]
+      const rows = shallowRef(initial())
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      const columns = [
+        { id: 'owner', label: 'Owner', width: 90, editable: true, value: row => row.owner },
+        { id: 'hours', label: 'Hours', width: 70, editable: true, value: row => row.hours ?? '',
+          field: { id: 'hours', kind: 'number', min: 0, max: 24, integer: true, get: row => row.hours ?? null } },
+        { id: 'code', label: 'Code', width: 60, value: row => row.id.toUpperCase() },
+      ]
+      function apply(change) {
+        rows.value = applyTimelineSheetEdit(rows.value, change, {
+          field: (row, edit) => ({ ...row, hours: edit.after }),
+          cell: (row, edit) => ({ ...row, owner: edit.after }),
+        })
+      }
+      createApp({
+        setup: () => () => h('div', [
+          h('button', { type: 'button', onClick: () => { rows.value = rows.value.map(row => ({ ...row })) } }, 'Replace rows'),
+          h('button', { type: 'button', onClick: () => { log.value = [] } }, 'Clear log'),
+          h(GanttChart, {
+            spreadsheet: true, readonly: query.has('readonly'), droppable: query.has('droppable'),
+            dir: query.has('rtl') ? 'rtl' : 'ltr', height: 320, rowHeight: 40,
+            rows: rows.value, columns, range: { start: 0, end: 10 },
+            bars: rows.value.map(row => ({ id: 'bar-' + row.id, rowId: row.id, label: 'Bar ' + row.label, start: 0, end: 2 })),
+            validateSheetEdit: query.has('limit')
+              ? change => {
+                const hours = new Map(rows.value.map(row => [row.id, row.hours ?? 0]))
+                for (const edit of change.fieldEdits) hours.set(edit.rowId, edit.after ?? 0)
+                let total = 0
+                for (const value of hours.values()) total += value
+                return total <= 30 || 'Total hours exceed 30.'
+              }
+              : undefined,
+            'onSheet-edit': change => { record('sheet-edit', change); apply(change) },
+            'onSheet-edit-rejected': (reason, change) => record('sheet-edit-rejected', reason, change ?? null),
+            'onField-edit': change => { record('field-edit', change); apply({ fieldEdits: [change] }) },
+            'onCell-edit': change => { record('cell-edit', change); apply({ cellEdits: [change] }) },
+            'onBar-drop': drop => record('bar-drop', drop.rowId ?? null),
+          }, query.has('slot') ? { cell: ({ value }) => h('em', String(value)) } : undefined),
+          h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

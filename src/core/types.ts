@@ -1,7 +1,7 @@
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import type { GraphGroup } from './graph.js'
 import type { EditMode, TimeRange } from './timeline.js'
-import type { TimelineFieldSpec } from './fieldEditing.js'
+import type { TimelineFieldSpec, TimelineFieldEdit } from './fieldEditing.js'
 import type { SvgExportThemeInput } from './exportSvg.js'
 import type { GraphRect } from './graphView.js'
 import type { GraphEdgeBand } from './graphFlow.js'
@@ -184,6 +184,19 @@ export interface TimelineColumn<R extends TimelineRow = TimelineRow> {
   field?: TimelineFieldSpec<R>
 }
 
+/**
+ * One GanttChart spreadsheet operation (`sheet-edit`), proposed as a whole: apply both lists as a single transaction,
+ * for example with `applyTimelineSheetEdit`.
+ */
+export interface TimelineSheetEdit<R extends TimelineRow = TimelineRow> {
+  /** `paste` (clipboard), `fill` (Ctrl/Cmd+D or the fill handle) or `clear` (Delete, Backspace or cut). */
+  action: 'paste' | 'fill' | 'clear'
+  /** Edits of typed columns (`column.field`), in row then column order. */
+  fieldEdits: TimelineFieldEdit<R>[]
+  /** Edits of plain editable columns, in row then column order. */
+  cellEdits: TimelineCellEdit[]
+}
+
 export interface TimelineCellEdit {
   rowId: string
   columnId: string
@@ -360,6 +373,16 @@ export interface GanttLabels {
   moveRow?: string
   /** Description of the row move handles. Default lists the Alt key shortcuts. */
   moveRowKeysHint?: string
+  /** Description of spreadsheet cells (`spreadsheet`). Default lists the selection and editing keys. */
+  sheetHint?: string
+  /** Reason of a spreadsheet operation that would change a read-only cell. Default "Read-only cell." */
+  sheetReadOnly?: string
+  /** Reason of a paste whose records have different numbers of cells. Default "The pasted rows must have the same number of cells." */
+  sheetRagged?: string
+  /** Reason of a paste that extends past the last row or column. Default "The pasted cells extend past the table." */
+  sheetOutside?: string
+  /** Announced when `validateSheetEdit` returns false. Default "This sheet change was rejected." */
+  sheetRejected?: string
   /** Announced when `validateRowMove` returns false. Default "This row move was rejected." */
   rowMoveRejected?: string
   /** Label of the status-date line (`statusDate`). Default "Status date". */
