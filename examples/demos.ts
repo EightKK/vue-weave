@@ -20,6 +20,7 @@ import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
 import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
 import BookingShowcase from './showcase/BookingShowcase.vue'
 import CalendarShowcase from './showcase/CalendarShowcase.vue'
+import BpmnDemo from './BpmnDemo.vue'
 
 /**
  * - `dataset`: a data set for the graph and timeline of the main page (see `makeExample` in data.ts).
@@ -66,6 +67,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'sprint', label: 'Sprint plan', group: 'gallery', component: SprintGanttShowcase },
   { id: 'booking', label: 'Room bookings', group: 'gallery', component: BookingShowcase },
   { id: 'calendar', label: 'Calendar views', group: 'gallery', component: CalendarShowcase },
+  { id: 'bpmn', label: 'BPMN process', group: 'standalone', component: BpmnDemo },
 ]
 
 export const demosIn = (group: DemoGroup) => demos.filter(demo => demo.group === group)

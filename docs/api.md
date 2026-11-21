@@ -55,6 +55,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)
   - [Label editing, lasso selection and item slots](#label-editing-lasso-selection-and-item-slots)
   - [Swimlanes](#swimlanes)
+  - [BPMN and flowchart shapes, markers and pools](#bpmn-and-flowchart-shapes-markers-and-pools)
   - [Quantity bands](#quantity-bands)
 - [GanttChart](#ganttchart)
   - [Editing contract](#editing-contract)
@@ -421,6 +422,40 @@ function moveStep(change: GraphNodeMove) {
 ```
 
 Bands do not follow saved `positions`: a node placed through `positions` outside its band stays drawn where it is, and `graphSwimlaneAt` on its box tells the application. Lanes and groups are independent; a group frame is drawn above the bands. With `dir="rtl"` the lane titles are right-aligned in their header with `direction: rtl`; like the rest of the graph geometry, the bands and headers are not mirrored (use `direction: 'RL'` in the layout for a flow from right to left, which also puts the headers on the right).
+
+### BPMN and flowchart shapes, markers and pools
+
+Opt-in additions for BPMN processes and classic flowcharts. Without them the server markup, routes, exports and accessible names are unchanged.
+
+| API | Behavior |
+| --- | --- |
+| NetworkNode.shape (flowchart shapes) | `NetworkFlowchartShape`, part of `NetworkNodeShape`: `'circle'` (a true circle centred in the box with the radius of the shorter half side, a BPMN event), `'stadium'` (a terminator: a rectangle with half-circle ends), `'parallelogram'` (input or output; the sides slant by `min(0.36 × height, width / 4)`), `'document'` (a wavy bottom that dips at the inline start and rises at the end, within the box), `'cylinder'` (a data store or database, with the front rim of its top drawn as a separate line) and `'data-object'` (a page with a folded top-right corner, also drawn as a separate line). Like diamond, ellipse and hexagon they are drawn 2 units inside the node box (an `ellipse`, `polygon` or `path` with the class `vw-node-shape`; the rim and the fold are a `path` with the class `vw-node-shape-detail`), the text is centred (a cylinder moves it down by half its rim) and clipped to the box, and the minimap, connection handles, resize handles and the focus ring keep the box. Unknown values still draw a box. |
+| NetworkNode.event | `NetworkNodeEvent`: `'start'` (the normal thin border), `'intermediate'` (a second outline 4 units inside the first, class `vw-node-shape-inner` or, for the rectangle shapes, a `rect`) or `'end'` (a 3.5-unit border, class `vw-node-event-end`). The outline gets the class `vw-node-event-<event>`. Meant for `circle`, it works on every shape. Unknown values are ignored. |
+| NetworkNode.marker | `NetworkNodeMarker`, a decorative BPMN symbol in the node ink (a `g` with the class `vw-node-marker`, `aria-hidden="true"` and `data-vw-marker`): the gateway symbols `'exclusive'` (×), `'parallel'` (+), `'inclusive'` (a thick circle) and `'event-based'` (a pentagon in a double circle) and the event symbols `'message'` (an envelope) and `'timer'` (a clock), centred and sized to the shorter side of the box; and the task types `'user'`, `'service'` and `'manual'`, a 16-unit icon in the top inline-start corner (top right with `dir="rtl"`, the manual hand mirrored). With a task icon, the text of a rectangle starts 30 units from the inline-start edge instead of 13. Centred symbols do not move the text, so give events and gateways `labelPosition: 'below'`. Unknown values draw nothing. |
+| NetworkNode.labelPosition | `NetworkNodeLabelPosition`: `'inside'` (default) or `'below'`. Below draws the label and detail centred under the box (baselines 17 and 32 units below its bottom), outside the clipped node content (class `vw-node-label-below`), in `--vw-text` with a halo in `--vw-surface-muted`, also when the node is selected. The text is not clipped and not part of the layout box, so leave room for it (`rowGap`, `lanePadding`); `renderGraphSvg` widens its bounds for it. |
+| GraphEdge.dashed | Draws the default edge with a static dash pattern (class `vw-is-dashed`, `stroke-dasharray: 5 4`; `5 4` in `renderGraphSvg`), for BPMN message flows and data associations. `animated` wins when both are set. `collapseGraphGroups` keeps it on a merged edge only when every merged edge agrees. |
+| GraphEdgeMarker `'hollow-arrow'` | A triangle filled with the graph background (class `vw-edge-marker-hollow`, `surfaceMuted` in exports), the end of a BPMN message flow. A message flow is `{ dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' }`; a data association `{ dashed: true, markerEnd: 'open-arrow' }`. |
+| pools | readonly GraphSwimlanePoolBand[] / undefined. Opt-in. Pools (BPMN participants), usually the `pools` of a `layoutSwimlaneGraph` result, drawn in the lanes layer: each pool is an SVG group (role group, class `vw-swimlane-pool`, `data-vw-pool`) named by its label, with a frame (`vw-swimlane-pool-band`), a title band (`vw-swimlane-pool-header`) and the title centred in the band and clipped to it (`vw-swimlane-pool-title`), rotated by −90° to read from bottom to top when the band is taller than it is wide. The `lanes` whose IDs a pool lists in `laneIds` are drawn inside its group, after its frame; other lanes follow the pools. Pools are part of the fitted content, exportSvg and exportPng, and never take the pointer. An invalid or repeated ID (`Invalid swimlane pool ID: <value>`, `Duplicate swimlane pool ID: <id>`), a label that is not a string or `laneIds` that are not an array of IDs throw Error, and geometry that is not finite or has a negative size throws RangeError while rendering. A title band of zero size draws no band and no title. |
+
+Where edges meet flowchart shapes: straight edges, and curve or straight edges through waypoints or spread as parallel edges, end where the line from the node centre meets the outline (curves are followed to within about 0.1 units). Unlike diamond, ellipse and hexagon, a flowchart shape need not touch the middle of every box side (a circle in a wide box, the slanted sides of a parallelogram, the wave of a document), so the ends of orthogonal routes that are not at a named port slide along their first (or last) leg onto the outline. The layout's own curve paths, and the long-edge bypass lanes the orthogonal style keeps, still end on the box sides: give circles and diamonds square boxes (a custom `layout` that shrinks their boxes, `sizes`, or square `nodeWidth` and `nodeHeight`) or use the orthogonal or straight edge style. Named ports and connection handles stay on the box sides.
+
+`layoutSwimlaneGraph` takes the opt-in `pools` (`GraphSwimlanePoolSpec[]`: `{ id, label?, lanes }`), `poolHeaderSize` (default 32) and `poolGap` (default 24, in place of `laneGap` between lanes of different pools) options and then returns `pools` (`GraphSwimlanePool[]`, in display order: `{ id, label, index, laneIds, x, y, width, height, header }`). Every lane must belong to exactly one pool and the lanes of a pool must be consecutive in `lanes` (in any order in the pool); otherwise it throws Error (`Unknown swimlane in swimlane pool <id>: <lane>`, `Swimlane <lane> is in more than one pool`, `The lanes of swimlane pool <id> must be consecutive`, `Swimlane <lane> is in no pool`, `Swimlane pool needs at least one lane: <id>`, and the ID texts with the kind `swimlane pool`); a `poolHeaderSize` or `poolGap` that is not finite and nonnegative throws RangeError. Each pool's title band sits at the flow start before the lane headers, so every lane band starts `poolHeaderSize` later and the nodes `poolHeaderSize` further along the flow; the lane of a pool with a single lane gets a zero-size header, as a BPMN pool without lanes. TB and BT turn the pools with the lanes (the title band on top or at the bottom, read without rotation). Without `pools` the result is unchanged and has no `pools` field.
+
+```ts
+const swimlanes = computed(() => layoutSwimlaneGraph(nodes.value, edges.value, {
+  lanes: [{ id: 'customer', label: 'Customer' }, { id: 'sales', label: 'Sales' }, { id: 'warehouse', label: 'Warehouse' }],
+  pools: [{ id: 'buyer', label: 'Customer', lanes: ['customer'] }, { id: 'supplier', label: 'Supplier', lanes: ['sales', 'warehouse'] }],
+  laneOf: node => node.data.lane,
+}))
+```
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :layout="() => swimlanes" :lanes="swimlanes.lanes" :pools="swimlanes.pools" edge-style="orthogonal" />
+```
+
+`renderGraphSvg` takes the same `pools` (drawn before the lanes: a `g class="vw-swimlane-pool"` with a `title`, a `surface` frame and a `surfaceMuted` title band with 1.5-unit `muted` borders and the 13-unit bold title, validated like the prop) and draws flowchart shapes (`stroke-linejoin="round"` on paths and polygons, the rim and fold as unfilled lines at most 1.5 units wide), event borders (an `end` border at least 3.5 units, an `intermediate` second outline), markers (a `g` with `fill="none"` and the stroke in the tone's ink, or `onSolid` when selected), labels below (outside the node's nested `svg`, in `text` with a `surfaceMuted` halo) and dashed edges like NetworkGraph draws them; exportSvg and exportPng follow.
+
+Accessibility: the accessible name of a node stays its label and detail; shapes, event borders and markers are decorative and are not announced. Put the BPMN meaning that matters into the label or the `detail` (for example "Order received" with the detail "message start event"), or describe it in your own `tooltip`.
 
 ### Quantity bands
 
@@ -1255,6 +1290,7 @@ Same-rank edges (inside a cycle) and self-loops of the layered, tree and swimlan
 | headerSize | Thickness of the header along the flow. Default 120 for LR and RL, 32 for TB and BT; 0 draws no header. |
 | padding | Margin around the bands. Default 20. |
 | crossingReduction, crossingSweeps | `barycenter` (default) or `none`; positive integer sweep limit, default 8. |
+| pools, poolHeaderSize, poolGap | Opt-in pools (BPMN participants) around consecutive lanes, the thickness of their title band (default 32) and the space between pools (default 24); see [BPMN and flowchart shapes, markers and pools](#bpmn-and-flowchart-shapes-markers-and-pools). |
 
 `GraphSwimlaneLayoutOptions` extends `GraphLayoutOptions`. Sizes that are not finite or are negative (and node sizes of 0) throw `RangeError` (see [Layout defaults and option checks](#layout-defaults-and-option-checks)), as do an unknown direction or crossing method; the graph errors of `indexGraph` (duplicate IDs, unknown endpoints) throw `Error`.
 

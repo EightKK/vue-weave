@@ -220,7 +220,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (508)
+## Entry `.`: type-only exports (515)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -414,6 +414,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlaneBand`
 - `GraphSwimlaneLayout`
 - `GraphSwimlaneLayoutOptions`
+- `GraphSwimlanePool`
+- `GraphSwimlanePoolBand`
+- `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
@@ -468,6 +471,7 @@ in public signatures, so changes to them can break consumers too.
 - `MsProjectXmlOptions`
 - `NetworkEdgeSlot`
 - `NetworkEdgeToolbarSlot`
+- `NetworkFlowchartShape`
 - `NetworkFocusOptions`
 - `NetworkGraphComponent`
 - `NetworkGraphExposed`
@@ -475,6 +479,9 @@ in public signatures, so changes to them can break consumers too.
 - `NetworkGroupSlot`
 - `NetworkMinimapNodeSlot`
 - `NetworkNode`
+- `NetworkNodeEvent`
+- `NetworkNodeLabelPosition`
+- `NetworkNodeMarker`
 - `NetworkNodeShape`
 - `NetworkNodeSlot`
 - `NetworkNodeToolbarSlot`
@@ -932,7 +939,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (472)
+## Entry `./core`: type-only exports (479)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1113,6 +1120,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlaneBand`
 - `GraphSwimlaneLayout`
 - `GraphSwimlaneLayoutOptions`
+- `GraphSwimlanePool`
+- `GraphSwimlanePoolBand`
+- `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
@@ -1160,11 +1170,15 @@ in public signatures, so changes to them can break consumers too.
 - `MsProjectXmlOptions`
 - `NetworkEdgeSlot`
 - `NetworkEdgeToolbarSlot`
+- `NetworkFlowchartShape`
 - `NetworkFocusOptions`
 - `NetworkGroup`
 - `NetworkGroupSlot`
 - `NetworkMinimapNodeSlot`
 - `NetworkNode`
+- `NetworkNodeEvent`
+- `NetworkNodeLabelPosition`
+- `NetworkNodeMarker`
 - `NetworkNodeShape`
 - `NetworkNodeSlot`
 - `NetworkNodeToolbarSlot`
@@ -1449,6 +1463,7 @@ minNodeSize?: GraphNodeSize;
 nodes: readonly N[];
 options?: GraphLayeredLayoutOptions;
 parallelEdgeSpacing?: number;
+pools?: readonly GraphSwimlanePoolBand[];
 positions?: ReadonlyMap<string, GraphPoint>;
 reconnectable?: boolean;
 relatedIds?: ReadonlySet<string>;
@@ -1962,6 +1977,9 @@ focusCard: (id: string) => boolean;
 - `--vw-load-highlight`
 - `--vw-load-selected`
 - `--vw-palette-preview-width`
+- `--vw-pool-border`
+- `--vw-pool-fill`
+- `--vw-pool-header-fill`
 - `--vw-range-opacity`
 - `--vw-row-depth`
 - `--vw-toolbar-offset`
@@ -3000,6 +3018,7 @@ interface GraphEdge<D = unknown> extends GraphConnection {
     markerEnd?: GraphEdgeMarker;
     markerStart?: GraphEdgeMarker;
     animated?: boolean;
+    dashed?: boolean;
 }
 ```
 
@@ -3016,7 +3035,7 @@ interface GraphEdgeBand {
 ### `GraphEdgeMarker`
 
 ```ts
-type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'circle' | 'diamond' | 'bar' | 'none';
+type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'hollow-arrow' | 'circle' | 'diamond' | 'bar' | 'none';
 ```
 
 ### `GraphEdgeReshape`
@@ -4049,6 +4068,7 @@ interface GraphSvgGroup {
 interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> extends SvgExportOptions {
     groups?: readonly GraphSvgGroup[];
     lanes?: readonly GraphSwimlaneBand[];
+    pools?: readonly GraphSwimlanePoolBand[];
     selectedIds?: Iterable<string>;
     highlightedNodeIds?: Iterable<string>;
     highlightedEdgeIds?: Iterable<string>;
@@ -4085,6 +4105,7 @@ interface GraphSwimlaneBand extends GraphRect {
 ```ts
 interface GraphSwimlaneLayout extends GraphLayout {
     lanes: GraphSwimlane[];
+    pools?: GraphSwimlanePool[];
 }
 ```
 
@@ -4100,6 +4121,39 @@ interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = IdentifiedNode> 
     headerSize?: number;
     crossingReduction?: 'none' | 'barycenter';
     crossingSweeps?: number;
+    pools?: readonly GraphSwimlanePoolSpec[];
+    poolHeaderSize?: number;
+    poolGap?: number;
+}
+```
+
+### `GraphSwimlanePool`
+
+```ts
+interface GraphSwimlanePool extends GraphSwimlanePoolBand {
+    index: number;
+    laneIds: string[];
+}
+```
+
+### `GraphSwimlanePoolBand`
+
+```ts
+interface GraphSwimlanePoolBand extends GraphRect {
+    id: string;
+    label: string;
+    header: GraphRect;
+    laneIds: readonly string[];
+}
+```
+
+### `GraphSwimlanePoolSpec`
+
+```ts
+interface GraphSwimlanePoolSpec {
+    id: string;
+    label?: string;
+    lanes: readonly string[];
 }
 ```
 
@@ -4645,6 +4699,12 @@ interface NetworkEdgeToolbarSlot<E extends GraphEdge = GraphEdge> {
 }
 ```
 
+### `NetworkFlowchartShape`
+
+```ts
+type NetworkFlowchartShape = 'circle' | 'stadium' | 'parallelogram' | 'document' | 'cylinder' | 'data-object';
+```
+
 ### `NetworkFocusOptions`
 
 ```ts
@@ -4714,14 +4774,35 @@ interface NetworkNode<D = unknown> extends IdentifiedNode {
     deletable?: boolean;
     shape?: NetworkNodeShape;
     resizable?: boolean;
+    marker?: NetworkNodeMarker;
+    event?: NetworkNodeEvent;
+    labelPosition?: NetworkNodeLabelPosition;
     data?: D;
 }
+```
+
+### `NetworkNodeEvent`
+
+```ts
+type NetworkNodeEvent = 'start' | 'intermediate' | 'end';
+```
+
+### `NetworkNodeLabelPosition`
+
+```ts
+type NetworkNodeLabelPosition = 'inside' | 'below';
+```
+
+### `NetworkNodeMarker`
+
+```ts
+type NetworkNodeMarker = 'exclusive' | 'parallel' | 'inclusive' | 'event-based' | 'message' | 'timer' | 'user' | 'service' | 'manual';
 ```
 
 ### `NetworkNodeShape`
 
 ```ts
-type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon';
+type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon' | NetworkFlowchartShape;
 ```
 
 ### `NetworkNodeSlot`

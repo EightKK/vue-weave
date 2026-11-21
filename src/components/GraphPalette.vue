@@ -53,7 +53,8 @@ function preview(item: GraphPaletteItem<D>) {
   const outline = graphOutlineShape(item)
   if (!outline) return { tag: 'rect' as const, rx: item.shape === 'rounded' ? 10 : 4 }
   const element = graphOutlineElement(outline, 48, 30)
-  return element.tag === 'ellipse' ? element : { tag: 'polygon' as const, points: graphPolygonPoints(element.points) }
+  if (element.tag === 'polygon') return { tag: 'polygon' as const, points: graphPolygonPoints(element.points) }
+  return element
 }
 
 async function focusItem(id?: string) {
@@ -130,7 +131,8 @@ defineExpose({
                 <template v-for="shape in [preview(item)]" :key="0">
                   <rect v-if="shape.tag === 'rect'" x="2" y="2" width="44" height="26" :rx="shape.rx" />
                   <ellipse v-else-if="shape.tag === 'ellipse'" :cx="shape.cx" :cy="shape.cy" :rx="shape.rx" :ry="shape.ry" />
-                  <polygon v-else :points="shape.points" />
+                  <polygon v-else-if="shape.tag === 'polygon'" :points="shape.points" />
+                  <path v-else :d="shape.d" />
                 </template>
               </svg>
               <span class="vw-palette-text">

@@ -3,35 +3,93 @@
 import { createCommentVNode, h, toDisplayString } from 'vue'
 import type { GraphBox, GraphEdge, GraphEdgeMarker } from '../../core/graph.js'
 import {
-  graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText, graphPolygonPoints,
+  graphBelowLabelText, graphEdgeMarker, graphIntermediateEventGap, graphMarkerDrawing, graphNodeEvent, graphNodeLabelBelow, graphNodeMarker,
+  graphNodeMarkerParts, graphOutlineDetail, graphOutlineElement, graphOutlineShape, graphOutlineText, graphPolygonPoints, isGraphTaskMarker,
+  type GraphOutlineShape,
 } from '../../core/graphShapes.js'
-import type { NetworkNode } from '../../core/types.js'
+import type { NetworkNode, NetworkNodeEvent, NetworkNodeMarker } from '../../core/types.js'
 
 /**
- * The default content of a node: a rectangle with text from the inline start edge, or a diamond, ellipse or hexagon
- * (class vw-node-shape) inside the box with centred text.
+ * The default content of a node: a rectangle with text from the inline start edge, or an outline shape (class
+ * vw-node-shape) inside the box with centred text, plus the opt-in BPMN event border and marker. Labels drawn below
+ * the box are left to `belowLabel`, outside the clipped content.
  */
 export function defaultNode(node: NetworkNode, box: GraphBox, rtl: boolean) {
   const outline = graphOutlineShape(node)
+  const event = graphNodeEvent(node), marker = graphNodeMarker(node), below = graphNodeLabelBelow(node)
+  const eventClass = event && 'vw-node-event-' + event
+  const decorations = [...eventOutline(node, box, outline, event), ...markerNodes(marker, box, rtl)]
   if (!outline) {
+    // A task icon in the corner moves the text away from it.
+    const inset = isGraphTaskMarker(marker) ? 30 : 13
     return [
-      h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8 }),
-      h('text', { x: rtl ? box.width - 13 : 13, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
-      node.detail
-        ? h('text', { key: 0, x: rtl ? box.width - 13 : 13, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
-        : createCommentVNode('', true),
+      h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8, ...eventClass && { class: eventClass } }),
+      ...decorations,
+      ...below ? [] : [
+        h('text', { x: rtl ? box.width - inset : inset, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
+        node.detail
+          ? h('text', { key: 0, x: rtl ? box.width - inset : inset, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
+          : createCommentVNode('', true),
+      ],
     ]
   }
   const shape = graphOutlineElement(outline, box.width, box.height)
-  const text = graphOutlineText(box.width, box.height, Boolean(node.detail))
+  const text = graphOutlineText(box.width, box.height, Boolean(node.detail), outline)
+  const shapeClass = eventClass ? 'vw-node-shape ' + eventClass : 'vw-node-shape'
+  const detail = graphOutlineDetail(outline, box.width, box.height)
   return [
     shape.tag === 'ellipse'
-      ? h('ellipse', { class: 'vw-node-shape', cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry })
-      : h('polygon', { class: 'vw-node-shape', points: graphPolygonPoints(shape.points) }),
-    h('text', { x: text.x, y: text.title, 'text-anchor': 'middle', class: 'vw-node-title' }, toDisplayString(node.label)),
-    node.detail
-      ? h('text', { key: 0, x: text.x, y: text.detail, 'text-anchor': 'middle', class: 'vw-node-detail' }, toDisplayString(node.detail))
-      : createCommentVNode('', true),
+      ? h('ellipse', { class: shapeClass, cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry })
+      : shape.tag === 'path'
+        ? h('path', { class: shapeClass, d: shape.d })
+        : h('polygon', { class: shapeClass, points: graphPolygonPoints(shape.points) }),
+    ...detail ? [h('path', { class: 'vw-node-shape-detail', d: detail })] : [],
+    ...decorations,
+    ...below ? [] : [
+      h('text', { x: text.x, y: text.title, 'text-anchor': 'middle', class: 'vw-node-title' }, toDisplayString(node.label)),
+      node.detail
+        ? h('text', { key: 0, x: text.x, y: text.detail, 'text-anchor': 'middle', class: 'vw-node-detail' }, toDisplayString(node.detail))
+        : createCommentVNode('', true),
+    ],
+  ]
+}
+
+// The inner outline of an intermediate event, inside the drawn outline.
+function eventOutline(node: NetworkNode, box: GraphBox, outline: GraphOutlineShape | undefined, event: NetworkNodeEvent | undefined) {
+  if (event !== 'intermediate') return []
+  const inset = 2 + graphIntermediateEventGap
+  if (!outline) {
+    return [h('rect', {
+      class: 'vw-node-shape-inner', x: inset, y: inset, width: Math.max(0, box.width - 2 * inset), height: Math.max(0, box.height - 2 * inset),
+      rx: Math.max(0, (node.shape === 'rounded' ? 19 : 8) - graphIntermediateEventGap),
+    })]
+  }
+  const inner = graphOutlineElement(outline, box.width, box.height, inset)
+  const attributes = { class: 'vw-node-shape vw-node-shape-inner' }
+  return [inner.tag === 'ellipse'
+    ? h('ellipse', { ...attributes, cx: inner.cx, cy: inner.cy, rx: inner.rx, ry: inner.ry })
+    : inner.tag === 'path' ? h('path', { ...attributes, d: inner.d }) : h('polygon', { ...attributes, points: graphPolygonPoints(inner.points) })]
+}
+
+// The BPMN marker of a node, decorative and hidden from assistive technology.
+function markerNodes(marker: NetworkNodeMarker | undefined, box: GraphBox, rtl: boolean) {
+  if (!marker) return []
+  return [h('g', { class: 'vw-node-marker', 'aria-hidden': 'true', 'data-vw-marker': marker }, graphNodeMarkerParts(marker, box.width, box.height, rtl).map(part =>
+    part.tag === 'circle'
+      ? h('circle', { cx: part.cx, cy: part.cy, r: part.r, 'stroke-width': part.strokeWidth })
+      : h('path', { d: part.d, 'stroke-width': part.strokeWidth }),
+  ))]
+}
+
+/** The label and detail of a node with `labelPosition: 'below'`, centred under the box and not clipped; else none. */
+export function belowLabel(node: NetworkNode, box: GraphBox) {
+  if (!graphNodeLabelBelow(node)) return []
+  const text = graphBelowLabelText(box.width, box.height)
+  return [
+    h('text', { x: text.x, y: text.title, 'text-anchor': 'middle', class: 'vw-node-title vw-node-label-below' }, toDisplayString(node.label)),
+    ...node.detail
+      ? [h('text', { x: text.x, y: text.detail, 'text-anchor': 'middle', class: 'vw-node-detail vw-node-label-below' }, toDisplayString(node.detail))]
+      : [],
   ]
 }
 

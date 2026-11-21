@@ -28,7 +28,7 @@ import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '
 import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
-import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from '../core/graphSwimlanes.js'
+import { assertGraphSwimlaneBands, assertGraphSwimlanePools, type GraphSwimlaneBand, type GraphSwimlanePoolBand } from '../core/graphSwimlanes.js'
 import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from '../core/graphFlow.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import { keep, keepIds, sameGeometry, sameRecord } from './networkGraph/equality.js'
@@ -43,7 +43,7 @@ import {
   arrowOffsets, clampPoint, cornerSides, corners, movePositions, placeMoved, referencePoint, resizeBox, snapValue, stepValue,
   movedBounds, type Corner,
 } from './networkGraph/editGeometry.js'
-import { defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
+import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
 
 // The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
 type ShownNode = GraphShownNode<N, G>
@@ -173,6 +173,12 @@ const props = withDefaults(defineProps<{
    * changes a node's lane (see `graphSwimlaneAt`). Opt-in. Default: undefined.
    */
   lanes?: readonly GraphSwimlaneBand[]
+  /**
+   * Pools (BPMN participants) drawn behind the lanes, each a group named by its label with a title band whose title is
+   * rotated when the band is taller than it is wide; usually the `pools` of a `layoutSwimlaneGraph` result. The `lanes`
+   * a pool lists by ID are drawn inside its group. Display only. Opt-in. Default: undefined.
+   */
+  pools?: readonly GraphSwimlanePoolBand[]
   /**
    * Edges drawn as bands with real width, by edge ID, usually `graphFlowBands` of a `layoutFlowGraph` result: the
    * default edge path is stroked with the band width (class `vw-network-band`, dashed with `vw-is-reference`) without
@@ -666,6 +672,12 @@ const laneBands = computed(() => {
   if (list) assertGraphSwimlaneBands(list, 'NetworkGraph')
   return list?.length ? list : undefined
 })
+// Pools, checked once per new list, also part of the content bounds.
+const poolBands = computed(() => {
+  const list = props.pools
+  if (list) assertGraphSwimlanePools(list, 'NetworkGraph')
+  return list?.length ? list : undefined
+})
 // The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
 // the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
 // The previous object while the bounds are equal, so a drag inside them does not re-render the minimap or the camera.
@@ -677,7 +689,7 @@ const contentBounds = computed<{ left: number; top: number; right: number; botto
     right = Math.max(right, group.x + group.width)
     bottom = Math.max(bottom, group.y + group.height)
   }
-  for (const lane of laneBands.value ?? []) {
+  for (const lane of [...laneBands.value ?? [], ...poolBands.value ?? []]) {
     left = Math.min(left, lane.x)
     top = Math.min(top, lane.y)
     right = Math.max(right, lane.x + lane.width)
@@ -2213,8 +2225,9 @@ const GroupLayers: FunctionalComponent<{ groupSlot?: typeof slots.group }> = ({ 
     ]))
   }
   // Swimlanes: one layer above the background and below the groups, only with `lanes`.
-  const laneList = laneBands.value
-  if (laneList) layers.push(h('g', { key: 'lanes', class: 'vw-swimlanes' }, laneList.map((lane, index) => laneNode(lane, index))))
+  const laneList = laneBands.value, poolList = poolBands.value
+  if (poolList) layers.push(h('g', { key: 'lanes', class: 'vw-swimlanes' }, poolLanes(poolList, laneList ?? [])))
+  else if (laneList) layers.push(h('g', { key: 'lanes', class: 'vw-swimlanes' }, laneList.map((lane, index) => laneNode(lane, index))))
   const shown = visibleGroups.value, draggable = props.draggable, right = rtl.value
   for (const group of groupMembership.value) {
     if (shown && !shown.has(group.id)) continue
@@ -2241,6 +2254,39 @@ function laneNode(lane: GraphSwimlaneBand, index: number) {
   return h('g', {
     key: lane.id, class: index % 2 ? 'vw-swimlane vw-is-alternate' : 'vw-swimlane', role: 'group', 'aria-label': lane.label, 'data-vw-lane': lane.id,
   }, parts)
+}
+
+// Pools, each a group with its frame, its title band and its own lanes; lanes of no pool follow them.
+function poolLanes(pools: readonly GraphSwimlanePoolBand[], lanes: readonly GraphSwimlaneBand[]) {
+  const index = new Map(lanes.map((lane, position) => [lane.id, position]))
+  const placed = new Set<string>()
+  const nodes = pools.map((pool) => {
+    const { header } = pool
+    const parts = [h('rect', { class: 'vw-swimlane-pool-band', x: pool.x, y: pool.y, width: pool.width, height: pool.height })]
+    if (header.width > 0 && header.height > 0) {
+      const cx = header.width / 2, cy = header.height / 2
+      parts.push(
+        h('rect', { class: 'vw-swimlane-pool-header', x: header.x, y: header.y, width: header.width, height: header.height }),
+        h('svg', { class: 'vw-swimlane-pool-title', x: header.x, y: header.y, width: header.width, height: header.height, overflow: 'hidden' }, [
+          h('text', {
+            x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+            transform: header.height > header.width ? `rotate(-90 ${cx} ${cy})` : undefined,
+          }, toDisplayString(pool.label)),
+        ]),
+      )
+    }
+    for (const id of pool.laneIds) {
+      const position = index.get(id)
+      if (position === undefined || placed.has(id)) continue
+      placed.add(id)
+      parts.push(laneNode(lanes[position]!, position))
+    }
+    return h('g', { key: 'pool:' + pool.id, class: 'vw-swimlane-pool', role: 'group', 'aria-label': pool.label, 'data-vw-pool': pool.id }, parts)
+  })
+  lanes.forEach((lane, position) => {
+    if (!placed.has(lane.id)) nodes.push(laneNode(lane, position))
+  })
+  return nodes
 }
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
@@ -2505,7 +2551,7 @@ const NodeItem: FunctionalComponent<NodeItemProps> = (item, { slots }) => {
     shared.title ? h('title', null, toDisplayString(node.label) + ' ' + toDisplayString(node.detail)) : createCommentVNode('', true),
     renderSlot(slots, 'node', {
       node: { ...node, box }, box, selected, dimmed, related: Boolean(item.related), highlighted: Boolean(item.highlighted), scale: shared.scale,
-    }, () => [h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, defaultNode(node, box, shared.rtl))]),
+    }, () => [h('svg', { width: box.width, height: box.height, overflow: 'hidden' }, defaultNode(node, box, shared.rtl)), ...belowLabel(node, box)]),
   ])
 }
 NodeItem.props = ['node', 'box', 'selected', 'draggable', 'related', 'dimmed', 'highlighted', 'describedby', 'shared']
@@ -2558,7 +2604,7 @@ const EdgeItem: FunctionalComponent<EdgeItemProps> = (item, { slots }) => {
         class: ['vw-network-edge vw-network-band', { 'vw-is-related': related, 'vw-is-reference': Boolean(band.reference) }], d: path,
         style: band.reference ? { strokeWidth: bandWidth, '--vw-band-dash': graphReferenceDash(band.width, path) } : { strokeWidth: bandWidth },
       }) : h('path', {
-        class: ['vw-network-edge', { 'vw-is-related': related, 'vw-is-animated': Boolean(edge.animated) }], d: path,
+        class: ['vw-network-edge', { 'vw-is-related': related, 'vw-is-animated': Boolean(edge.animated), 'vw-is-dashed': Boolean(edge.dashed && !edge.animated) }], d: path,
         'marker-start': markerUrl(shared.marker, edge, 'start'), 'marker-end': markerUrl(shared.marker, edge, 'end'),
       }),
       edge.label && labelX !== undefined
@@ -2806,6 +2852,7 @@ function exportSvg(options: GraphExportOptions<ShownNode, ShownEdge> = {}) {
     ...rest,
     groups: shownGroups.value.map(({ id, label, x, y, width, height }) => ({ id, label, x, y, width, height })),
     ...laneBands.value && { lanes: laneBands.value },
+    ...poolBands.value && { pools: poolBands.value },
     ...edgeBands.value && { edgeBands: edgeBands.value },
     selectedIds: selection,
     ...highlighted && { highlightedNodeIds: highlighted.nodes, highlightedEdgeIds: highlighted.edges },

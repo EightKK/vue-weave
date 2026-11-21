@@ -17,6 +17,7 @@ export { layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGrap
 export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions, GraphCircularLayoutOptions, GraphGridLayoutOptions, GraphConcentricLayoutOptions } from './graphLayouts.js'
 export { layoutSwimlaneGraph, graphSwimlaneAt } from './graphSwimlanes.js'
 export type { GraphSwimlaneSpec, GraphSwimlaneBand, GraphSwimlane, GraphSwimlaneLayout, GraphSwimlaneLayoutOptions } from './graphSwimlanes.js'
+export type { GraphSwimlanePoolSpec, GraphSwimlanePoolBand, GraphSwimlanePool } from './graphSwimlanes.js'
 export { layoutForceGraph } from './graphForce.js'
 export type { GraphForceLayoutOptions } from './graphForce.js'
 export { layoutFlowGraph, graphFlowBands } from './graphFlow.js'
