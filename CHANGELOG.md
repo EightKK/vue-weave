@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 1.0.0 - 2026-11-21
+
 This is the first stable release. From here on the package follows SemVer as defined in [Compatibility and versioning](docs/api.md#compatibility-and-versioning), and it is published on npm (`npm install vue-weave`). The changes below fix data-correctness and compatibility problems found in the pre-release review; the ones that change results or types are listed under "Breaking changes", each with who is affected and what to do.
 
 ### Breaking changes

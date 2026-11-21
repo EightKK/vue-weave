@@ -5310,8 +5310,8 @@ type ScheduleFailure = {
 
 ```ts
 interface ScheduleGraph {
-    nodes: NetworkNode[];
-    edges: GraphEdge[];
+    nodes: NetworkNode<ScheduleGraphNodeData>[];
+    edges: GraphEdge<ScheduleGraphEdgeData>[];
     criticalNodeIds: Set<string>;
     criticalEdgeIds: Set<string>;
 }
@@ -8160,7 +8160,7 @@ function useEditTransaction<S, P>(options: UseEditTransactionOptions<S, P>): {
         baseVersion: string;
     } | undefined>;
     result: import("vue").ComputedRef<import("../index.js").TransactionFailure | undefined>;
-    historyReset: import("vue").ShallowRef<HistoryReset | undefined, HistoryReset | undefined>;
+    historyReset: ShallowRef<HistoryReset | undefined>;
     canUndo: import("vue").ComputedRef<boolean>;
     canRedo: import("vue").ComputedRef<boolean>;
     submit: (changes: readonly P[], submitOptions?: {
@@ -8199,7 +8199,7 @@ function useLinkedSelection(options: UseLinkedSelectionOptions): {
 
 ```ts
 function useTimelineView<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar, D extends TimelineDependency = TimelineDependency>(source: MaybeRefOrGetter<TimelineViewInput<R, B, D>>, initial?: TimelineViewState): {
-    state: import("vue").ShallowRef<TimelineViewState, TimelineViewState>;
+    state: ShallowRef<TimelineViewState>;
     projection: import("vue").ComputedRef<import("../index.js").TimelineViewProjection<R, B, D>>;
     columns: import("vue").ComputedRef<import("../index.js").TimelineColumn<R>[]>;
     diagnostics: import("vue").ComputedRef<import("../index.js").TimelineViewDiagnostic[]>;
