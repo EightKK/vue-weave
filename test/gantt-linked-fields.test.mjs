@@ -20,6 +20,16 @@ const loadSegments = [{ resourceId: 'dev', start: hour, end: 3 * hour, load: 2, 
 const base = { rows, bars, dependencies, range, pixelsPerUnit: 10 / hour, columns: [plainColumn], loadRows, loadSegments, connectable: true }
 const render = (props = {}, slots) => renderComponent(GanttChart, { ...base, ...props }, slots)
 
+test('GanttChart row headings render as one roving tab stop for the heading column', async () => {
+  const html = await render()
+  const headings = [...html.matchAll(/<div class="vw-row-content" role="button" tabindex="(-?\d)" data-vw-row-heading="([^"]+)">/g)]
+    .map(match => [match[2], match[1]])
+  assert.deepEqual(headings, [['r1', '0'], ['r2', '-1']])
+  // A row slot keeps its content inside the same heading element.
+  const slotted = await render({}, { row: ({ row }) => `custom ${row.id}` })
+  assert.match(slotted, /data-vw-row-heading="r1"><!--\[-->custom r1<!--\]--><\/div>/)
+})
+
 test('GanttChart server markup is identical when the new props are unset or at their defaults', async () => {
   const plain = await render()
   assert.equal(await render({ loadSelectable: false, droppable: true, validateFieldEdit: () => true, highlightedBarIds: new Set() }), plain)
