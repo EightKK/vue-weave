@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoBuildState } from './demo-build.mjs'
+import { runReleaseTransaction } from './release-candidate.mjs'
 
 // Prepare verified local candidates only. Publishing and repository administration remain separate actions.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -12,23 +13,22 @@ const npmCli = process.env.npm_execpath
 assert.ok(npmCli, 'Run this script with npm run prepare:release')
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 const artifacts = join(root, 'artifacts')
-await mkdir(artifacts, { recursive: true })
-const resolvedArtifacts = await realpath(artifacts)
-const staging = await realpath(await mkdtemp(join(resolvedArtifacts, 'release-candidate-')))
-assert.equal(dirname(staging), resolvedArtifacts, 'Staging must stay directly inside artifacts/')
+// VW_RELEASE_FAIL_AT simulates a failure to show that the previous verified set survives: 'after-package' (the new
+// tarball is already in the candidate), 'before-promote' or 'during-promote'.
+const failAt = process.env.VW_RELEASE_FAIL_AT || undefined
 
 const sourcePaths = [
   '.editorconfig', '.github', '.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
   'LICENSE', 'README.md', 'README.ja.md', 'Start.cmd', 'THIRD_PARTY_NOTICES.md',
   'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
   'vite.config.ts', 'vite.demo.config.ts', 'playwright.config.ts',
-  'docs', 'examples', 'scripts', 'src', 'test',
+  'api', 'docs', 'examples', 'scripts', 'src', 'test',
 ]
 const sha256 = data => createHash('sha256').update(data).digest('hex')
 
-function npm(args, capture = false) {
+function npm(args, capture = false, env = process.env) {
   return execFileSync(process.execPath, [npmCli, ...args], {
-    cwd: root, encoding: 'utf8', windowsHide: true,
+    cwd: root, encoding: 'utf8', windowsHide: true, env,
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
   })
 }
@@ -94,67 +94,63 @@ async function verifyDemo(directory) {
   }
 }
 
-try {
-  const before = await inventory(root, sourcePaths)
-  npm(['run', 'check'])
-  npm(['run', 'test:e2e'])
-  npm(['run', 'test:package'])
-  const audit = JSON.parse(npm(['audit', '--json'], true))
-  assert.equal(audit.metadata.vulnerabilities.total, 0, 'Resolve dependency audit findings before preparing a release')
-  const [packed] = JSON.parse(npm(['pack', '--dry-run', '--ignore-scripts', '--json'], true))
-  assert.equal(packed.name, manifest.name)
-  assert.equal(packed.version, manifest.version)
-  assert.equal(packed.filename, `${manifest.name}-${manifest.version}.tgz`)
-  const tarball = join(artifacts, packed.filename)
-  const tarballData = await readFile(tarball)
-  assert.equal('sha512-' + createHash('sha512').update(tarballData).digest('base64'), packed.integrity, 'Verified tarball differs from the current package inventory')
-  assert.deepEqual(await inventory(root, sourcePaths), before, 'Source changed during release verification')
+const result = await runReleaseTransaction({
+  artifacts,
+  version: manifest.version,
+  failAt: failAt === 'after-package' ? undefined : failAt,
+  async build({ set, work }) {
+    const before = await inventory(root, sourcePaths)
+    npm(['run', 'check'])
+    npm(['run', 'test:e2e'])
+    // The package check packs straight into this run's candidate, never next to an earlier verified set.
+    npm(['run', 'test:package'], false, { ...process.env, VW_PACK_DESTINATION: set })
+    if (failAt === 'after-package') throw new Error('Simulated release failure after the package check')
+    const audit = JSON.parse(npm(['audit', '--json'], true))
+    assert.equal(audit.metadata.vulnerabilities.total, 0, 'Resolve dependency audit findings before preparing a release')
+    const [packed] = JSON.parse(npm(['pack', '--dry-run', '--ignore-scripts', '--json'], true))
+    assert.equal(packed.name, manifest.name)
+    assert.equal(packed.version, manifest.version)
+    assert.equal(packed.filename, `${manifest.name}-${manifest.version}.tgz`)
+    assert.deepEqual(await readdir(set), [packed.filename], 'Unexpected files after the package check')
+    const tarballData = await readFile(join(set, packed.filename))
+    assert.equal('sha512-' + createHash('sha512').update(tarballData).digest('base64'), packed.integrity, 'Verified tarball differs from the current package inventory')
+    assert.deepEqual(await inventory(root, sourcePaths), before, 'Source changed during release verification')
 
-  const sourceFiles = await inventory(root, [...sourcePaths, 'preview'])
-  const archiveName = `${manifest.name}-${manifest.version}-source-demo.tar.gz`
-  const stagedArchive = join(staging, archiveName)
-  const list = join(staging, 'files.txt')
-  await writeFile(list, sourceFiles.map(file => file.path).join('\n') + '\n')
-  execFileSync('tar', ['-czf', stagedArchive, '-C', root, '-T', list], { stdio: 'inherit', windowsHide: true })
-  const entries = execFileSync('tar', ['-tzf', stagedArchive], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/).sort()
-  assert.deepEqual(entries, sourceFiles.map(file => file.path), 'Unexpected source archive contents')
-  const extracted = join(staging, 'extracted')
-  await mkdir(extracted)
-  execFileSync('tar', ['-xzf', stagedArchive, '-C', extracted], { stdio: 'inherit', windowsHide: true })
-  assert.deepEqual(await inventory(extracted, [...sourcePaths, 'preview']), sourceFiles, 'Extracted source differs from the reviewed files')
-  assert.deepEqual((await readdir(extracted)).sort(), [...sourcePaths, 'preview'].sort(), 'Unexpected top-level archive entry')
-  assert.equal(manifest.scripts.start, 'node scripts/serve.mjs', 'Revisit the offline smoke test after changing npm start')
-  const extractedDemo = await verifyDemo(extracted)
-  assert.deepEqual(await inventory(root, [...sourcePaths, 'preview']), sourceFiles, 'Source changed during archive verification')
+    const sourceFiles = await inventory(root, [...sourcePaths, 'preview'])
+    const archiveName = `${manifest.name}-${manifest.version}-source-demo.tar.gz`
+    const archive = join(set, archiveName)
+    const list = join(work, 'files.txt')
+    await writeFile(list, sourceFiles.map(file => file.path).join('\n') + '\n')
+    execFileSync('tar', ['-czf', archive, '-C', root, '-T', list], { stdio: 'inherit', windowsHide: true })
+    const entries = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/).sort()
+    assert.deepEqual(entries, sourceFiles.map(file => file.path), 'Unexpected source archive contents')
+    const extracted = join(work, 'extracted')
+    await mkdir(extracted)
+    execFileSync('tar', ['-xzf', archive, '-C', extracted], { stdio: 'inherit', windowsHide: true })
+    assert.deepEqual(await inventory(extracted, [...sourcePaths, 'preview']), sourceFiles, 'Extracted source differs from the reviewed files')
+    assert.deepEqual((await readdir(extracted)).sort(), [...sourcePaths, 'preview'].sort(), 'Unexpected top-level archive entry')
+    assert.equal(manifest.scripts.start, 'node scripts/serve.mjs', 'Revisit the offline smoke test after changing npm start')
+    const extractedDemo = await verifyDemo(extracted)
+    assert.deepEqual(await inventory(root, [...sourcePaths, 'preview']), sourceFiles, 'Source changed during archive verification')
 
-  const archiveData = await readFile(stagedArchive)
-  const releaseArtifacts = [
-    { file: packed.filename, bytes: tarballData.length, sha256: sha256(tarballData) },
-    { file: archiveName, bytes: archiveData.length, sha256: sha256(archiveData) },
-  ]
-  const verification = {
-    assessedAt: new Date().toISOString(),
-    status: 'verified local candidates; not published',
-    packageName: manifest.name, version: manifest.version,
-    repository: manifest.repository,
-    node: process.version, platform: process.platform,
-    checks: { check: true, browser: true, packageConsumer: true, knownVulnerabilities: 0, extractedDemo },
-    sourceFiles, artifacts: releaseArtifacts,
-    publicationChecksRequired: [
-      'Confirm distribution rights and public maintainer identity',
-      'Review the actual Git commit and any imported history for confidential data',
-      'Verify repository metadata and private reporting routes',
-      'Verify hosted CI and repository protections',
-      'Choose release notes and tag before publishing a release',
-    ],
-  }
-  await copyFile(stagedArchive, join(artifacts, archiveName))
-  await writeFile(join(artifacts, 'SHA256SUMS'), releaseArtifacts.map(file => `${file.sha256}  ${file.file}`).join('\n') + '\n')
-  await writeFile(join(artifacts, 'release-verification.json'), JSON.stringify(verification, null, 2) + '\n')
-  console.log(`Verified local candidates: ${relative(root, tarball)}, artifacts/${archiveName}`)
-  console.log('Source, extracted demo and checksums match. No publication was performed.')
-} finally {
-  // Delete only the unique, verified direct child created above; never a caller-supplied directory.
-  assert.equal(dirname(await realpath(staging)), resolvedArtifacts)
-  await rm(staging, { recursive: true, force: true })
-}
+    // The transaction adds the artifact hashes, writes SHA256SUMS and checks the whole set before promoting it.
+    return {
+      assessedAt: new Date().toISOString(),
+      status: 'verified local candidates; not published',
+      packageName: manifest.name, version: manifest.version,
+      repository: manifest.repository,
+      node: process.version, platform: process.platform,
+      checks: { check: true, browser: true, packageConsumer: true, apiBaseline: true, knownVulnerabilities: 0, extractedDemo },
+      sourceFiles,
+      publicationChecksRequired: [
+        'Confirm distribution rights and public maintainer identity',
+        'Review the actual Git commit and any imported history for confidential data',
+        'Verify repository metadata and private reporting routes',
+        'Verify hosted CI and repository protections',
+        'Choose release notes and tag before publishing a release',
+      ],
+    }
+  },
+})
+console.log(`Verified local candidates in ${relative(root, result.directory)}: ${result.artifacts.map(item => item.file).join(', ')}`)
+console.log('Source, extracted demo and checksums match. No publication was performed.')
