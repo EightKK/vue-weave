@@ -373,6 +373,16 @@ export interface GanttLabels {
   moveRow?: string
   /** Description of the row move handles. Default lists the Alt key shortcuts. */
   moveRowKeysHint?: string
+  /** Description of spreadsheet cells (`spreadsheet`). Default lists the selection and editing keys. */
+  sheetHint?: string
+  /** Reason of a spreadsheet operation that would change a read-only cell. Default "Read-only cell." */
+  sheetReadOnly?: string
+  /** Reason of a paste whose records have different numbers of cells. Default "The pasted rows must have the same number of cells." */
+  sheetRagged?: string
+  /** Reason of a paste that extends past the last row or column. Default "The pasted cells extend past the table." */
+  sheetOutside?: string
+  /** Announced when `validateSheetEdit` returns false. Default "This sheet change was rejected." */
+  sheetRejected?: string
   /** Announced when `validateRowMove` returns false. Default "This row move was rejected." */
   rowMoveRejected?: string
   /** Label of the status-date line (`statusDate`). Default "Status date". */

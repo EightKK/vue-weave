@@ -560,9 +560,11 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   font: inherit; text-align: start; white-space: nowrap; user-select: none;
 }
 .vw-sheet-cell[aria-pressed="true"] { background: Highlight; color: HighlightText; }
+.vw-sheet-cell.vw-is-filling { outline: 1px dashed var(--vw-accent); outline-offset: -2px; }
 .vw-sheet-cell:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
 .vw-sheet-column { position: relative; }
 .vw-sheet-fill {
   position: absolute; inset-inline-end: 0; bottom: 0; width: 10px; height: 10px;
-  background: var(--vw-accent); border: 1px solid var(--vw-surface); cursor: crosshair;
+  background: var(--vw-accent); border: 1px solid var(--vw-surface); cursor: crosshair; touch-action: none;
 }
+@media (pointer: coarse) { .vw-sheet-fill { width: 16px; height: 16px; } }
