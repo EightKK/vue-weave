@@ -72,8 +72,16 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
   const rootId = uniqueName('0', taken), layerId = uniqueName('1', taken)
   const groupIds = new Map(groups.map(group => [group.id, uniqueName(group.id, taken)]))
   const edgeIds = new Map(edges.map(edge => [edge.id, uniqueName(edge.id, taken)]))
-  // Absolute boxes of the nodes: saved positions, else the layered layout.
-  const layout = nodes.some(node => !positions.has(node.id)) ? layoutLayeredGraph(nodes, edges, { direction: options.direction ?? 'LR' }) : undefined
+  // Absolute boxes of the nodes: saved positions, else the layered layout. The layout gives every node one slot size, so
+  // it uses the largest written size: a wide node then cannot overlap its neighbours.
+  let slotWidth = defaultNodeWidth, slotHeight = defaultNodeHeight
+  for (const size of sizes.values()) {
+    slotWidth = Math.max(slotWidth, size.width)
+    slotHeight = Math.max(slotHeight, size.height)
+  }
+  const layout = nodes.some(node => !positions.has(node.id))
+    ? layoutLayeredGraph(nodes, edges, { direction: options.direction ?? 'LR', nodeWidth: slotWidth, nodeHeight: slotHeight })
+    : undefined
   const boxes = new Map<string, Rect>()
   for (const node of nodes) {
     const point = positions.get(node.id) ?? layout!.boxes.get(node.id)!

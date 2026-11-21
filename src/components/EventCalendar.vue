@@ -254,7 +254,18 @@ interface TimedBox {
   /** Too short for two lines: the time and label share one line. */
   short: boolean
 }
-const timedBoxes = computed<TimedBox[][]>(() => columns.value.map(column => {
+/**
+ * Give the Tab stop of each event to its first drawn element (in document order), so an event that started before the
+ * visible range, or whose first segment is hidden, is still reachable by Tab.
+ */
+function markPrimary<T extends { event: E; primary: boolean }>(items: Iterable<T>) {
+  const seen = new Set<string>()
+  for (const item of items) {
+    item.primary = !seen.has(item.event.id)
+    seen.add(item.event.id)
+  }
+}
+const timedBoxes = computed<TimedBox[][]>(() => markedColumns(columns.value.map(column => {
   const events = props.events.filter(event => !inAllDayRow(event) && inColumn(event, column))
   const byId = new Map(events.map(event => [event.id, event]))
   const minDuration = minEventHeight / props.hourHeight * hour
@@ -276,7 +287,11 @@ const timedBoxes = computed<TimedBox[][]>(() => columns.value.map(column => {
       },
     }]
   })
-}))
+})))
+function markedColumns(boxes: TimedBox[][]) {
+  markPrimary(boxes.flat())
+  return boxes
+}
 const nowLine = computed(() => {
   if (props.now === undefined) return undefined
   const index = columns.value.findIndex(column => isToday(column.day))
@@ -323,11 +338,17 @@ function packRow(events: readonly E[], from: number, count: number, offset = 0, 
 const allDayRow = computed(() => {
   if (view.value === 'month' || !columns.value.length) return { lanes: 0, segments: [] as DaySegment[] }
   const events = props.events.filter(inAllDayRow)
-  if (!resourceMode.value) return packRow(events, 0, columns.value.length)
+  if (!resourceMode.value) {
+    const row = packRow(events, 0, columns.value.length)
+    markPrimary(row.segments)
+    return row
+  }
   const total = columns.value.length
   const rows = columns.value.map((column, index) => packRow(events.filter(event => inColumn(event, column)), 0, 1, index, total))
   // packRow slices from the start of dayCells; in resource mode every column shows the same day, so `from` stays 0.
-  return { lanes: Math.max(0, ...rows.map(row => row.lanes)), segments: rows.flatMap(row => row.segments) }
+  const segments = rows.flatMap(row => row.segments)
+  markPrimary(segments)
+  return { lanes: Math.max(0, ...rows.map(row => row.lanes)), segments }
 })
 
 interface MonthWeek { key: string; days: { day: EventCalendarDay; index: number; hidden: number }[]; segments: DaySegment[] }
@@ -348,6 +369,7 @@ const monthWeeks = computed<MonthWeek[]>(() => {
       segments: row.segments.filter(segment => segment.lane < shown),
     })
   }
+  markPrimary(weeks.flatMap(week => week.segments))
   return weeks
 })
 const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHeight + 6)
@@ -703,7 +725,9 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   } else if (horizontal || view.value === 'month') {
     const days = horizontal ? step : step * 7
     change = key.shiftKey && horizontal
-      ? (area === 'days' ? editOf(event, { start: before.start, end: Math.max(addDays(before.end, days), addDays(before.start, 1)) }, 'end', 'keyboard') : undefined)
+      // Like the pointer handle, day-wise resizing is for all-day events only: a timed event in the month view keeps
+      // its times instead of growing to a whole day.
+      ? (area === 'days' && event.allDay ? editOf(event, { start: before.start, end: Math.max(addDays(before.end, days), addDays(before.start, 1)) }, 'end', 'keyboard') : undefined)
       : editOf(event, { start: addDays(before.start, days), end: addDays(before.end, days) }, 'move', 'keyboard')
   }
   if (!change) return

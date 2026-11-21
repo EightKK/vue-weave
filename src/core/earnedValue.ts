@@ -324,7 +324,16 @@ function earnedValueSeries(tasks: readonly PreparedTask[], statusDate: number, o
   const start = options.start ?? first
   const end = options.end ?? last
   if (end < start) throw new RangeError(`series.end must be ≥ series.start (got ${show(start)}–${show(end)})`)
-  const count = Math.floor((end - start) / step) + 2
+  // The exact number of points: the steps before `end`, `end` itself and the status date when it is not one of them.
+  let steps = end > start ? Math.ceil((end - start) / step) : 0
+  while (steps > 0 && start + (steps - 1) * step >= end) steps--
+  while (start + steps * step < end) steps++
+  const onGrid = (time: number) => {
+    if (time === end) return true
+    const k = Math.round((time - start) / step)
+    return k >= 0 && k < steps && start + k * step === time
+  }
+  const count = steps + 1 + (statusDate >= start && statusDate <= end && !onGrid(statusDate) ? 1 : 0)
   if (count > maxEarnedValuePoints) {
     throw new RangeError(`The series would have more than ${maxEarnedValuePoints} points; use a larger series.step (got ${show(step)})`)
   }

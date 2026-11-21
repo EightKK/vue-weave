@@ -173,3 +173,28 @@ test('dragging over empty time proposes a new event, and a click books the defau
   await expect(calendar.getByRole('button', { name: 'New booking 3, Thu, Nov 19 – Sat, Nov 21, All day', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('the month view does not resize a timed event by whole days, and events continued from earlier days keep a Tab stop', async ({ page }) => {
+  const { errors, calendar, status, event, button } = await openCalendar(page)
+  await button('Month').click()
+  await event('Design review').focus()
+  await page.keyboard.press('Shift+ArrowLeft')
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(status).not.toHaveText(/^Design review →/)
+  await expect(calendar.getByRole('button', { name: /^Design review, Wed, Nov 11 10:00–11:00/ })).toBeVisible()
+
+  // Saturday's day view shows the overnight migration that started on Friday; Wednesday, Nov 18 shows the offsite that
+  // started on Tuesday. Each is the only element of its event and takes the Tab stop.
+  await button('Day').click()
+  for (let i = 0; i < 3; i++) await button('Next').click()
+  await expect(event('Server migration')).toHaveAttribute('tabindex', '0')
+  // Events without a room show only in the plain day view.
+  await page.getByRole('checkbox', { name: 'Rooms in day view' }).uncheck()
+  for (let i = 0; i < 4; i++) await button('Next').click()
+  await expect(event('Team offsite')).toHaveAttribute('tabindex', '0')
+  await event('Team offsite').focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(event('Team offsite')).toBeFocused()
+  expect(errors).toEqual([])
+})

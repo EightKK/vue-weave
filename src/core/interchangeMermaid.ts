@@ -30,12 +30,23 @@ const plainId = /^[A-Za-z0-9_]+$/
 const encodedId = /^vw_(?:[A-Za-z0-9]|_[0-9a-f]{1,6}_)+$/
 
 /**
+ * The comment line `toMermaid` writes after the header when it encoded an ID. `fromMermaid` decodes `vw_` IDs only in
+ * text that has this line, so the IDs of other Mermaid files are kept as written (`order` and `vw_order` stay two nodes).
+ */
+const encodedIdsMarker = '%% vue-weave: encoded-ids'
+
+/**
  * The Mermaid ID of a node, edge or group ID. Mermaid has no quoting for IDs, so an ID that is not letters, digits and
  * underscores, is a keyword or starts with `vw_` is written as `vw_` followed by its letters and digits, with every other
- * character as `_<hex code point>_` (`a b` becomes `vw_a_20_b`). `fromMermaid` decodes such IDs.
+ * character as `_<hex code point>_` (`a b` becomes `vw_a_20_b`). `fromMermaid` decodes such IDs when the text carries
+ * `encodedIdsMarker`.
  */
+function needsEncoding(id: string) {
+  return !plainId.test(id) || reservedIds.has(id) || id.startsWith('vw_')
+}
+
 function mermaidId(id: string) {
-  if (plainId.test(id) && !reservedIds.has(id) && !id.startsWith('vw_')) return id
+  if (!needsEncoding(id)) return id
   let out = 'vw_'
   for (const char of id) out += /[A-Za-z0-9]/.test(char) ? char : '_' + char.codePointAt(0)!.toString(16) + '_'
   return out
@@ -109,6 +120,9 @@ export function toMermaid(graph: GraphInterchangeInput, options: MermaidOptions 
     return `${nodeIds.get(node.id)}${open}"${text}"${close}`
   }
   const lines = ['flowchart ' + direction]
+  const encoded = nodes.some(node => needsEncoding(node.id)) || groups.some(group => needsEncoding(group.id))
+    || (options.edgeIds === true && edges.some(edge => needsEncoding(edge.id)))
+  if (encoded) lines.push(encodedIdsMarker)
   const grouped = new Set<string>()
   for (const group of groups) for (const id of group.nodeIds) grouped.add(id)
   for (const node of nodes) if (!grouped.has(node.id)) lines.push('  ' + declare(node))
@@ -213,8 +227,12 @@ interface Link {
 export function fromMermaid(text: string, options: GraphInterchangeImportOptions = {}): GraphInterchangeImport {
   if (typeof text !== 'string') throw new Error('Mermaid text must be a string')
   const collector = createGraphCollector('Mermaid', options)
+  const maxItems = options.maxItems ?? 100_000
   const { warn } = collector
   const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split(/\r\n|\n|\r/)
+  // Only text that toMermaid wrote with encoded IDs has the marker; other files keep their `vw_` IDs as written.
+  const decodeIds = lines.some(line => line.trim() === encodedIdsMarker)
+  const decodeId = (id: string) => decodeIds ? decodeMermaidId(id) : id
   let lineIndex = 0
   let source = ''
   let pos = 0
@@ -353,7 +371,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
     nodeIdPattern.lastIndex = pos
     const match = nodeIdPattern.exec(source)
     if (!match) fail('expected a node ID')
-    const id = decodeMermaidId(match![0])
+    const id = decodeId(match![0])
     pos = nodeIdPattern.lastIndex
     const node = mention(id)
     let raw: string | undefined, shape: string | undefined
@@ -407,7 +425,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
     edgeIdPattern.lastIndex = pos
     const named = edgeIdPattern.exec(source)
     if (named) {
-      id = decodeMermaidId(named[1]!)
+      id = decodeId(named[1]!)
       pos = edgeIdPattern.lastIndex
     }
     const start = pos
@@ -497,16 +515,27 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
       if (link!.invisible) {
         warn('unsupported-statement', 'An invisible link (~~~) was ignored', undefined, lineIndex + 1)
       } else {
+        // `a & b --> c & d` expands to every pair. Check the count before expanding, so a few `&` lists cannot build an
+        // edge list far beyond maxItems before the collector rejects it.
+        if (edges.length + current.length * next.length + parsed.size + groups.length > maxItems) {
+          throw new RangeError(`The Mermaid file has more than ${maxItems} nodes, edges and groups (maxItems)`)
+        }
         for (const from of current) for (const to of next) edges.push({ from, to, link: link!, line: lineIndex + 1 })
       }
       current = next
     }
   }
 
+  // The text up to the next `;` outside double quotes, or to the end of the line; `pos` stops at that `;`.
   const restOfStatement = () => {
-    const end = source.indexOf(';', pos)
-    const rest = source.slice(pos, end < 0 ? source.length : end)
-    pos = end < 0 ? source.length : end
+    let end = pos
+    let quoted = false
+    for (; end < source.length; end++) {
+      if (source[end] === '"') quoted = !quoted
+      else if (source[end] === ';' && !quoted) break
+    }
+    const rest = source.slice(pos, end)
+    pos = end
     return rest
   }
 
@@ -537,10 +566,10 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
       let id: string | undefined, raw: string
       const titled = /^([^\s[\]"]+)\s*\[(.*)\]$/.exec(rest)
       if (titled) {
-        id = decodeMermaidId(titled[1]!)
+        id = decodeId(titled[1]!)
         raw = titled[2]!.trim()
       } else if (/^[^\s"]+$/.test(rest)) {
-        id = decodeMermaidId(rest)
+        id = decodeId(rest)
         raw = rest
       } else raw = rest
       if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) raw = raw.slice(1, -1)
@@ -578,7 +607,9 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
     }
     if (word !== undefined) {
       warn('unsupported-statement', `The ${word} statement was ignored`, undefined, lineIndex + 1)
-      pos = source.length
+      // Skip only this statement: `style a fill:red; b --> c` still reads the link after the semicolon.
+      pos = keyword.lastIndex
+      restOfStatement()
       continue
     }
     readChain()

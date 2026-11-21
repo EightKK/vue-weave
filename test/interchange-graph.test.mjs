@@ -82,6 +82,33 @@ test('toMermaid escapes IDs that Mermaid cannot hold and fromMermaid decodes the
   assert.deepEqual(read.groups, [{ id: 'vw_a_20_b_g', label: 'Same ID as a node', nodeIds: ['plain_1'] }])
 })
 
+test('fromMermaid decodes vw_ IDs only in text that toMermaid marked as encoded', () => {
+  // A hand-written file keeps its IDs: order and vw_order are two nodes joined by one edge.
+  const plain = fromMermaid('flowchart LR\n  order["Order"] --> vw_order["Review"]')
+  assert.deepEqual(plain.nodes, [{ id: 'order', label: 'Order' }, { id: 'vw_order', label: 'Review' }])
+  assert.deepEqual(plain.edges.map(({ from, to }) => [from, to]), [['order', 'vw_order']])
+  assert.deepEqual(plain.warnings, [])
+  // The marker is written only when an ID needed encoding.
+  assert.doesNotMatch(toMermaid({ nodes: [{ id: 'a', label: 'A' }], edges: [] }), /encoded-ids/)
+  const text = toMermaid({ nodes: [{ id: 'order', label: 'Order' }, { id: 'vw_order', label: 'Review' }], edges: [] })
+  assert.match(text, /^flowchart LR\n%% vue-weave: encoded-ids\n/)
+  assert.deepEqual(fromMermaid(text).nodes.map(node => node.id), ['order', 'vw_order'])
+})
+
+test('fromMermaid skips only the ignored statement up to its semicolon', () => {
+  const read = fromMermaid('flowchart LR\n  a --> b; style a fill:red; b --> c\n  click a "x;y"; c --> d')
+  assert.deepEqual(read.edges.map(({ from, to }) => [from, to]), [['a', 'b'], ['b', 'c'], ['c', 'd']])
+  assert.deepEqual(read.warnings.map(warning => warning.code), ['unsupported-statement', 'unsupported-statement'])
+})
+
+test('fromMermaid checks maxItems before it expands & lists into edges', () => {
+  const list = prefix => Array.from({ length: 400 }, (_, i) => prefix + i).join(' & ')
+  // 160,000 pairs would be built before the check; the reader refuses them up front.
+  assert.throws(() => fromMermaid(`flowchart LR\n  ${list('a')} --> ${list('b')}`, { maxItems: 1000 }), {
+    name: 'RangeError', message: 'The Mermaid file has more than 1000 nodes, edges and groups (maxItems)',
+  })
+})
+
 test('fromMermaid reads chains, & lists, every link form, labels, comments and @{ } shapes', () => {
   const text = [
     '%%{init: {"theme": "dark"}}%%',
@@ -615,4 +642,11 @@ test('the flowchart and BPMN shapes, hollow arrows and dashed edges round-trip t
   // Mermaid has plain syntax for four of them; document and data-object are written as boxes.
   const mermaid = fromMermaid(toMermaid(graph))
   assert.deepEqual(mermaid.nodes.map(node => node.shape), ['circle', 'stadium', 'parallelogram', undefined, 'cylinder', undefined])
+})
+
+test('toDrawio places nodes without positions in slots as large as the largest written size', () => {
+  const graph = { nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ id: 'e', from: 'A', to: 'B' }], sizes: new Map([['A', { width: 400, height: 60 }]]) }
+  const read = fromDrawio(toDrawio(graph))
+  const a = read.positions.get('A'), b = read.positions.get('B')
+  assert.ok(a.x + read.sizes.get('A').width <= b.x, `B (x=${b.x}) overlaps A (x=${a.x}, width 400)`)
 })

@@ -25,6 +25,7 @@ const initialEvents: Booking[] = [
   { id: 'call', label: 'Customer call', start: at('11', '10:30'), end: at('11', '12:00'), resourceId: 'borealis', tone: 'teal', data: { owner: 'Sales' } },
   { id: 'safety', label: 'Lab safety', start: at('11', '13:00'), end: at('11', '14:00'), resourceId: 'lab', tone: 'amber', data: { owner: 'Facilities' } },
   { id: 'demo', label: 'Sprint demo', start: at('12', '15:00'), end: at('12', '16:30'), resourceId: 'borealis', data: { owner: 'Platform' } },
+  { id: 'migration', label: 'Server migration', start: at('13', '18:00'), end: at('14', '09:00'), resourceId: 'lab', tone: 'amber', data: { owner: 'Platform' } },
   { id: 'retro', label: 'Retrospective', start: at('13', '11:00'), end: at('13', '12:00'), resourceId: 'atlas', tone: 'violet', data: { owner: 'Platform' } },
   { id: 'offsite', label: 'Team offsite', start: at('17'), end: at('19'), allDay: true, tone: 'teal', data: { owner: 'All' } },
   { id: 'release', label: 'Release day', start: at('13'), end: at('14'), allDay: true, color: '#c23b22', data: { owner: 'Platform' } },

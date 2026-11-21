@@ -197,3 +197,13 @@ test('computeEarnedValue does not modify its arguments', () => {
   assert.deepEqual({ tasks, options }, before)
   assert.equal(result.tasks[0].pv, 37.5)
 })
+
+test('the series limit counts the exact points: the grid, the end and a status date between grid points', () => {
+  const task = { id: 'a', budget: 100, start: 0, end: 99999, progress: 0.5 }
+  // 0, 1, …, 99998 and the end 99999 are exactly maxEarnedValuePoints points; the status date 0 is one of them.
+  const exact = computeEarnedValue([task], { statusDate: 0, series: { step: 1, start: 0, end: maxEarnedValuePoints - 1 } }).series
+  assert.equal(exact.length, maxEarnedValuePoints)
+  // 0 … 99998 and the end 99998.5 are as many again, and the status date 0.5 adds one more.
+  assert.throws(() => computeEarnedValue([task], { statusDate: 0.5, series: { step: 1, start: 0, end: maxEarnedValuePoints - 1.5 } }), RangeError)
+  assert.equal(computeEarnedValue([task], { statusDate: 1, series: { step: 1, start: 0, end: maxEarnedValuePoints - 1.5 } }).series.length, maxEarnedValuePoints)
+})
