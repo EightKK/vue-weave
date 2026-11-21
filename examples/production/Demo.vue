@@ -7,7 +7,8 @@ import LotFlow from './LotFlow.vue'
 import ProductionPlan from './ProductionPlan.vue'
 
 const view = ref<'planning' | 'lot' | 'approval' | 'sheet'>('planning')
-const language = ref<Language>(navigator.language.startsWith('ja') ? 'ja' : 'en')
+// English by default; `?lang=ja` opens the Japanese copy.
+const language = ref<Language>(new URLSearchParams(location.search).get('lang') === 'ja' ? 'ja' : 'en')
 const theme = ref<'light' | 'dark'>()
 const text = computed(() => copy[language.value])
 watchEffect(() => { document.documentElement.lang = language.value })

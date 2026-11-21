@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-No changes yet.
+- The demo homepage now opens in English regardless of the browser language; add `?lang=ja` to the URL to open it in Japanese. The language buttons work as before.
+- Widened the approval workflow demo so the branch amount labels no longer run into the step boxes.
 
 ## 1.1.0 - 2026-11-21
 
