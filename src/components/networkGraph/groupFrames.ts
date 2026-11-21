@@ -49,7 +49,7 @@ export function groupShapes(list: readonly NetworkGroup[], hasNode: (id: string)
   for (let i = order.length - 1; i >= 0; i--) {
     const group = order[i]!.group
     const all = [...group.nodeIds]
-    for (const child of children.get(group.id) ?? []) all.push(...effective.get(child.id)!)
+    for (const child of children.get(group.id) ?? []) for (const id of effective.get(child.id)!) all.push(id)
     if (!all.length) throw emptyGroupError(group.id)
     effective.set(group.id, all)
   }

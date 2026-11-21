@@ -3023,7 +3023,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   if (typeof padding !== 'number' || !Number.isFinite(padding) || padding < 0) throw new RangeError('padding must be finite and nonnegative')
   const chosen: TimelineBar[] = []
   if (ids === undefined) {
-    for (const { row } of displayedRows.value) chosen.push(...barsByRow.value.get(row.id) ?? [])
+    for (const { row } of displayedRows.value) for (const bar of barsByRow.value.get(row.id) ?? []) chosen.push(bar)
   } else {
     for (const id of ids) {
       const bar = barById.value.get(id)

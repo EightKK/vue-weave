@@ -871,7 +871,7 @@ function emitMoves(before: ReadonlyMap<string, GraphPoint>, after: ReadonlyMap<s
     const previous = before.get(id)!
     if (previous.x === point.x && previous.y === point.y) continue
     const proxy = collapsedView.value?.proxies.get(id)
-    if (proxy) changes.push(...proxyMoves(proxy.nodeIds, point))
+    if (proxy) for (const change of proxyMoves(proxy.nodeIds, point)) changes.push(change)
     else changes.push({ id, before: previous, after: point })
   }
   if (changes.length === 1) emit('node-move', changes[0]!)

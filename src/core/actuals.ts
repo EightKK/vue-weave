@@ -297,7 +297,7 @@ export function rescheduleFromActuals(
       cycles: raw.cycles.map(cycle => ({ ...cycle, taskIds: [...new Set(cycle.taskIds.map(real))] })),
     }
   } else schedule = { ...raw, taskId: real(raw.taskId) }
-  diagnostics.push(...toPlanningDiagnostics(schedule))
+  for (const diagnostic of toPlanningDiagnostics(schedule)) diagnostics.push(diagnostic)
 
   const scheduled = schedule.ok ? new Map(schedule.tasks.map(task => [task.id, task])) : undefined
   const planned = plan.ok ? new Map(plan.tasks.map(task => [task.id, task])) : undefined
