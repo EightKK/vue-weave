@@ -241,7 +241,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## デモを起動する
 
-ホスト型のデモはありません。Node.js 22.18以降とnpmを用意し、ローカルで起動します。cloneしたソースやGitHubのソースZIPのフォルダーで次を実行します。
+デモは[GitHub Pages](https://eightkk.github.io/vue-weave/)で公開しています。`main`から再ビルドされるため、最新リリースより新しい内容のことがあります。ローカルで起動するには、Node.js 22.18以降とnpmを用意します。cloneしたソースやGitHubのソースZIPのフォルダーで次を実行します。
 
 ```sh
 npm ci

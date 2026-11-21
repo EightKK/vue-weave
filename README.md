@@ -241,7 +241,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## Run the demo
 
-There is no hosted demo. Run it locally with Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
+The demo is hosted on [GitHub Pages](https://eightkk.github.io/vue-weave/) and is rebuilt from `main`, so it can be ahead of the latest release. To run it locally, use Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
 
 ```sh
 npm ci
