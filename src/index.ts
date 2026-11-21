@@ -116,3 +116,16 @@ export const GraphPalette = GraphPaletteVue as unknown as GraphPaletteComponent
 export const PropertyInspector = PropertyInspectorVue as unknown as PropertyInspectorComponent
 export { readPaletteDrop } from './components/graphPalette.js'
 export type { PaletteDropSource } from './components/graphPalette.js'
+
+// EventCalendar: a controlled day, week and month calendar, generic over its event type like the other components.
+import EventCalendarVue from './components/EventCalendar.vue'
+import type { CalendarEvent } from './core/eventCalendar.js'
+type EventCalendarSfc<E extends CalendarEvent> = typeof EventCalendarVue<E>
+/** Methods that EventCalendar exposes on its template ref. `E` is the event type of the calendar. */
+export type EventCalendarExposed<E extends CalendarEvent = CalendarEvent> = SfcExposed<EventCalendarSfc<E>>
+/** The type of the `EventCalendar` component. In a template, the event type is inferred from `events`. */
+export type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent>(
+  props: { events: readonly E[]; date: number } & Record<string, unknown>,
+) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>)
+  & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>
+export const EventCalendar = EventCalendarVue as unknown as EventCalendarComponent

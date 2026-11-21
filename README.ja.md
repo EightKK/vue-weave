@@ -206,6 +206,9 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **スプレッドシート編集（`spreadsheet`）：** セル範囲の選択、Excel や Google スプレッドシートとのコピー・切り取り・貼り付け、Delete による消去、Ctrl/⌘+D や右下のハンドルによる下方向のコピー、文字入力による編集。操作ごとに一つの `sheet-edit` 変更案として届き、`validateSheetEdit` で一括で却下でき、`applyTimelineSheetEdit` で反映できます。デモには、表からスケジューラーがバー・矢印・クリティカルパスを計算する工程表と、購買申請の承認フローの編集画面があります。
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
+### EventCalendar
+- **表示：** IANA タイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
+- **提案としての編集：** ドラッグとキーボードによる移動とリサイズ、リソース間の移動、ドラッグでの新規作成。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。
 
 ### TaskBoard
 

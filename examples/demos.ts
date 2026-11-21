@@ -20,6 +20,7 @@ import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
 import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
 import BookingShowcase from './showcase/BookingShowcase.vue'
 import CalendarShowcase from './showcase/CalendarShowcase.vue'
+import EventCalendarDemo from './EventCalendarDemo.vue'
 import BpmnDemo from './BpmnDemo.vue'
 
 /**
@@ -57,6 +58,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'resource-planning', label: 'Resource planning', group: 'standalone', component: ResourcePlanningDemo },
   { id: 'persistence', label: 'Saved editing', group: 'standalone', component: PersistenceDemo },
   { id: 'large-plan', label: 'Large plan', group: 'standalone', component: LargePlanDemo },
+  { id: 'event-calendar', label: 'Event calendar', group: 'standalone', component: EventCalendarDemo },
   { id: 'diagram-editor', label: 'Diagram editor', group: 'standalone', component: DiagramEditorDemo },
   { id: 'task-board', label: 'Task board', group: 'standalone', component: TaskBoardDemo },
   { id: 'earned-value', label: 'Earned value', group: 'standalone', component: EarnedValueDemo },

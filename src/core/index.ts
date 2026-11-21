@@ -145,6 +145,15 @@ export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncre
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
 } from './graphIncremental.js'
+export {
+  eventCalendarRange, eventCalendarDays, eventCalendarMonthGrid, shiftEventCalendarDate, eventCalendarTimeOfDay, eventCalendarTimeAt,
+  layoutCalendarDayEvents, packCalendarEventLanes, validateCalendarEvents,
+} from './eventCalendar.js'
+export type {
+  EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
+  CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
+  EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
+} from './eventCalendar.js'
 export { graphPaletteMimeType } from './diagramEditor.js'
 export type {
   GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,

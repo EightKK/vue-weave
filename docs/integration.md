@@ -396,6 +396,14 @@ Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) w
 
 `--vw-item-ink`, `--vw-item-line`, `--vw-item-pale` and `--vw-item-solid` are internal. The `vw-tone-*` classes set them from the tone families above, and nodes, bars and segments read them. They are not a theming API: change the tone variables (for example `--vw-blue-solid`) instead.
 
+EventCalendar uses the shared theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-text`, `--vw-muted`, `--vw-border`, `--vw-grid`, `--vw-accent`, `--vw-on-solid` and `--vw-now`) and the tone families for event backgrounds, so the built-in dark themes apply to it unchanged. Its classes start with `vw-calendar-` (for example `vw-calendar-event`, `vw-calendar-column`, `vw-calendar-month-day`, `vw-calendar-preview` and `vw-calendar-now`), with the shared `vw-is-*` modifiers (`vw-is-selected`, `vw-is-editable`, `vw-is-dragging`, `vw-is-today`, `vw-is-outside` for days of another month) and `vw-continues-before` and `vw-continues-after` on events cut by a day or week boundary. Positions use logical properties, so `dir="rtl"` mirrors it without extra rules. It adds three variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-calendar-gutter` | `56px` (`42px` below 700 px wide) | Width of the hour labels and the corner of the all-day row |
+| `--vw-calendar-today` | `--vw-surface-hover` | Background of today's column and month day (with the `now` prop) |
+| `--vw-calendar-event-accent` | the tone's `--vw-item-solid` | Accent stripe at the inline start of an event; `CalendarEvent.color` sets it per event |
+
 ### Class names
 
 Every class that the components emit and the stylesheet targets starts with `vw-`, so generic utility classes in the host page (for example Tailwind's `outline` or Bootstrap's `active`) cannot restyle chart elements. Element classes are named after the element (`vw-gantt-bar`, `vw-network-node`). State and variant modifiers use the `vw-is-*` form and are always combined with an element class, for example `.vw-gantt-bar.vw-is-selected` or `.vw-network-edge.vw-is-related`. Classes you add yourself, such as a `class` attribute on the component or the content of a slot, are passed through unchanged.

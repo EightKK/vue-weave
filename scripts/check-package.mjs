@@ -98,12 +98,13 @@ try {
     import { readFileSync } from 'node:fs'
     import { createSSRApp, h } from 'vue'
     import { renderToString } from 'vue/server-renderer'
-    import { NetworkGraph, GanttChart, TaskBoard, useEditHistory } from '${manifest.name}'
+    import { NetworkGraph, GanttChart, TaskBoard, EventCalendar, useEditHistory } from '${manifest.name}'
     import { GraphPalette, PropertyInspector } from '${manifest.name}'
     assert.equal(typeof useEditHistory, 'function')
     for (const [component, props] of [
       [NetworkGraph, { nodes: [], edges: [] }],
       [GanttChart, { rows: [], bars: [], range: { start: 0, end: 10 } }],
+      [EventCalendar, { events: [], date: 0 }],
       [GraphPalette, { items: [{ id: 'step', label: 'Step', shape: 'diamond' }] }],
       [PropertyInspector, { item: { id: 'a' }, fields: [{ id: 'id', kind: 'text', label: 'ID', get: item => item.id }] }],
       [TaskBoard, { columns: [{ id: 'todo', label: 'To do' }], cards: [] }],
@@ -129,6 +130,7 @@ try {
     import {
       NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
       type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
+      EventCalendar, type CalendarEvent, type EventCalendarEdit, type EventCalendarExposed,
       GraphPalette, PropertyInspector, readPaletteDrop, type InspectorChange,
       TaskBoard, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardExposed,
     } from '${manifest.name}'
@@ -159,6 +161,12 @@ try {
     typedRef?.exportSvg({ nodeLabel: node => node.data?.owner ?? node.label })
     const chartRef = undefined as GanttChartExposed<TimelineRow, TimelineBar<MyData>> | undefined
     chartRef?.exportSvg({ barLabel: bar => bar.data?.owner ?? bar.label })
+    const events: CalendarEvent<MyData>[] = [{ id: 'e', label: 'Event', start: 0, end: 1, data: { owner: 'Ada' } }]
+    const calendar = new EventCalendar({ events, date: 0 })
+    assertType<Equal<Parameters<NonNullable<typeof calendar.$slots.event>>[0]['event']['data'], MyData | undefined>>()
+    assertType<Equal<Parameters<NonNullable<typeof calendar.$props.onEdit>>[0], EventCalendarEdit>>()
+    const calendarRef = undefined as EventCalendarExposed<CalendarEvent<MyData>> | undefined
+    calendarRef?.cancelEdit()
     void h(NetworkGraph, { nodes, edges })
     // The diagram editor parts infer their item types the same way.
     const palette = new GraphPalette({ items: [{ id: 'p', label: 'P', data: { owner: 'Ada' } }] })

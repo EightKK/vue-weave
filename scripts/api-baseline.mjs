@@ -25,6 +25,7 @@ const components = [
   { name: 'GraphPalette', file: 'dist/types/components/GraphPalette.vue.d.ts' },
   { name: 'PropertyInspector', file: 'dist/types/components/PropertyInspector.vue.d.ts' },
   { name: 'TaskBoard', file: 'dist/types/components/TaskBoard.vue.d.ts' },
+  { name: 'EventCalendar', file: 'dist/types/components/EventCalendar.vue.d.ts' },
 ]
 const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed })
 const byName = (a, b) => a < b ? -1 : a > b ? 1 : 0

@@ -79,6 +79,8 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line)
   - [Scheduling constraints](#scheduling-constraints)
   - [Timeline editing helpers](#timeline-editing-helpers)
+- [EventCalendar](#eventcalendar)
+  - [Event calendar helpers](#event-calendar-helpers)
 - [TaskBoard](#taskboard)
   - [Task board helpers](#task-board-helpers)
 - [Core entry point](#core-entry-point)
@@ -1069,6 +1071,83 @@ const headerBands = [
   calendarBands(range, 'hour', { timeZone: 'Europe/Berlin', step: 6 }),
 ]
 ```
+
+## EventCalendar
+
+A third controlled component for appointment-style scheduling: a day or week time grid with an all-day row, a month grid, and an optional day view with one column per resource (rooms, machines, people). Like the other components it never changes its props: moves, resizes, resource changes and new events are emitted as proposals that the parent validates and applies. It is generic over the event type `E extends CalendarEvent`, inferred from `events`; its public type is `EventCalendarComponent` and its template ref type `EventCalendarExposed<E>`.
+
+```vue
+<EventCalendar
+  v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
+  :events="events" :resources="rooms" :now="now" time-zone="Europe/Berlin" locale="en-GB" creatable
+  :validate-edit="noDoubleBooking" @edit="apply" @create="add" @range-change="load"
+/>
+```
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| events | readonly E[] (E extends CalendarEvent) / required | Events with `id`, `label` and a half-open `[start, end)` interval in epoch milliseconds; see below |
+| date | number / required | Anchor date of the view. Supports `v-model:date`; without a listener the calendar still navigates with local state |
+| view | `'day' \| 'week' \| 'month'` / `'week'` | Supports `v-model:view`, with local state like `date` |
+| weekStartsOn | number / 1 | First day of a week, 0 = Sunday to 6 = Saturday |
+| timeZone | string / `'UTC'` | IANA time zone of the days, hours and labels. Days start at local midnight, also across daylight-saving changes |
+| locale | string or readonly string[] / `'en-US'` | Locale of the labels. The runtime's default locale and time zone are never used, so server and client render the same text |
+| dayStart, dayEnd | integer / 0, 24 | First and last-plus-one hour of the time grid (`0 <= dayStart < dayEnd <= 24`). Events outside are clipped |
+| hourHeight | number / 48 | Pixels per hour of the time grid |
+| height | number or CSS length / 480 | Height of the scrolling time grid |
+| snap | number / 15 | Step of pointer and keyboard edits of timed events, **in minutes** |
+| createDuration | number / 4 × snap | Minutes of an event created by a click without a drag |
+| resources | readonly CalendarResource[] / undefined | `{ id, label, detail? }`. The day view shows one column per resource; events of other resources, or without `resourceId`, are not shown there. Every `resourceId` must name a resource |
+| readonly | boolean / false | Disables editing and creating |
+| creatable | boolean / false | A drag (or click) on an empty part of the time grid, the all-day row or a month day proposes a new event through `create` |
+| validateEdit, validateCreate | EventCalendarEditValidator, EventCalendarCreateValidator / undefined | Synchronous checks; see below |
+| selectedId | string / undefined | Selected event; supports `v-model:selected-id` |
+| labels | Partial<EventCalendarLabels> / English | Toolbar, view names, "All day", "+N more", hints, rejection texts, `now` and `empty` |
+| showToolbar | boolean / true | The built-in toolbar: Previous, Today, Next, the title and the view switch (a group of `aria-pressed` buttons) |
+| now | number / undefined | Draws the now line (`labels.now`) in today's column and enables Today. Supply it for deterministic and server-rendered output; the calendar never reads the clock |
+| formatTime | (time: number) => string / `intlTimeFormatter({ locale, timeZone })` | Times in event labels and accessible names |
+| maxMonthLanes | integer / 3 | Event lanes per week of the month view; more events collapse into a "+N more" button that opens the day view |
+| dir | ChartDirection / `'ltr'` | `rtl` mirrors the grid (logical CSS properties) and swaps Left and Right of the keyboard edits |
+
+`CalendarEvent<D>` has `id`, `start`, `end`, `label` and the optional `allDay` (drawn in the all-day row and moved by whole days; give local midnights), `resourceId`, `color` (a CSS colour for the event's accent stripe, `--vw-calendar-event-accent`), `tone` (teal, blue, amber or violet; default blue), `editable` (default true; false keeps one event fixed) and `data` (D). Events of 24 hours or more are drawn in the all-day row too but keep their times. A zero-duration event is a point in time. Overlapping timed events are placed side by side by `layoutCalendarDayEvents`, multi-day events stacked by `packCalendarEventLanes`; both are deterministic, so the drawing does not depend on the order of `events`.
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| edit | EventCalendarEdit | `{ id, before, after, mode: 'move' \| 'start' \| 'end', source: 'pointer' \| 'keyboard', resource?: { before, after } }`, the GanttChart `TimelineEdit` shape with `resource` in place of `row`. The parent applies `after` (and `resource.after`) |
+| edit-rejected | change, reason | `validateEdit` returned false (reason `labels.rejected`) or a string |
+| create | EventCalendarCreate | `{ start, end, allDay, resourceId?, source: 'pointer' }`. The parent assigns an ID and adds the event |
+| create-rejected | proposal, reason | `validateCreate` returned false (`labels.createRejected`) or a string |
+| select, update:selectedId | id | Click or Space on an event |
+| event-activate | id, source | Double click or Enter |
+| update:date, update:view | date, view | Toolbar navigation and the month day buttons ("Show day …"), which open the day view |
+| range-change | range, view | The visible range (`eventCalendarRange` of the view and date) after mounting and whenever it changes: load the events that overlap it |
+| edit-cancel | EventCalendarEditCancel | `{ reason: 'escape' \| 'source-changed' \| 'pointer-cancel' \| 'api', eventIds }` when a pointer gesture in flight ends without a proposal |
+| validation-error | Error | Invalid events (`Invalid event ID`, `Duplicate event ID`, `RangeError: Event <id> must have finite start <= end`), resources (`Unknown resource in event <id>: <resourceId>`), view, date, weekStartsOn, time zone, hours, hourHeight, snap, createDuration, maxMonthLanes or now. The calendar then shows its empty state and rethrows the error, like GanttChart |
+
+The validators follow the GanttChart contract: return true or nothing to accept, false for the default message, or a string for a specific message. A rejection emits the `-rejected` event and announces the reason in a polite live region, which also announces the new title after navigation. Validators are synchronous; persist in the `edit` or `create` listener.
+
+Editing. A pointer drag moves an event (to another day or, in the resource view, another resource column); the top and bottom edges of a timed event resize its start and end in `snap` steps, measured as displacement so an off-grid start keeps its offset; the end edge of an all-day event resizes it by days. In the month view and the all-day row, events move by whole days, keeping their local times. A dashed preview follows the pointer; the proposal is emitted on release, and the click that ends a drag does not select. Keyboard edits are proposed one step per key press: on a timed event Up and Down move by `snap` and Shift+Up/Down resize the end; Left and Right move by a day, or in the resource view to the previous or next resource; in the month view and the all-day row Left and Right move by a day, Up and Down by a week (month view) and Shift+Left/Right resize the end of an all-day event. The focus follows the event after the parent applies the edit. Escape, pointer cancellation and loss of capture discard a drag; new `events`, `resources`, view, date, time zone, week start, hours, `hourHeight`, `snap` or `readonly` cancel it with reason `source-changed`. Each event is one button whose name is its label, date and time (or "All day") and resource, such as `Design review, Wed, Nov 11 10:00–11:00, Atlas`; an event drawn in several columns or weeks is focusable once.
+
+Slots: `event({ event, range, selected, allDay, view })` replaces the content of an event button (use non-interactive content), `toolbar({ title, view, date, previous, next, today, setView })` replaces the toolbar content, and `empty()`. Methods: `cancelEdit()` cancels a gesture in flight (reason `api`); `scrollToTime(time)` scrolls the time grid to the time of day of `time`.
+
+The component renders on the server: it reads the DOM only in event handlers and after mounting, and it creates its hint IDs with `useId()`.
+
+### Event calendar helpers
+
+The core entry exports the calendar arithmetic and layout that EventCalendar uses, so a server or worker can compute the same ranges. Days follow local dates in `timeZone` (IANA, default UTC) with `weekStartsOn` (default 1); invalid views, dates, week starts and zones throw RangeError.
+
+| Function | Result |
+| --- | --- |
+| `eventCalendarRange(view, date, options?)` | The half-open range a view shows: the local day, the week from `weekStartsOn`, or the whole weeks of the month grid |
+| `eventCalendarDays(view, date, options?)` | The `EventCalendarDay`s of that range (`start`, `end`, `year`, `month` 1–12, `day`, `weekday`, `inMonth`) |
+| `eventCalendarMonthGrid(date, options?)` | The month grid as four to six weeks of seven days |
+| `shiftEventCalendarDate(view, date, steps, options?)` | The anchor `steps` days, weeks or months away, keeping the local time; months clamp the day (January 31 + 1 month is the end of February) |
+| `eventCalendarTimeOfDay(day, time, options?)`, `eventCalendarTimeAt(day, timeOfDay, options?)` | Local wall-clock milliseconds since the midnight of `day`, and back. A time grid stays 24 hours tall on 23- and 25-hour days |
+| `layoutCalendarDayEvents(events, range, { minDuration? })` | `CalendarEventColumn[]`: events clipped to the day, with `column` and `columns` of their overlap group. `minDuration` extends short events for the overlap test only |
+| `packCalendarEventLanes(events, days)` | `{ segments, lanes }`: per event the lowest free `lane`, the covered `startIndex`/`endIndex` and `continuesBefore`/`continuesAfter` |
+| `validateCalendarEvents(events, resources?)` | Throws for invalid or duplicate IDs, bad intervals and unknown resources, with the texts above |
+
+Related exported types: `EventCalendarView`, `CalendarEvent`, `CalendarResource`, `EventCalendarOptions`, `EventCalendarDay`, `CalendarEventColumn`, `CalendarEventLane`, `CalendarEventLaneLayout`, `EventCalendarEdit`, `EventCalendarCreate`, `EventCalendarEditValidator`, `EventCalendarCreateValidator`, `EventCalendarEditCancel`, `EventCalendarEditCancelReason`, `EventCalendarLabels`, `EventCalendarComponent` and `EventCalendarExposed`.
 
 ## TaskBoard
 

@@ -5,8 +5,9 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (212)
+## Entry `.`: runtime exports (222)
 
+- `EventCalendar: object`
 - `GanttChart: object`
 - `GraphPalette: object`
 - `NetworkGraph: object`
@@ -62,6 +63,11 @@ in public signatures, so changes to them can break consumers too.
 - `detectGraphCommunities: function`
 - `editTimeRange: function`
 - `escapeXml: function`
+- `eventCalendarDays: function`
+- `eventCalendarMonthGrid: function`
+- `eventCalendarRange: function`
+- `eventCalendarTimeAt: function`
+- `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `findGraphCycles: function`
@@ -113,6 +119,7 @@ in public signatures, so changes to them can break consumers too.
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
 - `layoutFlowGraph: function`
@@ -131,6 +138,7 @@ in public signatures, so changes to them can break consumers too.
 - `moveTimelineRow: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
+- `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
@@ -180,6 +188,7 @@ in public signatures, so changes to them can break consumers too.
 - `serializeWeaveSnapshot: function`
 - `setWindowedView: function`
 - `settleTransaction: function`
+- `shiftEventCalendarDate: function`
 - `shortestGraphPath: function`
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
@@ -212,6 +221,7 @@ in public signatures, so changes to them can break consumers too.
 - `useLinkedSelection: function`
 - `useTimelineView: function`
 - `useWindowedData: function`
+- `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
 - `validateTimelineData: function`
@@ -220,7 +230,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (515)
+## Entry `.`: type-only exports (532)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -240,6 +250,11 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
+- `CalendarEvent`
+- `CalendarEventColumn`
+- `CalendarEventLane`
+- `CalendarEventLaneLayout`
+- `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
 - `CalendarZoomPresetOptions`
@@ -268,6 +283,18 @@ in public signatures, so changes to them can break consumers too.
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarComponent`
+- `EventCalendarCreate`
+- `EventCalendarCreateValidator`
+- `EventCalendarDay`
+- `EventCalendarEdit`
+- `EventCalendarEditCancel`
+- `EventCalendarEditCancelReason`
+- `EventCalendarEditValidator`
+- `EventCalendarExposed`
+- `EventCalendarLabels`
+- `EventCalendarOptions`
+- `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -738,7 +765,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (198)
+## Entry `./core`: runtime exports (207)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -790,6 +817,11 @@ in public signatures, so changes to them can break consumers too.
 - `detectGraphCommunities: function`
 - `editTimeRange: function`
 - `escapeXml: function`
+- `eventCalendarDays: function`
+- `eventCalendarMonthGrid: function`
+- `eventCalendarRange: function`
+- `eventCalendarTimeAt: function`
+- `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `findGraphCycles: function`
@@ -840,6 +872,7 @@ in public signatures, so changes to them can break consumers too.
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
 - `layoutFlowGraph: function`
@@ -858,6 +891,7 @@ in public signatures, so changes to them can break consumers too.
 - `moveTimelineRow: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
+- `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
@@ -905,6 +939,7 @@ in public signatures, so changes to them can break consumers too.
 - `serializeWeaveSnapshot: function`
 - `setWindowedView: function`
 - `settleTransaction: function`
+- `shiftEventCalendarDate: function`
 - `shortestGraphPath: function`
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
@@ -931,6 +966,7 @@ in public signatures, so changes to them can break consumers too.
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
 - `validateTimelineData: function`
@@ -939,7 +975,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (479)
+## Entry `./core`: type-only exports (494)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -953,6 +989,11 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
+- `CalendarEvent`
+- `CalendarEventColumn`
+- `CalendarEventLane`
+- `CalendarEventLaneLayout`
+- `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
 - `CalendarZoomPresetOptions`
@@ -981,6 +1022,16 @@ in public signatures, so changes to them can break consumers too.
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarCreate`
+- `EventCalendarCreateValidator`
+- `EventCalendarDay`
+- `EventCalendarEdit`
+- `EventCalendarEditCancel`
+- `EventCalendarEditCancelReason`
+- `EventCalendarEditValidator`
+- `EventCalendarLabels`
+- `EventCalendarOptions`
+- `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -1885,6 +1936,81 @@ cancelMove: () => void;
 focusCard: (id: string) => boolean;
 ```
 
+## Component `EventCalendar`: props
+
+```ts
+creatable?: boolean;
+createDuration?: number;
+date: number;
+dayEnd?: number;
+dayStart?: number;
+dir?: ChartDirection;
+events: readonly E[];
+formatTime?: (time: number) => string;
+height?: number | string;
+hourHeight?: number;
+labels?: Partial<EventCalendarLabels>;
+locale?: string | readonly string[];
+maxMonthLanes?: number;
+now?: number;
+readonly?: boolean;
+resources?: readonly CalendarResource[];
+selectedId?: string;
+showToolbar?: boolean;
+snap?: number;
+timeZone?: string;
+validateCreate?: EventCalendarCreateValidator;
+validateEdit?: EventCalendarEditValidator;
+view?: EventCalendarView;
+weekStartsOn?: number;
+```
+
+## Component `EventCalendar`: emits
+
+```ts
+(evt: "create", proposal: EventCalendarCreate) => void
+(evt: "create-rejected", proposal: EventCalendarCreate, reason: string) => void
+(evt: "edit", change: EventCalendarEdit) => void
+(evt: "edit-cancel", event: EventCalendarEditCancel) => void
+(evt: "edit-rejected", change: EventCalendarEdit, reason: string) => void
+(evt: "event-activate", id: string, source: "pointer" | "keyboard") => void
+(evt: "range-change", range: TimeRange, view: EventCalendarView) => void
+(evt: "select", id: string) => void
+(evt: "update:date", date: number) => void
+(evt: "update:selectedId", id: string) => void
+(evt: "update:view", view: EventCalendarView) => void
+(evt: "validation-error", error: Error) => void
+```
+
+## Component `EventCalendar`: slots
+
+```ts
+empty(): unknown;
+event(props: {
+    event: E;
+    range: TimeRange;
+    selected: boolean;
+    allDay: boolean;
+    view: EventCalendarView;
+}): unknown;
+toolbar(props: {
+    title: string;
+    view: EventCalendarView;
+    date: number;
+    previous: () => void;
+    next: () => void;
+    today: () => void;
+    setView: (view: EventCalendarView) => void;
+}): unknown;
+```
+
+## Component `EventCalendar`: exposed
+
+```ts
+cancelEdit: () => void;
+scrollToTime: (time: number) => void;
+```
+
 ## CSS custom properties: defined
 
 - `--vw-accent`
@@ -1904,6 +2030,7 @@ focusCard: (id: string) => boolean;
 - `--vw-board-drop`
 - `--vw-board-wip-warning`
 - `--vw-border`
+- `--vw-calendar-gutter`
 - `--vw-cascade`
 - `--vw-connect-invalid`
 - `--vw-connect-valid`
@@ -1956,6 +2083,10 @@ focusCard: (id: string) => boolean;
 - `--vw-bar-highlight`
 - `--vw-board-cell-min-height`
 - `--vw-board-column-count`
+- `--vw-calendar-event-accent`
+- `--vw-calendar-hour-height`
+- `--vw-calendar-scrollbar`
+- `--vw-calendar-today`
 - `--vw-constraint-reach`
 - `--vw-edge-animation-duration`
 - `--vw-edge-selected`
@@ -2196,6 +2327,67 @@ interface CalendarBandOptions {
 
 ```ts
 type CalendarBandUnit = 'hour' | 'day' | 'week' | 'month' | 'year';
+```
+
+### `CalendarEvent`
+
+```ts
+interface CalendarEvent<D = unknown> {
+    id: string;
+    start: number;
+    end: number;
+    label: string;
+    allDay?: boolean;
+    resourceId?: string;
+    color?: string;
+    tone?: ChartTone;
+    editable?: boolean;
+    data?: D;
+}
+```
+
+### `CalendarEventColumn`
+
+```ts
+interface CalendarEventColumn {
+    id: string;
+    start: number;
+    end: number;
+    column: number;
+    columns: number;
+}
+```
+
+### `CalendarEventLane`
+
+```ts
+interface CalendarEventLane {
+    id: string;
+    lane: number;
+    startIndex: number;
+    endIndex: number;
+    continuesBefore: boolean;
+    continuesAfter: boolean;
+}
+```
+
+### `CalendarEventLaneLayout`
+
+```ts
+interface CalendarEventLaneLayout {
+    segments: CalendarEventLane[];
+    lanes: number;
+}
+```
+
+### `CalendarResource`
+
+```ts
+interface CalendarResource {
+    id: string;
+    label: string;
+    detail?: string;
+}
 ```
 
 ### `CalendarZoomLevel`
@@ -2454,6 +2646,132 @@ interface EntityRef {
     kind: string;
     id: string;
 }
+```
+
+### `EventCalendar`
+
+```ts
+const EventCalendar: EventCalendarComponent;
+```
+
+### `EventCalendarComponent`
+
+```ts
+type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent>(props: {
+    events: readonly E[];
+    date: number;
+} & Record<string, unknown>) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>) & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>;
+```
+
+### `EventCalendarCreate`
+
+```ts
+interface EventCalendarCreate extends TimeRange {
+    allDay: boolean;
+    resourceId?: string;
+    source: 'pointer';
+}
+```
+
+### `EventCalendarCreateValidator`
+
+```ts
+type EventCalendarCreateValidator = (proposal: EventCalendarCreate) => boolean | string | void;
+```
+
+### `EventCalendarDay`
+
+```ts
+interface EventCalendarDay extends TimeRange {
+    year: number;
+    month: number;
+    day: number;
+    weekday: number;
+    inMonth: boolean;
+}
+```
+
+### `EventCalendarEdit`
+
+```ts
+interface EventCalendarEdit {
+    id: string;
+    before: TimeRange;
+    after: TimeRange;
+    mode: 'move' | 'start' | 'end';
+    source: 'pointer' | 'keyboard';
+    resource?: {
+        before: string;
+        after: string;
+    };
+}
+```
+
+### `EventCalendarEditCancel`
+
+```ts
+interface EventCalendarEditCancel {
+    reason: EventCalendarEditCancelReason;
+    eventIds: readonly string[];
+}
+```
+
+### `EventCalendarEditCancelReason`
+
+```ts
+type EventCalendarEditCancelReason = 'escape' | 'source-changed' | 'pointer-cancel' | 'api';
+```
+
+### `EventCalendarEditValidator`
+
+```ts
+type EventCalendarEditValidator = (change: EventCalendarEdit) => boolean | string | void;
+```
+
+### `EventCalendarExposed`
+
+```ts
+type EventCalendarExposed<E extends CalendarEvent = CalendarEvent> = SfcExposed<EventCalendarSfc<E>>;
+```
+
+### `EventCalendarLabels`
+
+```ts
+interface EventCalendarLabels {
+    region: string;
+    previous: string;
+    today: string;
+    next: string;
+    views: string;
+    day: string;
+    week: string;
+    month: string;
+    allDay: string;
+    more: string;
+    showDay: string;
+    editHint: string;
+    dayEditHint: string;
+    rejected: string;
+    createRejected: string;
+    resources: string;
+    now: string;
+    empty: string;
+}
+```
+
+### `EventCalendarOptions`
+
+```ts
+interface EventCalendarOptions {
+    timeZone?: string;
+    weekStartsOn?: number;
+}
+```
+
+### `EventCalendarView`
+
+```ts
+type EventCalendarView = 'day' | 'week' | 'month';
 ```
 
 ### `ExplainedLevelResourcesResult`
@@ -8032,6 +8350,36 @@ function editTimeRange(range: TimeRange, mode: EditMode, delta: number, step: nu
 function escapeXml(value: string): string;
 ```
 
+### `eventCalendarDays`
+
+```ts
+function eventCalendarDays(view: EventCalendarView, date: number, options?: EventCalendarOptions): EventCalendarDay[];
+```
+
+### `eventCalendarMonthGrid`
+
+```ts
+function eventCalendarMonthGrid(date: number, options?: EventCalendarOptions): EventCalendarDay[][];
+```
+
+### `eventCalendarRange`
+
+```ts
+function eventCalendarRange(view: EventCalendarView, date: number, options?: EventCalendarOptions): TimeRange;
+```
+
+### `eventCalendarTimeAt`
+
+```ts
+function eventCalendarTimeAt(day: number, timeOfDay: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
+```
+
+### `eventCalendarTimeOfDay`
+
+```ts
+function eventCalendarTimeOfDay(day: number, time: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
+```
+
 ### `fieldValuesEqual`
 
 ```ts
@@ -8359,6 +8707,18 @@ function invertWorkPeriods(periods: readonly TimeRange[], range: TimeRange): Tim
 function isGraphRouteValid(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphEdge): boolean;
 ```
 
+### `layoutCalendarDayEvents`
+
+```ts
+function layoutCalendarDayEvents(events: readonly {
+    id: string;
+    start: number;
+    end: number;
+}[], range: TimeRange, options?: {
+    minDuration?: number;
+}): CalendarEventColumn[];
+```
+
 ### `layoutCircularGraph`
 
 ```ts
@@ -8473,6 +8833,16 @@ function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeRange): 
 
 ```ts
 function outdentTimelineRow<R extends TimelineRow>(rows: readonly R[], id: string): R[];
+```
+
+### `packCalendarEventLanes`
+
+```ts
+function packCalendarEventLanes(events: readonly {
+    id: string;
+    start: number;
+    end: number;
+}[], days: readonly TimeRange[]): CalendarEventLaneLayout;
 ```
 
 ### `parseCsv`
@@ -8792,6 +9162,12 @@ function setWindowedView<T, L = never>(state: WindowedDataState<T, L>, view: Win
 function settleTransaction<S>(state: TransactionCoreState<S>, operationId: string, epoch: number, result: SaveResult<S>, allowUncertain?: boolean): SettleResult<S>;
 ```
 
+### `shiftEventCalendarDate`
+
+```ts
+function shiftEventCalendarDate(view: EventCalendarView, date: number, steps: number, options?: EventCalendarOptions): number;
+```
+
 ### `shortestGraphPath`
 
 ```ts
@@ -9061,6 +9437,12 @@ function useTimelineView<R extends TimelineRow = TimelineRow, B extends Timeline
 function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T, L>): WindowedData<T, L>;
 ```
 
+### `validateCalendarEvents`
+
+```ts
+function validateCalendarEvents(events: readonly CalendarEvent[], resources?: readonly CalendarResource[]): void;
+```
+
 ### `validateFieldValue`
 
 ```ts
@@ -9106,6 +9488,12 @@ function windowedCoverage<T, L>(state: WindowedDataState<T, L>, window?: Windowe
 function workCalendarsFromMsProject(project: {
     calendars?: readonly MsProjectCalendar[];
 }, range: TimeRange): WorkCalendar[];
+```
+
+### Internal `EventCalendarSfc (dist/types/index.d.ts)`
+
+```ts
+type EventCalendarSfc<E extends CalendarEvent> = typeof EventCalendarVue<E>;
 ```
 
 ### Internal `GanttChartSfc (dist/types/index.d.ts)`
