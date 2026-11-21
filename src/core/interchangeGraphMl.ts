@@ -29,6 +29,7 @@ const keys: readonly (readonly [string, 'node' | 'edge', string, string])[] = [
   ['marker-end', 'edge', 'markerEnd', 'string'],
   ['edge-style', 'edge', 'edgeStyle', 'string'],
   ['animated', 'edge', 'animated', 'boolean'],
+  ['dashed', 'edge', 'dashed', 'boolean'],
   ['points', 'edge', 'points', 'string'],
 ]
 
@@ -37,7 +38,7 @@ const data = (key: string, value: string) => `<data key="${key}">${xmlText(value
 /**
  * Write a diagram as GraphML. The document declares `<key>`s for the node `label`, `detail`, `shape`, `tone`, `x`,
  * `y`, `width` and `height` (the top-left corner from `positions` and the size from `sizes`) and the edge `label`,
- * `markerStart`, `markerEnd`, `edgeStyle`, `animated` and `points` (waypoints as `x,y x,y …`), and writes the values a
+ * `markerStart`, `markerEnd`, `edgeStyle`, `animated`, `dashed` and `points` (waypoints as `x,y x,y …`), and writes the values a
  * node or edge has. Groups become nodes with a nested `<graph>` (ID `<group>:`) that holds their members and nested
  * groups; a group whose ID is also a node's gets a `-2` suffix, since GraphML node IDs share one namespace. Edges are
  * written in the top-level graph after the nodes. Ports and `data` are not written. Throws the Errors and RangeErrors
@@ -95,6 +96,7 @@ export function toGraphMl(graph: GraphInterchangeInput, options: GraphMlOptions 
     if (edge.markerEnd !== undefined) out += data('marker-end', String(edge.markerEnd))
     if (edge.edgeStyle !== undefined) out += data('edge-style', String(edge.edgeStyle))
     if (edge.animated !== undefined) out += data('animated', edge.animated ? 'true' : 'false')
+    if (edge.dashed !== undefined) out += data('dashed', edge.dashed ? 'true' : 'false')
     if (edge.points?.length) out += data('points', edge.points.map(point => formatNumber(point.x) + ',' + formatNumber(point.y)).join(' '))
     lines.push(out + '</edge>')
   }
@@ -253,6 +255,9 @@ function readEdge(collector: GraphCollector, element: XmlElement, directed: bool
   const animated = values.get('animated')?.trim()
   if (animated === 'true' || animated === '1') edge.animated = true
   else if (animated === 'false' || animated === '0') edge.animated = false
+  const dashed = values.get('dashed')?.trim()
+  if (dashed === 'true' || dashed === '1') edge.dashed = true
+  else if (dashed === 'false' || dashed === '0') edge.dashed = false
   const pointText = values.get('points')
   if (pointText !== undefined) {
     const read = readPoints(pointText)
@@ -267,7 +272,7 @@ function readEdge(collector: GraphCollector, element: XmlElement, directed: bool
  * Read a GraphML document into NetworkGraph nodes, edges, groups, positions and sizes. Uses the DOM-free XML reader of
  * `fromMsProjectXml`: declared entities are never expanded and nothing outside the text is loaded. Values come from
  * `<data>` whose `<key>` has the `attr.name` `label` (else `name`), `detail`, `shape`, `tone`, `x`, `y`, `width` and
- * `height` for nodes and `label`, `markerStart`, `markerEnd`, `edgeStyle`, `animated` and `points` for edges, as
+ * `height` for nodes and `label`, `markerStart`, `markerEnd`, `edgeStyle`, `animated`, `dashed` and `points` for edges, as
  * `toGraphMl` writes them; `<default>` values apply. Other keys are ignored. yEd files are read as well: the first
  * `y:NodeLabel` (its first line as label, the rest as detail), `y:Geometry`, `y:Shape` type or `y:GenericNode`
  * configuration, and the `y:EdgeLabel`, `y:Arrows` and `y:Path` points of edges. A node with a nested `<graph>` is a

@@ -75,7 +75,7 @@ test('the diagram demo reads compressed draw.io pages and keeps the graph when t
   const compressed = deflateRawSync(Buffer.from(encodeURIComponent(model))).toString('base64')
   await text.fill(`<mxfile host="app.diagrams.net"><diagram id="x" name="Plant">${compressed}</diagram></mxfile>`)
   await button('Import').click()
-  await expect(status).toHaveText('Imported 2 nodes, 1 edges and 0 groups from draw.io with 1 warning.')
+  await expect(status).toHaveText('Imported 2 nodes, 1 edges and 0 groups from draw.io with 0 warnings.')
   await expect(graph.getByRole('button', { name: 'Pump', exact: true })).toBeVisible()
   await expect(graph.getByRole('button', { name: 'Tank A', exact: true })).toBeVisible()
 

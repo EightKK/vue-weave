@@ -91,6 +91,14 @@ export const graphShapeFormats: Readonly<Partial<Record<NetworkNodeShape, GraphS
   diamond: { mermaid: ['{', '}'], drawio: 'rhombus;' },
   ellipse: { mermaid: ['((', '))'], drawio: 'ellipse;' },
   hexagon: { mermaid: ['{{', '}}'], drawio: 'shape=hexagon;perimeter=hexagonPerimeter2;fixedSize=1;' },
+  // Flowchart and BPMN shapes. Mermaid has no plain-syntax ellipse, document or data object: an ellipse is written as a
+  // circle, document and data-object as boxes.
+  circle: { mermaid: ['((', '))'], drawio: 'ellipse;aspect=fixed;vwShape=circle;' },
+  stadium: { mermaid: ['([', '])'], drawio: 'rounded=1;arcSize=50;vwShape=stadium;' },
+  parallelogram: { mermaid: ['[/', '/]'], drawio: 'shape=parallelogram;perimeter=parallelogramPerimeter;fixedSize=1;' },
+  document: { mermaid: ['[', ']'], drawio: 'shape=document;boundedLbl=1;' },
+  cylinder: { mermaid: ['[(', ')]'], drawio: 'shape=cylinder3;boundedLbl=1;' },
+  'data-object': { mermaid: ['[', ']'], drawio: 'shape=note;size=12;' },
 }
 
 /** The format of a node's shape; unknown and missing shapes are rectangles (`box`). */
@@ -107,14 +115,23 @@ export const graphShapeNames: Readonly<Record<string, NetworkNodeShape>> = {
   box: 'box', rect: 'box', rectangle: 'box', square: 'box', process: 'box', proc: 'box', text: 'box', label: 'box',
   rounded: 'rounded', roundrectangle: 'rounded', 'rounded-rectangle': 'rounded', event: 'rounded',
   diamond: 'diamond', rhombus: 'diamond', diam: 'diamond', decision: 'diamond', question: 'diamond',
-  ellipse: 'ellipse', circle: 'ellipse', circ: 'ellipse', oval: 'ellipse',
+  ellipse: 'ellipse', oval: 'ellipse',
   hexagon: 'hexagon', hex: 'hexagon', prepare: 'hexagon',
+  circle: 'circle', circ: 'circle', 'sm-circ': 'circle', start: 'circle', stop: 'circle', 'on-page_reference': 'circle',
+  stadium: 'stadium', terminal: 'stadium', terminator: 'stadium', pill: 'stadium',
+  parallelogram: 'parallelogram', 'parallelogram-alt': 'parallelogram', 'lean-r': 'parallelogram', 'lean-l': 'parallelogram',
+  'in-out': 'parallelogram', data: 'parallelogram',
+  document: 'document', doc: 'document',
+  cylinder: 'cylinder', cylinder3: 'cylinder', cyl: 'cylinder', database: 'cylinder', db: 'cylinder', datastore: 'cylinder',
+  stored_data: 'cylinder',
+  'data-object': 'data-object', dataobject: 'data-object', note: 'data-object', card: 'data-object',
 }
 
 /** Markers by the names the readers recognise (lower case): draw.io arrow names, yEd arrow types and the own names. */
 export const graphMarkerNames: Readonly<Record<string, GraphEdgeMarker>> = {
   arrow: 'arrow', classic: 'arrow', block: 'arrow', classicthin: 'arrow', blockthin: 'arrow', standard: 'arrow', delta: 'arrow',
-  'open-arrow': 'open-arrow', open: 'open-arrow', openthin: 'open-arrow', plain: 'open-arrow', white_delta: 'open-arrow',
+  'open-arrow': 'open-arrow', open: 'open-arrow', openthin: 'open-arrow', plain: 'open-arrow',
+  'hollow-arrow': 'hollow-arrow', white_delta: 'hollow-arrow',
   circle: 'circle', oval: 'circle', transparent_circle: 'circle',
   diamond: 'diamond', diamondthin: 'diamond', white_diamond: 'diamond',
   bar: 'bar', dash: 'bar', skewed_dash: 'bar',
@@ -125,13 +142,14 @@ export const graphMarkerNames: Readonly<Record<string, GraphEdgeMarker>> = {
 export const graphDrawioMarkers: Readonly<Record<GraphEdgeMarker, { name: string; fill?: boolean }>> = {
   arrow: { name: 'classic', fill: true },
   'open-arrow': { name: 'open' },
+  'hollow-arrow': { name: 'block', fill: false },
   circle: { name: 'oval', fill: false },
   diamond: { name: 'diamond', fill: false },
   bar: { name: 'dash' },
   none: { name: 'none' },
 }
 
-const markerValues = new Set<string>(['arrow', 'open-arrow', 'circle', 'diamond', 'bar', 'none'])
+const markerValues = new Set<string>(['arrow', 'open-arrow', 'hollow-arrow', 'circle', 'diamond', 'bar', 'none'])
 const toneValues = new Set<string>(['teal', 'blue', 'amber', 'violet'])
 const edgeStyleValues = new Set<string>(['curve', 'orthogonal', 'straight'])
 

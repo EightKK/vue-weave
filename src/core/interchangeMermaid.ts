@@ -71,12 +71,12 @@ function readNodeText(raw: string) {
   return parts.length > 1 ? { label: parts[0]!, detail: parts.slice(1).join('\n') } : { label: parts[0]! }
 }
 
-const endChars: Record<GraphEdgeMarker, string> = { arrow: '>', 'open-arrow': '>', diamond: '>', circle: 'o', bar: 'x', none: '' }
-const startChars: Record<GraphEdgeMarker, string> = { arrow: '<', 'open-arrow': '<', diamond: '<', circle: 'o', bar: 'x', none: '' }
+const endChars: Record<GraphEdgeMarker, string> = { arrow: '>', 'open-arrow': '>', 'hollow-arrow': '>', diamond: '>', circle: 'o', bar: 'x', none: '' }
+const startChars: Record<GraphEdgeMarker, string> = { arrow: '<', 'open-arrow': '<', 'hollow-arrow': '<', diamond: '<', circle: 'o', bar: 'x', none: '' }
 
 /**
  * Write a diagram as a Mermaid `flowchart`. Each node is declared once with its shape (`[ ]` box, `( )` rounded, `{ }`
- * diamond, `(( ))` ellipse, `{{ }}` hexagon; other shapes as boxes) and its quoted label, followed by `<br>` and the
+ * diamond, `(( ))` ellipse and circle, `{{ }}` hexagon, `([ ])` stadium, `[( )]` cylinder, `[/ /]` parallelogram; other shapes, such as document and data-object, as boxes) and its quoted label, followed by `<br>` and the
  * detail when it has one. Groups become nested `subgraph … end` blocks with their direct members; edges follow at the
  * end, `-->` for an arrow (and any other end marker without a Mermaid form), `---` for `markerEnd: 'none'`, `--o` for a
  * circle and `--x` for a bar, with a matching start marker (`<-->`, `o--o`, `x--x`) when `markerStart` has the same

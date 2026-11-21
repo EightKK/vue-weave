@@ -8,7 +8,7 @@ import {
 // A diagram with every feature the three formats share: shapes, tones, details, nested groups, markers and labels.
 const diagram = () => ({
   nodes: [
-    { id: 'start', label: 'Start', shape: 'ellipse', tone: 'teal' },
+    { id: 'start', label: 'Start', shape: 'circle', tone: 'teal' },
     { id: 'check', label: 'In stock?', shape: 'diamond' },
     { id: 'reserve', label: 'Reserve "A" | #1 <now> & `go`', detail: 'Second line\nthird line', shape: 'rounded' },
     { id: 'store', label: 'Inventory', shape: 'hexagon', tone: 'violet' },
@@ -124,7 +124,7 @@ test('fromMermaid reads chains, & lists, every link form, labels, comments and @
   assert.deepEqual(node('R'), { id: 'R', label: 'Unquoted text' })
   assert.deepEqual(node('S'), { id: 'S', label: 'Rounded', shape: 'rounded' })
   assert.equal(node('T').shape, 'diamond')
-  assert.equal(node('U').shape, 'ellipse')
+  assert.equal(node('U').shape, 'circle')
   assert.equal(node('V').shape, 'hexagon')
   assert.deepEqual(node('W'), { id: 'W', label: 'Decide', shape: 'diamond' })
   assert.deepEqual(node('X'), { id: 'X', label: 'X' })
@@ -195,12 +195,11 @@ test('fromMermaid turns nested subgraphs into groups and reports what it ignores
   assert.match(read.warnings.find(warning => warning.code === 'skipped-edge').message, /group outer/)
 })
 
-test('fromMermaid reports shapes NetworkGraph does not draw and keeps them as boxes', () => {
+test('fromMermaid reads the flowchart shapes NetworkGraph draws and keeps the others as boxes with a warning', () => {
   const read = fromMermaid('flowchart\n  A([Stadium]) --> B[(Database)] --> C[[Sub]] --> D>Flag] --> E[/Lean/] --> F[\\Trap/] --> G(((Double)))\n  H@{ shape: cyl, label: x }')
-  assert.deepEqual(read.nodes.map(node => node.shape), [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined])
+  assert.deepEqual(read.nodes.map(node => node.shape), ['stadium', 'cylinder', undefined, undefined, 'parallelogram', undefined, undefined, 'cylinder'])
   assert.deepEqual(read.nodes.map(node => node.label), ['Stadium', 'Database', 'Sub', 'Flag', 'Lean', 'Trap', 'Double', 'x'])
-  assert.deepEqual(read.warnings.map(warning => warning.code + ' ' + warning.id), 'ABCDEFGH'.split('').map(id => 'unsupported-shape ' + id))
-  assert.match(read.warnings[1].message, /cylinder/)
+  assert.deepEqual(read.warnings.map(warning => warning.code + ' ' + warning.id), 'CDFG'.split('').map(id => 'unsupported-shape ' + id))
 })
 
 test('fromMermaid rejects other diagram types, missing headers and malformed text', () => {
@@ -431,7 +430,7 @@ test('toDrawio output round-trips through fromDrawio: geometry, container groups
   graph.edges[1] = { ...graph.edges[1], edgeStyle: 'curve', markerEnd: 'open-arrow', markerStart: 'diamond' }
   graph.edges[2] = { ...graph.edges[2], edgeStyle: 'straight' }
   const xml = toDrawio(graph, { pageName: 'Order & flow' })
-  assert.match(xml, /^<mxfile host="@eightkk/vue-weave">\n {2}<diagram id="vw-page-1" name="Order &amp; flow">/)
+  assert.match(xml, /^<mxfile host="vue-weave">\n {2}<diagram id="vw-page-1" name="Order &amp; flow">/)
   assert.match(xml, /<mxCell id="warehouse" value="Warehouse" style="[^"]*container=1;[^"]*" vertex="1" parent="1"><mxGeometry x="420" y="-10" width="230" height="330" as="geometry"\/>/)
   assert.match(xml, /<mxCell id="storage" value="Storage" [^>]* parent="warehouse"><mxGeometry x="20" y="180" width="190" height="130"/)
   assert.match(xml, /<mxCell id="store" value="Inventory" style="shape=hexagon;[^"]*vwTone=violet;" vertex="1" parent="storage"><mxGeometry x="20" y="50" width="150" height="60"/)
@@ -450,7 +449,7 @@ test('toDrawio output round-trips through fromDrawio: geometry, container groups
 
 test('toDrawio places nodes without positions, keeps cell IDs unique and draws unknown shapes as rectangles', () => {
   const graph = {
-    nodes: [{ id: '0', label: 'Zero' }, { id: '1', label: 'One', shape: 'cylinder' }, { id: 'x', label: 'X' }],
+    nodes: [{ id: '0', label: 'Zero' }, { id: '1', label: 'One', shape: 'cloud' }, { id: 'x', label: 'X' }],
     edges: [{ id: 'x', from: '0', to: '1' }, { id: 'e', from: '1', to: 'x' }],
   }
   const xml = toDrawio(graph)
@@ -513,7 +512,7 @@ test('fromDrawio reads draw.io files: HTML labels, containers, UserObjects, edge
   assert.deepEqual(read.nodes, [
     { id: 'n1', label: 'Check', detail: 'stock & price ✓', shape: 'diamond', tone: 'blue' },
     { id: 'n2', label: 'Order', shape: 'rounded' },
-    { id: 'n3', label: 'DB' },
+    { id: 'n3', label: 'DB', shape: 'cylinder' },
     { id: 'n4', label: 'Decide', shape: 'diamond' },
   ])
   assert.deepEqual(read.groups, [{ id: 'lane', label: 'Lane', nodeIds: ['n1'] }])
@@ -524,7 +523,7 @@ test('fromDrawio reads draw.io files: HTML labels, containers, UserObjects, edge
     { id: 'e1', from: 'n1', to: 'n2', label: 'yes', markerEnd: 'open-arrow', edgeStyle: 'orthogonal', points: [{ x: 300, y: 170 }] },
   ])
   assert.deepEqual(read.warnings.map(warning => [warning.code, warning.id]), [
-    ['unsupported-shape', 'n3'], ['skipped-edge', 'e2'], ['skipped-edge', 'e3'],
+    ['skipped-edge', 'e2'], ['skipped-edge', 'e3'],
   ])
   // A page by name or index; a bare mxGraphModel is a one-page document.
   assert.deepEqual(fromDrawio(realWorldFile(), { page: 'Second' }).nodes, [{ id: 'only', label: 'Only' }])
@@ -600,4 +599,20 @@ test('the graph writers check their input like NetworkGraph', () => {
   toGraphMl(graph)
   toDrawio(graph)
   assert.deepEqual(graph, copy)
+})
+
+test('the flowchart and BPMN shapes, hollow arrows and dashed edges round-trip through draw.io and GraphML', () => {
+  const shapes = ['circle', 'stadium', 'parallelogram', 'document', 'cylinder', 'data-object']
+  const graph = {
+    nodes: shapes.map(shape => ({ id: shape, label: shape, shape })),
+    edges: [{ id: 'm', from: 'circle', to: 'stadium', dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' }],
+  }
+  for (const read of [fromDrawio(toDrawio(graph)), fromGraphMl(toGraphMl(graph))]) {
+    assert.deepEqual(read.warnings, [])
+    assert.deepEqual(read.nodes.map(node => node.shape), shapes)
+    assert.deepEqual(read.edges.map(({ id, from, to, ...edge }) => edge), [{ dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' }])
+  }
+  // Mermaid has plain syntax for four of them; document and data-object are written as boxes.
+  const mermaid = fromMermaid(toMermaid(graph))
+  assert.deepEqual(mermaid.nodes.map(node => node.shape), ['circle', 'stadium', 'parallelogram', undefined, 'cylinder', undefined])
 })

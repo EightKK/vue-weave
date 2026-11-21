@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (222)
+## Entry `.`: runtime exports (229)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -75,7 +75,11 @@ in public signatures, so changes to them can break consumers too.
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatSheetText: function`
+- `fromDrawio: function`
+- `fromDrawioAsync: function`
+- `fromGraphMl: function`
 - `fromICalendar: function`
+- `fromMermaid: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
 - `graphBetweennessCentrality: function`
@@ -210,7 +214,10 @@ in public signatures, so changes to them can break consumers too.
 - `timelineRowPosition: function`
 - `timelineWbsCodes: function`
 - `toCsv: function`
+- `toDrawio: function`
+- `toGraphMl: function`
 - `toICalendar: function`
+- `toMermaid: function`
 - `toMsProjectXml: function`
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
@@ -230,7 +237,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (532)
+## Entry `.`: type-only exports (543)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -269,6 +276,9 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `DrawioAsyncImportOptions`
+- `DrawioImportOptions`
+- `DrawioOptions`
 - `EarnedValueAmounts`
 - `EarnedValueEacMethod`
 - `EarnedValueMetrics`
@@ -372,6 +382,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphIncrementalLayout`
 - `GraphIncrementalLayoutOptions`
 - `GraphIndex`
+- `GraphInterchangeImport`
+- `GraphInterchangeImportOptions`
+- `GraphInterchangeInput`
+- `GraphInterchangeWarning`
+- `GraphInterchangeWarningCode`
 - `GraphKnownPosition`
 - `GraphLabelEdit`
 - `GraphLabels`
@@ -401,6 +416,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphLayoutWorkerJsonMessage`
 - `GraphLayoutWorkerMessage`
 - `GraphLayoutWorkerPort`
+- `GraphMlOptions`
 - `GraphNodeMatch`
 - `GraphNodeMove`
 - `GraphNodeResize`
@@ -480,6 +496,8 @@ in public signatures, so changes to them can break consumers too.
 - `LinkedViewName`
 - `LoadSegmentLike`
 - `LoadViewTarget`
+- `MermaidDirection`
+- `MermaidOptions`
 - `MsProjectAssignment`
 - `MsProjectBaseline`
 - `MsProjectCalendar`
@@ -765,7 +783,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (207)
+## Entry `./core`: runtime exports (214)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -829,7 +847,11 @@ in public signatures, so changes to them can break consumers too.
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatSheetText: function`
+- `fromDrawio: function`
+- `fromDrawioAsync: function`
+- `fromGraphMl: function`
 - `fromICalendar: function`
+- `fromMermaid: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
 - `graphBetweennessCentrality: function`
@@ -961,7 +983,10 @@ in public signatures, so changes to them can break consumers too.
 - `timelineRowPosition: function`
 - `timelineWbsCodes: function`
 - `toCsv: function`
+- `toDrawio: function`
+- `toGraphMl: function`
 - `toICalendar: function`
+- `toMermaid: function`
 - `toMsProjectXml: function`
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
@@ -975,7 +1000,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (494)
+## Entry `./core`: type-only exports (505)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1008,6 +1033,9 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `DrawioAsyncImportOptions`
+- `DrawioImportOptions`
+- `DrawioOptions`
 - `EarnedValueAmounts`
 - `EarnedValueEacMethod`
 - `EarnedValueMetrics`
@@ -1106,6 +1134,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphIncrementalLayout`
 - `GraphIncrementalLayoutOptions`
 - `GraphIndex`
+- `GraphInterchangeImport`
+- `GraphInterchangeImportOptions`
+- `GraphInterchangeInput`
+- `GraphInterchangeWarning`
+- `GraphInterchangeWarningCode`
 - `GraphKnownPosition`
 - `GraphLabelEdit`
 - `GraphLabels`
@@ -1133,6 +1166,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphLayoutSuccessMessage`
 - `GraphLayoutWorkerJsonMessage`
 - `GraphLayoutWorkerMessage`
+- `GraphMlOptions`
 - `GraphNodeMatch`
 - `GraphNodeMove`
 - `GraphNodeResize`
@@ -1203,6 +1237,8 @@ in public signatures, so changes to them can break consumers too.
 - `LevelResourcesSuccess`
 - `LoadSegmentLike`
 - `LoadViewTarget`
+- `MermaidDirection`
+- `MermaidOptions`
 - `MsProjectAssignment`
 - `MsProjectBaseline`
 - `MsProjectCalendar`
@@ -2499,6 +2535,31 @@ interface DanglingLink<L> {
 type DependencyPathStyle = 'orthogonal' | 'rounded' | 'curve';
 ```
 
+### `DrawioAsyncImportOptions`
+
+```ts
+interface DrawioAsyncImportOptions extends DrawioImportOptions {
+    maxInflatedLength?: number;
+}
+```
+
+### `DrawioImportOptions`
+
+```ts
+interface DrawioImportOptions extends GraphInterchangeImportOptions {
+    page?: number | string;
+}
+```
+
+### `DrawioOptions`
+
+```ts
+interface DrawioOptions {
+    pageName?: string;
+    direction?: GraphLayoutDirection;
+}
+```
+
 ### `EarnedValueAmounts`
 
 ```ts
@@ -3653,6 +3714,57 @@ interface GraphIndex {
 }
 ```
 
+### `GraphInterchangeImport`
+
+```ts
+interface GraphInterchangeImport {
+    nodes: NetworkNode[];
+    edges: GraphEdge[];
+    groups: NetworkGroup[];
+    positions: Map<string, GraphPoint>;
+    sizes: Map<string, GraphNodeSize>;
+    direction?: GraphLayoutDirection;
+    warnings: GraphInterchangeWarning[];
+}
+```
+
+### `GraphInterchangeImportOptions`
+
+```ts
+interface GraphInterchangeImportOptions {
+    maxItems?: number;
+}
+```
+
+### `GraphInterchangeInput`
+
+```ts
+interface GraphInterchangeInput {
+    nodes: readonly NetworkNode[];
+    edges: readonly GraphEdge[];
+    groups?: readonly NetworkGroup[];
+    positions?: ReadonlyMap<string, GraphPoint>;
+    sizes?: ReadonlyMap<string, GraphNodeSize>;
+}
+```
+
+### `GraphInterchangeWarning`
+
+```ts
+interface GraphInterchangeWarning {
+    code: GraphInterchangeWarningCode;
+    id?: string;
+    line?: number;
+    message: string;
+}
+```
+
+### `GraphInterchangeWarningCode`
+
+```ts
+type GraphInterchangeWarningCode = 'unsupported-statement' | 'unsupported-shape' | 'unsupported-style' | 'unsupported-element' | 'skipped-node' | 'skipped-edge' | 'skipped-group' | 'group-member' | 'invalid-value' | 'shifted-positions';
+```
+
 ### `GraphKnownPosition`
 
 ```ts
@@ -4017,6 +4129,14 @@ interface GraphLayoutWorkerPort {
     removeEventListener(type: 'message', listener: (event: {
         data: unknown;
     }) => void): void;
+}
+```
+
+### `GraphMlOptions`
+
+```ts
+interface GraphMlOptions {
+    directed?: boolean;
 }
 ```
 
@@ -4805,6 +4925,21 @@ interface LoadSegmentLike {
 type LoadViewTarget = Extract<ViewTarget, {
     view: 'load';
 }>;
+```
+
+### `MermaidDirection`
+
+```ts
+type MermaidDirection = 'TD' | 'TB' | 'LR' | 'RL' | 'BT';
+```
+
+### `MermaidOptions`
+
+```ts
+interface MermaidOptions {
+    direction?: MermaidDirection;
+    edgeIds?: boolean;
+}
 ```
 
 ### `MsProjectAssignment`
@@ -8425,10 +8560,34 @@ function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): stri
 function formatSheetText(records: readonly (readonly string[])[]): string;
 ```
 
+### `fromDrawio`
+
+```ts
+function fromDrawio(xml: string, options?: DrawioImportOptions): GraphInterchangeImport;
+```
+
+### `fromDrawioAsync`
+
+```ts
+function fromDrawioAsync(xml: string, options?: DrawioAsyncImportOptions): Promise<GraphInterchangeImport>;
+```
+
+### `fromGraphMl`
+
+```ts
+function fromGraphMl(xml: string, options?: GraphInterchangeImportOptions): GraphInterchangeImport;
+```
+
 ### `fromICalendar`
 
 ```ts
 function fromICalendar(text: string, options?: ICalendarImportOptions): ICalendarImport;
+```
+
+### `fromMermaid`
+
+```ts
+function fromMermaid(text: string, options?: GraphInterchangeImportOptions): GraphInterchangeImport;
 ```
 
 ### `fromMsProjectXml`
@@ -9302,10 +9461,28 @@ function timelineWbsCodes(rows: readonly TimelineRow[]): Map<string, string>;
 function toCsv(table: readonly (readonly CsvCell[])[]): string;
 ```
 
+### `toDrawio`
+
+```ts
+function toDrawio(graph: GraphInterchangeInput, options?: DrawioOptions): string;
+```
+
+### `toGraphMl`
+
+```ts
+function toGraphMl(graph: GraphInterchangeInput, options?: GraphMlOptions): string;
+```
+
 ### `toICalendar`
 
 ```ts
 function toICalendar(events: readonly ICalendarEvent[], options?: ICalendarOptions): string;
+```
+
+### `toMermaid`
+
+```ts
+function toMermaid(graph: GraphInterchangeInput, options?: MermaidOptions): string;
 ```
 
 ### `toMsProjectXml`

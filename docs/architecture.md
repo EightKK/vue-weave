@@ -6,7 +6,7 @@ The package has three boundaries.
 - src/components owns measurement, SVG/HTML rendering, local camera/scroll state and transient pointer previews. Persistent selection and accepted schedule data belong to the parent.
 - examples contains business data and validation. Components do not import examples.
 
-Planning screens around the components (an unplanned-task backlog, an inspector, a diagnostics list, a context toolbar, typed cell editors, save-status and conflict messages) are reference implementations in `examples/components/` and the planning demos. They are not part of the package: the library adds only core functions, composables and the props, events, slots and methods of the two components that such screens need, and the stylesheet styles only states the components draw themselves (highlights and selected load segments).
+Planning screens around the components (an unplanned-task backlog, an inspector, a diagnostics list, a context toolbar, typed cell editors, save-status and conflict messages) are reference implementations in `examples/components/` and the planning demos. They are not part of the package: the library adds only core functions, composables and the props, events, slots and methods of the components that such screens need, and the stylesheet styles only states the components draw themselves (highlights and selected load segments).
 
 ## Three models
 
@@ -92,7 +92,7 @@ Scheduling constraints on bars are display data with an editing contract like th
 
 ## Component internals
 
-The two components keep rendering, measurement and gesture handling in their single-file components. Pure arithmetic lives in plain TypeScript modules beside them, which the package does not export, so it can be read and tested without the component.
+The components keep rendering, measurement and gesture handling in their single-file components. Pure arithmetic lives in plain TypeScript modules beside them, which the package does not export, so it can be read and tested without the component.
 
 - `src/components/networkGraph/`: the drag-preview layout (`previewLayout(context, change)` layers the changed boxes, paths and labels over the saved layout and records which nodes and edges changed, so only those items update), the `avoidNodes` preview rerouting index, group frame geometry, port keys, the move, snap and resize arithmetic, and the default node and marker drawings.
 - `src/components/ganttChart/`: geometry and windowing, prop validation, the edit arithmetic for keys, drag to create and `cascade`, row hierarchy moves and the tooltip composable. One `Gesture` record holds the pointer gesture in flight; previews stay in their own reactive refs.

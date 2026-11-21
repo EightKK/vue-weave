@@ -110,7 +110,7 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
     return `<mxGeometry x="${formatNumber(rect.x - origin.x)}" y="${formatNumber(rect.y - origin.y)}" width="${formatNumber(rect.width)}" height="${formatNumber(rect.height)}" as="geometry"/>`
   }
   const lines = [
-    '<mxfile host="@eightkk/vue-weave">',
+    '<mxfile host="vue-weave">',
     `  <diagram id="vw-page-1" name="${xmlAttribute(pageName)}">`,
     '    <mxGraphModel grid="1" gridSize="10" page="0">',
     '      <root>',
@@ -134,6 +134,7 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
     let style = markerStyle('end', edge.markerEnd ?? 'arrow') + markerStyle('start', edge.markerStart ?? 'none')
     if (edge.edgeStyle !== undefined && Object.hasOwn(edgeStyles, edge.edgeStyle)) style += edgeStyles[edge.edgeStyle]
     if (edge.animated) style += 'flowAnimation=1;'
+    if (edge.dashed) style += 'dashed=1;'
     const points = edge.points?.length
       ? '<Array as="points">' + edge.points.map(point => `<mxPoint x="${formatNumber(point.x)}" y="${formatNumber(point.y)}"/>`).join('') + '</Array>'
       : ''
@@ -303,7 +304,7 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
     const node: NetworkNode = { id: cell.id, label, ...(detail === undefined ? {} : { detail }) }
     const shapeStyle = cell.style.get('shape')
     // `shape=mxgraph.flowchart.decision` is read by its last part; a named style (`ellipse`) or `rounded=1` otherwise.
-    const shapeName = (shapeStyle && shapeStyle.slice(shapeStyle.lastIndexOf('.') + 1))
+    const shapeName = cell.style.get('vwShape') || (shapeStyle && shapeStyle.slice(shapeStyle.lastIndexOf('.') + 1))
       || (cell.styleName !== undefined && namedShapeStyles.has(cell.styleName) ? cell.styleName : undefined)
       || (cell.style.get('rounded') === '1' ? 'rounded' : undefined)
     if (shapeName) {
@@ -344,8 +345,14 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
     const label = text !== '' ? text : edgeLabels.get(cell.id)?.join('\n')
     const edge: Omit<GraphEdge, 'id'> & { id?: string } = { id: cell.id, from: cell.source ?? '', to: cell.target ?? '' }
     if (label !== undefined && label !== '') edge.label = label
-    const end = readGraphMarker(cell.style.get('endArrow') || 'classic', warn, cell.id)
-    const start = readGraphMarker(cell.style.get('startArrow') || 'none', warn, cell.id)
+    // An unfilled `block` or `classic` arrow is the hollow triangle of a BPMN message flow.
+    const marker = (side: 'end' | 'start', fallback: string) => {
+      const name = cell.style.get(side + 'Arrow') || fallback
+      const hollow = cell.style.get(side + 'Fill') === '0' && (name === 'block' || name === 'classic')
+      return hollow ? 'hollow-arrow' : readGraphMarker(name, warn, cell.id)
+    }
+    const end = marker('end', 'classic')
+    const start = marker('start', 'none')
     if (end !== 'arrow') edge.markerEnd = end
     if (start !== 'none') edge.markerStart = start
     const edgeStyle = cell.style.get('edgeStyle')
@@ -353,6 +360,7 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
     else if (cell.style.get('curved') === '1') edge.edgeStyle = 'curve'
     else if (edgeStyle === 'none') edge.edgeStyle = 'straight'
     if (cell.style.get('flowAnimation') === '1') edge.animated = true
+    if (cell.style.get('dashed') === '1') edge.dashed = true
     const array = cell.geometry?.children.find(child => child.name === 'Array' && child.attributes.get('as') === 'points')
     if (array) {
       const base = offset(cell.parent === undefined ? undefined : parentVertex(cell))
