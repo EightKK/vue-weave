@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir as readdirUnsorted, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { releaseDirectory, runReleaseTransaction, verifyReleaseSet } from '../scripts/release-candidate.mjs'
 
 // Release tooling: a failed rerun must leave the previous verified set complete and untouched.
+
+// readdir() order is not specified (it differs between file systems), so every listing here is sorted.
+async function readdir(directory) {
+  return (await readdirUnsorted(directory)).sort()
+}
 
 async function withArtifacts(run) {
   const directory = await mkdtemp(join(tmpdir(), 'vw-release-test-'))
@@ -27,7 +32,7 @@ function writeArtifacts(content) {
 
 async function snapshot(directory) {
   const files = {}
-  for (const name of (await readdir(directory)).sort()) files[name] = await readFile(join(directory, name), 'utf8')
+  for (const name of await readdir(directory)) files[name] = await readFile(join(directory, name), 'utf8')
   return files
 }
 
@@ -41,7 +46,8 @@ test('a successful run promotes a complete verified set', async () => {
   await withArtifacts(async artifacts => {
     const result = await runReleaseTransaction({ artifacts, version: '1.0.0', build: writeArtifacts('first') })
     const directory = releaseDirectory(artifacts, '1.0.0')
-    assert.equal(result.directory, directory)
+    // The tooling resolves real paths; on Windows a temporary directory can also have a short (8.3) name.
+    assert.equal(await realpath(result.directory), await realpath(directory))
     assert.deepEqual(await readdir(directory), ['SHA256SUMS', 'pkg-1.0.0-source-demo.tar.gz', 'pkg-1.0.0.tgz', 'release-verification.json'])
     const record = await verifyReleaseSet(directory)
     assert.equal(record.run, 'first')
