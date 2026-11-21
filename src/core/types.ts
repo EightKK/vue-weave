@@ -184,10 +184,16 @@ export interface TimelineColumn<R extends TimelineRow = TimelineRow> {
   field?: TimelineFieldSpec<R>
 }
 
-/** One controlled spreadsheet operation; apply both lists as a single transaction. */
+/**
+ * One GanttChart spreadsheet operation (`sheet-edit`), proposed as a whole: apply both lists as a single transaction,
+ * for example with `applyTimelineSheetEdit`.
+ */
 export interface TimelineSheetEdit<R extends TimelineRow = TimelineRow> {
-  action: 'paste' | 'fill'
+  /** `paste` (clipboard), `fill` (Ctrl/Cmd+D or the fill handle) or `clear` (Delete, Backspace or cut). */
+  action: 'paste' | 'fill' | 'clear'
+  /** Edits of typed columns (`column.field`), in row then column order. */
   fieldEdits: TimelineFieldEdit<R>[]
+  /** Edits of plain editable columns, in row then column order. */
   cellEdits: TimelineCellEdit[]
 }
 
