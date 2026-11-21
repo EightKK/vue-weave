@@ -17,6 +17,7 @@ import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
 import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
 import BookingShowcase from './showcase/BookingShowcase.vue'
 import CalendarShowcase from './showcase/CalendarShowcase.vue'
+import EventCalendarDemo from './EventCalendarDemo.vue'
 
 /**
  * - `dataset`: a data set for the graph and timeline of the main page (see `makeExample` in data.ts).
@@ -53,6 +54,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'resource-planning', label: 'Resource planning', group: 'standalone', component: ResourcePlanningDemo },
   { id: 'persistence', label: 'Saved editing', group: 'standalone', component: PersistenceDemo },
   { id: 'large-plan', label: 'Large plan', group: 'standalone', component: LargePlanDemo },
+  { id: 'event-calendar', label: 'Event calendar', group: 'standalone', component: EventCalendarDemo },
   { id: 'workflow', label: 'Workflow builder', group: 'gallery', component: WorkflowShowcase },
   { id: 'schema', label: 'Database schema', group: 'gallery', component: SchemaShowcase },
   { id: 'org', label: 'Org chart', group: 'gallery', component: OrgChartShowcase },

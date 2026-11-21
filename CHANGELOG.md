@@ -4,6 +4,8 @@
 
 No changes yet.
 
+- `EventCalendar`: a third controlled component for appointment-style scheduling, with day, week and month views, an all-day row, an optional per-resource day view (`resources`), a now line, a built-in toolbar and `event`/`toolbar` slots. Pointer and keyboard moves and resizes emit `edit` (`EventCalendarEdit`, with `resource` for a column change), drags over empty time emit `create` when `creatable` is set, both checked by synchronous `validateEdit` and `validateCreate` (`edit-rejected`, `create-rejected`); `v-model:view`, `v-model:date` and `v-model:selected-id`, `event-activate`, `range-change` and `edit-cancel` complete it. New core helpers `eventCalendarRange`, `eventCalendarDays`, `eventCalendarMonthGrid`, `shiftEventCalendarDate`, `eventCalendarTimeOfDay`, `eventCalendarTimeAt`, `layoutCalendarDayEvents`, `packCalendarEventLanes` and `validateCalendarEvents`, the `EventCalendarComponent` and `EventCalendarExposed` types, `vw-calendar-*` classes and the `--vw-calendar-gutter`, `--vw-calendar-today` and `--vw-calendar-event-accent` theme variables. Additive; nothing existing changes.
+
 ## 0.6.0 - 2026-11-19
 
 This is a minor release because of the changes under "Breaking changes": error messages of input checks are unified, an ID must be a non-empty string everywhere, `layoutGridGraph` has a new default `columnGap`, and `graphRectsIntersect` no longer counts touching rectangles. Each entry below says who is affected and what to change.

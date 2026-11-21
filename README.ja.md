@@ -72,6 +72,11 @@ Vue 3でネットワークグラフとガントチャートを実装するため
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
 
+### EventCalendar
+
+- **表示：** IANA タイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
+- **提案としての編集：** ドラッグとキーボードによる移動とリサイズ、リソース間の移動、ドラッグでの新規作成。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。
+
 ### ヘッドレスコア（`vue-weave/core`）
 
 - **グラフのアルゴリズムと指標：** `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`、連結成分、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）と、その結果をグループに変換する `graphCommunityGroups`。

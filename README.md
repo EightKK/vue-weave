@@ -72,6 +72,11 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
 - **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
 
+### EventCalendar
+
+- **Views:** day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
+- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create, checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too.
+
 ### Headless core (`vue-weave/core`)
 
 - **Graph algorithms and metrics:** `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes`, `filterGraph`, connected components, degree, betweenness and PageRank centrality, and Louvain communities (`detectGraphCommunities`) that `graphCommunityGroups` turns into groups.

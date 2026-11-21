@@ -89,11 +89,12 @@ try {
     import { readFileSync } from 'node:fs'
     import { createSSRApp, h } from 'vue'
     import { renderToString } from 'vue/server-renderer'
-    import { NetworkGraph, GanttChart, useEditHistory } from '${manifest.name}'
+    import { NetworkGraph, GanttChart, EventCalendar, useEditHistory } from '${manifest.name}'
     assert.equal(typeof useEditHistory, 'function')
     for (const [component, props] of [
       [NetworkGraph, { nodes: [], edges: [] }],
       [GanttChart, { rows: [], bars: [], range: { start: 0, end: 10 } }],
+      [EventCalendar, { events: [], date: 0 }],
     ]) assert.ok((await renderToString(createSSRApp({ render: () => h(component, props) }))).length > 0)
     assert.match(readFileSync(new URL(import.meta.resolve('${manifest.name}/style.css')), 'utf8'), /\\.vw-/)
     const exportedManifest = JSON.parse(readFileSync(new URL(import.meta.resolve('${manifest.name}/package.json')), 'utf8'))
@@ -116,6 +117,7 @@ try {
     import {
       NetworkGraph, GanttChart, type GanttChartExposed, type GraphEdge, type GraphNodeMove, type NetworkGraphExposed,
       type NetworkNode, type TimelineBar, type TimelineEdit, type TimelineRow,
+      EventCalendar, type CalendarEvent, type EventCalendarEdit, type EventCalendarExposed,
     } from '${manifest.name}'
     interface MyData { owner: string }
     type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
@@ -144,6 +146,12 @@ try {
     typedRef?.exportSvg({ nodeLabel: node => node.data?.owner ?? node.label })
     const chartRef = undefined as GanttChartExposed<TimelineRow, TimelineBar<MyData>> | undefined
     chartRef?.exportSvg({ barLabel: bar => bar.data?.owner ?? bar.label })
+    const events: CalendarEvent<MyData>[] = [{ id: 'e', label: 'Event', start: 0, end: 1, data: { owner: 'Ada' } }]
+    const calendar = new EventCalendar({ events, date: 0 })
+    assertType<Equal<Parameters<NonNullable<typeof calendar.$slots.event>>[0]['event']['data'], MyData | undefined>>()
+    assertType<Equal<Parameters<NonNullable<typeof calendar.$props.onEdit>>[0], EventCalendarEdit>>()
+    const calendarRef = undefined as EventCalendarExposed<CalendarEvent<MyData>> | undefined
+    calendarRef?.cancelEdit()
     void h(NetworkGraph, { nodes, edges })
   `
   await writeFile(join(consumer, 'consumer.ts'), typeProbe)
