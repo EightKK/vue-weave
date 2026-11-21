@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cloneGraphElements, graphAlignmentGuides, snapGraphPoint } from 'vue-weave/core'
-import { NetworkGraph, cloneGraphElements as rootClone, graphAlignmentGuides as rootGuides } from 'vue-weave'
+import { cloneGraphElements, graphAlignmentGuides, snapGraphPoint } from '@eightkk/vue-weave/core'
+import { NetworkGraph, cloneGraphElements as rootClone, graphAlignmentGuides as rootGuides } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const rect = (x, y, width = 100, height = 40) => ({ x, y, width, height })

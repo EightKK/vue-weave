@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { graphFlowBands, layoutFlowGraph, renderGraphSvg } from 'vue-weave/core'
-import { NetworkGraph, layoutFlowGraph as rootLayoutFlowGraph } from 'vue-weave'
+import { graphFlowBands, layoutFlowGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
+import { NetworkGraph, layoutFlowGraph as rootLayoutFlowGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const node = (id, label = id) => ({ id, label })

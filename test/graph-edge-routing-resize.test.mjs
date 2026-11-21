@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import {
   applyGraphPositions, applyGraphSizes, graphEdgeEndpoint, graphPathEndpoints, graphPolylinePath, graphSmoothPath, layoutLayeredGraph,
   routeGraphEdges, routeGraphPorts,
-} from 'vue-weave/core'
-import { routeGraphEdges as rootRoute, applyGraphSizes as rootSizes } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { routeGraphEdges as rootRoute, applyGraphSizes as rootSizes } from '@eightkk/vue-weave'
 import { byId, deepFreeze as freeze, onBorder, segments } from './helpers/builders.mjs'
 
 const nodes = [

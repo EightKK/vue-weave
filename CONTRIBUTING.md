@@ -51,7 +51,7 @@ npm pack
 npm install ./path/to/package.tgz
 ```
 
-The package includes ES modules, declarations, the stylesheet and documentation. Vue remains a peer dependency. Use `vue-weave/core` for calculations without importing Vue components.
+The package includes ES modules, declarations, the stylesheet and documentation. Vue remains a peer dependency. Use `@eightkk/vue-weave/core` for calculations without importing Vue components.
 
 ## Verify a pull request
 
@@ -68,7 +68,7 @@ npm run test:package
 
 ### Public API baseline
 
-[`api/public-api.md`](https://github.com/EightKK/vue-weave/blob/v1.0.0/api/public-api.md) records the public API of the built package: the runtime and type-only export names of `vue-weave` and `vue-weave/core`, the normalized declaration of every export (and of the non-exported types that public signatures refer to), the props, emits, slots and exposed members of both components, and the `--vw-*` custom properties in `dist/style.css`. `test:package` fails with a per-item diff when the installed tarball differs from it. To check or regenerate it locally:
+[`api/public-api.md`](https://github.com/EightKK/vue-weave/blob/v1.0.0/api/public-api.md) records the public API of the built package: the runtime and type-only export names of `@eightkk/vue-weave` and `@eightkk/vue-weave/core`, the normalized declaration of every export (and of the non-exported types that public signatures refer to), the props, emits, slots and exposed members of both components, and the `--vw-*` custom properties in `dist/style.css`. `test:package` fails with a per-item diff when the installed tarball differs from it. To check or regenerate it locally:
 
 ```sh
 npm run build && node scripts/api-baseline.mjs           # check
@@ -94,7 +94,7 @@ A maintainer makes each release by hand: a GitHub Release and a manual npm publi
 1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. In `README.md` and `README.ja.md`, update the tarball name in the install instructions and the `v<version>` tag in the absolute image and document URLs (npm shows the README without the repository, so those links point at the release tag). Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
 3. Verify that private vulnerability reporting is enabled under the repository's **Settings > Advanced Security**. GitHub offers it only for public repositories, so enable it as soon as the repository is public. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
-4. Run `npm run prepare:release` (below). Its verified package tarball, `artifacts/release/<version>/vue-weave-<version>.tgz` (`<path-to-verified-tgz>` in the next steps), is the only file that is published; do not run `npm pack` or `npm publish` in the checkout again, because that rebuilds the package.
+4. Run `npm run prepare:release` (below). Its verified package tarball, `artifacts/release/<version>/eightkk-vue-weave-<version>.tgz` (`<path-to-verified-tgz>` in the next steps), is the only file that is published; do not run `npm pack` or `npm publish` in the checkout again, because that rebuilds the package.
 5. Create the `v<version>` tag on the checked revision and push it, so the tag-pinned README links resolve.
 6. Publish the verified tarball to npm, entering the one-time password when npm asks for it (or passing `--otp <code>`):
 
@@ -105,12 +105,12 @@ A maintainer makes each release by hand: a GitHub Release and a manual npm publi
 7. Check that the registry holds the same bytes. The integrity npm reports must equal the local SHA-512 of the tarball:
 
    ```sh
-   npm view vue-weave@<version> dist.integrity
+   npm view @eightkk/vue-weave@<version> dist.integrity
    node -e "console.log('sha512-' + require('node:crypto').createHash('sha512').update(require('node:fs').readFileSync(process.argv[1])).digest('base64'))" <path-to-verified-tgz>
    ```
 
    A published version cannot be replaced. If the values differ, deprecate the version with `npm deprecate` and release a new patch version.
-8. Create the GitHub Release from the `v<version>` tag. Attach the same tarball bytes that were published, `vue-weave-<version>-source-demo.tar.gz` and `SHA256SUMS` from `artifacts/release/<version>/`, and use the changelog entry as the release notes.
+8. Create the GitHub Release from the `v<version>` tag. Attach the same tarball bytes that were published, `eightkk-vue-weave-<version>-source-demo.tar.gz` and `SHA256SUMS` from `artifacts/release/<version>/`, and use the changelog entry as the release notes.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 

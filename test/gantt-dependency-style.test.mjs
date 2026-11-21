@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { createTimeScale, dependencyPath, renderTimelineSvg } from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+import { createTimeScale, dependencyPath, renderTimelineSvg } from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 
 const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]

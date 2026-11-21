@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { calculateResourceLoad, resourceLoadHistogram } from 'vue-weave/core'
+import { calculateResourceLoad, resourceLoadHistogram } from '@eightkk/vue-weave/core'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { GanttChart } from 'vue-weave'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

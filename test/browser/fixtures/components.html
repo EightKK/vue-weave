@@ -6,14 +6,14 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/component-test/style.css">
     <script type="importmap">
-      { "imports": { "vue": "/component-test/vue.js", "vue-weave": "/component-test/index.js" } }
+      { "imports": { "vue": "/component-test/vue.js", "@eightkk/vue-weave": "/component-test/index.js" } }
     </script>
   </head>
   <body>
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref, shallowRef } from 'vue'
-      import { GanttChart, NetworkGraph } from 'vue-weave'
+      import { GanttChart, NetworkGraph } from '@eightkk/vue-weave'
 
       const validRows = [{ id: 'a', label: 'Row A' }]
       const range = { start: 0, end: 10 }

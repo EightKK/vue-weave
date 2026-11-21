@@ -15,7 +15,7 @@ Interactive network graphs and Gantt charts for Vue 3. Build relationship explor
 ## Install
 
 ```sh
-npm install vue-weave
+npm install @eightkk/vue-weave
 ```
 
 Vue `^3.5.0` is a peer dependency. npm 7 and later install it together with the package when your application does not have it yet. The package ships ES modules, TypeScript declarations and one stylesheet.
@@ -23,17 +23,17 @@ Vue `^3.5.0` is a peer dependency. npm 7 and later install it together with the 
 Import the stylesheet once, for example in your application's entry file:
 
 ```ts
-import 'vue-weave/style.css'
+import '@eightkk/vue-weave/style.css'
 ```
 
 Vite handles this import as it is. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, or your build has no CSS loader, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#the-stylesheet-and-typescript).
 
-**Core only (servers and Workers).** `vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#core-only-servers-and-workers).
+**Core only (servers and Workers).** `@eightkk/vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install @eightkk/vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#core-only-servers-and-workers).
 
-**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `vue-weave-1.0.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
+**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `eightkk-vue-weave-1.0.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
 
 ```sh
-npm install ./vue-weave-1.0.0.tgz
+npm install ./eightkk-vue-weave-1.0.0.tgz
 ```
 
 You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v1.0.0/CONTRIBUTING.md#build-a-local-package) from a checkout.
@@ -45,8 +45,8 @@ You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { NetworkGraph, type NetworkNode, type GraphEdge } from 'vue-weave'
-import 'vue-weave/style.css'
+import { NetworkGraph, type NetworkNode, type GraphEdge } from '@eightkk/vue-weave'
+import '@eightkk/vue-weave/style.css'
 
 const selected = ref('design')
 const nodes: NetworkNode[] = [
@@ -88,8 +88,8 @@ Other features are enabled the same way, through props and `options`. For exampl
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { GanttChart, type TimelineBar, type TimelineEdit } from 'vue-weave'
-import 'vue-weave/style.css'
+import { GanttChart, type TimelineBar, type TimelineEdit } from '@eightkk/vue-weave'
+import '@eightkk/vue-weave/style.css'
 
 const start = Date.parse('2026-11-09T08:00:00Z')
 const hour = 3_600_000
@@ -123,7 +123,7 @@ A minimal link between a graph and a Gantt chart: activating an item in either v
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from '@eightkk/vue-weave'
 
 // nodes, edges, rows, bars and range as in the examples above; node and bar IDs are task IDs here.
 const bindings: ViewBinding[] = bars.value.flatMap(bar => [
@@ -204,7 +204,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
 - **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
 
-### Headless core (`vue-weave/core`)
+### Headless core (`@eightkk/vue-weave/core`)
 
 - **Graph algorithms and metrics:** `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes`, `filterGraph`, connected components, degree, betweenness and PageRank centrality, and Louvain communities (`detectGraphCommunities`) that `graphCommunityGroups` turns into groups.
 - **Scheduling:** `scheduleTasks` on calendars from `buildWorkPeriods`, including IANA time zones, as-late-as-possible, manual, inactive and summary tasks, constraints, pauses and cycle and infeasibility diagnostics. `scheduleTasks(input, { explain: true })` traces why each task starts when it does, and `toPlanningDiagnostics` lists the problems.
@@ -235,7 +235,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 - **Version 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.0.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
 - **Vue:** 3.5 or later in 3.x (peer dependency `^3.5.0`).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
-- **Node.js:** 22.18 or later for the headless `vue-weave/core` entry, server-side rendering and development.
+- **Node.js:** 22.18 or later for the headless `@eightkk/vue-weave/core` entry, server-side rendering and development.
 - **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/architecture.md)), so do not assume full conformance.
 

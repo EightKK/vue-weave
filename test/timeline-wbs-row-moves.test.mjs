@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { indentTimelineRow, moveTimelineRow, outdentTimelineRow, timelineRowPosition, timelineWbsCodes } from 'vue-weave/core'
+import { indentTimelineRow, moveTimelineRow, outdentTimelineRow, timelineRowPosition, timelineWbsCodes } from '@eightkk/vue-weave/core'
 
 const freeze = rows => Object.freeze(rows.map(row => Object.freeze({ ...row })))
 const tree = freeze([

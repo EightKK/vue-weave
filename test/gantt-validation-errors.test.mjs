@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { GanttChart } from 'vue-weave'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 test('invalid Gantt data reports validation-error and renders the empty state', async () => {
@@ -45,7 +45,7 @@ test('production builds do not render invalid Gantt data', () => {
   const script = `
     import { createSSRApp, h } from 'vue'
     import { renderToString } from 'vue/server-renderer'
-    import { GanttChart } from 'vue-weave'
+    import { GanttChart } from '@eightkk/vue-weave'
     const bar = { id: 'b', rowId: 'r', label: 'Bar', start: 0, end: 3600000 }
     const errors = []
     const html = await renderToString(createSSRApp({ render: () => h(GanttChart, {

@@ -2,7 +2,7 @@
 
 Identifiers are nonempty strings and must be unique within their corresponding collection. Named port IDs are scoped to each node. Labels are rendered as Vue text. Escape/sanitize any HTML you supply in custom slots according to your application's trust boundaries.
 
-The package is ESM-only. Import Vue components and shared types from `vue-weave`, headless calculations from `vue-weave/core`, and the stylesheet from `vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency. The package also exports `vue-weave/package.json`, so tools can read the installed version.
+The package is ESM-only. Import Vue components and shared types from `@eightkk/vue-weave`, headless calculations from `@eightkk/vue-weave/core`, and the stylesheet from `@eightkk/vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency. The package also exports `@eightkk/vue-weave/package.json`, so tools can read the installed version.
 
 The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
 
@@ -12,7 +12,7 @@ From 1.0.0, releases follow [Semantic Versioning](https://semver.org/). A breaki
 
 The public API is:
 
-- The names exported from `vue-weave` and `vue-weave/core`, with the types and signatures of their published declarations, and the `vue-weave/style.css` and `vue-weave/package.json` entries.
+- The names exported from `@eightkk/vue-weave` and `@eightkk/vue-weave/core`, with the types and signatures of their published declarations, and the `@eightkk/vue-weave/style.css` and `@eightkk/vue-weave/package.json` entries.
 - The props (and their documented defaults), events and their payloads, slots and slot props, and exposed methods of NetworkGraph and GanttChart, as documented on this page.
 - The `--vw-*` CSS custom properties documented in [Themes and localization](integration.md#themes-and-localization), except those described there as internal (such as `--vw-item-*` and `--vw-band-dash`), and the classes you add yourself (`vw-theme-dark`, `vw-theme-auto`).
 - The [snapshot format](#versioned-json-snapshots): a `schemaVersion: 1` document written by a 1.x release is accepted by `parseWeaveSnapshot` and `restoreWeaveSnapshot` of every later 1.x release.
@@ -25,7 +25,7 @@ Not covered, and allowed to change in a minor or patch release (noted in the cha
 
 ## Validation and errors
 
-The planning, timeline and data functions of `vue-weave/core` (scheduling, leveling and resource load, status-date and actuals rescheduling, plan comparison, placement, resource timelines, timeline data and row trees, `renderTimelineSvg`, snapshots, windowed data and the MS Project, iCalendar and CSV interchange), its graph functions (`indexGraph` and everything that validates a graph through it: every layout, the algorithms and analysis, editing, port rules and `renderGraphSvg`; group collapse, swimlanes, traversal, layout requests and the view bindings) and the prop checks of GanttChart and NetworkGraph share one ID rule: an ID is a non-empty string, and IDs are unique within their collection. Any other value (a number such as `0` or `5`, `''`, `null`, `undefined`, an object) is invalid. Each failure kind currently has one message format, thrown as an `Error`. The texts help people read logs; they are not part of the [compatibility promise](#compatibility-and-versioning), so code should check the class:
+The planning, timeline and data functions of `@eightkk/vue-weave/core` (scheduling, leveling and resource load, status-date and actuals rescheduling, plan comparison, placement, resource timelines, timeline data and row trees, `renderTimelineSvg`, snapshots, windowed data and the MS Project, iCalendar and CSV interchange), its graph functions (`indexGraph` and everything that validates a graph through it: every layout, the algorithms and analysis, editing, port rules and `renderGraphSvg`; group collapse, swimlanes, traversal, layout requests and the view bindings) and the prop checks of GanttChart and NetworkGraph share one ID rule: an ID is a non-empty string, and IDs are unique within their collection. Any other value (a number such as `0` or `5`, `''`, `null`, `undefined`, an object) is invalid. Each failure kind currently has one message format, thrown as an `Error`. The texts help people read logs; they are not part of the [compatibility promise](#compatibility-and-versioning), so code should check the class:
 
 | Failure | Message |
 | --- | --- |
@@ -187,7 +187,7 @@ Port rules declare what each connection endpoint accepts: a type tag, a directio
 A reconnection leaves the edge being reconnected out of the counts, so a port with `maxConnections: 1` can move its own edge. Collapsed-group proxies are not in `nodes`, so with `connectionRules` a connection to a proxy is rejected as `unknown-node`. Rules that name an unknown node or port throw when the component first checks a connection; keep the rules in step with `nodes`.
 
 ```ts
-import { graphConnectionValidator, type GraphPortRules } from 'vue-weave/core'
+import { graphConnectionValidator, type GraphPortRules } from '@eightkk/vue-weave/core'
 
 const rules: GraphPortRules = {
   ports: {
@@ -557,7 +557,7 @@ A bar can carry several saved baselines, for example the original plan and a rev
 **Export.** `exportSvg`, `exportPng` and `renderTimelineSvg` draw the same sets with the same layout, colours (theme `baseline`, `baseline2` and `baseline3`) and titles; `renderTimelineSvg` takes `baselineIds`, `baselineLabel`, `formatVariance` and `varianceLabels` options. `toMsProjectXml` writes numbered baselines (`MsProjectTask.baselines`); see [Interchange exports](#interchange-exports).
 
 ```ts
-import { baselineVariance, timelineBaseline } from 'vue-weave/core'
+import { baselineVariance, timelineBaseline } from '@eightkk/vue-weave/core'
 
 const bars = tasks.map(task => ({
   id: task.id, rowId: task.id, label: task.name, start: task.start, end: task.end,
@@ -612,7 +612,7 @@ Opt-in with `columnsResizable`. Without it and without `labelWidth`, the chart a
 **Pointer.** Press the primary button (or touch) on a separator and drag horizontally. The column, the cells below it and the timeline follow the preview; the label width before the drag is the rendered one. Release proposes the previewed width with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a change of `columns`, `labelWidth`, the limits, `columnsResizable`, the direction or the other source props listed in the editing contract cancel the drag without a proposal.
 
 ```ts
-import { timelineLabelColumnId, type TimelineColumn, type TimelineColumnResize } from 'vue-weave/core'
+import { timelineLabelColumnId, type TimelineColumn, type TimelineColumnResize } from '@eightkk/vue-weave/core'
 
 const labelWidth = ref<number>()
 function onColumnResize(change: TimelineColumnResize) {
@@ -739,7 +739,7 @@ The examples are `en-US`. The date `formatTime` of the day and coarser levels ap
 ```vue
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { GanttChart, calendarZoomPresets } from 'vue-weave'
+import { GanttChart, calendarZoomPresets } from '@eightkk/vue-weave'
 
 const range = { start: Date.parse('2026-04-06T00:00:00+02:00'), end: Date.parse('2026-08-31T00:00:00+02:00') }
 const presets = calendarZoomPresets(range, { locale: 'de-DE', timeZone: 'Europe/Berlin', levels: ['days', 'weeks', 'months'] })
@@ -817,7 +817,7 @@ When a bar has any of these fields, the information is added to the bar's access
 Float lines and deadline indicators are rendered whenever they intersect the visible time window, even if their bar is outside it, and follow the bar in a pointer preview: the float line starts at the previewed end and the late state uses the previewed end. Edit proposals (`TimelineEdit`) are unchanged and carry only `start` and `end`. During a pointer move preview the segments shift with the bar by the same displacement. During a resize preview the bar is drawn without segments, because the new work pattern depends on the calendar: the parent reschedules after accepting the edit and supplies new `segments`, `latestEnd` and `critical` values. Keyboard edits are proposed at once without a preview.
 
 ```ts
-import { invertWorkPeriods, scheduleTasks, scheduledBarFields } from 'vue-weave/core'
+import { invertWorkPeriods, scheduleTasks, scheduledBarFields } from '@eightkk/vue-weave/core'
 
 const plan = scheduleTasks({ range, calendars: [{ id: 'plant', periods }], defaultCalendarId: 'plant', tasks, dependencies })
 const bars = plan.ok ? plan.tasks.map(task => ({ id: task.id, rowId: task.id, label: task.id, ...scheduledBarFields(task) })) : []
@@ -877,7 +877,7 @@ Escape, pointer cancellation (including a native touch pan), lost capture and ch
 Returned changes for unknown bar IDs and for the bar being edited (or any bar of a multiple-selection move) are ignored, and so are changes whose `after` interval and row equal the bar's current ones. For a multiple-selection move the callback is called once per moved bar and the results are merged; when several calls return a change for the same bar, the last one wins. An `after` interval with a non-finite endpoint or `end < start` is an error. When the callback throws or returns such an interval, no preview is drawn and the edit is rejected with the error message: `edit-rejected` for a single bar, `edits-rejected` for a multiple-selection move. Keep `cascade` cheap and synchronous, and return `[]` when no schedule can be computed.
 
 ```ts
-import { propagateEdit, type TimelineEdit } from 'vue-weave/core'
+import { propagateEdit, type TimelineEdit } from '@eightkk/vue-weave/core'
 
 function cascade(change: TimelineEdit): TimelineEdit[] {
   if (change.mode !== 'move') return []
@@ -906,7 +906,7 @@ All of these are opt-in. Without `rowsReorderable` and `statusDate`, the chart r
 **Pointer.** Press the primary button (or touch) on a move handle and drag vertically. A drop indicator (`vw-gantt-row-drop`, `--vw-accent`, `aria-hidden`) shows the position: the upper half of a displayed row places the moved row before it, the lower half after it, which is its first child when the row's children are shown. Positions inside the moved row's subtree are not offered. Release proposes the indicated position with `source: 'pointer'`. Escape, pointer cancellation, lost capture, a source change (rows, collapsed rows, `rowsReorderable` and the other props listed in the editing contract) and a second pinch touch cancel the drag without a proposal.
 
 ```ts
-import { moveTimelineRow, timelineWbsCodes, type TimelineRowMove } from 'vue-weave/core'
+import { moveTimelineRow, timelineWbsCodes, type TimelineRowMove } from '@eightkk/vue-weave/core'
 
 function onRowMove(change: TimelineRowMove) {
   rows.value = moveTimelineRow(rows.value, change.id, change.after)
@@ -949,7 +949,7 @@ Opt-in. A chart whose bars have no `constraints` (or an empty object), without `
 ```ts
 import {
   applyTimelineConstraintEdit, type TimelineConstraintEdit, type TimelineConstraintKind, type TimelineContextMenu,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const menu = ref<TimelineContextMenu>()
 function onContextMenu(event: TimelineContextMenu) {
@@ -1004,7 +1004,7 @@ With `timeZone`, bands follow local time with the zone's daylight-saving rules f
 - An unknown or empty zone name throws a RangeError with the name, and so does combining it with `utcOffsetMinutes`. Results depend on the time-zone data of the runtime.
 
 ```ts
-import { calendarBands } from 'vue-weave/core'
+import { calendarBands } from '@eightkk/vue-weave/core'
 
 const range = { start: Date.parse('2025-10-24T22:00:00Z'), end: Date.parse('2025-10-28T23:00:00Z') }
 const headerBands = [
@@ -1015,7 +1015,7 @@ const headerBands = [
 
 ## Core entry point
 
-Import pure functions and types from `vue-weave/core`. The Vue entry also re-exports them. Core has no Vue or DOM runtime dependency and does not mutate input data.
+Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry also re-exports them. Core has no Vue or DOM runtime dependency and does not mutate input data.
 
 | Export | Purpose |
 | --- | --- |
@@ -1284,7 +1284,7 @@ Related exported types: `GraphIndex`, `GraphFilterOptions`, `GraphNodeMatch`, `G
 
 ### Graph analysis
 
-Headless metrics for large graphs, exported from `vue-weave/core`. Like the algorithms above they validate input with `indexGraph` (unknown endpoints and duplicate IDs throw `Error`), are deterministic (no randomness), iterate instead of recursing and never mutate their arguments. Results are keyed by node ID in input order.
+Headless metrics for large graphs, exported from `@eightkk/vue-weave/core`. Like the algorithms above they validate input with `indexGraph` (unknown endpoints and duplicate IDs throw `Error`), are deterministic (no randomness), iterate instead of recursing and never mutate their arguments. Results are keyed by node ID in input order.
 
 | Export | Purpose |
 | --- | --- |
@@ -1296,7 +1296,7 @@ Headless metrics for large graphs, exported from `vue-weave/core`. Like the algo
 | graphCommunityGroups(communities, { idPrefix = 'community-', label, minSize = 2 }) | `GraphGroup[]` for the `NetworkGraph` `groups` prop. IDs are `idPrefix + (index + 1)` with the index taken from `communities`, so skipped communities leave gaps and the rest stay stable. `label(members, index)` defaults to `Community N`. Communities smaller than `minSize` produce no group. Group IDs must not collide with node IDs because collapsing uses the group ID for the proxy node; change `idPrefix` if needed. A node in two communities throws `Error`. |
 
 ```ts
-import { detectGraphCommunities, graphCommunityGroups } from 'vue-weave/core'
+import { detectGraphCommunities, graphCommunityGroups } from '@eightkk/vue-weave/core'
 
 const { communities } = detectGraphCommunities(nodes, edges)
 const groups = graphCommunityGroups(communities, { label: members => `${members.length} nodes` })
@@ -1428,7 +1428,7 @@ The core entry builds three interchange formats as strings, and reads CSV, Micro
 `timelineFromCsvTable` finds its columns by header text, ignoring case and surrounding spaces, or takes them from `columns`; other columns are ignored. It needs `bar`, `start` and `end` and either `row` or `wbs`. With WBS codes, each code is a row with the ID `row-<code>` (for example `row-1.2`), its first `row` cell that is not blank as label (the code when every one is blank) and the row of the shorter code as parent; a parent code without a record of its own becomes a row labelled with its code, and rows are returned in tree preorder by code. Without WBS codes, each distinct row label is a top-level row `row-1`, `row-2`, … in order of appearance. Bars are `bar-1`, `bar-2`, … in record order with the label, the parsed `start` and `end` and, when the cell is not empty, `progress`. Rows without bars are not in a `timelineCsvTable` export, so they are not restored, and WBS codes are renumbered by `timelineWbsCodes` after such a gap. Records whose fields are all empty are skipped. Progress must be written as a plain decimal number, such as `0.25`, `.5` or `1`; hexadecimal, binary, octal and exponent forms (`0x1`, `1e0`) are rejected. WBS codes are ordered part by part as whole numbers of any length. A custom header in `headers` takes precedence over another column's default header, so `headers: { wbs: 'Row' }` reads the `Row` column as WBS codes and leaves `row` unmatched. Missing or repeated columns, and two custom headers that are equal ignoring case and surrounding spaces, throw an Error; an invalid WBS code throws an Error and an unreadable time, an end before the start and a progress that is not a plain decimal number from 0 to 1 throw a RangeError, each naming the CSV line (the one-based record number, with the header as line 1). Add application fields such as `editable` to the returned bars yourself.
 
 ```ts
-import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv, toICalendar, toMsProjectXml } from 'vue-weave/core'
+import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv, toICalendar, toMsProjectXml } from '@eightkk/vue-weave/core'
 
 const csv = toCsv(timelineCsvTable(rows, bars, { formatTime }))
 const ics = toICalendar(bars.map(bar => ({ id: bar.id + '@example.com', summary: bar.label, start: bar.start, end: bar.end })))
@@ -1491,7 +1491,7 @@ Not imported: notes, extended attributes, baseline work and cost, the working-ti
 **Timeline.** `timelineFromMsProject` validates its input like `toMsProjectXml` and throws the same errors. Every task becomes a row with the task ID and name, and the outline levels become `parentId`. A task that the next task is nested under is a summary task: its row has no bar, so GanttChart `showSummaries` draws it from its subtasks. Every other task becomes a bar with the task ID (so bar IDs, task IDs and `ScheduleTask` IDs agree), its name and dates, `progress` (percent complete / 100) when `percentComplete` is set, `constraints`, and `baselines` named by `baselineId`; a milestone (`milestone` or `start === end`) is a zero-length bar at its start, and an inactive task has `appearance: 'outline'`. Dependencies get the IDs `link-1`, `link-2`, … by position in `project.dependencies`, with `type` and a non-zero `lag` copied; one that touches a summary task is listed in `hiddenDependencyIds` instead, unless `summaryDependencies` is set: then it stays in `dependencies` with the summary's row ID as its end, for GanttChart `summaryDependencies` with `showSummaries` (see [Dependencies on summary rows](#dependencies-on-summary-rows)), and `hiddenDependencyIds` is empty. A baseline set ID that is empty, `timelineBaselineId` or used for two numbers throws an Error. Add application fields such as `editable` to the returned bars yourself.
 
 ```ts
-import { fromMsProjectXml, scheduleTasks, timelineFromMsProject, type ScheduleTask } from 'vue-weave/core'
+import { fromMsProjectXml, scheduleTasks, timelineFromMsProject, type ScheduleTask } from '@eightkk/vue-weave/core'
 
 const project = fromMsProjectXml(await file.text(), { utcOffsetMinutes: 540 })
 for (const warning of project.warnings) console.warn(warning.code, warning.message)
@@ -1524,7 +1524,7 @@ Related exported types: `MsProjectImportWarningCode`, `MsProjectResourceLoad`, `
 **Warnings** (`ICalendarImportWarning`: `code`, optional `eventId` and one-based `line`, an English `message`): `skipped-event` (no valid DTSTART, a RECURRENCE-ID, a repeated UID or no END:VEVENT), `missing-uid` (the event is named `event-<n>`), `recurrence`, `unknown-time-zone`, `invalid-value` (an unreadable or negative DURATION, an unreadable DTEND, a DTEND before DTSTART or both DTEND and DURATION; the event becomes an instant, or DTEND wins) and `malformed` (a line without a colon or an END that does not match). Text without `BEGIN:VCALENDAR` and a non-string throw an Error, and an invalid `utcOffsetMinutes` a RangeError.
 
 ```ts
-import { fromICalendar, timelineFromICalendar } from 'vue-weave/core'
+import { fromICalendar, timelineFromICalendar } from '@eightkk/vue-weave/core'
 
 const { events, warnings } = fromICalendar(await file.text(), { utcOffsetMinutes: 540 })
 const { rows, bars } = timelineFromICalendar(events)
@@ -1549,7 +1549,7 @@ Related exported types: `ICalendarImportWarningCode`.
 Core helpers and a composable link entities (tasks, resources, anything the application defines) to what the graph, timeline and load views show. The application passes the results to the components: `selectedIds` for the view the user acts in and display-only highlights for the others (NetworkGraph `highlightedNodeIds` and `highlightedEdgeIds`, GanttChart `highlightedBarIds` and `highlightedDependencyIds`, or `relatedIds`, `matchIds` or its own handling). Both components report what the user points at or activates through `target-enter`, `target-leave` and `target-activate` (`ViewTargetEvent`; NetworkGraph narrows it to `ViewTargetEvent<GraphViewTarget>`), and `revealNode` and `revealBar` bring a linked item into view (`RevealResult`). Types: `GraphViewTarget`, `ViewTargetSource`, `ViewTargetEvent`, `RevealStatus`, `RevealOptions` and `RevealResult`.
 
 ```ts
-import { buildViewBindingIndex, resolveViewTargets, resolveEntityRefs } from 'vue-weave/core'
+import { buildViewBindingIndex, resolveViewTargets, resolveEntityRefs } from '@eightkk/vue-weave/core'
 
 const index = buildViewBindingIndex([
   { entity: { kind: 'task', id: 'A' }, target: { view: 'graph', kind: 'node', id: 'n1' } },
@@ -1590,7 +1590,7 @@ Related exported types: `ViewBinding`, `ViewBindingIndex`, `LoadSegmentLike`, `R
 Select a time range, for example 14:00–16:00 on inspection machine X, and show what was worked on in it in the linked views, optionally with what the graph relates to it. Times are never inferred from the graph: activity comes only from the bars.
 
 ```ts
-import { buildViewBindingIndex, resolveTimeRangeTargets, timelineBarsInRange } from 'vue-weave/core'
+import { buildViewBindingIndex, resolveTimeRangeTargets, timelineBarsInRange } from '@eightkk/vue-weave/core'
 
 const active = timelineBarsInRange(bars, { start: t1400, end: t1600 }, { rowIds: ['machine-x'] })
 const result = resolveTimeRangeTargets(buildViewBindingIndex(bindings), active.map(bar => bar.id), {
@@ -1620,7 +1620,7 @@ Related exported types: `TimelineBarsInRangeOptions`, `TimeRangeTargetsOptions`.
 
 ## Resource timelines and unplanned tasks
 
-These `vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
+These `@eightkk/vue-weave/core` helpers show one plan by resource in an ordinary GanttChart. A task assigned to several resources appears once in each resource row; the input task stays one item, so its dates, its work and the resource load are not multiplied by the number of rows. See [Resource rows and unplanned tasks](scheduling.md#resource-rows-and-unplanned-tasks) for the workflow.
 
 | Function | Returns |
 | --- | --- |
@@ -1717,7 +1717,7 @@ The exported types are `PlanComparisonTask`, `PlanComparisonInput`, `PlanScenari
 
 ## Asynchronous layouts and preserved routes
 
-Core (`vue-weave/core`):
+Core (`@eightkk/vue-weave/core`):
 
 - `graphLayoutInputKey(input: GraphLayoutKeyInput): string` identifies a layout input: scope, direction, `settings` (JSON text), `revision`, and in order the nodes (ID, label, detail, shape, ports), edges (ID, ends, ports, label, waypoints), groups, collapsed group IDs, and any `positions`, `sizes`, `fixedIds` and `addedIds` given to the engine (the last two only when present, so keys of inputs without them are unchanged). Node and edge `data` is not read; change `revision` when it matters. Throws RangeError for an unknown scope or direction or settings that are not JSON-serializable.
 - `buildGraphLayoutRequests(input: GraphLayoutRequestInput<N, E, G>, requestId: string): GraphLayoutRequests<N, E, G>` makes the requests NetworkGraph's `layout` calls correspond to: one `shown` request (ID `requestId + ':shown'`) and, while a known group is collapsed, an `expanded` request (`requestId + ':expanded'`) for the full input plus the `collapse` result. Unknown collapsed IDs are dropped and proxy details use `labels.collapsedNode` / `labels.collapsedNodes`, as in NetworkGraph.
@@ -1730,7 +1730,7 @@ Core (`vue-weave/core`):
 - `GraphLayout` has an optional `routes?: Map<string, GraphLayoutRoute>`: `start`, `end`, `fromPort`, `toPort`, `fromSide`, `toSide` and bend `points` of each routed edge.
 - Types: `GraphLayoutScope`, `GraphLayoutRequestInput`, `GraphLayoutRequest`, `GraphLayoutResponse`, `GraphLayoutRequests`, `GraphLayoutKeyInput`, `GraphLayoutCompletionOptions`, `GraphLayoutCompletion`, `GraphLayoutRoute`, `GraphRoutingPolicy`, `GraphPortRouteOptions`, `GraphLayoutWorkerMessage` (and its four members), `GraphLayoutJson`, `GraphLayoutRequestJson`, `GraphLayoutWorkerJsonMessage`.
 
-Vue (`vue-weave`):
+Vue (`@eightkk/vue-weave`):
 
 - `useAsyncGraphLayout(options: UseAsyncGraphLayoutOptions<N, E, G>): AsyncGraphLayout<N, E, G>` with `input`, `adapter(request, signal)`, optional `initialLayout`, `gesture`, `provisional` (default true) and `cacheSize` (default 32: the number of computed layouts, by scope and input key, kept in least recently used order for reuse by later inputs; 0 keeps none). The layouts and failures of the desired frame are held with the frame, apart from that cache, so a frame completes with any `cacheSize`, and a failed request is not repeated until the input changes. It returns `desired` and `display` frames, a `layout` function of stable identity, `pending`, `deferred`, `error`, `gestureListeners`, `gesturing`, `cancel()` and `dispose()`. `display.source` is `'initial'`, `'layout'` (every layout of the frame came from the adapter) or `'provisional'` (the previous boxes with temporary routes for `temporaryEdgeIds`, shown while the adapter computes a frame whose nodes all have boxes already). A failure sets `error` and keeps the display: the last adapter frame, or, with `provisional`, the provisional frame of the failed input, which is consistent (every node and edge has geometry) and says by its `source` that its new routes are temporary. Set `provisional: false` to keep showing only adapter frames. Finished frames wait (`deferred`) while a gesture is in flight: bind `gestureListeners` (`AsyncGraphGestureListeners`: `onGestureStart(gesture: GraphGesture)` and `onGestureEnd(gesture: GraphGestureEnd)`, frozen, of stable identity) to NetworkGraph with `v-bind="graph.gestureListeners"` or spread them into `h(NetworkGraph, props)`; the composable counts started gestures that have not ended, ignoring an end without a start. The `gesture` option (a boolean ref or getter) still holds frames for gestures the application tracks itself; `gesturing` is true while either holds them. A frame that finished during the gesture is shown when it ends, unless the input changed in the meantime.
 - `graphLayoutWorkerAdapter(port: GraphLayoutWorkerPort, options?: { transport?: 'clone' | 'json' })` makes an adapter that talks to a Worker the caller created. A response is matched by `requestId` and `inputKey`; one with those but another `scope`, or a malformed message for the request, rejects it. If posting the request throws, the request rejects with that error. Whichever way a request ends (response, failure, abort or a failed post), its `message` listener and its abort listener are removed; a cancel message that cannot be posted is ignored.
@@ -1749,7 +1749,7 @@ GanttChart:
 | visible-window-change(window) | `TimelineVisibleWindow`: `start` and `end`, the half-open time window `[start, end)` that the chart renders (the visible time area plus 80 px on each side, clipped to `range`; `end >= start`), in the chart's time units; `rowIds`, the rendered rows top to bottom (the displayed rows after collapsing, in the scrolled row window plus two overscan rows on each side); `expandedIds`, every displayed row that has child rows and is not collapsed. Emitted only in the browser after mounting (never during server rendering), when scrolling, resizing, zooming, collapsing or new rows change the window, after it has settled for `visibleWindowDelay` ms (during a long scroll still about every four delays), and only when it differs from the last reported window. The payload holds new arrays. Adding the listener changes no markup. |
 | visibleWindowDelay | number / 100. Settling delay of the event in milliseconds; 0 reports on the next task. |
 
-Core (`vue-weave/core`), all pure (no Vue, DOM or timers) and iterative:
+Core (`@eightkk/vue-weave/core`), all pure (no Vue, DOM or timers) and iterative:
 
 - `createWindowedDataState<T, L>(options: WindowedDataOptions<T, L>, condition = ''): WindowedDataState<T, L>`. Options: `chunkSize` (required, positive) and `origin` (default 0) cut the time axis into half-open chunks `[origin + k·chunkSize, origin + (k+1)·chunkSize)`; `padding` (time units, default 0) widens a view before it is aligned to chunks, so small scrolls do not refetch; `maxChunksPerRequest` (default Infinity); `maxCells` (default 100000; a larger view throws RangeError); accessors `itemId` (default `item.id`), `itemRow` (default `item.rowId`), `itemRange` (default `item.start`/`item.end`) and `linkId` (default `link.id`). A cell is one chunk of one row (or one chunk, for views without `rowIds`).
 - `setWindowedView(state, view: WindowedView | undefined, condition?): WindowedDataTransition` (`{ state, start: WindowedDataRequest[], abort: string[] }`). Plans requests for the cells of the view that are not loaded, loading or failed (adjacent chunks with the same missing rows share one request) and aborts requests in flight whose cells are all outside the view; their cells become `unloaded`. A request that still covers a needed cell keeps running. A different `condition` (a caller-supplied filter or version token) aborts every request and drops all cells, items and links. A view with an empty `rowIds` (a row filter that matches nothing) needs no cell: it requests nothing, walks no chunk and aborts every request in flight. Otherwise the work is bounded by `maxCells`. Throws RangeError for a non-finite view, `end < start`, more than `maxCells` cells, or a view so far from `origin` for `chunkSize` that its chunk indices are not safe integers (`Number.isSafeInteger`) or its chunk boundaries `origin + k·chunkSize` are not distinct finite numbers, Error (`Invalid view row ID: <value>`, the shared ID rule) for a row ID in `rowIds` that is not a non-empty string, and TypeError for a view that is not an object or `rowIds` that is not an array. A repeated row ID is not an error: it is dropped and the first occurrence keeps its place (the same rules apply to the window of `retryWindowedData` and `windowedCoverage`). A throw changes nothing, so the given state keeps its condition, requests and data. To switch the condition even when the new view may be invalid, apply `setWindowedView(state, undefined, condition)` first (it never throws for a string condition) and set the view afterwards, as `useWindowedData` does.
@@ -1764,7 +1764,7 @@ Core (`vue-weave/core`), all pure (no Vue, DOM or timers) and iterative:
 - Graph neighbourhood expansion: `createGraphExpansion(seed?: GraphExpansionPage)`, `beginGraphExpansion(state, ids)`, `cancelGraphExpansion(state, ids)`, `mergeGraphExpansionPage(state, page: { nodes?, edges? }, expandedIds?)` and `graphExpansionView(state): { nodes, edges, dangling, frontierIds }`. Pages are merged by node and edge ID (cycles and shared neighbours never duplicate), `expandedIds` are marked expanded, `pendingIds` tracks expansions in flight, `edges` holds only edges whose both ends are loaded and `frontierIds` the loaded nodes that are neither expanded nor pending. Throws Error for an invalid or duplicate ID within one page (`Invalid graph page node ID: <value>`, `Duplicate graph page edge ID: <id> (in one page)`). The helpers do not place anything: NetworkGraph lays the larger graph out again, unless each page is placed with `layoutGraphIncrementally` around the shown boxes (see [Incremental placement](#incremental-placement)).
 - Types: `WindowedView`, `TimelineVisibleWindow`, `WindowedDataOptions`, `WindowedDataNormalizedOptions`, `WindowedDataRequest`, `WindowedDataPage`, `WindowedCell`, `WindowedInFlightRequest`, `WindowedDataState`, `WindowedDataTransition`, `WindowedDataSettlement`, `WindowedCoverage`, `WindowedCellStatus`, `DanglingLink`, `SplitDanglingLinks`, `SplitDanglingLinksOptions`, `GraphExpansionState`, `GraphExpansionPage`, `GraphExpansionView`.
 
-Vue (`vue-weave`):
+Vue (`@eightkk/vue-weave`):
 
 - `useWindowedData<T, L = never>(options: UseWindowedDataOptions<T, L>): WindowedData<T, L>` with the core options plus `view` (a ref or getter of a `WindowedView`, such as the `visible-window-change` payload), `condition` (ref or getter of a string, default `''`), `load(request, { signal })` (returns items, `{ items, links }` or a promise of either; `signal` aborts when the request is superseded) and `linkEnds`. It returns `state`, `items` and `links` (all loaded, deduplicated), `resolvedLinks` and `danglingLinks`, `coverage`, `status` and `complete` of the current view, `pending`, `error` (`WindowedDataError`, a computed: the current failure with its `request`, or a view or link-ends failure without one), `coverageOf(window)`, `retry(window?)`, `invalidate()`, `cancel()` and `dispose()`. Requests start when the owning component mounts (immediately outside a component), so nothing is requested during server rendering; late, aborted and out-of-order responses are ignored, matched by request ID and condition, and a rejection after an abort is not an `error`. `items` keeps its contents while requests load or fail. A new `condition` is processed before the new view is checked: every request of the old condition is aborted and its data dropped first. An invalid view (more than `maxCells` cells, non-finite, `end < start`, chunk indices or boundaries that are not representable) or condition (not a string), and a `view` or `condition` getter that throws, are reported through `error` without `request`, never thrown, not even by the `useWindowedData` call itself when the first read of `condition` fails (also during server rendering): requests in flight are aborted, no view is current (`complete` false), the data of the current condition stays (an invalid condition drops it), and the error clears once a valid condition and view are read again, on the next change of either or when requests start; the view is then requested again. Invalid core options (such as `chunkSize`) still throw from the call. `retry` and `invalidate` first catch up with a condition or view change the watcher has not processed yet; they do nothing before mounting and request nothing while the view is invalid. A `load` that throws synchronously fails its request like a rejection. A `linkEnds` accessor that throws is reported through `error` as `{ error }` without `request`, not thrown from `resolvedLinks` or `danglingLinks`: both are then empty arrays (never a partial split, so no link whose ends are unknown reaches a chart as resolved) while `items`, `links`, `status` and `complete` are unaffected. `error` shows, in this order, a failed request, an invalid view or condition, and then the link-ends failure; a lower one is shown once the higher ones clear, so a request failure is never hidden by it. The link-ends failure is derived, not stored: it clears by itself when the split succeeds again (other links, or anything the accessor reads has changed). The split stays lazy and cached: `linkEnds` runs only when `resolvedLinks`, `danglingLinks` or `error` (when no request or view failure is shown) is read, once per change of the loaded data. An end that is not a present ID (`undefined`, a number, `''`) is not an error: like `splitDanglingLinks`, the link is dangling and `missingIds` holds the value as returned. `splitDanglingLinks` itself throws whatever its accessors throw.
 - Types: `UseWindowedDataOptions`, `WindowedData`, `WindowedDataLoader`, `WindowedDataError`.
@@ -1775,7 +1775,7 @@ Partial data cannot answer questions about the whole: `complete` describes the l
 
 `TimelineColumn.field` is an optional `TimelineFieldSpec` (`id`, `kind`, raw getter `get`, optional `parse`, `format`, `required`, `choices`, `multiple`, `min`, `max`, `integer`, `allowNegative`, `timeZone`, `utcOffsetMinutes`, `durationBasis`, `unitSize`, `unitLabel`). Columns without it are edited as text through `cell-edit`. `kind` is `'text'`, `'number'`, `'time'`, `'duration'`, `'select'` or `'checkbox'`; `FieldValue` is a string, number, boolean, `null` or an array of those (multiple selection). `TimelineFieldEdit<R>` describes a typed change (`rowId`, `columnId`, `fieldId`, `before`, `after`, `source`). GanttChart emits it through `field-edit`; see [Timeline columns and rollups](#timeline-columns-and-rollups).
 
-Core helpers in `vue-weave/core`:
+Core helpers in `@eightkk/vue-weave/core`:
 
 - `parseFieldValue(spec, text)` returns `{ ok: true, value }` or `{ ok: false, code, error }`. Blank text is `null` (or a `required` error); `0` and negative numbers are values. Error codes are `required`, `invalid`, `negative`, `range`, `integer`, `choice`, `time-zone` and `custom`.
 - `validateFieldValue(spec, value)` checks a value with the same rules and returns `{ ok: true }` or an error. `null` and `[]` are empty.
@@ -1801,7 +1801,7 @@ Pass a complete immutable snapshot to `commit` after accepting an edit. Snapshot
 
 ### Edit transactions and asynchronous saving
 
-`useEditTransaction(options)` (Vue entry) confirms edits with a server before committing them. Types and pure state transitions (`EditTransaction`, `SaveResult`, `TransactionOutcome`, `TransactionAdapter`, `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState`, `clearTransactionResult`) are exported from `vue-weave/core`.
+`useEditTransaction(options)` (Vue entry) confirms edits with a server before committing them. Types and pure state transitions (`EditTransaction`, `SaveResult`, `TransactionOutcome`, `TransactionAdapter`, `createTransactionState`, `beginTransaction`, `settleTransaction`, `refreshTransactionState`, `clearTransactionResult`) are exported from `@eightkk/vue-weave/core`.
 
 Options: `documentId`, `initialState`, `initialVersion`, `adapter`, optional `createOperationId()` (defaults to `crypto.randomUUID()`), `historyLimit` (default 100) and `onHistoryReset(reset)`. The adapter provides synchronous `validate(state, changes)` (return `false` or a reason string to reject), synchronous `apply(state, changes)` returning a new state, and `save(request, candidate)` returning `Promise<SaveResult>`. Versions are opaque and compared for equality only.
 
@@ -1834,7 +1834,7 @@ Related exported types: `TransactionSource`, `TransactionStatus`, `TransactionCo
 
 ## Versioned JSON snapshots
 
-`vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
+`@eightkk/vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
 
 | Function | Contract |
 | --- | --- |
@@ -1936,7 +1936,7 @@ A graph with `groups` can collapse them, and a collapsed group is drawn as a pro
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph, type GraphEdge, type NetworkNode } from 'vue-weave'
+import { NetworkGraph, type GraphEdge, type NetworkNode } from '@eightkk/vue-weave'
 
 interface Task { owner: string }
 const nodes: NetworkNode<Task>[] = [{ id: 'cut', label: 'Cut', data: { owner: 'Ada' } }]
@@ -1958,7 +1958,7 @@ const edges: GraphEdge<{ weight: number }>[] = []
 
 ```vue
 <script setup lang="ts">
-import { GanttChart, type TimelineBar, type TimelineColumn, type TimelineRow } from 'vue-weave'
+import { GanttChart, type TimelineBar, type TimelineColumn, type TimelineRow } from '@eightkk/vue-weave'
 
 type Team = TimelineRow<{ lead: string }>
 const rows: Team[] = [{ id: 'core', label: 'Core', data: { lead: 'Grace' } }]
@@ -1977,7 +1977,7 @@ Template refs: in a single-file component, `useTemplateRef('graph')` (Vue 3.5) i
 
 ```ts
 import { ref, useTemplateRef } from 'vue'
-import type { GanttChartExposed, GraphEdge, NetworkGraphExposed, NetworkNode, TimelineBar, TimelineRow } from 'vue-weave'
+import type { GanttChartExposed, GraphEdge, NetworkGraphExposed, NetworkNode, TimelineBar, TimelineRow } from '@eightkk/vue-weave'
 
 const graph = useTemplateRef('graph') // inferred from <NetworkGraph ref="graph" ...>
 const typedGraph = ref<NetworkGraphExposed<NetworkNode<{ owner: string }>, GraphEdge>>()

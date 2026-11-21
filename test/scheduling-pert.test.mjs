@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { scheduleTasks, scheduleToGraph } from 'vue-weave/core'
+import { scheduleTasks, scheduleToGraph } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 

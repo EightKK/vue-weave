@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromICalendar, timelineFromICalendar, toICalendar, validateTimelineData } from 'vue-weave/core'
+import { fromICalendar, timelineFromICalendar, toICalendar, validateTimelineData } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const day = 24 * hour

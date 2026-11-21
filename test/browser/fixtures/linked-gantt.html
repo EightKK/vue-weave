@@ -7,14 +7,14 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/linked-gantt-test/style.css">
     <script type="importmap">
-      { "imports": { "vue": "/linked-gantt-test/vue.js", "vue-weave": "/linked-gantt-test/index.js" } }
+      { "imports": { "vue": "/linked-gantt-test/vue.js", "@eightkk/vue-weave": "/linked-gantt-test/index.js" } }
     </script>
   </head>
   <body>
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref, shallowRef } from 'vue'
-      import { GanttChart } from 'vue-weave'
+      import { GanttChart } from '@eightkk/vue-weave'
 
       // GanttChart opt-in props for linked views and typed editing: highlightedBarIds, loadSelectable, droppable,
       // field columns with the cell-editor slot (or the built-in field input with ?builtin), field-edit, edit-cancel,

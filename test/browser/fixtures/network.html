@@ -6,14 +6,14 @@
     <title>Network graph regression fixture</title>
     <link rel="stylesheet" href="/network-test/style.css">
     <script type="importmap">
-      { "imports": { "vue": "/network-test/vue.js", "vue-weave": "/network-test/index.js" } }
+      { "imports": { "vue": "/network-test/vue.js", "@eightkk/vue-weave": "/network-test/index.js" } }
     </script>
   </head>
   <body>
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref, shallowRef } from 'vue'
-      import { NetworkGraph, layoutLayeredGraph } from 'vue-weave'
+      import { NetworkGraph, layoutLayeredGraph } from '@eightkk/vue-weave'
 
       // Query parameters pick the scenario: nodes, cull, draggable, minimap, preset=groups, match, dir,
       // edgeselect (controlled edge selection), delete, menu (context menu events), tooltip, snap (grid size),

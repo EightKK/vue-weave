@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { NetworkGraph, GanttChart } from 'vue-weave'
+import { NetworkGraph, GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id }))

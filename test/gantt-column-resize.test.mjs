@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { timelineLabelColumnId } from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+import { timelineLabelColumnId } from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { collapseGraphGroups } from 'vue-weave/core'
+import { collapseGraphGroups } from '@eightkk/vue-weave/core'
 
 // A small deterministic PRNG so the randomised inputs are reproducible.
 function random(seed) {

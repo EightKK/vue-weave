@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { renderTimelineSvg } from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+import { renderTimelineSvg } from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 // 0..50 is drawn at 10 px per unit and 50..100 at 1 px per unit: strictly increasing and invertible.
@@ -53,7 +53,7 @@ test('Gantt screen grid lines match the per-tick lines of the SVG export', async
 })
 
 test('tick labels are kept where the scale leaves room: a working-time scale squeezes nights, never into overlapping labels', async () => {
-  const { createWorkingTimeScale } = await import('vue-weave/core')
+  const { createWorkingTimeScale } = await import('@eightkk/vue-weave/core')
   const hour = 3_600_000
   const day = { start: 0, end: 48 * hour }
   // Working 08:00-17:00 on both days; nights keep a tenth of the width. 6-hour ticks are 22 px apart at night.

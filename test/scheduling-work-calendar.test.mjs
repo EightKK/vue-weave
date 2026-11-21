@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildWorkPeriods } from 'vue-weave/core'
+import { buildWorkPeriods } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const utc = value => Date.parse(value + 'Z')

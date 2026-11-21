@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { calculateResourceLoad, normalizeWorkPeriods } from 'vue-weave/core'
+import { calculateResourceLoad, normalizeWorkPeriods } from '@eightkk/vue-weave/core'
 import { seededRandom } from './helpers/seeded.mjs'
 
 /** The original algorithm: every segment copies the active set. */

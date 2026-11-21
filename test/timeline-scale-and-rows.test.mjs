@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   createTimelineRowTree, summarizeTimelineRows, createTimeScale, dependencyTimes, editTimeRange, timeTicks, validateTimelineData, visibleRows,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 test('scale round-trip and stable tick anchoring', () => {
   const scale = createTimeScale({ start: 100, end: 1000 }, 3)

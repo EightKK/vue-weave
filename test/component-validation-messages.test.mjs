@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import { GanttChart, NetworkGraph, editTimeRange } from 'vue-weave'
+import { GanttChart, NetworkGraph, editTimeRange } from '@eightkk/vue-weave'
 
 // The prop checks of the components follow the core's rules: RangeError for invalid numbers and geometry (and unknown
 // values of a string option), Error for bad references, invalid or duplicate IDs and cycles. Component-owned ID checks

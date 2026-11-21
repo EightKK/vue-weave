@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   checkGraphConnection, createGraphConnectionChecker, graphConnectionTargets, graphConnectionValidator, graphConnectionViolations,
-} from 'vue-weave/core'
-import { NetworkGraph, checkGraphConnection as rootCheck } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { NetworkGraph, checkGraphConnection as rootCheck } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [

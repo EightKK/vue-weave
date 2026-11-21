@@ -1,4 +1,4 @@
-# vue-weave public API baseline
+# @eightkk/vue-weave public API baseline
 
 Generated from the built package by `node scripts/api-baseline.mjs --update`; do not edit by hand. `npm run test:package`
 fails when the built API differs. Review every change: in 1.x, a removed or changed export, prop, event, slot,

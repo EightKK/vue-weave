@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { layoutRadialGraph } from 'vue-weave/core'
+import { layoutRadialGraph } from '@eightkk/vue-weave/core'
 
 test('radial layout of a 200,000-node star does not overflow the call stack', () => {
   const nodes = [{ id: 'r' }]

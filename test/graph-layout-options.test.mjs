@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   layoutCircularGraph, layoutConcentricGraph, layoutFlowGraph, layoutForceGraph, layoutGraphIncrementally, layoutGridGraph,
   layoutLayeredGraph, layoutRadialGraph, layoutSwimlaneGraph, layoutTreeGraph,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const nodes = [{ id: 'a' }, { id: 'b' }]
 const edges = [{ id: 'ab', from: 'a', to: 'b' }]

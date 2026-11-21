@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import {
   createTimelineViewState, parseTimelineViewState, projectTimelineView, reconcileTimelineViewColumns, resolveTimelineColumns,
   timelineWbsCodes, validateTimelineData, createTimelineRowTree,
-} from 'vue-weave/core'
-import { useTimelineView } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { useTimelineView } from '@eightkk/vue-weave'
 
 const rows = [
   { id: 'p1', label: 'Phase 1' },

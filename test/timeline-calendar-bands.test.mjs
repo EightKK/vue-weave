@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { calendarBands } from 'vue-weave/core'
+import { calendarBands } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const day = 24 * hour

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import * as core from 'vue-weave/core'
+import * as core from '@eightkk/vue-weave/core'
 import { sparseLink as link, task } from './helpers/builders.mjs'
 import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
@@ -295,7 +295,7 @@ test('actualsTimelineBars shows the plan, the actuals and the forecast on one ro
 })
 
 test('actualsTimelineBars renders on the server with accessible names for each part', async () => {
-  const { GanttChart } = await import('vue-weave')
+  const { GanttChart } = await import('@eightkk/vue-weave')
   const result = rescheduleFromActuals(chain(), 5, new Map([['a', { intervals: [{ start: 0, end: 1 }, { start: 3, end: 4 }] }]]))
   const rows = ['a', 'b', 'c'].map(id => ({ id, label: 'Task ' + id }))
   const bars = actualsTimelineBars(result, { label: id => 'Task ' + id })

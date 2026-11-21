@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   fromICalendar, fromMsProjectXml, timelineFromCsvTable, timelineFromICalendar, timelineFromMsProject, toICalendar, toMsProjectXml,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 test('MSPDI and iCalendar round start and end to whole seconds and derive the duration from them', () => {
   const xml = toMsProjectXml({ name: 'P', tasks: [{ id: 'a', name: 'A', start: 0, end: 1500 }, { id: 'b', name: 'B', start: 400, end: 1400 }] })

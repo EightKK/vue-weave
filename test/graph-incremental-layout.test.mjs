@@ -5,8 +5,8 @@ import {
   applyGraphPositions, buildGraphLayoutRequests, createGraphExpansion, graphExpansionView, graphLayoutChangeMetrics, graphLayoutInputKey,
   graphLayoutMessageFromJson, graphLayoutMessageToJson, layoutGraphIncrementally, layoutLayeredGraph, mergeGraphExpansionPage,
   parseGraphLayoutMessage, routeGraphEdges,
-} from 'vue-weave/core'
-import { useAsyncGraphLayout } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { useAsyncGraphLayout } from '@eightkk/vue-weave'
 import { centre } from './helpers/builders.mjs'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id.toUpperCase() }))

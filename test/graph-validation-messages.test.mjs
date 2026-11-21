@@ -5,7 +5,7 @@ import {
   graphDeletion, indexGraph, layoutFlowGraph, layoutForceGraph, layoutGraphIncrementally, layoutLayeredGraph, layoutSwimlaneGraph,
   layoutTreeGraph, renderGraphSvg, resolveEntityRefs, resolveLoadTargets, resolveViewTargets, routeGraphEdges, shortestGraphPath,
   topologicalOrder, traverseGraph,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 // The graph core follows the ID rule of the planning core: an ID is a non-empty string. An invalid ID throws
 // `Invalid <kind> ID: <value>` and a repeated one `Duplicate <kind> ID: <id>`, both as Error. A reference to something

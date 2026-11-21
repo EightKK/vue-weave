@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { useEditHistory } from 'vue-weave'
+import { useEditHistory } from '@eightkk/vue-weave'
 
 test('history bounds old snapshots and drops the redo branch after a commit', () => {
   const history = useEditHistory(0, 2)

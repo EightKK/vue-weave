@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildPlacementInput, calculateResourceLoad, levelResources, scheduleTasks } from 'vue-weave/core'
+import { buildPlacementInput, calculateResourceLoad, levelResources, scheduleTasks } from '@eightkk/vue-weave/core'
 import { seededRandom } from './helpers/seeded.mjs'
 
 const range = { start: 0, end: 10 }

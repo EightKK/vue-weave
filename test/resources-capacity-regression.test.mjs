@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import * as core from 'vue-weave/core'
+import * as core from '@eightkk/vue-weave/core'
 import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 // Seeded plans mixing calendars, quanta, pauses, splittable, manual, inactive and summary tasks, priorities, several

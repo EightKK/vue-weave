@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from 'vue-weave/core'
+import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from '@eightkk/vue-weave/core'
 
 const number = (extra = {}) => ({ id: 'n', kind: 'number', get: () => null, ...extra })
 const time = (extra = {}) => ({ id: 't', kind: 'time', get: () => null, utcOffsetMinutes: 540, ...extra })

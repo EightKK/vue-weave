@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { calendarBands } from 'vue-weave/core'
+import { calendarBands } from '@eightkk/vue-weave/core'
 import { sha256Json } from './helpers/seeded.mjs'
 
 const hour = 3_600_000

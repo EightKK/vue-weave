@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createTimeScale, mirrorTimeScale } from 'vue-weave/core'
-import { GanttChart, NetworkGraph } from 'vue-weave'
+import { createTimeScale, mirrorTimeScale } from '@eightkk/vue-weave/core'
+import { GanttChart, NetworkGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

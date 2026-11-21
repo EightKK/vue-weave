@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { layoutForceGraph } from 'vue-weave/core'
+import { layoutForceGraph } from '@eightkk/vue-weave/core'
 import { seededRandom } from './helpers/seeded.mjs'
 
 const node = id => ({ id })

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   graphComponents, graphDegreeCentrality, graphBetweennessCentrality, graphPageRank,
   detectGraphCommunities, graphCommunityGroups,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const mk = ids => ids.map(id => ({ id }))
 const edgesOf = pairs => pairs.map(([from, to, w], i) => ({ id: `e${i}`, from, to, ...(w === undefined ? {} : { w }) }))

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   countGraphCrossings, filterGraph, findGraphCycles, graphEdgeEndpoint, layoutLayeredGraph, layoutRadialGraph, layoutTreeGraph,
   searchGraphNodes, shortestGraphPath, topologicalOrder,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id.toUpperCase() + ' node' }))
 const edges = (...pairs) => pairs.map(([from, to], i) => ({ id: `e${i}`, from, to }))
@@ -225,7 +225,7 @@ test('searchGraphNodes and filterGraph match text or predicates without mutating
 })
 
 test('unnamed edge endpoints follow the drawn path after moves, in every direction and for custom layouts', async () => {
-  const { applyGraphPositions, graphPathEndpoints, routeGraphPorts } = await import('vue-weave/core')
+  const { applyGraphPositions, graphPathEndpoints, routeGraphPorts } = await import('@eightkk/vue-weave/core')
   const assertMatchesPath = (layout, nodeMap, edgeList, direction) => {
     for (const edge of edgeList) {
       const drawn = graphPathEndpoints(layout.paths.get(edge.id))
@@ -275,7 +275,7 @@ test('unnamed edge endpoints follow the drawn path after moves, in every directi
 })
 
 test('graphPathEndpoints returns the first moveto and the final current point', async () => {
-  const { graphPathEndpoints } = await import('vue-weave/core')
+  const { graphPathEndpoints } = await import('@eightkk/vue-weave/core')
   assert.deepEqual(graphPathEndpoints('M 1 2 C 3 4, 5 6, 7 8'), { start: { x: 1, y: 2 }, end: { x: 7, y: 8 } })
   assert.deepEqual(graphPathEndpoints('m 1 2 l 3 4 h 1e1 v -2'), { start: { x: 1, y: 2 }, end: { x: 14, y: 4 } })
   assert.deepEqual(graphPathEndpoints('M 1 2 L 5 5 Z'), { start: { x: 1, y: 2 }, end: { x: 1, y: 2 } })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { graphNodesInPolygon, graphPointInPolygon, layoutLayeredGraph } from 'vue-weave/core'
-import { graphNodesInPolygon as rootNodesInPolygon, graphPointInPolygon as rootPointInPolygon } from 'vue-weave'
+import { graphNodesInPolygon, graphPointInPolygon, layoutLayeredGraph } from '@eightkk/vue-weave/core'
+import { graphNodesInPolygon as rootNodesInPolygon, graphPointInPolygon as rootPointInPolygon } from '@eightkk/vue-weave'
 
 const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]
 

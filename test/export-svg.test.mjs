@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   calculateResourceLoad, createTimeScale, defaultSvgExportTheme, escapeXml, layoutLayeredGraph, renderGraphSvg, renderTimelineSvg,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 

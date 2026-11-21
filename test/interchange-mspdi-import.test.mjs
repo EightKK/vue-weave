@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fromMsProjectXml, scheduleTasks, timelineFromMsProject, toMsProjectXml, validateTimelineData } from 'vue-weave/core'
+import { fromMsProjectXml, scheduleTasks, timelineFromMsProject, toMsProjectXml, validateTimelineData } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const t0 = Date.parse('2026-11-09T08:00:00Z')

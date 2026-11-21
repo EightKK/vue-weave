@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Graph analysis on a synthetic supplier network: connected components, community detection, centrality and PageRank
-// from `vue-weave/core`, shown with NetworkGraph groups, collapsing and highlighting. The data comes from a seeded
+// from `@eightkk/vue-weave/core`, shown with NetworkGraph groups, collapsing and highlighting. The data comes from a seeded
 // generator and the metrics are pure functions of it, so each one is computed once and cached.
 import { computed, nextTick, ref } from 'vue'
 import {

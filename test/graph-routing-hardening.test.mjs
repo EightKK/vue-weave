@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   graphEdgeEndpoint, graphPathBounds, graphPathEndpoints, graphPolylinePath, graphPortAnchor, graphSmoothPath, indexGraph, routeGraphEdges,
   routeGraphPorts,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 test('port sides must be one of the four sides', () => {
   const box = { x: 0, y: 0, width: 100, height: 40, rank: 0 }

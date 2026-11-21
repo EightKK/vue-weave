@@ -6,8 +6,8 @@ import {
   cancelWindowedRequests, createGraphExpansion, createWindowedDataState, graphExpansionView, invalidateWindowedData, mergeGraphExpansionPage,
   beginGraphExpansion, cancelGraphExpansion, rejectWindowedRequest, resetWindowedData, resolveWindowedRequest, retryWindowedData,
   setWindowedView, splitDanglingLinks, windowedCellStatus, windowedCoverage,
-} from 'vue-weave/core'
-import { GanttChart, useWindowedData } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { GanttChart, useWindowedData } from '@eightkk/vue-weave'
 import { seededRandom } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 

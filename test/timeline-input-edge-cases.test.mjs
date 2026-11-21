@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   buildWorkPeriods, calendarBands, editTimeRange, invertWorkPeriods, moveTimeRanges, normalizeWorkPeriods, scheduleTasks, timeTicks,
   validateTimelineData,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 test('invertWorkPeriods accepts finite non-integer periods while normalizeWorkPeriods still needs integers', () => {
   const periods = [{ start: 1.25, end: 2.5 }, { start: 0.5, end: 1.25 }, { start: 3.75, end: 9 }]
