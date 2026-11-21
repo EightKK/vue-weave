@@ -59,6 +59,8 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line)
   - [Scheduling constraints](#scheduling-constraints)
   - [Timeline editing helpers](#timeline-editing-helpers)
+- [TaskBoard](#taskboard)
+  - [Task board helpers](#task-board-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
   - [Layout defaults and option checks](#layout-defaults-and-option-checks)
@@ -994,6 +996,66 @@ const headerBands = [
   calendarBands(range, 'hour', { timeZone: 'Europe/Berlin', step: 6 }),
 ]
 ```
+
+## TaskBoard
+
+An opt-in third controlled component: a kanban board that shows cards in status columns, optionally split into horizontal swimlanes. It never changes its data. A drag or keyboard move becomes a `card-move` proposal, and the parent applies it, for example with `applyBoardCardMove`. It is designed to sit next to a GanttChart on the same tasks: give the bars and the cards the same IDs and share one selected ID (see the "Task board" demo).
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| columns | readonly TaskBoardColumn[] / required | Status columns in display order: unique ID, label, optional detail and optional `wipLimit` (a non-negative integer) |
+| cards | readonly C[] (C extends TaskBoardCard) / required | ID, `columnId`, `laneId` (required on a board with lanes), label, optional detail, tone, `draggable` (false keeps the card in place) and data (`TaskBoardCard<D>`). The array order is the order inside every cell. C is inferred |
+| lanes | readonly TaskBoardLane[] / undefined | Horizontal swimlanes in display order: unique ID, label and optional detail. Without lanes (or with an empty array) the board has one row of cells and card `laneId`s are ignored |
+| selectedId | string / undefined | Controlled selected card, drawn with `vw-is-selected` and `aria-pressed="true"`; supports `v-model:selected-id` |
+| readonly | boolean / false | Disables moves; cards can still be selected and activated |
+| validateCardMove | TaskBoardCardMoveValidator / undefined | Synchronous check of a proposal: true or undefined accepts, false (default message `labels.moveRejected`, "This card move was rejected.") or a reason string rejects |
+| labels | Partial<TaskBoardLabels> / English | region ("Task board"), empty, emptyCell, card, cards, wipLimit, overLimit, moveHint, moveRejected, pickedUp, moved, moveCancelled, position, of and lane |
+| dir | ChartDirection / ltr | `rtl` places the first column on the right and swaps Left and Right; with `auto` the board follows the inherited direction |
+| height | number or CSS string / undefined | Height of the scroll viewport; by default the board is as tall as its content |
+| autoScroll | boolean / true | Scrolls the viewport while a pointer drag is held within 36 px of one of its edges |
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| card-move | TaskBoardCardMove | Proposal: `id`, `before` and `after` positions (`columnId`, `laneId` on a board with lanes, `index`) and `source` (`pointer` or `keyboard`). `after.index` counts the cards of the target cell without the moved card. Apply it with `applyBoardCardMove(cards, change)`. A drop on the card's own position proposes nothing |
+| card-move-rejected | (change, reason) | `validateCardMove` rejected the proposal; the reason is announced in the live region |
+| card-move-cancel | TaskBoardMoveCancel | A pick-up or drag ended without a proposal: `id`, `before`, `source` and `reason`: `escape` (Escape or the exposed `cancelMove()`), `pointer-cancel` (pointer cancellation or lost capture), `no-target` (released outside every cell), `blur` (the picked-up card lost focus) or `data-change` (`cards`, `columns`, `lanes` or `readonly` changed) |
+| card-activate | id | A card was activated by click or Enter, or by Space on a card that cannot move |
+| update:selectedId | id | The same activation, for `v-model:selected-id`; not emitted when the card is already selected |
+| validation-error | Error | Invalid columns, lanes or cards (the errors of `groupBoardCards`). The board renders its empty state and the error is rethrown, as in GanttChart |
+
+Slots are `card({ card, selected, moving, column, lane })` (inside the card button, so keep it non-interactive), `column-header({ column, status })` with the `TaskBoardColumnStatus` of the column, and `empty({ column, lane })` for a cell without cards (without `column` for a board without columns). Methods are `focusCard(id)` and `cancelMove()`. The public component type is `TaskBoardComponent`, and `TaskBoardExposed<C>` types a template ref.
+
+**Markup and accessibility.** The scroll viewport is a focusable `region` named `labels.region`. Each cell is a `list` named after its column, or "column · lane" on a board with lanes (for example "Doing · Web team"), and described by the column's count, WIP limit and over-limit state ("4 cards, WIP limit 3, Over WIP limit"). A card is a `button` named by its label, with `aria-pressed` for the selection; a movable card is described by `labels.moveHint`. Column headers show the count as "count / limit"; a column over its limit gets `vw-is-over-limit` and the visible `labels.overLimit` warning, and one at its limit `vw-is-at-limit`. A WIP limit never blocks a move by itself: reject such moves in `validateCardMove` if they must not happen.
+
+**Pointer.** A press on a movable card and a move of 4 px start a drag with the mouse, a pen or touch (movable cards have `touch-action: none`). The card follows the pointer (`vw-is-dragging`), and a drop indicator (`vw-board-drop`, with `vw-is-over-limit` when the drop would take another column over its limit) shows the place between the cards of the cell under the pointer (`vw-is-target`). Release proposes the move; Escape, pointer cancellation and data changes cancel it. A click without a drag selects and activates the card. `cards`, `columns` and `lanes` are watched by reference: pass new arrays instead of mutating them, and keep `columns` and `lanes` out of inline template literals, which are new arrays on every render of the parent and would cancel a move in progress.
+
+**Keyboard.** Space picks a movable card up (`vw-is-picked`) and announces its place ("Picked up Billing API. To do, lane API team, position 1 of 1."). Up and Down move the drop indicator through the cell and on into the previous or next lane, Left and Right to the neighbouring column in the visual direction, Home and End to the first and last place of the cell; each step is announced ("Doing, lane API team, position 1 of 3, Over WIP limit."). Space or Enter drops, Escape or moving the focus away cancels. The card keeps the focus, also after the parent applies the move and the card is drawn in its new cell. Without a pick-up, Enter activates the card and the arrow keys move the focus to the neighbouring card.
+
+```ts
+import { applyBoardCardMove, type TaskBoardCardMove } from 'vue-weave'
+
+function validateCardMove(change: TaskBoardCardMove) {
+  const task = cards.value.find(card => card.id === change.id)
+  return change.after.columnId !== 'done' || (task?.data?.progress ?? 0) >= 1 || 'Finish the work first.'
+}
+function moveCard(change: TaskBoardCardMove) {
+  cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
+}
+// <TaskBoard v-model:selected-id="selectedId" :columns="columns" :lanes="lanes" :cards="cards"
+//   :validate-card-move="validateCardMove" @card-move="moveCard" />
+// <GanttChart :rows="rows" :bars="bars" :range="range" :selected-ids="new Set(selectedId ? [selectedId] : [])"
+//   @select="id => selectedId = id" />
+```
+
+### Task board helpers
+
+These functions are part of `vue-weave/core` and do not need Vue.
+
+| Function | Result |
+| --- | --- |
+| groupBoardCards(cards, columns, lanes?) | `TaskBoardGroups`: `rows` (one per lane in lane order, or one without `laneId` when there are no lanes), each with one `TaskBoardCell` per column holding its cards in `cards` order; `columns`, one `TaskBoardColumnStatus` per column with `count` over all lanes, `wipLimit`, `atLimit` (`count >= wipLimit`) and `overLimit` (`count > wipLimit`); and `positions`, every card's `TaskBoardPosition` by ID. Throws `Invalid column ID`, `Duplicate card ID` and the like for IDs (kinds `column`, `lane` and `card`), `Unknown column in card <id>: <value>` and `Unknown lane in card <id>: <value>` (also for a missing `laneId` on a board with lanes), and a RangeError for a WIP limit that is not a non-negative integer |
+| boardCardPosition(cards, id, { lanes }?) | The `TaskBoardPosition` of one card; with `lanes: true` the index counts only the cards of the same lane. Throws `Unknown card in board: <id>` |
+| applyBoardCardMove(cards, move, { columns, lanes }?) | A new array in which the card has the target column (and lane when `after.laneId` is set) and sits before the card that had `after.index` in the target cell, or after the cell's last card. Other cards are kept as they are; the moved card is a shallow copy. A move whose positions have no `laneId` treats each column as one cell and keeps the card's `laneId`. With `columns` or `lanes`, the target must name one (`Unknown column in card move <id>: <value>`, `Unknown lane in card move <id>: <value>`). Throws an Error for an unknown card, a move that names a lane in only one position, and a stale move whose `before` is not the card's current position (`Stale card move for <id>: …`), and a RangeError for an index that is not an integer from 0 to the size of the target cell |
 
 ## Core entry point
 

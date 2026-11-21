@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-No changes yet.
+- New opt-in `TaskBoard` component (kanban): cards in status columns, optionally split into swimlanes, with card counts and WIP-limit warnings. It is controlled like the other components: pointer, touch and keyboard moves (Space to pick up, arrows, Space or Enter to drop, Escape to cancel, with live announcements) propose `card-move`, `validateCardMove` can reject it (`card-move-rejected`), and cancelled moves report `card-move-cancel`; `v-model:selected-id`, `card-activate`, `labels`, `dir` and the `card`, `column-header` and `empty` slots. New public types `TaskBoardComponent` and `TaskBoardExposed`. New core helpers `groupBoardCards`, `boardCardPosition` and `applyBoardCardMove` with the `TaskBoard*` types, and the CSS variables `--vw-board-column-width`, `--vw-board-cell-min-height`, `--vw-board-wip-warning` and `--vw-board-drop`. A new "Task board" demo shares tasks and selection with a GanttChart. Nothing existing changes.
 
 ## 0.6.0 - 2026-11-19
 

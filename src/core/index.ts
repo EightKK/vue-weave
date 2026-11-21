@@ -143,3 +143,8 @@ export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncre
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
 } from './graphIncremental.js'
+export { groupBoardCards, boardCardPosition, applyBoardCardMove } from './taskBoard.js'
+export type {
+  TaskBoardColumn, TaskBoardLane, TaskBoardCard, TaskBoardPosition, TaskBoardCardMove, TaskBoardCardMoveValidator,
+  TaskBoardMoveCancelReason, TaskBoardMoveCancel, TaskBoardCell, TaskBoardColumnStatus, TaskBoardGroups, TaskBoardLabels,
+} from './taskBoard.js'

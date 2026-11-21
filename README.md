@@ -72,6 +72,10 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
 - **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
 
+### TaskBoard
+
+- **Kanban board:** an opt-in third controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](docs/api.md#taskboard).
+
 ### Headless core (`vue-weave/core`)
 
 - **Graph algorithms and metrics:** `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes`, `filterGraph`, connected components, degree, betweenness and PageRank centrality, and Louvain communities (`detectGraphCommunities`) that `graphCommunityGroups` turns into groups.

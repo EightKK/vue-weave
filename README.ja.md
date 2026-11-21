@@ -72,6 +72,10 @@ Vue 3でネットワークグラフとガントチャートを実装するため
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
 
+### TaskBoard
+
+- **カンバンボード：** オプトインの3つ目の制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えると警告します。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChart と同じタスクと選択を共有できます。[TaskBoard](docs/api.md#taskboard) を参照してください。
+
 ### ヘッドレスコア（`vue-weave/core`）
 
 - **グラフのアルゴリズムと指標：** `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`、連結成分、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）と、その結果をグループに変換する `graphCommunityGroups`。
