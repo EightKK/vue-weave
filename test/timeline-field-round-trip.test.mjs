@@ -32,17 +32,82 @@ test('a multiple select formats labels and commits the parsed text as an array i
   assert.deepEqual(parseFieldValue(multi, ''), { ok: true, value: null })
 })
 
-test('labels that contain the separator are read whole, longest entry first', () => {
+test('multiple-select entries that contain the separator are quoted, so every selection round trips', () => {
+  // A choice whose text equals two other choices joined by the separator.
+  const joined = select({ choices: [{ value: '加工' }, { value: '検査' }, { value: '加工, 検査' }], multiple: true })
+  assert.deepEqual(roundTrip(joined, ['加工', '検査']), { text: '加工, 検査', parsed: { ok: true, value: ['加工', '検査'] } })
+  assert.deepEqual(roundTrip(joined, ['加工, 検査']), { text: '"加工, 検査"', parsed: { ok: true, value: ['加工, 検査'] } })
+  assert.deepEqual(roundTrip(joined, ['加工, 検査', '加工']), { text: '"加工, 検査", 加工', parsed: { ok: true, value: ['加工, 検査', '加工'] } })
+  // Unquoted commas always separate, whatever the labels are.
+  assert.deepEqual(parseFieldValue(joined, '加工,検査'), { ok: true, value: ['加工', '検査'] })
   const choices = [{ value: 'cw', label: 'Cut, weld' }, { value: 'c', label: 'Cut' }, { value: 'w', label: 'weld' }, { value: 'p', label: 'Paint' }]
   const multi = select({ choices, multiple: true })
-  assert.deepEqual(roundTrip(multi, ['cw', 'p']), { text: 'Cut, weld, Paint', parsed: { ok: true, value: ['cw', 'p'] } })
-  // The same text could also be read as Cut + weld; the longest entry wins, so the formatter falls back to values.
-  assert.deepEqual(roundTrip(multi, ['c', 'w']), { text: 'c, w', parsed: { ok: true, value: ['c', 'w'] } })
-  // When the longest entry leaves text that names no choice, shorter entries are tried.
-  const partial = select({ choices: [{ value: 'cw', label: 'Cut, weld' }, { value: 'c', label: 'Cut' }, { value: 'wx', label: 'weld, x' }], multiple: true })
-  assert.deepEqual(parseFieldValue(partial, 'Cut, weld, x'), { ok: true, value: ['c', 'wx'] })
-  // A single select never splits.
+  assert.deepEqual(roundTrip(multi, ['cw', 'p']), { text: '"Cut, weld", Paint', parsed: { ok: true, value: ['cw', 'p'] } })
+  assert.deepEqual(roundTrip(multi, ['c', 'w']), { text: 'Cut, weld', parsed: { ok: true, value: ['c', 'w'] } })
+  // Whitespace outside quotes is ignored; inside quotes it is part of the entry.
+  assert.deepEqual(parseFieldValue(multi, '  "Cut, weld"  ,Paint  '), { ok: true, value: ['cw', 'p'] })
+  assert.equal(parseFieldValue(multi, '" Cut"').code, 'choice')
+  // A single select never splits or unquotes.
   assert.deepEqual(roundTrip(select({ choices }), 'cw'), { text: 'Cut, weld', parsed: { ok: true, value: 'cw' } })
+  assert.equal(parseFieldValue(select({ choices }), '"Cut"').code, 'choice')
+})
+
+test('quotes, surrounding whitespace and malformed quoting in multiple-select text', () => {
+  const choices = [
+    { value: 'in', label: '12" pipe' }, { value: 'q', label: '"quoted"' }, { value: 'sp', label: ' padded ' }, { value: 'x', label: 'X' },
+  ]
+  const multi = select({ choices, multiple: true })
+  assert.deepEqual(roundTrip(multi, ['in', 'q', 'sp', 'x']), {
+    text: '"12"" pipe", """quoted""", " padded ", X', parsed: { ok: true, value: ['in', 'q', 'sp', 'x'] },
+  })
+  // A quote inside an unquoted entry is an ordinary character.
+  assert.deepEqual(parseFieldValue(multi, '12" pipe, X'), { ok: true, value: ['in', 'x'] })
+  assert.equal(parseFieldValue(multi, '"X').code, 'invalid')
+  assert.equal(parseFieldValue(multi, '"X" Y').code, 'invalid')
+  assert.equal(parseFieldValue(multi, 'X,').code, 'invalid')
+  assert.equal(parseFieldValue(multi, ', X').code, 'invalid')
+  assert.equal(parseFieldValue(multi, 'X, ,X').code, 'invalid')
+  // A quoted empty entry is looked up like any other text.
+  assert.equal(parseFieldValue(multi, 'X, ""').code, 'choice')
+  const empty = select({ choices: [{ value: 'e', label: '' }, { value: 'x', label: 'X' }], multiple: true })
+  assert.deepEqual(roundTrip(empty, ['x', 'e']), { text: 'X, ""', parsed: { ok: true, value: ['x', 'e'] } })
+  // Single selects keep reading the trimmed text as one entry; a padded label is written by its value.
+  assert.deepEqual(roundTrip(select({ choices }), 'in'), { text: '12" pipe', parsed: { ok: true, value: 'in' } })
+  assert.deepEqual(roundTrip(select({ choices }), 'sp'), { text: 'sp', parsed: { ok: true, value: 'sp' } })
+})
+
+test('each multiple-select entry follows the single-value rule for labels and values', () => {
+  // Duplicate labels: those choices are written by value, the others by label.
+  const shared = select({ choices: [{ value: 'a1', label: 'Line A' }, { value: 'a2', label: 'Line A' }, { value: 'b', label: 'Line B' }], multiple: true })
+  assert.deepEqual(roundTrip(shared, ['a2', 'b', 'a1']), { text: 'a2, Line B, a1', parsed: { ok: true, value: ['a2', 'b', 'a1'] } })
+  assert.equal(parseFieldValue(shared, 'Line B, Line A').code, 'choice')
+  // A label equal to another choice's value wins; that other choice is written by its own label.
+  const crossed = select({ choices: [{ value: 'x', label: 'y' }, { value: 'y', label: 'z' }], multiple: true })
+  assert.deepEqual(parseFieldValue(crossed, 'y, z'), { ok: true, value: ['x', 'y'] })
+  assert.deepEqual(roundTrip(crossed, ['y', 'x']), { text: 'z, y', parsed: { ok: true, value: ['y', 'x'] } })
+  // Number values are read back as numbers.
+  const numbers = select({ choices: [{ value: 1 }, { value: 2, label: 'Two, 2' }, { value: 3, label: '1' }], multiple: true })
+  assert.deepEqual(roundTrip(numbers, [2, 1, 3]), { text: '"Two, 2", 1, 3', parsed: { ok: true, value: [2, 1, 3] } })
+  assert.deepEqual(parseFieldValue(numbers, '2, 3'), { ok: true, value: [2, 3] })
+  assert.equal(parseFieldValue(select({ choices: [{ value: 1 }, { value: '1' }], multiple: true }), '1').code, 'choice')
+  // A choice that no text names (a shared label, and a value that another choice shows as its label) is shown by
+  // its label, which the parser rejects rather than reading another value.
+  const unreachable = select({ choices: [{ value: 'a', label: 'L' }, { value: 'b', label: 'L' }, { value: 'c', label: 'a' }], multiple: true })
+  assert.equal(formatFieldValue(unreachable, ['a']), 'L')
+  assert.equal(parseFieldValue(unreachable, 'L').code, 'choice')
+})
+
+test('formatting and parsing a long multiple selection stays fast', () => {
+  const choices = Array.from({ length: 1000 }, (_, index) => ({ value: index, label: index % 3 ? 'Step ' + index : 'Step, ' + index }))
+  const multi = select({ choices, multiple: true })
+  const value = choices.map(choice => choice.value).reverse()
+  const started = performance.now()
+  for (let round = 0; round < 5; round++) {
+    const { parsed } = roundTrip(multi, value)
+    assert.deepEqual(parsed, { ok: true, value })
+  }
+  const elapsed = performance.now() - started
+  assert.ok(elapsed < 200, 'five round trips of 1,000 entries took ' + elapsed + ' ms')
 })
 
 test('duplicate labels are rejected as ambiguous and formatted as values', () => {
@@ -53,7 +118,7 @@ test('duplicate labels are rejected as ambiguous and formatted as values', () =>
   assert.match(ambiguous.error, /Several choices match "Line A"/)
   assert.deepEqual(roundTrip(select({ choices }), 'a2'), { text: 'a2', parsed: { ok: true, value: 'a2' } })
   assert.deepEqual(roundTrip(select({ choices }), 'b'), { text: 'Line B', parsed: { ok: true, value: 'b' } })
-  assert.deepEqual(roundTrip(select({ choices, multiple: true }), ['b', 'a1']), { text: 'b, a1', parsed: { ok: true, value: ['b', 'a1'] } })
+  assert.deepEqual(roundTrip(select({ choices, multiple: true }), ['b', 'a1']), { text: 'Line B, a1', parsed: { ok: true, value: ['b', 'a1'] } })
   // A unique label wins over another choice's value; the formatter keeps the reading that round trips.
   const crossed = [{ value: 'x', label: 'y' }, { value: 'y', label: 'z' }]
   assert.deepEqual(parseFieldValue(select({ choices: crossed }), 'y'), { ok: true, value: 'x' })

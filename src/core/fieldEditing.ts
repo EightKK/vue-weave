@@ -31,8 +31,10 @@ export interface TimelineFieldSpec<R extends TimelineRow = TimelineRow> {
    */
   choices?: readonly FieldChoice[]
   /**
-   * `select` only: accept an array of choices. The built-in formatter joins the choices with `, ` and the built-in
-   * parser splits the text at commas, reading a label that itself contains a comma whole.
+   * `select` only: accept an array of choices. The built-in formatter joins the entries with `, ` and writes an entry
+   * that is empty, contains a comma or a double quote, or starts or ends with whitespace in double quotes, with inner
+   * quotes doubled (as in CSV). The built-in parser splits the text at unquoted commas and reads each entry like a
+   * single selection.
    */
   multiple?: boolean
   /** Inclusive lower bound for `number`, `time` and `duration`. */
@@ -195,83 +197,140 @@ function choiceText(choice: FieldChoice) {
 
 type FieldFailure = { ok: false; code: FieldErrorCode; error: string }
 
+/** Choices grouped by the text that names them, so that each lookup takes constant time. */
+interface ChoiceIndex {
+  byLabel: Map<string, FieldChoice[]>
+  byValue: Map<string, FieldChoice[]>
+  /** The first choice with each value, as `Array.prototype.find` would return it. */
+  byIdentity: Map<FieldPrimitive, FieldChoice>
+}
+
+function indexChoices(choices: readonly FieldChoice[]): ChoiceIndex {
+  const byLabel = new Map<string, FieldChoice[]>()
+  const byValue = new Map<string, FieldChoice[]>()
+  const byIdentity = new Map<FieldPrimitive, FieldChoice>()
+  const add = (map: Map<string, FieldChoice[]>, key: string, choice: FieldChoice) => {
+    const list = map.get(key)
+    if (list) list.push(choice)
+    else map.set(key, [choice])
+  }
+  for (const choice of choices) {
+    add(byLabel, choiceText(choice), choice)
+    add(byValue, String(choice.value), choice)
+    if (!byIdentity.has(choice.value)) byIdentity.set(choice.value, choice)
+  }
+  return { byLabel, byValue, byIdentity }
+}
+
 /**
- * The choice that `text` (trimmed) names. A label (or, for a choice without one, its value) shown by exactly one choice
- * wins; otherwise the text is compared with the values. Text that still matches several choices is rejected as
- * ambiguous rather than resolved to one of them.
+ * The choice that `text` names. A label (or, for a choice without one, its value) shown by exactly one choice wins;
+ * otherwise the text is compared with the values. Text that still matches several choices is rejected as ambiguous
+ * rather than resolved to one of them.
  */
-function matchChoice(choices: readonly FieldChoice[], text: string): { ok: true; choice: FieldChoice } | FieldFailure {
-  const byLabel = choices.filter(choice => choiceText(choice) === text)
-  if (byLabel.length === 1) return { ok: true, choice: byLabel[0]! }
-  const byValue = choices.filter(choice => String(choice.value) === text)
-  if (byValue.length === 1) return { ok: true, choice: byValue[0]! }
-  if (byLabel.length > 1 || byValue.length > 1) {
+function matchChoice(index: ChoiceIndex, text: string): { ok: true; choice: FieldChoice } | FieldFailure {
+  const byLabel = index.byLabel.get(text)
+  if (byLabel?.length === 1) return { ok: true, choice: byLabel[0]! }
+  const byValue = index.byValue.get(text)
+  if (byValue?.length === 1) return { ok: true, choice: byValue[0]! }
+  if ((byLabel?.length ?? 0) > 1 || (byValue?.length ?? 0) > 1) {
     return fail('choice', 'Several choices match ' + JSON.stringify(text) + '; enter the value of one of them')
   }
   return fail('choice', 'Not one of the choices: ' + text)
 }
 
+const isSpace = (char: string | undefined) => char !== undefined && char.trim() === ''
+
 /**
- * Split multiple-choice text at commas into choice values. Each entry is matched as long as possible first, so a label
- * that contains a comma is read whole; when the rest of the text then names no choices, shorter entries are tried. The
- * first complete reading in this order wins, which makes the result deterministic.
+ * Split multiple-choice text into entries. Entries are separated by commas; whitespace around an entry is ignored.
+ * An entry that starts with a double quote runs to the closing quote, with `""` standing for one quote, so it can
+ * contain commas, quotes and leading or trailing whitespace. A quote inside an unquoted entry is an ordinary
+ * character. The scan is linear in the length of the text.
  */
-function matchChoices(choices: readonly FieldChoice[], text: string): FieldParseResult {
-  const parts = text.split(',')
-  let firstError: FieldFailure | undefined
-  // Depth-first search with an explicit stack, longest entry first. `failed` holds the parts from which no complete
-  // reading exists, so that each start is searched once.
-  const failed = new Set<number>()
-  const stack: { start: number; end: number; picked: FieldPrimitive[] }[] = [{ start: 0, end: parts.length, picked: [] }]
-  while (stack.length) {
-    const frame = stack[stack.length - 1]!
-    if (frame.end <= frame.start) {
-      failed.add(frame.start)
-      stack.pop()
-      continue
+function splitChoiceEntries(text: string): { ok: true; entries: string[] } | FieldFailure {
+  const entries: string[] = []
+  let at = 0
+  for (;;) {
+    while (isSpace(text[at])) at++
+    let entry = ''
+    if (text[at] === '"') {
+      let from = ++at
+      for (;;) {
+        const quote = text.indexOf('"', at)
+        if (quote < 0) return fail('invalid', 'A quoted entry has no closing quote: ' + text.trim())
+        entry += text.slice(from, quote)
+        if (text[quote + 1] !== '"') {
+          at = quote + 1
+          break
+        }
+        entry += '"'
+        at = from = quote + 2
+      }
+      while (isSpace(text[at])) at++
+      if (at < text.length && text[at] !== ',') return fail('invalid', 'Text follows a closing quote: ' + text.trim())
+    } else {
+      const comma = text.indexOf(',', at)
+      const end = comma < 0 ? text.length : comma
+      entry = text.slice(at, end).trim()
+      at = end
+      if (entry === '') return fail('invalid', 'An entry between commas is empty: ' + text.trim())
     }
-    const end = frame.end--
-    const entry = parts.slice(frame.start, end).join(',').trim()
-    if (entry === '') {
-      firstError ??= fail('invalid', 'An entry between commas is empty: ' + text.trim())
-      continue
-    }
-    const match = matchChoice(choices, entry)
-    if (!match.ok) {
-      if (end - frame.start === 1) firstError ??= match
-      continue
-    }
-    const picked = [...frame.picked, match.choice.value]
-    if (end === parts.length) return { ok: true, value: picked }
-    if (!failed.has(end)) stack.push({ start: end, end: parts.length, picked })
+    entries.push(entry)
+    if (at >= text.length) return { ok: true, entries }
+    at++ // past the comma
   }
-  return firstError ?? fail('choice', 'Not one of the choices: ' + text.trim())
 }
 
-function parseSelect(spec: TimelineFieldSpec<any>, text: string, multiple = Boolean(spec.multiple)): FieldParseResult {
-  if (multiple) return matchChoices(spec.choices!, text)
-  const match = matchChoice(spec.choices!, text)
-  return match.ok ? { ok: true, value: match.choice.value } : match
+/** A multiple-choice entry, quoted when it is empty, contains a comma or a quote, or starts or ends with whitespace. */
+function quoteEntry(text: string) {
+  const plain = text !== '' && !text.includes(',') && !text.includes('"') && text.trim() === text
+  return plain ? text : '"' + text.replaceAll('"', '""') + '"'
+}
+
+function parseSelect(spec: TimelineFieldSpec<any>, text: string): FieldParseResult {
+  const index = indexChoices(spec.choices!)
+  if (!spec.multiple) {
+    const match = matchChoice(index, text)
+    return match.ok ? { ok: true, value: match.choice.value } : match
+  }
+  const split = splitChoiceEntries(text)
+  if (!split.ok) return split
+  const values: FieldPrimitive[] = []
+  for (const entry of split.entries) {
+    const match = matchChoice(index, entry)
+    if (!match.ok) return match
+    values.push(match.choice.value)
+  }
+  return { ok: true, value: values }
 }
 
 /**
- * Text for a select value that the built-in parser reads back: labels where they identify the choices, else values.
- * Only when neither reads back (labels and values that collide both ways) are the labels shown anyway.
+ * Text for one selected value that {@link matchChoice} resolves back to a choice with that value: the label where it
+ * names the choice, else the value. When neither does (a shared label, and value text that another choice shows as
+ * its label), text that the parser rejects is preferred over text that it would read as another value. A value that
+ * is not among the choices is shown as is.
+ */
+function choiceEntryText(index: ChoiceIndex, item: FieldPrimitive, quoted: boolean): string {
+  const choice = index.byIdentity.get(item)
+  if (!choice) return String(item)
+  const candidates = [choiceText(choice), String(choice.value)]
+  // Unquoted text (a single select) is trimmed when it is read.
+  const resolved = candidates.map(text => matchChoice(index, quoted ? text : text.trim()))
+  const exact = resolved.findIndex(match => match.ok && Object.is(match.choice.value, item))
+  if (exact >= 0) return candidates[exact]!
+  const rejected = resolved.findIndex(match => !match.ok)
+  return candidates[Math.max(rejected, 0)]!
+}
+
+/**
+ * Text for a select value that the built-in parser reads back. Each value is shown by its label where the label names
+ * it, else by its value. In a multiple select the entries are joined with `, ` and quoted where needed (see
+ * {@link quoteEntry}), so that every entry reads back by itself. The work is linear in the number of choices and values.
  */
 function formatSelect(spec: TimelineFieldSpec<any>, value: FieldValue): string {
-  const multiple = Array.isArray(value)
-  const items: readonly FieldPrimitive[] = multiple ? value : [value as FieldPrimitive]
-  const labels = items.map(item => {
-    const choice = spec.choices!.find(option => option.value === item)
-    return choice ? choiceText(choice) : String(item)
-  }).join(', ')
-  const readsBack = (text: string) => {
-    const parsed = parseSelect(spec, text, multiple)
-    return parsed.ok && fieldValuesEqual(parsed.value, value)
-  }
-  if (readsBack(labels)) return labels
-  const values = items.map(item => String(item)).join(', ')
-  return readsBack(values) ? values : labels
+  const index = indexChoices(spec.choices!)
+  if (!spec.multiple && !Array.isArray(value)) return choiceEntryText(index, value as FieldPrimitive, false)
+  const items: readonly FieldPrimitive[] = Array.isArray(value) ? value : [value as FieldPrimitive]
+  return items.map(item => quoteEntry(choiceEntryText(index, item, true))).join(', ')
 }
 
 function isCustomError(value: unknown): value is { error: string } {
@@ -286,8 +345,9 @@ function isCustomError(value: unknown): value is { error: string } {
  * gives the same value back:
  * - `select`: a choice's label, or its value. A label that exactly one choice shows wins over a value. Text that
  *   matches several choices (a shared label with no single matching value) is a `choice` error; the formatter then
- *   shows values instead. With `multiple`, the text is split at commas into an array, in order; a label containing a
- *   comma is read whole where possible (the longest entry is tried first).
+ *   shows values instead. With `multiple`, the text is split at unquoted commas into an array, in order. An entry in
+ *   double quotes (`"Cut, weld"`, with `""` for a quote inside) is read exactly, commas and surrounding whitespace
+ *   included; unquoted entries are trimmed. An empty unquoted entry (`a,,b`) or an unclosed quote is `invalid`.
  * - `time` with `timeZone`: a trailing offset (`-05:00`, `Z`) picks one occurrence of a repeated wall time; without
  *   one, the earlier occurrence is used.
  */
@@ -384,8 +444,9 @@ export function validateFieldValue(spec: TimelineFieldSpec<any>, value: FieldVal
 
 /**
  * Turn a field value into editor text. `null` becomes an empty string; `0` stays `0`. The built-in formats read back
- * with {@link parseFieldValue}: a `select` shows labels unless they are ambiguous (then values), and a `time` with
- * `timeZone` appends the offset to a wall time that occurs twice.
+ * with {@link parseFieldValue}: a `select` shows each choice by its label unless the label does not name it (then by
+ * its value), a multiple `select` quotes entries that contain a comma, a quote or surrounding whitespace, and a `time`
+ * with `timeZone` appends the offset to a wall time that occurs twice.
  */
 export function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): string {
   checkSpec(spec)
