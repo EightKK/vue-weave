@@ -144,3 +144,8 @@ export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncre
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
 } from './graphIncremental.js'
+export { graphPaletteMimeType } from './diagramEditor.js'
+export type {
+  GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,
+  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot,
+} from './diagramEditor.js'

@@ -568,3 +568,54 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   background: var(--vw-accent); border: 1px solid var(--vw-surface); cursor: crosshair; touch-action: none;
 }
 @media (pointer: coarse) { .vw-sheet-fill { width: 16px; height: 16px; } }
+/* Diagram editor parts: GraphPalette (vw-palette-*) and PropertyInspector (vw-inspector-*). Both follow the shared surface,
+   text, border and accent variables, so the dark themes apply to them; layout uses logical properties for RTL. */
+.vw-palette, .vw-inspector { box-sizing: border-box; color: var(--vw-text, #172c3b); font-family: inherit; font-size: 13px; }
+.vw-palette *, .vw-inspector * { box-sizing: border-box; }
+.vw-palette { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vw-palette-search, .vw-inspector-input { width: 100%; min-height: 30px; padding: 4px 8px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); color: inherit; font: inherit; }
+.vw-palette-search:focus-visible, .vw-inspector-input:focus-visible, .vw-inspector-check:focus-visible, .vw-inspector-swatch:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-list { display: flex; flex-direction: column; gap: 10px; }
+.vw-palette-section { display: flex; flex-direction: column; gap: 4px; }
+.vw-palette-heading { padding-inline-start: 2px; color: var(--vw-muted, #4f6574); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.vw-palette-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--vw-border, #dce6ed); border-radius: 7px; background: var(--vw-surface, #fff); cursor: grab; outline: none; user-select: none; }
+.vw-palette-item:hover { background: var(--vw-surface-hover, #e4ecf2); }
+.vw-palette-item:active { cursor: grabbing; }
+.vw-palette-item:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-item.vw-is-disabled { cursor: default; opacity: .5; }
+.vw-palette-preview { flex: none; width: var(--vw-palette-preview-width, 48px); height: auto; overflow: visible; }
+.vw-palette-preview rect, .vw-palette-preview ellipse, .vw-palette-preview polygon { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-palette-text { display: flex; flex-direction: column; min-width: 0; }
+.vw-palette-label { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.vw-palette-detail { overflow: hidden; color: var(--vw-muted, #4f6574); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.vw-palette-empty, .vw-inspector-empty { margin: 0; color: var(--vw-muted, #4f6574); }
+.vw-inspector { display: flex; flex-direction: column; gap: 12px; margin: 0; min-width: 0; }
+.vw-inspector-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vw-inspector-field.vw-is-checkbox { flex-flow: row wrap; align-items: center; }
+.vw-inspector-field.vw-is-checkbox .vw-inspector-label { order: 1; }
+.vw-inspector-field.vw-is-checkbox > :not(.vw-inspector-label):not(input) { flex-basis: 100%; order: 2; }
+.vw-inspector-label { color: var(--vw-muted, #4f6574); font-size: 12px; font-weight: 650; }
+.vw-inspector-field.vw-is-checkbox .vw-inspector-label { color: inherit; font-size: inherit; font-weight: 400; }
+.vw-inspector-input[readonly], .vw-inspector-input:disabled { background: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, #4f6574); }
+.vw-inspector-input[multiple] { min-height: 72px; }
+.vw-inspector-check { margin: 0; accent-color: var(--vw-accent, #245e96); }
+.vw-inspector-color { display: flex; align-items: center; gap: 8px; }
+.vw-inspector-swatch { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); }
+.vw-inspector-color-text { color: var(--vw-muted, #4f6574); font-variant-numeric: tabular-nums; }
+.vw-inspector-description { margin: 0; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
+.vw-inspector-error { margin: 0; color: var(--vw-inspector-error, #b3261e); font-size: 12px; font-weight: 600; }
+.vw-inspector-field.vw-is-invalid .vw-inspector-input, .vw-inspector-field.vw-is-invalid .vw-inspector-swatch { border-color: var(--vw-inspector-error, #b3261e); }
+.vw-theme-dark { --vw-inspector-error: #ff8a80; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-inspector-error: #ff8a80; }
+}
+@media (forced-colors: active) {
+  .vw-palette-item { border-color: CanvasText; }
+  .vw-palette-item:focus-visible, .vw-palette-item.vw-is-active:focus-visible { outline-color: Highlight; }
+  .vw-palette-preview rect, .vw-palette-preview ellipse, .vw-palette-preview polygon { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-inspector-error { color: CanvasText; text-decoration: underline; }
+  .vw-inspector-field.vw-is-invalid .vw-inspector-input { border-style: dashed; }
+}
+@media print {
+  .vw-palette-search { display: none; }
+}

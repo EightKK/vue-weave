@@ -196,6 +196,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), waypoints, end markers, animated edges and spread parallel edges.
 - **Editing as proposals:** node moves, connections checked against typed port rules (`connectionRules`) with valid-target hints, inline label editing, box or lasso selection, nested and collapsible groups, node resizing, snap to grid with alignment guides, palette drops, clipboard, and keyboard deletion.
 - **Navigation:** minimap, viewport culling and level of detail for large graphs, pinch zoom, search highlighting (`matchIds`), `focusNode(id)` and `fit({ ids })`.
+- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#diagram-editor-parts).
 
 ### GanttChart
 

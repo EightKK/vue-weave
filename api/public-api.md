@@ -5,10 +5,12 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (201)
+## Entry `.`: runtime exports (205)
 
 - `GanttChart: object`
+- `GraphPalette: object`
 - `NetworkGraph: object`
+- `PropertyInspector: object`
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
 - `applyGraphPositions: function`
@@ -89,6 +91,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphNeighborhood: function`
 - `graphNodesInPolygon: function`
 - `graphPageRank: function`
+- `graphPaletteMimeType: string`
 - `graphPathBounds: function`
 - `graphPathEndpoints: function`
 - `graphPointInPolygon: function`
@@ -134,6 +137,7 @@ in public signatures, so changes to them can break consumers too.
 - `projectTimelineView: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
+- `readPaletteDrop: function`
 - `reconcileTimelineViewColumns: function`
 - `refreshTransactionState: function`
 - `rejectWindowedRequest: function`
@@ -209,7 +213,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (469)
+## Entry `.`: type-only exports (484)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -360,6 +364,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphObstacleAvoidance`
 - `GraphPageRankOptions`
 - `GraphPageRankResult`
+- `GraphPaletteComponent`
+- `GraphPaletteDrop`
+- `GraphPaletteExposed`
+- `GraphPaletteItem`
+- `GraphPaletteLabels`
 - `GraphPaste`
 - `GraphPathResult`
 - `GraphPngExportOptions`
@@ -406,6 +415,11 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorChange`
+- `InspectorChangeValidator`
+- `InspectorField`
+- `InspectorFieldKind`
+- `InspectorItem`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -448,6 +462,7 @@ in public signatures, so changes to them can break consumers too.
 - `NetworkNodeSlot`
 - `NetworkNodeToolbarSlot`
 - `NetworkTooltipSlot`
+- `PaletteDropSource`
 - `ParseWeaveSnapshotOptions`
 - `ParseWeaveSnapshotResult`
 - `PendingTransaction`
@@ -486,6 +501,10 @@ in public signatures, so changes to them can break consumers too.
 - `ProgressEditValidator`
 - `PropagateEditResult`
 - `PropagateEditSuccess`
+- `PropertyInspectorComponent`
+- `PropertyInspectorExposed`
+- `PropertyInspectorFieldSlot`
+- `PropertyInspectorLabels`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -681,7 +700,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (191)
+## Entry `./core`: runtime exports (192)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -762,6 +781,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphNeighborhood: function`
 - `graphNodesInPolygon: function`
 - `graphPageRank: function`
+- `graphPaletteMimeType: string`
 - `graphPathBounds: function`
 - `graphPathEndpoints: function`
 - `graphPointInPolygon: function`
@@ -875,7 +895,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (440)
+## Entry `./core`: type-only exports (450)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1015,6 +1035,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphObstacleAvoidance`
 - `GraphPageRankOptions`
 - `GraphPageRankResult`
+- `GraphPaletteDrop`
+- `GraphPaletteItem`
+- `GraphPaletteLabels`
 - `GraphPaste`
 - `GraphPathResult`
 - `GraphPngExportOptions`
@@ -1060,6 +1083,11 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorChange`
+- `InspectorChangeValidator`
+- `InspectorField`
+- `InspectorFieldKind`
+- `InspectorItem`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -1132,6 +1160,8 @@ in public signatures, so changes to them can break consumers too.
 - `ProgressEditValidator`
 - `PropagateEditResult`
 - `PropagateEditSuccess`
+- `PropertyInspectorFieldSlot`
+- `PropertyInspectorLabels`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -1667,6 +1697,67 @@ scrollToRow: (id: string) => void;
 scrollToTime: (time: number) => void;
 ```
 
+## Component `GraphPalette`: props
+
+```ts
+dir?: ChartDirection;
+items: readonly GraphPaletteItem<D>[];
+labels?: Partial<GraphPaletteLabels>;
+searchable?: boolean;
+```
+
+## Component `GraphPalette`: emits
+
+```ts
+(evt: "insert", item: GraphPaletteItem<D>) => void
+```
+
+## Component `GraphPalette`: slots
+
+```ts
+item?(props: {
+    item: GraphPaletteItem<D>;
+    active: boolean;
+}): unknown;
+```
+
+## Component `GraphPalette`: exposed
+
+```ts
+focusItem: (id?: string) => Promise<boolean>;
+```
+
+## Component `PropertyInspector`: props
+
+```ts
+dir?: ChartDirection;
+fields: readonly InspectorField<T>[];
+item?: T | null;
+labels?: Partial<PropertyInspectorLabels>;
+validateChange?: InspectorChangeValidator<T>;
+```
+
+## Component `PropertyInspector`: emits
+
+```ts
+(evt: "change", change: InspectorChange) => void
+(evt: "change-rejected", change: InspectorChange, reason: string) => void
+```
+
+## Component `PropertyInspector`: slots
+
+```ts
+[name: `field-${string}`]: ((props: PropertyInspectorFieldSlot<T>) => unknown) | undefined;
+empty?(): unknown;
+```
+
+## Component `PropertyInspector`: exposed
+
+```ts
+cancelEdits(): void;
+focusField(id: string): boolean;
+```
+
 ## CSS custom properties: defined
 
 - `--vw-accent`
@@ -1696,6 +1787,7 @@ scrollToTime: (time: number) => void;
 - `--vw-float`
 - `--vw-grid`
 - `--vw-guide`
+- `--vw-inspector-error`
 - `--vw-item-ink`
 - `--vw-item-line`
 - `--vw-item-pale`
@@ -1752,6 +1844,7 @@ scrollToTime: (time: number) => void;
 - `--vw-load-focus`
 - `--vw-load-highlight`
 - `--vw-load-selected`
+- `--vw-palette-preview-width`
 - `--vw-range-opacity`
 - `--vw-row-depth`
 - `--vw-toolbar-offset`
@@ -3427,6 +3520,61 @@ interface GraphPageRankResult {
 }
 ```
 
+### `GraphPalette`
+
+```ts
+const GraphPalette: GraphPaletteComponent;
+```
+
+### `GraphPaletteComponent`
+
+```ts
+type GraphPaletteComponent = (new <D = unknown>(props: {
+    items: readonly GraphPaletteItem<D>[];
+} & Record<string, unknown>) => SfcInstance<GraphPaletteSfc<D>>) & SfcDefaultComponent<GraphPaletteSfc<unknown>>;
+```
+
+### `GraphPaletteDrop`
+
+```ts
+interface GraphPaletteDrop {
+    id: string;
+    data?: unknown;
+}
+```
+
+### `GraphPaletteExposed`
+
+```ts
+type GraphPaletteExposed<D = unknown> = SfcExposed<GraphPaletteSfc<D>>;
+```
+
+### `GraphPaletteItem`
+
+```ts
+interface GraphPaletteItem<D = unknown> {
+    id: string;
+    label: string;
+    detail?: string;
+    shape?: NetworkNodeShape;
+    tone?: ChartTone;
+    section?: string;
+    keywords?: readonly string[];
+    disabled?: boolean;
+    data?: D;
+}
+```
+
+### `GraphPaletteLabels`
+
+```ts
+interface GraphPaletteLabels {
+    region: string;
+    search: string;
+    noMatches: string;
+}
+```
+
 ### `GraphPaste`
 
 ```ts
@@ -3889,6 +4037,50 @@ interface IdentifiedNode {
 }
 ```
 
+### `InspectorChange`
+
+```ts
+interface InspectorChange {
+    id: string;
+    field: string;
+    before: FieldValue;
+    after: FieldValue;
+}
+```
+
+### `InspectorChangeValidator`
+
+```ts
+type InspectorChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorChange, item: T) => boolean | string | void;
+```
+
+### `InspectorField`
+
+```ts
+interface InspectorField<T extends InspectorItem = InspectorItem> extends Omit<TimelineFieldSpec, 'kind' | 'get'> {
+    kind: InspectorFieldKind;
+    label: string;
+    get: (item: T) => FieldValue;
+    readonly?: boolean;
+    description?: string;
+    placeholder?: string;
+}
+```
+
+### `InspectorFieldKind`
+
+```ts
+type InspectorFieldKind = TimelineFieldKind | 'color';
+```
+
+### `InspectorItem`
+
+```ts
+interface InspectorItem {
+    id: string;
+}
+```
+
 ### `IntlTimeFormatterOptions`
 
 ```ts
@@ -4342,6 +4534,14 @@ interface NetworkTooltipSlot<N extends NetworkNode = NetworkNode, E extends Grap
 }
 ```
 
+### `PaletteDropSource`
+
+```ts
+type PaletteDropSource = {
+    readonly dataTransfer: Pick<DataTransfer, 'getData'> | null;
+} | Pick<DataTransfer, 'getData'>;
+```
+
 ### `ParseWeaveSnapshotOptions`
 
 ```ts
@@ -4793,6 +4993,56 @@ interface PropagateEditSuccess {
     ok: true;
     schedule: ScheduleSuccess;
     changes: ScheduleChange[];
+}
+```
+
+### `PropertyInspector`
+
+```ts
+const PropertyInspector: PropertyInspectorComponent;
+```
+
+### `PropertyInspectorComponent`
+
+```ts
+type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(props: {
+    item?: T | null;
+    fields: readonly InspectorField<T>[];
+} & Record<string, unknown>) => SfcInstance<PropertyInspectorSfc<T>>) & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>;
+```
+
+### `PropertyInspectorExposed`
+
+```ts
+type PropertyInspectorExposed<T extends InspectorItem = InspectorItem> = SfcExposed<PropertyInspectorSfc<T>>;
+```
+
+### `PropertyInspectorFieldSlot`
+
+```ts
+interface PropertyInspectorFieldSlot<T extends InspectorItem = InspectorItem> {
+    field: InspectorField<T>;
+    item: T;
+    value: FieldValue;
+    text: string;
+    error?: string;
+    readonly: boolean;
+    inputId: string;
+    describedBy?: string;
+    commit: (value: FieldValue) => boolean;
+    commitText: (text: string) => boolean;
+    cancel: () => void;
+}
+```
+
+### `PropertyInspectorLabels`
+
+```ts
+interface PropertyInspectorLabels {
+    region: string;
+    empty: string;
+    rejected: string;
+    none: string;
 }
 ```
 
@@ -7505,6 +7755,12 @@ function graphNodesInPolygon(boxes: ReadonlyMap<string, GraphRect>, polygon: rea
 function graphPageRank(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options?: GraphPageRankOptions): GraphPageRankResult;
 ```
 
+### `graphPaletteMimeType`
+
+```ts
+const graphPaletteMimeType = "application/x-vue-weave-palette+json";
+```
+
 ### `graphPathBounds`
 
 ```ts
@@ -7787,6 +8043,12 @@ function propagateEdit(input: ScheduleInput, edit: ScheduleEdit): PropagateEditR
 
 ```ts
 function proposeResourceAssignment(state: ResourceAssignmentState, request: ResourceAssignmentRequest): ResourceAssignmentProposal;
+```
+
+### `readPaletteDrop`
+
+```ts
+function readPaletteDrop(source: PaletteDropSource | null | undefined): GraphPaletteDrop | undefined;
 ```
 
 ### `reconcileTimelineViewColumns`
@@ -8342,10 +8604,22 @@ function workCalendarsFromMsProject(project: {
 type GanttChartSfc<R extends TimelineRow, B extends TimelineBar> = typeof GanttChartVue<R, B>;
 ```
 
+### Internal `GraphPaletteSfc (dist/types/index.d.ts)`
+
+```ts
+type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>;
+```
+
 ### Internal `NetworkGraphSfc (dist/types/index.d.ts)`
 
 ```ts
 type NetworkGraphSfc<N extends NetworkNode, E extends GraphEdge, G extends NetworkGroup> = typeof NetworkGraphVue<N, E, G>;
+```
+
+### Internal `PropertyInspectorSfc (dist/types/index.d.ts)`
+
+```ts
+type PropertyInspectorSfc<T extends InspectorItem> = typeof PropertyInspectorVue<T>;
 ```
 
 ### Internal `RestoredBase (dist/types/core/snapshot.d.ts)`

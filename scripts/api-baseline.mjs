@@ -22,6 +22,8 @@ const entries = [
 const components = [
   { name: 'NetworkGraph', file: 'dist/types/components/NetworkGraph.vue.d.ts' },
   { name: 'GanttChart', file: 'dist/types/components/GanttChart.vue.d.ts' },
+  { name: 'GraphPalette', file: 'dist/types/components/GraphPalette.vue.d.ts' },
+  { name: 'PropertyInspector', file: 'dist/types/components/PropertyInspector.vue.d.ts' },
 ]
 const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed })
 const byName = (a, b) => a < b ? -1 : a > b ? 1 : 0
@@ -72,12 +74,13 @@ function componentSurface(program, component, packageDir) {
   const props = property('props')
   assert.ok(props, `Missing props in ${component.file}`)
   const emit = property('emit')
-  assert.ok(emit && ts.isIntersectionTypeNode(emit), `Unexpected emit type in ${component.file}`)
+  // Several events are an intersection of call signatures; a single event is one function type.
+  assert.ok(emit && (ts.isIntersectionTypeNode(emit) || ts.isFunctionTypeNode(emit)), `Unexpected emit type in ${component.file}`)
   const exposed = property('expose')
   assert.ok(exposed, `Missing expose in ${component.file}`)
   return {
     props: members(literalIn(props), `${component.name} props`),
-    emits: emit.types.map(type => print(ts.isParenthesizedTypeNode(type) ? type.type : type)).sort(byName),
+    emits: (ts.isIntersectionTypeNode(emit) ? emit.types : [emit]).map(type => print(ts.isParenthesizedTypeNode(type) ? type.type : type)).sort(byName),
     slots: members(property('slots'), `${component.name} slots`),
     exposed: members(literalIn(exposed), `${component.name} exposed members`),
   }

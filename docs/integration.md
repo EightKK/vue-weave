@@ -92,6 +92,8 @@ Turn on `snapGrid` (with `background="dots"` to show the grid), `alignmentGuides
 
 A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `node-drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
 
+`GraphPalette` packages both ways (drag payload, `readPaletteDrop` and an `insert` event for Enter and Space), and `PropertyInspector` edits the selected node; see [Diagram editor parts](#diagram-editor-parts).
+
 ```vue
 <button type="button" draggable="true" @dragstart="$event.dataTransfer?.setData('application/x-node', 'task')"
   @click="addTask(graph!.getViewportCenter())">Add task</button>
@@ -962,3 +964,65 @@ const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 
 ```
 
 The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.
+
+## Diagram editor parts
+
+`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change`, and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
+
+```vue
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import {
+  GraphPalette, NetworkGraph, PropertyInspector, readPaletteDrop, useEditHistory,
+  type GraphDrop, type GraphPaletteItem, type GraphPoint, type InspectorChange, type InspectorField, type NetworkNode,
+} from '@eightkk/vue-weave'
+
+const templates: GraphPaletteItem[] = [
+  { id: 'step', label: 'Step', shape: 'box', section: 'Flow' },
+  { id: 'decision', label: 'Decision', shape: 'diamond', tone: 'violet', section: 'Flow' },
+]
+const history = useEditHistory({ nodes: [] as NetworkNode[], positions: new Map<string, GraphPoint>() })
+const graph = ref<InstanceType<typeof NetworkGraph>>()
+const selectedId = ref<string>()
+const selected = computed(() => history.state.value.nodes.find(node => node.id === selectedId.value) ?? null)
+
+function add(template: GraphPaletteItem, center: GraphPoint) {
+  const { nodes, positions } = history.state.value
+  const id = template.id + '-' + (nodes.length + 1)
+  history.commit({
+    nodes: [...nodes, { id, label: template.label, shape: template.shape, tone: template.tone }],
+    positions: new Map(positions).set(id, { x: Math.max(0, center.x - 72), y: Math.max(0, center.y - 29) }),
+  })
+  selectedId.value = id
+}
+function drop(event: GraphDrop) {
+  const template = templates.find(item => item.id === readPaletteDrop(event)?.id)
+  if (template) add(template, graph.value!.toGraphPoint(event.clientX, event.clientY))
+}
+const fields: InspectorField<NetworkNode>[] = [
+  { id: 'label', kind: 'text', label: 'Label', get: node => node.label, required: true },
+]
+function apply(change: InspectorChange) {
+  const state = history.state.value
+  history.commit({ ...state, nodes: state.nodes.map(node => node.id === change.id ? { ...node, label: String(change.after) } : node) })
+}
+</script>
+
+<template>
+  <GraphPalette :items="templates" searchable @insert="item => add(item, graph!.getViewportCenter())" />
+  <NetworkGraph ref="graph" v-model:selected-id="selectedId" :nodes="history.state.value.nodes" :edges="[]"
+    :positions="history.state.value.positions" droppable @node-drop="drop" />
+  <PropertyInspector :item="selected" :fields="fields" @change="apply" />
+</template>
+```
+
+Inspector fields are typed fields, so a field definition written for a GanttChart column (`TimelineColumn.field`) needs only a `label` and a getter for the inspected item. Put validation that depends on other items, such as unique labels, in `validateChange`; its reason is shown under the field. When the selection changes, or an undo changes a value that is being edited, the inspector drops the draft instead of proposing a stale change.
+
+Both components use the shared variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-text`, `--vw-muted`, `--vw-border` and `--vw-accent`, and the tone families for the palette previews), so `vw-theme-dark` and `vw-theme-auto` apply to them. They add two variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-palette-preview-width` | `48px` | Width of the shape preview of a palette item (`vw-palette-preview`); the height follows the 48 by 30 aspect ratio |
+| `--vw-inspector-error` | `#b3261e` (`#ff8a80` in the dark themes) | Messages under inspector fields (`vw-inspector-error`) and the border of an invalid control |
+
+Classes: `vw-palette`, `vw-palette-search`, `vw-palette-list`, `vw-palette-section`, `vw-palette-heading`, `vw-palette-item` (with `vw-is-active` and `vw-is-disabled`), `vw-palette-preview`, `vw-palette-label`, `vw-palette-detail`, `vw-palette-empty`; `vw-inspector`, `vw-inspector-field` (with `vw-is-<kind>`, `vw-is-readonly` and `vw-is-invalid`), `vw-inspector-label`, `vw-inspector-input`, `vw-inspector-check`, `vw-inspector-color`, `vw-inspector-swatch`, `vw-inspector-description`, `vw-inspector-error` and `vw-inspector-empty`. Layout uses logical properties, so `dir="rtl"` (or an inherited right-to-left direction with `dir="auto"`) mirrors both. In forced-colors mode palette previews are drawn in `CanvasText` on `Canvas` and messages are underlined; the filter box is not printed.

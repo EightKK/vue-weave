@@ -108,6 +108,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [Export to SVG and PNG](#export-to-svg-and-png)
 - [Right-to-left layout](#right-to-left-layout)
 - [Typed data](#typed-data)
+- [Diagram editor parts](#diagram-editor-parts)
 
 ## NetworkGraph
 
@@ -2007,3 +2008,63 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Diagram editor parts
+
+Two small controlled components for building a diagram editor around NetworkGraph: `GraphPalette`, a list of node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector`, a form generated from typed field definitions for the selected item. Both are exported from the Vue entry with their public component types (`GraphPaletteComponent`, `PropertyInspectorComponent`) and template ref types (`GraphPaletteExposed`, `PropertyInspectorExposed`); their data types and `graphPaletteMimeType` are also in `@eightkk/vue-weave/core`. Neither changes the graph or the item: the application applies what they report, for example as one `useEditHistory` entry. Both render on the server, take `dir` (`ltr`, `rtl` or `auto`, as for the charts; `rtl` writes `dir="rtl"` and adds `vw-rtl`, `auto` writes nothing and follows the inherited direction) and follow the dark themes.
+
+### GraphPalette
+
+| API | Behavior |
+| --- | --- |
+| items | readonly GraphPaletteItem<D>[] / required. `id` (unique, the ID rule of [Validation and errors](#validation-and-errors) with the kind `palette item`), `label`, optional `detail`, `shape` (`NetworkNodeShape`, drawn in a 48 by 30 preview with the node outlines of NetworkGraph; default `box`), `tone` (default `blue`), `section`, `keywords`, `disabled` and `data`. D is inferred and reaches the `item` slot and `insert`. |
+| searchable | boolean / false. Shows a filter box (`type="search"`) above the list. Every word of the text must occur, ignoring case, in the label, detail, section or keywords of an item. ArrowDown in the box focuses the first shown item; Escape clears a non-empty filter. When nothing matches, a `role="status"` paragraph says so (`labels.noMatches`). |
+| labels | Partial<GraphPaletteLabels> / English. `region` (accessible name of the list, default `Shape palette`), `search` (`Filter shapes`) and `noMatches`. |
+| dir | ChartDirection / `ltr`. |
+| insert(item) | Enter or Space on a focused, enabled item: the keyboard alternative to dragging it, because HTML drag and drop needs a pointer. Held keys do not repeat it. Add the node at `getViewportCenter()` of the graph. |
+| item slot | `{ item, active }`. Replaces the preview, label and detail of an item; the option element, its keyboard handling and its drag stay. |
+| focusItem(id?) | Exposed method. Focuses an item (default: the one with the tab stop) and resolves to false when it is not shown. |
+
+The list is a `listbox` of `option` elements; items with a `section` are grouped under a heading in a `group` named by it, in the order of each section's first item, and items without one are listed without a heading. One option takes the tab stop (`tabindex="0"`, `aria-selected="true"`, class `vw-is-active`): the last focused item while it is shown, else the first shown one. ArrowUp, ArrowDown, Home and End move focus between the shown items. A `disabled` item is listed with `aria-disabled="true"`, is not draggable and does not emit `insert`.
+
+Each enabled item is `draggable`. On `dragstart` it puts the JSON text `{ "id": ..., "data": ... }` under `graphPaletteMimeType` (`application/x-vue-weave-palette+json`; `data` is left out when it cannot be serialised) and its label under `text/plain`, with `effectAllowed = 'copy'`. `readPaletteDrop(source)` (Vue entry; it reads a `DataTransfer`) takes the `node-drop` event of a `droppable` NetworkGraph, the `bar-drop` event of GanttChart or a `DataTransfer` and returns `{ id, data? }`, or undefined for a drop without a palette payload, with malformed JSON or without a non-empty string `id`. Any page can start a drag with this type, so look the ID up in your own items rather than trusting `data`.
+
+```vue
+<GraphPalette :items="templates" searchable @insert="item => addNode(item, graph!.getViewportCenter())" />
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :positions="positions" droppable
+  @node-drop="drop => { const hit = readPaletteDrop(drop); const item = templates.find(t => t.id === hit?.id); if (item) addNode(item, graph!.toGraphPoint(drop.clientX, drop.clientY)) }" />
+```
+
+Related exported types: `GraphPaletteItem`, `GraphPaletteLabels`, `GraphPaletteDrop`, `PaletteDropSource`.
+
+### PropertyInspector
+
+| API | Behavior |
+| --- | --- |
+| item | T / null / undefined (T extends `InspectorItem`, `{ id: string }`). The inspected item; without one the form shows `labels.empty` or the `empty` slot. T is inferred from `item` and `fields`. |
+| fields | readonly InspectorField<T>[] / required. A [typed field](#typed-fields-and-timeline-views) (`TimelineFieldSpec`: `required`, `choices`, `multiple`, `min`, `max`, `integer`, `parse`, `format`, `timeZone`, and so on) whose `get(item)` returns the raw value, plus `label`, `kind`, optional `readonly`, `description` and `placeholder`. IDs follow the ID rule with the kind `inspector field`; an unknown kind is a RangeError and a `select` without `choices` an Error, thrown while rendering. |
+| validateChange | (change, item) => boolean / string / void. Synchronous. False or a reason rejects the change: the reason (or `labels.rejected`) is shown under the field and `change-rejected` is emitted. |
+| labels | Partial<PropertyInspectorLabels> / English. `region` (accessible name of the form, default `Properties`), `empty`, `rejected` and `none` (the empty choice of an optional select, `(none)`). |
+| dir | ChartDirection / `ltr`. |
+| change(change) | InspectorChange: `id` (the item), `field` (the field ID), `before` and `after` (`FieldValue`). Emitted for a committed value that passes the field checks and `validateChange` and differs from `before` (`fieldValuesEqual`). The parent updates the item to accept. |
+| change-rejected(change, reason) | A change refused by `validateChange`. |
+| field-<id> slot | PropertyInspectorFieldSlot<T>: `field`, `item`, `value`, `text`, `error`, `readonly`, `inputId` (the ID the label points to), `describedBy`, and `commit(value)`, `commitText(text)` and `cancel()`, which run the same checks as the built-in controls. Replaces the control of one field; its label, description and message stay. |
+| empty slot | Replaces the empty-state text. |
+| focusField(id) | Exposed method. Focuses the control of a field; returns false when it is not shown. |
+| cancelEdits() | Exposed method. Drops every draft and message without a proposal. |
+
+Controls by `kind`: `text`, `number`, `time` and `duration` are text inputs (`inputmode="decimal"` for numbers and durations) parsed with `parseFieldValue` and shown with `formatFieldValue`; `select` is a `select` (a multiple one with `multiple`), `checkbox` a checkbox and `color` a colour input whose value is lowercase `#rrggbb` text (the built-in parser of a `color` field accepts `#rgb` and `#rrggbb`). A `readonly` text field is a `readonly` input; other read-only controls are disabled. Every control is named by its `label` element and described by the field's `description` and message (`aria-describedby`); an invalid field has `aria-invalid="true"` and its message is a `role="alert"` paragraph.
+
+Text is a draft until it is committed with Enter or on blur; Escape drops the draft and its message; when there was one, the key does not propagate further. A parse or check failure (`required`, `range`, the colour format, a custom parser) keeps the draft and shows the message without emitting anything; a rejected draft is not proposed again on blur. Selects, checkboxes and colour inputs commit on `change`, and the control returns to the current value until the parent applies the change, so a rejected or ignored change leaves the old value. The form never shows a value the item does not have once a draft is gone.
+
+Stale source data cancels an edit: when `item` changes to another ID, every draft and message is dropped; when the value under a draft or message changes (an undo, a collaborator, another view), that draft or message is dropped without a proposal. Drafts of fields whose value did not change are kept.
+
+```ts
+const fields: InspectorField<MyNode>[] = [
+  { id: 'label', kind: 'text', label: 'Label', get: node => node.label, required: true },
+  { id: 'shape', kind: 'select', label: 'Shape', get: node => node.shape ?? 'box', required: true, choices: [{ value: 'box' }, { value: 'diamond' }] },
+  { id: 'accent', kind: 'color', label: 'Accent', get: node => node.data?.accent ?? null },
+]
+```
+
+Related exported types: `InspectorItem`, `InspectorField`, `InspectorFieldKind`, `InspectorChange`, `InspectorChangeValidator`, `PropertyInspectorLabels`, `PropertyInspectorFieldSlot`.

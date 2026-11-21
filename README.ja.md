@@ -196,6 +196,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **描画：** 独自のSVGを描く `node`・`edge`・`group`・`minimap-node` スロット、HTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロット。ひし形・楕円・六角形のノード、直角・直線の辺（`edgeStyle`）、ノードを避ける経路（`avoidNodes`）、経由点、端の記号、アニメーションする辺、平行な辺の振り分け。
 - **変更案としての編集：** ノードの移動、型付きのポートルール（`connectionRules`）で検査する接続と接続先のヒント、ラベルのその場編集、矩形・投げ縄による選択、入れ子で折りたためるグループ、ノードのサイズ変更、グリッドへの吸着と整列ガイド、パレットからのドロップ、クリップボード、キーボードによる削除。
 - **表示範囲の操作：** ミニマップ、大規模グラフ向けの表示範囲外の描画省略と縮小時の簡略表示、ピンチズーム、検索結果の強調（`matchIds`）、`focusNode(id)`、`fit({ ids })`。
+- **ダイアグラムエディタ部品：** `GraphPalette` はノードのテンプレートを並べ、グラフへのドラッグとキーボードでの追加を提供します。`PropertyInspector` は選択中のノードを型付きフィールドで編集します。どちらも変更案をイベントで通知します。詳しくは[Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#diagram-editor-parts)を参照してください。
 
 ### GanttChart
 

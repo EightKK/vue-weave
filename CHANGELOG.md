@@ -4,6 +4,7 @@
 
 - The demo homepage now opens in English regardless of the browser language; add `?lang=ja` to the URL to open it in Japanese. The language buttons work as before.
 - Widened the approval workflow demo so the branch amount labels no longer run into the step boxes.
+- Added two diagram editor parts to the Vue entry, both controlled and opt-in: `GraphPalette`, a listbox of node templates (optional sections and filter box, shape previews) that are HTML5-draggable with a JSON payload under `graphPaletteMimeType` and emit `insert` on Enter or Space, with `readPaletteDrop(drop)` to read a NetworkGraph or GanttChart drop back; and `PropertyInspector`, a form generated from typed field definitions (`InspectorField`: the `TimelineFieldSpec` rules plus `label`, `readonly` and a `color` kind) that emits `change` proposals checked by a synchronous `validateChange`, shows rejection reasons inline (`change-rejected`), has a `field-<id>` slot per field and drops drafts when the item or the edited value changes. New types `GraphPaletteItem`, `GraphPaletteLabels`, `GraphPaletteDrop`, `PaletteDropSource`, `InspectorItem`, `InspectorField`, `InspectorFieldKind`, `InspectorChange`, `InspectorChangeValidator`, `PropertyInspectorLabels`, `PropertyInspectorFieldSlot`, `GraphPaletteComponent`, `GraphPaletteExposed`, `PropertyInspectorComponent` and `PropertyInspectorExposed`, and CSS variables `--vw-palette-preview-width` and `--vw-inspector-error`. The gallery has a new "Diagram editor" demo. Nothing existing changes.
 
 ## 1.1.0 - 2026-11-21
 
