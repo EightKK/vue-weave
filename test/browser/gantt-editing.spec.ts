@@ -43,7 +43,7 @@ test('row hierarchy failures notify, cancel pending edits and recover on replace
 
 test('selection, controlled edits, validation and cancellation', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await expect(page).toHaveTitle('Vue Weave — Examples')
   await expect(page.getByRole('link', { name: `Vue Weave ${releaseLine}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
@@ -90,7 +90,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
 })
 
 test('timeline columns edit through validation and keep summary bars when collapsed', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')
@@ -161,7 +161,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
 test('a bar click or drag emits select once and keyboard edits keep focus in a narrow viewport', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/')
+  await page.goto('/gallery.html')
   const count = page.getByRole('status', { name: 'Select events', exact: true })
   const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
   await expect(plan).toBeVisible()
@@ -192,7 +192,7 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
 test('dragging a bar near the viewport edge scrolls the timeline and keeps the preview in sync', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
   const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
@@ -1346,7 +1346,7 @@ test('gantt cell inputs leave Enter and Escape of an input method composition to
 
 test('gantt plain cell inputs keep composed text on Enter and Escape of an input method', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')

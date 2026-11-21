@@ -28,5 +28,14 @@ export default defineConfig({
   plugins: [vue(), demoBuildStamp()],
   // The demo header shows the package's major.minor version without hard-coding it.
   define: { __VUE_WEAVE_VERSION__: JSON.stringify(version) },
-  build: { outDir: '../preview', emptyOutDir: true },
+  build: {
+    outDir: '../preview',
+    emptyOutDir: true,
+    rolldownOptions: {
+      input: {
+        demo: fileURLToPath(new URL('./examples/index.html', import.meta.url)),
+        gallery: fileURLToPath(new URL('./examples/gallery.html', import.meta.url)),
+      },
+    },
+  },
 })

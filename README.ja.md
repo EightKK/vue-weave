@@ -4,7 +4,7 @@
 
 [English](https://github.com/EightKK/vue-weave/blob/v1.0.0/README.md)
 
-[ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
+[デモを試す](https://eightkk.github.io/vue-weave/) · [ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
 
 Vue 3でネットワークグラフとガントチャートを実装するためのライブラリです。関係の探索、工程フロー、製造のロット系譜、プロジェクト工程、設備・担当者別の予定などを、型付きの2つのコンポーネントで作れます。グラフ・日程計算・設備負荷の計算は、Node.js、Worker、サーバーでも動くヘッドレスのコアで行えます。
 
@@ -249,7 +249,9 @@ npm run build:demo
 npm start
 ```
 
-デモには例ごとのページ（[ギャラリー](#ギャラリー)を参照）、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** があります。**Edit graph** や **Planning overlays** などの切り替えで、上記のオプトイン機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけで作り替えています。編集結果はデモ画面内の状態として保持します。デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
+トップページでは「製造計画」と「ロットの流れ」を試せます。ほかの作例は「サンプル集」から開けます。
+
+サンプル集には例ごとのページ（[ギャラリー](#ギャラリー)を参照）、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** があります。**Edit graph** や **Planning overlays** などの切り替えで、上記のオプトイン機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけで作り替えています。編集結果はデモ画面内の状態として保持します。デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
 
 Windowsでは代わりに `Start.cmd` をダブルクリックしても起動できます。`preview/` が現在のソースからビルドされたものであればそのまま表示し、そうでなければ先にビルドします。インストール済みの依存関係が `package-lock.json` と一致しない場合は、ビルドの前に `npm ci` も実行します。`npm start` は `preview/` をそのまま表示します。
 

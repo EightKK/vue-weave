@@ -14,7 +14,7 @@ async function recordWheelDefaults(page: Page) {
 }
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Direction').selectOption('TB')
   await expect(page.locator('.vw-network-stage')).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
@@ -34,7 +34,7 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
 })
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   await expect(page.getByText('Operating window · UTC')).toBeVisible()
   await expect(page.getByText('Shift review', { exact: true })).toBeVisible()

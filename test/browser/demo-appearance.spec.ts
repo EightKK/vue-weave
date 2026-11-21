@@ -3,7 +3,7 @@ import { expect, test, openComponentFixture, openDemo, openGanttFixture, openTim
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   const demo = page.locator('.demo')
   const surface = () => page.locator('.vw-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vw-surface').trim())
   expect(await surface()).toBe('')
@@ -20,7 +20,7 @@ test('demo built-in theme switch applies the stylesheet theme classes', async ({
 
 test('mobile layout and horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/')
+  await page.goto('/gallery.html')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
   const viewport = page.locator('.vw-gantt-scroll')
   expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
@@ -174,7 +174,7 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
 })
 
 test('the graph Undo and Redo buttons are hidden in the scheduling and timeline editing demos', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   const undo = page.getByRole('button', { name: 'Undo', exact: true }), redo = page.getByRole('button', { name: 'Redo', exact: true })
   await expect(undo).toBeVisible()
   for (const name of ['Scheduling', 'Timeline editing']) {
@@ -330,7 +330,7 @@ test('the sprint plan showcase rejects a move before a predecessor ends and acce
 test('every design gallery showcase fits a phone-width page', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/')
+  await page.goto('/gallery.html')
   for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views']) {
     await page.getByRole('button', { name, exact: true }).click()
     await expect(page.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()

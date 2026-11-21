@@ -41,7 +41,7 @@ export function pageErrors(page: Page) {
 
 /** Opens the demo app and switches to one of its examples by its navigation button. */
 export async function openDemo(page: Page, name: string) {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByRole('button', { name, exact: true }).click()
 }
 
@@ -113,7 +113,7 @@ export async function openGanttFixture(page: Page, search: string) {
 
 export async function openGraphEditor(page: Page) {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
