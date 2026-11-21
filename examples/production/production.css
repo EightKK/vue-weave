@@ -117,6 +117,7 @@ body { margin: 0; }
   --vw-edge: var(--line);
   --vw-accent: var(--accent);
   --vw-graph-highlight: var(--accent);
+  --vw-non-working: light-dark(#eef2f8, #222e40);
   border: 0;
   border-radius: 0;
   color: var(--text);
@@ -160,3 +161,4 @@ body { margin: 0; }
 }
 .workflow-fields p:empty { display: none; }
 .production-nav { overflow-x: auto; }
+.production-app .sheet-status { color: var(--warning); min-height: 2.4em; }
