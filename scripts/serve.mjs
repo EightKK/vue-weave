@@ -74,7 +74,8 @@ const server = createServer(async (request, response) => {
 })
 
 const host = '127.0.0.1'
-let port = 4173
+// VW_PORT lets parallel browser-test runs (for example in separate worktrees) use their own port.
+let port = Number(process.env.VW_PORT) || 4173
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE' && port !== 0) {
     port = 0
