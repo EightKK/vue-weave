@@ -566,8 +566,8 @@ function commitCell(event: Event, row: R, column: TimelineColumn<R>) {
 }
 
 // Typed field editing (`TimelineColumn.field`). Such a column emits `field-edit` only, never `cell-edit`. A `cell` slot
-// owns the cell as before; otherwise the `cell-editor` slot edits it, or the built-in text input parses the text with
-// the field. Columns without `field` render and behave exactly as before.
+// owns the cell; otherwise the `cell-editor` slot edits it, or the built-in text input parses the text with
+// the field. Columns without `field` render and behave as plain columns.
 type CellEditorState = {
   rowId: string; columnId: string; before: FieldValue; draft: FieldValue; validation: FieldCheck; source: ViewTargetSource
 }
@@ -1062,7 +1062,7 @@ const shownRows = computed(() => {
   })
 })
 
-// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as before.
+// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as a plain bar.
 type BarOverlay = {
   description?: string
   late: boolean
@@ -1357,7 +1357,7 @@ const baselineText = computed<BaselineTextOptions>(() => ({
 type ShownBaseline = { key: string; className: string; style: Record<string, string>; title: string; set?: string }
 /**
  * The baseline strips of a row inside the visible time window. With only `TimelineBar.baseline` (no named sets and no
- * `baselineIds`) each is drawn exactly as before; otherwise one strip per selected set, with its slot class, set ID and
+ * `baselineIds`) each is drawn as a single baseline strip; otherwise one strip per selected set, with its slot class, set ID and
  * variance title.
  */
 function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
