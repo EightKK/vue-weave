@@ -91,7 +91,9 @@ Versions follow [Semantic Versioning](https://semver.org/). From 1.0.0, breaking
 
 A maintainer publishes a GitHub Release. The dedicated npm workflow uses npm Trusted Publishing (OIDC) to publish the same verified tarball for stable releases.
 
-Set up the [npm trusted publisher](https://docs.npmjs.com/trusted-publishers/) once in the settings for `@eightkk/vue-weave`. Select GitHub Actions and use account `EightKK`, repository `vue-weave`, workflow filename `publish-npm.yml`, and environment `npm-publish`. Allow direct publishing (`npm publish`). The workflow uses a GitHub-hosted runner and needs no npm token.
+Set up the [npm trusted publisher](https://docs.npmjs.com/trusted-publishers/) once in the settings for `@eightkk/vue-weave`. Select GitHub Actions and use account `EightKK`, repository `vue-weave`, workflow filename `publish-npm.yml`, and environment `npm-publish`. Allow direct publishing (`npm publish`). The workflow uses a GitHub-hosted runner and needs no npm token. Trusted publishing needs npm 11.5.1 or later; the workflow stops before downloading anything if the runner's npm is older.
+
+Also set the repository's **Settings > Pages > Build and deployment > Source** to **GitHub Actions** once, so the Pages workflow can deploy the demo. GitHub Pages requires a public repository on the Free plan.
 
 1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. In `README.md` and `README.ja.md`, update the tarball name in the install instructions and the `v<version>` tag in the absolute image and document URLs (npm shows the README without the repository, so those links point at the release tag). Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
@@ -99,7 +101,9 @@ Set up the [npm trusted publisher](https://docs.npmjs.com/trusted-publishers/) o
 4. Run `npm run prepare:release` (below) to produce the verified tarball and offline demo under `artifacts/release/<version>/`.
 5. Create and push the `v<version>` tag on the checked revision from `main`. The tagged revision must contain the npm workflow.
 6. Draft the GitHub Release with the changelog entry as its notes. Attach `eightkk-vue-weave-<version>.tgz`, `eightkk-vue-weave-<version>-source-demo.tar.gz`, and `SHA256SUMS` before publishing the Release.
-7. Check the **Publish to npm** run in Actions. It checks the tarball checksum and package version before publication, then compares the registry's integrity with the attached tarball. Rerun a failed job after fixing its cause. If npm already holds the same bytes, the rerun succeeds without uploading again. If npm holds different bytes, investigate and release a new version.
+7. Check the **Publish to npm** run in Actions. It checks the tarball checksum and package version before publication, then waits up to about 90 seconds for the registry to list the version and compares its integrity with the attached tarball. Rerun a failed job after fixing its cause. If npm already holds the same bytes, the rerun succeeds without uploading again. If npm holds different bytes, investigate and release a new version.
+
+The workflow publishes every stable release with the `latest` dist-tag. After a patch release for an older release line (for example 1.0.4 after 1.1.0), move `latest` back to the newest version with `npm dist-tag add @eightkk/vue-weave@<newest-version> latest`.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 

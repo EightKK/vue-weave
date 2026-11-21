@@ -49,7 +49,7 @@ Run `npm run check` before you consider a change done. Also run the browser test
 - `src/composables/`: `useEditHistory.ts`, `useEditTransaction.ts`, `useLinkedSelection.ts`, `useAsyncGraphLayout.ts`, `useTimelineView.ts` and `useWindowedData.ts`, which wire core state to Vue.
 - `src/styles/style.css` is the only stylesheet. The build emits it as `dist/style.css`.
 - `src/index.ts` is the Vue entry: the components, the composables and all of core. It gives the generic SFCs their public types (`NetworkGraphComponent`, `GanttChartComponent`).
-- `scripts/`: `serve.mjs` (serves `preview/`; `--build-if-stale` rebuilds through `demo-build.mjs` first), `finalize-declarations.mjs` (end of `build`; rewrites the entry declarations and deletes every `dist/types` file not reachable from the two public entries, found by `declaration-graph.mjs`), `check-package.mjs` (`test:package`; also fails if the tarball holds an unreachable declaration) and `prepare-release.mjs` (`prepare:release`).
+- `scripts/`: `serve.mjs` (serves `preview/`; `--build-if-stale` rebuilds through `demo-build.mjs` first), `finalize-declarations.mjs` (end of `build`; rewrites the entry declarations and deletes every `dist/types` file not reachable from the two public entries, found by `declaration-graph.mjs`), `check-package.mjs` (`test:package`; also fails if the tarball holds an unreachable declaration), `prepare-release.mjs` (`prepare:release`) and `publish-release.mjs` (run only by the npm workflow; `test/publish-release.test.mjs` covers it with fake GitHub, npm and registry calls).
 - `examples/`: the demo app and the dev server root. `demos.ts` lists every demo, `components/` holds shared demo components, `showcase/` the design gallery.
 - `test/*.test.mjs`: `node:test` core and SSR tests; `test/helpers/` holds their shared builders (not tests). `test/browser/*.spec.ts`: Playwright specs by area, with shared fixtures and helpers in `test/browser/support.ts` and fixture pages in `test/browser/fixtures/`. `test/types/`: type-level tests that `npm run typecheck` checks.
 - `docs/`: API contracts, integration, architecture and scheduling. It is included in the npm package.
@@ -105,7 +105,7 @@ Ask first before:
 - Adding a dependency. The package has no runtime dependencies. Vue is a peer dependency and is kept out of the bundle.
 - Making breaking changes to public types, props, events or default behavior.
 - Changing the package name or `version`, or the `exports` and `files` fields in `package.json`.
-- Editing `.github/workflows/ci.yml`.
+- Editing `.github/workflows/ci.yml`, `.github/workflows/pages.yml`, `.github/workflows/publish-npm.yml` or `scripts/publish-release.mjs`, or adding another workflow step that publishes, deploys or uses `id-token: write`.
 
 Never:
 
