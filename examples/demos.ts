@@ -10,6 +10,7 @@ import QuantityFlowDemo from './QuantityFlowDemo.vue'
 import ResourcePlanningDemo from './ResourcePlanningDemo.vue'
 import PersistenceDemo from './PersistenceDemo.vue'
 import LargePlanDemo from './LargePlanDemo.vue'
+import EarnedValueDemo from './EarnedValueDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
 import SchemaShowcase from './showcase/SchemaShowcase.vue'
 import OrgChartShowcase from './showcase/OrgChartShowcase.vue'
@@ -53,6 +54,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'resource-planning', label: 'Resource planning', group: 'standalone', component: ResourcePlanningDemo },
   { id: 'persistence', label: 'Saved editing', group: 'standalone', component: PersistenceDemo },
   { id: 'large-plan', label: 'Large plan', group: 'standalone', component: LargePlanDemo },
+  { id: 'earned-value', label: 'Earned value', group: 'standalone', component: EarnedValueDemo },
   { id: 'workflow', label: 'Workflow builder', group: 'gallery', component: WorkflowShowcase },
   { id: 'schema', label: 'Database schema', group: 'gallery', component: SchemaShowcase },
   { id: 'org', label: 'Org chart', group: 'gallery', component: OrgChartShowcase },

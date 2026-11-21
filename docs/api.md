@@ -90,6 +90,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Row trees and summaries](#row-trees-and-summaries)
   - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
   - [Recorded actuals](#recorded-actuals)
+  - [Earned value management](#earned-value-management)
   - [Interchange exports](#interchange-exports)
   - [Microsoft Project import](#microsoft-project-import)
   - [iCalendar import](#icalendar-import)
@@ -1421,6 +1422,56 @@ An `ActualsDiagnostic` has the shape of a `PlanningDiagnostic` (`id`, `code`, `s
 | `baselineId` | `timelineBaselineId`: the plan becomes the bar's `baseline`. Another ID adds a named `baselines` entry; `false` adds none |
 
 Related exported types: `RescheduleFromActualsFields`.
+
+### Earned value management
+
+`computeEarnedValue(tasks, options)` calculates earned value management (EVM) figures for a plan at a status date. It does not schedule anything: pass each task's budget and baseline dates, for example from a `scheduleTasks` result or a `TimelineBar` baseline, and its progress and cost so far. See [Earned value management](scheduling.md#earned-value-management) for the formulas and assumptions.
+
+`EarnedValueTask`:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Task ID; an invalid or duplicate ID throws an Error (`Invalid task ID: …`, `Duplicate task ID: …`) |
+| `budget` | Budget at completion (BAC), a finite number ≥ 0 in any currency or effort unit |
+| `start`, `end` | Planned (baseline) dates, half-open `[start, end)`, finite with `end ≥ start`; `end === start` is a milestone |
+| `progress` | Optional completed share at the status date, 0 to 1 like `TimelineBar.progress`. Default: the last `history` record's progress, else 0 |
+| `actualCost` | Optional actual cost (AC) up to the status date, finite and ≥ 0. Default: the last `history` record's cost, else 0 |
+| `calendarId` | Optional calendar of `options.calendars`; planned value then accrues over its working time only |
+| `history` | Optional `EarnedValueRecord[]` (`{ time, progress, actualCost? }`) before the status date, by strictly increasing `time`, for the EV and AC curves. A record without `actualCost` keeps the previous cost |
+
+`EarnedValueOptions`:
+
+| Option | Meaning |
+| --- | --- |
+| `statusDate` | Required finite time. PV counts the planned work in `[start, statusDate)` |
+| `calendars`, `defaultCalendarId` | `WorkCalendar[]` as for `scheduleTasks` (only `id` and `periods` are read; periods need finite endpoints and positive length, in any unit) and the calendar of tasks without `calendarId`. Without a calendar, PV accrues linearly over elapsed time |
+| `eacMethod` | `EarnedValueEacMethod`: `'cpi'` (default), `'cpi-spi'` or `'budget'` |
+| `series` | `EarnedValueSeriesOptions` `{ step, start?, end? }`: calculate the cumulative series every `step` from `start` (default: the earliest planned start) to `end` (default: the latest planned end or the status date). At most `maxEarnedValuePoints` (100,000) points |
+
+`EarnedValueResult` has `statusDate`, `eacMethod`, `tasks` (an `EarnedValueTaskResult` with `id` per task, in input order), `totals` and `series`. Each task and the totals are `EarnedValueMetrics`:
+
+| Field | Formula | Undefined when |
+| --- | --- | --- |
+| `bac` | `budget` | |
+| `pv` | `bac ×` planned share before the status date | |
+| `ev` | `progress × bac` | |
+| `ac` | `actualCost` | |
+| `sv`, `cv` | `ev − pv`, `ev − ac` | |
+| `spi` | `ev / pv` | `pv` is 0 |
+| `cpi` | `ev / ac` | `ac` is 0 |
+| `etc` | `(bac − ev) / index`; 0 when `ev = bac`. The index is `cpi` (`'cpi'`), `cpi × spi` (`'cpi-spi'`) or 1 (`'budget'`), where an undefined CPI or SPI counts as 1 | work remains and the index is 0 |
+| `eac` | `ac + etc` | `etc` is undefined |
+| `vac` | `bac − eac` | `eac` is undefined |
+| `tcpi` | `(bac − ev) / (bac − ac)` | `bac − ac ≤ 0` (the budget is spent) |
+| `percentComplete` | `ev / bac` | `bac` is 0 |
+
+An undefined ratio is left out of the object; no field is ever NaN or Infinity. `totals` is `rollupEarnedValue(tasks, { eacMethod })`. Each `EarnedValuePoint` of `series` has `time` and `pv`, and, at points up to the status date, `ev` and `ac`; the status date is always a point inside the series range.
+
+`rollupEarnedValue(items, options?)` sums `bac`, `pv`, `ev` and `ac` of any `EarnedValueAmounts[]` (such as some task results) and derives the indicators from the sums, for a summary row or any group. An empty list gives zeros. Values that are not finite numbers ≥ 0 throw a RangeError (`ev of earned value item 0 must be a finite number ≥ 0 (got -1)`).
+
+Errors of `computeEarnedValue`: RangeError for `statusDate must be a finite number (got …)`, `Budget of task <id> must be a finite number ≥ 0 (got …)`, `Planned dates of task <id> must be finite with end ≥ start (got …)`, `Progress must be between zero and one: <id>` (with ` (history)` for a record), `Actual cost must be a finite number ≥ 0: <id> (got …)`, `History times of task <id> must be finite, strictly increasing and not after the status date (got …)`, `Working periods must have finite endpoints and positive length (calendar <id>)`, `series.step must be a finite number > 0 (got …)`, `series.start`/`series.end` that are not finite or end before the start, and a series with too many points; Error for tasks that are not an array, missing options, an invalid or duplicate task or calendar ID, `Unknown calendar: <id>` (with ` (task <id>)` for a task's calendar), `History must be an array: <id>`, `Invalid history record: <id>` and `Unknown EAC method: …`. The arguments are not modified.
+
+GanttChart needs no new prop to show EVM figures: return them from `TimelineColumn.value(row)`, using `rollupEarnedValue` over a summary row's tasks, and pass the status date as `statusDate`. Related exported types: `EarnedValueTask`, `EarnedValueRecord`, `EarnedValueOptions`, `EarnedValueSeriesOptions`, `EarnedValueEacMethod`, `EarnedValueAmounts`, `EarnedValueMetrics`, `EarnedValueTaskResult`, `EarnedValuePoint`, `EarnedValueResult`.
 
 ### Interchange exports
 
