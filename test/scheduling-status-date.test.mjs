@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { rescheduleFromStatusDate, scheduleTasks } from 'vue-weave/core'
+import { rescheduleFromStatusDate, scheduleTasks } from '@eightkk/vue-weave/core'
 
 const plan = {
   range: { start: 0, end: 100 },

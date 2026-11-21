@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { timelineCsvTable, toCsv, toICalendar, toMsProjectXml } from 'vue-weave/core'
+import { timelineCsvTable, toCsv, toICalendar, toMsProjectXml } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 

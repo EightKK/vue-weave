@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cullGraphElements, graphLayoutBounds, graphPathBounds, layoutLayeredGraph, renderGraphSvg } from 'vue-weave/core'
+import { cullGraphElements, graphLayoutBounds, graphPathBounds, layoutLayeredGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
 
 const tolerance = 1e-9
 const steps = 2000

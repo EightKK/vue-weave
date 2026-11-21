@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { h } from 'vue'
-import { graphDeletion, removeGraphElements } from 'vue-weave/core'
-import { NetworkGraph, graphDeletion as rootGraphDeletion } from 'vue-weave'
+import { graphDeletion, removeGraphElements } from '@eightkk/vue-weave/core'
+import { NetworkGraph, graphDeletion as rootGraphDeletion } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [

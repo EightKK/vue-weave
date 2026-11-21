@@ -4,8 +4,8 @@ import { nextTick, ref } from 'vue'
 import {
   buildViewBindingIndex, collapseGraphGroups, resolveCollapsedTargets, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
   traverseGraph,
-} from 'vue-weave/core'
-import { revealLinkedTarget, useLinkedSelection } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { revealLinkedTarget, useLinkedSelection } from '@eightkk/vue-weave'
 
 const task = id => ({ kind: 'task', id })
 const node = id => ({ view: 'graph', kind: 'node', id })

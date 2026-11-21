@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   calculateResourceLoad, collectScheduleReasons, levelResources, scheduleTasks, toPlanningDiagnostics,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 import { dates, link, task } from './helpers/builders.mjs'
 
 const on = (resourceId, ...ids) => ids.map(taskId => ({ resourceId, taskId }))

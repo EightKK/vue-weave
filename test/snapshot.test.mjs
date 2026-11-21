@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
   parseWeaveSnapshot, projectResourceTimeline, restoreWeaveSnapshot, scheduleTasks, serializeWeaveSnapshot, WeaveSnapshotError,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const fixture = name => readFileSync(new URL('./fixtures/snapshots/v1/' + name + '.json', import.meta.url), 'utf8')
 const dateCodec = {

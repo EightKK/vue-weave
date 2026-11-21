@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { useEditHistory, useEditTransaction } from 'vue-weave'
+import { useEditHistory, useEditTransaction } from '@eightkk/vue-weave'
 
 function deferred() {
   let resolve, reject

@@ -110,14 +110,16 @@ const result = await runReleaseTransaction({
     const [packed] = JSON.parse(npm(['pack', '--dry-run', '--ignore-scripts', '--json'], true))
     assert.equal(packed.name, manifest.name)
     assert.equal(packed.version, manifest.version)
-    assert.equal(packed.filename, `${manifest.name}-${manifest.version}.tgz`)
+    // npm names the tarball of a scoped package without the `@` and with `-` for the `/` (`@scope/name` → `scope-name`).
+    const fileBase = manifest.name.replace(/^@/, '').replace('/', '-')
+    assert.equal(packed.filename, `${fileBase}-${manifest.version}.tgz`)
     assert.deepEqual(await readdir(set), [packed.filename], 'Unexpected files after the package check')
     const tarballData = await readFile(join(set, packed.filename))
     assert.equal('sha512-' + createHash('sha512').update(tarballData).digest('base64'), packed.integrity, 'Verified tarball differs from the current package inventory')
     assert.deepEqual(await inventory(root, sourcePaths), before, 'Source changed during release verification')
 
     const sourceFiles = await inventory(root, [...sourcePaths, 'preview'])
-    const archiveName = `${manifest.name}-${manifest.version}-source-demo.tar.gz`
+    const archiveName = `${fileBase}-${manifest.version}-source-demo.tar.gz`
     const archive = join(set, archiveName)
     const list = join(work, 'files.txt')
     await writeFile(list, sourceFiles.map(file => file.path).join('\n') + '\n')

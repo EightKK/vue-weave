@@ -30,14 +30,14 @@ Run `npm run check` before you consider a change done. Also run the browser test
 
 ## Gotchas
 
-- Tests import the package by its own name (`vue-weave`, `vue-weave/core`). The `package.json` `exports` map resolves those names to `dist/`. If you run `node --test` without a fresh `npm run build`, the tests run against stale output. `npm test` runs the build for you.
+- Tests import the package by its own name (`@eightkk/vue-weave`, `@eightkk/vue-weave/core`). The `package.json` `exports` map resolves those names to `dist/`. If you run `node --test` without a fresh `npm run build`, the tests run against stale output. `npm test` runs the build for you.
 - `test:e2e` doesn't build anything. It serves the existing `preview/` directory on `127.0.0.1:4173` through `scripts/serve.mjs`; regression fixtures also load the public entries from `dist/`. After a source change, run `npm run build` and `npm run build:demo` first, or the browser tests run old code. `npm run check` builds both. Port 4173 must be free; the specs share that one static server and run on two workers (`workers: 2`, whole files in parallel). Tests must not depend on each other, on run order or on server state, and must not write the same file as another spec. Install the browser once with `npx playwright install chromium`. If the `CHROMIUM_PATH` environment variable is set, `playwright.config.ts` launches that executable instead of Playwright's own browser, with `--no-sandbox --no-zygote --disable-gpu`; otherwise Playwright resolves its installed Chromium.
 - `dist/` and `preview/` are generated and gitignored. Never edit them by hand. A prebuilt demo archive can include `preview/` so that `Start.cmd` works offline; a GitHub source ZIP requires a demo build. To update it, run `npm run build:demo`. That build writes `preview/demo-build.json`, a hash of the inputs in `demoInputs` (`scripts/demo-build.mjs`); `Start.cmd` rebuilds (and runs `npm ci` if needed) when the hash no longer matches. If the demo starts reading a file outside those inputs, add it to `demoInputs`.
 - Browser tests find elements by role and accessible name, for example `Split · plan 09:00–11:00`. These changes can break them: labels, `aria-*` attributes, the default `formatTime`, and demo data in `examples/`. Update the matching spec in `test/browser/` in the same change.
 
 ## Project layout
 
-- `src/core/`: pure TypeScript, one file per area. `src/core/index.ts` exports the public parts as `vue-weave/core`.
+- `src/core/`: pure TypeScript, one file per area. `src/core/index.ts` exports the public parts as `@eightkk/vue-weave/core`.
   - Graph layout and routing: `graph.ts` (indexing, layered layout, ports), `graphLayouts.ts`, `graphForce.ts`, `graphSwimlanes.ts`, `graphFlow.ts`, `graphIncremental.ts`, `graphRouting.ts`, `graphObstacleRouting.ts`, `graphGeometry.ts` (route checks for `routingPolicy: 'preserve'`), `graphCrossings.ts`.
   - Graph algorithms and editing: `graphAlgorithms.ts`, `graphAnalysis.ts`, `graphTraversal.ts`, `graphCollapse.ts`, `graphEditing.ts`, `graphPortRules.ts`, `graphSnapping.ts`, `graphLasso.ts`, `graphView.ts`, `graphExpansion.ts`, `graphLayoutRequests.ts` (asynchronous layout requests).
   - Timeline: `timeline.ts` (time scales, interval editing), `workingTimeScale.ts`, `rowHierarchy.ts`, `calendarFormat.ts`, `fieldEditing.ts`, `timelineView.ts`.

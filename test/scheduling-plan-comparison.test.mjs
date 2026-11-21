@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   buildViewBindingIndex, calculateResourceLoad, comparePlans, levelResources, planBaselines, planComparisonTargets, scheduleTasks,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const range = { start: 0, end: 100 }
 const link = (from, to, type = 'FS') => ({ id: from + '-' + to, from, to, type })

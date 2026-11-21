@@ -4,8 +4,8 @@ import { h } from 'vue'
 import {
   applyTimelineConstraintEdit, createTimeScale, defaultSvgExportTheme, renderTimelineSvg, scheduleTasks, timelineConstraintKinds,
   timelineConstraintViolated, timelineConstraints, toMsProjectXml, validateTimelineData,
-} from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

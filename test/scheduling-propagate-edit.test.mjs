@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { propagateEdit, scheduleTasks } from 'vue-weave/core'
+import { propagateEdit, scheduleTasks } from '@eightkk/vue-weave/core'
 
 // The plan of the scheduling guide: cut 0–4, inspection 5–7 after the break at 4, other 2–4.
 const plan = {

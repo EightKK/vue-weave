@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { dependencyEndsForType, dependencyTimes, dependencyTypeForEnds, intersectsWindow, moveTimeRanges } from 'vue-weave/core'
+import { dependencyEndsForType, dependencyTimes, dependencyTypeForEnds, intersectsWindow, moveTimeRanges } from '@eightkk/vue-weave/core'
 
 test('dependency types derive from joined bar ends and round-trip', () => {
   assert.equal(dependencyTypeForEnds('finish', 'start'), 'FS')

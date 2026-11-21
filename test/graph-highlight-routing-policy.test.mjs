@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { layoutLayeredGraph, renderGraphSvg } from 'vue-weave/core'
-import { NetworkGraph } from 'vue-weave'
+import { layoutLayeredGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
+import { NetworkGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = [

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import * as core from 'vue-weave/core'
+import * as core from '@eightkk/vue-weave/core'
 import { sparseLink as link, task } from './helpers/builders.mjs'
 import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 

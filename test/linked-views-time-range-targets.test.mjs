@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextTick, ref } from 'vue'
-import { buildViewBindingIndex, resolveTimeRangeTargets, timelineBarsInRange } from 'vue-weave/core'
-import { useLinkedSelection } from 'vue-weave'
+import { buildViewBindingIndex, resolveTimeRangeTargets, timelineBarsInRange } from '@eightkk/vue-weave/core'
+import { useLinkedSelection } from '@eightkk/vue-weave'
 
 const ids = bars => bars.map(bar => bar.id)
 const range = (start, end) => ({ start, end })

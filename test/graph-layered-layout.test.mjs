@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyGraphPositions, routeGraphPorts, graphNeighborhood, indexGraph, layoutLayeredGraph } from 'vue-weave/core'
+import { applyGraphPositions, routeGraphPorts, graphNeighborhood, indexGraph, layoutLayeredGraph } from '@eightkk/vue-weave/core'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id }))
 const edges = (...pairs) => pairs.map(([from, to], i) => ({ id: String(i), from, to }))

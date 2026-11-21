@@ -6,14 +6,14 @@
     <title>Graph shapes and edge decorations fixture</title>
     <link rel="stylesheet" href="/graph-styles-test/style.css">
     <script type="importmap">
-      { "imports": { "vue": "/graph-styles-test/vue.js", "vue-weave": "/graph-styles-test/index.js" } }
+      { "imports": { "vue": "/graph-styles-test/vue.js", "@eightkk/vue-weave": "/graph-styles-test/index.js" } }
     </script>
   </head>
   <body>
     <div id="app"></div>
     <script type="module">
       import { createApp, h, ref, shallowRef } from 'vue'
-      import { NetworkGraph } from 'vue-weave'
+      import { NetworkGraph } from '@eightkk/vue-weave'
 
       // Query parameters: theme=dark wraps the graph in vw-theme-dark, style sets edgeStyle.
       const query = new URLSearchParams(location.search)

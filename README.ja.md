@@ -15,7 +15,7 @@ Vue 3でネットワークグラフとガントチャートを実装するため
 ## インストール
 
 ```sh
-npm install vue-weave
+npm install @eightkk/vue-weave
 ```
 
 Vue `^3.5.0` をpeer dependencyとしています。npm 7以降では、アプリケーションにVueがまだなければパッケージと一緒にインストールされます。ES modules、TypeScriptの型定義、スタイルシート1つを提供します。
@@ -23,17 +23,17 @@ Vue `^3.5.0` をpeer dependencyとしています。npm 7以降では、アプ�
 スタイルシートは、アプリケーションのエントリファイルなどで一度だけ読み込みます。
 
 ```ts
-import 'vue-weave/style.css'
+import '@eightkk/vue-weave/style.css'
 ```
 
 Viteではこのままimportできます。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合や、CSSを扱えないビルド環境の場合は、[The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#the-stylesheet-and-typescript)を参照してください。
 
-**コアだけを使う場合（サーバー・Worker）。** `vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
+**コアだけを使う場合（サーバー・Worker）。** `@eightkk/vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install @eightkk/vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
 
-**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`vue-weave-1.0.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`eightkk-vue-weave-1.0.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./vue-weave-1.0.0.tgz
+npm install ./eightkk-vue-weave-1.0.0.tgz
 ```
 
 チェックアウトから[ローカルパッケージを作成](https://github.com/EightKK/vue-weave/blob/v1.0.0/CONTRIBUTING.md#build-a-local-package)することもできます。
@@ -45,8 +45,8 @@ npm install ./vue-weave-1.0.0.tgz
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { NetworkGraph, type NetworkNode, type GraphEdge } from 'vue-weave'
-import 'vue-weave/style.css'
+import { NetworkGraph, type NetworkNode, type GraphEdge } from '@eightkk/vue-weave'
+import '@eightkk/vue-weave/style.css'
 
 const selected = ref('design')
 const nodes: NetworkNode[] = [
@@ -88,8 +88,8 @@ const edges: GraphEdge[] = [
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { GanttChart, type TimelineBar, type TimelineEdit } from 'vue-weave'
-import 'vue-weave/style.css'
+import { GanttChart, type TimelineBar, type TimelineEdit } from '@eightkk/vue-weave'
+import '@eightkk/vue-weave/style.css'
 
 const start = Date.parse('2026-11-09T08:00:00Z')
 const hour = 3_600_000
@@ -123,7 +123,7 @@ function commit(change: TimelineEdit) {
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+import { NetworkGraph, GanttChart, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from '@eightkk/vue-weave'
 
 // nodes、edges、rows、bars、range は上の例と同じです。ここではノードIDとバーIDがタスクIDです。
 const bindings: ViewBinding[] = bars.value.flatMap(bar => [
@@ -204,7 +204,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
 
-### ヘッドレスコア（`vue-weave/core`）
+### ヘッドレスコア（`@eightkk/vue-weave/core`）
 
 - **グラフのアルゴリズムと指標：** `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`、連結成分、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）と、その結果をグループに変換する `graphCommunityGroups`。
 - **日程計算：** `buildWorkPeriods` で作るカレンダー（IANAタイムゾーンを含む）上での `scheduleTasks`。最遅開始、手動・非アクティブ・サマリーのタスク、制約、中断区間、循環や実行不能の診断に対応します。`scheduleTasks(input, { explain: true })` は各タスクの開始が決まった理由をトレースし、`toPlanningDiagnostics` は問題を一覧にします。
@@ -235,7 +235,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 - **バージョン1.0です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.0.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/api.md#compatibility-and-versioning)に記載しています。
 - **Vue：** 3.x の3.5以降（peer dependency `^3.5.0`）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
-- **Node.js：** ヘッドレスの `vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
+- **Node.js：** ヘッドレスの `@eightkk/vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
 - **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
 - **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
 

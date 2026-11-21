@@ -4,8 +4,8 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import {
   createTimeScale, defaultSvgExportTheme, formatDependencyLag, propagateEdit, renderTimelineSvg, scheduleTasks, validateTimelineData,
-} from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000
@@ -129,7 +129,7 @@ test('lag labels are drawn after the marker, now and status-date lines, and outp
 
 test('GanttChart stacks the lag label layer above the now line in the stylesheet', async () => {
   const { readFile } = await import('node:fs/promises')
-  const css = await readFile(new URL(import.meta.resolve('vue-weave/style.css')), 'utf8')
+  const css = await readFile(new URL(import.meta.resolve('@eightkk/vue-weave/style.css')), 'utf8')
   // The first rule whose whole selector is `selector`, in the (possibly minified) stylesheet.
   const zIndex = selector => Number(new RegExp(`(?:^|[}\\n])\\s*${selector.replace(/[.]/g, '\\.')}\\s*\\{[^}]*z-index:\\s*(\\d+)`).exec(css)?.[1])
   assert.equal(zIndex('.vw-gantt-now'), 3)

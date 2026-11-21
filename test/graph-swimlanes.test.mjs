@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { graphPathBounds, graphSwimlaneAt, layoutSwimlaneGraph, renderGraphSvg, routeGraphEdges } from 'vue-weave/core'
-import { NetworkGraph, layoutSwimlaneGraph as rootLayoutSwimlaneGraph } from 'vue-weave'
+import { graphPathBounds, graphSwimlaneAt, layoutSwimlaneGraph, renderGraphSvg, routeGraphEdges } from '@eightkk/vue-weave/core'
+import { NetworkGraph, layoutSwimlaneGraph as rootLayoutSwimlaneGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const directions = ['LR', 'RL', 'TB', 'BT']

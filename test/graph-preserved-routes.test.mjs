@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   applyGraphPositions, applyGraphSizes, completeGraphLayout, graphPathEndpoints, isGraphRouteValid, layoutLayeredGraph, routeGraphEdges, routeGraphPorts,
-} from 'vue-weave/core'
-import { completeGraphLayout as rootComplete, isGraphRouteValid as rootValid } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { completeGraphLayout as rootComplete, isGraphRouteValid as rootValid } from '@eightkk/vue-weave'
 import { byId } from './helpers/builders.mjs'
 
 const nodes = [

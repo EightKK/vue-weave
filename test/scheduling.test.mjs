@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildWorkPeriods, scheduleTasks, calculateResourceLoad } from 'vue-weave/core'
+import { buildWorkPeriods, scheduleTasks, calculateResourceLoad } from '@eightkk/vue-weave/core'
 import { link, task } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 40 }

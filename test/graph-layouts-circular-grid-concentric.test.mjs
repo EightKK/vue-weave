@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { layoutCircularGraph, layoutGridGraph, layoutConcentricGraph } from 'vue-weave/core'
+import { layoutCircularGraph, layoutGridGraph, layoutConcentricGraph } from '@eightkk/vue-weave/core'
 import { centre } from './helpers/builders.mjs'
 
 const make = n => Array.from({ length: n }, (_, i) => ({ id: 'n' + i }))

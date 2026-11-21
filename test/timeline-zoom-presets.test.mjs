@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { GanttChart } from 'vue-weave'
-import { calendarBands, calendarZoomPresets, intlTimeFormatter } from 'vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
+import { calendarBands, calendarZoomPresets, intlTimeFormatter } from '@eightkk/vue-weave/core'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const minute = 60_000

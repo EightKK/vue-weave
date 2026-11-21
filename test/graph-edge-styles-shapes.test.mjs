@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { h } from 'vue'
 import {
   defaultSvgExportTheme, graphPathEndpoints, layoutLayeredGraph, renderGraphSvg, routeGraphEdges, routeGraphPorts,
-} from 'vue-weave/core'
-import { NetworkGraph } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { NetworkGraph } from '@eightkk/vue-weave'
 import { byId, centre, deepFreeze as freeze, onBorder, polyline } from './helpers/builders.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 

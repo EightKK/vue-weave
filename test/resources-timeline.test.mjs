@@ -4,7 +4,7 @@ import {
   calculateResourceLoad, createResourceTimelineProjector, levelResources, projectResourceTimeline, proposeResourceAssignment,
   resolveResourceTimelineEdit, resolveResourceTimelineEdits, resourceTimelineBarId, resourceTimelineCascade, scheduleTasks,
   validateTimelineData,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const range = { start: 0, end: 10 }
 const id = (taskId, resourceId) => JSON.stringify([taskId, resourceId])

@@ -5,7 +5,7 @@ import {
   levelResources, mergeGraphExpansionPage, parseWeaveSnapshot, planBaselines, projectResourceTimeline, propagateEdit, renderTimelineSvg, rescheduleFromActuals,
   rescheduleFromStatusDate, resolveWindowedRequest, scheduleTasks, scheduleToGraph, serializeWeaveSnapshot, setWindowedView,
   timelineCsvTable, timelineFromICalendar, timelineFromMsProject, timelineWbsCodes, toICalendar, toMsProjectXml, validateTimelineData,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 // One ID rule for the planning, timeline and data functions: an ID is a non-empty string. An invalid ID throws
 // `Invalid <kind> ID: <value>` and a repeated one `Duplicate <kind> ID: <id>`, both as Error.

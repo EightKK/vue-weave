@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { collapseGraphGroups } from 'vue-weave/core'
-import { collapseGraphGroups as rootCollapse } from 'vue-weave'
+import { collapseGraphGroups } from '@eightkk/vue-weave/core'
+import { collapseGraphGroups as rootCollapse } from '@eightkk/vue-weave'
 import { deepFreeze as freeze } from './helpers/builders.mjs'
 
 const nodes = [

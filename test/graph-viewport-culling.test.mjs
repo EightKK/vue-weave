@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   layoutLayeredGraph, cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphRectsIntersect, graphViewportRect,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 import { h } from 'vue'
-import { NetworkGraph } from 'vue-weave'
+import { NetworkGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const nodes = (...ids) => ids.map(id => ({ id, label: id }))

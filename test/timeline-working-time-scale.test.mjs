@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { h } from 'vue'
-import { buildWorkPeriods, createTimeScale, createWorkingTimeScale, defaultNonWorkingRatio, invertWorkPeriods } from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+import { buildWorkPeriods, createTimeScale, createWorkingTimeScale, defaultNonWorkingRatio, invertWorkPeriods } from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

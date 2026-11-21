@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatFieldValue, parseFieldValue } from 'vue-weave/core'
+import { formatFieldValue, parseFieldValue } from '@eightkk/vue-weave/core'
 
 /** Format a value, parse the text back and return both. */
 function roundTrip(spec, value) {

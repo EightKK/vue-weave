@@ -1,6 +1,6 @@
 # Scheduling and equipment load
 
-The scheduling functions are available from `vue-weave/core` and the Vue package entry. The Gantt chart still renders the intervals supplied by its parent. Call the solver when an edit proposes a new constraint, then publish the accepted bars, links, and load data together.
+The scheduling functions are available from `@eightkk/vue-weave/core` and the Vue package entry. The Gantt chart still renders the intervals supplied by its parent. Call the solver when an edit proposes a new constraint, then publish the accepted bars, links, and load data together.
 
 ## Calendar contract
 
@@ -11,7 +11,7 @@ Use `buildWorkPeriods(range, { weekly, utcOffsetMinutes, exceptions })` to expan
 ## Calculate a plan
 
 ```ts
-import { scheduleTasks, calculateResourceLoad } from 'vue-weave/core'
+import { scheduleTasks, calculateResourceLoad } from '@eightkk/vue-weave/core'
 
 const range = { start: 0, end: 30 }
 const periods = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 30 }]
@@ -57,7 +57,7 @@ In this example cutting runs from 0 to 4. Inspection starts at 5 after the break
 `scheduledBarFields(task)` turns each task of a successful result into the bar fields the chart draws: `start` and `end`, `critical`, `latestEnd` for the float line and, when the work is split by breaks, closed dates or pauses, `segments` from the task's `work`. Spread it into a `TimelineBar` and add the fields the scheduler does not know, such as the row, label, tone, `editable` and an optional display `deadline`. `invertWorkPeriods(periods, range)` returns the time between the calendar's work periods, which the chart shades through `nonWorkingPeriods`.
 
 ```ts
-import { buildWorkPeriods, invertWorkPeriods, scheduleTasks, scheduledBarFields, type TimelineBar } from 'vue-weave/core'
+import { buildWorkPeriods, invertWorkPeriods, scheduleTasks, scheduledBarFields, type TimelineBar } from '@eightkk/vue-weave/core'
 
 const periods = buildWorkPeriods(range, { utcOffsetMinutes: 540, weekly })
 const plan = scheduleTasks({ range, quantum: 60_000, calendars: [{ id: 'plant', periods }], defaultCalendarId: 'plant', tasks, dependencies })
@@ -82,7 +82,7 @@ Critical bars get an outline, `latestEnd` draws a float line from the end of the
 ```ts
 import {
   scheduleTasks, scheduledBarFields, timelineConstraints, type ScheduleTask, type TimelineConstraintEdit,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const bars = computed(() => plan.value.tasks.map(task => ({
   id: task.id, rowId: task.id, label: labels.get(task.id)!, editable: true,
@@ -110,7 +110,7 @@ If the bars themselves are your source of truth, apply the proposal with `applyT
 `propagateEdit(input, edit)` answers "what else moves if this task moves?". `edit` is a `ScheduleEdit` with the task `id`, a new `start` and an optional new `end`. The function schedules a copy of the plan in which the task has `fixedStart` at the new start, replacing any fixed start it had. With `end`, the task's working duration becomes the working time in `[start, end)` on its own calendar, after its pauses, so resizing a bar across a break keeps only the working hours. Every other bound of the task, every dependency, the horizon and the deadline still apply. The input is not modified.
 
 ```ts
-import { propagateEdit } from 'vue-weave/core'
+import { propagateEdit } from '@eightkk/vue-weave/core'
 
 const result = propagateEdit(input, { id: 'cut', start: 1 })
 if (result.ok) {
@@ -161,7 +161,7 @@ A started or finished task is pinned at its start with `fixedStart`: its `startN
 A kept FF or SF link that cannot be met makes the plan infeasible. When the required finish lies after the task's `finishNoLaterThan`, the deadline or the end of the horizon, the result is an `infeasible` failure for the task that names the link in `dependencyIds`, with `finishNoLaterThan`, `deadline` or `range` in `constraints`. Unstarted tasks keep every bound and dependency; an unstarted task with a `fixedStart` before the status date makes the plan infeasible, which is returned as an `infeasible` failure. The result is the `ScheduleResult` of the adjusted plan. The dependencies that no longer apply are left out of it, so they never appear in `criticalDependencyIds`. The input is not modified.
 
 ```ts
-import { rescheduleFromStatusDate } from 'vue-weave/core'
+import { rescheduleFromStatusDate } from '@eightkk/vue-weave/core'
 
 // Continuous time: a (10 units) → b (10 units); status date 15.
 const result = rescheduleFromStatusDate(input, 15, new Map([['a', 1], ['b', 0.3]]))
@@ -189,7 +189,7 @@ The status date must be finite, inside `input.range` and aligned with the quantu
 Use the progress share when only a percentage is known. Use recorded actuals when the shop floor reports when work actually ran, for example "10:10–10:40 and 11:20–12:00". The library standardises only time and quantity: it never derives remaining work from good-piece counts or shop-floor percentages. Convert those to `remainingWork` yourself, in the task's working-time units; when you omit it, the default rule above applies.
 
 ```ts
-import { actualsTimelineBars, rescheduleFromActuals } from 'vue-weave/core'
+import { actualsTimelineBars, rescheduleFromActuals } from '@eightkk/vue-weave/core'
 
 // a (4 units) → b (4 units), continuous time. a started late at 2, stopped at 3, resumed at 5 and ran until 6.
 const result = rescheduleFromActuals(input, 7, new Map([
@@ -476,7 +476,7 @@ Terminology references include [Microsoft Project dependency types](https://supp
 A resource view shows each resource as a GanttChart row and each assignment as a bar. Build it with `projectResourceTimeline` from the placed tasks, the resources and the assignments, and keep the tasks and assignments as the data you edit and save. A task on two resources has two bars but is still one task: compute the load with `calculateResourceLoad` from the scheduled tasks and the original assignments, never from the projected bars.
 
 ```ts
-import { createResourceTimelineProjector, resolveResourceTimelineEdit, scheduledBarFields } from 'vue-weave/core'
+import { createResourceTimelineProjector, resolveResourceTimelineEdit, scheduledBarFields } from '@eightkk/vue-weave/core'
 
 const project = createResourceTimelineProjector()
 const projection = project({
@@ -510,7 +510,7 @@ An unplanned task is a task without dates, not a missing task. Do not give it in
 Pass `{ explain: true }` as the second argument of `scheduleTasks` or `levelResources` to get a `trace` with the reasons for each task's dates. The calculation is the same: the reasons are recorded where the normal passes place each task, and without the option no reason is created and the result is unchanged.
 
 ```ts
-import { collectScheduleReasons, scheduleTasks, toPlanningDiagnostics } from 'vue-weave/core'
+import { collectScheduleReasons, scheduleTasks, toPlanningDiagnostics } from '@eightkk/vue-weave/core'
 
 const plan = scheduleTasks(input, { explain: true })
 if (plan.ok) {
@@ -544,7 +544,7 @@ Keep the three kinds of deadline apart:
 - **View projection**: `planComparisonTargets` turns compared tasks into the targets of the existing highlight props through your view bindings, and `planBaselines` turns the current plan into a baseline set for the candidate's bars.
 
 ```ts
-import { comparePlans, planBaselines, planComparisonTargets, scheduleTasks } from 'vue-weave/core'
+import { comparePlans, planBaselines, planComparisonTargets, scheduleTasks } from '@eightkk/vue-weave/core'
 
 const comparison = comparePlans(
   { input: currentInput, revision: acceptedVersion },

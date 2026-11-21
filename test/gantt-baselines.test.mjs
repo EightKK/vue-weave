@@ -5,8 +5,8 @@ import { renderToString } from 'vue/server-renderer'
 import {
   baselineVariance, createTimeScale, defaultSvgExportTheme, renderTimelineSvg, timelineBaseline, timelineBaselineId,
   timelineBaselineIds, timelineBaselineLimit, toMsProjectXml, validateTimelineData,
-} from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
 const hour = 3_600_000

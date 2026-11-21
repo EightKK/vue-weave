@@ -4,8 +4,8 @@ import { test } from 'node:test'
 import {
   assignmentWorkPeriods, calculateResourceLoad, levelResources, parseWeaveSnapshot, projectResourceTimeline,
   proposeResourceAssignment, renderTimelineSvg, createTimeScale, scheduleTasks, toPlanningDiagnostics,
-} from 'vue-weave/core'
-import { GanttChart } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { GanttChart } from '@eightkk/vue-weave'
 import { seededRandom } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 

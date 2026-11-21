@@ -5,8 +5,8 @@ import { renderToString } from 'vue/server-renderer'
 import {
   buildGraphLayoutRequests, collapseGraphGroups, graphLayoutFromJson, graphLayoutInputKey, graphLayoutMessageFromJson, graphLayoutMessageToJson,
   graphLayoutToJson, layoutLayeredGraph, parseGraphLayoutMessage, validateGraphLayoutResponse,
-} from 'vue-weave/core'
-import { NetworkGraph, graphLayoutWorkerAdapter, useAsyncGraphLayout } from 'vue-weave'
+} from '@eightkk/vue-weave/core'
+import { NetworkGraph, graphLayoutWorkerAdapter, useAsyncGraphLayout } from '@eightkk/vue-weave'
 
 const nodes = [
   { id: 'a', label: 'A', ports: [{ id: 'out', side: 'right' }] },

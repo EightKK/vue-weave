@@ -1,5 +1,5 @@
 {
-  "name": "vue-weave",
+  "name": "@eightkk/vue-weave",
   "version": "1.0.0",
   "description": "Composable network graphs and interactive timelines for Vue 3.",
   "type": "module",

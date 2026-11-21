@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   buildWorkPeriods, calculateResourceLoad, fromMsProjectXml, projectResourceTimeline, resourceLoadFromMsProject,
   scheduleTasks, timelineFromMsProject, toMsProjectXml, workCalendarsFromMsProject,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const day = 24 * hour

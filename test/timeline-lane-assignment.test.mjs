@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assignLanes, validateTimelineData } from 'vue-weave/core'
+import { assignLanes, validateTimelineData } from '@eightkk/vue-weave/core'
 
 const lanesOf = result => result.bars.map(bar => [bar.id, bar.lane])
 const bar = (id, start, end, extra = {}) => ({ id, rowId: 'r', label: id, start, end, ...extra })

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import {
   buildPlacementInput, calculateResourceLoad, collectScheduleReasons, levelResources, parseWeaveSnapshot, propagateEdit,
   rescheduleFromStatusDate, restoreWeaveSnapshot, scheduleTasks, scheduleToGraph, serializeWeaveSnapshot,
-} from 'vue-weave/core'
+} from '@eightkk/vue-weave/core'
 import { dates, link } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 40 }

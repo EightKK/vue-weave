@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv } from 'vue-weave/core'
+import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv } from '@eightkk/vue-weave/core'
 
 const hour = 3_600_000
 const parseTime = text => Date.parse(text)

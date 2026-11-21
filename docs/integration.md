@@ -2,17 +2,17 @@
 
 ## Node.js and TypeScript
 
-The package exports ES modules. Use `vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `vue-weave/style.css` once.
+The package exports ES modules. Use `@eightkk/vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `@eightkk/vue-weave/style.css` once.
 
 Both components are generic over their item types. Type the `data` of your items, for example `NetworkNode<MyData>[]` or `TimelineBar<MyData>[]`, and the slot props, `layout`, `columns` callbacks and export label callbacks receive that type without casts. For a template ref, use `useTemplateRef`, which vue-tsc infers from the template, or `NetworkGraphExposed` and `GanttChartExposed`; `InstanceType<typeof NetworkGraph>` keeps working with the default types. See [Typed data](api.md#typed-data).
 
-For installation, follow the [README](../README.md#install): `npm install vue-weave`, with Vue `^3.5.0` as a peer dependency.
+For installation, follow the [README](../README.md#install): `npm install @eightkk/vue-weave`, with Vue `^3.5.0` as a peer dependency.
 
 ### The stylesheet and TypeScript
 
-Load the stylesheet once in the application, usually with `import 'vue-weave/style.css'` in its entry file. The package exports it at that path (the file is `dist/style.css`). Vite and other bundlers with CSS support handle the import. In a setup without a CSS loader, add the file to your build or serve it and link it, for example by copying `node_modules/vue-weave/dist/style.css` to your static assets; in Nuxt, list it in `css` (see [Nuxt](#nuxt)).
+Load the stylesheet once in the application, usually with `import '@eightkk/vue-weave/style.css'` in its entry file. The package exports it at that path (the file is `dist/style.css`). Vite and other bundlers with CSS support handle the import. In a setup without a CSS loader, add the file to your build or serve it and link it, for example by copying `node_modules/@eightkk/vue-weave/dist/style.css` to your static assets; in Nuxt, list it in `css` (see [Nuxt](#nuxt)).
 
-The package ships no type declaration for the stylesheet. Importing the components never needs one: the declarations work with `noUncheckedSideEffectImports`. With that option enabled, TypeScript reports the side-effect import `import 'vue-weave/style.css'` unless your project declares CSS modules. Vite projects get that declaration from `vite/client` (a `/// <reference types="vite/client" />` line or `"types": ["vite/client"]` in `tsconfig.json`). Elsewhere, add one to a declaration file of your own:
+The package ships no type declaration for the stylesheet. Importing the components never needs one: the declarations work with `noUncheckedSideEffectImports`. With that option enabled, TypeScript reports the side-effect import `import '@eightkk/vue-weave/style.css'` unless your project declares CSS modules. Vite projects get that declaration from `vite/client` (a `/// <reference types="vite/client" />` line or `"types": ["vite/client"]` in `tsconfig.json`). Elsewhere, add one to a declaration file of your own:
 
 ```ts
 // src/assets.d.ts
@@ -21,7 +21,7 @@ declare module '*.css' {}
 
 ### Core only: servers and Workers
 
-`vue-weave/core` does not import Vue, the DOM or browser globals at runtime, so scheduling, layout, interchange and SVG export run in Node.js, Workers and serverless functions. The package still declares Vue as a required peer dependency (`^3.5.0`); it is not marked optional (`peerDependenciesMeta`), so `npm install vue-weave` installs Vue as well, even when you only import `vue-weave/core`. That costs disk space but no runtime work, because the core never loads it. To leave Vue out of a core-only deployment, install with `npm install vue-weave --omit=peer` and use the same flag for later installs (or `omit=peer` in the project's `.npmrc`); note that it omits every peer dependency of the project. Other package managers have their own peer dependency settings.
+`@eightkk/vue-weave/core` does not import Vue, the DOM or browser globals at runtime, so scheduling, layout, interchange and SVG export run in Node.js, Workers and serverless functions. The package still declares Vue as a required peer dependency (`^3.5.0`); it is not marked optional (`peerDependenciesMeta`), so `npm install @eightkk/vue-weave` installs Vue as well, even when you only import `@eightkk/vue-weave/core`. That costs disk space but no runtime work, because the core never loads it. To leave Vue out of a core-only deployment, install with `npm install @eightkk/vue-weave --omit=peer` and use the same flag for later installs (or `omit=peer` in the project's `.npmrc`); note that it omits every peer dependency of the project. Other package managers have their own peer dependency settings.
 
 ## Nuxt
 
@@ -30,7 +30,7 @@ Install the package as described in the [README](../README.md#install), then add
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  css: ['vue-weave/style.css'],
+  css: ['@eightkk/vue-weave/style.css'],
 })
 ```
 
@@ -38,7 +38,7 @@ Import components explicitly in a page or component.
 
 ```vue
 <script setup lang="ts">
-import { NetworkGraph, type GraphEdge, type NetworkNode } from 'vue-weave'
+import { NetworkGraph, type GraphEdge, type NetworkNode } from '@eightkk/vue-weave'
 const nodes: NetworkNode[] = [{ id: 'root', label: 'Root' }]
 const edges: GraphEdge[] = []
 </script>
@@ -396,7 +396,7 @@ For an API-backed application, retain a record version alongside the interval, c
 `useEditTransaction` keeps the accepted state and the state being saved apart, saves one transaction per document at a time and commits only what the server accepted. Give it a document ID, the state and version you loaded and an adapter:
 
 ```ts
-import { useEditTransaction, type TransactionAdapter } from 'vue-weave'
+import { useEditTransaction, type TransactionAdapter } from '@eightkk/vue-weave'
 
 const adapter: TransactionAdapter<Plan, PlanChange> = {
   validate: (plan, changes) => checkChanges(plan, changes), // synchronous: true, false or a reason
@@ -468,7 +468,7 @@ A piecewise scale can give working hours more visual space while retaining a sma
 ```vue
 <script setup lang="ts">
 import { computed } from 'vue'
-import { GanttChart, buildWorkPeriods, createWorkingTimeScale } from 'vue-weave'
+import { GanttChart, buildWorkPeriods, createWorkingTimeScale } from '@eightkk/vue-weave'
 
 const hour = 3_600_000
 const range = { start: Date.UTC(2026, 10, 9), end: Date.UTC(2026, 10, 16) }
@@ -490,7 +490,7 @@ The helper follows the contract above: `toX(range.start)` is 0, `toX(range.end)`
 - Changing the ratio or `pixelsPerUnit` moves bars on screen but never changes their times, and snapping, `minDuration` and edit proposals work on time, so they stay on the same grid. A gesture is one pointer position in pixels, so a drag over non-working time covers more time per pixel than one over working time.
 - The scale does not know the text direction. GanttChart positions bars and ticks from the inline start edge, so the same scale works with `dir="rtl"`; use `mirrorTimeScale` only for your own renderers.
 
-A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
+A fully collapsed interval is not invertible and needs a separately defined editing policy. For calendar generation and work-duration scheduling, call `buildWorkPeriods` and `scheduleTasks` from `@eightkk/vue-weave/core`, then pass accepted intervals to the chart. `buildWorkPeriods` uses a fixed UTC offset or, with `timeZone`, an IANA zone including its daylight-saving transitions. The chart does not invoke the scheduler automatically. See [Scheduling and resource load](scheduling.md).
 
 ## Reusing calculations
 
@@ -505,7 +505,7 @@ To show one plan as a graph, a Gantt chart and load rows that follow each other,
 ```vue
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { GanttChart, NetworkGraph, revealLinkedTarget, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from 'vue-weave'
+import { GanttChart, NetworkGraph, revealLinkedTarget, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from '@eightkk/vue-weave'
 
 const bindings = computed<ViewBinding[]>(() => tasks.value.flatMap(task => [
   { entity: { kind: 'task', id: task.id }, target: { view: 'graph', kind: 'node', id: task.id } },
@@ -561,7 +561,7 @@ For typed editing, give a column a `field` spec. A `time` field needs an explici
 
 ## Use ELK.js for layout
 
-The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes and each other (the opt-in `avoidNodes` prop routes orthogonal edges around node boxes, but each edge on its own). Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. vue-weave does not depend on ELK; the code below lives in your application.
+The built-in layouts (`layoutLayeredGraph`, `layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph` and `layoutForceGraph`) are synchronous, have no dependencies and cover flows, trees and organic graphs of up to a few thousand nodes. Prefer them unless you need what a full layout engine adds: node sizes that vary a lot, many ports with ordering constraints, labels placed without overlaps, compound graphs or orthogonal routes that avoid nodes and each other (the opt-in `avoidNodes` prop routes orthogonal edges around node boxes, but each edge on its own). Then an application can install [ELK.js](https://github.com/kieler/elkjs) (`npm install elkjs`) itself and turn its output into a `GraphLayout`. @eightkk/vue-weave does not depend on ELK; the code below lives in your application.
 
 ELK lays out asynchronously, and NetworkGraph's `layout` prop is synchronous. Compute the layout in the application (in a worker, with ELK's `workerUrl`, for large graphs), then pass the nodes, the edges and a `layout` function that returns the cached result together, so that the chart never sees data without matching geometry.
 
@@ -569,7 +569,7 @@ ELK lays out asynchronously, and NetworkGraph's `layout` prop is synchronous. Co
 import ELK from 'elkjs/lib/elk.bundled.js'
 import type { ElkExtendedEdge, ElkNode, ElkPoint } from 'elkjs/lib/elk-api'
 import { shallowRef, watch, type Ref } from 'vue'
-import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutFunction, type NetworkNode } from 'vue-weave'
+import { graphPortAnchor, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutFunction, type NetworkNode } from '@eightkk/vue-weave'
 
 const elk = new ELK()
 const nodeWidth = 144, nodeHeight = 58
@@ -668,7 +668,7 @@ When the graph grows (a new node, a page of a [graph expansion](#expanding-a-gra
 
 ```ts
 import { computed, shallowRef } from 'vue'
-import { useAsyncGraphLayout, type GraphLayoutRequest } from 'vue-weave'
+import { useAsyncGraphLayout, type GraphLayoutRequest } from '@eightkk/vue-weave'
 
 const shownBoxes = shallowRef(new Map()) // the boxes on display, updated when a frame is shown
 const input = computed(() => {
@@ -705,7 +705,7 @@ async function layoutWithElk(request: GraphLayoutRequest) {
 
 - Which options an engine offers differs: yFiles and similar engines take incremental hints for the added nodes and exact fixed positions, ELK layered uses the coordinates as ordering hints. An engine that cannot honour `fixedIds` should fail the request (as above) rather than silently move pinned nodes.
 - In the `shown` request of a collapsed view, `fixedIds` and `addedIds` are passed as given; IDs of members hidden in a collapsed group are not nodes of that request and are ignored.
-- Without an engine, `layoutGraphIncrementally` from `vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
+- Without an engine, `layoutGraphIncrementally` from `@eightkk/vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
 
 ## Export to SVG and PNG
 
@@ -721,7 +721,7 @@ URL.revokeObjectURL(url)
 
 The export reads the `--vw-*` colours and the font in effect on the component, so a theme applies automatically; pass `theme` to override individual colours, for example a light theme for printing from a dark UI. The default rendering is exported: slot content is not, so pass `barLabel`, `rowLabel`, `rowHeading`, `nodeLabel`, `nodeDetail` or `edgeLabel` when your slots change text. Fonts are not embedded; a viewer without the font uses a fallback.
 
-To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
+To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `@eightkk/vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
 
 ## Right-to-left languages
 
@@ -742,7 +742,7 @@ The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical pro
 Use a snapshot to persist a chart's data and saved view as JSON (see "Versioned JSON snapshots" in [api.md](api.md)).
 
 ```ts
-import { parseWeaveSnapshot, restoreWeaveSnapshot, serializeWeaveSnapshot } from 'vue-weave/core'
+import { parseWeaveSnapshot, restoreWeaveSnapshot, serializeWeaveSnapshot } from '@eightkk/vue-weave/core'
 
 // Save. Pass savedAt yourself; the same input and metadata give the same text.
 const text = serializeWeaveSnapshot({
@@ -785,7 +785,7 @@ For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (o
 ```vue
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'
-import { NetworkGraph, graphLayoutWorkerAdapter, layoutLayeredGraph, useAsyncGraphLayout } from 'vue-weave'
+import { NetworkGraph, graphLayoutWorkerAdapter, layoutLayeredGraph, useAsyncGraphLayout } from '@eightkk/vue-weave'
 
 const worker = typeof Worker === 'undefined' ? undefined : new Worker(new URL('./graphLayout.worker.ts', import.meta.url), { type: 'module' })
 const graph = useAsyncGraphLayout({
@@ -828,7 +828,7 @@ A node drag keeps updating only the dragged nodes' edges and draws the same rout
 Direct core users get the routed layout that NetworkGraph draws, and that `renderGraphSvg` should receive, by running the same steps:
 
 ```ts
-import { applyGraphPositions, applyGraphSizes, renderGraphSvg, routeGraphEdges, routeGraphPorts } from 'vue-weave/core'
+import { applyGraphPositions, applyGraphSizes, renderGraphSvg, routeGraphEdges, routeGraphPorts } from '@eightkk/vue-weave/core'
 
 const nodesById = new Map(nodes.map(node => [node.id, node]))
 const placed = applyGraphSizes(applyGraphPositions(layout, edges, positions, direction), edges, sizes, direction)
@@ -846,7 +846,7 @@ GanttChart renders only the rows and the time window on screen, and NetworkGraph
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
-import { GanttChart, useWindowedData, type TimelineBar, type TimelineDependency, type TimelineVisibleWindow } from 'vue-weave'
+import { GanttChart, useWindowedData, type TimelineBar, type TimelineDependency, type TimelineVisibleWindow } from '@eightkk/vue-weave'
 
 const day = 86_400_000
 // `rows` (the whole row skeleton), `range` (the whole plan) and `planVersion` come from your application.
@@ -893,7 +893,7 @@ For a graph, load the neighbourhood of the selected nodes and grow it on request
 
 ```ts
 import { shallowRef, computed } from 'vue'
-import { beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, mergeGraphExpansionPage } from 'vue-weave'
+import { beginGraphExpansion, cancelGraphExpansion, createGraphExpansion, graphExpansionView, mergeGraphExpansionPage } from '@eightkk/vue-weave'
 
 const graph = shallowRef(createGraphExpansion({ nodes: [selectedNode] }))
 const shown = computed(() => graphExpansionView(graph.value)) // bind shown.nodes and shown.edges to NetworkGraph
@@ -912,7 +912,7 @@ async function expand(id: string) {
 `shown.dangling` lists edges waiting for a node, and `shown.frontierIds` the loaded nodes not expanded yet. By default each expansion gives NetworkGraph a larger graph, which it lays out again, so existing nodes can move. To keep them where they are, place each page around the boxes on display with `layoutGraphIncrementally` and pass the result through a `layout` function of stable identity:
 
 ```ts
-import { graphLayoutChangeMetrics, layoutGraphIncrementally, layoutLayeredGraph, type GraphLayoutFunction } from 'vue-weave'
+import { graphLayoutChangeMetrics, layoutGraphIncrementally, layoutLayeredGraph, type GraphLayoutFunction } from '@eightkk/vue-weave'
 
 const first = layoutLayeredGraph(shown.value.nodes, shown.value.edges)
 const kept = shallowRef(layoutGraphIncrementally(shown.value.nodes, shown.value.edges, first.boxes, { previousLayout: first }))
