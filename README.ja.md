@@ -1,8 +1,8 @@
 # Vue Weave
 
-[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.0.0/LICENSE)
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.1.0/LICENSE)
 
-[English](https://github.com/EightKK/vue-weave/blob/v1.0.0/README.md)
+[English](https://github.com/EightKK/vue-weave/blob/v1.1.0/README.md)
 
 [デモを試す](https://eightkk.github.io/vue-weave/) · [ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
 
@@ -26,17 +26,17 @@ Vue `^3.5.0` をpeer dependencyとしています。npm 7以降では、アプ�
 import '@eightkk/vue-weave/style.css'
 ```
 
-Viteではこのままimportできます。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合や、CSSを扱えないビルド環境の場合は、[The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#the-stylesheet-and-typescript)を参照してください。
+Viteではこのままimportできます。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合や、CSSを扱えないビルド環境の場合は、[The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#the-stylesheet-and-typescript)を参照してください。
 
-**コアだけを使う場合（サーバー・Worker）。** `@eightkk/vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install @eightkk/vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
+**コアだけを使う場合（サーバー・Worker）。** `@eightkk/vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install @eightkk/vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
 
-**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`eightkk-vue-weave-1.0.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`eightkk-vue-weave-1.1.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./eightkk-vue-weave-1.0.0.tgz
+npm install ./eightkk-vue-weave-1.1.0.tgz
 ```
 
-チェックアウトから[ローカルパッケージを作成](https://github.com/EightKK/vue-weave/blob/v1.0.0/CONTRIBUTING.md#build-a-local-package)することもできます。
+チェックアウトから[ローカルパッケージを作成](https://github.com/EightKK/vue-weave/blob/v1.1.0/CONTRIBUTING.md#build-a-local-package)することもできます。
 
 ## クイックスタート
 
@@ -142,40 +142,40 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 </template>
 ```
 
-ホバー、負荷行、折り畳まれた項目への移動は [Linking views](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#linking-views) を、`useEditTransaction` は [Saving through a server](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#saving-through-a-server) を参照してください。
+ホバー、負荷行、折り畳まれた項目への移動は [Linking views](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#linking-views) を、`useEditTransaction` は [Saving through a server](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#saving-through-a-server) を参照してください。
 
 ## ギャラリー
 
 画像はすべて、このリポジトリの[デモ](#デモを起動する)の画面です。
 
-![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/network-graph.png)
+![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/network-graph.png)
 
-![スケジューリングデモのGanttChart。ステータス日付線とイナズマ線、クリティカルパスの枠線、余裕日数の線、分割バー、リードのラベル、締切フラグ、完了日と余裕日数の列、網掛けされた工場休業日を表示したカレンダー対応スケジュール](https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/gantt-chart.png)
+![スケジューリングデモのGanttChart。ステータス日付線とイナズマ線、クリティカルパスの枠線、余裕日数の線、分割バー、リードのラベル、締切フラグ、完了日と余裕日数の列、網掛けされた工場休業日を表示したカレンダー対応スケジュール](https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/gantt-chart.png)
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/process-lanes.png" alt="工程レーンのデモ。機械加工の工程を4つの部門レーン（購買、加工、検査、空の出荷レーン）に配置し、部門間の受け渡しを表す直角の辺がレーン境界をまたぎ、ミニマップにもレーンが表示されている" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/process-lanes.png" alt="工程レーンのデモ。機械加工の工程を4つの部門レーン（購買、加工、検査、空の出荷レーン）に配置し、部門間の受け渡しを表す直角の辺がレーン境界をまたぎ、ミニマップにもレーンが表示されている" width="100%"><br>
       <b>スイムレーン。</b>部門や作業区ごとのレーンを指定した順に並べます（<code>layoutSwimlaneGraph</code>、<code>lanes</code>）。
     </td>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/quantity-flow.png" alt="数量フローのデモ。100個のロットが2つのラインに60対40で分かれ、検査で合流し、Bラインで4個減り、10個が手戻りとして破線の帯でループするサンキー図と、工程ごとの流入量・流出量・差の表" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/quantity-flow.png" alt="数量フローのデモ。100個のロットが2つのラインに60対40で分かれ、検査で合流し、Bラインで4個減り、10個が手戻りとして破線の帯でループするサンキー図と、工程ごとの流入量・流出量・差の表" width="100%"><br>
       <b>数量フロー。</b>辺を数量に比例した太さの帯として、図全体で同じ縮尺で描きます（<code>layoutFlowGraph</code>、<code>edgeBands</code>）。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/linked-views.png" alt="ビュー連動のデモ。ガントチャートで「Cut order A」を選択すると、上のネットワークグラフと下のCNCセルの負荷行でも同じタスクが強調され、負荷行では赤い区間が負荷超過を示している" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/linked-views.png" alt="ビュー連動のデモ。ガントチャートで「Cut order A」を選択すると、上のネットワークグラフと下のCNCセルの負荷行でも同じタスクが強調され、負荷行では赤い区間が負荷超過を示している" width="100%"><br>
       <b>ビューの連動。</b>一つのビューで選ぶと、グラフ、ガントチャート、負荷行で同じタスクが強調されます（<code>useLinkedSelection</code>）。
     </td>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/plan-comparison.png" alt="計画シナリオのデモ。保守時間帯の後へ切断作業を送る候補計画を現行計画と比較し、最終完了、期限超過、割り当ての変更、CNCセルの負荷超過を表にまとめ、ガントチャートでは各候補バーの下に現行計画を細い帯で表示している" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/plan-comparison.png" alt="計画シナリオのデモ。保守時間帯の後へ切断作業を送る候補計画を現行計画と比較し、最終完了、期限超過、割り当ての変更、CNCセルの負荷超過を表にまとめ、ガントチャートでは各候補バーの下に現行計画を細い帯で表示している" width="100%"><br>
       <b>計画シナリオ。</b>候補計画を採用する前に現行計画と比較します（<code>comparePlans</code>）。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.0.0/.github/images/diagram-styles-dark.png" alt="ダークテーマで表示したダイアグラム表現のデモ。楕円、ひし形、六角形のノード、主経路の破線のアニメーション辺、白抜き矢印や丸の端の記号、左右に振り分けた平行な辺の組を含む受注処理フロー" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.1.0/.github/images/diagram-styles-dark.png" alt="ダークテーマで表示したダイアグラム表現のデモ。楕円、ひし形、六角形のノード、主経路の破線のアニメーション辺、白抜き矢印や丸の端の記号、左右に振り分けた平行な辺の組を含む受注処理フロー" width="100%"><br>
       <b>ダイアグラム表現とダークテーマ。</b>ノード形状、辺の端の記号、アニメーションする辺と平行な辺、組み込みのダークテーマ。
     </td>
     <td width="50%" valign="top">
@@ -186,13 +186,13 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 ## 機能
 
-基本機能以外はすべてオプトインです。ここでは概要を示します。props、イベント、スロット、関数の一覧は [docs/api.md](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/api.md) に、手順は [docs/integration.md](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md) と [docs/scheduling.md](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/scheduling.md) にあります。
+基本機能以外はすべてオプトインです。ここでは概要を示します。props、イベント、スロット、関数の一覧は [docs/api.md](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/api.md) に、手順は [docs/integration.md](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md) と [docs/scheduling.md](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md) にあります。
 
 ### NetworkGraph
 
-- **レイアウト：** 分岐・合流、閉路、自己ループに対応した標準の階層レイアウト（`LR`・`TB`・`RL`・`BT`。`crossingReduction: 'barycenter'` で交差を削減）。`layout` propでは、木、放射状、円形、格子、同心円、決定的な力学モデルの各配置（`layoutTreeGraph`、`layoutRadialGraph`、`layoutCircularGraph`、`layoutGridGraph`、`layoutConcentricGraph`、`layoutForceGraph`）や、アプリケーションで導入した[ELK.js](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#use-elkjs-for-layout)の結果を使えます。
-- **工程レーン：** `layoutSwimlaneGraph` は部門や作業区ごとのレーンを指定した順に並べます。`lanes` propで帯を描き、ミニマップと書き出しにも反映されます。ドラッグしたノードが入るレーンは `graphSwimlaneAt` で判定できます。詳しくは[Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#swimlanes-for-process-flows)を参照してください。
-- **数量フロー（サンキー図）：** `layoutFlowGraph` は各辺を数量に応じた太さにして図全体で同じ縮尺で描き、ノードごとの流入量・流出量とその差を補正せずに報告します。単位の異なる数量は合算せず、手戻りのループは破線の参照帯にします。`edgeBands` propは「Cut → Inspect: 60 pcs」のような名前付きで帯を描きます。詳しくは[Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#quantity-flows-sankey-diagrams)を参照してください。
+- **レイアウト：** 分岐・合流、閉路、自己ループに対応した標準の階層レイアウト（`LR`・`TB`・`RL`・`BT`。`crossingReduction: 'barycenter'` で交差を削減）。`layout` propでは、木、放射状、円形、格子、同心円、決定的な力学モデルの各配置（`layoutTreeGraph`、`layoutRadialGraph`、`layoutCircularGraph`、`layoutGridGraph`、`layoutConcentricGraph`、`layoutForceGraph`）や、アプリケーションで導入した[ELK.js](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#use-elkjs-for-layout)の結果を使えます。
+- **工程レーン：** `layoutSwimlaneGraph` は部門や作業区ごとのレーンを指定した順に並べます。`lanes` propで帯を描き、ミニマップと書き出しにも反映されます。ドラッグしたノードが入るレーンは `graphSwimlaneAt` で判定できます。詳しくは[Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#swimlanes-for-process-flows)を参照してください。
+- **数量フロー（サンキー図）：** `layoutFlowGraph` は各辺を数量に応じた太さにして図全体で同じ縮尺で描き、ノードごとの流入量・流出量とその差を補正せずに報告します。単位の異なる数量は合算せず、手戻りのループは破線の参照帯にします。`edgeBands` propは「Cut → Inspect: 60 pcs」のような名前付きで帯を描きます。詳しくは[Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#quantity-flows-sankey-diagrams)を参照してください。
 - **描画：** 独自のSVGを描く `node`・`edge`・`group`・`minimap-node` スロット、HTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロット。ひし形・楕円・六角形のノード、直角・直線の辺（`edgeStyle`）、ノードを避ける経路（`avoidNodes`）、経由点、端の記号、アニメーションする辺、平行な辺の振り分け。
 - **変更案としての編集：** ノードの移動、型付きのポートルール（`connectionRules`）で検査する接続と接続先のヒント、ラベルのその場編集、矩形・投げ縄による選択、入れ子で折りたためるグループ、ノードのサイズ変更、グリッドへの吸着と整列ガイド、パレットからのドロップ、クリップボード、キーボードによる削除。
 - **表示範囲の操作：** ミニマップ、大規模グラフ向けの表示範囲外の描画省略と縮小時の簡略表示、ピンチズーム、検索結果の強調（`matchIds`）、`focusNode(id)`、`fit({ ids })`。
@@ -210,13 +210,13 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **グラフのアルゴリズムと指標：** `topologicalOrder`、`findGraphCycles`、`shortestGraphPath`、`searchGraphNodes`、`filterGraph`、連結成分、次数・媒介・PageRankの各中心性、Louvain法によるコミュニティ検出（`detectGraphCommunities`）と、その結果をグループに変換する `graphCommunityGroups`。
 - **日程計算：** `buildWorkPeriods` で作るカレンダー（IANAタイムゾーンを含む）上での `scheduleTasks`。最遅開始、手動・非アクティブ・サマリーのタスク、制約、中断区間、循環や実行不能の診断に対応します。`scheduleTasks(input, { explain: true })` は各タスクの開始が決まった理由をトレースし、`toPlanningDiagnostics` は問題を一覧にします。
 - **リソース：** `calculateResourceLoad` と `levelResources`。時間とともに変わる能力（`capacityPeriods`）や、タスクの一部だけを占める割り当て（`workOffset`、`workDuration`）にも対応します。`projectResourceTimeline` はリソース別に計画を表示し、`buildPlacementInput` は未計画タスクを計算から除きます。
-- **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/scheduling.md#compare-plan-scenarios)を参照してください。
+- **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#compare-plan-scenarios)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
 
 ### ビューの連動・大規模データ・保存
 
-- **ビューの連動：** `useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。`revealNode`、`revealBar`、`revealLinkedTarget` は折り畳まれたグループや行の中も含めて項目へ移動し、`timelineBarsInRange` と `resolveTimeRangeTargets` はある時間範囲に作業していた対象を強調します。詳しくは[Linking views](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#linking-views)を参照してください。
-- **大規模データ：** `useWindowedData` はアプリの `load` 関数を通じて表示中の範囲だけを取得し、中断、重複排除、再試行に対応します。グラフ展開ヘルパーと `layoutGraphIncrementally` は、表示中のノードを動かさずにグラフを1ホップずつ読み込みます。`useAsyncGraphLayout` はWorkerでレイアウトを計算し、`routingPolicy="preserve"` はエンジンの配線を保持します。詳しくは[Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md#loading-only-what-is-visible)を参照してください。
+- **ビューの連動：** `useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。`revealNode`、`revealBar`、`revealLinkedTarget` は折り畳まれたグループや行の中も含めて項目へ移動し、`timelineBarsInRange` と `resolveTimeRangeTargets` はある時間範囲に作業していた対象を強調します。詳しくは[Linking views](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#linking-views)を参照してください。
+- **大規模データ：** `useWindowedData` はアプリの `load` 関数を通じて表示中の範囲だけを取得し、中断、重複排除、再試行に対応します。グラフ展開ヘルパーと `layoutGraphIncrementally` は、表示中のノードを動かさずにグラフを1ホップずつ読み込みます。`useAsyncGraphLayout` はWorkerでレイアウトを計算し、`routingPolicy="preserve"` はエンジンの配線を保持します。詳しくは[Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#loading-only-what-is-visible)を参照してください。
 - **表示と保存：** 行を検索・並べ替える `useTimelineView`、Undo／Redoの `useEditHistory`、サーバーのアダプターを通じて版競合も扱いながら保存する `useEditTransaction`、版付きで検証されたJSONとして保存・復元する `serializeWeaveSnapshot` と `restoreWeaveSnapshot`。
 
 ### 書き出し・テーマ・アクセシビリティ
@@ -233,12 +233,12 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## 対応状況
 
-- **バージョン1.0です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.0.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/api.md#compatibility-and-versioning)に記載しています。
+- **バージョン1.0です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.1.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/api.md#compatibility-and-versioning)に記載しています。
 - **Vue：** 3.x の3.5以降（peer dependency `^3.5.0`）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `@eightkk/vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
 - **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
-- **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
+- **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
 
 ## デモを起動する
 
@@ -258,21 +258,21 @@ Windowsでは代わりに `Start.cmd` をダブルクリックしても起動で
 
 `preview/` を含むビルド済みデモのアーカイブ（リリースに添付されることがあります）を使う場合は、全体を展開して `npm start` を実行するか、Windowsで `Start.cmd` をダブルクリックします。ビルド済みデモはNode.jsがあれば依存関係のインストールなしで起動できます。ソースを変更した場合は `Start.cmd` がデモをビルドし直します。初回はnpmとインターネット接続が必要です。
 
-開発・検証コマンドは[Contributing](https://github.com/EightKK/vue-weave/blob/v1.0.0/CONTRIBUTING.md)を参照してください。
+開発・検証コマンドは[Contributing](https://github.com/EightKK/vue-weave/blob/v1.1.0/CONTRIBUTING.md)を参照してください。
 
 ## ドキュメント
 
 API、コメント、詳細ドキュメントは英語です。
 
-- [入力型と公開API](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/api.md)
-- [Vue・Nuxtへの組み込み、独自描画、時間軸、保存処理](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/integration.md)
-- [構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/architecture.md)
-- [日程計算と設備負荷](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/scheduling.md)
-- [開発とリリース手順](https://github.com/EightKK/vue-weave/blob/v1.0.0/CONTRIBUTING.md)
-- [セキュリティ方針と脆弱性の非公開報告](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/security.md)
-- [行動規範](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/code-of-conduct.md)
-- [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.0.0/CHANGELOG.md)
+- [入力型と公開API](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/api.md)
+- [Vue・Nuxtへの組み込み、独自描画、時間軸、保存処理](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md)
+- [構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/architecture.md)
+- [日程計算と設備負荷](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md)
+- [開発とリリース手順](https://github.com/EightKK/vue-weave/blob/v1.1.0/CONTRIBUTING.md)
+- [セキュリティ方針と脆弱性の非公開報告](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/security.md)
+- [行動規範](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/code-of-conduct.md)
+- [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.1.0/CHANGELOG.md)
 
 ## ライセンス
 
-MITです。[LICENSE](https://github.com/EightKK/vue-weave/blob/v1.0.0/LICENSE) を参照してください。ビルド済みデモの第三者ライセンス表示は [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.0.0/THIRD_PARTY_NOTICES.md) と [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/third-party-licenses.md) にあります。
+MITです。[LICENSE](https://github.com/EightKK/vue-weave/blob/v1.1.0/LICENSE) を参照してください。ビルド済みデモの第三者ライセンス表示は [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.1.0/THIRD_PARTY_NOTICES.md) と [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/third-party-licenses.md) にあります。
