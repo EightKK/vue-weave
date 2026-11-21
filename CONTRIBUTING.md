@@ -89,28 +89,17 @@ Versions follow [Semantic Versioning](https://semver.org/). From 1.0.0, breaking
 
 ## Prepare a release
 
-A maintainer makes each release by hand: a GitHub Release and a manual npm publication of the same verified tarball, from the maintainer's own npm account with two-factor authentication. Agents and CI never publish.
+A maintainer publishes a GitHub Release. The dedicated npm workflow uses npm Trusted Publishing (OIDC) to publish the same verified tarball for stable releases.
+
+Set up the [npm trusted publisher](https://docs.npmjs.com/trusted-publishers/) once in the settings for `@eightkk/vue-weave`. Select GitHub Actions and use account `EightKK`, repository `vue-weave`, workflow filename `publish-npm.yml`, and environment `npm-publish`. Allow direct publishing (`npm publish`). The workflow uses a GitHub-hosted runner and needs no npm token.
 
 1. Choose the version by the rules in [Versioning](#versioning) and set it with `npm version <version> --no-git-tag-version`, which updates `package.json` and `package-lock.json` together. Move the `Unreleased` entries into a `## <version> - <YYYY-MM-DD>` changelog entry and leave an empty `Unreleased` section. In `README.md` and `README.ja.md`, update the tarball name in the install instructions and the `v<version>` tag in the absolute image and document URLs (npm shows the README without the repository, so those links point at the release tag). Review package metadata and distribution rights for source, examples and assets.
 2. From the final source revision, run `npm ci`, the checks in [Verify a pull request](#verify-a-pull-request), `npm pack --dry-run` and `npm audit`. Review every failure and inspect the actual packed file list. CI covers Node.js 22 and 24 on Linux and Windows, with Chromium interactions on Linux; use the results for the release commit.
 3. Verify that private vulnerability reporting is enabled under the repository's **Settings > Advanced Security**. GitHub offers it only for public repositories, so enable it as soon as the repository is public. Review the source, package contents and Git history for credentials, personal data and confidential examples. Preserve project and third-party notices.
-4. Run `npm run prepare:release` (below). Its verified package tarball, `artifacts/release/<version>/eightkk-vue-weave-<version>.tgz` (`<path-to-verified-tgz>` in the next steps), is the only file that is published; do not run `npm pack` or `npm publish` in the checkout again, because that rebuilds the package.
-5. Create the `v<version>` tag on the checked revision and push it, so the tag-pinned README links resolve.
-6. Publish the verified tarball to npm, entering the one-time password when npm asks for it (or passing `--otp <code>`):
-
-   ```sh
-   npm publish <path-to-verified-tgz> --access public
-   ```
-
-7. Check that the registry holds the same bytes. The integrity npm reports must equal the local SHA-512 of the tarball:
-
-   ```sh
-   npm view @eightkk/vue-weave@<version> dist.integrity
-   node -e "console.log('sha512-' + require('node:crypto').createHash('sha512').update(require('node:fs').readFileSync(process.argv[1])).digest('base64'))" <path-to-verified-tgz>
-   ```
-
-   A published version cannot be replaced. If the values differ, deprecate the version with `npm deprecate` and release a new patch version.
-8. Create the GitHub Release from the `v<version>` tag. Attach the same tarball bytes that were published, `eightkk-vue-weave-<version>-source-demo.tar.gz` and `SHA256SUMS` from `artifacts/release/<version>/`, and use the changelog entry as the release notes.
+4. Run `npm run prepare:release` (below) to produce the verified tarball and offline demo under `artifacts/release/<version>/`.
+5. Create and push the `v<version>` tag on the checked revision from `main`. The tagged revision must contain the npm workflow.
+6. Draft the GitHub Release with the changelog entry as its notes. Attach `eightkk-vue-weave-<version>.tgz`, `eightkk-vue-weave-<version>-source-demo.tar.gz`, and `SHA256SUMS` before publishing the Release.
+7. Check the **Publish to npm** run in Actions. It checks the tarball checksum and package version before publication, then compares the registry's integrity with the attached tarball. Rerun a failed job after fixing its cause. If npm already holds the same bytes, the rerun succeeds without uploading again. If npm holds different bytes, investigate and release a new version.
 
 To prepare matching local package and offline-demo candidates, install Chromium once with `npx playwright install chromium`, then run:
 
@@ -120,4 +109,4 @@ npm run prepare:release
 
 This command reruns the full check, browser tests, package-consumer tests (including the public API baseline) and dependency audit. It requires registry access (or a populated npm cache), Chromium and a `tar` executable, which is supplied by current Windows and Linux environments. It uses an explicit source-file allowlist, rejects symlinks, and excludes `.git`, `node_modules`, local settings, credentials and test output. It checks that source files stay unchanged during verification, creates an archive with the generated `preview/`, compares every extracted file against the source inventory, and smoke-tests the extracted demo without installing dependencies. Each run writes all of its files (tarball, source archive, `SHA256SUMS` and `release-verification.json`) into a new candidate directory `artifacts/.candidate-*`, then checks that the checksums and the record match the files. Only then does it move that set into `artifacts/release/<version>/` with two directory renames, replacing the previous set for that version as a whole. If any step fails, the candidate is deleted and the previous verified set stays unchanged; a run that is killed can leave a `.candidate-*` directory, which is safe to delete. `VW_RELEASE_FAIL_AT=after-package`, `before-promote` or `during-promote` simulates a failure at that point, and `test/release-candidate.test.mjs` covers these cases. The verification record lists file hashes and outstanding publication checks; it does not certify distribution rights, Git history or hosted settings. No publishing, tags or repository changes are performed. Review the allowlisted source files for confidential content before sharing them. GitHub's generated source ZIP omits ignored `preview/` and requires a demo build.
 
-To host a public demo, serve the static files from `preview/` with the relevant third-party notices. The local preview server binds to `127.0.0.1`.
+The Pages workflow builds the public demo from `main` and deploys `preview/` to [GitHub Pages](https://eightkk.github.io/vue-weave/). The local preview server binds to `127.0.0.1`.

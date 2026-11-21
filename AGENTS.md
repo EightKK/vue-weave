@@ -109,6 +109,6 @@ Ask first before:
 
 Never:
 
-- Run `npm publish`, or add a publish step to CI. A maintainer publishes to npm by hand from their own account, following the release steps in [CONTRIBUTING.md](CONTRIBUTING.md#prepare-a-release); agents may prepare and verify release candidates (`npm run prepare:release`) but never publish them.
+- Publish a release or run `npm publish` directly. A maintainer publishes the GitHub Release, which triggers the dedicated npm workflow. Agents may prepare and verify release candidates following [CONTRIBUTING.md](CONTRIBUTING.md#prepare-a-release).
 - Edit `dist/`, `preview/` or `package-lock.json` by hand.
 - Change the attribution in `LICENSE` or `THIRD_PARTY_NOTICES.md`.
