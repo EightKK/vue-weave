@@ -23,6 +23,28 @@ test('production demo edits the schedule, graph and load from the homepage', asy
   expect(errors).toEqual([])
 })
 
+test('a proposal highlights every task it moved from the adopted plan and reopening the adopted strategy keeps its moves', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: '日本語' }).click()
+  const scenario = page.getByRole('button', { name: /切断Aを予備機へ/ })
+  await scenario.click()
+  const gantt = page.getByRole('region', { name: 'ガントチャート' })
+  await dragBy(page, gantt.getByRole('button', { name: '切断B 13:00–15:00' }), 42, 0)
+  await dragBy(page, gantt.getByRole('button', { name: '検査 16:00–18:00' }), 42, 0)
+  await expect(gantt.getByRole('button', { name: '梱包 19:00–21:00' })).toBeVisible()
+  const affected = page.locator('.production-caption').filter({ hasText: '日程が変わった後工程' })
+  await expect(affected).toContainText('切断B')
+  await expect(affected).toContainText('梱包')
+
+  const shipping = page.getByRole('row', { name: /出荷できる時刻/ })
+  await page.getByRole('button', { name: 'この案を採用' }).click()
+  await expect(shipping.getByRole('cell')).toHaveText(['21:00'])
+  await scenario.click()
+  await expect(shipping.getByRole('cell')).toHaveText(['21:00', '21:00'])
+  expect(errors).toEqual([])
+})
+
 test('lot flow keeps the same network as the displayed unit and language change', async ({ page }) => {
   const errors = pageErrors(page)
   await page.goto('/')

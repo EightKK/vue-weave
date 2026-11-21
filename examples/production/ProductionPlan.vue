@@ -44,7 +44,9 @@ const bars = computed<TimelineBar[]>(() => taskIds.map(id => {
 }))
 
 function openScenario(value: Exclude<Strategy, 'original'>) {
-  draft.value = { strategy: value, starts: {} }
+  // Reopening the strategy in use keeps its manual starts, so an adopted move is not silently dropped.
+  const base = strategy.value
+  draft.value = { strategy: value, starts: value === base.strategy ? base.starts : {} }
   changed.value = taskIds.filter(id => current.value.byId.get(id)!.start !== schedule.value.byId.get(id)!.start)
   status.value = undefined
 }
@@ -62,7 +64,8 @@ function cascade(change: TimelineEdit) {
 function move(id: TaskId, start: number) {
   const proposal = proposeStart(strategy.value, id, start)
   if (!proposal) { status.value = 'rejected'; return }
-  changed.value = taskIds.filter(other => other !== id && schedule.value.byId.get(other)!.start !== proposal.computed.byId.get(other)!.start)
+  // Compare with the adopted plan, like the baseline bars, so earlier moves of the same proposal stay highlighted.
+  changed.value = taskIds.filter(other => other !== id && current.value.byId.get(other)!.start !== proposal.computed.byId.get(other)!.start)
   draft.value = proposal.next
   selected.value = id
   status.value = undefined

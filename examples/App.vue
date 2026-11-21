@@ -504,7 +504,7 @@ function commit(change: TimelineEdit) {
 
 <template>
   <div class="demo" :class="[{ dark }, builtInTheme]">
-    <header><a href="./" class="wordmark">Vue Weave <span>{{ releaseLine }}</span></a><span v-if="!standalone" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vw-theme-dark">Dark</option><option value="vw-theme-auto">Auto (system)</option></select></label></header>
+    <header><a href="./gallery.html" class="wordmark">Vue Weave <span>{{ releaseLine }}</span></a><span v-if="!standalone" class="export-actions"><button type="button" @click="exportGraphSvg">Export graph SVG</button><button type="button" @click="exportGraphPng">Export graph PNG</button></span><label><input v-model="dark" type="checkbox"> Dark theme</label><label class="theme-switch">Built-in theme <select v-model="builtInTheme"><option value="">Demo default</option><option value="vw-theme-dark">Dark</option><option value="vw-theme-auto">Auto (system)</option></select></label></header>
     <main>
       <div class="intro"><p class="eyebrow">INTERACTIVE EXAMPLES</p><h1>Relationships meet schedules.</h1><p>Explore connected data and editable timelines with Vue components.</p></div>
       <nav aria-label="Examples">
