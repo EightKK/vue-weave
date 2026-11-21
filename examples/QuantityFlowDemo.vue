@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import {
-  NetworkGraph, graphFlowBands, layoutFlowGraph, type GraphEdge, type GraphLayoutDirection, type GraphLayoutFunction, type NetworkNode,
+  NetworkGraph, graphFlowBands, layoutFlowGraph, type GraphLayoutDirection, type GraphLayoutFunction, type NetworkNode,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
+import { flows } from './production/lot-transfers'
 
 // Opt-in example of `layoutFlowGraph` and the NetworkGraph `edgeBands` prop: a production lot drawn as quantity bands.
 // Material edges carry pieces and cost; the overhead allocation carries cost only, so the pieces view leaves it out
 // instead of adding euros to pieces. The rework loop is a reference band: dashed, routed below, outside the totals.
 type Unit = 'pcs' | 'EUR'
-type Flow = GraphEdge<{ pcs?: number; EUR: number }>
+type Flow = (typeof flows)[number]
 const steps: NetworkNode[] = [
   { id: 'lot', label: 'Lot L-100', tone: 'amber' },
   { id: 'overhead', label: 'Overhead', tone: 'violet' },
@@ -19,18 +20,6 @@ const steps: NetworkNode[] = [
   { id: 'inspect', label: 'Inspect', tone: 'teal' },
   { id: 'rework', label: 'Rework', tone: 'amber' },
   { id: 'pack', label: 'Pack', tone: 'teal' },
-]
-const flows: Flow[] = [
-  { id: 'lot-a', from: 'lot', to: 'line-a', data: { pcs: 60, EUR: 1200 } },
-  { id: 'lot-b', from: 'lot', to: 'line-b', data: { pcs: 40, EUR: 800 } },
-  { id: 'overhead-a', from: 'overhead', to: 'line-a', data: { EUR: 300 } },
-  { id: 'overhead-b', from: 'overhead', to: 'line-b', data: { EUR: 200 } },
-  { id: 'a-inspect', from: 'line-a', to: 'inspect', data: { pcs: 60, EUR: 1500 } },
-  // Line B loses 4 pieces (and 100 EUR of value): the library reports the difference and never balances it.
-  { id: 'b-inspect', from: 'line-b', to: 'inspect', data: { pcs: 36, EUR: 900 } },
-  { id: 'inspect-pack', from: 'inspect', to: 'pack', data: { pcs: 86, EUR: 2150 } },
-  { id: 'inspect-rework', from: 'inspect', to: 'rework', data: { pcs: 10, EUR: 250 } },
-  { id: 'rework-inspect', from: 'rework', to: 'inspect', data: { pcs: 10, EUR: 250 } },
 ]
 const unitNames: Record<Unit, string> = { pcs: 'Pieces', EUR: 'Cost' }
 const unit = ref<Unit>('pcs')

@@ -23,7 +23,7 @@ const readJson = async (page: Page, name: string) => JSON.parse(await fixtureSta
 
 test('graph moves are controlled and connections can be accepted or rejected', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
   const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
@@ -102,7 +102,7 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
 })
 
 test('range selection and group movement commit an atomic batch', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
   const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])
@@ -1170,7 +1170,7 @@ test('a manual graph camera survives accepted connections, deletions and group t
 
 test('inline label editing proposes node and edge labels, validates them and returns focus', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Edit labels').check()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -1276,7 +1276,7 @@ test('the label editor follows the camera in right-to-left graphs and a data ref
 
 test('lasso selection selects the nodes whose centre the outline encloses, keeps modifiers and cancels on Escape', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Lasso selection').check()
   const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
@@ -1333,7 +1333,7 @@ test('lasso selection selects the nodes whose centre the outline encloses, keeps
 
 test('toolbar slots follow the selected node and edge, and group and minimap slots restyle the graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Item toolbars').check()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -1405,7 +1405,7 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
 
 test('typed port rules hint valid targets, reject type and limit violations with a reason and allow limit-1 reconnects', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Typed ports').check()
   const graph = page.getByRole('group', { name: 'Typed port example', exact: true })

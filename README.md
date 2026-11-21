@@ -4,7 +4,7 @@
 
 [日本語](https://github.com/EightKK/vue-weave/blob/v1.0.0/README.ja.md)
 
-[Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
+[Interactive demo](https://eightkk.github.io/vue-weave/) · [Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
 
 Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, process flows, production views, project schedules and resource timelines from two typed components, and do the graph, scheduling and resource-load calculations in a headless core that also runs in Node.js, workers and on servers.
 
@@ -240,6 +240,8 @@ const png = await chart.value!.exportPng({ scale: 2 })
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.0.0/docs/architecture.md)), so do not assume full conformance.
 
 ## Run the demo
+
+The main page opens the production planning and lot flow demos. Use **Examples** to open the full sample gallery.
 
 The demo is hosted on [GitHub Pages](https://eightkk.github.io/vue-weave/) and is rebuilt from `main`, so it can be ahead of the latest release. To run it locally, use Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
 
