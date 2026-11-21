@@ -650,3 +650,33 @@ test('toDrawio places nodes without positions in slots as large as the largest w
   const a = read.positions.get('A'), b = read.positions.get('B')
   assert.ok(a.x + read.sizes.get('A').width <= b.x, `B (x=${b.x}) overlaps A (x=${a.x}, width 400)`)
 })
+
+test('fromMermaid reads indented headers and subgraph statements that end with a semicolon', () => {
+  const read = fromMermaid('  flowchart LR\n    subgraph g; a --> b; end')
+  assert.equal(read.direction, 'LR')
+  assert.deepEqual(read.groups, [{ id: 'g', label: 'g', nodeIds: ['a', 'b'] }])
+  assert.deepEqual(read.edges.map(({ from, to }) => [from, to]), [['a', 'b']])
+  assert.deepEqual(fromMermaid('flowchart TD\n  subgraph s["A; B"]; x; end').groups, [{ id: 's', label: 'A; B', nodeIds: ['x'] }])
+})
+
+test('fromMermaid checks maxItems as it meets new nodes and subgraphs', () => {
+  const nodes = Array.from({ length: 50 }, (_, i) => '  n' + i).join('\n')
+  assert.throws(() => fromMermaid('flowchart LR\n' + nodes, { maxItems: 20 }), {
+    name: 'RangeError', message: 'The Mermaid file has more than 20 nodes, edges and groups (maxItems)',
+  })
+  const groups = Array.from({ length: 50 }, (_, i) => `  subgraph g${i}\n  end`).join('\n')
+  assert.throws(() => fromMermaid('flowchart LR\n' + groups, { maxItems: 20 }), RangeError)
+  // A subgraph that is also mentioned as a node counts once, as in the result.
+  const shared = fromMermaid('flowchart LR\n  subgraph g\n    a\n  end\n  g', { maxItems: 2 })
+  assert.deepEqual([shared.nodes.length, shared.groups.length], [1, 1])
+})
+
+test('toDrawio places new nodes around saved positions and their sizes', () => {
+  const graph = {
+    nodes: [{ id: 'A', label: 'A' }, { id: 'B', label: 'B' }], edges: [{ id: 'e', from: 'A', to: 'B' }],
+    positions: new Map([['A', { x: 150, y: 40 }]]), sizes: new Map([['A', { width: 400, height: 60 }]]),
+  }
+  const read = fromDrawio(toDrawio(graph))
+  assert.deepEqual(read.positions.get('A'), { x: 150, y: 40 })
+  assert.ok(read.positions.get('B').x >= 150 + 400, `B starts at ${read.positions.get('B').x}, inside A`)
+})

@@ -207,3 +207,13 @@ test('the series limit counts the exact points: the grid, the end and a status d
   assert.throws(() => computeEarnedValue([task], { statusDate: 0.5, series: { step: 1, start: 0, end: maxEarnedValuePoints - 1.5 } }), RangeError)
   assert.equal(computeEarnedValue([task], { statusDate: 1, series: { step: 1, start: 0, end: maxEarnedValuePoints - 1.5 } }).series.length, maxEarnedValuePoints)
 })
+
+test('the series count ends for steps far below the precision of the times and rejects ranges that are not finite', () => {
+  const task = { id: 'a', budget: 100, start: 1e17, end: 1e17 + 16, progress: 0.5 }
+  // Near 1e17 the times are 16 apart, so start + k × 0.001 rounds to the same value for many k.
+  const series = computeEarnedValue([task], { statusDate: 1e17, series: { step: 1e-3 } }).series
+  assert.ok(series.length <= maxEarnedValuePoints)
+  assert.equal(series.at(-1).time, 1e17 + 16)
+  assert.throws(() => computeEarnedValue([task], { statusDate: 1e17, series: { step: 1e-9 } }), RangeError)
+  assert.throws(() => computeEarnedValue([task], { statusDate: 0, series: { step: 1, start: -1e308, end: 1e308 } }), RangeError)
+})

@@ -2,6 +2,7 @@
 // `fromDrawioAsync` also inflates compressed ones. Uses the DOM-free XML reader of the interchange formats.
 import type { GraphEdge, GraphEdgeMarker, GraphLayoutDirection, GraphNodeSize, GraphPoint } from './graph.js'
 import { layoutLayeredGraph } from './graph.js'
+import { layoutGraphIncrementally, type GraphKnownPosition } from './graphIncremental.js'
 import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkNode } from './types.js'
 import { defaultNodeHeight, defaultNodeWidth } from './graphOptions.js'
@@ -79,9 +80,14 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
     slotWidth = Math.max(slotWidth, size.width)
     slotHeight = Math.max(slotHeight, size.height)
   }
-  const layout = nodes.some(node => !positions.has(node.id))
-    ? layoutLayeredGraph(nodes, edges, { direction: options.direction ?? 'LR', nodeWidth: slotWidth, nodeHeight: slotHeight })
-    : undefined
+  // With some saved positions, the new nodes are placed around the saved boxes (with their sizes) instead.
+  const direction = options.direction ?? 'LR'
+  const missing = nodes.some(node => !positions.has(node.id))
+  const known = new Map<string, GraphKnownPosition>()
+  for (const [id, point] of positions) known.set(id, { x: point.x, y: point.y, ...sizes.get(id) })
+  const layout = !missing ? undefined : known.size
+    ? layoutGraphIncrementally(nodes, edges, known, { direction, sizes, allowNegative: true })
+    : layoutLayeredGraph(nodes, edges, { direction, nodeWidth: slotWidth, nodeHeight: slotHeight })
   const boxes = new Map<string, Rect>()
   for (const node of nodes) {
     const point = positions.get(node.id) ?? layout!.boxes.get(node.id)!

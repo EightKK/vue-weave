@@ -158,7 +158,7 @@ export function toMermaid(graph: GraphInterchangeInput, options: MermaidOptions 
 // Reading
 
 const diagramTypes = /^(sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|C4\w*|mindmap|timeline|zenuml|sankey(?:-beta)?|xychart(?:-beta)?|block(?:-beta)?|packet(?:-beta)?|kanban|architecture(?:-beta)?|radar(?:-beta)?|treemap(?:-beta)?)\b/
-const header = /^(?:flowchart(?:-elk)?|graph)(?:[ \t]+([A-Za-z]{2}|[<>^v]))?[ \t]*(?=;|$)/y
+const header = /(?:flowchart(?:-elk)?|graph)(?:[ \t]+([A-Za-z]{2}|[<>^v]))?[ \t]*(?=;|$)/y
 const nodeIdPattern = /[\p{L}\p{N}_](?:[\p{L}\p{N}_]|[-.](?=[\p{L}\p{N}_]))*/uy
 const edgeIdPattern = /([\p{L}\p{N}_]+)@(?=[<ox]?[-=~.])/uy
 const plainLink = /(<|[ox](?=[-=]))?(-{2,}|={2,}|-\.+-|~{3,})(>|[ox](?![\p{L}\p{N}_]))?/uy
@@ -284,6 +284,15 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
   const edges: { from: string; to: string; link: Link; line: number }[] = []
   const open: string[] = []
   let subgraphCount = 0
+  // Node and group IDs met so far (a subgraph mentioned as a node counts once, as the collector counts it). With the
+  // edges they must stay within maxItems while the text is read, not only when the result is collected.
+  const seenIds = new Set<string>()
+  const tooMany = () => new RangeError(`The Mermaid file has more than ${maxItems} nodes, edges and groups (maxItems)`)
+  const see = (id: string) => {
+    if (seenIds.has(id)) return
+    if (seenIds.size + edges.length + 1 > maxItems) throw tooMany()
+    seenIds.add(id)
+  }
 
   /** Whether group `inner` is `outer` or nested in it. */
   const within = (inner: string, outer: string) => {
@@ -295,6 +304,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
   const mention = (id: string) => {
     let node = parsed.get(id)
     if (!node) {
+      see(id)
       node = { line: lineIndex + 1 }
       parsed.set(id, node)
     }
@@ -517,9 +527,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
       } else {
         // `a & b --> c & d` expands to every pair. Check the count before expanding, so a few `&` lists cannot build an
         // edge list far beyond maxItems before the collector rejects it.
-        if (edges.length + current.length * next.length + parsed.size + groups.length > maxItems) {
-          throw new RangeError(`The Mermaid file has more than ${maxItems} nodes, edges and groups (maxItems)`)
-        }
+        if (edges.length + current.length * next.length + seenIds.size > maxItems) throw tooMany()
         for (const from of current) for (const to of next) edges.push({ from, to, link: link!, line: lineIndex + 1 })
       }
       current = next
@@ -560,8 +568,8 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
     const word = keyword.exec(source)?.[1]
     if (word === 'subgraph') {
       pos = keyword.lastIndex
-      const rest = source.slice(pos).replace(/;\s*$/, '').trim()
-      pos = source.length
+      // The subgraph statement ends at a `;` outside quotes, like the others: `subgraph g; a --> b; end` is one line.
+      const rest = restOfStatement().trim()
       if (rest === '') fail('expected a subgraph ID or title', keyword.lastIndex)
       let id: string | undefined, raw: string
       const titled = /^([^\s[\]"]+)\s*\[(.*)\]$/.exec(rest)
@@ -576,6 +584,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
       if (id === undefined) id = 'subGraph' + subgraphCount
       subgraphCount++
       const parentId = open.at(-1)
+      see(id)
       groups.push({ id, label: decodeMermaidText(raw.replace(lineBreak, '\n')), ...(parentId === undefined ? {} : { parentId }), line: lineIndex + 1 })
       if (!groupParent.has(id)) groupParent.set(id, parentId)
       open.push(id)

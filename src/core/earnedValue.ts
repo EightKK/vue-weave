@@ -324,19 +324,25 @@ function earnedValueSeries(tasks: readonly PreparedTask[], statusDate: number, o
   const start = options.start ?? first
   const end = options.end ?? last
   if (end < start) throw new RangeError(`series.end must be ≥ series.start (got ${show(start)}–${show(end)})`)
+  const tooMany = () => new RangeError(`The series would have more than ${maxEarnedValuePoints} points; use a larger series.step (got ${show(step)})`)
+  // Reject an estimate that is not finite or clearly over the limit before counting exactly: with a step far below the
+  // precision of the times, `start + k * step` stops changing and an exact count would not end.
+  const estimate = (end - start) / step
+  if (!Number.isFinite(estimate) || estimate > maxEarnedValuePoints + 2) throw tooMany()
   // The exact number of points: the steps before `end`, `end` itself and the status date when it is not one of them.
-  let steps = end > start ? Math.ceil((end - start) / step) : 0
+  // Both corrections are bounded by the limit, so they end even where rounding keeps the sums equal.
+  let steps = end > start ? Math.ceil(estimate) : 0
   while (steps > 0 && start + (steps - 1) * step >= end) steps--
-  while (start + steps * step < end) steps++
+  while (start + steps * step < end) {
+    if (++steps > maxEarnedValuePoints) throw tooMany()
+  }
   const onGrid = (time: number) => {
     if (time === end) return true
     const k = Math.round((time - start) / step)
     return k >= 0 && k < steps && start + k * step === time
   }
   const count = steps + 1 + (statusDate >= start && statusDate <= end && !onGrid(statusDate) ? 1 : 0)
-  if (count > maxEarnedValuePoints) {
-    throw new RangeError(`The series would have more than ${maxEarnedValuePoints} points; use a larger series.step (got ${show(step)})`)
-  }
+  if (count > maxEarnedValuePoints) throw tooMany()
   const times: number[] = []
   for (let k = 0; start + k * step < end; k++) times.push(start + k * step)
   times.push(end)
