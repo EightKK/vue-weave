@@ -6,9 +6,22 @@ The package exports ES modules. Use `vue-weave/core` for calculations on a serve
 
 Both components are generic over their item types. Type the `data` of your items, for example `NetworkNode<MyData>[]` or `TimelineBar<MyData>[]`, and the slot props, `layout`, `columns` callbacks and export label callbacks receive that type without casts. For a template ref, use `useTemplateRef`, which vue-tsc infers from the template, or `NetworkGraphExposed` and `GanttChartExposed`; `InstanceType<typeof NetworkGraph>` keeps working with the default types. See [Typed data](api.md#typed-data).
 
-For installation, follow the [README](../README.md#install).
+For installation, follow the [README](../README.md#install): `npm install vue-weave`, with Vue `^3.5.0` as a peer dependency.
 
-Declarations also support `noUncheckedSideEffectImports` without requiring CSS declarations just to import the components. If your application imports the stylesheet with that option enabled, its asset types must recognize CSS imports, for example through `vite/client` or an application-owned `declare module '*.css' {}` declaration.
+### The stylesheet and TypeScript
+
+Load the stylesheet once in the application, usually with `import 'vue-weave/style.css'` in its entry file. The package exports it at that path (the file is `dist/style.css`). Vite and other bundlers with CSS support handle the import. In a setup without a CSS loader, add the file to your build or serve it and link it, for example by copying `node_modules/vue-weave/dist/style.css` to your static assets; in Nuxt, list it in `css` (see [Nuxt](#nuxt)).
+
+The package ships no type declaration for the stylesheet. Importing the components never needs one: the declarations work with `noUncheckedSideEffectImports`. With that option enabled, TypeScript reports the side-effect import `import 'vue-weave/style.css'` unless your project declares CSS modules. Vite projects get that declaration from `vite/client` (a `/// <reference types="vite/client" />` line or `"types": ["vite/client"]` in `tsconfig.json`). Elsewhere, add one to a declaration file of your own:
+
+```ts
+// src/assets.d.ts
+declare module '*.css' {}
+```
+
+### Core only: servers and Workers
+
+`vue-weave/core` does not import Vue, the DOM or browser globals at runtime, so scheduling, layout, interchange and SVG export run in Node.js, Workers and serverless functions. The package still declares Vue as a required peer dependency (`^3.5.0`); it is not marked optional (`peerDependenciesMeta`), so `npm install vue-weave` installs Vue as well, even when you only import `vue-weave/core`. That costs disk space but no runtime work, because the core never loads it. To leave Vue out of a core-only deployment, install with `npm install vue-weave --omit=peer` and use the same flag for later installs (or `omit=peer` in the project's `.npmrc`); note that it omits every peer dependency of the project. Other package managers have their own peer dependency settings.
 
 ## Nuxt
 
@@ -332,29 +345,31 @@ Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) w
 
 Every class that the components emit and the stylesheet targets starts with `vw-`, so generic utility classes in the host page (for example Tailwind's `outline` or Bootstrap's `active`) cannot restyle chart elements. Element classes are named after the element (`vw-gantt-bar`, `vw-network-node`). State and variant modifiers use the `vw-is-*` form and are always combined with an element class, for example `.vw-gantt-bar.vw-is-selected` or `.vw-network-edge.vw-is-related`. Classes you add yourself, such as a `class` attribute on the component or the content of a slot, are passed through unchanged.
 
+The emitted classes and the DOM they sit on describe the current markup. Unlike the documented `--vw-*` properties and the theme classes you add, they are not covered by the [compatibility promise](api.md#compatibility-and-versioning) and can change in a minor release, with a changelog note. Prefer `--vw-*` properties and slots for lasting customization.
+
 In 0.1.0 these modifiers had no prefix; 0.2.0 adds it. When you upgrade from 0.1.0, rename them in custom stylesheets, test selectors and DOM queries:
 
 | Old class | New class | Applied to |
 | --- | --- | --- |
 | `selected` | `vw-is-selected` | Selected graph nodes, minimap nodes, selected edge hit areas, Gantt bars and the active dependency path |
 | `related` | `vw-is-related` | Graph nodes and edges next to the selection, and Gantt dependency paths that touch a selected bar |
-| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds` (since this release also Gantt bars in `highlightedBarIds`) |
+| `highlighted` | `vw-is-highlighted` | Gantt dependency paths and their lag labels in `highlightedDependencyIds`, and Gantt bars in `highlightedBarIds` |
 | `active` | `vw-is-active` | Pressed connection handles, the active graph edge and Gantt dependency hit areas, pressed Gantt link handles and the column resize separator being dragged |
 | `panning` | `vw-is-panning` | The graph stage while it is panned |
 | `draggable` | `vw-is-draggable` | Graph nodes that can be dragged |
 | `collapsed` | `vw-is-collapsed` | Group toggles of collapsed graph groups |
 | `solid`, `outline` | `vw-is-solid`, `vw-is-outline` | Gantt bars, from `TimelineBar.appearance` |
 | `editable` | `vw-is-editable` | Editable Gantt bars |
-| `dragging` | `vw-is-dragging` | Gantt bars with a pending preview and the progress slider being dragged (since 0.2.0 also a constraint handle being dragged) |
+| `dragging` | `vw-is-dragging` | Gantt bars with a pending preview and the progress slider being dragged, and a constraint handle being dragged |
 | `milestone` | `vw-is-milestone` | Zero-duration Gantt bars |
 | `first`, `last` | `vw-is-first`, `vw-is-last` | The start and end resize handles of a Gantt bar (`vw-bar-handle`) |
 | `start`, `finish` | `vw-is-start`, `vw-is-finish` | The start and finish link handles of a Gantt bar (`vw-gantt-link-handle`) |
 | `end` | `vw-is-end` | The tick label at the end of the Gantt range |
 | `overloaded`, `idle` | `vw-is-overloaded`, `vw-is-idle` | Gantt load segments above capacity or without load |
 
-Two newer modifiers exist only with opt-in content: `vw-is-unstyled` on graph node groups rendered by a `node` slot with `unstyledNodeSlots`, and `vw-has-slot` on Gantt milestones rendered with a `bar` slot.
+Two modifiers appear only with opt-in content: `vw-is-unstyled` on graph node groups rendered by a `node` slot with `unstyledNodeSlots`, and `vw-has-slot` on Gantt milestones rendered with a `bar` slot.
 
-The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-auto`) and the other `vw-` classes, such as `vw-critical`, `vw-dimmed` and `vw-rtl`, keep their names.
+The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-auto`) and the other `vw-` classes, such as `vw-critical`, `vw-dimmed` and `vw-rtl`, were not renamed in 0.2.0.
 
 ### Built-in dark theme
 
@@ -649,7 +664,7 @@ Notes:
 
 ### Incremental layouts with an external engine
 
-When the graph grows (a new node, a page of a [graph expansion](#expanding-a-graph-one-hop-at-a-time)), an engine that supports incremental layout can keep the nodes the user was looking at. Pass the information through `useAsyncGraphLayout`: `positions` (the boxes on display), `fixedIds` (nodes that must not move) and `addedIds` (nodes new since the last layout) are optional fields of the input, copied to every request, and part of the input key. Requests without them are exactly as before, so existing adapters keep working.
+When the graph grows (a new node, a page of a [graph expansion](#expanding-a-graph-one-hop-at-a-time)), an engine that supports incremental layout can keep the nodes the user was looking at. Pass the information through `useAsyncGraphLayout`: `positions` (the boxes on display), `fixedIds` (nodes that must not move) and `addedIds` (nodes new since the last layout) are optional fields of the input, copied to every request, and part of the input key. Requests without them carry none of these fields, so adapters that ignore them work unchanged.
 
 ```ts
 import { computed, shallowRef } from 'vue'
@@ -800,7 +815,7 @@ A Worker receives `{ type: 'request', request }` and answers `{ type: 'success',
 
 ### Preserving external routes
 
-`routeGraphPorts` and `routeGraphEdges` take `policy: 'preserve'`. With it, a path the layout drew is kept, in every edge style and also for edges with named ports, while both ends still fit: at the port anchor for a named port, otherwise on the box border. A layout can return route metadata in `layout.routes` (start and end points, ports, the sides a route leaves and enters, bend points); it is then checked as well, and it is carried through `applyGraphPositions`, `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges`. Only these edges fall back to built-in routing: edges with `points` (explicit waypoints win), edges of a node that `positions` or `sizes` moved or resized, edges whose port or metadata no longer fits, and temporary routes. Note that with `preserve`, edges with named ports are no longer always rerouted. The default `'builtin'` policy is unchanged.
+`routeGraphPorts` and `routeGraphEdges` take `policy: 'preserve'`. With it, a path the layout drew is kept, in every edge style and also for edges with named ports, while both ends still fit: at the port anchor for a named port, otherwise on the box border. A layout can return route metadata in `layout.routes` (start and end points, ports, the sides a route leaves and enters, bend points); it is then checked as well, and it is carried through `applyGraphPositions`, `applyGraphSizes`, `routeGraphPorts` and `routeGraphEdges`. Only these edges fall back to built-in routing: edges with `points` (explicit waypoints win), edges of a node that `positions` or `sizes` moved or resized, edges whose port or metadata no longer fits, and temporary routes. Note that with `preserve`, edges with named ports are not always rerouted; the default `'builtin'` policy always reroutes them.
 
 NetworkGraph applies the policy with its `routingPolicy` prop:
 

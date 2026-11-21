@@ -8,7 +8,7 @@ import type { NetworkGroup, NetworkNode, TimelineBar, TimelineRow } from './core
 // Both components are generic SFCs, so their item types flow into slots and callbacks. vue-tsc types a generic SFC as
 // a function, which has no instance type. The public type adds two construct signatures: a generic one first, which
 // Vue templates (vue-tsc) call with the props to infer the item types, and one with the default item types last, which
-// keeps `InstanceType<typeof NetworkGraph>` and `h(NetworkGraph, props)` working as before. The inferred item types are
+// keeps `InstanceType<typeof NetworkGraph>` and `h(NetworkGraph, props)` working with the default item types. The inferred item types are
 // intersected with the base types, so items inferred from an unannotated array literal keep the optional fields they
 // lack, such as `detail`.
 type SfcContext<F extends (...args: any) => any> = NonNullable<ReturnType<F>['__ctx']>
