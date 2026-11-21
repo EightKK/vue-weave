@@ -741,7 +741,9 @@ function commitFieldInput(event: Event, row: R, column: TimelineColumn<R>) {
   }
   const parsed = parseFieldValue(field, input.value)
   if (!parsed.ok) {
-    // Keep the text so it can be corrected; the reason is announced and the input is marked invalid.
+    // Keep the text so it can be corrected; the reason is announced and the input is marked invalid. The error belongs
+    // to this draft and goes with it when the source text changes.
+    cellDrafts.set(key, { text: input.value, source: shown })
     fieldInputError.value = { key, error: parsed.error }
     notice.value = parsed.error
     return
@@ -786,6 +788,22 @@ watch([() => props.rows, () => props.columns, () => props.readonly, () => props.
     cellDrafts.delete(key)
     if (fieldInputError.value?.key === key) fieldInputError.value = undefined
   }
+})
+// The cell with a parse error is watched on its own: its source text can change without new props (a `field.get` that
+// reads other reactive state), and the error belongs to the draft of the old text.
+watch(() => {
+  const error = fieldInputError.value
+  if (!error) return true
+  const draft = cellDrafts.get(error.key)
+  const [rowId, columnId] = JSON.parse(error.key) as [string, string]
+  const row = rowOrder.value.has(rowId) ? rowById.value.get(rowId) as R | undefined : undefined
+  const column = props.columns?.find(item => item.id === columnId)
+  return Boolean(draft && row && column?.field && canEditCell(row, column) && fieldText(row, column) === draft.source)
+}, current => {
+  if (current) return
+  const key = fieldInputError.value!.key
+  cellDrafts.delete(key)
+  fieldInputError.value = undefined
 })
 const displayedRows = computed(() => {
   const result: typeof tree.value = []

@@ -1360,6 +1360,24 @@ test('gantt plain cell inputs keep composed text on Enter and Escape of an input
   expect(errors).toEqual([])
 })
 
+test('a typed cell drops its parse error when its source value changes outside the props', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openLinkedGanttFixture(page, '?builtin')
+  const effort = chart.getByRole('textbox', { name: 'Row 2 · Effort', exact: true })
+  await effort.fill('oops')
+  await effort.press('Enter')
+  await expect(effort).toHaveAttribute('aria-invalid', 'true')
+  await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.setExternalEffort('r2', 2))
+  await expect(effort).toHaveValue('2')
+  await expect(effort).not.toHaveAttribute('aria-invalid', 'true')
+  // The cell edits normally again.
+  await effort.fill('3')
+  await effort.press('Enter')
+  await expect(effort).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(out('Field edits')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
 test('gantt cell inputs keep typed and composed text through re-renders until commit or cancel', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, out, json } = await openLinkedGanttFixture(page, '?builtin&plain')

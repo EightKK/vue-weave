@@ -44,9 +44,11 @@
         counts.value = { ...counts.value, [name]: (counts.value[name] ?? 0) + 1 }
       }
       const output = (label, value) => h('output', { role: 'status', 'aria-label': label }, String(value ?? ''))
+      // Effort values that the field reads from state outside `rows`, as a `field.get` that reads another ref would.
+      const externalEffort = ref({})
       const effort = {
         id: 'effort', label: 'Effort', width: 90, value: row => row.data.effort ?? '', editable: true,
-        field: { id: 'effort', kind: 'number', get: row => row.data.effort, min: 0 },
+        field: { id: 'effort', kind: 'number', get: row => (row.id in externalEffort.value ? externalEffort.value[row.id] : row.data.effort), min: 0 },
       }
       // With ?builtin, a multiple select whose text shows labels, to commit unedited text and labels back.
       const stage = {
@@ -79,6 +81,7 @@
         highlight: ids => { highlighted.value = new Set(ids) },
         setRowData,
         rerender: () => { rowHeight.value = (rowHeight.value ?? 66) + 2 },
+        setExternalEffort: (rowId, value) => { externalEffort.value = { ...externalEffort.value, [rowId]: value } },
       }
       const editor = props => [
         h('input', {

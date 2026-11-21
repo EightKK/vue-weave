@@ -89,12 +89,57 @@ test('each multiple-select entry follows the single-value rule for labels and va
   const numbers = select({ choices: [{ value: 1 }, { value: 2, label: 'Two, 2' }, { value: 3, label: '1' }], multiple: true })
   assert.deepEqual(roundTrip(numbers, [2, 1, 3]), { text: '"Two, 2", 1, 3', parsed: { ok: true, value: [2, 1, 3] } })
   assert.deepEqual(parseFieldValue(numbers, '2, 3'), { ok: true, value: [2, 3] })
-  assert.equal(parseFieldValue(select({ choices: [{ value: 1 }, { value: '1' }], multiple: true }), '1').code, 'choice')
-  // A choice that no text names (a shared label, and a value that another choice shows as its label) is shown by
-  // its label, which the parser rejects rather than reading another value.
-  const unreachable = select({ choices: [{ value: 'a', label: 'L' }, { value: 'b', label: 'L' }, { value: 'c', label: 'a' }], multiple: true })
-  assert.equal(formatFieldValue(unreachable, ['a']), 'L')
-  assert.equal(parseFieldValue(unreachable, 'L').code, 'choice')
+  // A number and a string value with the same text cannot be told apart by text, so the spec is rejected.
+  assert.throws(() => parseFieldValue(select({ choices: [{ value: 1 }, { value: '1' }], multiple: true }), '1'), /Choice 1 of select field s has no text that names it/)
+})
+
+test('a choice with an empty label is shown by its value where empty text would read as no value', () => {
+  const single = select({ choices: [{ value: 'pending', label: '' }, { value: 'done', label: 'Done' }] })
+  assert.deepEqual(roundTrip(single, 'pending'), { text: 'pending', parsed: { ok: true, value: 'pending' } })
+  assert.deepEqual(parseFieldValue(single, ''), { ok: true, value: null })
+  // In a multiple select the empty label is written quoted, which names the choice.
+  const multi = select({ choices: [{ value: 'pending', label: '' }, { value: 'done', label: 'Done' }], multiple: true })
+  assert.deepEqual(roundTrip(multi, ['pending', 'done']), { text: '"", Done', parsed: { ok: true, value: ['pending', 'done'] } })
+})
+
+test('choices that some value cannot be written for are rejected instead of reading back as another value', () => {
+  // `A` shares its label with `B`, and its value text is the label of `C` and the value of no other choice: neither
+  // text names `A`, so formatting `A` and reading it back would give another value.
+  const choices = [{ value: 'A', label: '共通' }, { value: 'B', label: '共通' }, { value: '共通', label: 'その他' }, { value: 'C', label: 'A' }]
+  for (const multiple of [false, true]) {
+    const spec = select({ choices, multiple })
+    assert.throws(() => formatFieldValue(spec, multiple ? ['A'] : 'A'), /Choice "A" of select field s has no text that names it/)
+    assert.throws(() => parseFieldValue(spec, '共通'), /Choice "A" of select field s has no text that names it/)
+  }
+  // Two choices with one label are fine while their values name them.
+  const shared = select({ choices: [{ value: 'a', label: 'L' }, { value: 'b', label: 'L' }], multiple: true })
+  assert.deepEqual(roundTrip(shared, ['a', 'b']), { text: 'a, b', parsed: { ok: true, value: ['a', 'b'] } })
+  assert.equal(parseFieldValue(shared, 'L').code, 'choice')
+})
+
+test('every valid select value round-trips or the spec is rejected', () => {
+  // Small exhaustive search over choice sets built from a few overlapping texts.
+  const texts = ['', 'a', 'b', 'a, b', ' a']
+  let checked = 0
+  for (const multiple of [false, true]) {
+    for (let mask = 0; mask < 5 ** 3; mask++) {
+      const labels = [mask % 5, Math.floor(mask / 5) % 5, Math.floor(mask / 25) % 5].map(i => texts[i])
+      const choices = labels.map((label, i) => ({ value: ['a', 'b', 'c'][i], label }))
+      const spec = select({ choices, multiple })
+      for (const value of multiple ? [['a'], ['b', 'c'], ['c', 'a', 'b']] : ['a', 'b', 'c']) {
+        let text
+        try {
+          text = formatFieldValue(spec, value)
+        } catch (error) {
+          assert.match(error.message, /has no text that names it/)
+          continue
+        }
+        assert.deepEqual(parseFieldValue(spec, text), { ok: true, value }, JSON.stringify({ choices, value, text }))
+        checked++
+      }
+    }
+  }
+  assert.ok(checked > 500)
 })
 
 test('formatting and parsing a long multiple selection stays fast', () => {
@@ -123,8 +168,8 @@ test('duplicate labels are rejected as ambiguous and formatted as values', () =>
   const crossed = [{ value: 'x', label: 'y' }, { value: 'y', label: 'z' }]
   assert.deepEqual(parseFieldValue(select({ choices: crossed }), 'y'), { ok: true, value: 'x' })
   assert.deepEqual(roundTrip(select({ choices: crossed }), 'y'), { text: 'z', parsed: { ok: true, value: 'y' } })
-  // A number and a string value with the same text cannot be told apart by text.
-  assert.equal(parseFieldValue(select({ choices: [{ value: 1 }, { value: '1' }] }), '1').code, 'choice')
+  // A number and a string value with the same text cannot be told apart by text, so the spec is rejected.
+  assert.throws(() => formatFieldValue(select({ choices: [{ value: 1 }, { value: '1' }] }), 1), /has no text that names it/)
 })
 
 test('a repeated wall time formats with its offset and parses back to the same instant', () => {

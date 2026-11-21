@@ -157,4 +157,6 @@ export type LinkedFixture = {
   setRowData(rowId: string, patch: Record<string, unknown>): void
   /** Change `rowHeight`, which re-renders the chart without new rows, bars or columns. */
   rerender(): void
+  /** Make the Effort field of a row read `value` from a ref outside `rows`, without new props. */
+  setExternalEffort(rowId: string, value: number): void
 }

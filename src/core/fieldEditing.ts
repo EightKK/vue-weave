@@ -287,7 +287,7 @@ function quoteEntry(text: string) {
 }
 
 function parseSelect(spec: TimelineFieldSpec<any>, text: string): FieldParseResult {
-  const index = indexChoices(spec.choices!)
+  const index = selectIndex(spec)
   if (!spec.multiple) {
     const match = matchChoice(index, text)
     return match.ok ? { ok: true, value: match.choice.value } : match
@@ -305,32 +305,54 @@ function parseSelect(spec: TimelineFieldSpec<any>, text: string): FieldParseResu
 
 /**
  * Text for one selected value that {@link matchChoice} resolves back to a choice with that value: the label where it
- * names the choice, else the value. When neither does (a shared label, and value text that another choice shows as
- * its label), text that the parser rejects is preferred over text that it would read as another value. A value that
- * is not among the choices is shown as is.
+ * names the choice, else the value. Unquoted text (a single select) is trimmed when it is read, and empty text reads
+ * as no value, so it names no choice there. `undefined` when neither text names the choice.
  */
-function choiceEntryText(index: ChoiceIndex, item: FieldPrimitive, quoted: boolean): string {
-  const choice = index.byIdentity.get(item)
-  if (!choice) return String(item)
-  const candidates = [choiceText(choice), String(choice.value)]
-  // Unquoted text (a single select) is trimmed when it is read.
-  const resolved = candidates.map(text => matchChoice(index, quoted ? text : text.trim()))
-  const exact = resolved.findIndex(match => match.ok && Object.is(match.choice.value, item))
-  if (exact >= 0) return candidates[exact]!
-  const rejected = resolved.findIndex(match => !match.ok)
-  return candidates[Math.max(rejected, 0)]!
+function namingText(index: ChoiceIndex, choice: FieldChoice, quoted: boolean): string | undefined {
+  for (const text of [choiceText(choice), String(choice.value)]) {
+    const read = quoted ? text : text.trim()
+    if (!quoted && read === '') continue
+    const match = matchChoice(index, read)
+    if (match.ok && Object.is(match.choice.value, choice.value)) return text
+  }
+  return undefined
+}
+
+/**
+ * Throw when a choice has no text that names it: its label and its value text both read as other choices (or as no
+ * value). Such a choice could be shown but never read back, so the built-in parser and formatter refuse the spec
+ * instead of turning the value into another one.
+ */
+function checkNameableChoices(spec: TimelineFieldSpec<any>, index: ChoiceIndex, quoted: boolean) {
+  for (const choice of index.byIdentity.values()) {
+    if (namingText(index, choice, quoted) === undefined) {
+      throw new Error('Choice ' + JSON.stringify(choice.value) + ' of select field ' + spec.id + ' has no text that names it: '
+        + 'its label and its value read as other choices; give it a label that no other choice shows or has as its value')
+    }
+  }
+}
+
+function selectIndex(spec: TimelineFieldSpec<any>) {
+  const index = indexChoices(spec.choices!)
+  checkNameableChoices(spec, index, !!spec.multiple)
+  return index
 }
 
 /**
  * Text for a select value that the built-in parser reads back. Each value is shown by its label where the label names
  * it, else by its value. In a multiple select the entries are joined with `, ` and quoted where needed (see
- * {@link quoteEntry}), so that every entry reads back by itself. The work is linear in the number of choices and values.
+ * {@link quoteEntry}), so that every entry reads back by itself. A value that is not among the choices is shown as is
+ * (it fails `validateFieldValue`). The work is linear in the number of choices and values.
  */
 function formatSelect(spec: TimelineFieldSpec<any>, value: FieldValue): string {
-  const index = indexChoices(spec.choices!)
-  if (!spec.multiple && !Array.isArray(value)) return choiceEntryText(index, value as FieldPrimitive, false)
+  const index = selectIndex(spec)
+  const text = (item: FieldPrimitive, quoted: boolean) => {
+    const choice = index.byIdentity.get(item)
+    return choice ? namingText(index, choice, quoted)! : String(item)
+  }
+  if (!spec.multiple && !Array.isArray(value)) return text(value as FieldPrimitive, false)
   const items: readonly FieldPrimitive[] = Array.isArray(value) ? value : [value as FieldPrimitive]
-  return items.map(item => quoteEntry(choiceEntryText(index, item, true))).join(', ')
+  return items.map(item => quoteEntry(text(item, true))).join(', ')
 }
 
 function isCustomError(value: unknown): value is { error: string } {
@@ -348,6 +370,7 @@ function isCustomError(value: unknown): value is { error: string } {
  *   shows values instead. With `multiple`, the text is split at unquoted commas into an array, in order. An entry in
  *   double quotes (`"Cut, weld"`, with `""` for a quote inside) is read exactly, commas and surrounding whitespace
  *   included; unquoted entries are trimmed. An empty unquoted entry (`a,,b`) or an unclosed quote is `invalid`.
+ *   Throws an Error when some choice has no text that names it (its label and value both read as other choices).
  * - `time` with `timeZone`: a trailing offset (`-05:00`, `Z`) picks one occurrence of a repeated wall time; without
  *   one, the earlier occurrence is used.
  */
