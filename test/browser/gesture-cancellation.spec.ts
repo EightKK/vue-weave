@@ -509,3 +509,34 @@ test('Gantt: turning summaryDependencies off cancels a connection armed from a r
   await expect(out('Connections')).toHaveText('0')
   expect(errors).toEqual([])
 })
+
+test('Gantt: a zoom change cancels a progress drag as a source change, while a bar drag refuses the zoom buttons', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?interactions=1&cancels=1')
+  const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true })
+  const slider = chart.getByRole('slider', { name: 'Progress of Task A', exact: true })
+  const handle = (await slider.boundingBox())!
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 30, y, { steps: 3 })
+  // The zoom buttons change the time axis under the pointer: the progress preview ends without a proposal.
+  await zoom.getByRole('button', { name: 'Zoom in', exact: true }).dispatchEvent('click')
+  await expect(zoom.locator('output')).toHaveText('135%')
+  await expect(out('Last edit cancel')).toHaveText('{"reason":"source-changed","barIds":["a"]}')
+  await page.mouse.move(x + 60, y, { steps: 3 })
+  await page.mouse.up()
+  await expect(out('Last progress edit')).toHaveText('')
+  // A bar drag scrolls at the edges, so the zoom buttons wait for it instead of cancelling it.
+  const taskB = chart.getByRole('button', { name: /^Task B \d/ })
+  const box = (await taskB.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2, { steps: 4 })
+  await expect(taskB).toHaveClass(/\bvw-is-dragging\b/)
+  await zoom.getByRole('button', { name: 'Zoom out', exact: true }).dispatchEvent('click')
+  await expect(zoom.locator('output')).toHaveText('135%')
+  await page.mouse.up()
+  await expect(out('Last edit')).toContainText('"id":"b"')
+  expect(errors).toEqual([])
+})

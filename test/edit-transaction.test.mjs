@@ -68,6 +68,36 @@ test('invalid: synchronous validation failure changes nothing and never saves', 
   assert.equal(tx.canUndo.value, false)
 })
 
+test('invalid: a throwing validate, apply or createOperationId resolves to invalid instead of throwing', async () => {
+  const check = async (options, reason) => {
+    const ctx = setup(options)
+    let promise
+    assert.doesNotThrow(() => { promise = ctx.tx.submit(['a']) })
+    assert.deepEqual(await promise, { status: 'invalid', reason })
+    assert.equal(ctx.saves.length, 0)
+    assert.equal(ctx.tx.status.value, 'idle')
+    assert.equal(ctx.tx.candidateState.value, undefined)
+    assert.equal(ctx.tx.pendingTransaction.value, undefined)
+    assert.equal(ctx.tx.canUndo.value, false)
+    return ctx
+  }
+  const adapter = (patch) => ({ adapter: { validate: () => true, apply: (state, changes) => ({ items: [...state.items, ...changes] }), save: () => assert.fail('never saved'), ...patch } })
+  await check(adapter({ validate: () => { throw new Error('validator crashed') } }), 'validator crashed')
+  await check(adapter({ apply: () => { throw new TypeError('cannot apply') } }), 'cannot apply')
+  // A thrown value without a message falls back to a generic reason.
+  await check(adapter({ validate: () => { throw undefined } }), 'Changes failed validation')
+  await check({ createOperationId: () => { throw new Error('no id') } }, 'no id')
+  // Undo and redo create operation IDs too, and resolve the same way.
+  let failing = false
+  const ctx = setup({ createOperationId: () => { if (failing) throw new Error('no id'); return 'op-ok' } })
+  await commitEdit(ctx, 'a', 'v1')
+  failing = true
+  assert.deepEqual(await ctx.tx.undo(), { status: 'invalid', reason: 'no id' })
+  assert.equal(ctx.tx.status.value, 'idle')
+  assert.equal(ctx.tx.canUndo.value, true)
+  assert.equal(ctx.saves.length, 1)
+})
+
 test('R04: re-editing while saving returns busy without partial commit', async () => {
   const ctx = setup()
   const p = ctx.tx.submit(['a'])

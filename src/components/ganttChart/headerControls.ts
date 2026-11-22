@@ -9,14 +9,22 @@ export function headerColumnIds(option: boolean | readonly string[] | undefined,
   return new Set(option === true ? [timelineLabelColumnId, ...columns.map(column => column.id)] : option)
 }
 
+/** `previous` when `next` is a list with the same IDs in the same order, otherwise `next`. */
+export function sameOption(
+  previous: boolean | readonly string[] | undefined, next: boolean | readonly string[] | undefined,
+): boolean | readonly string[] | undefined {
+  return Array.isArray(previous) && Array.isArray(next) && previous.length === next.length
+    && previous.every((id, index) => id === next[index]) ? previous : next
+}
+
 /** Whether a filter has any condition: non-blank text or a value list. */
 export function filterActive(filter: TimelineViewFilter | undefined): boolean {
   return Boolean(filter && (filter.text?.trim() || filter.values))
 }
 
 /**
- * The filters after changing one column's conditions. A filter left without conditions is removed; a changed one keeps
- * its place. Returns new objects and never changes `filters`.
+ * The filters after changing one column's conditions. A filter left without conditions (blank or whitespace-only text
+ * and no value list) is removed; a changed one keeps its place. Returns new objects and never changes `filters`.
  */
 export function withColumnFilter(
   filters: readonly TimelineViewFilter[], columnId: string, patch: { text?: string; values?: (string | number)[] | null },
@@ -27,7 +35,7 @@ export function withColumnFilter(
   const next: TimelineViewFilter = { columnId }
   if (text) next.text = text
   if (values) next.values = [...values]
-  const keep = filterActive(next) || Boolean(next.text)
+  const keep = filterActive(next)
   const result: TimelineViewFilter[] = []
   let placed = false
   for (const filter of filters) {

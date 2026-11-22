@@ -43,9 +43,18 @@ export interface GanttValidationInput<R extends TimelineRow> {
   labelWidth: number | undefined
   minColumnWidth: number | undefined
   maxColumnWidth: number | undefined
-  /** True with `columnsResizable`, `sortableColumns` or `filterableColumns`: the header addresses the label column by ID. */
+  /**
+   * True with `columnsResizable`, or with `sortableColumns` or `filterableColumns` naming at least one column: the header
+   * addresses the label column by ID.
+   */
   columnsResizable: boolean | undefined
   columns: readonly TimelineColumn<R>[] | undefined
+  /** The header options; a list may only name `timelineLabelColumnId` and extra column IDs. */
+  sortableColumns: boolean | readonly string[] | undefined
+  filterableColumns: boolean | readonly string[] | undefined
+  /** The row tree of the same `rows` from an earlier valid run; reused instead of building it again. */
+  tree?: ReturnType<typeof createTimelineRowTree<R>>
+
   headerBands: readonly (readonly TimelineBand[])[] | undefined
   markers: readonly TimelineMarker[] | undefined
   markerRanges: readonly TimelineMarkerRange[] | undefined
@@ -117,5 +126,17 @@ export function validateGanttProps<R extends TimelineRow>(input: GanttValidation
     throw new Error('The column ID is reserved for the row label column: ' + timelineLabelColumnId)
   }
   validateDisplay(input)
-  return { tree: createTimelineRowTree(input.rows), load: validateLoad(input) }
+  checkHeaderOption('sortableColumns', input.sortableColumns, input.columns)
+  checkHeaderOption('filterableColumns', input.filterableColumns, input.columns)
+  return { tree: input.tree ?? createTimelineRowTree(input.rows), load: validateLoad(input) }
+}
+
+/** A header option list may only name the row label column (`timelineLabelColumnId`) and extra columns. */
+function checkHeaderOption<R extends TimelineRow>(
+  name: string, option: boolean | readonly string[] | undefined, columns: readonly TimelineColumn<R>[] | undefined,
+) {
+  if (option === undefined || typeof option === 'boolean') return
+  if (!Array.isArray(option)) throw new Error(name + ' must be a boolean or a list of column IDs')
+  const known = new Set([timelineLabelColumnId, ...(columns ?? []).map(column => column.id)])
+  for (const id of option) if (!known.has(id)) throw new Error(`Unknown column in ${name}: ${String(id)}`)
 }

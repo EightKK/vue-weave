@@ -3134,6 +3134,8 @@ interface GanttLabels {
     resizeColumn?: string;
     columnResizeRejected?: string;
     sortBy?: string;
+    sortedAscending?: string;
+    sortedDescending?: string;
     filterBy?: string;
     filtered?: string;
     filterContains?: string;

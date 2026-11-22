@@ -36,7 +36,7 @@ import type { TimelineDrop } from './types.js'
 import type { TimelineVisibleWindow } from '../core/windowedData.js'
 import {
   canvasInset, clipSpan, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox, linkHandleOffset,
-  rowScrollTop, sameItems, sameRange,
+  rowScrollTop, sameItems, sameRange, type RowWindow,
 } from './ganttChart/geometry.js'
 import { validateGanttProps } from './ganttChart/validateProps.js'
 import { useBarTooltip } from './ganttChart/useBarTooltip.js'
@@ -50,7 +50,7 @@ import {
 
 import { sheetKey, useSheet } from './ganttChart/sheet.js'
 import { nextTimelineSort, type TimelineViewFilter, type TimelineViewSort } from '../core/timelineView.js'
-import { filterActive, headerColumnIds, withColumnFilter } from './ganttChart/headerControls.js'
+import { filterActive, headerColumnIds, sameOption, withColumnFilter } from './ganttChart/headerControls.js'
 import type { TimelineSheetEdit } from '../core/types.js'
 
 const props = withDefaults(defineProps<{
@@ -211,18 +211,20 @@ const props = withDefaults(defineProps<{
   /**
    * Shows a sort button in the header of these columns: `true` for the row label column and every extra column, or a
    * list of column IDs (`timelineLabelColumnId` for the row label column). Activating it proposes the next sort
-   * (ascending, descending, none) through `update:sort`; the chart never reorders rows itself. Opt-in. Default: false.
+   * (ascending, descending, none) through `update:sort`; the chart never reorders rows itself. An unknown ID is reported
+   * through `validation-error`. Opt-in. Default: false.
    */
   sortableColumns?: boolean | readonly string[]
   /**
-   * The applied sort, shown through `aria-sort` on the header of its first rule's column (`ruleId` is the column ID).
+   * The applied sort, shown on the sort button of each rule's column (`ruleId` is the column ID) by its glyph and name.
    * Supports `v-model:sort`, for example with `useTimelineView`'s `state.sort` and `setSort`. Default: none.
    */
   sort?: readonly TimelineViewSort[]
   /**
    * Shows a filter button in the header of these columns (`true`: the row label column and every extra column). It
    * opens a small dialog with a text filter, plus a value list for a `select` field, and proposes the filters through
-   * `update:filters`; the chart never filters rows itself. Opt-in. Default: false.
+   * `update:filters`; the chart never filters rows itself. An unknown ID is reported through `validation-error`.
+   * Opt-in. Default: false.
    */
   filterableColumns?: boolean | readonly string[]
   /** The applied column filters, shown on the filter buttons. Supports `v-model:filters`. Default: none. */
@@ -370,7 +372,8 @@ const emit = defineEmits<{
   /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
   'column-resize-rejected': [change: TimelineColumnResize, reason: string]
   /**
-   * A header sort button (`sortableColumns`) proposes a new sort: one ascending or descending rule, or none. Apply it to
+   * A header sort button (`sortableColumns`) proposes a new sort (`nextTimelineSort`): only that column's rule changes, and
+   * the other rules are kept. Apply it to
    * the rows, for example with `useTimelineView`'s `setSort`, and pass it back as `sort`. Supports `v-model:sort`.
    */
   'update:sort': [sort: TimelineViewSort[]]
@@ -448,7 +451,7 @@ const messages = computed<GanttLabels>(() => ({
   createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
   moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
   resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.', lag: 'Lag',
-  sortBy: 'Sort by', filterBy: 'Filter', filtered: 'filtered', filterContains: 'Contains', filterValues: 'Show values',
+  sortBy: 'Sort by', sortedAscending: 'ascending', sortedDescending: 'descending', filterBy: 'Filter', filtered: 'filtered', filterContains: 'Contains', filterValues: 'Show values',
   clearFilter: 'Clear filter',
   startNoEarlierThan: 'Start no earlier than', startNoLaterThan: 'Start no later than', finishNoEarlierThan: 'Finish no earlier than',
   finishNoLaterThan: 'Finish no later than', fixedStart: 'Must start on', constraintViolated: 'violated',
@@ -487,7 +490,16 @@ const minimum = computed(() => props.minDuration ?? activeSnap.value)
 // development builds still surface it (production Vue logs it instead of rendering invalid data).
 const validationError = ref<Error>()
 const tree = shallowRef<ReturnType<typeof createTimelineRowTree<R>>>([])
+// The `rows` that `tree` was built from. Other validated props (`now`, `markers`, ...) reuse the tree, so a change of
+// them neither rebuilds the rows nor cancels a gesture that depends on them.
+let treeRows: readonly R[] | undefined
 const loadHistogram = shallowRef<Map<string, ResourceLoadHistogram>>()
+// Header sorting and filtering (`sortableColumns`, `filterableColumns`): the column IDs that get controls. Lists are
+// compared by value, so an inline literal in a parent template does not count as a change.
+const stableSortable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.sortableColumns))
+const stableFilterable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.filterableColumns))
+const sortableIds = computed(() => headerColumnIds(stableSortable.value, props.columns ?? []))
+const filterableIds = computed(() => headerColumnIds(stableFilterable.value, props.columns ?? []))
 function validateProps() {
   return validateGanttProps({
     rows: props.rows, bars: props.bars, dependencies: props.dependencies, laneCount: props.laneCount,
@@ -497,9 +509,12 @@ function validateProps() {
     nonWorkingPeriods: props.nonWorkingPeriods, progressStep: props.progressStep, tooltipDelay: props.tooltipDelay,
     dependencyStyle: props.dependencyStyle, createDuration: props.createDuration, statusDate: props.statusDate,
     labelWidth: props.labelWidth, minColumnWidth: props.minColumnWidth, maxColumnWidth: props.maxColumnWidth,
-    columnsResizable: props.columnsResizable || Boolean(props.sortableColumns) || Boolean(props.filterableColumns), columns: props.columns, headerBands: activeBands.value, markers: props.markers,
+    columnsResizable: props.columnsResizable || sortableIds.value.size > 0 || filterableIds.value.size > 0, columns: props.columns,
+    sortableColumns: stableSortable.value, filterableColumns: stableFilterable.value,
+    headerBands: activeBands.value, markers: props.markers,
     markerRanges: props.markerRanges, baselineIds: stableBaselineIds.value, loadRows: props.loadRows,
     loadSegments: props.loadSegments, loadRowHeight: props.loadRowHeight,
+    ...(treeRows !== undefined && treeRows === props.rows ? { tree: tree.value } : {}),
   })
 }
 // Controlled props are watched by reference. Pass new arrays and objects instead of mutating them in place.
@@ -510,15 +525,17 @@ watch([
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.dependencyStyle, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
   () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value, () => props.markerRanges,
-  () => props.summaryDependencies, () => Boolean(props.sortableColumns) || Boolean(props.filterableColumns),
+  () => props.summaryDependencies, stableSortable, stableFilterable,
 ], () => {
   try {
     const result = validateProps()
-    tree.value = result.tree
+    if (result.tree !== tree.value) tree.value = result.tree
+    treeRows = props.rows
     loadHistogram.value = result.load
     validationError.value = undefined
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error))
+    treeRows = undefined
     tree.value = []
     loadHistogram.value = undefined
     validationError.value = failure
@@ -920,8 +937,13 @@ const sheet = useSheet<R>({
     syncViewport()
   },
   rtl: () => rtl.value,
+  busy: (): boolean => gestureActive(),
 })
-watch([() => props.spreadsheet, () => props.readonly], sheet.reset)
+// A fill handle drag that new data ends is reported like any other cancelled gesture, before the sheet drops it.
+watch([() => props.spreadsheet, () => props.readonly], () => {
+  if (sheet.fill.value) cancelGestures('source-changed')
+  sheet.reset()
+})
 /**
  * Clipboard events while a spreadsheet cell has focus. They are read on the document because a browser may dispatch
  * them to the body rather than to a focused element that is not editable.
@@ -937,7 +959,10 @@ function sheetClipboard(event: Event) {
 const clipboardEvents = ['copy', 'cut', 'paste'] as const
 onMounted(() => { for (const type of clipboardEvents) document.addEventListener(type, sheetClipboard) })
 onUnmounted(() => { for (const type of clipboardEvents) document.removeEventListener(type, sheetClipboard) })
-watch([displayedRows, () => props.columns], sheet.refresh)
+watch([displayedRows, () => props.columns], () => {
+  if (sheet.fill.value) cancelForSource(true)
+  sheet.refresh()
+})
 /** Whether a cell is shown as a spreadsheet cell button (no `cell` or `cell-editor` slot, editor closed). */
 function sheetCell(row: R, column: TimelineColumn<R>) {
   return props.spreadsheet && !slots.cell && !slots['cell-editor'] && sheet.editing.value !== cellKey(row, column)
@@ -1059,20 +1084,26 @@ const baselineChoice = computed(() => validationError.value ? { ids: [], describ
 const baselineGeometry = computed(() => baselineLayout(baselineChoice.value.ids.length))
 const barHeight = computed(() => Math.max(1, laneHeight.value - 6 - baselineGeometry.value.reserve))
 const bodyHeight = computed(() => displayedRows.value.length * props.rowHeight)
-const xWindow = computed(() => ({
-  left: Math.min(axis.value.width, Math.max(0, viewport.value.left - 80)),
-  right: Math.min(axis.value.width, Math.max(0, viewport.value.left + viewport.value.width - viewport.value.labels + 80)),
-}))
-const timeWindow = computed(() => ({
-  start: axis.value.toTime(xWindow.value.left),
-  end: axis.value.toTime(xWindow.value.right),
-}))
-const rowWindow = computed(() => visibleRows(
-  viewport.value.top,
-  Math.max(0, viewport.value.height - headerHeight.value),
-  props.rowHeight,
-  displayedRows.value.length,
-))
+// The windows keep their objects while their values stay the same, so a vertical scroll does not recompute what
+// depends on the time window, and a horizontal scroll does not recompute what depends on the row window.
+const xWindow = computed<{ left: number; right: number }>(previous => {
+  const left = Math.min(axis.value.width, Math.max(0, viewport.value.left - 80))
+  const right = Math.min(axis.value.width, Math.max(0, viewport.value.left + viewport.value.width - viewport.value.labels + 80))
+  return previous && previous.left === left && previous.right === right ? previous : { left, right }
+})
+const timeWindow = computed<TimeRange>(previous => {
+  const next = { start: axis.value.toTime(xWindow.value.left), end: axis.value.toTime(xWindow.value.right) }
+  return previous && sameRange(previous, next) ? previous : next
+})
+const rowWindow = computed<RowWindow>(previous => {
+  const next = visibleRows(
+    viewport.value.top,
+    Math.max(0, viewport.value.height - headerHeight.value),
+    props.rowHeight,
+    displayedRows.value.length,
+  )
+  return previous && previous.first === next.first && previous.afterLast === next.afterLast ? previous : next
+})
 /** The part of the axis that can be drawn: `range` inside the visible time window. Overlays are clipped to it. */
 const drawnWindow = computed(() => drawableWindow(stableRange.value, timeWindow.value))
 const shownBands = computed(() => (activeBands.value ?? []).map(level => level.flatMap(band => {
@@ -1624,14 +1655,26 @@ function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
     })))
 }
 
+/** Measure the viewport, the label column and the scroll position. A viewport that did not change keeps its object. */
 function syncViewport() {
   const el = scroller.value
   if (!el) return
   const labels = el.querySelector('.vw-gantt-corner')?.getBoundingClientRect().width ?? 154
-  viewport.value = {
-    width: el.clientWidth, height: el.clientHeight, left: scrollStart(el), top: el.scrollTop, labels,
-  }
+  setViewport({ width: el.clientWidth, height: el.clientHeight, left: scrollStart(el), top: el.scrollTop, labels })
   measureLabelColumn()
+}
+/**
+ * `scroll` events: only the scroll position. Sizes and the label column are measured by the ResizeObserver (and every
+ * explicit `syncViewport`), so scrolling reads no layout beyond the scroll offsets.
+ */
+function syncScroll() {
+  const el = scroller.value
+  if (el) setViewport({ ...viewport.value, left: scrollStart(el), top: el.scrollTop })
+}
+function setViewport(next: typeof viewport.value) {
+  const current = viewport.value
+  if (next.width !== current.width || next.height !== current.height || next.left !== current.left || next.top !== current.top
+    || next.labels !== current.labels) viewport.value = next
 }
 
 /** Width of the visible time area: the scroll viewport without the sticky label column. */
@@ -1690,20 +1733,26 @@ function editable(bar: TimelineBar) {
   return !props.readonly && Boolean(bar.editable) && bar.start >= bounds.value.start && bar.end <= bounds.value.end
 }
 
-/** The bars of the in-flight pointer gesture or armed connection, or undefined when none is in flight. */
-function gestureInFlight(): { barIds: string[]; rowId?: string } | undefined {
+/**
+ * The bars of the in-flight pointer gesture or armed connection, or undefined when none is in flight. `fill` counts a
+ * spreadsheet fill handle drag, which has no bars.
+ */
+function gestureInFlight(fill = true): { barIds: string[]; rowId?: string } | undefined {
   const active = gesture
   const ids = new Set<string>()
   if (active?.type === 'bar') for (const bar of active.group) ids.add(bar.id)
   if (active?.type === 'progress' || active?.type === 'constraint') ids.add(active.id)
   if (linkDraft.value) ids.add(linkDraft.value.fixed.bar)
-  if (!ids.size && active?.type !== 'create' && active?.type !== 'row' && active?.type !== 'column') return undefined
+  if (!ids.size && active?.type !== 'create' && active?.type !== 'row' && active?.type !== 'column' && !(fill && sheet.fill.value)) return undefined
   return active?.type === 'create' ? { barIds: [...ids], rowId: active.rowId } : { barIds: [...ids] }
 }
-/** End every pointer gesture and armed connection, and report it through `edit-cancel` when one was in flight. */
-function cancelGestures(reason: TimelineEditCancelReason) {
-  const info = gestureInFlight()
-  resetGestures()
+/**
+ * End every pointer gesture and armed connection, and report it through `edit-cancel` when one was in flight. With
+ * `keepFill`, a spreadsheet fill handle drag goes on.
+ */
+function cancelGestures(reason: TimelineEditCancelReason, keepFill = false) {
+  const info = gestureInFlight(!keepFill)
+  resetGestures(keepFill)
   if (info) emit('edit-cancel', { reason, barIds: info.barIds })
 }
 /** Cancel everything in flight: gestures, an armed connection and an open cell editor. */
@@ -1711,19 +1760,22 @@ function cancelEdit(reason: TimelineEditCancelReason = 'api') {
   cancelGestures(reason)
   cancelCellEditor(reason)
 }
-/** New source data or coordinates: `hidden` when the gesture's row is no longer displayed, otherwise `source-changed`. */
-function cancelForSource() {
-  const info = gestureInFlight()
-  if (!info) return resetGestures()
+/**
+ * New source data or coordinates: `hidden` when the gesture's row is no longer displayed, otherwise `source-changed`.
+ * A fill handle drag depends only on the displayed rows and the columns, so it is cancelled only with `fill`.
+ */
+function cancelForSource(fill = false) {
+  const info = gestureInFlight(fill)
+  if (!info) return resetGestures(!fill)
   const hidden = info.barIds.some(id => {
     const bar = barById.value.get(id)
     return bar !== undefined && !rowOrder.value.has(bar.rowId)
   }) || (info.rowId !== undefined && rowById.value.has(info.rowId) && !rowOrder.value.has(info.rowId))
-  cancelGestures(hidden ? 'hidden' : 'source-changed')
+  cancelGestures(hidden ? 'hidden' : 'source-changed', !fill)
 }
 
-/** Reset every pointer gesture and armed connection without reporting it. */
-function resetGestures() {
+/** Reset every pointer gesture and armed connection without reporting it; with `keepFill`, not a fill handle drag. */
+function resetGestures(keepFill = false) {
   endGesture('bar')
   previews.value = undefined
   stopAutoScroll()
@@ -1735,14 +1787,16 @@ function resetGestures() {
   cancelConstraint()
   clearCascade()
   endGesture('pinch')
+  if (!keepFill) sheet.cancelFill()
 }
 
 /**
- * Whether a pointer owns a gesture: an edit, progress, link, create, row or column drag, or a pinch. `isPrimary` is per
- * pointer type, so a mouse and a pen (or touch) can both be primary; every pointer gesture start checks this.
+ * Whether a pointer owns a gesture: an edit, progress, link, create, row or column drag, a pinch or a spreadsheet fill
+ * handle drag. `isPrimary` is per pointer type, so a mouse and a pen (or touch) can both be primary; every pointer
+ * gesture start checks this.
  */
-function pointerGestureActive() {
-  return gesture !== undefined
+function pointerGestureActive(): boolean {
+  return gesture !== undefined || Boolean(sheet.fill.value)
 }
 // Pointer events of the scroll viewport. The gestures capture the pointer on an element inside it, so their events
 // bubble here; each handler ignores events of other pointers and gestures. Column separators handle their own events.
@@ -1770,7 +1824,7 @@ function finishGesture(event: PointerEvent) {
   finishRowDrag(event)
 }
 /** Whether a gesture owns the pointer or keyboard: a pointer gesture or an armed connection. */
-function gestureActive() {
+function gestureActive(): boolean {
   return pointerGestureActive() || Boolean(linkDraft.value)
 }
 
@@ -1788,25 +1842,25 @@ function settle(result: boolean | string | void, fallback?: string) {
   return reason
 }
 
+/** Emit `edit` or `edit-rejected`; returns whether `edit` was emitted. */
 function propose(change: TimelineEdit) {
-  if (change.before.start === change.after.start && change.before.end === change.after.end && !change.row) return
+  if (change.before.start === change.after.start && change.before.end === change.after.end && !change.row) return false
   const reason = settle(props.validateEdit?.(change))
   if (reason !== undefined) emit('edit-rejected', change, reason)
   else emit('edit', change)
+  return reason === undefined
 }
 
-/** A single change keeps the `edit` contract; several changes form one atomic `edits` batch. */
+/** A single change keeps the `edit` contract; several changes form one atomic `edits` batch. Returns whether `edit` or `edits` was emitted. */
 function proposeAll(changes: TimelineEdit[]) {
-  if (changes.length <= 1) {
-    if (changes[0]) propose(changes[0])
-    return
-  }
+  if (changes.length <= 1) return changes[0] ? propose(changes[0]) : false
   const reason = props.validateEdits
     ? rejection(props.validateEdits(changes))
     : changes.reduce<string | undefined>((found, change) => found ?? rejection(props.validateEdit?.(change)), undefined)
   notice.value = reason ?? ''
   if (reason !== undefined) emit('edits-rejected', changes, reason)
   else emit('edits', changes)
+  return reason === undefined
 }
 
 // Cascade (`cascade`): follow-on changes of other bars, drawn as ghosts during a drag and proposed with the edit.
@@ -1842,18 +1896,18 @@ const cascadeBoxes = computed(() => (cascadeGhosts.value ?? []).flatMap(change =
  * Propose move and resize changes. With `cascade`, the follow-on changes join the primary ones (which come first) in
  * one `edits` batch; when there are none, a single change keeps the `edit` contract.
  */
-function proposeEdits(changes: readonly TimelineEdit[], cascaded?: CascadeResult) {
+function proposeEdits(changes: readonly TimelineEdit[], cascaded?: CascadeResult): boolean {
   const primary = changes.filter(change => change.row || change.before.start !== change.after.start || change.before.end !== change.after.end)
-  if (!primary.length) return
+  if (!primary.length) return false
   if (!props.cascade) return proposeAll(primary)
   const result = cascaded ?? cascadeFor(primary)
   if ('error' in result) {
     notice.value = result.error
     if (primary.length === 1) emit('edit-rejected', primary[0]!, result.error)
     else emit('edits-rejected', primary, result.error)
-    return
+    return false
   }
-  proposeAll([...primary, ...result.changes])
+  return proposeAll([...primary, ...result.changes])
 }
 
 /** Bars that move together: the selected editable bars when multiSelect includes this bar, otherwise the bar itself. */
@@ -1891,7 +1945,7 @@ function buildChanges(group: readonly TimelineBar[], ranges: readonly TimeRange[
 
 function startEdit(event: PointerEvent, bar: TimelineBar) {
   suppressSelection = undefined
-  if (!editable(bar) || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
+  if (!editable(bar) || !event.isPrimary || event.button !== 0 || gestureActive()) return
   const target = event.target as HTMLElement
   const mode = (target.closest<HTMLElement>('[data-edit-mode]')?.dataset.editMode ?? 'move') as EditMode
   if (mode !== 'move' && bar.end - bar.start < minimum.value) return
@@ -2004,14 +2058,15 @@ function editWithKeys(event: KeyboardEvent, bar: TimelineBar) {
   if (event.key === 'Escape') return cancelEdit('escape')
   if (props.contextMenu && isMenuKey(event)) return keyboardContextMenu(event, { kind: 'bar', id: bar.id }, bar.rowId)
   if (props.deletable && (event.key === 'Delete' || event.key === 'Backspace')) return deleteFrom(event, bar)
-  if (!editable(bar) || gesture?.type === 'bar') return
+  // Like the other keyboard paths, keys do not edit while a pointer gesture or an armed connection is in flight.
+  if (!editable(bar) || gestureActive()) return
   if (props.rowDraggable && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.altKey && !event.shiftKey) {
     const group = movingGroup(bar)
     const shift = rowShiftFor(group, event.key === 'ArrowUp' ? -1 : 1)
     event.preventDefault()
     if (!shift) return
-    pendingFocus = bar.id
-    proposeEdits(buildChanges(group, group, 'move', 'keyboard', shift))
+    // Focus follows the bar to its new row only after a proposal; a rejected one leaves nothing to follow.
+    if (proposeEdits(buildChanges(group, group, 'move', 'keyboard', shift))) pendingFocus = bar.id
     return
   }
   if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
@@ -2042,6 +2097,8 @@ function onBarBlur(id: string) {
   blurTarget(barTarget(id))
   if (focusedBarId.value === id) focusedBarId.value = undefined
   if (pendingReveal === id) pendingReveal = undefined
+  // An ignored keyboard row move must not pull focus back to the bar on a later, unrelated update of `bars`.
+  if (pendingFocus === id) pendingFocus = undefined
   blurTooltip(id)
 }
 
@@ -2276,7 +2333,7 @@ function captureLink(event: PointerEvent) {
 }
 function startLink(event: PointerEvent, id: string, end: TimelineBarEnd) {
   skipLinkClick = false
-  if (linkDraft.value || !props.connectable || !event.isPrimary || event.button !== 0 || pointerGestureActive()) return
+  if (!props.connectable || !event.isPrimary || event.button !== 0 || gestureActive()) return
   linkDraft.value = { fixed: { bar: id, end }, role: 'to' }
   captureLink(event)
 }
@@ -2571,7 +2628,13 @@ watch([
   () => props.progressEditable, () => props.progressStep, () => props.createDuration, () => props.rowsReorderable,
   () => props.columnsResizable, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth,
   () => props.constraintsEditable,
-], cancelForSource)
+], () => cancelForSource())
+// A new zoom factor (buttons, presets, Ctrl+wheel, fitToBars) maps pointer positions to other times, so every gesture
+// that previews times ends with `source-changed`. A pinch changes the zoom itself, and row, column and fill drags do
+// not depend on the time axis; an armed keyboard connection has no pointer position and stays armed.
+watch(zoom, () => {
+  if (gesture && gesture.type !== 'pinch' && gesture.type !== 'row' && gesture.type !== 'column') cancelGestures('source-changed')
+})
 
 // Column resizing (`columnsResizable`). A separator at the inline-end edge of each header cell previews pointer
 // drags and proposes keyboard steps; the parent accepts `column-resize` by setting the column width or `labelWidth`.
@@ -2666,9 +2729,8 @@ const headerCells = computed(() => {
 
 // Header sorting and filtering (`sortableColumns`, `filterableColumns`). The header shows the controlled `sort` and
 // `filters` and proposes changes; the parent reorders or filters the rows (for example with `useTimelineView`), and the
-// new rows cancel an in-flight gesture like any other source change.
-const sortableIds = computed(() => headerColumnIds(props.sortableColumns, props.columns ?? []))
-const filterableIds = computed(() => headerColumnIds(props.filterableColumns, props.columns ?? []))
+// new rows cancel an in-flight gesture like any other source change. `sortableIds` and `filterableIds` are defined
+// with the validation above.
 interface HeaderControls {
   id: string
   label: string
@@ -2683,11 +2745,11 @@ interface HeaderControls {
 function headerControls(id: string, label: string, column?: TimelineColumn<R>): HeaderControls | undefined {
   const sortable = sortableIds.value.has(id), filterable = filterableIds.value.has(id)
   if (!sortable && !filterable) return undefined
-  const rule = props.sort?.[0]
-  const direction = rule?.ruleId === id ? rule.direction : undefined
+  // Every rule of the sort shows its direction, not only the first one.
+  const direction = props.sort?.find(rule => rule.ruleId === id)?.direction
   const filter = props.filters?.find(item => item.columnId === id)
-  const attrs: Record<string, string> = { role: 'columnheader', 'data-vw-header': id }
-  if (sortable) attrs['aria-sort'] = direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
+  // The header is not a table row, so the sort state is part of the sort button's name instead of `aria-sort`.
+  const attrs: Record<string, string> = { 'data-vw-header': id }
   const choices = column?.field?.kind === 'select' ? column.field.choices : undefined
   return { id, label, sortable, filterable, direction, filter, filtered: filterActive(filter), attrs, ...(choices ? { choices } : {}) }
 }
@@ -2699,8 +2761,21 @@ const headerList = computed<HeaderCell[]>(() => {
   if (!controls) return headerCells.value
   return [{ key: labelHeaderKey, className: 'vw-name-column vw-header-controls', style: {}, attrs: controls.attrs, on: headerControlEvents(controls), text: messages.value.rows, controls }, ...headerCells.value]
 })
+/**
+ * Text typed into a filter box. Text being composed with an input method is proposed once, when the composition ends.
+ * The box shows the applied filter: once the parent has handled the proposal, text it did not apply is replaced by the
+ * applied text, as the value-list checkboxes are. Text that differs from it only in surrounding whitespace is left as
+ * typed, since matching trims it anyway.
+ */
 function filterText(controls: HeaderControls, event: Event) {
-  proposeFilter(controls.id, { text: (event.target as HTMLInputElement).value })
+  if ((event as InputEvent).isComposing) return
+  const input = event.target as HTMLInputElement
+  const id = controls.id
+  proposeFilter(id, { text: input.value })
+  void nextTick(() => {
+    const applied = props.filters?.find(filter => filter.columnId === id)?.text ?? ''
+    if (input.isConnected && input.value.trim() !== applied.trim()) input.value = applied
+  })
 }
 function clearFilter(controls: HeaderControls) {
   proposeFilter(controls.id, { text: '', values: null })
@@ -2709,6 +2784,12 @@ function clearFilter(controls: HeaderControls) {
 const sortGlyph = (direction: TimelineViewSort['direction'] | undefined) => direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'
 function toggleSort(id: string) {
   emit('update:sort', nextTimelineSort(props.sort ?? [], id))
+}
+/** "Sort by Finish", with the applied direction in parentheses: "Sort by Finish (ascending)". */
+function sortButtonName(controls: HeaderControls) {
+  const name = `${messages.value.sortBy} ${controls.label}`
+  const direction = controls.direction === 'asc' ? messages.value.sortedAscending : controls.direction === 'desc' ? messages.value.sortedDescending : undefined
+  return direction ? `${name} (${direction})` : name
 }
 const filterName = (controls: HeaderControls) => `${messages.value.filterBy} ${controls.label}`
 const filterButtonName = (controls: HeaderControls) => filterName(controls) + (controls.filtered ? ` (${messages.value.filtered})` : '')
@@ -3655,7 +3736,7 @@ onUnmounted(() => {
     </div>
     <div
       ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
-      @keydown.esc="cancelEdit('escape')" @scroll.passive="syncViewport" @pointerdown="pressScroller" @contextmenu="onContextMenu"
+      @keydown.esc="cancelEdit('escape')" @scroll.passive="syncScroll" @pointerdown="pressScroller" @contextmenu="onContextMenu"
       @dragenter="acceptDrag" @dragover="acceptDrag" @drop="dropOnChart"
       @pointermove="movePointer" @pointerup="releasePointer" @pointercancel="releasePointer" @lostpointercapture="finishGesture"
     >
@@ -3680,7 +3761,7 @@ onUnmounted(() => {
               <div v-for="cell in headerList" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">
                 <template v-if="cell.controls">
                   <button v-if="cell.controls.sortable" type="button" class="vw-column-sort" :class="{ 'vw-is-sorted': cell.controls.direction }"
-                    :aria-label="`${messages.sortBy} ${cell.controls.label}`" @pointerdown.stop @click="toggleSort(cell.controls.id)">
+                    :aria-label="sortButtonName(cell.controls)" @pointerdown.stop @click="toggleSort(cell.controls.id)">
                     <span class="vw-column-title"><slot v-if="cell.key === labelHeaderKey" name="row-heading">{{ messages.rows }}</slot><template v-else>{{ cell.text }}</template></span>
                     <span class="vw-sort-indicator" aria-hidden="true">{{ sortGlyph(cell.controls.direction) }}</span>
                   </button>
@@ -3692,7 +3773,8 @@ onUnmounted(() => {
                     <div v-if="openFilter === cell.controls.id" class="vw-column-filter-popover" role="dialog" :aria-label="filterName(cell.controls)"
                       @pointerdown.stop @keydown="filterKeys">
                       <label class="vw-column-filter-text"><span>{{ messages.filterContains }}</span>
-                        <input type="search" autocomplete="off" :value="cell.controls.filter?.text ?? ''" @input="filterText(cell.controls, $event)">
+                        <input type="search" autocomplete="off" :value="cell.controls.filter?.text ?? ''" @input="filterText(cell.controls, $event)"
+                          @compositionend="filterText(cell.controls, $event)">
                       </label>
                       <fieldset v-if="cell.controls.choices" class="vw-column-filter-values">
                         <legend>{{ messages.filterValues }}</legend>
@@ -3867,23 +3949,15 @@ onUnmounted(() => {
           </button>
           <!-- Deadline indicators and the constraint markers of bars without handles share one list, so the default markup stays unchanged. -->
           <div v-for="item in row.decorations" :key="item.key" :class="item.className" :style="item.style" aria-hidden="true"></div>
-          <template v-if="(linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible) && !row.progress">
+          <template v-if="linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible">
             <template v-for="bar in row.bars" :key="bar.id + ':links'">
               <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
                 @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
             </template>
           </template>
-          <template v-else-if="row.progress">
-            <template v-if="linkHandlesVisible || progressHandlesVisible || constraintHandlesVisible">
-              <template v-for="bar in row.bars" :key="bar.id + ':links'">
-                <button v-for="end in barHandles(bar)" :key="end" type="button" v-bind="handleAttrs(bar, end)"
-                  @pointerdown="pressHandle($event, bar, end)" @click="clickHandle($event, bar, end)" @keydown="handleKeys($event, bar, end)"></button>
-              </template>
-            </template>
-            <svg class="vw-gantt-progress-line" aria-hidden="true" :width="xWindow.right - xWindow.left" :height="rowHeight"
-              :style="{ [inlineSide]: canvasInset(xWindow.left) }"
-              :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
-          </template>
+          <svg v-if="row.progress" class="vw-gantt-progress-line" aria-hidden="true" :width="xWindow.right - xWindow.left" :height="rowHeight"
+            :style="{ [inlineSide]: canvasInset(xWindow.left) }"
+            :viewBox="`${xWindow.left} 0 ${xWindow.right - xWindow.left} ${rowHeight}`"><polyline :points="row.progress.points" /></svg>
         </div>
         <DependencyLayers v-if="shownLines.length">
         <svg class="vw-gantt-links" aria-hidden="true"

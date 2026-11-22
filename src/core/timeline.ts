@@ -8,6 +8,7 @@ import { firstIndex, intervalsMeet } from './intervals.js'
 import { cachedDateFormat, zonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 import { duplicateIdError, inContext, invalidIdError, isId, uniqueIds } from './ids.js'
+import { isDependencyType } from './dependencyTypes.js'
 
 export interface TimeRange {
   start: number
@@ -477,7 +478,7 @@ export function validateTimelineData(
       if (barIds.has(summary) || !summaryIds.has(summary) || !above(summary, rowOf(other))) continue
       throw new Error(`Dependency ${dependency.id} links summary row ${summary} with its own subtask ${other}`)
     }
-    if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type: ' + dependency.id)
+    if (dependency.type && !isDependencyType(dependency.type)) throw new Error('Invalid dependency type: ' + dependency.id)
     const lag = dependency.lag
     if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) throw new RangeError('Dependency lag must be finite: ' + dependency.id)
   }
@@ -570,7 +571,7 @@ export function dependencyTypeForEnds(from: TimelineBarEnd, to: TimelineBarEnd):
 
 /** The bar ends a dependency type joins. FS joins the source finish to the target start. */
 export function dependencyEndsForType(type: TimelineDependency['type'] = 'FS'): { from: TimelineBarEnd; to: TimelineBarEnd } {
-  if (!['FS', 'SS', 'FF', 'SF'].includes(type)) throw new Error('Invalid dependency type')
+  if (!isDependencyType(type)) throw new Error('Invalid dependency type')
   return { from: type[0] === 'S' ? 'start' : 'finish', to: type[1] === 'S' ? 'start' : 'finish' }
 }
 

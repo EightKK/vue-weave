@@ -261,13 +261,17 @@ export function filterTimelineRows<R extends TimelineRow>(rows: readonly R[], pr
 }
 
 /**
- * The sort after activating a column's sort control: a column that is not the primary sort becomes the only rule,
- * ascending; ascending turns descending; descending clears the sort. Returns a new array.
+ * The sort after activating a column's sort control. Only that column's rule changes; the other rules keep their
+ * directions and order. A column without a rule becomes the primary (first) rule, ascending; an ascending rule turns
+ * descending where it is; a descending rule is removed. Returns new objects and never changes `sort`.
  */
 export function nextTimelineSort(sort: readonly TimelineViewSort[], columnId: string): TimelineViewSort[] {
-  const current = sort[0]
-  if (current?.ruleId !== columnId) return [{ ruleId: columnId, direction: 'asc' }]
-  return current.direction === 'asc' ? [{ ruleId: columnId, direction: 'desc' }] : []
+  const next = sort.map(rule => ({ ...rule }))
+  const index = next.findIndex(rule => rule.ruleId === columnId)
+  if (index < 0) return [{ ruleId: columnId, direction: 'asc' }, ...next]
+  if (next[index]!.direction === 'asc') next[index]!.direction = 'desc'
+  else next.splice(index, 1)
+  return next
 }
 
 /**

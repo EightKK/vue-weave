@@ -342,6 +342,45 @@ test('gantt keyboard row moves emit plain time ranges like pointer moves', async
   expect(errors).toEqual([])
 })
 
+test('gantt: an ignored keyboard row move does not pull focus back on a later bars update', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?rowDraggable=1&cancels=1')
+  await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).press('ArrowDown')
+  await expect(out('Last edit')).not.toHaveText('')
+  // The parent ignored the move. Focus moves on, and new but equal bars arrive later.
+  const replace = page.getByRole('button', { name: 'Replace bars', exact: true })
+  await replace.press('Enter')
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await expect(replace).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('gantt: bar keys do not edit while a connection is armed, and a bar press does not start a drag then', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?cancels=1')
+  const start = chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true })
+  await start.press('Enter')
+  await expect(start).toHaveAttribute('aria-pressed', 'true')
+  const taskB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+  await taskB.focus()
+  await taskB.press('ArrowRight')
+  await taskB.press('Shift+ArrowRight')
+  await expect(out('Last edit')).toHaveText('')
+  const box = (await taskB.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 4 })
+  await expect(taskB).not.toHaveClass(/\bvw-is-dragging\b/)
+  await page.mouse.up()
+  await expect(out('Last edit')).toHaveText('')
+  // Escape disarms the connection; then the keys edit again.
+  await taskB.press('Escape')
+  await expect(out('Last edit cancel')).toHaveText('{"reason":"escape","barIds":["a"]}')
+  await taskB.press('ArrowRight')
+  await expect(out('Last edit')).toContainText('"source":"keyboard"')
+  expect(errors).toEqual([])
+})
+
 test('gantt readonly keeps dependency selection but proposes no delete', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, out } = await openGanttFixture(page, '?readonly=1')

@@ -835,45 +835,100 @@ async function openHeaderFixture(page: Page, search = '') {
   await expect(chart).toBeVisible()
   return {
     errors, chart, events: fixtureStatus(page, 'Events'),
-    header: (name: string) => chart.getByRole('columnheader').filter({ has: page.getByRole('button', { name: 'Sort by ' + name, exact: true }) }),
-    sortButton: (name: string) => chart.getByRole('button', { name: 'Sort by ' + name, exact: true }),
+    sortButton: (name: string) => chart.getByRole('button', { name: new RegExp(`^Sort by ${name}( \\((ascending|descending)\\))?$`) }),
     filterButton: (name: string) => chart.getByRole('button', { name: new RegExp('^Filter ' + name) }),
     shownRows: () => chart.locator('[data-vw-row-heading]').evaluateAll(list => list.map(item => item.getAttribute('data-vw-row-heading'))),
   }
 }
 
-test('gantt header sort buttons cycle ascending, descending and none, report aria-sort and sort siblings only', async ({ page }) => {
-  const { errors, chart, header, sortButton, shownRows, events } = await openHeaderFixture(page)
-  await expect(chart.getByRole('columnheader')).toHaveCount(3)
-  await expect(header('Owner')).toHaveAttribute('aria-sort', 'none')
+test('gantt header sort buttons cycle ascending, descending and none, name their state and sort siblings only', async ({ page }) => {
+  const { errors, chart, sortButton, shownRows, events } = await openHeaderFixture(page)
+  // The header is not a table row: the sort state is in the button names, not in aria-sort on a columnheader.
+  await expect(chart.locator('[role="columnheader"], [aria-sort]')).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: /^Sort by / })).toHaveCount(3)
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
   expect(await shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
   await sortButton('Owner').click()
-  await expect(header('Owner')).toHaveAttribute('aria-sort', 'ascending')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner (ascending)')
   // Children stay under their parents: Ann before Ben, Ann before Cy; the parents (no owner) keep their order.
   await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'd', 'c'])
   await sortButton('Owner').press('Enter')
-  await expect(header('Owner')).toHaveAttribute('aria-sort', 'descending')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner (descending)')
   await expect.poll(shownRows).toEqual(['p1', 'b', 'a', 'p2', 'c', 'd'])
   await sortButton('Owner').press('Space')
-  await expect(header('Owner')).toHaveAttribute('aria-sort', 'none')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
   await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
-  // Another column takes over the sort; the label column sorts by row label.
+  // Another column becomes the primary rule and the earlier rules stay; the label column sorts by row label.
   await sortButton('Status').click()
   await sortButton('Rows').click()
-  await expect(header('Status')).toHaveAttribute('aria-sort', 'none')
-  await expect(header('Rows')).toHaveAttribute('aria-sort', 'ascending')
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status (ascending)')
+  await expect(sortButton('Rows')).toHaveAccessibleName('Sort by Rows (ascending)')
   await sortButton('Rows').click()
   await expect.poll(shownRows).toEqual(['p2', 'c', 'd', 'p1', 'b', 'a'])
+  await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"},{"ruleId":"status","direction":"asc"}]]')
+  // A secondary rule turns descending in place, then goes; the primary rule stays.
+  await sortButton('Status').click()
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status (descending)')
+  await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"},{"ruleId":"status","direction":"desc"}]]')
+  await sortButton('Status').click()
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status')
+  await expect(sortButton('Rows')).toHaveAccessibleName('Sort by Rows (descending)')
   await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"}]]')
   expect(errors).toEqual([])
 })
 
-test('gantt header sort stays controlled: an ignored proposal leaves aria-sort and the rows as they are', async ({ page }) => {
-  const { errors, header, sortButton, shownRows, events } = await openHeaderFixture(page, '?ignore')
+test('gantt header sort stays controlled: an ignored proposal leaves the button name and the rows as they are', async ({ page }) => {
+  const { errors, sortButton, shownRows, events } = await openHeaderFixture(page, '?ignore')
   await sortButton('Owner').click()
   await expect(events).toHaveText('["sort",[{"ruleId":"owner","direction":"asc"}]]')
-  await expect(header('Owner')).toHaveAttribute('aria-sort', 'none')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
   expect(await shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  expect(errors).toEqual([])
+})
+
+test('gantt header filter text is controlled, drops blank text and waits for an input method to finish', async ({ page }) => {
+  const ignored = await openHeaderFixture(page, '?ignore')
+  await ignored.filterButton('Owner').click()
+  const box = ignored.chart.getByRole('dialog', { name: 'Filter Owner', exact: true }).getByLabel('Contains', { exact: true })
+  // The parent ignores the proposals, so the box shows the applied (empty) filter again, like the checkboxes do.
+  await box.pressSequentially('an')
+  await expect(ignored.events).toHaveText('["filters",[{"columnId":"owner","text":"a"}]]\n["filters",[{"columnId":"owner","text":"n"}]]')
+  await expect(box).toHaveValue('')
+  expect(await ignored.shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  expect(ignored.errors).toEqual([])
+
+  const { errors, chart, filterButton, shownRows, events } = await openHeaderFixture(page)
+  await filterButton('Owner').click()
+  const text = chart.getByRole('dialog', { name: 'Filter Owner', exact: true }).getByLabel('Contains', { exact: true })
+  // A parent that applies each proposal keeps typing intact.
+  await text.pressSequentially('ann')
+  await expect(text).toHaveValue('ann')
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'p2', 'd'])
+  // Whitespace-only text is no condition: the filter goes, and the box shows the applied (empty) filter.
+  await text.fill('  ')
+  await expect(events).toContainText('["filters",[]]')
+  await expect(text).toHaveValue('')
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  await expect(filterButton('Owner')).toHaveAccessibleName('Filter Owner')
+  // While an input method composes, nothing is proposed; the composed text is proposed once it ends.
+  await page.getByRole('button', { name: 'Clear log', exact: true }).evaluate(button => (button as HTMLButtonElement).click())
+  await text.evaluate((input: HTMLInputElement) => {
+    input.value = ''
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    for (const value of ['b', 'be']) {
+      input.value = value
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true, data: value }))
+    }
+  })
+  await expect(text).toHaveValue('be')
+  await expect(events).toHaveText('')
+  await text.evaluate((input: HTMLInputElement) => {
+    input.value = 'ben'
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'ben' }))
+  })
+  await expect(events).toHaveText('["filters",[{"columnId":"owner","text":"ben"}]]')
+  await expect.poll(shownRows).toEqual(['p1', 'b'])
+  await expect(text).toHaveValue('ben')
   expect(errors).toEqual([])
 })
 
@@ -920,7 +975,7 @@ test('gantt header filters work in right-to-left and dark charts and keep the di
   await filterButton('Status').click()
   const dialog = chart.getByRole('dialog', { name: 'Filter Status', exact: true })
   await expect(dialog).toBeVisible()
-  const cell = (await chart.getByRole('columnheader').filter({ hasText: 'Status' }).boundingBox())!
+  const cell = (await chart.locator('.vw-header-controls').filter({ hasText: 'Status' }).boundingBox())!
   const box = (await dialog.boundingBox())!
   // In a right-to-left chart the dialog opens from the column's right edge.
   expect(Math.abs(box.x + box.width - (cell.x + cell.width))).toBeLessThan(2)

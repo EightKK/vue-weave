@@ -8,7 +8,7 @@ const resources = [{ value: 'crane', label: 'Crane' }, { value: 'crew', label: '
 const tasks = [{ value: 'design', label: 'Design' }, { value: 'permit', label: 'Permit' }]
 const task = {
   id: 'build', label: 'Build',
-  assignments: [{ resourceId: 'crane', units: 1 }, { resourceId: 'crew', units: 0.5 }],
+  assignments: [{ resourceId: 'crane', units: 1 }, { resourceId: 'crew', units: 2 }],
   links: [{ predecessorId: 'design', type: 'FS', lag: 7_200_000 }],
 }
 const assignments = { id: 'assignments', kind: 'assignments', label: 'Resources', options: resources, get: item => item.assignments, maxUnits: 4 }
@@ -28,12 +28,14 @@ test('validateInspectorList checks options, duplicates, units, types and lags', 
   }
   assert.deepEqual(error(assignments, [{ resourceId: 'nope', units: 1 }]), ['choice', 'Unknown resource: nope'])
   assert.deepEqual(error(assignments, [{ resourceId: 'crane', units: 1 }, { resourceId: 'crane', units: 2 }]), ['invalid', 'Duplicate resource: Crane'])
-  for (const units of [0, -1, NaN, Infinity, '1']) {
-    assert.deepEqual(error(assignments, [{ resourceId: 'crew', units }]), ['range', 'Units for Crew must be a positive number'], String(units))
+  for (const units of [0, -1, 0.5, 1.5, NaN, Infinity, 2 ** 53, '1']) {
+    assert.deepEqual(error(assignments, [{ resourceId: 'crew', units }]), ['range', 'Units for Crew must be a positive integer'], String(units))
   }
   assert.deepEqual(error(assignments, [{ resourceId: 'truck', units: 5 }]), ['range', 'Units for truck must be at most 4'])
   assert.deepEqual(error(dependencies, [{ predecessorId: 'design', type: 'XX', lag: 0 }]), ['choice', 'Invalid dependency type for Design: XX'])
-  assert.deepEqual(error(dependencies, [{ predecessorId: 'design', type: 'SS', lag: NaN }]), ['invalid', 'Lag for Design must be a finite number'])
+  for (const lag of [NaN, Infinity, 0.5, 2 ** 53, '0']) {
+    assert.deepEqual(error(dependencies, [{ predecessorId: 'design', type: 'SS', lag }]), ['invalid', 'Lag for Design must be an integer'], String(lag))
+  }
   assert.deepEqual(error(dependencies, [{ predecessorId: 'build', type: 'SS', lag: 0 }]), ['choice', 'Unknown predecessor: build'])
   assert.deepEqual(validateInspectorList(dependencies, [{ predecessorId: 'permit', type: 'SF', lag: -3_600_000 }]), { ok: true })
   assert.equal(validateInspectorList(assignments, 'crane').ok, false)
@@ -47,8 +49,8 @@ test('PropertyInspector renders list fields as labelled tables on the server', a
   assert.match(html, new RegExp(`<span id="${group[1]}-label" class="vw-inspector-label">Resources</span>`))
   assert.match(html, /<th scope="col">Resource<\/th><th scope="col">Units<\/th><th scope="col"><span class="vw-sr-only">Remove<\/span><\/th>/)
   assert.match(html, /aria-label="Resource for Crane"/)
-  assert.match(html, /aria-label="Units for Crane"[^>]*>|value="1"[^>]*aria-label="Units for Crane"/)
-  assert.match(html, /value="0.5" aria-label="Units for Crew"/)
+  assert.match(html, /value="1" aria-label="Units for Crane"/)
+  assert.match(html, /value="2" aria-label="Units for Crew"/)
   assert.match(html, /aria-label="Remove Crew"/)
   // A resource used by another row is disabled in the select, so a row cannot repeat it.
   assert.match(html, /<option value="crew" disabled>Crew<\/option>/)
@@ -77,6 +79,8 @@ test('PropertyInspector list fields show empty and read-only states and validate
   const render = list => renderComponent(PropertyInspector, { item: task, fields: list })
   await assert.rejects(render([{ ...assignments, options: undefined }]), { message: 'A list field needs options: assignments' })
   await assert.rejects(render([{ ...assignments, options: [{ value: 'a' }, { value: 'a' }] }]), { message: 'Duplicate option of list field assignments: a' })
-  await assert.rejects(render([{ ...assignments, defaultUnits: 0 }]), { name: 'RangeError', message: 'defaultUnits must be finite and positive: assignments' })
+  await assert.rejects(render([{ ...assignments, defaultUnits: 0 }]), { name: 'RangeError', message: 'defaultUnits must be a positive integer: assignments' })
+  await assert.rejects(render([{ ...assignments, defaultUnits: 1.5 }]), { name: 'RangeError', message: 'defaultUnits must be a positive integer: assignments' })
+  await assert.rejects(render([{ ...assignments, maxUnits: 2.5 }]), { name: 'RangeError', message: 'maxUnits must be a positive integer: assignments' })
   await assert.rejects(render([{ ...dependencies, lagUnitSize: -1 }]), { name: 'RangeError', message: 'lagUnitSize must be finite and positive: links' })
 })

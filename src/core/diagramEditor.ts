@@ -2,9 +2,10 @@
 // components live in the Vue entry; the types are here so that servers and workers can build palettes and field
 // definitions without Vue. `index.ts` exports the types, `graphPaletteMimeType` and `validateInspectorList` only.
 import {
-  fieldValuesEqual, parseFieldValue, validateFieldValue, type FieldCheck, type FieldParseResult, type FieldValue,
+  parseFieldValue, validateFieldValue, type FieldCheck, type FieldParseResult, type FieldValue,
   type TimelineFieldKind, type TimelineFieldSpec,
 } from './fieldEditing.js'
+import { isDependencyType } from './dependencyTypes.js'
 import { uniqueIds } from './ids.js'
 import type { ChartTone, NetworkNodeShape, TimelineDependencyType } from './types.js'
 
@@ -135,7 +136,7 @@ export interface InspectorOption {
 /** One row of an `assignments` field. With the inspected task's ID it is a `ResourceAssignment`. */
 export interface InspectorAssignment {
   resourceId: string
-  /** Share of the resource; positive and finite. */
+  /** Share of the resource, as in `ResourceAssignment`: a positive safe integer, for example a percentage. */
   units: number
 }
 
@@ -143,7 +144,7 @@ export interface InspectorAssignment {
 export interface InspectorDependency {
   predecessorId: string
   type: TimelineDependencyType
-  /** Lag in model time units; negative values allow overlap. */
+  /** Lag in model time units, a safe integer; negative values allow overlap. */
   lag: number
 }
 
@@ -163,9 +164,9 @@ interface InspectorListFieldBase {
 export interface InspectorAssignmentsField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
   kind: 'assignments'
   get: (item: T) => readonly InspectorAssignment[]
-  /** Units of an added row. Default 1. */
+  /** Units of an added row, a positive integer. Default 1. */
   defaultUnits?: number
-  /** Largest allowed units. Default: no limit. */
+  /** Largest allowed units, a positive integer. Default: no limit. */
   maxUnits?: number
 }
 
@@ -173,7 +174,7 @@ export interface InspectorAssignmentsField<T extends InspectorItem = InspectorIt
 export interface InspectorDependenciesField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
   kind: 'dependencies'
   get: (item: T) => readonly InspectorDependency[]
-  /** Model units in one displayed lag unit, for example 3600000 to edit milliseconds as hours. Default 1. */
+  /** Model units in one displayed lag unit, for example 3600000 to edit milliseconds as hours. Default 1. A lag typed in display units is rounded to whole model units. */
   lagUnitSize?: number
   /** Suffix shown after the lag box, such as `h`. */
   lagUnitLabel?: string
@@ -193,12 +194,11 @@ export type InspectorListChange =
 /** Synchronous check of a list change. Accept with true or undefined; reject with false or a reason. */
 export type InspectorListChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorListChange, item: T) => boolean | string | void
 
-const dependencyTypes: readonly string[] = ['FS', 'SS', 'FF', 'SF']
-
 /**
  * Check the rows of an `assignments` or `dependencies` field: every resource or predecessor is one of `options` and
- * appears once, units are positive and finite (and at most `maxUnits`), types are FS, SS, FF or SF, and lags are
- * finite. PropertyInspector runs it before `validateListChange`; servers can run it on submitted rows.
+ * appears once, units are positive safe integers (and at most `maxUnits`) as `ResourceAssignment` requires, types are
+ * FS, SS, FF or SF, and lags are safe integers, as schedule links require. PropertyInspector runs it before
+ * `validateListChange`; servers can run it on submitted rows.
  */
 export function validateInspectorList(
   field: InspectorListField<any>, rows: readonly InspectorAssignment[] | readonly InspectorDependency[],
@@ -214,17 +214,17 @@ export function validateInspectorList(
     seen.add(id)
     if (field.kind === 'assignments') {
       const units = row.units
-      if (typeof units !== 'number' || !Number.isFinite(units) || units <= 0) {
-        return { ok: false, code: 'range', error: `Units for ${names.get(id)} must be a positive number` }
+      if (typeof units !== 'number' || !Number.isSafeInteger(units) || units <= 0) {
+        return { ok: false, code: 'range', error: `Units for ${names.get(id)} must be a positive integer` }
       }
       if (field.maxUnits !== undefined && units > field.maxUnits) {
         return { ok: false, code: 'range', error: `Units for ${names.get(id)} must be at most ${field.maxUnits}` }
       }
     } else {
-      if (typeof row.type !== 'string' || !dependencyTypes.includes(row.type)) {
+      if (typeof row.type !== 'string' || !isDependencyType(row.type)) {
         return { ok: false, code: 'choice', error: `Invalid dependency type for ${names.get(id)}: ${String(row.type)}` }
       }
-      if (typeof row.lag !== 'number' || !Number.isFinite(row.lag)) return { ok: false, code: 'invalid', error: `Lag for ${names.get(id)} must be a finite number` }
+      if (typeof row.lag !== 'number' || !Number.isSafeInteger(row.lag)) return { ok: false, code: 'invalid', error: `Lag for ${names.get(id)} must be an integer` }
     }
   }
   return { ok: true }
@@ -316,9 +316,13 @@ export function checkInspectorFields(fields: readonly (InspectorField<any> | Ins
       const positive = (value: number | undefined, name: string) => {
         if (value !== undefined && (!Number.isFinite(value) || value <= 0)) throw new RangeError(name + ' must be finite and positive: ' + field.id)
       }
+      // Units are whole numbers, as `ResourceAssignment` requires.
+      const positiveInteger = (value: number | undefined, name: string) => {
+        if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) throw new RangeError(name + ' must be a positive integer: ' + field.id)
+      }
       if (field.kind === 'assignments') {
-        positive(field.defaultUnits, 'defaultUnits')
-        positive(field.maxUnits, 'maxUnits')
+        positiveInteger(field.defaultUnits, 'defaultUnits')
+        positiveInteger(field.maxUnits, 'maxUnits')
       } else positive(field.lagUnitSize, 'lagUnitSize')
       continue
     }
@@ -382,9 +386,4 @@ export function palettePayload(item: GraphPaletteItem<unknown>): string {
   } catch {
     return JSON.stringify({ id: item.id })
   }
-}
-
-/** True when two field value lists are equal, element by element. */
-export function sameFieldValues(a: readonly FieldValue[], b: readonly FieldValue[]) {
-  return a.length === b.length && a.every((value, index) => fieldValuesEqual(value, b[index]!))
 }

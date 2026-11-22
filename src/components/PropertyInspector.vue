@@ -14,7 +14,8 @@ import {
   type PropertyInspectorFieldSlot, type PropertyInspectorLabels,
 } from '../core/diagramEditor.js'
 import { fieldValuesEqual, formatFieldValue, type FieldValue } from '../core/fieldEditing.js'
-import type { ChartDirection, TimelineDependencyType } from '../core/types.js'
+import type { ChartDirection } from '../core/types.js'
+import { dependencyTypes } from '../core/dependencyTypes.js'
 
 const props = withDefaults(defineProps<{
   /** The inspected item; null or undefined shows the empty state. */
@@ -63,10 +64,18 @@ type AnyField = InspectorField<T> | InspectorListField<T>
 type ListRow = InspectorAssignment | InspectorDependency
 type Value = FieldValue | readonly ListRow[]
 interface Draft { text: string; base: Value; field: string }
-interface FieldMessage { message: string; base: Value; text?: string }
+interface FieldMessage { message: string; base: Value; text?: string; field: string }
 // Text drafts by field ID, and by field ID, row index and column for the units and lag boxes of list fields.
 const drafts = reactive(new Map<string, Draft>())
+// Messages keyed like the drafts: by field ID for a value field or a whole list (add, remove), and by cell for the
+// controls of a list row, so that editing or cancelling one cell leaves the message of another cell alone.
 const errors = reactive(new Map<string, FieldMessage>())
+/** The message shown under a field: the latest one of the field or any of its cells. */
+function fieldError(field: AnyField) {
+  let found: FieldMessage | undefined
+  for (const error of errors.values()) if (error.field === field.id) found = error
+  return found
+}
 
 const fields = computed(() => {
   checkInspectorFields(props.fields)
@@ -92,26 +101,27 @@ watch(values, (next, previous) => {
     const value = next[index] ?? null
     if (previous.length === next.length && sameValue(field, previous[index] ?? null, value)) return
     for (const [key, draft] of [...drafts]) if (draft.field === field.id && !sameValue(field, draft.base, value)) drafts.delete(key)
-    const error = errors.get(field.id)
-    if (error && !sameValue(field, error.base, value)) errors.delete(field.id)
+    for (const [key, error] of [...errors]) if (error.field === field.id && !sameValue(field, error.base, value)) errors.delete(key)
   })
 })
 watch(() => props.fields.map(field => field.id).join('\u0000'), () => {
   const ids = new Set(props.fields.map(field => field.id))
   for (const [key, draft] of [...drafts]) if (!ids.has(draft.field)) drafts.delete(key)
-  for (const id of [...errors.keys()]) if (!ids.has(id)) errors.delete(id)
+  for (const [key, error] of [...errors]) if (!ids.has(error.field)) errors.delete(key)
 })
 
 const inputId = (index: number) => base + '-field-' + index
 function describedBy(field: AnyField, index: number) {
-  const ids = [field.description ? inputId(index) + '-description' : '', errors.has(field.id) ? inputId(index) + '-error' : ''].filter(Boolean)
+  const ids = [field.description ? inputId(index) + '-description' : '', fieldError(field) ? inputId(index) + '-error' : ''].filter(Boolean)
   return ids.length ? ids.join(' ') : undefined
 }
 const formatted = (field: InspectorField<T>, value: FieldValue) => formatFieldValue(inspectorFieldSpec(field), value)
 const textOf = (field: InspectorField<T>) => drafts.get(field.id)?.text ?? formatted(field, valueOf(field))
 
-function fail(field: AnyField, message: string, text?: string) {
-  errors.set(field.id, { message, base: values.value[fields.value.indexOf(field)] ?? null, text })
+/** Show a message for a field, or with `key` for one cell of a list field; the latest message is shown. */
+function fail(field: AnyField, message: string, text?: string, key = field.id) {
+  errors.delete(key)
+  errors.set(key, { message, base: values.value[fields.value.indexOf(field)] ?? null, text, field: field.id })
   return false
 }
 
@@ -213,7 +223,7 @@ function onColor(field: InspectorField<T>, event: Event) {
 }
 
 // List fields. Every edit proposes the whole new list; the table keeps showing the item's rows until the parent applies it.
-const dependencyTypes: readonly TimelineDependencyType[] = ['FS', 'SS', 'FF', 'SF']
+type ListColumn = 'units' | 'lag' | 'resourceId' | 'predecessorId' | 'type'
 const rowKey = (row: ListRow) => 'resourceId' in row ? row.resourceId : row.predecessorId
 const copyRow = (row: ListRow): ListRow => 'resourceId' in row
   ? { resourceId: row.resourceId, units: row.units }
@@ -221,7 +231,9 @@ const copyRow = (row: ListRow): ListRow => 'resourceId' in row
 function optionName(field: InspectorListField<T>, value: string) {
   return field.options.find(option => option.value === value)?.label ?? value
 }
-const cellKey = (field: InspectorListField<T>, index: number, column: 'units' | 'lag') => field.id + '\u0000' + index + '\u0000' + column
+/** The key of one control of a list row, for its draft and its message. */
+const cellKey = (field: InspectorListField<T>, index: number, column: ListColumn) => field.id + '\u0000' + index + '\u0000' + column
+const cellInvalid = (field: InspectorListField<T>, index: number, column: ListColumn) => errors.has(cellKey(field, index, column)) ? 'true' : undefined
 const lagSize = (field: InspectorListField<T>) => field.kind === 'dependencies' ? field.lagUnitSize ?? 1 : 1
 function cellText(field: InspectorListField<T>, index: number, column: 'units' | 'lag') {
   const draft = drafts.get(cellKey(field, index, column))
@@ -231,45 +243,49 @@ function cellText(field: InspectorListField<T>, index: number, column: 'units' |
   return String(Math.round(value * 1e6) / 1e6)
 }
 
-function commitList(field: InspectorListField<T>, after: ListRow[], keepDraft?: string): boolean {
+/**
+ * Check and propose a new list. `key` names the control that made the edit (a cell, or the field itself for add and
+ * remove): its draft and message are settled, while drafts and messages of other cells stay.
+ */
+function commitList(field: InspectorListField<T>, after: ListRow[], keepDraft?: string, key = field.id): boolean {
   const item = props.item
   if (!item || field.readonly) return false
   const before = field.get(item as T).map(copyRow)
   const check = validateInspectorList(field, after as InspectorAssignment[] | InspectorDependency[])
-  if (!check.ok) return fail(field, check.error, keepDraft)
-  const dropDrafts = () => {
-    for (const [key, draft] of [...drafts]) if (draft.field === field.id) drafts.delete(key)
+  if (!check.ok) return fail(field, check.error, keepDraft, key)
+  const settled = () => {
+    drafts.delete(key)
+    errors.delete(key)
     errors.delete(field.id)
   }
   if (sameInspectorRows(before, after)) {
-    dropDrafts()
+    settled()
     return true
   }
   const change = { id: item.id, field: field.id, kind: field.kind, before, after } as InspectorListChange
   const verdict = props.validateListChange?.(change, item as T)
   if (verdict === false || typeof verdict === 'string') {
     const reason = typeof verdict === 'string' && verdict.trim() ? verdict : messages.value.rejected
-    if (keepDraft === undefined) for (const [key, draft] of [...drafts]) if (draft.field === field.id) drafts.delete(key)
-    fail(field, reason, keepDraft)
+    if (keepDraft === undefined) drafts.delete(key)
+    fail(field, reason, keepDraft, key)
     emit('list-change-rejected', change, reason)
     return false
   }
-  dropDrafts()
+  settled()
   emit('list-change', change)
   return true
 }
-function changeRow(field: InspectorListField<T>, index: number, patch: Partial<InspectorAssignment & InspectorDependency>, keepDraft?: string) {
+function changeRow(field: InspectorListField<T>, index: number, column: ListColumn, value: string | number, keepDraft?: string) {
   const after = rowsOf(field).map((row, at) => {
     const copy = copyRow(row)
-    if (at !== index) return copy
-    for (const key of Object.keys(patch) as (keyof typeof patch)[]) if (key in copy) (copy as unknown as Record<string, unknown>)[key] = patch[key]
+    if (at === index && column in copy) (copy as unknown as Record<string, unknown>)[column] = value
     return copy
   })
-  return commitList(field, after, keepDraft)
+  return commitList(field, after, keepDraft, cellKey(field, index, column))
 }
 function onRowSelect(field: InspectorListField<T>, index: number, key: 'resourceId' | 'predecessorId' | 'type', event: Event) {
   const select = event.target as HTMLSelectElement
-  changeRow(field, index, { [key]: select.value })
+  changeRow(field, index, key, select.value)
   // Show the applied value: the parent's update renders the new one, and a rejected change leaves the old one.
   const row = rowsOf(field)[index] as unknown as Record<string, unknown> | undefined
   if (row) select.value = String(row[key])
@@ -277,7 +293,7 @@ function onRowSelect(field: InspectorListField<T>, index: number, key: 'resource
 function onCellInput(field: InspectorListField<T>, index: number, column: 'units' | 'lag', event: Event) {
   const key = cellKey(field, index, column)
   drafts.set(key, { text: (event.target as HTMLInputElement).value, base: drafts.get(key)?.base ?? rowsOf(field), field: field.id })
-  errors.delete(field.id)
+  errors.delete(key)
 }
 function commitCell(field: InspectorListField<T>, index: number, column: 'units' | 'lag') {
   const key = cellKey(field, index, column)
@@ -286,8 +302,10 @@ function commitCell(field: InspectorListField<T>, index: number, column: 'units'
   const unit = field.kind === 'dependencies' ? field.lagUnitLabel : undefined
   let text = draft.text.trim()
   if (unit && text.endsWith(unit)) text = text.slice(0, -unit.length).trim()
-  const number = text === '' ? NaN : Number(text) * (column === 'lag' ? lagSize(field) : 1)
-  return changeRow(field, index, { [column]: number }, draft.text)
+  let number = text === '' ? NaN : Number(text)
+  // A lag typed in display units (`lagUnitSize`) becomes whole model units.
+  if (column === 'lag' && field.kind === 'dependencies' && field.lagUnitSize !== undefined) number = Math.round(number * field.lagUnitSize)
+  return changeRow(field, index, column, number, draft.text)
 }
 function onCellKeydown(field: InspectorListField<T>, index: number, column: 'units' | 'lag', event: KeyboardEvent) {
   if (event.isComposing) return
@@ -297,7 +315,7 @@ function onCellKeydown(field: InspectorListField<T>, index: number, column: 'uni
   } else if (event.key === 'Escape') {
     const key = cellKey(field, index, column)
     const had = drafts.delete(key)
-    const error = errors.delete(field.id)
+    const error = errors.delete(key)
     if (!had && !error) return
     event.preventDefault()
     event.stopPropagation()
@@ -305,9 +323,10 @@ function onCellKeydown(field: InspectorListField<T>, index: number, column: 'uni
   }
 }
 function onCellBlur(field: InspectorListField<T>, index: number, column: 'units' | 'lag') {
-  const draft = drafts.get(cellKey(field, index, column))
+  const key = cellKey(field, index, column)
+  const draft = drafts.get(key)
   // A draft that was already refused is not proposed again on blur; it stays with its message.
-  if (draft && errors.get(field.id)?.text !== draft.text) commitCell(field, index, column)
+  if (draft && errors.get(key)?.text !== draft.text) commitCell(field, index, column)
 }
 /** The first option that no row uses yet: the one an added row takes. */
 const freeOption = (field: InspectorListField<T>) => {
@@ -334,7 +353,7 @@ const listName = (field: InspectorListField<T>, heading: string, row: ListRow) =
 const rows = computed(() => fields.value.map((field, index) => {
   const common = {
     index, id: inputId(index), readonly: Boolean(field.readonly),
-    error: errors.get(field.id)?.message, describedBy: describedBy(field, index),
+    error: fieldError(field)?.message, describedBy: describedBy(field, index),
   }
   if (!isInspectorListField(field)) {
     return { ...common, field: field as AnyField, valueField: field, value: valueOf(field), list: undefined, entries: [], canAdd: false }
@@ -431,7 +450,7 @@ defineExpose({
                 <td>
                   <select class="vw-inspector-input" :disabled="row.readonly"
                     :aria-label="listName(row.list, row.list.kind === 'assignments' ? messages.resource : messages.predecessor, entry.row)"
-                    :aria-invalid="row.error ? 'true' : undefined"
+                    :aria-invalid="cellInvalid(row.list, at, row.list.kind === 'assignments' ? 'resourceId' : 'predecessorId')"
                     @change="onRowSelect(row.list, at, row.list.kind === 'assignments' ? 'resourceId' : 'predecessorId', $event)">
                     <option v-for="option in entry.options" :key="option.value" :value="option.value" :selected="option.value === entry.key"
                       :disabled="option.disabled">{{ option.label }}</option>
@@ -439,6 +458,7 @@ defineExpose({
                 </td>
                 <td v-if="row.list.kind === 'dependencies'">
                   <select class="vw-inspector-input vw-inspector-type" :disabled="row.readonly" :aria-label="listName(row.list, messages.type, entry.row)"
+                    :aria-invalid="cellInvalid(row.list, at, 'type')"
                     @change="onRowSelect(row.list, at, 'type', $event)">
                     <option v-for="type in dependencyTypes" :key="type" :value="type" :selected="'type' in entry.row && entry.row.type === type">{{ type }}</option>
                   </select>
@@ -448,7 +468,7 @@ defineExpose({
                     <input class="vw-inspector-input" type="text" inputmode="decimal" autocomplete="off" :readonly="row.readonly"
                       :value="cellText(row.list, at, row.list.kind === 'assignments' ? 'units' : 'lag')"
                       :aria-label="listName(row.list, row.list.kind === 'assignments' ? messages.units : messages.lag, entry.row)"
-                      :aria-invalid="row.error ? 'true' : undefined"
+                      :aria-invalid="cellInvalid(row.list, at, row.list.kind === 'assignments' ? 'units' : 'lag')"
                       @input="onCellInput(row.list, at, row.list.kind === 'assignments' ? 'units' : 'lag', $event)"
                       @keydown="onCellKeydown(row.list, at, row.list.kind === 'assignments' ? 'units' : 'lag', $event)"
                       @blur="onCellBlur(row.list, at, row.list.kind === 'assignments' ? 'units' : 'lag')">

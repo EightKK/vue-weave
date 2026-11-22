@@ -423,6 +423,10 @@ export interface GanttLabels {
   columnResizeRejected?: string
   /** Accessible name prefix of a header sort button (`sortableColumns`), followed by the column label. Default "Sort by". */
   sortBy?: string
+  /** Added in parentheses to the name of a sort button whose column is sorted ascending ("Sort by Finish (ascending)"). Default "ascending". */
+  sortedAscending?: string
+  /** Added in parentheses to the name of a sort button whose column is sorted descending. Default "descending". */
+  sortedDescending?: string
   /** Accessible name prefix of a header filter button and its dialog (`filterableColumns`), followed by the column label. Default "Filter". */
   filterBy?: string
   /** Added in parentheses to the name of a filter button whose column is filtered. Default "filtered". */
