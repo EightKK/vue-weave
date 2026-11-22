@@ -7,7 +7,7 @@ import {
 
 test('range selection and group movement commit an atomic batch', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Edit graph').check()
   const lots = graphNode(page, /^Lot A123-/)
   const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])

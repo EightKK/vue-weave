@@ -1,10 +1,10 @@
 // The construction program showcase: scheduler-driven KPIs, the steel-delay what-if, resource leveling and controlled
 // bar edits that are rescheduled.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('construction program showcase reports the plan, the steel what-if and leveling', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Construction program')
+  await openExample(page, 'construction', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Construction program', exact: true })
   // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
   const status = showcase.getByRole('status').last()
@@ -47,7 +47,7 @@ test('construction program showcase reports the plan, the steel what-if and leve
 
 test('construction program showcase reschedules a keyboard bar move and refuses a started task', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Construction program')
+  await openExample(page, 'construction', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Construction program', exact: true })
   const status = showcase.getByRole('status').last()
 

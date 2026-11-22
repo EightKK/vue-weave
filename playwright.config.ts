@@ -18,7 +18,10 @@ export default defineConfig({
   retries: ci ? 1 : 0,
   reporter: ci ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: `http://127.0.0.1:${port}`,
+    // The site and the demo pages are served under /vue-weave/, as on GitHub Pages (scripts/serve.mjs). Specs open
+    // them with relative URLs (`gallery.html`, `examples/tree-grid/`); the regression fixtures use absolute paths
+    // (`/gantt-test/`) that page.route serves without the server.
+    baseURL: `http://127.0.0.1:${port}/vue-weave/`,
     // Traces (kept for failed tests only) go to test-results/ and are uploaded by the CI browser job.
     trace: ci ? 'retain-on-failure' : 'off',
     viewport: { width: 1440, height: 1000 },
@@ -29,7 +32,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'node scripts/serve.mjs --strict-port',
-    url: `http://127.0.0.1:${port}`,
+    url: `http://127.0.0.1:${port}/vue-weave/`,
     reuseExistingServer: false,
   },
 })

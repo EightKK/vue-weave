@@ -11,11 +11,22 @@ npm ci
 npm run dev
 ```
 
-The development demo is at http://127.0.0.1:5173. A fresh GitHub checkout or automatically generated GitHub source ZIP does not include `preview/`. To run the static demo, first run `npm run build:demo`, then `npm start`. On Windows, `Start.cmd` does both: it rebuilds `preview/` when it is missing or was built from other sources (running `npm ci` first if `node_modules` does not match `package-lock.json`), then serves it. A separately prepared demo archive can include `preview/` and run offline with Node.js; Windows users can launch it with `Start.cmd`.
+The development server of the documentation site is at http://127.0.0.1:5173/vue-weave/; `npm run dev:demo` serves the production demo and the legacy example gallery from `examples/` instead. A fresh GitHub checkout or automatically generated GitHub source ZIP does not include `preview/`. To run the static demo, first run `npm run build:demo`, then `npm start`. On Windows, `Start.cmd` does both: it rebuilds `preview/` when it is missing or was built from other sources (running `npm ci` first if `node_modules` does not match `package-lock.json`), then serves it. A separately prepared demo archive can include `preview/` and run offline with Node.js; Windows users can launch it with `Start.cmd`.
 
 `npm run build:demo` writes `preview/demo-build.json`, a hash of the demo sources listed in `demoInputs` in `scripts/demo-build.mjs`. `Start.cmd` runs `scripts/serve.mjs --build-if-stale`, which compares that hash with the current sources. If the demo starts reading a new file outside those inputs, add it to `demoInputs`.
 
 The development toolchain uses TypeScript 6.0.x. The current `vue-tsc` depends on the JavaScript compiler API; standard TypeScript 7.0 does not provide its required compiler entry point and fails before checking Vue files. See the [upstream compatibility discussion](https://github.com/vuejs/language-tools/issues/6156). Dependabot holds TypeScript 7 and later until upstream support, type checking, declaration generation and isolated package-consumer checks have been verified. This development-tool restriction does not set a TypeScript peer requirement for library consumers.
+
+## The documentation site
+
+`site/` is a VitePress site, deployed to GitHub Pages from `preview/` under `/vue-weave/`; `npm start` and the browser tests serve it under the same path. English pages are at the root and Japanese pages under `site/ja/`; keep the two in step. The API detail tables stay in English in `docs/`, which remains the source of truth.
+
+To add an example or showcase:
+
+1. Write the demo component in `examples/` (or `examples/showcase/`), importing the library from `../src` like the other demos. It must render on the server: touch the DOM only in `onMounted`.
+2. Add an entry to `site/examples/registry.ts`: `id` (the URL segment), `kind` (`example` or `showcase`), `category`, `title` and `description` in English and Japanese, `component` and `sources` (repository-relative paths) and related `api` links. The pages `/examples/<id>/` and `/ja/examples/<id>/` (or `/showcase/...`) are generated from it. A demo outside `examples/*.vue` and `examples/showcase/*.vue` also needs a pattern in `site/.vitepress/theme/demos.ts`.
+3. Run `npm run build:demo`, then `node scripts/site-thumbnails.mjs <id>` to write `site/public/thumbnails/<id>.png`, and commit it.
+4. Test the demo in the spec of its area under `test/browser/`, opening it with `openExample(page, '<id>')` (add `{ kind: 'showcase' }` for a showcase).
 
 ## Report a problem or propose a feature
 

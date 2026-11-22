@@ -1,10 +1,10 @@
 // The BOM editor showcase of the design gallery: TreeGrid editing folded into BOM lines with undo, structure moves with
 // a cycle check, linked selection with the item graph, where-used walks, the revision comparison and the rollup.
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openExample, pageErrors, type Page } from './support'
 
 async function openBom(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'BOM editor')
+  await openExample(page, 'bom', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'BOM editor', exact: true })
   const grid = showcase.getByRole('treegrid', { name: 'Bill of materials', exact: true })
   await expect(grid).toBeVisible()

@@ -29,11 +29,13 @@ export default defineConfig({
   // The demo header shows the package's major.minor version without hard-coding it.
   define: { __VUE_WEAVE_VERSION__: JSON.stringify(version) },
   build: {
+    // `npm run build:demo` builds the documentation site (site/, VitePress) into preview/ first; these pages are added
+    // next to it: the production planning demo at demo/ and the legacy example gallery at gallery.html.
     outDir: '../preview',
-    emptyOutDir: true,
+    emptyOutDir: false,
     rolldownOptions: {
       input: {
-        demo: fileURLToPath(new URL('./examples/index.html', import.meta.url)),
+        demo: fileURLToPath(new URL('./examples/demo/index.html', import.meta.url)),
         gallery: fileURLToPath(new URL('./examples/gallery.html', import.meta.url)),
       },
     },

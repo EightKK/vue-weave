@@ -1,5 +1,5 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openDemo, pageErrors, pressAndMove, type Page } from './support'
+import { expect, test, openExample, openDemo, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
@@ -15,7 +15,7 @@ async function openPersistence(page: Page) {
 
 async function openLinkedDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Linked views')
+  await openExample(page, 'linked-views')
   const demo = page.locator('section[aria-labelledby="linked-title"]')
   await expect(demo.getByRole('button', { name: /^Cut order A 10:00/ })).toBeVisible()
   return {
@@ -628,11 +628,12 @@ test.describe('linked views: the context toolbar and deletion', () => {
     // The toolbar is given the graph component; ask it for a target's rectangle the way the toolbar does.
     // A role query skips a hidden toolbar, so the element is found by CSS here.
     const rect = (target: unknown) => demo.locator('.linked-graph [role="toolbar"]').evaluate((element, value) => {
-      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree.
+      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree. The site's layout
+      // nests the demo deeply, so the walk allows a deep tree.
       const find = (vnode: any, depth = 0): any => {
-        if (!vnode || typeof vnode !== 'object' || depth > 80) return undefined
+        if (!vnode || typeof vnode !== 'object' || depth > 400) return undefined
         if (vnode.component?.props?.graph) return vnode.component.props.graph
-        const children = [vnode.component?.subTree, ...(Array.isArray(vnode.children) ? vnode.children : [])]
+        const children = [vnode.component?.subTree, vnode.suspense?.activeBranch, ...(Array.isArray(vnode.children) ? vnode.children : [])]
         for (const child of children) { const found = find(child, depth + 1); if (found) return found }
         return undefined
       }

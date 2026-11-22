@@ -39,9 +39,19 @@ export function pageErrors(page: Page) {
   return errors
 }
 
-/** Opens the demo app and switches to one of its examples by its navigation button. */
+/**
+ * Opens the page of an example or showcase of the documentation site (site/examples/registry.ts) by its ID, in English
+ * or Japanese, and waits until its demo has loaded and hydrated. Returns the demo panel, which holds only the demo.
+ */
+export async function openExample(page: Page, id: string, { kind = 'example', locale = 'en' }: { kind?: 'example' | 'showcase'; locale?: 'en' | 'ja' } = {}) {
+  await page.goto(`${locale === 'ja' ? 'ja/' : ''}${kind === 'showcase' ? 'showcase' : 'examples'}/${id}/`)
+  await expect(page.locator('.vw-site-frame[data-ready]')).toBeVisible()
+  return page.locator('.vw-site-demo')
+}
+
+/** Opens the legacy example gallery (gallery.html) and switches to one of its examples by its navigation button. */
 export async function openDemo(page: Page, name: string) {
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByRole('button', { name, exact: true }).click()
 }
 
@@ -162,7 +172,7 @@ export async function openGanttFixture(page: Page, search: string) {
 
 export async function openGraphEditor(page: Page) {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Edit graph').check()
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
