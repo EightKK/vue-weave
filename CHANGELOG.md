@@ -18,6 +18,7 @@
 ### Fixed
 
 - A server-rendered `EventCalendar` hydrates without a mismatch: Node.js formats the week title (`Intl.DateTimeFormat#formatRange`) with thin spaces around the dash where browsers write plain spaces. Formatted dates and times in the library (the `EventCalendar` title and event names, `intlTimeFormatter`, `calendarZoomPresets` and locale-aware `calendarBands` labels) now write thin, narrow no-break and no-break spaces (U+2009, U+202F, U+00A0) as plain spaces, so the server and the browser render the same text. The default English output is unchanged apart from those spaces.
+- Documentation: types and placeholders with angle brackets in `docs/` (such as `ReadonlySet<string>` or `Edit <column> for <row>`) are in code spans, so GitHub and npm show them instead of dropping them as HTML tags.
 
 ### Demo
 

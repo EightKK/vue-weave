@@ -196,9 +196,10 @@ export function resolveApiLink(map: ApiLinkMap, file: string, anchor?: string) {
 const startMarker = (file: string) => `<!-- vw-docs-start: ${file} -->`
 const startMarkerRE = /^<!-- vw-docs-start: ([\w.-]+) -->\s*$/
 const endMarker = '<!-- vw-docs-end -->'
-// docs/*.md and the TypeDoc comments write types such as `ReadonlySet<string>` and placeholders such as `<row>` in
-// running text. VitePress compiles a page's HTML as a Vue template, where they would be unclosed elements, so in that
-// text every tag outside this list is shown as text.
+// The TypeDoc comments of src/ write types such as `ReadonlySet<string>` and placeholders such as `<row>` in running
+// text. VitePress compiles a page's HTML as a Vue template, where they would be unclosed elements, so in the generated
+// type reference every tag outside this list is shown as text. docs/*.md keeps such text in code spans instead, so that
+// GitHub and npm show it too (test/docs-markdown.test.mjs checks this).
 const htmlTagRE = /^<\/?(a|b|br|code|em|i|img|kbd|p|span|strong|sub|sup|wbr)(?=[\s/>])/i
 
 function escapeUnknownHtml(children: { type: string; content: string }[]) {
@@ -224,7 +225,7 @@ export function apiDocsMarkdown(md: MarkdownRenderer, map: ApiLinkMap) {
     const locale = relativePath.startsWith('ja/') ? '/ja' : ''
     const ownRoute = '/' + relativePath.replace(/^ja\//, '').replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '')
     const files: string[] = []
-    const reference = /^api\/reference\//.test(relativePath)
+    const reference = /^(?:ja\/)?api\/reference\//.test(relativePath)
     for (const token of state.tokens) {
       if (reference && token.type === 'inline') escapeUnknownHtml(token.children ?? [])
       if (token.type === 'html_block') {
@@ -237,7 +238,6 @@ export function apiDocsMarkdown(md: MarkdownRenderer, map: ApiLinkMap) {
       }
       const file = files.at(-1)
       if (!file || token.type !== 'inline') continue
-      escapeUnknownHtml(token.children ?? [])
       for (const child of token.children ?? []) {
         // The anchor plugin has already added the permalinks of the headings, which point at this page's own IDs.
         if (child.type !== 'link_open' || child.attrGet('class') === 'header-anchor') continue
