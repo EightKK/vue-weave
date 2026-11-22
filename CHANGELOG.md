@@ -55,6 +55,10 @@ These fix the unreleased recurring events:
 - VTIMEZONE observances written by `toICalendar` now begin in the year before the zone's first event instead of after it (for example in the southern hemisphere).
 - Rules that can never match, such as `FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30`, are detected up front instead of walking 146,097 days on every expansion.
 
+### Changed
+
+- Less repeated work in the core, with the same results: `propagateEdit`, `rescheduleFromStatusDate` and `rescheduleFromActuals` build the scheduling model of the unedited plan once instead of twice, and `resolveEntityRefs` checks a load target only against the bound load targets of its own resource.
+
 ### Demo
 
 - Four new design gallery showcases: **CI/CD pipeline** (a live job DAG linked to a run timeline, with failure injection and retry), **Knowledge graph** (a force-directed graph with clusters, search, neighbourhoods and shortest paths), **Construction program** (a scheduled master programme with critical path, baseline, resource leveling, earned value and a what-if delay) and **Service map** (a live service topology with grouped namespaces, traffic-weighted edges, an incident blast radius and an alert timeline).
