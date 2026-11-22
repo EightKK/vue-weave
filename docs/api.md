@@ -112,6 +112,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [Structure comparison](#structure-comparison)
 - [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)
 - [Partial data loading](#partial-data-loading)
+- [Time bucket tables](#time-bucket-tables)
 - [Typed fields and timeline views](#typed-fields-and-timeline-views)
 - [Application undo and redo](#application-undo-and-redo)
   - [Edit transactions and asynchronous saving](#edit-transactions-and-asynchronous-saving)
@@ -2236,6 +2237,52 @@ Vue (`@eightkk/vue-weave`):
 - Types: `UseWindowedDataOptions`, `WindowedData`, `WindowedDataLoader`, `WindowedDataError`.
 
 Partial data cannot answer questions about the whole: `complete` describes the loaded part of the current view, not the plan. Run scheduling, leveling, resource load, critical paths, deadlines and plan comparisons on complete inputs (on the server or over the full data set) and show their results as data, or label any figure computed over the loaded part as partial. A total or aggregate must not change when the visible subset changes.
+
+## Time bucket tables
+
+Pure helpers (`@eightkk/vue-weave/core`) for period tables: rows (items or metrics) by columns (days, weeks, shifts) with sparse cells `{ rowId, columnId, value, status }`. They do not depend on any component. See [Period tables from time buckets](integration.md#period-tables-from-time-buckets).
+
+Buckets are caller-defined half-open periods `[start, end)` in the caller's time units, sorted by time without overlaps. Gaps between them (nights, weekends, breaks between shifts) are allowed. The library does not define calendar periods here: generate days, weeks, months or hours in an IANA `timeZone` or fixed offset with `calendarBands` (a local day can last 23 or 25 hours; its bands carry labels), working periods with `buildWorkPeriods`, or pass your own. `calendarBands` clips the first and last band to its range, so pass a range on period boundaries to get whole periods.
+
+- `createTimeBucketColumns<P extends TimeBucketPeriod>(periods: readonly P[], options?: TimeBucketColumnOptions<P>): TimeBucketColumn[]` gives `{ id, label, width, start, end }` per period, in order. `id` is `options.id(period, index)`, else `period.id`, else `idPrefix + start` (`idPrefix` default `'bucket:'`), so a column keeps its ID when the shown periods move. `label` is `options.label(period, index)`, else `period.label`, else `String(start)`. `width` (pixels, a number or a function of the period, default 80) must be positive and finite. Throws TypeError for a non-array or a period that is not an object, RangeError for a non-finite period, `end <= start`, a period that starts before the previous one ends (out of order or overlapping) and an invalid width, and Error for an invalid or duplicate ID (`Invalid time bucket ID: <value>`, `Duplicate time bucket ID: <id>`).
+- `timeBucketIndex(buckets, time): number`: the index of the bucket with `start <= time < end`, or -1 when `time` is before, after or between the buckets. `timeBucketIndexRange(buckets, range): { start, end }`: the half-open index range of the buckets that overlap `[range.start, range.end)`; `buckets.slice(start, end)` are the columns to show for a GanttChart `TimelineVisibleWindow`, so a period table can follow the chart's visible range. An empty range or one between buckets gives `start === end`. Both are binary searches and do not validate the buckets again; both throw RangeError for a non-finite time or range and `end < start`.
+- `aggregateTimeBuckets<T = TimeBucketItem>(items: readonly T[], buckets: readonly TimeBucket[], options?: TimeBucketAggregateOptions<T>): TimeBucketCell[]` aggregates quantities into one cell per row and bucket (rows in order, then buckets in time order). `buckets` need IDs (`TimeBucketColumn` has them) and are validated like `createTimeBucketColumns`. Runs in O((items + cells) · log buckets) plus the buckets each interval item overlaps; the inputs are not modified.
+
+`TimeBucketItem`: `{ rowId, time?, start?, end?, value, denominator? }`. An item with `time` is an instant, placed in the bucket that contains it. An item with `start` and `end` is a half-open interval, placed by `placement`: `'start'` (default) in the bucket containing its start; `'overlap'` with its whole value in every bucket it overlaps (counts of active orders, peaks); `'prorate'` split over the buckets it overlaps in proportion to the overlapped time (additive quantities: hours, output), where the parts in gaps or outside every bucket are dropped. A zero-length interval is an instant. Items outside every bucket are ignored. Accessors `itemRow`, `itemTime` (a number or a `TimeRange`), `itemValue` and `itemDenominator` read other item shapes.
+
+Options:
+
+| Option | Meaning |
+| --- | --- |
+| rule | `TimeBucketRule<T>`, default `'sum'`: the rule of rows without an entry in `rules`. |
+| rules | Rules by row ID, a `Map` or a plain object, for tables that mix metrics. |
+| rowIds | The rows to emit, in order; items of other rows are ignored. Default: the rows of the items in first-appearance order. |
+| loaded | `TimeBucketLoaded`: what is loaded, as half-open ranges whose union is loaded for every row, or a function `(rowId, bucket) => boolean \| WindowedCellStatus`. Default: everything. |
+| placement | `'start' \| 'overlap' \| 'prorate'`, default `'start'`: placement of interval items. |
+| carryForward | `boolean \| (rowId) => boolean`, default false: carry the value of `last` rows into later loaded buckets without items. |
+| maxCells | Most cells (rows × buckets) per call, default 1000000; more throws RangeError. |
+
+Rules, with the value of a loaded bucket that has items and of one that has none:
+
+| Rule | With items | Without items |
+| --- | --- | --- |
+| `sum` | total of the values | 0 |
+| `count` | number of items | 0 |
+| `min`, `max` | the smallest or largest value | null |
+| `first`, `last` | the value of the earliest or latest item (by time, intervals by start; ties in input order) | null, or the carried value |
+| `ratio` | sum of values ÷ sum of denominators (null when that sum is 0), with `numerator` and `denominator` on the cell | null, with `numerator` and `denominator` 0 |
+| `precomputed` | the value of the one item, as-is (server-side aggregates); a second item of the row in the bucket throws Error | null |
+| `(values, { rowId, bucket, items }) => number \| null` | the result; `values` and `items` in time order (ties in input order) | the result for `[]` |
+
+`TimeBucketCell`: `{ rowId, columnId, value: number | null, status: WindowedCellStatus, count, numerator?, denominator?, carried? }`. `status` is `loaded` when items were placed in a loaded bucket and `loaded-empty` when none were, so a known zero (`sum`, `count`) and a known absence (null for the other rules) are both distinguished from missing data. A bucket that `loaded` does not cover has status `unloaded` (or the `loading` or `failed` state the function returns) and value null, never 0, even when some items fall in it; `count` still reports them. With ranges, a bucket counts as loaded only when their union covers all of it, since a partly loaded sum would be wrong. The function form can return `windowedCoverage(state, { start: bucket.start, end: bucket.end, rowIds: [rowId] }).status` to follow a windowed data state; `true`, `'loaded'` and `'loaded-empty'` mean loaded, `false` means unloaded.
+
+Ratios (yield, utilisation, on-time rate) must be aggregated from their parts: pass the numerator as `value` and the denominator as `denominator` (or by accessors) and use `ratio`. Averaging the percentages of the buckets weights a day of 10 units like a day of 1000. To roll a ratio up further (a total column, a parent row), sum the cells' `numerator` and `denominator`, or call `aggregateTimeBuckets` again with one bucket that spans the total. The same goes for any total: aggregate the items, not the displayed cells, except for `sum` and `count`.
+
+`carryForward` (only for `last` rows) is for running balances such as stock levels or backlog: a loaded bucket without items shows the last value before it, with `carried: true` and status `loaded-empty`. The carry is seeded by the last item before the bucket, including one before the first bucket or in a gap, so pass the reading before the first shown period to get an opening balance. A bucket that is not loaded has no value and breaks the carry until the next item.
+
+Throws TypeError for inputs of the wrong type, RangeError for invalid buckets, a non-finite time, value or denominator (a denominator is read only for `ratio` rows), an interval or loaded range with `end < start`, an unknown rule (`Unknown time bucket rule: <rule>`, `Unknown time bucket rule of row <id>: <rule>`), placement or loaded state, a custom result that is neither a finite number nor null, and more cells than `maxCells`, and Error for an invalid or duplicate bucket or row ID (`Invalid time bucket row ID: <value>`, `Duplicate time bucket row ID: <id>`) and a repeated precomputed value. Whatever an accessor, reducer or `loaded` function throws passes through.
+
+Types: `TimeBucketPeriod`, `TimeBucket`, `TimeBucketColumn`, `TimeBucketColumnOptions`, `TimeBucketRuleName`, `TimeBucketRule`, `TimeBucketReducer`, `TimeBucketReducerContext`, `TimeBucketPlacement`, `TimeBucketLoaded`, `TimeBucketItem`, `TimeBucketAggregateOptions`, `TimeBucketCell`.
 
 ## Typed fields and timeline views
 
