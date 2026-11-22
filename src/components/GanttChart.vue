@@ -24,7 +24,7 @@ import { progressAt, progressTime, segmentPieces, snapProgress } from '../core/b
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
 import { timelineBaselineId } from '../core/timeline.js'
-import { timelineConstraintKinds, timelineConstraintViolated } from '../core/timeline.js'
+import { timelineConstraintKinds } from '../core/timeline.js'
 import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
 import type { TimelineEditCancel, TimelineEditCancelReason, TimelineSelectDetail } from '../core/types.js'
 import type { LoadViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
@@ -35,7 +35,7 @@ import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import type { TimelineDrop } from './types.js'
 import type { TimelineVisibleWindow } from '../core/windowedData.js'
 import {
-  canvasInset, clipSpan, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox, linkHandleOffset,
+  canvasInset, clipSpan, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox,
   rowScrollTop, sameItems, sameRange, type RowWindow,
 } from './ganttChart/geometry.js'
 import { validateGanttProps, type GanttLoad } from './ganttChart/validateProps.js'
@@ -53,11 +53,12 @@ import { constraintView, type ConstraintPreview } from './ganttChart/constraints
 import { shownBaselines, type BaselineContext } from './ganttChart/baselines.js'
 import { linkEnds, linkHandles, linkKey, type CanvasHandle, type LinkDraft, type LinkEnd } from './ganttChart/linkHandles.js'
 import { clampZoom, maxZoom, minZoom, useZoomGestures } from './ganttChart/useZoomGestures.js'
+import { contextTarget, isMenuKey, keyboardMenuRequest, pointerMenuRequest } from './ganttChart/contextMenu.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource, type ValidatorResult } from './shared/validation.js'
-import { nextTimelineSort, type TimelineViewFilter, type TimelineViewSort } from '../core/timelineView.js'
-import { filterActive, headerColumnIds, sameOption, withColumnFilter } from './ganttChart/headerControls.js'
+import type { TimelineViewFilter, TimelineViewSort } from '../core/timelineView.js'
+import { headerColumnIds, sameOption, useHeaderFilters, type HeaderControls } from './ganttChart/headerControls.js'
 import type { TimelineSheetEdit } from '../core/types.js'
 
 const props = withDefaults(defineProps<{
@@ -2542,32 +2543,16 @@ const headerCells = computed(() => {
   return cells
 })
 
-// Header sorting and filtering (`sortableColumns`, `filterableColumns`). The header shows the controlled `sort` and
-// `filters` and proposes changes; the parent reorders or filters the rows (for example with `useTimelineView`), and the
-// new rows cancel an in-flight gesture like any other source change. `sortableIds` and `filterableIds` are defined
-// with the validation above.
-interface HeaderControls {
-  id: string
-  label: string
-  sortable: boolean
-  filterable: boolean
-  direction?: TimelineViewSort['direction']
-  filter?: TimelineViewFilter
-  filtered: boolean
-  attrs: Record<string, string>
-  choices?: readonly { value: string | number; label?: string }[]
-}
-function headerControls(id: string, label: string, column?: TimelineColumn<R>): HeaderControls | undefined {
-  const sortable = sortableIds.value.has(id), filterable = filterableIds.value.has(id)
-  if (!sortable && !filterable) return undefined
-  // Every rule of the sort shows its direction, not only the first one.
-  const direction = props.sort?.find(rule => rule.ruleId === id)?.direction
-  const filter = props.filters?.find(item => item.columnId === id)
-  // The header is not a table row, so the sort state is part of the sort button's name instead of `aria-sort`.
-  const attrs: Record<string, string> = { 'data-vw-header': id }
-  const choices = column?.field?.kind === 'select' ? column.field.choices : undefined
-  return { id, label, sortable, filterable, direction, filter, filtered: filterActive(filter), attrs, ...(choices ? { choices } : {}) }
-}
+// Header sorting and filtering (`sortableColumns`, `filterableColumns`), see `useHeaderFilters`. `sortableIds` and
+// `filterableIds` are defined with the validation above.
+const {
+  headerControls, headerControlEvents, openFilter, toggleFilter, closeFilter, filterKeys, filterText, clearFilter, choiceShown,
+  toggleChoice, sortGlyph, toggleSort, sortButtonName, filterName, filterButtonName,
+} = useHeaderFilters<R>({
+  root, labels: () => messages.value, sort: () => props.sort, filters: () => props.filters, sortableIds: () => sortableIds.value,
+  filterableIds: () => filterableIds.value, error: () => validationError.value,
+  proposeSort: sort => emit('update:sort', sort), proposeFilters: filters => emit('update:filters', filters),
+})
 const labelHeader = computed(() => validationError.value ? undefined : headerControls(timelineLabelColumnId, messages.value.rows))
 const labelHeaderKey = '\u0000header:' + timelineLabelColumnId
 /** `headerCells`, after the label column's own header when that has controls. */
@@ -2576,99 +2561,6 @@ const headerList = computed<HeaderCell[]>(() => {
   if (!controls) return headerCells.value
   return [{ key: labelHeaderKey, className: 'vw-name-column vw-header-controls', style: {}, attrs: controls.attrs, on: headerControlEvents(controls), text: messages.value.rows, controls }, ...headerCells.value]
 })
-/**
- * Text typed into a filter box. Text being composed with an input method is proposed once, when the composition ends.
- * The box shows the applied filter: once the parent has handled the proposal, text it did not apply is replaced by the
- * applied text, as the value-list checkboxes are. Text that differs from it only in surrounding whitespace is left as
- * typed, since matching trims it anyway.
- */
-function filterText(controls: HeaderControls, event: Event) {
-  if ((event as InputEvent).isComposing) return
-  const input = event.target as HTMLInputElement
-  const id = controls.id
-  proposeFilter(id, { text: input.value })
-  void nextTick(() => {
-    const applied = props.filters?.find(filter => filter.columnId === id)?.text ?? ''
-    if (input.isConnected && input.value.trim() !== applied.trim()) input.value = applied
-  })
-}
-function clearFilter(controls: HeaderControls) {
-  proposeFilter(controls.id, { text: '', values: null })
-  headerCellOf(controls.id)?.querySelector<HTMLInputElement>('.vw-column-filter-popover input[type="search"]')?.focus({ preventScroll: true })
-}
-const sortGlyph = (direction: TimelineViewSort['direction'] | undefined) => direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'
-function toggleSort(id: string) {
-  emit('update:sort', nextTimelineSort(props.sort ?? [], id))
-}
-/** "Sort by Finish", with the applied direction in parentheses: "Sort by Finish (ascending)". */
-function sortButtonName(controls: HeaderControls) {
-  const name = `${messages.value.sortBy} ${controls.label}`
-  const direction = controls.direction === 'asc' ? messages.value.sortedAscending : controls.direction === 'desc' ? messages.value.sortedDescending : undefined
-  return direction ? `${name} (${direction})` : name
-}
-const filterName = (controls: HeaderControls) => `${messages.value.filterBy} ${controls.label}`
-const filterButtonName = (controls: HeaderControls) => filterName(controls) + (controls.filtered ? ` (${messages.value.filtered})` : '')
-function proposeFilter(id: string, patch: { text?: string; values?: (string | number)[] | null }) {
-  emit('update:filters', withColumnFilter(props.filters ?? [], id, patch))
-}
-/** Whether a value-list choice is shown: every choice is while the filter has no value list. */
-function choiceShown(controls: HeaderControls, value: string | number) {
-  return !controls.filter?.values || controls.filter.values.includes(value)
-}
-function toggleChoice(controls: HeaderControls, value: string | number, event: Event) {
-  const all = controls.choices!.map(choice => choice.value)
-  const shown = all.filter(item => choiceShown(controls, item))
-  const next = shown.includes(value) ? shown.filter(item => item !== value) : all.filter(item => item === value || shown.includes(item))
-  proposeFilter(controls.id, { values: next.length === all.length ? null : next })
-  // The box shows the applied filter: the parent's update checks it, and an ignored proposal leaves it as it was.
-  ;(event.target as HTMLInputElement).checked = choiceShown(controls, value)
-}
-// The filter dialog of one column. It never renders on the server; Escape or a press outside closes it.
-const openFilter = ref<string>()
-function headerCellOf(id: string) {
-  return elementWithData(root.value, 'vwHeader', id)
-}
-function onOutsidePress(event: PointerEvent) {
-  const id = openFilter.value
-  if (id === undefined) return
-  const cell = headerCellOf(id)
-  if (!cell || !cell.contains(event.target as Node)) closeFilter(false)
-}
-function closeFilter(restoreFocus: boolean) {
-  const id = openFilter.value
-  if (id === undefined) return
-  openFilter.value = undefined
-  document.removeEventListener('pointerdown', onOutsidePress, true)
-  if (restoreFocus) headerCellOf(id)?.querySelector<HTMLElement>('[data-vw-column-filter]')?.focus({ preventScroll: true })
-}
-function toggleFilter(id: string) {
-  if (openFilter.value === id) return closeFilter(true)
-  closeFilter(false)
-  openFilter.value = id
-  document.addEventListener('pointerdown', onOutsidePress, true)
-  void nextTick(() => headerCellOf(id)?.querySelector<HTMLElement>('.vw-column-filter-popover input')?.focus({ preventScroll: true }))
-}
-function filterKeys(event: KeyboardEvent) {
-  // Keys typed into the dialog are not chart shortcuts.
-  event.stopPropagation()
-  if (event.key === 'Escape' && !event.isComposing) {
-    event.preventDefault()
-    closeFilter(true)
-  }
-}
-function filterFocusOut(event: FocusEvent, id: string) {
-  const next = event.relatedTarget as Node | null
-  if (next && openFilter.value === id && !headerCellOf(id)?.contains(next)) closeFilter(false)
-}
-function headerControlEvents(controls: HeaderControls): HeaderCell['on'] {
-  return controls.filterable ? { focusout: event => filterFocusOut(event as FocusEvent, controls.id) } : {}
-}
-// A column that loses its filter control, or a chart that turns invalid, closes the dialog.
-watch([filterableIds, validationError], () => {
-  if (openFilter.value !== undefined && (validationError.value || !filterableIds.value.has(openFilter.value))) closeFilter(false)
-})
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePress, true))
-
 function proposeColumnResize(change: TimelineColumnResize) {
   if (change.before === change.after) return
   const reason = settle(props.validateColumnResize?.(change), messages.value.columnResizeRejected!)
@@ -2986,9 +2878,6 @@ const createBox = computed(() => {
 
 // Context menu (`contextMenu`). The component reports what was targeted and where; the parent renders the menu.
 let keyboardMenu: { at: number; element: Element } | undefined
-function isMenuKey(event: KeyboardEvent) {
-  return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)
-}
 function keyboardContextMenu(event: KeyboardEvent, target: TimelineContextTarget, rowId?: string) {
   event.preventDefault()
   const element = event.currentTarget as Element
@@ -2996,10 +2885,7 @@ function keyboardContextMenu(event: KeyboardEvent, target: TimelineContextTarget
   // unless a pointer press shows that the next one comes from a real right-click.
   keyboardMenu = { at: event.timeStamp, element }
   hideTooltip()
-  const rect = element.getBoundingClientRect()
-  const menu: TimelineContextMenu = { target, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, source: 'keyboard' }
-  if (rowId !== undefined) menu.rowId = rowId
-  emit('context-menu', menu)
+  emit('context-menu', keyboardMenuRequest(element, target, rowId))
 }
 function pressScroller(event: PointerEvent) {
   keyboardMenu = undefined
@@ -3022,30 +2908,11 @@ function onContextMenu(event: MouseEvent) {
   if (element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return
   event.preventDefault()
   hideTooltip()
-  const rect = area.getBoundingClientRect()
-  const x = timeAreaOffset(event.clientX, rect)
-  const y = event.clientY - rect.top - headerHeight.value
-  // The sticky header and row heading column cover the scrolled content; neither is part of the body or time area.
-  const inHeader = event.clientY < rect.top + el.scrollTop + headerHeight.value
-  const inTime = x >= scrollStart(el) && x >= 0 && x <= axis.value.width
-  const row = !inHeader && y >= 0 ? displayedRows.value[Math.floor(y / props.rowHeight)]?.row : undefined
-  const menu: TimelineContextMenu = {
-    target: contextTarget(element) ?? (row ? { kind: 'row', id: row.id } : { kind: 'chart' }),
-    clientX: event.clientX, clientY: event.clientY, source: 'pointer',
-  }
-  if (inTime) menu.time = axis.value.toTime(x)
-  if (row) menu.rowId = row.id
-  emit('context-menu', menu)
+  emit('context-menu', pointerMenuRequest(event.clientX, event.clientY, contextTarget(element, el, id => barById.value.has(id)), {
+    rect: area.getBoundingClientRect(), scrollTop: el.scrollTop, scrollStart: scrollStart(el), headerHeight: headerHeight.value,
+    rowHeight: props.rowHeight, timeAreaOffset, axis: axis.value, rows: displayedRows.value,
+  }))
 }
-function contextTarget(element: Element | undefined): TimelineContextTarget | undefined {
-  const owner = element?.closest<HTMLElement | SVGElement>('[data-vw-bar], [data-vw-progress], [data-vw-constraint], [data-vw-link], [data-vw-dependency]')
-  if (!owner || !scroller.value?.contains(owner)) return undefined
-  const { vwBar, vwProgress, vwConstraint, vwLink, vwDependency } = owner.dataset
-  if (vwDependency !== undefined) return { kind: 'dependency', id: vwDependency }
-  const id = vwBar ?? vwProgress ?? vwConstraint ?? (vwLink ? (JSON.parse(vwLink) as [string, TimelineBarEnd])[0] : undefined)
-  return id !== undefined && barById.value.has(id) ? { kind: 'bar', id } : undefined
-}
-
 // Target events (`target-enter`, `target-leave`, `target-activate`) report bars, dependencies, rows and, with
 // `loadSelectable`, load segments as view targets. Keyboard focus counts as entering only when it is visible focus.
 function barTarget(id: string): ViewTarget {
