@@ -254,6 +254,17 @@ export function uniqueName(base: string, taken: Set<string>) {
   return name
 }
 
+/**
+ * The deepest nesting level the writers indent. Deeper groups keep this indentation, so the output of a deep hierarchy
+ * grows linearly with its depth instead of quadratically. The readers ignore indentation.
+ */
+const maxIndentLevel = 32
+
+/** The indentation of a nesting `level`: `unit` repeated `level` times, at most `maxIndentLevel` times. */
+export function nestedIndent(unit: string, level: number) {
+  return unit.repeat(Math.min(level, maxIndentLevel))
+}
+
 /** A number for XML output, exact (the shortest text that reads back as the same number), without `-0`. */
 export function formatNumber(value: number) {
   return String(value === 0 ? 0 : value)

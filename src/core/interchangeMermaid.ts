@@ -3,7 +3,7 @@
 import type { GraphEdge, GraphEdgeMarker, GraphLayoutDirection } from './graph.js'
 import type { NetworkGroup, NetworkNode, NetworkNodeShape } from './types.js'
 import {
-  checkGraphInterchangeInput, createGraphCollector, graphShapeFormat, readGraphShape,
+  checkGraphInterchangeInput, createGraphCollector, graphShapeFormat, nestedIndent, readGraphShape,
   type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
 import { dropInvalidXmlChars, isXmlCodePoint } from './interchangeXml.js'
@@ -137,7 +137,7 @@ export function toMermaid(graph: GraphInterchangeInput, options: MermaidOptions 
   for (let i = roots.length - 1; i >= 0; i--) stack.push({ group: roots[i]!, close: false })
   while (stack.length) {
     const { group, close } = stack.pop()!
-    const indent = '  '.repeat(depth.get(group.id)! + 1)
+    const indent = nestedIndent('  ', depth.get(group.id)! + 1)
     if (close) {
       lines.push(indent + 'end')
       continue

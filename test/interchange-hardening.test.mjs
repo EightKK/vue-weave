@@ -39,6 +39,45 @@ test('fromDrawio orders containers listed children first by depth', () => {
   assert.deepEqual(imported.groups.map(group => [group.id, group.parentId]), [['a', undefined], ['b', 'a'], ['c', 'b']])
 })
 
+/** A chain of `depth` nested groups, each holding one node. */
+function nestedGroups(depth) {
+  const nodes = [], groups = []
+  for (let i = 0; i < depth; i++) {
+    nodes.push({ id: 'n' + i, label: 'N' + i })
+    groups.push({ id: 'g' + i, label: 'G' + i, nodeIds: ['n' + i], ...(i ? { parentId: 'g' + (i - 1) } : {}) })
+  }
+  return { nodes, edges: [{ id: 'e', from: 'n0', to: 'n' + (depth - 1) }], groups }
+}
+
+for (const [format, write, read] of [['toGraphMl', toGraphMl, fromGraphMl], ['toMermaid', toMermaid, fromMermaid]]) {
+  test(`${format} writes 20,000 nested groups with bounded indentation, and they read back`, () => {
+    const depth = 20_000
+    const graph = nestedGroups(depth)
+    const started = performance.now()
+    // Indenting every level made the text grow quadratically; GraphML threw "Invalid string length" here.
+    const text = write(graph)
+    const imported = read(text)
+    assert.ok(performance.now() - started < 10_000, 'deep nesting is written and read in linear time')
+    assert.ok(text.length < 20_000_000, 'the text grows linearly with the depth')
+    assert.equal(imported.groups.length, depth)
+    assert.equal(imported.groups.at(-1).parentId, 'g' + (depth - 2))
+    assert.deepEqual(imported.groups.at(-1).nodeIds, ['n' + (depth - 1)])
+    assert.deepEqual(imported.edges.map(edge => [edge.from, edge.to]), [['n0', 'n' + (depth - 1)]])
+  })
+}
+
+test('the graph writers indent the first 32 nesting levels and no deeper', () => {
+  const graph = nestedGroups(40)
+  const indents = (text, pattern) => text.split('\n').filter(line => pattern.test(line)).map(line => line.length - line.trimStart().length)
+  const mermaid = indents(toMermaid(graph), /^\s*subgraph /)
+  assert.deepEqual(mermaid.slice(0, 3), [2, 4, 6])
+  assert.equal(mermaid[31], 64)
+  assert.deepEqual(new Set(mermaid.slice(31)), new Set([64]))
+  const graphMl = indents(toGraphMl(graph), /^\s*<node id="g/)
+  assert.deepEqual(graphMl.slice(0, 3), [4, 8, 12])
+  assert.deepEqual(new Set(graphMl.slice(31)), new Set([128]))
+})
+
 test('fromDrawio collects many edge label cells in linear time and counts them against maxItems', () => {
   const labels = 40_000
   const cells = [
