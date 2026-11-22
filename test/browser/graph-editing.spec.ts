@@ -1282,6 +1282,26 @@ test('the label editor follows the camera in right-to-left graphs and a data ref
   expect(errors).toEqual([])
 })
 
+test('a blank rejection reason rejects label and delete proposals with the default text', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=3&labels=1&delete=1&blankreject=1')
+  const node = chainNode(page, 'N0001')
+  const notice = page.locator('.vw-network .vw-sr-only[aria-live="polite"]')
+  const proposals = page.getByRole('status', { name: 'Edit proposals', exact: true })
+  await node.press('F2')
+  const editor = page.getByRole('textbox', { name: 'Edit label of N0001', exact: true })
+  await editor.fill('Renamed')
+  await editor.press('Enter')
+  await expect(notice).toHaveText('This label change was rejected.')
+  await expect(proposals).toHaveText('label-edit-rejected:"This label change was rejected."')
+  await expect(page.getByRole('status', { name: 'Last label', exact: true })).toHaveText('')
+  await node.press('Delete')
+  await expect(notice).toHaveText('This deletion was rejected.')
+  await expect(proposals).toHaveText('label-edit-rejected:"This label change was rejected." delete-rejected:"This deletion was rejected."')
+  await expect(page.getByRole('status', { name: 'Last deletion', exact: true })).toHaveText('')
+  expect(errors).toEqual([])
+})
+
 test('lasso selection selects the nodes whose centre the outline encloses, keeps modifiers and cancels on Escape', async ({ page }) => {
   const errors = pageErrors(page)
   await page.goto('/gallery.html')

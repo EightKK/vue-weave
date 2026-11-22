@@ -46,6 +46,8 @@ import {
   movedBounds, type Corner,
 } from './networkGraph/editGeometry.js'
 import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
+import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
+import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 
 // The nodes and edges the graph draws and hands back: the inputs and, with groups, collapsed proxies and merged edges.
 type ShownNode = GraphShownNode<N, G>
@@ -888,7 +890,7 @@ function startPan(event: PointerEvent) {
   }
   if (pan.box && lassoMode.value) pan.lasso = true
   isPanning.value = !pan.box
-  svg.value.setPointerCapture(event.pointerId)
+  capturePointer(svg.value, event.pointerId)
   if (pan.box) startAutoPan(event)
   beginGesture('pointer', pan.box ? 'box-select' : 'pan')
 }
@@ -900,26 +902,18 @@ let nodeDrag: {
   guides?: GraphRect[]
 } | undefined
 let suppressClick: string | undefined
-// Ends the pointer capture of a gesture that the element still holds.
-function releasePointer(element: Element, pointerId: number) {
-  if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
-}
 // The group whose label was dragged, so the click that ends the drag does not activate it.
 let suppressGroupClick: string | undefined
 const noIds: ReadonlySet<string> = new Set()
 const gestureIds = shallowRef(noIds)
 // The live region's announcement: the reason of the last rejected proposal, cleared when a new one is checked.
 const notice = ref('')
-// The reason a synchronous validator gave for rejecting a proposal: its string, `fallback` for `false`, or undefined
-// when it accepts (`true` or nothing).
-function rejection(result: boolean | string | void, fallback: string) {
-  return typeof result === 'string' ? result : result === false ? fallback : undefined
-}
 // Checks a proposal with the result of its validator: clears the last announcement and, when the result rejects the
-// proposal, announces the reason and returns it. The caller emits the matching event.
-function checkProposal(result: boolean | string | void, fallback: string): string | undefined {
+// proposal (see rejectionReason: `false` or a blank reason rejects with `fallback`), announces the reason and returns
+// it. The caller emits the matching event.
+function checkProposal(result: ValidatorResult, fallback: string): string | undefined {
   notice.value = ''
-  const reason = rejection(result, fallback)
+  const reason = rejectionReason(result, fallback)
   if (reason !== undefined) notice.value = reason
   return reason
 }
@@ -1026,7 +1020,7 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
   }
   gestureIds.value = new Set(before.keys())
   target.focus({ preventScroll: true })
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
   startAutoPan(event)
   beginGesture('pointer', before.size > 1 ? 'nodes-drag' : 'node-drag')
 }
@@ -1034,7 +1028,7 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
 function updateNodePreview(clientX: number, clientY: number) {
   if (!nodeDrag) return
   const dx = clientX - nodeDrag.start.x, dy = clientY - nodeDrag.start.y
-  if (!dragPreview.value && Math.hypot(dx, dy) < 4) return
+  if (!dragPreview.value && !pastThreshold(nodeDrag.start, { clientX, clientY })) return
   const { x, y, scale } = camera.value
   // Camera movement during the drag (auto-pan) moves the chart under a still pointer.
   dragPreview.value = dragPositions(nodeDrag, (dx - (x - nodeDrag.camera.x)) / scale, (dy - (y - nodeDrag.camera.y)) / scale)
@@ -1200,7 +1194,7 @@ function captureConnection(event: PointerEvent) {
   const target = event.currentTarget as SVGElement
   connectionDrag = { pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
   target.focus({ preventScroll: true })
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
   startAutoPan(event)
 }
 function startPort(event: PointerEvent, handle: PortHandle) {
@@ -1221,7 +1215,7 @@ function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent
 function moveConnection(event: PointerEvent) {
   if (connectionDrag?.pointerId !== event.pointerId) return
   gesturePointer = { x: event.clientX, y: event.clientY }
-  if (connectionPoint.value || Math.hypot(event.clientX - connectionDrag.start.x, event.clientY - connectionDrag.start.y) >= 4) {
+  if (connectionPoint.value || pastThreshold(connectionDrag.start, event)) {
     connectionPoint.value = worldPoint(event.clientX, event.clientY)
   }
 }
@@ -1353,7 +1347,7 @@ function movePan(event: PointerEvent) {
   if (!pan || pan.pointerId !== event.pointerId) return
   if (pan.box) {
     gesturePointer = { x: event.clientX, y: event.clientY }
-    if (pan.lasso && !lassoPreview.value && Math.hypot(event.clientX - pan.x, event.clientY - pan.y) < 4) return
+    if (pan.lasso && !lassoPreview.value && !pastThreshold(pan, event)) return
     updateSelectionArea(event.clientX, event.clientY)
     return
   }
@@ -1366,7 +1360,7 @@ function movePan(event: PointerEvent) {
 
 function stopPan(event: PointerEvent) {
   if (pan?.pointerId !== event.pointerId) return
-  if (pan.box && event.type === 'pointerup' && Math.hypot(event.clientX - pan.x, event.clientY - pan.y) >= 4) {
+  if (pan.box && event.type === 'pointerup' && pastThreshold(pan, event)) {
     movePan(event)
     const selection = new Set(event.ctrlKey || event.metaKey ? props.selectedIds : [])
     if (pan.lasso) {
@@ -1624,7 +1618,7 @@ function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId'
   const target = event.currentTarget as SVGElement
   handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
   target.focus({ preventScroll: true })
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
   beginGesture('pointer', drag.kind === 'resize' ? 'node-resize' : 'edge-reshape')
 }
 function startWaypointDrag(event: PointerEvent, handle: WaypointHandle) {
@@ -1641,7 +1635,7 @@ function snapOrKeep(value: number) {
 function moveHandle(event: PointerEvent) {
   const drag = handleDrag
   if (!drag || drag.pointerId !== event.pointerId) return
-  if (!resizePreview.value && !reshapePreview.value && Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) < 4) return
+  if (!resizePreview.value && !reshapePreview.value && !pastThreshold(drag.start, event)) return
   const { scale } = camera.value
   const dx = (event.clientX - drag.start.x) / scale, dy = (event.clientY - drag.start.y) / scale
   if (drag.kind === 'resize') {
@@ -1940,14 +1934,11 @@ const renderedGroups = computed(() => visibleGroups.value ? shownGroups.value.fi
 const touches = new Map<number, GraphPoint>()
 let pinch: { ids: number[]; distance: number; midpoint: GraphPoint; camera: GraphViewport } | undefined
 const pinching = ref(false)
-function releaseCapture(id: number) {
-  try { if (svg.value?.hasPointerCapture(id)) svg.value.releasePointerCapture(id) } catch { /* the pointer is already gone */ }
-}
 function endPinch() {
   const previous = pinch
   pinch = undefined
   pinching.value = false
-  for (const id of previous?.ids ?? []) releaseCapture(id)
+  for (const id of previous?.ids ?? []) releasePointer(svg.value, id)
 }
 function startTouch(event: PointerEvent) {
   if (event.pointerType !== 'touch' || !svg.value) return
@@ -1956,9 +1947,7 @@ function startTouch(event: PointerEvent) {
   // A second finger turns the gesture into a camera gesture and cancels any one-finger edit in flight.
   cancelInteraction()
   const ids = [...touches.keys()], [a, b] = [...touches.values()] as [GraphPoint, GraphPoint]
-  for (const id of ids) {
-    try { svg.value.setPointerCapture(id) } catch { /* synthetic pointers cannot be captured */ }
-  }
+  for (const id of ids) capturePointer(svg.value, id)
   pinch = {
     ids, distance: Math.hypot(a.x - b.x, a.y - b.y), midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
     camera: { ...camera.value },

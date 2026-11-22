@@ -22,8 +22,9 @@
       // highlight and highlightedges (comma-separated highlighted IDs), targets (logging target-* events), collapse
       // (comma-separated controlled collapsed group IDs), preset=ports (A to D with named ports on A and B and an
       // external route for edge ab), policy (routingPolicy), style (edgeStyle), gestures (logging gesture-* events),
-      // boxselect, editableedges, resizable, labels (editableLabels, logging label-edit proposals), edgelabels (a label
-      // on every edge), labelplacement (edgeLabelPlacement) and reconnectable. Every edit proposal is logged by event
+      // boxselect, editableedges, resizable, labels (editableLabels, logging label-edit proposals), blankreject (label and
+      // delete validators that return a blank reason), edgelabels (a label on every edge), labelplacement
+      // (edgeLabelPlacement) and reconnectable. Every edit proposal is logged by event
       // name in "Edit proposals" and passed through structuredClone; a payload that cannot be cloned is reported in
       // "Clone errors".
       const query = new URLSearchParams(location.search)
@@ -180,6 +181,12 @@
             resizable: query.get('resizable') === '1',
             editableLabels: query.get('labels') === '1',
             onLabelEdit: change => { lastLabel.value = JSON.stringify(change) },
+            // blankreject=1: the label and delete validators reject with a blank reason, and the rejections are logged.
+            ...query.get('blankreject') === '1' ? {
+              validateLabelEdit: () => '  ', validateDelete: () => ' ',
+              onLabelEditRejected: (change, reason) => record('label-edit-rejected:' + JSON.stringify(reason), change),
+              onDeleteRejected: (deletion, reason) => record('delete-rejected:' + JSON.stringify(reason), deletion),
+            } : {},
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
             draggable: query.get('draggable') === '1', connectable: query.get('connectable') === '1', positions: positions.value,
