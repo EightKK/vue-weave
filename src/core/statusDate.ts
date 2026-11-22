@@ -2,7 +2,7 @@ import {
   buildScheduleModel, checkStatusDate, isMapLike, limitsOf, lowerBounds, slotFor, summarySlot, targetFinish, topologicalOrder,
   type WorkClock,
 } from './scheduleModel.js'
-import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
+import type { ScheduleInput, ScheduleResult, ScheduleTask } from './scheduling.js'
 import { scheduleWithModel } from './schedulePasses.js'
 import type { TimeRange } from './timeline.js'
 
@@ -55,7 +55,7 @@ export function rescheduleFromStatusDate(
       throw new RangeError('Progress must be between zero and one: ' + id)
     }
   }
-  const base = scheduleTasks(input)
+  const base = scheduleWithModel(input, model, false)
   if (!base.ok) return base
   const current = new Map(base.tasks.map(task => [task.id, task]))
   const completed = new Set<string>()

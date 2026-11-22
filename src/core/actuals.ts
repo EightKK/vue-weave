@@ -3,9 +3,8 @@ import { withContext } from './ids.js'
 import {
   buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, type ScheduleModel,
 } from './scheduleModel.js'
-import {
-  scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleSuccess, type ScheduleTask,
-  type ScheduledTask,
+import type {
+  ScheduleFailure, ScheduleInput, ScheduleLink, ScheduleResult, ScheduleSuccess, ScheduleTask, ScheduledTask,
 } from './scheduling.js'
 import { toPlanningDiagnostics, type PlanningDiagnostic, type PlanningDiagnosticSeverity } from './scheduleDiagnostics.js'
 import { scheduleWithModel } from './schedulePasses.js'
@@ -254,7 +253,7 @@ export function rescheduleFromActuals(
   const started = new Set([...finished, ...startStandIns.keys(), ...startStandIns.values()])
   const remainingInput = { ...input, tasks, dependencies }
   const raw = scheduleWithModel(remainingInput, buildScheduleModel(remainingInput, false, started), false)
-  const plan = scheduleTasks(input)
+  const plan = scheduleWithModel(input, model, false)
 
   const owner = new Map([...startStandIns].map(([id, standIn]) => [standIn, id]))
   const real = (id: string) => owner.get(id) ?? id

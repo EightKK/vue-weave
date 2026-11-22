@@ -221,7 +221,8 @@ export function propagateEdit(input: ScheduleInput, edit: ScheduleEdit): Propaga
   const tasks = input.tasks.map(item => item.id === edit.id ? edited(item) : item)
   const schedule = scheduleTasks({ ...input, tasks })
   if (!schedule.ok) return schedule
-  const base = scheduleTasks(input)
+  // The model of the unedited input validated the edit; its schedule reuses it.
+  const base = scheduleWithModel(input, model, false)
   if (!base.ok) return base
   const changes: ScheduleChange[] = []
   schedule.tasks.forEach((after, index) => {
