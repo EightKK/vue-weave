@@ -11,6 +11,9 @@ import {
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
 import { unusedNumber } from './ids'
+import { useDemoLocale } from './i18n'
+
+const { t, labels } = useDemoLocale()
 
 type DiagramNode = NetworkNode<{ accent: string }>
 interface Diagram {
@@ -25,25 +28,25 @@ const nodeHeight = 58
 const defaultWidth = 144
 
 const templates: readonly GraphPaletteItem<{ kind: string }>[] = [
-  { id: 'start', label: 'Start', detail: 'Where the flow begins', shape: 'ellipse', tone: 'teal', section: 'Flow', data: { kind: 'event' } },
-  { id: 'step', label: 'Step', detail: 'A unit of work', shape: 'box', tone: 'blue', section: 'Flow', keywords: ['task', 'activity'], data: { kind: 'task' } },
-  { id: 'subprocess', label: 'Subprocess', detail: 'A reusable flow', shape: 'rounded', tone: 'blue', section: 'Flow', data: { kind: 'task' } },
-  { id: 'decision', label: 'Decision', detail: 'Branch on a condition', shape: 'diamond', tone: 'violet', section: 'Flow', keywords: ['gateway', 'if'], data: { kind: 'gateway' } },
-  { id: 'end', label: 'End', detail: 'Where the flow stops', shape: 'ellipse', tone: 'amber', section: 'Flow', data: { kind: 'event' } },
-  { id: 'store', label: 'Data store', detail: 'Read or written data', shape: 'hexagon', tone: 'teal', section: 'Data', keywords: ['database'], data: { kind: 'data' } },
+  { id: 'start', label: t({ en: 'Start', ja: '開始' }), detail: t({ en: 'Where the flow begins', ja: 'フローの始まり' }), shape: 'ellipse', tone: 'teal', section: t({ en: 'Flow', ja: 'フロー' }), data: { kind: 'event' } },
+  { id: 'step', label: t({ en: 'Step', ja: '処理' }), detail: t({ en: 'A unit of work', ja: '作業の単位' }), shape: 'box', tone: 'blue', section: t({ en: 'Flow', ja: 'フロー' }), keywords: ['task', 'activity'], data: { kind: 'task' } },
+  { id: 'subprocess', label: t({ en: 'Subprocess', ja: 'サブプロセス' }), detail: t({ en: 'A reusable flow', ja: '再利用できるフロー' }), shape: 'rounded', tone: 'blue', section: t({ en: 'Flow', ja: 'フロー' }), data: { kind: 'task' } },
+  { id: 'decision', label: t({ en: 'Decision', ja: '判断' }), detail: t({ en: 'Branch on a condition', ja: '条件で分岐' }), shape: 'diamond', tone: 'violet', section: t({ en: 'Flow', ja: 'フロー' }), keywords: ['gateway', 'if'], data: { kind: 'gateway' } },
+  { id: 'end', label: t({ en: 'End', ja: '終了' }), detail: t({ en: 'Where the flow stops', ja: 'フローの終わり' }), shape: 'ellipse', tone: 'amber', section: t({ en: 'Flow', ja: 'フロー' }), data: { kind: 'event' } },
+  { id: 'store', label: t({ en: 'Data store', ja: 'データストア' }), detail: t({ en: 'Read or written data', ja: '読み書きするデータ' }), shape: 'hexagon', tone: 'teal', section: t({ en: 'Data', ja: 'データ' }), keywords: ['database'], data: { kind: 'data' } },
 ]
 
 const history = useEditHistory<Diagram>({
   nodes: [
-    { id: 'start-1', label: 'Request received', shape: 'ellipse', tone: 'teal', data: { accent: '#2b756b' } },
-    { id: 'step-1', label: 'Check request', detail: 'Clerk', shape: 'box', tone: 'blue', data: { accent: '#29609a' } },
-    { id: 'decision-1', label: 'Approved?', shape: 'diamond', tone: 'violet', data: { accent: '#624888' } },
-    { id: 'end-1', label: 'Done', shape: 'ellipse', tone: 'amber', data: { accent: '#825411' } },
+    { id: 'start-1', label: t({ en: 'Request received', ja: '申請受付' }), shape: 'ellipse', tone: 'teal', data: { accent: '#2b756b' } },
+    { id: 'step-1', label: t({ en: 'Check request', ja: '申請を確認' }), detail: t({ en: 'Clerk', ja: '担当者' }), shape: 'box', tone: 'blue', data: { accent: '#29609a' } },
+    { id: 'decision-1', label: t({ en: 'Approved?', ja: '承認?' }), shape: 'diamond', tone: 'violet', data: { accent: '#624888' } },
+    { id: 'end-1', label: t({ en: 'Done', ja: '完了' }), shape: 'ellipse', tone: 'amber', data: { accent: '#825411' } },
   ],
   edges: [
     { id: 'e1', from: 'start-1', to: 'step-1' },
     { id: 'e2', from: 'step-1', to: 'decision-1' },
-    { id: 'e3', from: 'decision-1', to: 'end-1', label: 'yes' },
+    { id: 'e3', from: 'decision-1', to: 'end-1', label: t({ en: 'yes', ja: 'はい' }) },
   ],
   positions: new Map([
     ['start-1', { x: 20, y: 100 }], ['step-1', { x: 220, y: 100 }], ['decision-1', { x: 420, y: 100 }], ['end-1', { x: 620, y: 100 }],
@@ -64,7 +67,7 @@ function commit(change: Partial<Diagram>) {
   history.commit({ ...history.state.value, ...change })
 }
 const selectedId = ref<string>('step-1')
-const status = ref('Drag a shape onto the diagram, or focus one and press Enter.')
+const status = ref(t({ en: 'Drag a shape onto the diagram, or focus one and press Enter.', ja: '図形を図へドラッグするか、フォーカスして Enter を押してください。' }))
 const rtl = ref(false)
 
 // Palette: a drop and a keyboard insert both centre a new node on a chart point.
@@ -80,7 +83,7 @@ function addNode(template: GraphPaletteItem<{ kind: string }>, center: GraphPoin
     positions: new Map(diagram.value.positions).set(id, { x: Math.max(0, corner.x), y: Math.max(0, corner.y) }),
   })
   selectedId.value = id
-  status.value = 'Added ' + node.label + '.'
+  status.value = t({ en: 'Added ' + node.label + '.', ja: node.label + ' を追加しました。' })
 }
 function dropNode(drop: GraphDrop) {
   const dropped = readPaletteDrop(drop)
@@ -98,16 +101,18 @@ function moveNodes(changes: readonly GraphNodeMove[]) {
   const positions = new Map(diagram.value.positions)
   for (const change of changes) positions.set(change.id, change.after)
   commit({ positions })
-  status.value = changes.length === 1 ? 'Moved ' + label(changes[0]!.id) + '.' : 'Moved ' + changes.length + ' nodes.'
+  status.value = changes.length === 1
+    ? t({ en: 'Moved ' + label(changes[0]!.id) + '.', ja: label(changes[0]!.id) + ' を移動しました。' })
+    : t({ en: 'Moved ' + changes.length + ' nodes.', ja: changes.length + ' 個のノードを移動しました。' })
 }
 function connect(connection: GraphConnection) {
   const id = 'e' + unusedNumber(diagram.value.edges, 'e')
   commit({ edges: [...diagram.value.edges, { id, from: connection.from, to: connection.to }] })
-  status.value = 'Connected ' + label(connection.from) + ' to ' + label(connection.to) + '.'
+  status.value = t({ en: 'Connected ' + label(connection.from) + ' to ' + label(connection.to) + '.', ja: label(connection.from) + ' を ' + label(connection.to) + ' に接続しました。' })
 }
 function validateConnection(connection: GraphConnection) {
-  if (connection.from === connection.to) return 'A node cannot connect to itself.'
-  if (diagram.value.edges.some(edge => edge.from === connection.from && edge.to === connection.to)) return 'These nodes are already connected.'
+  if (connection.from === connection.to) return t({ en: 'A node cannot connect to itself.', ja: 'ノードを自分自身に接続することはできません。' })
+  if (diagram.value.edges.some(edge => edge.from === connection.from && edge.to === connection.to)) return t({ en: 'These nodes are already connected.', ja: 'これらのノードはすでに接続されています。' })
 }
 function deleteElements(deletion: GraphDeletion) {
   const { nodes, edges } = removeGraphElements(diagram.value.nodes, diagram.value.edges, deletion)
@@ -118,32 +123,36 @@ function deleteElements(deletion: GraphDeletion) {
   }
   const removedEdges = diagram.value.edges.length - edges.length
   commit({ nodes, edges, positions, sizes })
-  status.value = 'Deleted ' + deletion.nodeIds.length + ' node(s) and ' + removedEdges + ' edge(s).'
+  status.value = t({ en: 'Deleted ' + deletion.nodeIds.length + ' node(s) and ' + removedEdges + ' edge(s).', ja: 'ノード ' + deletion.nodeIds.length + ' 個と辺 ' + removedEdges + ' 本を削除しました。' })
 }
 const label = (id: string) => diagram.value.nodes.find(node => node.id === id)?.label ?? id
 
 // Inspector: typed fields of the selected node. The parent applies each accepted change as one history entry.
 const selectedNode = computed(() => diagram.value.nodes.find(node => node.id === selectedId.value) ?? null)
 const shapes: readonly NetworkNodeShape[] = ['box', 'rounded', 'diamond', 'ellipse', 'hexagon']
+const shapeNamesJa: Record<string, string> = { box: '四角形', rounded: '角丸', diamond: 'ひし形', ellipse: '楕円', hexagon: '六角形' }
 const fields = computed<InspectorField<DiagramNode>[]>(() => [
   { id: 'id', kind: 'text', label: 'ID', get: node => node.id, readonly: true },
-  { id: 'label', kind: 'text', label: 'Label', get: node => node.label, required: true, description: 'Must be unique in the diagram.' },
-  { id: 'detail', kind: 'text', label: 'Detail', get: node => node.detail ?? null, placeholder: 'Optional second line' },
-  { id: 'shape', kind: 'select', label: 'Shape', get: node => node.shape ?? 'box', required: true, choices: shapes.map(value => ({ value, label: value[0]!.toUpperCase() + value.slice(1) })) },
+  { id: 'label', kind: 'text', label: t({ en: 'Label', ja: 'ラベル' }), get: node => node.label, required: true, description: t({ en: 'Must be unique in the diagram.', ja: '図の中で重複しない名前にしてください。' }) },
+  { id: 'detail', kind: 'text', label: t({ en: 'Detail', ja: '詳細' }), get: node => node.detail ?? null, placeholder: t({ en: 'Optional second line', ja: '任意の2行目' }) },
+  { id: 'shape', kind: 'select', label: t({ en: 'Shape', ja: '形状' }), get: node => node.shape ?? 'box', required: true, choices: shapes.map(value => ({ value, label: t({ en: value[0]!.toUpperCase() + value.slice(1), ja: shapeNamesJa[value]! }) })) },
   {
-    id: 'tone', kind: 'select', label: 'Colour', get: node => node.tone ?? 'blue', required: true,
-    choices: [{ value: 'teal', label: 'Teal' }, { value: 'blue', label: 'Blue' }, { value: 'amber', label: 'Amber' }, { value: 'violet', label: 'Violet' }],
+    id: 'tone', kind: 'select', label: t({ en: 'Colour', ja: '色' }), get: node => node.tone ?? 'blue', required: true,
+    choices: [
+      { value: 'teal', label: t({ en: 'Teal', ja: '青緑' }) }, { value: 'blue', label: t({ en: 'Blue', ja: '青' }) },
+      { value: 'amber', label: t({ en: 'Amber', ja: '琥珀' }) }, { value: 'violet', label: t({ en: 'Violet', ja: '紫' }) },
+    ],
   },
-  { id: 'accent', kind: 'color', label: 'Accent', get: node => node.data?.accent ?? null, description: 'Kept in the node data for exports.' },
+  { id: 'accent', kind: 'color', label: t({ en: 'Accent', ja: 'アクセント' }), get: node => node.data?.accent ?? null, description: t({ en: 'Kept in the node data for exports.', ja: '出力用にノードのデータに保存します。' }) },
   {
-    id: 'width', kind: 'number', label: 'Width', integer: true, min: 100, max: 320, required: true,
+    id: 'width', kind: 'number', label: t({ en: 'Width', ja: '幅' }), integer: true, min: 100, max: 320, required: true,
     get: node => diagram.value.sizes.get(node.id)?.width ?? defaultWidth,
   },
-  { id: 'locked', kind: 'checkbox', label: 'Lock position', get: node => node.draggable === false },
+  { id: 'locked', kind: 'checkbox', label: t({ en: 'Lock position', ja: '位置を固定' }), get: node => node.draggable === false },
 ])
 function validateChange(change: InspectorChange) {
   if (change.field === 'label' && diagram.value.nodes.some(node => node.id !== change.id && node.label === change.after)) {
-    return 'Another node is already called ' + String(change.after) + '.'
+    return t({ en: 'Another node is already called ' + String(change.after) + '.', ja: String(change.after) + ' という名前のノードはすでにあります。' })
   }
 }
 function applyChange(change: InspectorChange) {
@@ -164,37 +173,38 @@ function applyChange(change: InspectorChange) {
     }
     commit({ nodes: diagram.value.nodes.map(node => node.id === change.id ? update(node) : node) })
   }
-  status.value = 'Changed ' + change.field + ' of ' + label(change.id) + ' to ' + String(after) + '.'
+  const fieldName = fields.value.find(field => field.id === change.field)?.label ?? change.field
+  status.value = t({ en: 'Changed ' + change.field + ' of ' + label(change.id) + ' to ' + String(after) + '.', ja: label(change.id) + ' の' + fieldName + 'を ' + String(after) + ' に変更しました。' })
 }
 function rejectChange(_change: InspectorChange, reason: string) {
-  status.value = 'Rejected: ' + reason
+  status.value = t({ en: 'Rejected: ', ja: '却下: ' }) + reason
 }
 </script>
 
 <template>
-  <DemoPanel title-id="diagram-editor-title" title="Diagram editor" subtitle="Drag shapes from the palette, connect them on the canvas and edit the selected node in the inspector.">
+  <DemoPanel title-id="diagram-editor-title" :title="t({ en: 'Diagram editor', ja: 'ダイアグラムエディター' })" :subtitle="t({ en: 'Drag shapes from the palette, connect them on the canvas and edit the selected node in the inspector.', ja: 'パレットから図形をドラッグし、キャンバスで接続して、選択したノードをインスペクターで編集します。' })">
     <template #options>
-      <button type="button" :disabled="!history.canUndo.value" @click="history.undo">Undo</button>
-      <button type="button" :disabled="!history.canRedo.value" @click="history.redo">Redo</button>
-      <label><input v-model="rtl" type="checkbox"> Right to left</label>
+      <button type="button" :disabled="!history.canUndo.value" @click="history.undo">{{ t({ en: 'Undo', ja: '元に戻す' }) }}</button>
+      <button type="button" :disabled="!history.canRedo.value" @click="history.redo">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
+      <label><input v-model="rtl" type="checkbox"> {{ t({ en: 'Right to left', ja: '右から左' }) }}</label>
     </template>
     <div class="diagram-editor" :dir="rtl ? 'rtl' : undefined">
       <aside class="diagram-editor-side">
-        <h3>Shapes</h3>
-        <GraphPalette :items="templates" searchable :dir="rtl ? 'rtl' : 'ltr'" :labels="{ region: 'Shapes' }" @insert="insertNode" />
+        <h3>{{ t({ en: 'Shapes', ja: '図形' }) }}</h3>
+        <GraphPalette :items="templates" searchable :dir="rtl ? 'rtl' : 'ltr'" :labels="{ ...labels.palette, region: t({ en: 'Shapes', ja: '図形' }) }" @insert="insertNode" />
       </aside>
       <NetworkGraph ref="graph" v-model:selected-id="selectedId" class="diagram-editor-canvas" :nodes="diagram.nodes" :edges="diagram.edges"
         :positions="diagram.positions" :sizes="diagram.sizes" :height="460" :snap-grid="grid" background="dots"
         draggable connectable deletable droppable alignment-guides :validate-connection="validateConnection"
-        :labels="{ region: 'Diagram canvas' }"
+        :labels="{ ...labels.graph, region: t({ en: 'Diagram canvas', ja: '図のキャンバス' }) }"
         @node-move="change => moveNodes([change])" @nodes-move="moveNodes" @connect="connect" @delete="deleteElements" @node-drop="dropNode" />
       <aside class="diagram-editor-side">
-        <h3>Properties</h3>
+        <h3>{{ t({ en: 'Properties', ja: 'プロパティ' }) }}</h3>
         <PropertyInspector :item="selectedNode" :fields="fields" :validate-change="validateChange" :dir="rtl ? 'rtl' : 'ltr'"
-          :labels="{ region: 'Node properties', empty: 'Select a node to edit it.' }" @change="applyChange" @change-rejected="rejectChange" />
+          :labels="{ ...labels.inspector, region: t({ en: 'Node properties', ja: 'ノードのプロパティ' }), empty: t({ en: 'Select a node to edit it.', ja: 'ノードを選ぶと編集できます。' }) }" @change="applyChange" @change-rejected="rejectChange" />
       </aside>
     </div>
-    <StatusLine label="Diagram editor status">{{ status }}</StatusLine>
+    <StatusLine :label="t({ en: 'Diagram editor status', ja: 'エディターの状態' })">{{ status }}</StatusLine>
   </DemoPanel>
 </template>
 

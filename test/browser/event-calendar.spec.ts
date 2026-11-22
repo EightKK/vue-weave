@@ -379,3 +379,16 @@ test('a blank rejection reason from validateEdit rejects with the default text',
   await expect(announcement).toHaveText('This change was rejected.')
   expect(errors).toEqual([])
 })
+
+test('the event calendar demo uses Japanese labels on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'event-calendar', { locale: 'ja' })
+  const calendar = demo.getByRole('region', { name: '会議室の予約', exact: true })
+  await expect(calendar).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '今日', exact: true })).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '週', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
+  await calendar.getByRole('button', { name: '月', exact: true }).click()
+  await expect(calendar.getByRole('button', { name: '月', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})

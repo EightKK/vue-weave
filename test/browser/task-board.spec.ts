@@ -388,3 +388,13 @@ test('a blank rejection reason from validateCardMove rejects with the default te
   await expect(board.locator('xpath=..').locator('[aria-live="polite"]')).toHaveText('This card move was rejected.')
   expect(errors).toEqual([])
 })
+
+test('the task board example names its columns and status in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'task-board', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: 'スプリントのボード', exact: true })).toBeVisible()
+  await expect(demo.getByText('未着手', { exact: true }).first()).toBeVisible()
+  await expect(demo.getByRole('status', { name: 'ボードの選択' })).toHaveText('何も選択されていません。')
+  await expect(demo.getByRole('region', { name: 'スプリントのタイムライン', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

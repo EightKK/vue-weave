@@ -46,6 +46,9 @@ export function pageErrors(page: Page) {
 export async function openExample(page: Page, id: string, { kind = 'example', locale = 'en' }: { kind?: 'example' | 'showcase'; locale?: 'en' | 'ja' } = {}) {
   await page.goto(`${locale === 'ja' ? 'ja/' : ''}${kind === 'showcase' ? 'showcase' : 'examples'}/${id}/`)
   await expect(page.locator('.vw-site-frame[data-ready]')).toBeVisible()
+  // The site's navigation bar is fixed to the top of the viewport. Pointer gestures aim at element centres, and an
+  // element scrolled just under the bar would receive the bar instead, so here the bar scrolls away with the page.
+  await page.addStyleTag({ content: '.VPNav, .VPLocalNav { position: absolute !important; }' })
   return page.locator('.vw-site-demo')
 }
 

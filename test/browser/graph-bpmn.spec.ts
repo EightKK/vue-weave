@@ -77,3 +77,13 @@ test('the BPMN demo exports pools, shapes and markers to SVG and draws right-to-
   }
   expect(errors).toEqual([])
 })
+
+test('the BPMN example shows its process and flowchart in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'bpmn-process', { locale: 'ja' })
+  await expect(demo.getByLabel('発注プロセス', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: 'フローチャート', exact: true })).toBeVisible()
+  await expect(demo.getByLabel('注文ファイルのフローチャート', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'プロセスをリセット', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

@@ -672,7 +672,7 @@ test('the diagram demo draws shapes and markers, spreads parallel edges, animate
   const { readFile } = await import('node:fs/promises')
   const errors = pageErrors(page)
   await openExample(page, 'diagram-styles')
-  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
   for (const name of ['Order placed', 'In stock?', 'Inventory data store', 'Validate order', 'Delivered']) {
     await expect(page.getByRole('button', { name })).toBeVisible()
   }
@@ -725,7 +725,7 @@ test('the diagram demo draws shapes and markers, spreads parallel edges, animate
 test('the diagram demo routes orthogonal edges around the nodes with Avoid nodes', async ({ page }) => {
   const errors = pageErrors(page)
   await openExample(page, 'diagram-styles')
-  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
   const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
   const avoid = page.getByLabel('Avoid nodes')
   await expect(avoid).not.toBeChecked()
@@ -1010,7 +1010,7 @@ test('the quantity flow demo draws named bands on one scale, never mixes units a
   await expect(band('Overhead → Line A: 300 EUR')).toBeAttached()
   await expect(band('Line B → Inspect: 900 EUR')).toBeAttached()
   await expect(stage.getByRole('button', { name: / pcs$/ })).toHaveCount(0)
-  await expect(page.getByText('Every edge is in EUR.')).toBeVisible()
+  await expect(page.getByText('Every edge is in EUR.', { exact: true })).toBeVisible()
   await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(2)).toHaveText('−100')
   await page.getByRole('button', { name: 'Export flow SVG', exact: true }).click()
   await expect(status).toHaveText('Exported SVG with 9 bands.')
@@ -1019,5 +1019,14 @@ test('the quantity flow demo draws named bands on one scale, never mixes units a
   await expect(band('Lot L-100 → Line A: 1200 EUR')).toBeAttached()
   await page.getByLabel('Flow unit').selectOption('pcs')
   await expect(band('Lot L-100 → Line A: 60 pcs')).toBeAttached()
+  expect(errors).toEqual([])
+})
+
+test('the large graph example counts its nodes and edges in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'large-graph', { locale: 'ja' })
+  await expect(demo.getByText('ノード 3750 · 辺 7450', { exact: true })).toBeVisible()
+  await expect(demo.getByLabel('ネットワーク図', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '全体を表示', exact: true }).first()).toBeVisible()
   expect(errors).toEqual([])
 })

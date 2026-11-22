@@ -1005,3 +1005,14 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
   expect(await actualNames()).toEqual(before)
   expect(errors).toEqual([])
 })
+
+test('the resource planning example previews a change in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-planning', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: 'リソースの計画', exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '計画の変更を元に戻す', exact: true })).toBeDisabled()
+  await expect(demo.getByRole('status', { name: '計画の概要' })).toContainText('scheduleTasks で計算。')
+  await expect(demo.getByRole('heading', { name: '未計画のタスク', exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: '計画の診断', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

@@ -33,3 +33,13 @@ test('the earned value demo recalculates PV, EV, AC and the indicators when the 
   await expect(curve).toHaveAccessibleDescription(/forecast \d+\.\dk by/)
   expect(errors).toEqual([])
 })
+
+test('the earned value demo shows its measures and verdict in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'earned-value', { locale: 'ja' })
+  await expect(demo.getByRole('slider', { name: '状況日付' })).toBeVisible()
+  await expect(demo.getByText('計画価値(PV)', { exact: true }).first()).toBeVisible()
+  await expect(demo.getByRole('status', { name: 'アーンドバリューの概要' })).toContainText('の状況:')
+  await expect(demo.getByRole('region', { name: 'アーンドバリューの計画', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

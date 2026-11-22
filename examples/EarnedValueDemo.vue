@@ -6,6 +6,9 @@ import {
 } from '../src'
 import { day, hour } from './data'
 import DemoPanel from './components/DemoPanel.vue'
+import { useDemoLocale } from './i18n'
+
+const { t, labels, isJapanese } = useDemoLocale()
 
 // Opt-in example of `computeEarnedValue` and `rollupEarnedValue`: a small delivery project with a budget per task and a
 // baseline plan on a weekday 08:00–16:00 calendar. The "actual" progress and cost come from a made-up record of what
@@ -34,20 +37,20 @@ interface PlanTask {
   actual: { day: number; days: number; costRate: number }
 }
 const plan: PlanTask[] = [
-  { id: 'spec', parentId: 'engineering', label: 'Specification', budget: 6000, days: [0, 2], actual: { day: 0, days: 3, costRate: 1 } },
-  { id: 'design', parentId: 'engineering', label: 'Design', budget: 10000, days: [3, 7], actual: { day: 3, days: 6, costRate: 1.15 } },
-  { id: 'procure', parentId: 'delivery', label: 'Procurement', budget: 14000, days: [5, 9], actual: { day: 5, days: 5, costRate: 0.95 } },
-  { id: 'assemble', parentId: 'delivery', label: 'Assembly', budget: 21000, days: [10, 16], actual: { day: 10, days: 9, costRate: 1.1 } },
-  { id: 'test', parentId: 'delivery', label: 'Testing', budget: 8000, days: [17, 20], actual: { day: 19, days: 4, costRate: 1 } },
-  { id: 'handover', parentId: 'delivery', label: 'Handover', budget: 1000, days: [21, 21], actual: { day: 23, days: 0, costRate: 1 } },
+  { id: 'spec', parentId: 'engineering', label: t({ en: 'Specification', ja: '仕様策定' }), budget: 6000, days: [0, 2], actual: { day: 0, days: 3, costRate: 1 } },
+  { id: 'design', parentId: 'engineering', label: t({ en: 'Design', ja: '設計' }), budget: 10000, days: [3, 7], actual: { day: 3, days: 6, costRate: 1.15 } },
+  { id: 'procure', parentId: 'delivery', label: t({ en: 'Procurement', ja: '調達' }), budget: 14000, days: [5, 9], actual: { day: 5, days: 5, costRate: 0.95 } },
+  { id: 'assemble', parentId: 'delivery', label: t({ en: 'Assembly', ja: '組立' }), budget: 21000, days: [10, 16], actual: { day: 10, days: 9, costRate: 1.1 } },
+  { id: 'test', parentId: 'delivery', label: t({ en: 'Testing', ja: '試験' }), budget: 8000, days: [17, 20], actual: { day: 19, days: 4, costRate: 1 } },
+  { id: 'handover', parentId: 'delivery', label: t({ en: 'Handover', ja: '引き渡し' }), budget: 1000, days: [21, 21], actual: { day: 23, days: 0, costRate: 1 } },
 ]
 const milestone = (task: PlanTask) => task.id === 'handover'
 const plannedStart = (task: PlanTask) => dayStart(task.days[0])
 const plannedEnd = (task: PlanTask) => milestone(task) ? dayStart(task.days[0]) : dayEnd(task.days[1])
 const rows: TimelineRow[] = [
-  { id: 'engineering', label: 'Engineering' },
+  { id: 'engineering', label: t({ en: 'Engineering', ja: '技術' }) },
   ...plan.filter(task => task.parentId === 'engineering').map(task => ({ id: task.id, parentId: task.parentId, label: task.label })),
-  { id: 'delivery', label: 'Delivery' },
+  { id: 'delivery', label: t({ en: 'Delivery', ja: '納品' }) },
   ...plan.filter(task => task.parentId === 'delivery').map(task => ({ id: task.id, parentId: task.parentId, label: task.label })),
 ]
 const children = new Map<string, string[]>()
@@ -67,9 +70,9 @@ const statusDay = ref(12)
 const statusDate = computed(() => dayEnd(statusDay.value))
 const method = ref<EarnedValueEacMethod>('cpi')
 const methods: { value: EarnedValueEacMethod; label: string }[] = [
-  { value: 'cpi', label: 'Cost efficiency (CPI)' },
-  { value: 'cpi-spi', label: 'Cost and schedule (CPI × SPI)' },
-  { value: 'budget', label: 'Remaining at budget' },
+  { value: 'cpi', label: t({ en: 'Cost efficiency (CPI)', ja: 'コスト効率(CPI)' }) },
+  { value: 'cpi-spi', label: t({ en: 'Cost and schedule (CPI × SPI)', ja: 'コストと日程(CPI × SPI)' }) },
+  { value: 'budget', label: t({ en: 'Remaining at budget', ja: '残りは予算どおり' }) },
 ]
 
 const tasks = computed<EarnedValueTask[]>(() => plan.map(task => {
@@ -93,11 +96,13 @@ function metricsOf(rowId: string): EarnedValueMetrics | undefined {
   return byId.value.get(rowId)
 }
 
-const money = (value: number | undefined) => value === undefined ? 'n/a' : (value / 1000).toFixed(1) + 'k'
-const ratio = (value: number | undefined) => value === undefined ? 'n/a' : value.toFixed(2)
+const notAvailable = t({ en: 'n/a', ja: '該当なし' })
+const money = (value: number | undefined) => value === undefined ? notAvailable : (value / 1000).toFixed(1) + 'k'
+const ratio = (value: number | undefined) => value === undefined ? notAvailable : value.toFixed(2)
 const signedMoney = (value: number) => (value < 0 ? '−' : '+') + money(Math.abs(value))
-const formatDate = (time: number) => new Date(time).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
-const formatTime = (time: number) => new Date(time).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+const dateLocale = isJapanese.value ? 'ja-JP' : 'en-GB'
+const formatDate = (time: number) => new Date(time).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short', timeZone: 'UTC' })
+const formatTime = (time: number) => new Date(time).toLocaleString(dateLocale, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
 
 const columns: TimelineColumn[] = [
   { id: 'bac', label: 'BAC', width: 54, value: row => money(metricsOf(row.id)?.bac) },
@@ -122,6 +127,11 @@ const forecastFinish = computed(() => {
 })
 const verdict = computed(() => {
   const { spi, cpi, eac, bac } = totals.value
+  if (isJapanese.value) {
+    const schedule = spi === undefined ? 'まだ計画価値がありません' : spi >= 1 ? `日程どおりか前倒し(SPI ${ratio(spi)})` : `日程の遅れ(SPI ${ratio(spi)})`
+    const cost = cpi === undefined ? 'まだコストがありません' : cpi >= 1 ? `予算内(CPI ${ratio(cpi)})` : `予算超過(CPI ${ratio(cpi)})`
+    return `${formatDate(statusDate.value)} の状況: ${schedule}、${cost}。BAC ${money(bac)} に対して EAC ${money(eac)}。`
+  }
   const schedule = spi === undefined ? 'no planned value yet' : spi >= 1 ? `on or ahead of schedule (SPI ${ratio(spi)})` : `behind schedule (SPI ${ratio(spi)})`
   const cost = cpi === undefined ? 'no cost yet' : cpi >= 1 ? `on or under budget (CPI ${ratio(cpi)})` : `over budget (CPI ${ratio(cpi)})`
   return `Status ${formatDate(statusDate.value)}: ${schedule}, ${cost}; EAC ${money(eac)} against BAC ${money(bac)}.`
@@ -147,30 +157,34 @@ const forecastPath = computed(() => totals.value.eac === undefined ? '' : path([
 ]))
 const yTicks = computed(() => Array.from({ length: yMax.value / 20000 + 1 }, (_, index) => index * 20000))
 const xTicks = Array.from({ length: 5 }, (_, index) => range.start + index * 7 * day)
-const curveSummary = computed(() => `S-curve to ${formatDate(range.end)}: planned value reaches ${money(totals.value.bac)} on ${formatDate(plannedFinish)}; `
+const curveSummary = computed(() => isJapanese.value
+  ? `${formatDate(range.end)} までの S カーブ: 計画価値は ${formatDate(plannedFinish)} に ${money(totals.value.bac)} に達します。`
+    + `状況日付 ${formatDate(statusDate.value)} の PV ${money(totals.value.pv)}、EV ${money(totals.value.ev)}、AC ${money(totals.value.ac)}。`
+    + `予測は ${formatDate(forecastFinish.value)} までに ${money(totals.value.eac)}。`
+  : `S-curve to ${formatDate(range.end)}: planned value reaches ${money(totals.value.bac)} on ${formatDate(plannedFinish)}; `
   + `at the status date ${formatDate(statusDate.value)} PV ${money(totals.value.pv)}, EV ${money(totals.value.ev)}, AC ${money(totals.value.ac)}; `
   + `forecast ${money(totals.value.eac)} by ${formatDate(forecastFinish.value)}.`)
 </script>
 
 <template>
-  <DemoPanel title-id="earned-value-title" title="Earned value" subtitle="computeEarnedValue · PV accrues on a weekday 08:00–16:00 calendar · summary rows use rollupEarnedValue">
+  <DemoPanel title-id="earned-value-title" :title="t({ en: 'Earned value', ja: 'アーンドバリュー' })" :subtitle="t({ en: 'computeEarnedValue · PV accrues on a weekday 08:00–16:00 calendar · summary rows use rollupEarnedValue', ja: 'computeEarnedValue · PV は平日 08:00–16:00 のカレンダーで積み上がります · 集計行は rollupEarnedValue' })">
     <template #options>
-      <label>Status date <input v-model.number="statusDay" type="range" min="0" :max="lastDay" step="1" :aria-valuetext="formatTime(statusDate)"></label>
-      <output aria-label="Selected status date">{{ formatTime(statusDate) }}</output>
-      <label>EAC method <select v-model="method"><option v-for="item in methods" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+      <label>{{ t({ en: 'Status date', ja: '状況日付' }) }} <input v-model.number="statusDay" type="range" min="0" :max="lastDay" step="1" :aria-valuetext="formatTime(statusDate)"></label>
+      <output :aria-label="t({ en: 'Selected status date', ja: '選択中の状況日付' })">{{ formatTime(statusDate) }}</output>
+      <label>{{ t({ en: 'EAC method', ja: 'EAC の算出方法' }) }} <select v-model="method"><option v-for="item in methods" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
     </template>
-    <dl class="schedule-metrics evm-tiles" aria-label="Earned value at the status date">
-      <div><dt>Planned value (PV)</dt><dd>{{ money(totals.pv) }}</dd></div>
-      <div><dt>Earned value (EV)</dt><dd>{{ money(totals.ev) }}</dd><small>SV {{ signedMoney(totals.sv) }}</small></div>
-      <div><dt>Actual cost (AC)</dt><dd>{{ money(totals.ac) }}</dd><small>CV {{ signedMoney(totals.cv) }}</small></div>
+    <dl class="schedule-metrics evm-tiles" :aria-label="t({ en: 'Earned value at the status date', ja: '状況日付のアーンドバリュー' })">
+      <div><dt>{{ t({ en: 'Planned value (PV)', ja: '計画価値(PV)' }) }}</dt><dd>{{ money(totals.pv) }}</dd></div>
+      <div><dt>{{ t({ en: 'Earned value (EV)', ja: '出来高(EV)' }) }}</dt><dd>{{ money(totals.ev) }}</dd><small>SV {{ signedMoney(totals.sv) }}</small></div>
+      <div><dt>{{ t({ en: 'Actual cost (AC)', ja: '実コスト(AC)' }) }}</dt><dd>{{ money(totals.ac) }}</dd><small>CV {{ signedMoney(totals.cv) }}</small></div>
       <div><dt>SPI</dt><dd>{{ ratio(totals.spi) }}</dd></div>
       <div><dt>CPI</dt><dd>{{ ratio(totals.cpi) }}</dd></div>
-      <div><dt>EAC</dt><dd>{{ money(totals.eac) }}</dd><small>BAC {{ money(totals.bac) }} · VAC {{ totals.vac === undefined ? 'n/a' : signedMoney(totals.vac) }}</small></div>
+      <div><dt>EAC</dt><dd>{{ money(totals.eac) }}</dd><small>BAC {{ money(totals.bac) }} · VAC {{ totals.vac === undefined ? notAvailable : signedMoney(totals.vac) }}</small></div>
     </dl>
-    <p role="status" aria-label="Earned value summary" class="evm-verdict">{{ verdict }}</p>
+    <p role="status" :aria-label="t({ en: 'Earned value summary', ja: 'アーンドバリューの概要' })" class="evm-verdict">{{ verdict }}</p>
     <figure class="evm-curve">
       <svg :viewBox="`0 0 ${width} ${height}`" role="img" aria-labelledby="evm-curve-title" aria-describedby="evm-curve-desc">
-        <title id="evm-curve-title">Cumulative cost S-curve</title>
+        <title id="evm-curve-title">{{ t({ en: 'Cumulative cost S-curve', ja: '累積コストの S カーブ' }) }}</title>
         <desc id="evm-curve-desc">{{ curveSummary }}</desc>
         <g class="evm-grid">
           <g v-for="tick in yTicks" :key="tick">
@@ -187,19 +201,19 @@ const curveSummary = computed(() => `S-curve to ${formatDate(range.end)}: planne
         <path class="evm-line evm-ev" :d="evPath" />
       </svg>
       <figcaption>
-        <ul class="evm-legend" aria-label="S-curve legend">
-          <li><span class="evm-key evm-pv" aria-hidden="true"></span>Planned value (PV)</li>
-          <li><span class="evm-key evm-ev" aria-hidden="true"></span>Earned value (EV)</li>
-          <li><span class="evm-key evm-ac" aria-hidden="true"></span>Actual cost (AC)</li>
-          <li><span class="evm-key evm-forecast" aria-hidden="true"></span>Forecast to EAC</li>
-          <li><span class="evm-key evm-bac" aria-hidden="true"></span>Budget at completion</li>
+        <ul class="evm-legend" :aria-label="t({ en: 'S-curve legend', ja: 'S カーブの凡例' })">
+          <li><span class="evm-key evm-pv" aria-hidden="true"></span>{{ t({ en: 'Planned value (PV)', ja: '計画価値(PV)' }) }}</li>
+          <li><span class="evm-key evm-ev" aria-hidden="true"></span>{{ t({ en: 'Earned value (EV)', ja: '出来高(EV)' }) }}</li>
+          <li><span class="evm-key evm-ac" aria-hidden="true"></span>{{ t({ en: 'Actual cost (AC)', ja: '実コスト(AC)' }) }}</li>
+          <li><span class="evm-key evm-forecast" aria-hidden="true"></span>{{ t({ en: 'Forecast to EAC', ja: 'EAC までの予測' }) }}</li>
+          <li><span class="evm-key evm-bac" aria-hidden="true"></span>{{ t({ en: 'Budget at completion', ja: '完成時総予算' }) }}</li>
         </ul>
       </figcaption>
     </figure>
     <GanttChart :rows="rows" :bars="bars" :range="range" :columns="columns" show-summaries readonly :status-date="statusDate"
       :format-time="formatDate" :pixels-per-unit="26 / day" :tick-steps="[day, 7 * day]" :non-working-periods="weekends"
-      :row-height="40" :height="372" :labels="{ region: 'Earned value plan' }">
-      <template #row-heading>Work package</template>
+      :row-height="40" :height="372" :labels="{ ...labels.gantt, region: t({ en: 'Earned value plan', ja: 'アーンドバリューの計画' }) }">
+      <template #row-heading>{{ t({ en: 'Work package', ja: '作業パッケージ' }) }}</template>
     </GanttChart>
   </DemoPanel>
 </template>

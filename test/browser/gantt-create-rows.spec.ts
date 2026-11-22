@@ -1,6 +1,6 @@
 // GanttChart editing: keyboard row moves, context menus, creating bars by pointer, touch and keyboard, and indenting,
 // outdenting and dragging rows.
-import { expect, test, ganttRow, openGanttFixture, openTimelineEditing, pageErrors, pressAndMove, pressAndMoveTo, touch, type Page } from './support'
+import { expect, test, ganttRow, openGanttFixture, openTimelineEditing, pageErrors, pressAndMove, pressAndMoveTo, touch, type Page, openExample } from './support'
 
 /** Pixel positions in the timeline editing demo, measured from Checkout UI (10:00–14:00 in the Web team row, 115 px per hour). */
 async function editingGeometry(chart: ReturnType<Page['getByRole']>, rtl = false) {
@@ -469,5 +469,14 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
   await expect(wbs('Platform team')).toHaveText('1')
   await page.getByRole('button', { name: 'Undo timeline change', exact: true }).click()
   await expect(wbs('Product team')).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('the timeline editing demo shows its row move handles in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'timeline-editing', { locale: 'ja' })
+  await demo.getByRole('checkbox', { name: '行を並べ替え', exact: true }).check()
+  await expect(demo.getByRole('button', { name: /行を移動/ }).first()).toBeVisible()
+  await expect(demo.getByText('品質', { exact: true }).first()).toBeVisible()
   expect(errors).toEqual([])
 })

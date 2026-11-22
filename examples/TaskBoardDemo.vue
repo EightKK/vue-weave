@@ -12,31 +12,37 @@ import {
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
 import { formatTime, hour, origin, range } from './data'
+import { useDemoLocale } from './i18n'
+
+const { t, labels } = useDemoLocale()
 
 type Work = { start: number; end: number; progress: number }
 type Task = TaskBoardCard<Work>
 
 const columns: TaskBoardColumn[] = [
-  { id: 'todo', label: 'To do' },
-  { id: 'doing', label: 'Doing', wipLimit: 3 },
-  { id: 'review', label: 'Review', wipMin: 2, wipLimit: 2 },
-  { id: 'done', label: 'Done' },
+  { id: 'todo', label: t({ en: 'To do', ja: '未着手' }) },
+  { id: 'doing', label: t({ en: 'Doing', ja: '作業中' }), wipLimit: 3 },
+  { id: 'review', label: t({ en: 'Review', ja: 'レビュー' }), wipMin: 2, wipLimit: 2 },
+  { id: 'done', label: t({ en: 'Done', ja: '完了' }) },
 ]
-const lanes: TaskBoardLane[] = [{ id: 'web', label: 'Web team', detail: 'Front end' }, { id: 'api', label: 'API team', detail: 'Services' }]
+const lanes: TaskBoardLane[] = [
+  { id: 'web', label: t({ en: 'Web team', ja: 'Web チーム' }), detail: t({ en: 'Front end', ja: 'フロントエンド' }) },
+  { id: 'api', label: t({ en: 'API team', ja: 'API チーム' }), detail: t({ en: 'Services', ja: 'サービス' }) },
+]
 const teamTone: Record<string, ChartTone> = { web: 'blue', api: 'violet' }
 const statusTone: Record<string, ChartTone> = { todo: 'violet', doing: 'blue', review: 'amber', done: 'teal' }
 const task = (id: string, label: string, columnId: string, laneId: string, start: number, hours: number, progress: number): Task => ({
   id, label, columnId, laneId, tone: teamTone[laneId], data: { start: origin + start * hour, end: origin + (start + hours) * hour, progress },
 })
 const initialCards: Task[] = [
-  task('wireframes', 'Wireframes', 'done', 'web', 0, 2, 1),
-  task('login', 'Login form', 'doing', 'web', 2, 3, 0.6),
-  task('dashboard', 'Dashboard', 'todo', 'web', 4, 3, 0),
-  task('styles', 'Style guide', 'review', 'web', 1, 2, 1),
-  task('schema', 'Data schema', 'done', 'api', 0, 2, 1),
-  task('auth', 'Auth API', 'doing', 'api', 2, 2, 0.8),
-  task('reports', 'Reports API', 'doing', 'api', 3, 3, 0.3),
-  task('billing', 'Billing API', 'todo', 'api', 5, 3, 0),
+  task('wireframes', t({ en: 'Wireframes', ja: 'ワイヤーフレーム' }), 'done', 'web', 0, 2, 1),
+  task('login', t({ en: 'Login form', ja: 'ログインフォーム' }), 'doing', 'web', 2, 3, 0.6),
+  task('dashboard', t({ en: 'Dashboard', ja: 'ダッシュボード' }), 'todo', 'web', 4, 3, 0),
+  task('styles', t({ en: 'Style guide', ja: 'スタイルガイド' }), 'review', 'web', 1, 2, 1),
+  task('schema', t({ en: 'Data schema', ja: 'データスキーマ' }), 'done', 'api', 0, 2, 1),
+  task('auth', t({ en: 'Auth API', ja: '認証 API' }), 'doing', 'api', 2, 2, 0.8),
+  task('reports', t({ en: 'Reports API', ja: 'レポート API' }), 'doing', 'api', 3, 3, 0.3),
+  task('billing', t({ en: 'Billing API', ja: '請求 API' }), 'todo', 'api', 5, 3, 0),
 ]
 // The Gantt rows keep this order; only the board order changes with moves.
 const rowOrder = initialCards.map(card => card.id)
@@ -52,7 +58,8 @@ const filter = computed(() => {
   const text = query.value.trim().toLowerCase()
   return text ? (card: Task) => card.label.toLowerCase().includes(text) : undefined
 })
-const status = ref('Drag a card, or focus it and press Space, to move it. Raise progress in the chart to finish a task.')
+const status = ref(t({ en: 'Drag a card, or focus it and press Space, to move it. Raise progress in the chart to finish a task.', ja: 'カードをドラッグするか、フォーカスして Space を押すと移動できます。タスクを完了にするには、チャートで進捗を上げてください。' }))
+const sourceText = (source: string) => t({ en: source, ja: source === 'keyboard' ? 'キーボード' : source === 'pointer' ? 'ポインター' : source })
 
 const byId = computed(() => new Map(cards.value.map(card => [card.id, card])))
 const percent = (card: Task) => `${Math.round(card.data!.progress * 100)}%`
@@ -69,13 +76,15 @@ const bars = computed<TimelineBar[]>(() => rowOrder.map(id => {
 const selectedIds = computed(() => new Set(selectedId.value ? [selectedId.value] : []))
 const selectionText = computed(() => {
   const card = selectedId.value ? byId.value.get(selectedId.value) : undefined
-  return card ? `Selected: ${card.label} (${columnLabel(card.columnId)}, ${percent(card)})` : 'Nothing selected.'
+  return card
+    ? t({ en: `Selected: ${card.label} (${columnLabel(card.columnId)}, ${percent(card)})`, ja: `選択中: ${card.label}(${columnLabel(card.columnId)}、${percent(card)})` })
+    : t({ en: 'Nothing selected.', ja: '何も選択されていません。' })
 })
 
 function validateCardMove(change: TaskBoardCardMove) {
   const card = byId.value.get(change.id)
   if (change.after.columnId === 'done' && card && card.data!.progress < 1) {
-    return `${card.label} cannot move to Done: progress is ${percent(card)}, not 100%.`
+    return t({ en: `${card.label} cannot move to Done: progress is ${percent(card)}, not 100%.`, ja: `${card.label} は進捗が 100% ではなく ${percent(card)} のため、完了に移動できません。` })
   }
   return true
 }
@@ -85,24 +94,30 @@ function moveCard(change: TaskBoardCardMove) {
   const over = change.before.columnId !== change.after.columnId
     && columns.find(column => column.id === change.after.columnId)?.wipLimit !== undefined
     && cards.value.filter(item => item.columnId === change.after.columnId).length > columns.find(column => column.id === change.after.columnId)!.wipLimit!
-  status.value = `Moved ${card.label} to ${columnLabel(change.after.columnId)}${over ? ' (over the WIP limit)' : ''} by ${change.source}.`
+  status.value = t({
+    en: `Moved ${card.label} to ${columnLabel(change.after.columnId)}${over ? ' (over the WIP limit)' : ''} by ${change.source}.`,
+    ja: `${sourceText(change.source)}で ${card.label} を${columnLabel(change.after.columnId)}に移動しました${over ? '(WIP 上限超過)' : ''}。`,
+  })
 }
 function rejectMove(change: TaskBoardCardMove, reason: string) {
-  status.value = `Rejected: ${reason}`
+  status.value = t({ en: `Rejected: ${reason}`, ja: `却下: ${reason}` })
 }
 function cancelMove(event: TaskBoardMoveCancel) {
-  status.value = `Move of ${byId.value.get(event.id)?.label ?? event.id} cancelled (${event.reason}).`
+  const label = byId.value.get(event.id)?.label ?? event.id
+  status.value = t({ en: `Move of ${label} cancelled (${event.reason}).`, ja: `${label} の移動を取り消しました(${event.reason})。` })
 }
 function updateWork(id: string, change: Partial<Work>) {
   cards.value = cards.value.map(card => card.id === id ? { ...card, data: { ...card.data!, ...change } } : card)
 }
 function editProgress(change: TimelineProgressEdit) {
   updateWork(change.id, { progress: change.after })
-  status.value = `${byId.value.get(change.id)!.label} is at ${Math.round(change.after * 100)}%.`
+  const label = byId.value.get(change.id)!.label, value = Math.round(change.after * 100)
+  status.value = t({ en: `${label} is at ${value}%.`, ja: `${label} の進捗は ${value}% です。` })
 }
 function editBar(change: TimelineEdit) {
   updateWork(change.id, { start: change.after.start, end: change.after.end })
-  status.value = `${byId.value.get(change.id)!.label} rescheduled to ${formatTime(change.after.start)}–${formatTime(change.after.end)}.`
+  const label = byId.value.get(change.id)!.label, time = `${formatTime(change.after.start)}–${formatTime(change.after.end)}`
+  status.value = t({ en: `${label} rescheduled to ${time}.`, ja: `${label} を ${time} に変更しました。` })
 }
 function reset() {
   cards.value = initialCards
@@ -110,25 +125,25 @@ function reset() {
   collapsedColumnIds.value = []
   collapsedLaneIds.value = []
   query.value = ''
-  status.value = 'Board reset.'
+  status.value = t({ en: 'Board reset.', ja: 'ボードを初期状態に戻しました。' })
 }
 </script>
 
 <template>
-  <DemoPanel title-id="task-board-title" title="Task board" subtitle="A kanban board and a Gantt chart on the same tasks, with one shared selection, collapsible columns and lanes, a card filter and WIP limits and minimums.">
+  <DemoPanel title-id="task-board-title" :title="t({ en: 'Task board', ja: 'タスクボード' })" :subtitle="t({ en: 'A kanban board and a Gantt chart on the same tasks, with one shared selection, collapsible columns and lanes, a card filter and WIP limits and minimums.', ja: '同じタスクのカンバンボードとガントチャートです。選択の共有、列とレーンの折りたたみ、カードの絞り込み、WIP の上限と下限を備えています。' })">
     <template #options>
-      <label><input v-model="useLanes" type="checkbox"> Team lanes</label>
-      <label>Filter cards <input v-model="query" type="search" placeholder="Label contains"></label>
-      <button type="button" @click="reset">Reset board</button>
+      <label><input v-model="useLanes" type="checkbox"> {{ t({ en: 'Team lanes', ja: 'チームのレーン' }) }}</label>
+      <label>{{ t({ en: 'Filter cards', ja: 'カードを絞り込む' }) }} <input v-model="query" type="search" :placeholder="t({ en: 'Label contains', ja: '名前に含む文字' })"></label>
+      <button type="button" @click="reset">{{ t({ en: 'Reset board', ja: 'ボードをリセット' }) }}</button>
     </template>
     <TaskBoard v-model:selected-id="selectedId" v-model:collapsed-column-ids="collapsedColumnIds"
       v-model:collapsed-lane-ids="collapsedLaneIds" collapsible :filter="filter" :columns="columns" :lanes="useLanes ? lanes : undefined" :cards="boardCards"
-      :validate-card-move="validateCardMove" :labels="{ region: 'Sprint board' }"
+      :validate-card-move="validateCardMove" :labels="{ ...labels.taskBoard, region: t({ en: 'Sprint board', ja: 'スプリントのボード' }) }"
       @card-move="moveCard" @card-move-rejected="rejectMove" @card-move-cancel="cancelMove" />
-    <StatusLine label="Task board status">{{ status }}</StatusLine>
-    <StatusLine label="Board selection">{{ selectionText }}</StatusLine>
+    <StatusLine :label="t({ en: 'Task board status', ja: 'タスクボードの状態' })">{{ status }}</StatusLine>
+    <StatusLine :label="t({ en: 'Board selection', ja: 'ボードの選択' })">{{ selectionText }}</StatusLine>
     <GanttChart :rows="rows" :bars="bars" :range="range" :format-time="formatTime" :selected-ids="selectedIds" :height="300"
-      progress-editable :labels="{ region: 'Sprint timeline', rows: 'Tasks' }"
+      progress-editable :labels="{ ...labels.gantt, region: t({ en: 'Sprint timeline', ja: 'スプリントのタイムライン' }), rows: t({ en: 'Tasks', ja: 'タスク' }) }"
       @select="id => selectedId = id" @progress-edit="editProgress" @edit="editBar" />
   </DemoPanel>
 </template>

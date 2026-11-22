@@ -441,3 +441,13 @@ test('right-to-left: the tree column is on the right and the arrow keys follow t
   await expect(row('Tools')).toHaveAttribute('aria-expanded', 'false')
   expect(errors).toEqual([])
 })
+
+test('the tree grid example shows its grid and controls in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'tree-grid', { locale: 'ja' })
+  await expect(demo.getByRole('treegrid', { name: '製品マトリクス' })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
+  await expect(demo.getByRole('checkbox', { name: '次の読み込みを失敗させる', exact: true })).toBeVisible()
+  await expect(demo.getByRole('status', { name: 'ツリーグリッドの選択' })).toHaveText('連動しているものはありません。')
+  expect(errors).toEqual([])
+})

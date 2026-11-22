@@ -2,6 +2,7 @@
 import { reactive, watch } from 'vue'
 import { formatFieldValue, parseFieldValue, validateFieldValue, fieldValuesEqual, type FieldValue } from '../../src'
 import type { InspectorField } from './types'
+import { useDemoLocale } from '../i18n'
 
 // Reference inspector (spec D1): edits the typed fields of one item. `spec.get(item)` is the raw getter, and the shared
 // core helpers parse and check the text, so a number is never saved as a string. The parent decides what an edit means.
@@ -14,6 +15,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ edit: [change: { fieldId: string; before: FieldValue; after: FieldValue }] }>()
 
+const { t } = useDemoLocale()
 const drafts = reactive<Record<string, string>>({})
 const errors = reactive<Record<string, string>>({})
 const current = (field: InspectorField) => field.spec.get(props.item)
@@ -53,7 +55,7 @@ function cancel(field: InspectorField) {
 <template>
   <section class="inspector" aria-labelledby="inspector-title">
     <h3 id="inspector-title">{{ title }}</h3>
-    <p v-if="item === undefined" class="hint">Select a bar to edit its task.</p>
+    <p v-if="item === undefined" class="hint">{{ t({ en: 'Select a bar to edit its task.', ja: 'バーを選ぶと、そのタスクを編集できます。' }) }}</p>
     <template v-else>
       <div v-for="field in fields" :key="field.spec.id" class="field">
         <label :for="'inspect-' + field.spec.id">{{ field.label }}</label>
@@ -61,7 +63,7 @@ function cancel(field: InspectorField) {
           @change="propose(field, ($event.target as HTMLInputElement).checked)">
         <select v-else-if="field.spec.kind === 'select'" :id="'inspect-' + field.spec.id" :value="String(current(field) ?? '')"
           @change="propose(field, field.spec.choices?.find(choice => String(choice.value) === ($event.target as HTMLSelectElement).value)?.value ?? null)">
-          <option v-if="!field.spec.required" value="">None</option>
+          <option v-if="!field.spec.required" value="">{{ t({ en: 'None', ja: 'なし' }) }}</option>
           <option v-for="choice in field.spec.choices" :key="choice.value" :value="String(choice.value)">{{ choice.label ?? choice.value }}</option>
         </select>
         <input v-else :id="'inspect-' + field.spec.id" v-model="drafts[field.spec.id]" type="text" :aria-invalid="errors[field.spec.id] ? 'true' : undefined"

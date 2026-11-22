@@ -52,7 +52,7 @@ export interface DemoEntry {
 
 /** Every example of the demo app, in navigation order within each group. */
 export const demos: readonly DemoEntry[] = [
-  ...datasets.map(item => ({ ...item, group: 'dataset' as const })),
+  ...datasets.map(item => ({ id: item.id, label: item.label, group: 'dataset' as const })),
   { id: 'scheduling', label: 'Scheduling', group: 'standalone', component: SchedulingDemo },
   { id: 'editing', label: 'Timeline editing', group: 'standalone', component: GanttEditingDemo },
   { id: 'linked', label: 'Linked views', group: 'standalone', component: LinkedPlanningDemo },

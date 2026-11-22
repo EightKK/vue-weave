@@ -991,3 +991,13 @@ test('gantt sorting or filtering during a drag cancels the gesture as a source c
   await expect(chart.getByRole('button', { name: /^Bar Gamma/ })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('the 1,000 resources example scrolls to its last resource on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-scale', { locale: 'ja' })
+  await expect(demo.getByText('1,000 行 · 3,000 区間 · UTC')).toBeVisible()
+  await demo.getByRole('button', { name: '最後のリソース', exact: true }).click()
+  await expect(demo.getByText('リソース 1000', { exact: true })).toBeVisible()
+  expect(await demo.locator('.vw-gantt-row').count()).toBeLessThan(15)
+  expect(errors).toEqual([])
+})

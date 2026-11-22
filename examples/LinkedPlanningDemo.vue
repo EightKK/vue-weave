@@ -15,9 +15,15 @@ import GraphContextToolbar from './components/GraphContextToolbar.vue'
 import ScenarioComparison from './components/ScenarioComparison.vue'
 import DemoPanel from './components/DemoPanel.vue'
 import { hour, origin } from './data'
+import { useDemoLocale } from './i18n'
+
+const { t, labels, isJapanese } = useDemoLocale()
 
 const range = { start: origin, end: origin + 12 * hour }
-const names: Record<string, string> = { prep: 'Prepare stock', cutA: 'Cut order A', cutB: 'Cut order B', inspect: 'Inspect', pack: 'Pack' }
+const names: Record<string, string> = t({
+  en: { prep: 'Prepare stock', cutA: 'Cut order A', cutB: 'Cut order B', inspect: 'Inspect', pack: 'Pack' },
+  ja: { prep: '材料準備', cutA: '切断オーダー A', cutB: '切断オーダー B', inspect: '検査', pack: '梱包' },
+})
 const tasks: ScheduleTask[] = [
   { id: 'prep', duration: 2 * hour }, { id: 'cutA', duration: 3 * hour }, { id: 'cutB', duration: 2 * hour },
   { id: 'inspect', duration: 2 * hour }, { id: 'pack', duration: 2 * hour },
@@ -28,7 +34,11 @@ const dependencies: ScheduleLink[] = [
   { id: 'cutA-inspect', from: 'cutA', to: 'inspect', type: 'FS' }, { id: 'cutB-inspect', from: 'cutB', to: 'inspect', type: 'FS' },
   { id: 'inspect-pack', from: 'inspect', to: 'pack', type: 'FS' },
 ]
-const resources = [{ id: 'cnc', label: 'CNC cell', capacity: 1 }, { id: 'qc', label: 'Inspection', capacity: 1 }, { id: 'dispatch', label: 'Packing', capacity: 1 }]
+const resources = [
+  { id: 'cnc', label: t({ en: 'CNC cell', ja: 'CNC セル' }), capacity: 1 }, { id: 'qc', label: t({ en: 'Inspection', ja: '検査' }), capacity: 1 },
+  { id: 'dispatch', label: t({ en: 'Packing', ja: '梱包' }), capacity: 1 },
+]
+const cuttingCell = t({ en: 'Cutting cell', ja: '切断セル' })
 const assignments = [
   { resourceId: 'cnc', taskId: 'cutA' }, { resourceId: 'cnc', taskId: 'cutB' },
   { resourceId: 'qc', taskId: 'inspect' }, { resourceId: 'dispatch', taskId: 'pack' },
@@ -36,9 +46,13 @@ const assignments = [
 const plan = scheduleTasks({ range, tasks, dependencies })
 if (!plan.ok) throw new Error('The linked demo schedule must be feasible')
 
-const network = scheduleToGraph(plan, dependencies, { label: id => names[id]!, formatTime: time => new Date(time).toISOString().slice(11, 16) })
+// Japanese node details for scheduleToGraph; English pages keep its defaults (ES, EF, Float and hours).
+const pertText = isJapanese.value
+  ? { labels: { earlyStart: '最早開始', earlyFinish: '最早終了', float: '余裕' }, formatDuration: (value: number) => value / hour + ' 時間' }
+  : {}
+const network = scheduleToGraph(plan, dependencies, { label: id => names[id]!, formatTime: time => new Date(time).toISOString().slice(11, 16), ...pertText })
 const rows = [
-  { id: 'prep', label: names.prep! }, { id: 'cutting', label: 'Cutting cell' },
+  { id: 'prep', label: names.prep! }, { id: 'cutting', label: cuttingCell },
   { id: 'cutA', parentId: 'cutting', label: names.cutA! }, { id: 'cutB', parentId: 'cutting', label: names.cutB! },
   { id: 'inspect', label: names.inspect! }, { id: 'pack', label: names.pack! },
 ]
@@ -90,8 +104,8 @@ const clockTime = (text: string) => {
 const rangeError = computed(() => {
   if (!rangeEnabled.value) return ''
   const start = clockTime(rangeStart.value), end = clockTime(rangeEnd.value)
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'Enter a start and an end time.'
-  return end < start ? 'The range end is before its start.' : ''
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return t({ en: 'Enter a start and an end time.', ja: '開始と終了の時刻を入力してください。' })
+  return end < start ? t({ en: 'The range end is before its start.', ja: '範囲の終了が開始より前です。' }) : ''
 })
 const timeRange = computed(() => {
   if (!rangeEnabled.value || rangeError.value) return undefined
@@ -106,13 +120,14 @@ const timeRange = computed(() => {
 })
 const linked = useLinkedSelection({ bindings, timeRange })
 const rangeSummary = computed(() => {
-  if (!rangeEnabled.value) return 'Time range off.'
+  if (!rangeEnabled.value) return t({ en: 'Time range off.', ja: '時間範囲はオフです。' })
   if (rangeError.value) return rangeError.value
   const result = linked.timeRange.value
   if (!result) return ''
-  const taskNames = (entities: readonly EntityRef[]) => entities.filter(entity => entity.kind === 'task').map(entity => names[entity.id]).join(', ')
+  const taskNames = (entities: readonly EntityRef[]) => entities.filter(entity => entity.kind === 'task').map(entity => names[entity.id]).join(t({ en: ', ', ja: '、' }))
   const active = taskNames(result.activeEntities)
   const related = taskNames(result.relatedEntities)
+  if (isJapanese.value) return `${rangeStart.value}–${rangeEnd.value} に作業中: ${active || 'なし'}。` + (rangeRelation.value === 'active' ? '' : `関連: ${related || 'なし'}。`)
   return `Active ${rangeStart.value}–${rangeEnd.value}: ${active || 'none'}.` + (rangeRelation.value === 'active' ? '' : ` Related: ${related || 'none'}.`)
 })
 
@@ -129,7 +144,7 @@ const deleteProposals = ref<string[][]>([])
 // graph drawing changes; the schedule, the timeline and the bindings stay as they are.
 const graphNodes = shallowRef(network.nodes)
 const graphEdges = shallowRef(network.edges)
-const graphGroups = computed(() => [{ id: 'cutting-cell', label: 'Cutting cell', nodeIds: ['cutA', 'cutB'].filter(id => graphNodes.value.some(node => node.id === id)) }])
+const graphGroups = computed(() => [{ id: 'cutting-cell', label: cuttingCell, nodeIds: ['cutA', 'cutB'].filter(id => graphNodes.value.some(node => node.id === id)) }])
 function onGraphDelete(deletion: GraphDeletion) {
   const next = removeGraphElements(graphNodes.value, graphEdges.value, deletion)
   graphNodes.value = next.nodes
@@ -186,18 +201,20 @@ const toolbarTarget = computed<GraphViewTarget | undefined>(() => {
 })
 const edgeText = (id: string) => {
   const dependency = dependencies.find(item => item.id === id)
-  return dependency ? `${names[dependency.from]} to ${names[dependency.to]}` : id
+  return dependency ? t({ en: `${names[dependency.from]} to ${names[dependency.to]}`, ja: `${names[dependency.from]} → ${names[dependency.to]}` }) : id
 }
 
 const summary = computed(() => {
   const selected = linked.selectedEntities.value
-  if (!selected.length && !linked.hoveredEntities.value.length) return 'Nothing selected. Select a task in any view.'
-  const text = (entities: readonly EntityRef[]) => entities.map(entity => entity.kind === 'task' ? names[entity.id] : edgeText(entity.id)).join(', ')
+  if (!selected.length && !linked.hoveredEntities.value.length) return t({ en: 'Nothing selected. Select a task in any view.', ja: '何も選択されていません。どのビューでもタスクを選べます。' })
+  const text = (entities: readonly EntityRef[]) => entities.map(entity => entity.kind === 'task' ? names[entity.id] : edgeText(entity.id)).join(t({ en: ', ', ja: '、' }))
   const parts = []
-  if (selected.length) parts.push(`Selected in ${linked.owner.value ?? linked.selectionSource.value}: ${text(selected)}`)
-  if (linked.hoveredEntities.value.length) parts.push(`Hovering: ${text(linked.hoveredEntities.value)}`)
-  if (impactTargets.value.length) parts.push(`Impact range reaches ${new Set(impactTargets.value.flatMap(t => t.view === 'timeline' && t.kind === 'bar' ? [t.id] : [])).size} tasks`)
-  return parts.join('. ')
+  const source = linked.owner.value ?? linked.selectionSource.value
+  if (selected.length) parts.push(t({ en: `Selected in ${source}: ${text(selected)}`, ja: `${source} で選択: ${text(selected)}` }))
+  if (linked.hoveredEntities.value.length) parts.push(t({ en: `Hovering: ${text(linked.hoveredEntities.value)}`, ja: `ポインター位置: ${text(linked.hoveredEntities.value)}` }))
+  const reached = new Set(impactTargets.value.flatMap(target => target.view === 'timeline' && target.kind === 'bar' ? [target.id] : [])).size
+  if (impactTargets.value.length) parts.push(t({ en: `Impact range reaches ${reached} tasks`, ja: `影響範囲は ${reached} タスクに及びます` }))
+  return parts.join(t({ en: '. ', ja: '。' }))
 })
 
 function bump() {
@@ -214,7 +231,7 @@ function activate(event: ViewTargetEvent) {
   offer.value = undefined
   // Linked items are display-only, so activation reports what the user touched in the view they act in.
   const { unknown } = linked.select(event.target.view, [event.target])
-  if (unknown.length && event.target.view !== 'graph') message.value = 'That item has no counterpart in the other views.'
+  if (unknown.length && event.target.view !== 'graph') message.value = t({ en: 'That item has no counterpart in the other views.', ja: 'その項目には他のビューに対応するものがありません。' })
 }
 // The application's own task list selects by entity and shows every selection, whichever view made it. Echoing the same
 // selection back changes nothing; clicking the task the list selected again clears it with an empty input.
@@ -246,30 +263,34 @@ function setGraphCollapsed(ids: Set<string>) {
 // Go to counterpart. A hidden item is explained, never replaced by another one; expanding is offered, not forced.
 function reportReveal(result: RevealResult, view: 'graph' | 'timeline', taskId: string): boolean {
   if (result.status === 'revealed') {
-    message.value = `Showing ${names[taskId]} in the ${view === 'graph' ? 'graph' : 'timeline'}.`
+    message.value = t({ en: `Showing ${names[taskId]} in the ${view === 'graph' ? 'graph' : 'timeline'}.`, ja: `${view === 'graph' ? 'グラフ' : 'タイムライン'}で ${names[taskId]} を表示しています。` })
     offer.value = undefined
     return true
   }
   if (result.status === 'hidden-by-collapse' && result.proxyId) {
-    message.value = `${names[taskId]} is hidden inside the collapsed ${view === 'graph' ? 'group' : 'row'} “${result.proxyId === 'cutting-cell' || result.proxyId === 'cutting' ? 'Cutting cell' : result.proxyId}”.`
+    const proxy = result.proxyId === 'cutting-cell' || result.proxyId === 'cutting' ? cuttingCell : result.proxyId
+    message.value = t({
+      en: `${names[taskId]} is hidden inside the collapsed ${view === 'graph' ? 'group' : 'row'} “${proxy}”.`,
+      ja: `${names[taskId]} は折りたたまれた${view === 'graph' ? 'グループ' : '行'}「${proxy}」の中に隠れています。`,
+    })
     offer.value = { view, taskId, proxyId: result.proxyId }
     return false
   }
-  message.value = `${names[taskId] ?? taskId} is not shown in the ${view === 'graph' ? 'graph' : 'timeline'}.`
+  message.value = t({ en: `${names[taskId] ?? taskId} is not shown in the ${view === 'graph' ? 'graph' : 'timeline'}.`, ja: `${names[taskId] ?? taskId} は${view === 'graph' ? 'グラフ' : 'タイムライン'}に表示されていません。` })
   offer.value = undefined
   return false
 }
 function counterpart(view: 'graph' | 'timeline') {
   const taskId = revealTask.value || selectedTaskIds.value[0]
   if (!taskId) {
-    message.value = 'Select a task, or choose one to go to.'
+    message.value = t({ en: 'Select a task, or choose one to go to.', ja: 'タスクを選ぶか、移動先を選んでください。' })
     offer.value = undefined
     return
   }
   const { targets } = resolveViewTargets(index, [{ kind: 'task', id: taskId }])
   const target = targets.find(item => view === 'graph' ? item.view === 'graph' && item.kind === 'node' : item.view === 'timeline' && item.kind === 'bar')
   if (!target || target.view === 'load') {
-    message.value = `No ${view === 'graph' ? 'graph node' : 'timeline bar'} is known for “${names[taskId] ?? taskId}”.`
+    message.value = t({ en: `No ${view === 'graph' ? 'graph node' : 'timeline bar'} is known for “${names[taskId] ?? taskId}”.`, ja: `「${names[taskId] ?? taskId}」に対応する${view === 'graph' ? 'グラフのノード' : 'タイムラインのバー'}はありません。` })
     offer.value = undefined
     return
   }
@@ -297,59 +318,59 @@ async function expandAndShow() {
 </script>
 
 <template>
-  <DemoPanel title-id="linked-title" title="Linked planning views" subtitle="Act in any view; the others highlight the same tasks. Escape clears the selection." @keydown.esc="clear">
-    <div class="options linked-options" role="group" aria-label="Linked view controls">
-      <label>Impact range
-        <select v-model="impactDirection" aria-label="Impact direction">
-          <option value="off">Off</option>
-          <option value="forward">Downstream</option>
-          <option value="backward">Upstream</option>
-          <option value="both">Both directions</option>
+  <DemoPanel title-id="linked-title" :title="t({ en: 'Linked planning views', ja: '連動する計画ビュー' })" :subtitle="t({ en: 'Act in any view; the others highlight the same tasks. Escape clears the selection.', ja: 'どのビューで操作しても、他のビューが同じタスクを強調表示します。Escape で選択を解除します。' })" @keydown.esc="clear">
+    <div class="options linked-options" role="group" :aria-label="t({ en: 'Linked view controls', ja: '連動ビューの操作' })">
+      <label>{{ t({ en: 'Impact range', ja: '影響範囲' }) }}
+        <select v-model="impactDirection" :aria-label="t({ en: 'Impact direction', ja: '影響の方向' })">
+          <option value="off">{{ t({ en: 'Off', ja: 'オフ' }) }}</option>
+          <option value="forward">{{ t({ en: 'Downstream', ja: '後続' }) }}</option>
+          <option value="backward">{{ t({ en: 'Upstream', ja: '先行' }) }}</option>
+          <option value="both">{{ t({ en: 'Both directions', ja: '両方向' }) }}</option>
         </select>
       </label>
-      <label>Hop limit
-        <select v-model="impactHops" aria-label="Impact hop limit" :disabled="impactDirection === 'off'">
-          <option value="1">1</option><option value="2">2</option><option value="all">No limit</option>
+      <label>{{ t({ en: 'Hop limit', ja: 'ホップ数の上限' }) }}
+        <select v-model="impactHops" :aria-label="t({ en: 'Impact hop limit', ja: '影響のホップ数の上限' })" :disabled="impactDirection === 'off'">
+          <option value="1">1</option><option value="2">2</option><option value="all">{{ t({ en: 'No limit', ja: '上限なし' }) }}</option>
         </select>
       </label>
-      <label>Go to
-        <select v-model="revealTask" aria-label="Task to go to">
-          <option value="">Current selection</option>
+      <label>{{ t({ en: 'Go to', ja: '移動先' }) }}
+        <select v-model="revealTask" :aria-label="t({ en: 'Task to go to', ja: '移動先のタスク' })">
+          <option value="">{{ t({ en: 'Current selection', ja: '現在の選択' }) }}</option>
           <option v-for="task in tasks" :key="task.id" :value="task.id">{{ names[task.id] }}</option>
-          <option value="retired">Retired task (unknown)</option>
+          <option value="retired">{{ t({ en: 'Retired task (unknown)', ja: '廃止したタスク(不明)' }) }}</option>
         </select>
       </label>
-      <button type="button" @click="counterpart('graph')">Go to graph</button>
-      <button type="button" @click="counterpart('timeline')">Go to timeline</button>
-      <button type="button" @click="clear">Clear selection</button>
+      <button type="button" @click="counterpart('graph')">{{ t({ en: 'Go to graph', ja: 'グラフへ移動' }) }}</button>
+      <button type="button" @click="counterpart('timeline')">{{ t({ en: 'Go to timeline', ja: 'タイムラインへ移動' }) }}</button>
+      <button type="button" @click="clear">{{ t({ en: 'Clear selection', ja: '選択を解除' }) }}</button>
     </div>
-    <div class="options linked-options" role="group" aria-label="Time range controls">
-      <label><input v-model="rangeEnabled" type="checkbox"> Explore a time range</label>
-      <label>From <input v-model="rangeStart" type="time" aria-label="Range start" :disabled="!rangeEnabled"></label>
-      <label>To <input v-model="rangeEnd" type="time" aria-label="Range end" :disabled="!rangeEnabled"></label>
-      <label>Resource
-        <select v-model="rangeResource" aria-label="Range resource" :disabled="!rangeEnabled">
-          <option value="">All rows</option>
+    <div class="options linked-options" role="group" :aria-label="t({ en: 'Time range controls', ja: '時間範囲の操作' })">
+      <label><input v-model="rangeEnabled" type="checkbox"> {{ t({ en: 'Explore a time range', ja: '時間範囲を調べる' }) }}</label>
+      <label>{{ t({ en: 'From', ja: '開始' }) }} <input v-model="rangeStart" type="time" :aria-label="t({ en: 'Range start', ja: '範囲の開始' })" :disabled="!rangeEnabled"></label>
+      <label>{{ t({ en: 'To', ja: '終了' }) }} <input v-model="rangeEnd" type="time" :aria-label="t({ en: 'Range end', ja: '範囲の終了' })" :disabled="!rangeEnabled"></label>
+      <label>{{ t({ en: 'Resource', ja: 'リソース' }) }}
+        <select v-model="rangeResource" :aria-label="t({ en: 'Range resource', ja: '範囲のリソース' })" :disabled="!rangeEnabled">
+          <option value="">{{ t({ en: 'All rows', ja: 'すべての行' }) }}</option>
           <option v-for="resource in resources" :key="resource.id" :value="resource.id">{{ resource.label }}</option>
         </select>
       </label>
-      <label>Show
-        <select v-model="rangeRelation" aria-label="Range relation" :disabled="!rangeEnabled">
-          <option value="active">Active only</option>
-          <option value="successors">With successors</option>
-          <option value="predecessors">With predecessors</option>
-          <option value="neighbours">With direct neighbours</option>
+      <label>{{ t({ en: 'Show', ja: '表示' }) }}
+        <select v-model="rangeRelation" :aria-label="t({ en: 'Range relation', ja: '範囲の関係' })" :disabled="!rangeEnabled">
+          <option value="active">{{ t({ en: 'Active only', ja: '作業中のみ' }) }}</option>
+          <option value="successors">{{ t({ en: 'With successors', ja: '後続も含む' }) }}</option>
+          <option value="predecessors">{{ t({ en: 'With predecessors', ja: '先行も含む' }) }}</option>
+          <option value="neighbours">{{ t({ en: 'With direct neighbours', ja: '直接の隣接も含む' }) }}</option>
         </select>
       </label>
     </div>
-    <p class="status linked-status" role="status" aria-label="Time range result">{{ rangeSummary }}</p>
-    <p class="status linked-status" role="status" aria-label="Linked selection">{{ summary }}</p>
-    <p class="status linked-status" role="status" aria-label="Navigation message">
+    <p class="status linked-status" role="status" :aria-label="t({ en: 'Time range result', ja: '時間範囲の結果' })">{{ rangeSummary }}</p>
+    <p class="status linked-status" role="status" :aria-label="t({ en: 'Linked selection', ja: '連動した選択' })">{{ summary }}</p>
+    <p class="status linked-status" role="status" :aria-label="t({ en: 'Navigation message', ja: '移動のメッセージ' })">
       <span>{{ message }}</span>
-      <button v-if="offer" type="button" @click="expandAndShow">Expand and show</button>
+      <button v-if="offer" type="button" @click="expandAndShow">{{ t({ en: 'Expand and show', ja: '展開して表示' }) }}</button>
     </p>
 
-    <ul class="linked-task-list" aria-label="Task list">
+    <ul class="linked-task-list" :aria-label="t({ en: 'Task list', ja: 'タスクの一覧' })">
       <li v-for="task in tasks" :key="task.id">
         <button type="button" :aria-pressed="listSelectedIds.has(task.id)" @click="selectFromList(task.id)">{{ names[task.id] }}</button>
       </li>
@@ -360,15 +381,15 @@ async function expandAndShow() {
         :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="300" edges-selectable
         :selected-ids="graphSets.selectedNodeIds" :selected-edge-ids="graphSets.selectedEdgeIds"
         :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges" :related-ids="graphSets.relatedNodeIds"
-        :labels="{ region: 'Linked network diagram' }"
+        :labels="{ ...labels.graph, region: t({ en: 'Linked network diagram', ja: '連動するネットワーク図' }) }"
         @target-enter="enter" @target-leave="leave" @target-activate="activate"
         @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" @delete="onGraphDelete" />
-      <GraphContextToolbar :graph="graph" :target="toolbarTarget" :refresh-key="refreshKey" label="Selected graph item">
+      <GraphContextToolbar :graph="graph" :target="toolbarTarget" :refresh-key="refreshKey" :label="t({ en: 'Selected graph item', ja: '選択中のグラフの項目' })">
         <template #default="{ target }">
           <strong v-if="target?.kind === 'node'">{{ names[target.id] }}</strong>
           <strong v-else-if="target">{{ edgeText(target.id) }}</strong>
-          <button v-if="target?.kind === 'node'" type="button" @click="counterpart('timeline')">Show in timeline</button>
-          <button type="button" @click="clear">Clear</button>
+          <button v-if="target?.kind === 'node'" type="button" @click="counterpart('timeline')">{{ t({ en: 'Show in timeline', ja: 'タイムラインで表示' }) }}</button>
+          <button type="button" @click="clear">{{ t({ en: 'Clear', ja: '解除' }) }}</button>
         </template>
       </GraphContextToolbar>
     </div>
@@ -378,20 +399,23 @@ async function expandAndShow() {
       :highlighted-load-targets="highlightedLoad" :selected-load-targets="linked.load.value.selected"
       deletable multi-select :selected-ids="timelineSets.selectedBarIds" :highlighted-bar-ids="highlightedBars"
       :highlighted-dependency-ids="highlightedDependencies" :collapsed-ids="rowsCollapsed"
-      :labels="{ region: 'Linked timeline' }"
+      :labels="{ ...labels.gantt, region: t({ en: 'Linked timeline', ja: '連動するタイムライン' }) }"
       @target-enter="enter" @target-leave="leave" @target-activate="activate"
       @bars-delete="onDelete" @update:collapsed-ids="setRowsCollapsed">
-      <template #row-heading>Task</template>
-      <template #legend><span class="hint">Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks. A time range highlights the tasks worked on in it; related tasks are marked in the graph only.</span></template>
+      <template #row-heading>{{ t({ en: 'Task', ja: 'タスク' }) }}</template>
+      <template #legend><span class="hint">{{ t({ en: 'Outlined bars are linked from another view and cannot be deleted from here. A red segment is an overloaded resource; select it to see the competing tasks. A time range highlights the tasks worked on in it; related tasks are marked in the graph only.', ja: '枠線だけのバーは他のビューから連動したもので、ここからは削除できません。赤い区間は過負荷のリソースで、選ぶと競合するタスクを表示します。時間範囲はその間に作業するタスクを強調表示し、関連するタスクはグラフにだけ示します。' }) }}</span></template>
     </GanttChart>
     <p class="hint">
-      <output aria-label="Graph tasks">Graph tasks: {{ graphNodes.length }}</output>
+      <output :aria-label="t({ en: 'Graph tasks', ja: 'グラフのタスク' })">{{ t({ en: 'Graph tasks: ', ja: 'グラフのタスク: ' }) }}{{ graphNodes.length }}</output>
     </p>
     <p class="hint">
-      <output aria-label="Delete proposals">Delete proposals: {{ deleteProposals.length }}</output>
-      <span v-if="deleteProposals.length"> (last: {{ deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join(', ') }}; the demo does not apply them)</span>
+      <output :aria-label="t({ en: 'Delete proposals', ja: '削除の提案' })">{{ t({ en: 'Delete proposals: ', ja: '削除の提案: ' }) }}{{ deleteProposals.length }}</output>
+      <span v-if="deleteProposals.length">{{ t({
+        en: ` (last: ${deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join(', ')}; the demo does not apply them)`,
+        ja: `(最後: ${deleteProposals[deleteProposals.length - 1]!.map(id => names[id]).join('、')}。このデモは適用しません)`,
+      }) }}</span>
     </p>
-    <p class="hint"><label><input v-model="scenariosOpen" type="checkbox"> Compare plan scenarios</label></p>
+    <p class="hint"><label><input v-model="scenariosOpen" type="checkbox"> {{ t({ en: 'Compare plan scenarios', ja: '計画のシナリオを比較' }) }}</label></p>
     <ScenarioComparison v-if="scenariosOpen" />
   </DemoPanel>
 </template>

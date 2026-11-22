@@ -14,13 +14,15 @@ import {
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
+import { useDemoLocale } from './i18n'
 
 type Product = { kind: 'category' | 'product'; sku?: string; price?: number; status?: string; launch?: number; supplierId?: string; inStock?: boolean }
 type Row = TreeGridRow<Product>
 
+const { t, labels } = useDemoLocale()
 const day = 86_400_000
 const launchBase = Date.UTC(2024, 0, 1)
-const categories = ['Tools', 'Garden', 'Kitchen', 'Lighting', 'Storage', 'Outdoor']
+const categories = t({ en: ['Tools', 'Garden', 'Kitchen', 'Lighting', 'Storage', 'Outdoor'], ja: ['工具', '園芸', 'キッチン', '照明', '収納', 'アウトドア'] })
 const subcategories = ['Basic', 'Pro', 'Compact', 'Classic', 'Smart']
 const suppliers = ['Northwind', 'Contoso', 'Fabrikam', 'Tailspin', 'Litware', 'Proseware', 'Adatum', 'Woodgrove']
 const warehouses = Array.from({ length: 24 }, (_, i) => 'W' + String(i + 1).padStart(2, '0'))
@@ -47,7 +49,7 @@ function initialRows(): Row[] {
       }
     })
   })
-  rows.push({ id: 'archived', label: 'Archived products', childStatus: 'unloaded', data: { kind: 'category' } })
+  rows.push({ id: 'archived', label: t({ en: 'Archived products', ja: 'アーカイブ済みの製品' }), childStatus: 'unloaded', data: { kind: 'category' } })
   return rows
 }
 function initialCells(rows: readonly Row[]): TreeGridCell[] {
@@ -74,31 +76,31 @@ const formatDate = (value: unknown) => {
 }
 const parseDate = (text: string) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim())
-  if (!match) return { error: 'Use the format YYYY-MM-DD' }
+  if (!match) return { error: t({ en: 'Use the format YYYY-MM-DD', ja: 'YYYY-MM-DD の形式で入力してください' }) }
   const time = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-  return formatDate(time) === text.trim() ? time : { error: 'Not a calendar date: ' + text.trim() }
+  return formatDate(time) === text.trim() ? time : { error: t({ en: 'Not a calendar date: ', ja: '存在しない日付です: ' }) + text.trim() }
 }
 const isProduct = (row: Row) => row.data?.kind === 'product'
 const field = <K extends keyof Product>(key: K) => (row: Row, value: unknown): Row => ({ ...row, data: { ...row.data!, [key]: value ?? undefined } })
 const columns: TreeGridColumn<Row>[] = [
   { id: 'sku', label: 'SKU', width: 104, value: row => row.data?.sku, editor: { kind: 'text', required: true }, editable: isProduct, update: field('sku') },
   {
-    id: 'price', label: 'Price', width: 88, value: row => row.data?.price, editor: { kind: 'number', min: 0 }, editable: isProduct, update: field('price'),
+    id: 'price', label: t({ en: 'Price', ja: '価格' }), width: 88, value: row => row.data?.price, editor: { kind: 'number', min: 0 }, editable: isProduct, update: field('price'),
   },
   {
-    id: 'status', label: 'Status', width: 120, value: row => row.data?.status,
-    editor: { kind: 'select', required: true, choices: [{ value: 'active', label: 'Active' }, { value: 'discontinued', label: 'Discontinued' }] },
+    id: 'status', label: t({ en: 'Status', ja: '状態' }), width: 120, value: row => row.data?.status,
+    editor: { kind: 'select', required: true, choices: [{ value: 'active', label: t({ en: 'Active', ja: '販売中' }) }, { value: 'discontinued', label: t({ en: 'Discontinued', ja: '販売終了' }) }] },
     editable: isProduct, update: field('status'),
   },
   {
-    id: 'launch', label: 'Launch', width: 108, value: row => row.data?.launch,
+    id: 'launch', label: t({ en: 'Launch', ja: '発売日' }), width: 108, value: row => row.data?.launch,
     editor: { kind: 'time', parse: parseDate, format: formatDate }, editable: isProduct, update: field('launch'),
   },
   {
-    id: 'supplier', label: 'Supplier', width: 112,
+    id: 'supplier', label: t({ en: 'Supplier', ja: '仕入先' }), width: 112,
     value: row => row.data?.supplierId ? { value: suppliers[Number(row.data.supplierId.slice(4))]!, entities: [{ kind: 'supplier', id: row.data.supplierId }] } : undefined,
   },
-  { id: 'inStock', label: 'In stock', width: 80, value: row => row.data?.inStock, editor: { kind: 'checkbox' }, editable: isProduct, update: field('inStock') },
+  { id: 'inStock', label: t({ en: 'In stock', ja: '在庫あり' }), width: 80, value: row => row.data?.inStock, editor: { kind: 'checkbox' }, editable: isProduct, update: field('inStock') },
   ...warehouses.map(id => ({ id, label: id, width: 64, missingCell: 'unknown' as const, editor: { kind: 'number' as const, min: 0, integer: true }, editable: isProduct })),
 ]
 
@@ -108,7 +110,7 @@ const rows = computed(() => history.state.value.rows)
 const cells = computed(() => history.state.value.cells)
 const expandedIds = ref<string[]>(['cat-0', 'cat-0-0', 'cat-1'])
 const activeCell = ref<TreeGridPosition>()
-const status = ref('Click or press Enter on a row or cell. Type, F2 or double-click edits; Ctrl+C, Ctrl+V and Ctrl+D work on ranges.')
+const status = ref(t({ en: 'Click or press Enter on a row or cell. Type, F2 or double-click edits; Ctrl+C, Ctrl+V and Ctrl+D work on ranges.', ja: '行かセルをクリックするか Enter を押してください。文字入力、F2、ダブルクリックで編集し、Ctrl+C、Ctrl+V、Ctrl+D は範囲に使えます。' }))
 const failNextLoad = ref(false)
 const archivedStatus = shallowRef<'unloaded' | 'loading' | 'loaded' | 'failed'>('unloaded')
 let created = 0
@@ -122,60 +124,63 @@ function cellEdit(change: TreeGridCellEdit) {
   commit(applyTreeGridEdits({ rows: rows.value, columns, cells: cells.value }, [change]), `${label(change.rowId)} · ${change.columnId}: ${String(change.before)} → ${String(change.after)}.`)
 }
 function sheetEdit(change: TreeGridSheetEdit) {
-  commit(applyTreeGridEdits({ rows: rows.value, columns, cells: cells.value }, change.edits), `${change.action}: ${change.edits.length} cells changed.`)
+  commit(applyTreeGridEdits({ rows: rows.value, columns, cells: cells.value }, change.edits), t({ en: `${change.action}: ${change.edits.length} cells changed.`, ja: `${change.action}: ${change.edits.length} セルを変更しました。` }))
 }
-function rejected(_change: unknown, reason: string) { status.value = 'Rejected: ' + reason }
-function cancelled(event: TreeGridEditCancel) { status.value = `Edit cancelled (${event.kind}, ${event.reason}).` }
+function rejected(_change: unknown, reason: string) { status.value = t({ en: 'Rejected: ', ja: '却下: ' }) + reason }
+function cancelled(event: TreeGridEditCancel) { status.value = t({ en: `Edit cancelled (${event.kind}, ${event.reason}).`, ja: `編集を取り消しました(${event.kind}、${event.reason})。` }) }
 function validateCellEdit(change: TreeGridCellEdit) {
-  return change.columnId !== 'price' || (typeof change.after === 'number' && change.after <= 10_000) || change.after === null || 'Prices above 10,000 need approval.'
+  return change.columnId !== 'price' || (typeof change.after === 'number' && change.after <= 10_000) || change.after === null || t({ en: 'Prices above 10,000 need approval.', ja: '10,000 を超える価格には承認が必要です。' })
 }
 function rowCreate(change: TreeGridRowCreate) {
   const id = 'new-' + ++created
   const parent = change.parentId ? rows.value.find(row => row.id === change.parentId) : undefined
   const product = parent && parent.parentId !== undefined
   const row: Row = {
-    id, label: `New ${product ? 'product' : 'group'} ${created}`, entities: [{ kind: 'product', id }],
+    id, label: t({ en: `New ${product ? 'product' : 'group'} ${created}`, ja: `新しい${product ? '製品' : 'グループ'} ${created}` }), entities: [{ kind: 'product', id }],
     data: product ? { kind: 'product', sku: `NEW-${created}`, price: 0, status: 'active', inStock: false } : { kind: 'category' },
   }
-  commit({ rows: insertTreeGridRow(rows.value, change, row) }, `Added ${row.label}.`)
+  commit({ rows: insertTreeGridRow(rows.value, change, row) }, t({ en: `Added ${row.label}.`, ja: `${row.label} を追加しました。` }))
   if (change.parentId && !expandedIds.value.includes(change.parentId)) expandedIds.value = [...expandedIds.value, change.parentId]
   activeCell.value = { rowId: id }
 }
 function rowDelete(change: TreeGridRowDelete) {
-  const names = change.ids.map(label).join(', ')
-  commit(deleteTreeGridRows({ rows: rows.value, cells: cells.value }, change), `Deleted ${names}${change.includeDescendants ? ' with its rows' : ''}.`)
+  const names = change.ids.map(label).join(t({ en: ', ', ja: '、' }))
+  commit(deleteTreeGridRows({ rows: rows.value, cells: cells.value }, change), t({ en: `Deleted ${names}${change.includeDescendants ? ' with its rows' : ''}.`, ja: `${names}${change.includeDescendants ? 'をその行ごと' : 'を'}削除しました。` }))
 }
 function rowMove(change: TimelineRowMove) {
-  commit({ rows: moveTimelineRow(rows.value, change.id, change.after) }, `Moved ${label(change.id)}${change.after.parentId ? ' into ' + label(change.after.parentId) : ' to the top level'}.`)
+  commit({ rows: moveTimelineRow(rows.value, change.id, change.after) }, t({
+    en: `Moved ${label(change.id)}${change.after.parentId ? ' into ' + label(change.after.parentId) : ' to the top level'}.`,
+    ja: `${label(change.id)} を${change.after.parentId ? label(change.after.parentId) + ' の中' : '最上位'}に移動しました。`,
+  }))
 }
 function validateRowDelete(change: TreeGridRowDelete) {
-  return change.ids.every(id => rows.value.find(row => row.id === id)?.parentId !== undefined) || 'Top-level categories cannot be deleted.'
+  return change.ids.every(id => rows.value.find(row => row.id === id)?.parentId !== undefined) || t({ en: 'Top-level categories cannot be deleted.', ja: '最上位のカテゴリーは削除できません。' })
 }
 function validateRowMove(change: TimelineRowMove) {
   const row = rows.value.find(item => item.id === change.id)
-  return !(row?.data?.kind === 'product' && change.after.parentId === undefined) || 'A product needs a category.'
+  return !(row?.data?.kind === 'product' && change.after.parentId === undefined) || t({ en: 'A product needs a category.', ja: '製品にはカテゴリーが必要です。' })
 }
 
 // The lazily loaded group: its children arrive after a short delay, or fail on request.
 function expandRequest(rowId: string) {
   if (rowId !== 'archived') return
   archivedStatus.value = 'loading'
-  status.value = 'Loading archived products…'
+  status.value = t({ en: 'Loading archived products…', ja: 'アーカイブ済みの製品を読み込み中…' })
   setTimeout(() => {
     if (failNextLoad.value) {
       failNextLoad.value = false
       archivedStatus.value = 'failed'
-      status.value = 'Loading archived products failed. Press Enter on the status line to retry.'
+      status.value = t({ en: 'Loading archived products failed. Press Enter on the status line to retry.', ja: 'アーカイブ済みの製品を読み込めませんでした。状態の行で Enter を押すと再試行します。' })
       return
     }
     const loaded: Row[] = Array.from({ length: 20 }, (_, i) => ({
-      id: 'arch-' + i, parentId: 'archived', label: `Archived ${String(i + 1).padStart(2, '0')}`, entities: [{ kind: 'product', id: 'arch-' + i }],
+      id: 'arch-' + i, parentId: 'archived', label: t({ en: 'Archived ', ja: 'アーカイブ ' }) + String(i + 1).padStart(2, '0'), entities: [{ kind: 'product', id: 'arch-' + i }],
       data: { kind: 'product', sku: `OLD-${i}`, price: 1 + i, status: 'discontinued', supplierId: 'sup-' + (i % suppliers.length), inStock: false },
     }))
     archivedStatus.value = 'loaded'
     // Loaded data replaces the current entry: it is not an edit to undo.
     history.replaceCurrent({ ...history.state.value, rows: [...history.state.value.rows.filter(row => row.parentId !== 'archived'), ...loaded] })
-    status.value = 'Loaded 20 archived products.'
+    status.value = t({ en: 'Loaded 20 archived products.', ja: 'アーカイブ済みの製品を 20 件読み込みました。' })
   }, 600)
 }
 const gridRows = computed(() => rows.value.map(row => row.id === 'archived' ? { ...row, childStatus: archivedStatus.value } : row))
@@ -200,8 +205,11 @@ const gridSelection = ref<string[]>([])
 function activateInGrid(activation: TreeGridActivation) {
   gridSelection.value = [activation.rowId]
   linked.selectEntities(activation.entities, { source: 'tree-grid' })
-  const names = activation.entities.map(entity => `${entity.kind}:${entity.id}`).join(', ') || 'none'
-  status.value = `Activated ${label(activation.rowId)}${activation.columnId ? ' · ' + activation.columnId : ''} by ${activation.source}; entities ${names}.`
+  const names = activation.entities.map(entity => `${entity.kind}:${entity.id}`).join(', ') || t({ en: 'none', ja: 'なし' })
+  status.value = t({
+    en: `Activated ${label(activation.rowId)}${activation.columnId ? ' · ' + activation.columnId : ''} by ${activation.source}; entities ${names}.`,
+    ja: `${activation.source}で ${label(activation.rowId)}${activation.columnId ? ' · ' + activation.columnId : ''} を選びました。エンティティ: ${names}。`,
+  })
 }
 function activateInGraph(event: ViewTargetEvent) {
   gridSelection.value = []
@@ -214,32 +222,35 @@ const matches = computed(() => {
 const highlightedRowIds = computed(() => matches.value.rowIds.filter(id => !gridSelection.value.includes(id)))
 const selectionText = computed(() => {
   const count = matches.value.rowIds.length + matches.value.cells.length
-  return linked.selectedEntities.value.length ? `Linked: ${linked.selectedEntities.value.map(entity => entity.id).join(', ')} (${count} grid matches)` : 'Nothing linked.'
+  const ids = linked.selectedEntities.value.map(entity => entity.id).join(', ')
+  return linked.selectedEntities.value.length
+    ? t({ en: `Linked: ${ids} (${count} grid matches)`, ja: `連動中: ${ids}(グリッドで ${count} 件一致)` })
+    : t({ en: 'Nothing linked.', ja: '連動しているものはありません。' })
 })
 const rtl = ref(false)
 </script>
 
 <template>
-  <DemoPanel title-id="tree-grid-title" title="Tree grid" subtitle="A product hierarchy against attributes and warehouse stock: about 3,000 rows and 30 columns, rendered in a window, with cell and spreadsheet editing, row structure editing, a lazily loaded group and selection linked to a graph.">
+  <DemoPanel title-id="tree-grid-title" :title="t({ en: 'Tree grid', ja: 'ツリーグリッド' })" :subtitle="t({ en: 'A product hierarchy against attributes and warehouse stock: about 3,000 rows and 30 columns, rendered in a window, with cell and spreadsheet editing, row structure editing, a lazily loaded group and selection linked to a graph.', ja: '製品階層を属性と倉庫在庫に並べた約 3,000 行・30 列の表を、表示範囲だけ描画します。セルとスプレッドシートの編集、行構造の編集、遅延読み込みのグループ、グラフと連動する選択を備えています。' })">
     <template #options>
-      <button type="button" :disabled="!history.canUndo.value" @click="history.undo()">Undo</button>
-      <button type="button" :disabled="!history.canRedo.value" @click="history.redo()">Redo</button>
-      <label><input v-model="failNextLoad" type="checkbox"> Fail next load</label>
-      <label><input v-model="rtl" type="checkbox"> Right to left</label>
+      <button type="button" :disabled="!history.canUndo.value" @click="history.undo()">{{ t({ en: 'Undo', ja: '元に戻す' }) }}</button>
+      <button type="button" :disabled="!history.canRedo.value" @click="history.redo()">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
+      <label><input v-model="failNextLoad" type="checkbox"> {{ t({ en: 'Fail next load', ja: '次の読み込みを失敗させる' }) }}</label>
+      <label><input v-model="rtl" type="checkbox"> {{ t({ en: 'Right to left', ja: '右から左' }) }}</label>
     </template>
     <TreeGrid v-model:expanded-ids="expandedIds" v-model:active-cell="activeCell" :rows="gridRows" :columns="columns" :cells="cells"
       missing-cell="unknown" :height="420" :tree-column-width="260" :dir="rtl ? 'rtl' : 'ltr'" editable spreadsheet rows-editable
       :selected-row-ids="gridSelection" :highlighted-row-ids="highlightedRowIds" :highlighted-cells="matches.cells"
       :validate-cell-edit="validateCellEdit" :validate-row-delete="validateRowDelete" :validate-row-move="validateRowMove"
-      :labels="{ grid: 'Product matrix', treeColumn: 'Product' }"
+      :labels="{ ...labels.treeGrid, grid: t({ en: 'Product matrix', ja: '製品マトリクス' }), treeColumn: t({ en: 'Product', ja: '製品' }) }"
       @row-activate="activateInGrid" @cell-activate="activateInGrid" @expand-request="expandRequest"
       @cell-edit="cellEdit" @cell-edit-rejected="rejected" @sheet-edit="sheetEdit" @sheet-edit-rejected="rejected" @edit-cancel="cancelled"
       @row-create="rowCreate" @row-delete="rowDelete" @row-move="rowMove"
       @row-create-rejected="rejected" @row-delete-rejected="rejected" @row-move-rejected="rejected" />
-    <StatusLine label="Tree grid status">{{ status }}</StatusLine>
-    <StatusLine label="Tree grid selection">{{ selectionText }}</StatusLine>
+    <StatusLine :label="t({ en: 'Tree grid status', ja: 'ツリーグリッドの状態' })">{{ status }}</StatusLine>
+    <StatusLine :label="t({ en: 'Tree grid selection', ja: 'ツリーグリッドの選択' })">{{ selectionText }}</StatusLine>
     <NetworkGraph :nodes="graphNodes" :edges="graphEdges" :height="260" :options="{ nodeWidth: 150, nodeHeight: 34 }"
       :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
-      :labels="{ region: 'Categories and suppliers' }" @target-activate="activateInGraph" />
+      :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph" />
   </DemoPanel>
 </template>

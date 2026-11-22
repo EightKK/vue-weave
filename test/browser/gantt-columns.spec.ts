@@ -443,3 +443,13 @@ test('gantt edit-cancel reports gestures and cell editors cancelled by new sourc
   await expect(chart.getByRole('textbox', { name: 'Effort editor', exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('the timeline editing demo names its column options in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'timeline-editing', { locale: 'ja' })
+  await expect(demo.getByText('CSV を読み込む', { exact: true })).toBeVisible()
+  await demo.getByRole('checkbox', { name: '列幅を変更', exact: true }).check()
+  await expect(demo.getByText('WBS', { exact: true }).first()).toBeVisible()
+  await expect(demo.getByRole('separator', { name: /列幅を変更/ }).first()).toBeVisible()
+  expect(errors).toEqual([])
+})

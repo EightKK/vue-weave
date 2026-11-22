@@ -817,3 +817,12 @@ test('large plan: with Keep positions when expanding, the parts already shown st
   }
   expect(errors).toEqual([])
 })
+
+test('the saved editing example saves JSON and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'saved-editing', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: '保存するタイムライン', exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: 'JSON を保存', exact: true }).click()
+  await expect(demo.getByRole('status', { name: 'JSON の状態' })).toContainText('タスク 5 件と表示状態を JSON で保存しました')
+  expect(errors).toEqual([])
+})

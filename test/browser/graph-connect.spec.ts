@@ -404,3 +404,13 @@ test('arrow keys on a node do not propose a move while a keyboard connection is 
   await expect(moves).toHaveText('1')
   expect(errors).toEqual([])
 })
+
+test('graph editing options and the editing hint are Japanese on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await demo.getByRole('checkbox', { name: 'グラフを編集', exact: true }).check()
+  await expect(demo.getByRole('checkbox', { name: 'グリッドに吸着', exact: true })).toBeVisible()
+  await expect(demo.getByText('ポートの間をドラッグして接続します。', { exact: false })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '選択範囲に合わせる', exact: true })).toBeDisabled()
+  expect(errors).toEqual([])
+})

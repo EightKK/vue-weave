@@ -334,7 +334,7 @@ test('the sprint plan showcase rejects a move before a predecessor ends and acce
 test('every design gallery showcase fits a phone-width page', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await openExample(page, 'graph-and-gantt')
+  await page.goto('gallery.html')
   for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views',
     'CI/CD pipeline', 'Knowledge graph', 'Construction program', 'Service map', 'BOM editor']) {
     await page.getByRole('button', { name, exact: true }).click()
@@ -382,5 +382,21 @@ test('the calendar views showcase switches calendar zoom presets and locales and
   await expect(showcase.getByRole('img', { name: 'Code freeze 18. Mai–1. Juni', exact: true })).toBeVisible()
   await expect(showcase.locator('.vw-gantt-band', { hasText: /^Mai$/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /^API v2 14\. Apr\.?–16\. Mai$/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the graph and Gantt example shows its controls, sections and data in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await expect(demo.getByRole('navigation', { name: 'データセット' }).getByRole('button', { name: '製造', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo.getByRole('button', { name: 'グラフを SVG で出力', exact: true })).toBeVisible()
+  await expect(demo.getByLabel('組み込みテーマ')).toBeVisible()
+  await expect(demo.getByRole('heading', { name: 'ネットワーク', exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: 'タイムライン', exact: true })).toBeVisible()
+  await expect(demo.getByLabel('ネットワーク図', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('status').filter({ hasText: 'ノードかバーを選んでください。' })).toBeVisible()
+  await demo.getByRole('button', { name: 'プロジェクト納品', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '例を初期状態に戻しました。' })).toBeVisible()
+  await expect(demo.getByText('基盤チーム', { exact: true }).first()).toBeVisible()
   expect(errors).toEqual([])
 })

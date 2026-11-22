@@ -6,6 +6,9 @@ import {
 } from '../src'
 import { formatTime, hour, minute, origin } from './data'
 import DemoPanel from './components/DemoPanel.vue'
+import { useDemoLocale } from './i18n'
+
+const { t, labels: componentLabels } = useDemoLocale()
 
 // Opt-in example of `rescheduleFromActuals`: recorded actual intervals are kept exactly as reported and only the
 // remaining work is scheduled on the shift calendar from the status date. Each row shows the original plan (grey strip),
@@ -16,11 +19,11 @@ const range = { start: origin, end: at(33) }
 const periods = [0, 24].flatMap(day => [{ start: at(day), end: at(day + 4) }, { start: at(day + 5), end: at(day + 9) }])
 const nonWorking = [{ start: at(4), end: at(5) }, { start: at(9), end: at(24) }, { start: at(28), end: at(29) }]
 const rows: TimelineRow[] = [
-  { id: 'saw', label: 'Cut stock', detail: 'Finished, overran' },
-  { id: 'mill', label: 'Mill housing', detail: 'Late start, interrupted' },
-  { id: 'weld', label: 'Weld frame', detail: 'Remaining work revised' },
-  { id: 'paint', label: 'Paint frame', detail: 'Not started' },
-  { id: 'pack', label: 'Pack', detail: 'Not started' },
+  { id: 'saw', label: t({ en: 'Cut stock', ja: '素材切断' }), detail: t({ en: 'Finished, overran', ja: '完了、超過' }) },
+  { id: 'mill', label: t({ en: 'Mill housing', ja: 'ハウジング加工' }), detail: t({ en: 'Late start, interrupted', ja: '開始遅れ、中断あり' }) },
+  { id: 'weld', label: t({ en: 'Weld frame', ja: 'フレーム溶接' }), detail: t({ en: 'Remaining work revised', ja: '残作業を見直し' }) },
+  { id: 'paint', label: t({ en: 'Paint frame', ja: 'フレーム塗装' }), detail: t({ en: 'Not started', ja: '未着手' }) },
+  { id: 'pack', label: t({ en: 'Pack', ja: '梱包' }), detail: t({ en: 'Not started', ja: '未着手' }) },
 ]
 const labels = new Map(rows.map(row => [row.id, row.label]))
 const tasks: ScheduleTask[] = [
@@ -50,14 +53,22 @@ const actuals = computed(() => new Map<string, TaskActuals>([
 ]))
 const result = computed(() => rescheduleFromActuals(input, statusDate, actuals.value))
 const bars = computed(() => actualsTimelineBars(result.value, { label: id => labels.get(id) ?? id, baselineId: 'plan' }))
-const finish = computed(() => result.value.ok ? formatTime(result.value.schedule.finish) : 'not feasible')
+const finish = computed(() => result.value.ok ? formatTime(result.value.schedule.finish) : t({ en: 'not feasible', ja: '実行不可能' }))
 const planFinish = result.value.plan.ok ? formatTime(result.value.plan.finish) : ''
-const problems: Record<ActualsDiagnostic['code'], string> = {
-  'actual-overlap': 'Actual intervals overlap',
-  'actual-after-status-date': 'Actual work recorded after the status date',
-  'actual-outside-calendar': 'Actual work outside the shift calendar (kept as recorded)',
-  'actual-contradiction': 'Finished, but remaining work was reported',
-}
+const problems: Record<ActualsDiagnostic['code'], string> = t({
+  en: {
+    'actual-overlap': 'Actual intervals overlap',
+    'actual-after-status-date': 'Actual work recorded after the status date',
+    'actual-outside-calendar': 'Actual work outside the shift calendar (kept as recorded)',
+    'actual-contradiction': 'Finished, but remaining work was reported',
+  },
+  ja: {
+    'actual-overlap': '実績の区間が重なっています',
+    'actual-after-status-date': '状況日付より後に実績が記録されています',
+    'actual-outside-calendar': 'シフトのカレンダー外の実績です(記録どおりに保持)',
+    'actual-contradiction': '完了していますが、残作業が報告されています',
+  },
+})
 function describe(item: ActualsDiagnostic | PlanningDiagnostic) {
   const task = item.entities.find(entity => entity.kind === 'task')
   const title = (problems as Record<string, string>)[item.code] ?? item.code
@@ -67,29 +78,29 @@ const remainingHours = (id: string) => (result.value.tasks.find(task => task.id 
 </script>
 
 <template>
-  <DemoPanel title-id="actuals-title" title="Recorded actuals" subtitle="rescheduleFromActuals · status 14:00 UTC · actuals stay as recorded">
+  <DemoPanel title-id="actuals-title" :title="t({ en: 'Recorded actuals', ja: '記録された実績' })" :subtitle="t({ en: 'rescheduleFromActuals · status 14:00 UTC · actuals stay as recorded', ja: 'rescheduleFromActuals · 状況日付 14:00 UTC · 実績は記録どおり' })">
     <template #options>
-      <label><input v-model="reviseWeld" type="checkbox"> Welding needs 3 h more</label>
+      <label><input v-model="reviseWeld" type="checkbox"> {{ t({ en: 'Welding needs 3 h more', ja: '溶接にあと 3 時間必要' }) }}</label>
     </template>
     <dl class="schedule-metrics">
-      <div><dt>Planned finish</dt><dd>{{ planFinish }}</dd></div>
-      <div><dt>Forecast finish</dt><dd data-testid="actuals-finish">{{ finish }}</dd></div>
-      <div><dt>Welding remaining</dt><dd>{{ remainingHours('weld') }} h</dd></div>
+      <div><dt>{{ t({ en: 'Planned finish', ja: '計画の完了' }) }}</dt><dd>{{ planFinish }}</dd></div>
+      <div><dt>{{ t({ en: 'Forecast finish', ja: '予測の完了' }) }}</dt><dd data-testid="actuals-finish">{{ finish }}</dd></div>
+      <div><dt>{{ t({ en: 'Welding remaining', ja: '溶接の残り' }) }}</dt><dd>{{ remainingHours('weld') }}{{ t({ en: ' h', ja: ' 時間' }) }}</dd></div>
     </dl>
     <GanttChart :rows="rows" :bars="bars" :range="range" :format-time="formatTime" :status-date="statusDate" readonly
       :pixels-per-unit="22 / hour" :tick-steps="[2 * hour, 4 * hour, 8 * hour]" :row-height="52" :height="320"
-      :non-working-periods="nonWorking" :baseline-ids="['plan']" :baseline-label="() => 'Original plan'"
-      :labels="{ region: 'Recorded actuals timeline' }">
-      <template #row-heading>Operation</template>
+      :non-working-periods="nonWorking" :baseline-ids="['plan']" :baseline-label="() => t({ en: 'Original plan', ja: '当初計画' })"
+      :labels="{ ...componentLabels.gantt, region: t({ en: 'Recorded actuals timeline', ja: '記録された実績のタイムライン' }) }">
+      <template #row-heading>{{ t({ en: 'Operation', ja: '工程' }) }}</template>
       <template #legend>
-        <ul class="actuals-key" aria-label="Recorded actuals legend">
-          <li><span class="key key-actual" aria-hidden="true"></span>Actual: recorded work (solid)</li>
-          <li><span class="key key-forecast" aria-hidden="true"></span>Forecast: remaining work (outline)</li>
-          <li><span class="key key-plan" aria-hidden="true"></span>Original plan (strip below)</li>
+        <ul class="actuals-key" :aria-label="t({ en: 'Recorded actuals legend', ja: '記録された実績の凡例' })">
+          <li><span class="key key-actual" aria-hidden="true"></span>{{ t({ en: 'Actual: recorded work (solid)', ja: '実績: 記録された作業(塗りつぶし)' }) }}</li>
+          <li><span class="key key-forecast" aria-hidden="true"></span>{{ t({ en: 'Forecast: remaining work (outline)', ja: '予測: 残りの作業(枠線)' }) }}</li>
+          <li><span class="key key-plan" aria-hidden="true"></span>{{ t({ en: 'Original plan (strip below)', ja: '当初計画(下の帯)' }) }}</li>
         </ul>
       </template>
     </GanttChart>
-    <ul class="actuals-diagnostics" aria-label="Recorded actuals diagnostics">
+    <ul class="actuals-diagnostics" :aria-label="t({ en: 'Recorded actuals diagnostics', ja: '記録された実績の診断' })">
       <li v-for="item in result.diagnostics" :key="item.id">{{ describe(item) }}</li>
     </ul>
   </DemoPanel>

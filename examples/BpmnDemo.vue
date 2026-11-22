@@ -11,16 +11,19 @@ import {
 import { download } from './download'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
+import { useDemoLocale } from './i18n'
+
+const { t, labels } = useDemoLocale()
 
 type Step = NetworkNode<{ lane: string }>
 const lanes = [
-  { id: 'customer', label: 'Customer' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'warehouse', label: 'Warehouse' },
+  { id: 'customer', label: t({ en: 'Customer', ja: '顧客' }) },
+  { id: 'sales', label: t({ en: 'Sales', ja: '営業' }) },
+  { id: 'warehouse', label: t({ en: 'Warehouse', ja: '倉庫' }) },
 ]
 const pools = [
-  { id: 'customer-pool', label: 'Customer', lanes: ['customer'] },
-  { id: 'supplier-pool', label: 'Supplier', lanes: ['sales', 'warehouse'] },
+  { id: 'customer-pool', label: t({ en: 'Customer', ja: '顧客' }), lanes: ['customer'] },
+  { id: 'supplier-pool', label: t({ en: 'Supplier', ja: '仕入先' }), lanes: ['sales', 'warehouse'] },
 ]
 const tones = { customer: 'teal', sales: 'blue', warehouse: 'amber' } as const
 type Lane = keyof typeof tones
@@ -32,39 +35,39 @@ const task = (id: string, label: string, lane: Lane, marker?: 'user' | 'service'
   ({ id, label, shape: 'rounded', tone: tones[lane], data: { lane }, ...marker && { marker } })
 
 const initialNodes: Step[] = [
-  event('need', 'Goods needed', 'customer', 'start'),
-  task('order', 'Send order', 'customer', 'user'),
-  event('delivery', 'Goods arrive', 'customer', 'intermediate', 'message'),
-  task('pay', 'Pay invoice', 'customer', 'manual'),
-  event('closed', 'Order closed', 'customer', 'end'),
-  event('received', 'Order received', 'sales', 'start', 'message'),
-  task('check', 'Check order', 'sales', 'user'),
-  { id: 'orders', label: 'Orders', detail: 'data store', shape: 'cylinder', tone: 'blue', data: { lane: 'sales' } },
-  gateway('accept', 'Accept?', 'sales', 'exclusive'),
-  task('reject', 'Send rejection', 'sales', 'service'),
-  event('rejected', 'Rejected', 'sales', 'end'),
-  task('invoice', 'Send invoice', 'sales', 'service'),
-  event('billed', 'Billed', 'sales', 'end'),
-  gateway('fork', 'Fulfil', 'warehouse', 'parallel'),
-  task('pick', 'Pick goods', 'warehouse', 'manual'),
-  task('label', 'Print label', 'warehouse', 'service'),
-  gateway('join', 'Packed', 'warehouse', 'parallel'),
-  task('ship', 'Ship goods', 'warehouse', 'user'),
-  event('shipped', 'Shipped', 'warehouse', 'end'),
+  event('need', t({ en: 'Goods needed', ja: '商品が必要' }), 'customer', 'start'),
+  task('order', t({ en: 'Send order', ja: '注文を送る' }), 'customer', 'user'),
+  event('delivery', t({ en: 'Goods arrive', ja: '商品の到着' }), 'customer', 'intermediate', 'message'),
+  task('pay', t({ en: 'Pay invoice', ja: '請求書を支払う' }), 'customer', 'manual'),
+  event('closed', t({ en: 'Order closed', ja: '注文完了' }), 'customer', 'end'),
+  event('received', t({ en: 'Order received', ja: '注文受付' }), 'sales', 'start', 'message'),
+  task('check', t({ en: 'Check order', ja: '注文を確認' }), 'sales', 'user'),
+  { id: 'orders', label: t({ en: 'Orders', ja: '注文' }), detail: t({ en: 'data store', ja: 'データストア' }), shape: 'cylinder', tone: 'blue', data: { lane: 'sales' } },
+  gateway('accept', t({ en: 'Accept?', ja: '受注する?' }), 'sales', 'exclusive'),
+  task('reject', t({ en: 'Send rejection', ja: '断りを送る' }), 'sales', 'service'),
+  event('rejected', t({ en: 'Rejected', ja: '受注せず' }), 'sales', 'end'),
+  task('invoice', t({ en: 'Send invoice', ja: '請求書を送る' }), 'sales', 'service'),
+  event('billed', t({ en: 'Billed', ja: '請求済み' }), 'sales', 'end'),
+  gateway('fork', t({ en: 'Fulfil', ja: '出荷準備' }), 'warehouse', 'parallel'),
+  task('pick', t({ en: 'Pick goods', ja: 'ピッキング' }), 'warehouse', 'manual'),
+  task('label', t({ en: 'Print label', ja: 'ラベル印刷' }), 'warehouse', 'service'),
+  gateway('join', t({ en: 'Packed', ja: '梱包完了' }), 'warehouse', 'parallel'),
+  task('ship', t({ en: 'Ship goods', ja: '商品を出荷' }), 'warehouse', 'user'),
+  event('shipped', t({ en: 'Shipped', ja: '出荷済み' }), 'warehouse', 'end'),
 ]
 const sequence = (from: string, to: string, label?: string): GraphEdge => ({ id: from + '-' + to, from, to, ...label && { label } })
 // Message flows cross pools: dashed, with an open circle at the sender and a hollow arrow at the receiver.
 const message = (from: string, to: string, label: string): GraphEdge =>
   ({ id: from + '-' + to, from, to, label, dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' })
 const initialEdges: GraphEdge[] = [
-  sequence('need', 'order'), message('order', 'received', 'purchase order'), sequence('delivery', 'pay'), sequence('pay', 'closed'),
+  sequence('need', 'order'), message('order', 'received', t({ en: 'purchase order', ja: '発注書' })), sequence('delivery', 'pay'), sequence('pay', 'closed'),
   sequence('received', 'check'), sequence('check', 'accept'),
   // A data association: dashed with an open arrow.
   { id: 'check-orders', from: 'check', to: 'orders', dashed: true, markerEnd: 'open-arrow' },
-  sequence('accept', 'reject', 'no'), sequence('reject', 'rejected'), sequence('accept', 'fork', 'yes'),
+  sequence('accept', 'reject', t({ en: 'no', ja: 'いいえ' })), sequence('reject', 'rejected'), sequence('accept', 'fork', t({ en: 'yes', ja: 'はい' })),
   sequence('fork', 'pick'), sequence('fork', 'label'), sequence('pick', 'join'), sequence('label', 'join'),
   sequence('join', 'ship'), sequence('join', 'invoice'), sequence('ship', 'shipped'), sequence('invoice', 'billed'),
-  message('ship', 'delivery', 'goods'), message('invoice', 'pay', 'invoice'),
+  message('ship', 'delivery', t({ en: 'goods', ja: '商品' })), message('invoice', 'pay', t({ en: 'invoice', ja: '請求書' })),
 ]
 
 const nodes = ref<Step[]>(initialNodes)
@@ -73,7 +76,7 @@ const edgeStyle = ref<GraphEdgeStyle>('orthogonal')
 const rtl = ref(false)
 const selectedId = ref<string>()
 const graph = ref<InstanceType<typeof NetworkGraph>>()
-const status = ref('Select a step, or connect two steps to propose a new sequence flow.')
+const status = ref(t({ en: 'Select a step, or connect two steps to propose a new sequence flow.', ja: 'ステップを選ぶか、2つのステップをつないで新しいシーケンスフローを提案してください。' }))
 
 // Events and gateways get square boxes centred where the layout put them, so circles and diamonds keep BPMN
 // proportions. The orthogonal and straight edge styles route every edge from these boxes.
@@ -97,49 +100,52 @@ const layout: GraphLayoutFunction<Step> = () => squareBoxes(swimlanes.value, nod
 // The parent decides: a new sequence flow stays inside one pool; between pools only message flows are allowed.
 const poolOf = (id: string) => pools.find(pool => pool.lanes.includes(nodes.value.find(node => node.id === id)?.data?.lane ?? ''))?.id
 function validateConnection(connection: GraphConnection) {
-  if (connection.from === connection.to) return 'A step cannot follow itself.'
-  if (edges.value.some(edge => edge.from === connection.from && edge.to === connection.to)) return 'That flow already exists.'
+  if (connection.from === connection.to) return t({ en: 'A step cannot follow itself.', ja: 'ステップを自分自身の後に続けることはできません。' })
+  if (edges.value.some(edge => edge.from === connection.from && edge.to === connection.to)) return t({ en: 'That flow already exists.', ja: 'そのフローはすでにあります。' })
   return true
 }
 const label = (id: string) => nodes.value.find(node => node.id === id)?.label ?? id
 function connect(connection: GraphConnection) {
   const crossing = poolOf(connection.from) !== poolOf(connection.to)
-  const edge = crossing ? message(connection.from, connection.to, 'message') : sequence(connection.from, connection.to)
+  const edge = crossing ? message(connection.from, connection.to, t({ en: 'message', ja: 'メッセージ' })) : sequence(connection.from, connection.to)
   edges.value = [...edges.value, edge]
-  status.value = (crossing ? 'Message flow' : 'Sequence flow') + ' from ' + label(connection.from) + ' to ' + label(connection.to) + ' added.'
+  status.value = t({
+    en: (crossing ? 'Message flow' : 'Sequence flow') + ' from ' + label(connection.from) + ' to ' + label(connection.to) + ' added.',
+    ja: label(connection.from) + ' から ' + label(connection.to) + ' への' + (crossing ? 'メッセージフロー' : 'シーケンスフロー') + 'を追加しました。',
+  })
 }
 function select(id: string) {
   const node = nodes.value.find(item => item.id === id)
-  if (node) status.value = 'Selected ' + node.label + '.'
+  if (node) status.value = t({ en: 'Selected ' + node.label + '.', ja: node.label + ' を選択しました。' })
 }
 function reset() {
   selectedId.value = undefined
   nodes.value = initialNodes
   edges.value = initialEdges
-  status.value = 'Process reset.'
+  status.value = t({ en: 'Process reset.', ja: 'プロセスを初期状態に戻しました。' })
 }
 function exportSvg() {
-  const svg = graph.value?.exportSvg({ title: 'Purchase order process' })
+  const svg = graph.value?.exportSvg({ title: t({ en: 'Purchase order process', ja: '発注プロセス' }) })
   if (!svg) return
   download(svg, 'purchase-order-process.svg')
-  status.value = `Exported SVG (${svg.length} characters).`
+  status.value = t({ en: `Exported SVG (${svg.length} characters).`, ja: `SVG を出力しました(${svg.length} 文字)。` })
 }
 
 // A classic flowchart with the flowchart shapes and the layered layout.
 const chartNodes: NetworkNode[] = [
-  { id: 'begin', label: 'Start', shape: 'stadium', tone: 'teal' },
-  { id: 'read', label: 'Read order file', shape: 'parallelogram', tone: 'blue' },
-  { id: 'valid', label: 'Valid?', shape: 'diamond', tone: 'violet' },
-  { id: 'error', label: 'Show error', shape: 'parallelogram', tone: 'amber' },
-  { id: 'total', label: 'Compute totals', tone: 'blue' },
-  { id: 'store', label: 'Save to database', shape: 'cylinder', tone: 'teal' },
-  { id: 'report', label: 'Print report', shape: 'document', tone: 'blue' },
-  { id: 'note', label: 'Order record', shape: 'data-object', tone: 'violet' },
-  { id: 'finish', label: 'End', shape: 'stadium', tone: 'teal' },
+  { id: 'begin', label: t({ en: 'Start', ja: '開始' }), shape: 'stadium', tone: 'teal' },
+  { id: 'read', label: t({ en: 'Read order file', ja: '注文ファイルを読む' }), shape: 'parallelogram', tone: 'blue' },
+  { id: 'valid', label: t({ en: 'Valid?', ja: '正しい?' }), shape: 'diamond', tone: 'violet' },
+  { id: 'error', label: t({ en: 'Show error', ja: 'エラーを表示' }), shape: 'parallelogram', tone: 'amber' },
+  { id: 'total', label: t({ en: 'Compute totals', ja: '合計を計算' }), tone: 'blue' },
+  { id: 'store', label: t({ en: 'Save to database', ja: 'データベースに保存' }), shape: 'cylinder', tone: 'teal' },
+  { id: 'report', label: t({ en: 'Print report', ja: 'レポートを印刷' }), shape: 'document', tone: 'blue' },
+  { id: 'note', label: t({ en: 'Order record', ja: '注文記録' }), shape: 'data-object', tone: 'violet' },
+  { id: 'finish', label: t({ en: 'End', ja: '終了' }), shape: 'stadium', tone: 'teal' },
 ]
 const chartEdges: GraphEdge[] = [
   { id: 'begin-read', from: 'begin', to: 'read' }, { id: 'read-valid', from: 'read', to: 'valid' },
-  { id: 'valid-total', from: 'valid', to: 'total', label: 'yes' }, { id: 'valid-error', from: 'valid', to: 'error', label: 'no' },
+  { id: 'valid-total', from: 'valid', to: 'total', label: t({ en: 'yes', ja: 'はい' }) }, { id: 'valid-error', from: 'valid', to: 'error', label: t({ en: 'no', ja: 'いいえ' }) },
   { id: 'total-store', from: 'total', to: 'store' }, { id: 'total-report', from: 'total', to: 'report' },
   { id: 'store-note', from: 'store', to: 'note', dashed: true, markerEnd: 'open-arrow' },
   { id: 'report-finish', from: 'report', to: 'finish' }, { id: 'error-finish', from: 'error', to: 'finish' },
@@ -148,25 +154,25 @@ const chartLayout: GraphLayoutFunction = (list, links) => layoutLayeredGraph(lis
 </script>
 
 <template>
-  <DemoPanel title-id="bpmn-title" title="BPMN process" subtitle="A purchase order process between two pools, with events, gateways, task types, a data store and message flows.">
-    <div class="options bpmn-options" role="group" aria-label="BPMN options">
-      <label>Edge style
-        <select v-model="edgeStyle" aria-label="BPMN edge style">
-          <option value="orthogonal">orthogonal</option><option value="straight">straight</option>
+  <DemoPanel title-id="bpmn-title" :title="t({ en: 'BPMN process', ja: 'BPMN プロセス' })" :subtitle="t({ en: 'A purchase order process between two pools, with events, gateways, task types, a data store and message flows.', ja: '2つのプールにまたがる発注プロセスです。イベント、ゲートウェイ、タスクの種類、データストア、メッセージフローを含みます。' })">
+    <div class="options bpmn-options" role="group" :aria-label="t({ en: 'BPMN options', ja: 'BPMN のオプション' })">
+      <label>{{ t({ en: 'Edge style', ja: '辺のスタイル' }) }}
+        <select v-model="edgeStyle" :aria-label="t({ en: 'BPMN edge style', ja: 'BPMN の辺のスタイル' })">
+          <option value="orthogonal">{{ t({ en: 'orthogonal', ja: '直交' }) }}</option><option value="straight">{{ t({ en: 'straight', ja: '直線' }) }}</option>
         </select>
       </label>
-      <label><input v-model="rtl" type="checkbox"> Right-to-left labels</label>
-      <button type="button" @click="exportSvg">Export SVG</button>
-      <button type="button" @click="reset">Reset process</button>
+      <label><input v-model="rtl" type="checkbox"> {{ t({ en: 'Right-to-left labels', ja: '右から左のラベル' }) }}</label>
+      <button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button>
+      <button type="button" @click="reset">{{ t({ en: 'Reset process', ja: 'プロセスをリセット' }) }}</button>
     </div>
     <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :pools="swimlanes.pools"
       :edge-style="edgeStyle" :dir="rtl ? 'rtl' : 'ltr'" connectable :validate-connection="validateConnection" show-minimap :height="560"
-      :labels="{ region: 'Purchase order process' }" v-model:selected-id="selectedId" @connect="connect" @select="select"
+      :labels="{ ...labels.graph, region: t({ en: 'Purchase order process', ja: '発注プロセス' }) }" v-model:selected-id="selectedId" @connect="connect" @select="select"
       @connect-rejected="(_connection, reason) => status = reason" />
-    <StatusLine label="BPMN status">{{ status }}</StatusLine>
-    <h3 class="bpmn-heading">Flowchart</h3>
+    <StatusLine :label="t({ en: 'BPMN status', ja: 'BPMN の状態' })">{{ status }}</StatusLine>
+    <h3 class="bpmn-heading">{{ t({ en: 'Flowchart', ja: 'フローチャート' }) }}</h3>
     <NetworkGraph :nodes="chartNodes" :edges="chartEdges" :layout="chartLayout" edge-style="orthogonal" :height="360"
-      :labels="{ region: 'Order file flowchart' }" />
+      :labels="{ ...labels.graph, region: t({ en: 'Order file flowchart', ja: '注文ファイルのフローチャート' }) }" />
   </DemoPanel>
 </template>
 

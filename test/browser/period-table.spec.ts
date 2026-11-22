@@ -181,3 +181,13 @@ test('period table: the day/week toggle rebuilds the columns, and week cells are
   await expect(await cell('Bracket demand', 'Mon, Jun 1')).not.toHaveAttribute('aria-readonly', 'true')
   expect(errors).toEqual([])
 })
+
+test('the period table example shows its periods and measures in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'period-table', { locale: 'ja' })
+  await expect(demo.getByRole('treegrid', { name: '期間別テーブル' })).toBeVisible()
+  await expect(demo.getByText('北工場', { exact: true }).first()).toBeVisible()
+  await demo.getByRole('radio', { name: '週', exact: true }).check()
+  await expect(demo.getByRole('columnheader', { name: /の週$/ }).first()).toBeVisible()
+  expect(errors).toEqual([])
+})

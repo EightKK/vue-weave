@@ -570,3 +570,15 @@ test('gantt dependency lag is labelled between the bars, describes the dependenc
   }
   expect(errors).toEqual([])
 })
+
+test('the timeline editing demo edits a bar and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'timeline-editing', { locale: 'ja' })
+  const chart = demo.getByRole('region', { name: '編集できるタイムライン', exact: true })
+  await expect(chart).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'タイムラインの変更を元に戻す', exact: true })).toBeDisabled()
+  await chart.getByRole('button', { name: /^ワイヤーフレーム / }).first().press('ArrowRight')
+  await expect(demo.getByRole('status').filter({ hasText: 'ワイヤーフレーム →' })).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'タイムラインの変更を元に戻す', exact: true })).toBeEnabled()
+  expect(errors).toEqual([])
+})

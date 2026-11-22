@@ -15,24 +15,29 @@ import { BACKLOG_MIME, type InspectorField, type PlaceRequest } from './componen
 import { formatTime, hour, origin } from './data'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
+import { useDemoLocale } from './i18n'
 
 // One plan, shown by resource. Tasks A and B need the same press, so the press is overloaded until one of them moves.
 // The plan is the single source of truth (tasks, assignments, placed IDs); the chart rows are a projection of it.
 // Every edit becomes a proposal that is calculated and previewed first, and then applied as ONE history entry.
 interface PlanModel { tasks: ScheduleTask[]; assignments: ResourceAssignment[]; placed: string[] }
 type Policy = 'warn' | 'reject' | 'level'
+const { t, labels, isJapanese } = useDemoLocale()
 
 const range = { start: origin, end: origin + 14 * hour }
 const quantum = hour / 4
 const resources = [
-  { id: 'press-1', label: 'Press 1', capacity: 1 },
-  { id: 'press-2', label: 'Press 2', capacity: 1 },
-  { id: 'crew', label: 'Crew', capacity: 1 },
+  { id: 'press-1', label: t({ en: 'Press 1', ja: 'プレス 1' }), capacity: 1 },
+  { id: 'press-2', label: t({ en: 'Press 2', ja: 'プレス 2' }), capacity: 1 },
+  { id: 'crew', label: t({ en: 'Crew', ja: '作業班' }), capacity: 1 },
 ]
-const resourceRows = resources.map(resource => ({ id: resource.id, label: resource.label, detail: 'capacity ' + resource.capacity }))
+const resourceRows = resources.map(resource => ({ id: resource.id, label: resource.label, detail: t({ en: 'capacity ', ja: '能力 ' }) + resource.capacity }))
 const resourceIds = resources.map(resource => resource.id)
 const resourceLabel = (id: string) => resources.find(resource => resource.id === id)?.label ?? id
-const taskLabels = new Map([['A', 'Mold A'], ['B', 'Mold B'], ['C', 'Finish C'], ['D', 'Rework D'], ['E', 'Inspect E']])
+const taskLabels = new Map(t({
+  en: [['A', 'Mold A'], ['B', 'Mold B'], ['C', 'Finish C'], ['D', 'Rework D'], ['E', 'Inspect E']],
+  ja: [['A', '成形 A'], ['B', '成形 B'], ['C', '仕上げ C'], ['D', '手直し D'], ['E', '検査 E']],
+}) as [string, string][])
 const taskLabel = (id: string) => taskLabels.get(id) ?? id
 // Task links use task IDs. The chart receives one link between representative projections (see the projection below).
 const links: ScheduleLink[] = [{ id: 'A-C', from: 'A', to: 'C', type: 'FS' }, { id: 'D-E', from: 'D', to: 'E', type: 'FS' }]
@@ -73,11 +78,11 @@ const planAdapter: TransactionAdapter<PlanModel, PlanChange> = {
         for (const item of change.assignments) {
           const key = item.taskId + '\u0000' + item.resourceId
           if (seen.has(key)) return taskLabel(item.taskId) + ' is assigned to ' + resourceLabel(item.resourceId) + ' twice.'
-          if (!resourceIds.includes(item.resourceId)) return 'Unknown resource ' + item.resourceId + '.'
+          if (!resourceIds.includes(item.resourceId)) return t({ en: 'Unknown resource ' + item.resourceId + '.', ja: '不明なリソース ' + item.resourceId + '。' })
           seen.add(key)
         }
       }
-      if (change.type === 'placed' && new Set(change.placed).size !== change.placed.length) return 'A task is placed twice.'
+      if (change.type === 'placed' && new Set(change.placed).size !== change.placed.length) return t({ en: 'A task is placed twice.', ja: 'タスクが二重に配置されています。' })
     }
   },
   apply(plan, changes) {
@@ -105,40 +110,43 @@ watch(serverBacked, on => {
     // Start from what the server stores; the local history does not travel to the server.
     const latest = server.fetch()
     tx.refresh(latest.state, latest.version)
-    notice.value = 'Changes are now saved through the mock server. Loaded version ' + latest.version + '.'
+    notice.value = t({ en: 'Changes are now saved through the mock server. Loaded version ' + latest.version + '.', ja: '変更はモックサーバー経由で保存します。版 ' + latest.version + ' を読み込みました。' })
   } else {
     history.reset(tx.acceptedState.value)
-    notice.value = 'Changes are applied locally again, starting from the last saved plan.'
+    notice.value = t({ en: 'Changes are applied locally again, starting from the last saved plan.', ja: '変更をローカルに適用する方式に戻しました。最後に保存した計画から始めます。' })
   }
 })
 function describeOutcome(outcome: TransactionOutcome<PlanModel>): string {
-  if (outcome.status === 'accepted') return 'accepted by the server as version ' + outcome.version
-  if (outcome.status === 'invalid') return 'not sent: ' + outcome.reason
-  if (outcome.status === 'busy') return 'not sent: another save is in progress'
-  if (outcome.status === 'discarded') return 'the answer no longer matches the plan'
-  if (outcome.status === 'rejected') return 'rejected by the server (' + outcome.code + '); nothing changed'
-  if (outcome.status === 'conflict') return 'version conflict with ' + outcome.currentVersion + '; nothing changed'
-  return 'no answer; the save may or may not have been applied'
+  if (outcome.status === 'accepted') return t({ en: 'accepted by the server as version ' + outcome.version, ja: 'サーバーが版 ' + outcome.version + ' として受理' })
+  if (outcome.status === 'invalid') return t({ en: 'not sent: ', ja: '未送信: ' }) + outcome.reason
+  if (outcome.status === 'busy') return t({ en: 'not sent: another save is in progress', ja: '未送信: 別の保存が進行中' })
+  if (outcome.status === 'discarded') return t({ en: 'the answer no longer matches the plan', ja: '応答が計画と合わなくなりました' })
+  if (outcome.status === 'rejected') return t({ en: 'rejected by the server (' + outcome.code + '); nothing changed', ja: 'サーバーが拒否(' + outcome.code + ')。何も変わっていません' })
+  if (outcome.status === 'conflict') return t({ en: 'version conflict with ' + outcome.currentVersion + '; nothing changed', ja: '版 ' + outcome.currentVersion + ' と競合。何も変わっていません' })
+  return t({ en: 'no answer; the save may or may not have been applied', ja: '応答なし。保存が適用されたかどうかは不明です' })
 }
 function reloadLatest() {
   const latest = server.fetch()
   tx.refresh(latest.state, latest.version)
   proposal.value = undefined
-  notice.value = 'Loaded version ' + latest.version + ' from the server. Undo starts from here.'
+  notice.value = t({ en: 'Loaded version ' + latest.version + ' from the server. Undo starts from here.', ja: 'サーバーから版 ' + latest.version + ' を読み込みました。元に戻す操作はここから始まります。' })
 }
 function checkWithServer() {
   const operationId = tx.pendingTransaction.value?.operationId
   if (!operationId) return
   const stored: SaveResult<PlanModel> = server.lookup(operationId) ?? { status: 'rejected', operationId, code: 'not-applied' }
   const outcome = tx.reconcile(stored)
-  notice.value = stored.status === 'accepted' ? 'The server had applied the save: ' + describeOutcome(outcome) + '.' : 'The server never applied the save, so nothing changed.'
+  notice.value = stored.status === 'accepted'
+    ? t({ en: 'The server had applied the save: ' + describeOutcome(outcome) + '.', ja: 'サーバーは保存を適用していました: ' + describeOutcome(outcome) + '。' })
+    : t({ en: 'The server never applied the save, so nothing changed.', ja: 'サーバーは保存を適用していなかったため、何も変わっていません。' })
 }
 
 // ---- received proposals: what the parent got from the chart or the backlog, by pointer or keyboard ----
 type InputSource = 'pointer' | 'keyboard'
 const proposalLog = ref<string[]>([])
 function logProposal(source: InputSource, text: string) {
-  proposalLog.value = [...proposalLog.value.slice(-9), source + ': ' + text]
+  const name = t({ en: source, ja: source === 'pointer' ? 'ポインター' : 'キーボード' })
+  proposalLog.value = [...proposalLog.value.slice(-9), name + ': ' + text]
 }
 function logEdit(edit: TimelineEdit) {
   const shown = projection.value.origins.get(edit.id)
@@ -147,7 +155,9 @@ function logEdit(edit: TimelineEdit) {
   const reassigned = target !== shown.resourceId
   const timed = edit.after.start !== edit.before.start || edit.after.end !== edit.before.end
   const kind = edit.mode !== 'move' ? 'resize' : reassigned && timed ? 'reassign and reschedule' : reassigned ? 'reassign' : 'reschedule'
-  logProposal(edit.source, kind + ' ' + taskLabel(shown.taskId) + ' on ' + resourceLabel(target) + ' at ' + formatTime(edit.after.start) + '–' + formatTime(edit.after.end))
+  const kindJa = { resize: '伸縮', 'reassign and reschedule': '割り当てと日程を変更', reassign: '割り当てを変更', reschedule: '日程を変更' }[kind]
+  const time = formatTime(edit.after.start) + '–' + formatTime(edit.after.end)
+  logProposal(edit.source, t({ en: kind + ' ' + taskLabel(shown.taskId) + ' on ' + resourceLabel(target) + ' at ' + time, ja: taskLabel(shown.taskId) + ' を ' + resourceLabel(target) + ' の ' + time + ' に' + kindJa }))
 }
 
 // ---- calculation: placement input, then scheduleTasks or levelResources, then load and diagnostics ----
@@ -179,15 +189,22 @@ const current = computed(() => compute(model.value, policy.value))
 const overloads = (calc: Calc) => calc.load.filter(segment => segment.overload > 0).length
 /** What the calculation did about capacity. It says "resolved" only when levelResources left no unresolved task. */
 function capacitySummary(calc: Calc) {
-  if (!calc.plan.ok) return 'No plan could be calculated.'
+  if (!calc.plan.ok) return t({ en: 'No plan could be calculated.', ja: '計画を計算できませんでした。' })
   const over = overloads(calc)
   if (calc.name === 'scheduleTasks') {
-    return over ? over + ' overloaded interval(s). scheduleTasks reports load but does not enforce capacity.' : 'No overloaded interval in the calculated load.'
+    return over
+      ? t({ en: over + ' overloaded interval(s). scheduleTasks reports load but does not enforce capacity.', ja: '過負荷の区間が ' + over + ' 個あります。scheduleTasks は負荷を報告しますが、能力は守らせません。' })
+      : t({ en: 'No overloaded interval in the calculated load.', ja: '計算した負荷に過負荷の区間はありません。' })
   }
   if (calc.unresolved.length) {
-    return 'Not resolved: ' + calc.unresolved.map(taskLabel).join(', ') + ' could not be leveled within their constraints; ' + over + ' overloaded interval(s) remain.'
+    return t({
+      en: 'Not resolved: ' + calc.unresolved.map(taskLabel).join(', ') + ' could not be leveled within their constraints; ' + over + ' overloaded interval(s) remain.',
+      ja: '未解決: ' + calc.unresolved.map(taskLabel).join('、') + ' は制約の範囲内で平準化できませんでした。過負荷の区間が ' + over + ' 個残っています。',
+    })
   }
-  return over ? over + ' overloaded interval(s) remain after leveling.' : 'Capacity constraints resolved by levelResources.'
+  return over
+    ? t({ en: over + ' overloaded interval(s) remain after leveling.', ja: '平準化の後も過負荷の区間が ' + over + ' 個残っています。' })
+    : t({ en: 'Capacity constraints resolved by levelResources.', ja: 'levelResources が能力の制約を解消しました。' })
 }
 
 // ---- projection onto resource rows ----
@@ -205,7 +222,7 @@ const projection = computed(() => projector({
 const loadRows = resourceRows.map(({ id, label }) => ({ id, label }))
 const backlogItems = computed(() => unplannedIds.value.map(id => ({
   id, label: taskLabel(id),
-  detail: (model.value.assignments.filter(item => item.taskId === id).map(item => resourceLabel(item.resourceId)).join(', ') || 'no resource') + ' · ' + (model.value.tasks.find(item => item.id === id)!.duration / hour) + ' h',
+  detail: (model.value.assignments.filter(item => item.taskId === id).map(item => resourceLabel(item.resourceId)).join(', ') || t({ en: 'no resource', ja: 'リソースなし' })) + ' · ' + (model.value.tasks.find(item => item.id === id)!.duration / hour) + t({ en: ' h', ja: ' 時間' }),
 })))
 // The keyboard placement offers every snap step (the chart's default `snap` is 15 minutes), the same times a pointer drop can reach.
 const startTimes = Array.from({ length: (range.end - range.start) / quantum }, (_, index) => ({ value: range.start + index * quantum, label: formatTime(range.start + index * quantum) }))
@@ -213,10 +230,10 @@ const startTimes = Array.from({ length: (range.end - range.start) / quantum }, (
 // ---- proposals: calculated and previewed, then applied as one history entry ----
 interface Proposal { title: string; changes: string[]; base: PlanModel; next: PlanModel; calc: Calc; focusBarId?: string; source?: InputSource }
 const proposal = shallowRef<Proposal>()
-const notice = ref('Move a bar (drag, or arrow keys; Up and Down change the resource), edit the inspector, or place an unplanned task.')
+const notice = ref(t({ en: 'Move a bar (drag, or arrow keys; Up and Down change the resource), edit the inspector, or place an unplanned task.', ja: 'バーを動かす(ドラッグか矢印キー。上下キーでリソースを変更)、インスペクターで編集する、未計画のタスクを配置する、のいずれかを試してください。' }))
 function reject(reason: string) {
   proposal.value = undefined
-  notice.value = 'Not applied: ' + reason
+  notice.value = t({ en: 'Not applied: ', ja: '適用しませんでした: ' }) + reason
 }
 function propose(title: string, changes: string[], next: PlanModel, focusBarId?: string, source?: InputSource) {
   let calc: Calc
@@ -227,17 +244,23 @@ function propose(title: string, changes: string[], next: PlanModel, focusBarId?:
   }
   if (!calc.placement.ok) {
     return reject(calc.placement.diagnostics.map(item => item.code === 'unplaced-predecessor'
-      ? taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.'
-      : taskLabel(item.taskId) + ' has no placed subtask to span. Place one of its subtasks first.').join(' '))
+      ? t({
+        en: taskLabel(item.taskId) + ' depends on ' + taskLabel(item.predecessorId) + ', which is not placed yet. Place ' + taskLabel(item.predecessorId) + ' first.',
+        ja: taskLabel(item.taskId) + ' は未配置の ' + taskLabel(item.predecessorId) + ' に依存しています。先に ' + taskLabel(item.predecessorId) + ' を配置してください。',
+      })
+      : t({ en: taskLabel(item.taskId) + ' has no placed subtask to span. Place one of its subtasks first.', ja: taskLabel(item.taskId) + ' には配置済みのサブタスクがありません。先にサブタスクを1つ配置してください。' })).join(' '))
   }
   if (!calc.plan.ok) {
-    return reject(calc.plan.code === 'cycle' ? 'The change creates a dependency cycle.'
-      : taskLabel(calc.plan.taskId) + ' cannot meet its constraints (' + calc.plan.constraints.join(', ') + ').')
+    return reject(calc.plan.code === 'cycle' ? t({ en: 'The change creates a dependency cycle.', ja: 'この変更は依存関係の循環を生みます。' })
+      : t({ en: taskLabel(calc.plan.taskId) + ' cannot meet its constraints (' + calc.plan.constraints.join(', ') + ').', ja: taskLabel(calc.plan.taskId) + ' は制約を満たせません(' + calc.plan.constraints.join(', ') + ')。' }))
   }
   if (policy.value === 'reject' && overloads(calc) > overloads(current.value)) {
-    return reject('the capacity policy rejects changes that add overload (' + overloads(calc) + ' overloaded interval(s) instead of ' + overloads(current.value) + ').')
+    return reject(t({
+      en: 'the capacity policy rejects changes that add overload (' + overloads(calc) + ' overloaded interval(s) instead of ' + overloads(current.value) + ').',
+      ja: '能力の方針により、過負荷を増やす変更は却下します(過負荷の区間が ' + overloads(current.value) + ' 個から ' + overloads(calc) + ' 個に増えます)。',
+    }))
   }
-  notice.value = 'Review the preview, then apply or discard it.'
+  notice.value = t({ en: 'Review the preview, then apply or discard it.', ja: 'プレビューを確認してから、適用するか破棄してください。' })
   proposal.value = { title, changes, base: model.value, next, calc, ...(focusBarId ? { focusBarId } : {}), ...(source ? { source } : {}) }
 }
 function describeDates(calc: Calc) {
@@ -252,11 +275,11 @@ function describeDates(calc: Calc) {
 async function apply() {
   const pending = proposal.value
   if (!pending) return
-  if (pending.base !== model.value) return reject('the plan changed after the preview was calculated. Make the change again.')
+  if (pending.base !== model.value) return reject(t({ en: 'the plan changed after the preview was calculated. Make the change again.', ja: 'プレビューを計算した後に計画が変わりました。もう一度変更してください。' }))
   if (serverBacked.value) return applyThroughServer(pending)
   history.commit(pending.next)
   proposal.value = undefined
-  notice.value = 'Applied: ' + pending.title + '.'
+  notice.value = t({ en: 'Applied: ' + pending.title + '.', ja: '適用しました: ' + pending.title + '。' })
   await nextTick()
   // An assignment change gives the bar a new ID, so the keyboard focus is returned by the parent to the new bar.
   if (pending.focusBarId) void chart.value?.revealBar(pending.focusBarId, { focus: true })
@@ -267,13 +290,16 @@ async function applyThroughServer(pending: Proposal) {
   if (pending.next.tasks !== pending.base.tasks) changes.push({ type: 'tasks', tasks: pending.next.tasks })
   if (pending.next.assignments !== pending.base.assignments) changes.push({ type: 'assignments', assignments: pending.next.assignments })
   if (pending.next.placed !== pending.base.placed) changes.push({ type: 'placed', placed: pending.next.placed })
-  notice.value = 'Saving: ' + pending.title + '. The chart keeps the accepted plan until the server answers.'
+  notice.value = t({ en: 'Saving: ' + pending.title + '. The chart keeps the accepted plan until the server answers.', ja: '保存中: ' + pending.title + '。サーバーが応答するまで、チャートは受理済みの計画を表示します。' })
   const outcome = await tx.submit(changes, pending.source ? { source: pending.source } : {})
   busy.value = outcome.status === 'busy'
-  if (outcome.status === 'busy') { notice.value = 'Not applied: ' + describeOutcome(outcome) + '.'; return }
+  if (outcome.status === 'busy') { notice.value = t({ en: 'Not applied: ' + describeOutcome(outcome) + '.', ja: '適用しませんでした: ' + describeOutcome(outcome) + '。' }); return }
   if (proposal.value === pending) proposal.value = undefined
-  if (outcome.status !== 'accepted') { notice.value = 'Not applied: ' + pending.title + ' was ' + describeOutcome(outcome) + '.'; return }
-  notice.value = 'Applied: ' + pending.title + ' (version ' + outcome.version + ').'
+  if (outcome.status !== 'accepted') {
+    notice.value = t({ en: 'Not applied: ' + pending.title + ' was ' + describeOutcome(outcome) + '.', ja: '適用しませんでした: ' + pending.title + ' は' + describeOutcome(outcome) + '。' })
+    return
+  }
+  notice.value = t({ en: 'Applied: ' + pending.title + ' (version ' + outcome.version + ').', ja: '適用しました: ' + pending.title + '(版 ' + outcome.version + ')。' })
   await nextTick()
   if (pending.focusBarId) void chart.value?.revealBar(pending.focusBarId, { focus: true })
 }
@@ -282,20 +308,26 @@ async function undoRedoThroughServer(kind: 'undo' | 'redo') {
   const outcome = await (kind === 'undo' ? tx.undo() : tx.redo())
   busy.value = outcome.status === 'busy'
   notice.value = outcome.status === 'accepted'
-    ? (kind === 'undo' ? 'Undid' : 'Redid') + ' the planning change through the server (version ' + outcome.version + ').'
-    : (kind === 'undo' ? 'Undo' : 'Redo') + ' not applied: ' + describeOutcome(outcome) + '.'
+    ? t({
+      en: (kind === 'undo' ? 'Undid' : 'Redid') + ' the planning change through the server (version ' + outcome.version + ').',
+      ja: 'サーバー経由で計画の変更を' + (kind === 'undo' ? '元に戻しました' : 'やり直しました') + '(版 ' + outcome.version + ')。',
+    })
+    : t({
+      en: (kind === 'undo' ? 'Undo' : 'Redo') + ' not applied: ' + describeOutcome(outcome) + '.',
+      ja: (kind === 'undo' ? '元に戻す' : 'やり直し') + 'を適用しませんでした: ' + describeOutcome(outcome) + '。',
+    })
 }
 function discard() {
   proposal.value = undefined
-  notice.value = 'Preview discarded. Nothing changed.'
+  notice.value = t({ en: 'Preview discarded. Nothing changed.', ja: 'プレビューを破棄しました。何も変わっていません。' })
 }
 function undo() {
   if (serverBacked.value) return undoRedoThroughServer('undo')
-  history.undo(); proposal.value = undefined; notice.value = 'Undid the last planning change.'
+  history.undo(); proposal.value = undefined; notice.value = t({ en: 'Undid the last planning change.', ja: '直前の計画の変更を元に戻しました。' })
 }
 function redo() {
   if (serverBacked.value) return undoRedoThroughServer('redo')
-  history.redo(); proposal.value = undefined; notice.value = 'Redid the planning change.'
+  history.redo(); proposal.value = undefined; notice.value = t({ en: 'Redid the planning change.', ja: '計画の変更をやり直しました。' })
 }
 
 // Vertical move = replace the assignment; horizontal move = change the task's schedule for every projection; both = one proposal.
@@ -311,44 +343,58 @@ function onEdit(edit: TimelineEdit) {
     const result = proposeResourceAssignment({ assignments: next.assignments, resourceIds, taskIds: next.tasks.map(item => item.id) }, { kind: 'replace', ...assignmentReplacement })
     if (!result.ok) return reject(result.reason)
     next = { ...next, assignments: result.assignments }
-    changes.push('Replace ' + resourceLabel(assignmentReplacement.fromResourceId) + ' with ' + resourceLabel(assignmentReplacement.toResourceId) + ' for ' + taskLabel(assignmentReplacement.taskId))
+    const { fromResourceId, toResourceId, taskId } = assignmentReplacement
+    changes.push(t({
+      en: 'Replace ' + resourceLabel(fromResourceId) + ' with ' + resourceLabel(toResourceId) + ' for ' + taskLabel(taskId),
+      ja: taskLabel(taskId) + ' のリソースを ' + resourceLabel(fromResourceId) + ' から ' + resourceLabel(toResourceId) + ' に変更',
+    }))
     focusBarId = resourceTimelineBarId(assignmentReplacement.taskId, assignmentReplacement.toResourceId)
   }
   if (scheduleChange) {
     next = { ...next, tasks: next.tasks.map(item => item.id === scheduleChange.taskId
       ? withoutFixed({ ...item, startNoEarlierThan: scheduleChange.after.start, duration: scheduleChange.after.end - scheduleChange.after.start }) : item) }
-    changes.push('Request ' + taskLabel(scheduleChange.taskId) + ' at ' + formatTime(scheduleChange.after.start) + '–' + formatTime(scheduleChange.after.end) + ' (every row that shows it)')
+    const time = formatTime(scheduleChange.after.start) + '–' + formatTime(scheduleChange.after.end)
+    changes.push(t({
+      en: 'Request ' + taskLabel(scheduleChange.taskId) + ' at ' + time + ' (every row that shows it)',
+      ja: taskLabel(scheduleChange.taskId) + ' を ' + time + ' に要求(表示しているすべての行)',
+    }))
   }
   if (!changes.length) return
   const taskId = (assignmentReplacement ?? scheduleChange)!.taskId
-  propose(taskLabel(taskId) + (assignmentReplacement ? ' reassigned' : ' rescheduled'), changes, next, focusBarId, edit.source)
+  propose(taskLabel(taskId) + (assignmentReplacement ? t({ en: ' reassigned', ja: ' の割り当てを変更' }) : t({ en: ' rescheduled', ja: ' の日程を変更' })), changes, next, focusBarId, edit.source)
 }
 function withoutFixed(item: ScheduleTask): ScheduleTask {
   const { fixedStart: _fixed, ...rest } = item
   return rest
 }
 function place(request: PlaceRequest, source: InputSource) {
-  logProposal(source, 'place ' + taskLabel(request.taskId) + ' on ' + resourceLabel(request.resourceId) + ' at ' + formatTime(request.time))
+  logProposal(source, t({
+    en: 'place ' + taskLabel(request.taskId) + ' on ' + resourceLabel(request.resourceId) + ' at ' + formatTime(request.time),
+    ja: taskLabel(request.taskId) + ' を ' + resourceLabel(request.resourceId) + ' の ' + formatTime(request.time) + ' に配置',
+  }))
   const base = model.value
-  if (base.placed.includes(request.taskId)) return reject(taskLabel(request.taskId) + ' is already placed.')
+  if (base.placed.includes(request.taskId)) return reject(t({ en: taskLabel(request.taskId) + ' is already placed.', ja: taskLabel(request.taskId) + ' はすでに配置されています。' }))
   let assignments = base.assignments
-  const changes = ['Place ' + taskLabel(request.taskId) + ' at ' + formatTime(request.time) + ' on ' + resourceLabel(request.resourceId)]
+  const changes = [t({
+    en: 'Place ' + taskLabel(request.taskId) + ' at ' + formatTime(request.time) + ' on ' + resourceLabel(request.resourceId),
+    ja: taskLabel(request.taskId) + ' を ' + resourceLabel(request.resourceId) + ' の ' + formatTime(request.time) + ' に配置',
+  })]
   if (!assignments.some(item => item.taskId === request.taskId && item.resourceId === request.resourceId)) {
     const result = proposeResourceAssignment({ assignments, resourceIds, taskIds: base.tasks.map(item => item.id) }, { kind: 'add', taskId: request.taskId, resourceId: request.resourceId })
     if (!result.ok) return reject(result.reason)
     assignments = result.assignments
-    changes.push('Assign ' + taskLabel(request.taskId) + ' to ' + resourceLabel(request.resourceId))
+    changes.push(t({ en: 'Assign ' + taskLabel(request.taskId) + ' to ' + resourceLabel(request.resourceId), ja: taskLabel(request.taskId) + ' を ' + resourceLabel(request.resourceId) + ' に割り当て' }))
   }
   const next: PlanModel = {
     tasks: base.tasks.map(item => item.id === request.taskId ? withoutFixed({ ...item, startNoEarlierThan: request.time }) : item),
     assignments, placed: [...base.placed, request.taskId],
   }
-  propose('placed ' + taskLabel(request.taskId), changes, next, resourceTimelineBarId(request.taskId, request.resourceId), source)
+  propose(t({ en: 'placed ' + taskLabel(request.taskId), ja: taskLabel(request.taskId) + ' を配置' }), changes, next, resourceTimelineBarId(request.taskId, request.resourceId), source)
 }
 function onDrop(drop: TimelineDrop) {
   const taskId = drop.dataTransfer?.getData(BACKLOG_MIME)
-  if (!taskId) return reject('drop a task from the unplanned list.')
-  if (!drop.rowId) return reject('drop the task on a resource row.')
+  if (!taskId) return reject(t({ en: 'drop a task from the unplanned list.', ja: '未計画の一覧からタスクをドロップしてください。' }))
+  if (!drop.rowId) return reject(t({ en: 'drop the task on a resource row.', ja: 'タスクはリソースの行にドロップしてください。' }))
   place({ taskId, resourceId: drop.rowId, time: drop.time }, 'pointer')
 }
 
@@ -363,14 +409,15 @@ watch(selection, ids => {
 })
 const selectedTask = computed(() => model.value.tasks.find(item => item.id === selectedTaskId.value))
 const inspectorFields: InspectorField[] = [
-  { label: 'Duration', spec: { id: 'duration', kind: 'duration', durationBasis: 'elapsed', unitSize: hour, unitLabel: 'h', required: true, min: quantum, get: (item: ScheduleTask) => item.duration } },
-  { label: 'Leveling priority', spec: { id: 'priority', kind: 'number', integer: true, get: (item: ScheduleTask) => item.priority ?? 0 } },
+  { label: t({ en: 'Duration', ja: '期間' }), spec: { id: 'duration', kind: 'duration', durationBasis: 'elapsed', unitSize: hour, unitLabel: t({ en: 'h', ja: '時間' }), required: true, min: quantum, get: (item: ScheduleTask) => item.duration } },
+  { label: t({ en: 'Leveling priority', ja: '平準化の優先度' }), spec: { id: 'priority', kind: 'number', integer: true, get: (item: ScheduleTask) => item.priority ?? 0 } },
 ]
 function inspect(change: { fieldId: string; after: FieldValue }) {
   const target = selectedTask.value
   if (!target || typeof change.after !== 'number') return
   const patch = change.fieldId === 'duration' ? { duration: change.after } : { priority: change.after }
-  propose(taskLabel(target.id) + ' ' + change.fieldId + ' edited', [taskLabel(target.id) + ': ' + change.fieldId + ' = ' + change.after], {
+  const fieldName = t({ en: change.fieldId, ja: change.fieldId === 'duration' ? '期間' : '優先度' })
+  propose(t({ en: taskLabel(target.id) + ' ' + change.fieldId + ' edited', ja: taskLabel(target.id) + ' の' + fieldName + 'を編集' }), [taskLabel(target.id) + ': ' + fieldName + ' = ' + change.after], {
     ...model.value, tasks: model.value.tasks.map(item => item.id === target.id ? { ...item, ...patch } : item),
   })
 }
@@ -382,7 +429,11 @@ function changeAssignment(request: { kind: 'add' | 'remove'; resourceId: string 
   const result = proposeResourceAssignment({ assignments: model.value.assignments, resourceIds, taskIds: model.value.tasks.map(item => item.id) }, { ...request, taskId: target.id })
   if (!result.ok) return reject(result.reason)
   const verb = request.kind === 'add' ? 'Assign ' + taskLabel(target.id) + ' to ' : 'Unassign ' + taskLabel(target.id) + ' from '
-  propose(verb.toLowerCase() + resourceLabel(request.resourceId), [verb + resourceLabel(request.resourceId)], { ...model.value, assignments: result.assignments },
+  const text = t({
+    en: verb + resourceLabel(request.resourceId),
+    ja: taskLabel(target.id) + ' を ' + resourceLabel(request.resourceId) + (request.kind === 'add' ? ' に割り当て' : ' から外す'),
+  })
+  propose(t({ en: text.toLowerCase(), ja: text }), [text], { ...model.value, assignments: result.assignments },
     request.kind === 'add' ? resourceTimelineBarId(target.id, request.resourceId) : undefined)
 }
 
@@ -391,34 +442,35 @@ const highlighted = ref<ReadonlySet<string>>(new Set())
 async function reveal(diagnostic: PlanningDiagnostic) {
   const bars = diagnostic.entities.filter(entity => entity.kind === 'task').flatMap(entity => projection.value.taskBarIds.get(entity.id) ?? [])
   highlighted.value = new Set(bars)
-  if (!bars.length) { notice.value = 'This diagnostic names no placed task with a bar.'; return }
+  if (!bars.length) { notice.value = t({ en: 'This diagnostic names no placed task with a bar.', ja: 'この診断には、バーを持つ配置済みのタスクがありません。' }); return }
   const result = await chart.value?.revealBar(bars[0]!)
-  notice.value = 'Highlighted ' + bars.length + ' bar(s) for the diagnostic' + (result && result.status !== 'revealed' ? ' (' + result.status + ')' : '') + '.'
+  const state = result && result.status !== 'revealed' ? ' (' + result.status + ')' : ''
+  notice.value = t({ en: 'Highlighted ' + bars.length + ' bar(s) for the diagnostic' + state + '.', ja: '診断に対応するバーを ' + bars.length + ' 本強調表示しました' + state + '。' })
 }
-const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTime(current.value.plan.finish) : '')
+const summaryDates = computed(() => current.value.plan.ok ? t({ en: 'Finish ', ja: '完了 ' }) + formatTime(current.value.plan.finish) : '')
 </script>
 
 <template>
-  <DemoPanel title-id="resource-planning-title" title="Resource planning" subtitle="One plan shown by resource · a task with two resources has two bars but one set of dates · UTC">
+  <DemoPanel title-id="resource-planning-title" :title="t({ en: 'Resource planning', ja: 'リソース計画' })" :subtitle="t({ en: 'One plan shown by resource · a task with two resources has two bars but one set of dates · UTC', ja: '1つの計画をリソース別に表示 · 2つのリソースを使うタスクはバーが2本でも日程は1つ · UTC' })">
     <template #options>
-      <label>Capacity policy
+      <label>{{ t({ en: 'Capacity policy', ja: '能力の方針' }) }}
         <select v-model="policy" @change="proposal = undefined">
-          <option value="warn">Warn about overload (scheduleTasks)</option>
-          <option value="reject">Reject added overload (scheduleTasks)</option>
-          <option value="level">Level resources (levelResources)</option>
+          <option value="warn">{{ t({ en: 'Warn about overload (scheduleTasks)', ja: '過負荷を警告(scheduleTasks)' }) }}</option>
+          <option value="reject">{{ t({ en: 'Reject added overload (scheduleTasks)', ja: '過負荷の増加を却下(scheduleTasks)' }) }}</option>
+          <option value="level">{{ t({ en: 'Level resources (levelResources)', ja: 'リソースを平準化(levelResources)' }) }}</option>
         </select>
       </label>
-      <button type="button" :disabled="!canUndo" @click="undo">Undo planning change</button>
-      <button type="button" :disabled="!canRedo" @click="redo">Redo planning change</button>
-      <label><input v-model="serverBacked" type="checkbox" :disabled="saving"> Save through the mock server</label>
+      <button type="button" :disabled="!canUndo" @click="undo">{{ t({ en: 'Undo planning change', ja: '計画の変更を元に戻す' }) }}</button>
+      <button type="button" :disabled="!canRedo" @click="redo">{{ t({ en: 'Redo planning change', ja: '計画の変更をやり直す' }) }}</button>
+      <label><input v-model="serverBacked" type="checkbox" :disabled="saving"> {{ t({ en: 'Save through the mock server', ja: 'モックサーバー経由で保存' }) }}</label>
     </template>
     <div v-if="serverBacked" class="rp-server">
       <fieldset class="server">
-        <legend>Mock server response</legend>
-        <label v-for="mode in ([['accept', 'Accept'], ['reject', 'Reject'], ['conflict', 'Version conflict'], ['uncertain', 'Result unknown']] as [ServerMode, string][])" :key="mode[0]">
+        <legend>{{ t({ en: 'Mock server response', ja: 'モックサーバーの応答' }) }}</legend>
+        <label v-for="mode in (t({ en: [['accept', 'Accept'], ['reject', 'Reject'], ['conflict', 'Version conflict'], ['uncertain', 'Result unknown']], ja: [['accept', '受理'], ['reject', '拒否'], ['conflict', '版の競合'], ['uncertain', '結果不明']] }) as [ServerMode, string][])" :key="mode[0]">
           <input v-model="server.info.mode" type="radio" name="plan-server-mode" :value="mode[0]"> {{ mode[1] }}
         </label>
-        <p class="hint">Server version {{ server.info.version }} · {{ server.info.commits }} commits</p>
+        <p class="hint">{{ t({ en: `Server version ${server.info.version} · ${server.info.commits} commits`, ja: `サーバーの版 ${server.info.version} · コミット ${server.info.commits} 件` }) }}</p>
       </fieldset>
       <SaveStatus :status="tx.status.value" :pending="tx.pendingTransaction.value" :result="tx.result.value" :busy="busy" :version="tx.acceptedVersion.value"
         @dismiss="tx.clearResult(); busy = false" @reload="reloadLatest" @reconcile="checkWithServer" />
@@ -427,41 +479,42 @@ const summaryDates = computed(() => current.value.plan.ok ? 'Finish ' + formatTi
       <div class="rp-main">
         <GanttChart ref="chart" :rows="projection.rows" :bars="projection.bars" :dependencies="projection.dependencies" :lane-count="projection.laneCount" :range="range"
           :format-time="formatTime" :height="360" :pixels-per-unit="60 / hour" row-draggable droppable v-model:selected-ids="selection" :highlighted-bar-ids="highlighted"
-          :load-rows="loadRows" :load-segments="current.load" :labels="{ region: 'Resource plan', rows: 'Resource' }" @edit="onEdit" @bar-drop="onDrop" @select="id => selection = new Set([id])"
+          :load-rows="loadRows" :load-segments="current.load" :labels="{ ...labels.gantt, region: t({ en: 'Resource plan', ja: 'リソースの計画' }), rows: t({ en: 'Resource', ja: 'リソース' }) }" @edit="onEdit" @bar-drop="onDrop" @select="id => selection = new Set([id])"
           @edit-rejected="(_edit, reason) => notice = reason">
-          <template #row-heading>Resource</template>
-          <template #legend><span class="hint">Left and Right move a task in time; Up and Down move it to another resource row. Both changes are previewed before they apply.</span></template>
+          <template #row-heading>{{ t({ en: 'Resource', ja: 'リソース' }) }}</template>
+          <template #legend><span class="hint">{{ t({ en: 'Left and Right move a task in time; Up and Down move it to another resource row. Both changes are previewed before they apply.', ja: '左右キーでタスクの時間を、上下キーで別のリソースの行へ動かします。どちらの変更も適用前にプレビューします。' }) }}</span></template>
         </GanttChart>
-        <div class="summary" role="status" aria-label="Plan summary">
-          <strong>Calculated with {{ current.name }}.</strong> {{ summaryDates }}. {{ capacitySummary(current) }}
-          <span v-if="current.name === 'levelResources'"> levelResources ignores a task's ALAP mode.</span>
+        <div class="summary" role="status" :aria-label="t({ en: 'Plan summary', ja: '計画の概要' })">
+          <strong>{{ t({ en: `Calculated with ${current.name}.`, ja: `${current.name} で計算。` }) }}</strong> {{ summaryDates }}{{ t({ en: '. ', ja: '。' }) }}{{ capacitySummary(current) }}
+          <span v-if="current.name === 'levelResources'">{{ t({ en: ` levelResources ignores a task's ALAP mode.`, ja: ' levelResources はタスクの ALAP 指定を無視します。' }) }}</span>
         </div>
         <section v-if="proposal" class="preview" aria-labelledby="preview-title">
-          <h3 id="preview-title">Preview: {{ proposal.title }}</h3>
-          <p>Calculated with {{ proposal.calc.name }}{{ proposal.calc.name === 'scheduleTasks' ? ' (dates only; capacity is not enforced)' : ' (dates leveled for capacity)' }}.</p>
-          <ul aria-label="Proposed changes"><li v-for="change in proposal.changes" :key="change">{{ change }}</li></ul>
-          <ul v-if="describeDates(proposal.calc).length" aria-label="Resulting dates"><li v-for="line in describeDates(proposal.calc)" :key="line">{{ line }}</li></ul>
+          <h3 id="preview-title">{{ t({ en: 'Preview: ', ja: 'プレビュー: ' }) }}{{ proposal.title }}</h3>
+          <p v-if="!isJapanese">Calculated with {{ proposal.calc.name }}{{ proposal.calc.name === 'scheduleTasks' ? ' (dates only; capacity is not enforced)' : ' (dates leveled for capacity)' }}.</p>
+          <p v-else>{{ proposal.calc.name }} で計算{{ proposal.calc.name === 'scheduleTasks' ? '(日程のみ。能力は守らせません)' : '(能力に合わせて日程を平準化)' }}。</p>
+          <ul :aria-label="t({ en: 'Proposed changes', ja: '提案された変更' })"><li v-for="change in proposal.changes" :key="change">{{ change }}</li></ul>
+          <ul v-if="describeDates(proposal.calc).length" :aria-label="t({ en: 'Resulting dates', ja: '変更後の日程' })"><li v-for="line in describeDates(proposal.calc)" :key="line">{{ line }}</li></ul>
           <p>{{ capacitySummary(proposal.calc) }}</p>
-          <p v-if="saving && tx.pendingTransaction.value">Saving to the server. The chart and the load still show the accepted plan.</p>
-          <div class="options"><button type="button" :disabled="saving" @click="apply">Apply change</button><button type="button" :disabled="saving" @click="discard">Discard preview</button></div>
+          <p v-if="saving && tx.pendingTransaction.value">{{ t({ en: 'Saving to the server. The chart and the load still show the accepted plan.', ja: 'サーバーに保存中です。チャートと負荷は受理済みの計画のままです。' }) }}</p>
+          <div class="options"><button type="button" :disabled="saving" @click="apply">{{ t({ en: 'Apply change', ja: '変更を適用' }) }}</button><button type="button" :disabled="saving" @click="discard">{{ t({ en: 'Discard preview', ja: 'プレビューを破棄' }) }}</button></div>
         </section>
-        <StatusLine label="Planning notice">{{ notice }}</StatusLine>
+        <StatusLine :label="t({ en: 'Planning notice', ja: '計画の通知' })">{{ notice }}</StatusLine>
         <details class="proposal-log">
-          <summary>Received proposals</summary>
-          <ol aria-label="Received proposals"><li v-for="(entry, index) in proposalLog" :key="index">{{ entry }}</li></ol>
-          <p v-if="!proposalLog.length" class="hint">No proposal yet.</p>
+          <summary>{{ t({ en: 'Received proposals', ja: '受け取った提案' }) }}</summary>
+          <ol :aria-label="t({ en: 'Received proposals', ja: '受け取った提案' })"><li v-for="(entry, index) in proposalLog" :key="index">{{ entry }}</li></ol>
+          <p v-if="!proposalLog.length" class="hint">{{ t({ en: 'No proposal yet.', ja: 'まだ提案はありません。' }) }}</p>
         </details>
         <PlanningDiagnostics :diagnostics="current.diagnostics" :trace="current.trace" :task-label="taskLabel" :resource-label="resourceLabel" :format-time="formatTime" @activate="reveal" />
       </div>
       <aside class="rp-side">
         <PlanningBacklog :items="backlogItems" :rows="resourceRows" :times="startTimes" @place="request => place(request, 'keyboard')" />
-        <PlanningInspector :title="selectedTask ? 'Task ' + taskLabel(selectedTask.id) : 'Task inspector'" :item="selectedTask" :fields="inspectorFields" @edit="inspect" />
+        <PlanningInspector :title="selectedTask ? t({ en: 'Task ' + taskLabel(selectedTask.id), ja: 'タスク ' + taskLabel(selectedTask.id) }) : t({ en: 'Task inspector', ja: 'タスクのインスペクター' })" :item="selectedTask" :fields="inspectorFields" @edit="inspect" />
         <fieldset v-if="selectedTask" class="assign">
-          <legend>Assignments of {{ taskLabel(selectedTask.id) }}</legend>
-          <p v-if="!assigned.length" class="hint">No resource: the task has no bar in the resource rows.</p>
-          <button v-for="id in assigned" :key="id" type="button" @click="changeAssignment({ kind: 'remove', resourceId: id })">Unassign {{ resourceLabel(id) }}</button>
-          <label>Resource to add <select v-model="addChoice"><option v-for="resource in resources" :key="resource.id" :value="resource.id">{{ resource.label }}</option></select></label>
-          <button type="button" @click="changeAssignment({ kind: 'add', resourceId: addChoice })">Assign to resource</button>
+          <legend>{{ t({ en: `Assignments of ${taskLabel(selectedTask.id)}`, ja: `${taskLabel(selectedTask.id)} の割り当て` }) }}</legend>
+          <p v-if="!assigned.length" class="hint">{{ t({ en: 'No resource: the task has no bar in the resource rows.', ja: 'リソースなし: このタスクにはリソースの行のバーがありません。' }) }}</p>
+          <button v-for="id in assigned" :key="id" type="button" @click="changeAssignment({ kind: 'remove', resourceId: id })">{{ t({ en: `Unassign ${resourceLabel(id)}`, ja: `${resourceLabel(id)} から外す` }) }}</button>
+          <label>{{ t({ en: 'Resource to add', ja: '追加するリソース' }) }} <select v-model="addChoice"><option v-for="resource in resources" :key="resource.id" :value="resource.id">{{ resource.label }}</option></select></label>
+          <button type="button" @click="changeAssignment({ kind: 'add', resourceId: addChoice })">{{ t({ en: 'Assign to resource', ja: 'リソースに割り当て' }) }}</button>
         </fieldset>
       </aside>
     </div>

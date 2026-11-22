@@ -95,3 +95,12 @@ test('the diagram demo reads compressed draw.io pages and keeps the graph when t
   await expect(text).toHaveValue(/^<\?xml version="1\.0" encoding="UTF-8"\?>\n<graphml /)
   expect(errors).toEqual([])
 })
+
+test('the diagram interchange example exports and reports in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'diagram-interchange', { locale: 'ja' })
+  await demo.getByRole('button', { name: '書き出す', exact: true }).click()
+  await expect(demo.getByRole('status', { name: '入出力の状態' })).toHaveText('ノード 6 個と辺 6 本を Mermaid で書き出しました。')
+  await expect(demo.getByRole('textbox', { name: '図のテキスト' })).toHaveValue(/注文受付/)
+  expect(errors).toEqual([])
+})

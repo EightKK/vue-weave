@@ -355,3 +355,15 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   await expect(graphMinimap(page).locator('.demo-minimap-node')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('the graph palette adds a node and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await demo.getByRole('checkbox', { name: 'グラフを編集', exact: true }).check()
+  const palette = demo.getByRole('group', { name: 'ノードのパレット' })
+  await palette.getByRole('button', { name: '工程を追加', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '工程 1 を追加しました。' })).toBeVisible()
+  await demo.getByRole('button', { name: '元に戻す', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '直前の編集を元に戻しました。' })).toBeVisible()
+  expect(errors).toEqual([])
+})

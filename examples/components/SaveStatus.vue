@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TransactionStatus } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 // Reference save-status indicator (spec D1: peripheral UI lives in examples/). It only displays what useEditTransaction
 // reports and asks the parent for the recovery actions; it never changes any document state itself.
@@ -15,27 +16,41 @@ const props = defineProps<{
   version: string
 }>()
 const emit = defineEmits<{ dismiss: []; reload: []; reconcile: [] }>()
+const { t } = useDemoLocale()
+const titlesJa: Record<string, string> = { idle: '保存済み', busy: '処理中', saving: '保存中', rejected: '拒否', conflict: '競合', uncertain: '結果不明' }
 
-const kindText = computed(() => props.pending?.kind === 'restore' ? 'restore (' + props.pending.source + ')' : 'changes')
+const kindText = computed(() => props.pending?.kind === 'restore'
+  ? t({ en: 'restore (' + props.pending.source + ')', ja: '復元(' + props.pending.source + ')' })
+  : t({ en: 'changes', ja: '変更' }))
 const tone = computed(() => props.busy && props.status === 'idle' ? 'busy' : props.status)
-const title = computed(() => tone.value === 'idle' ? 'Saved' : tone.value[0]!.toUpperCase() + tone.value.slice(1))
+const title = computed(() => t({ en: tone.value === 'idle' ? 'Saved' : tone.value[0]!.toUpperCase() + tone.value.slice(1), ja: titlesJa[tone.value] ?? tone.value }))
 const message = computed(() => {
-  if (props.status === 'saving') return 'Saving ' + kindText.value + ' based on version ' + props.pending?.baseVersion + '. The chart shows the candidate; nothing is confirmed yet.'
-  if (props.status === 'rejected') return 'Rejected by the server (' + (props.result?.code ?? 'unknown') + '). Nothing changed.'
-  if (props.status === 'conflict') return 'Version conflict: the server is at version ' + props.result?.currentVersion + ', not ' + props.version + '. Nothing changed; load the latest version and redo the edit.'
-  if (props.status === 'uncertain') return 'Result unknown: the save may or may not have been applied. It is not resent automatically; check with the server.'
-  if (props.busy) return 'Another save is still in progress. Try again when it has finished.'
-  return 'Accepted version ' + props.version + '.'
+  if (props.status === 'saving') {
+    return t({
+      en: 'Saving ' + kindText.value + ' based on version ' + props.pending?.baseVersion + '. The chart shows the candidate; nothing is confirmed yet.',
+      ja: '版 ' + props.pending?.baseVersion + ' をもとに' + kindText.value + 'を保存しています。チャートは候補を表示しており、まだ確定していません。',
+    })
+  }
+  if (props.status === 'rejected') return t({ en: 'Rejected by the server (' + (props.result?.code ?? 'unknown') + '). Nothing changed.', ja: 'サーバーが拒否しました(' + (props.result?.code ?? '不明') + ')。何も変わっていません。' })
+  if (props.status === 'conflict') {
+    return t({
+      en: 'Version conflict: the server is at version ' + props.result?.currentVersion + ', not ' + props.version + '. Nothing changed; load the latest version and redo the edit.',
+      ja: '版の競合: サーバーは版 ' + props.version + ' ではなく版 ' + props.result?.currentVersion + ' です。何も変わっていません。最新の版を読み込んでから編集し直してください。',
+    })
+  }
+  if (props.status === 'uncertain') return t({ en: 'Result unknown: the save may or may not have been applied. It is not resent automatically; check with the server.', ja: '結果不明: 保存が適用されたかどうかわかりません。自動では再送しないので、サーバーに確認してください。' })
+  if (props.busy) return t({ en: 'Another save is still in progress. Try again when it has finished.', ja: '別の保存がまだ進行中です。終わってからもう一度試してください。' })
+  return t({ en: 'Accepted version ' + props.version + '.', ja: '版 ' + props.version + ' を受理しました。' })
 })
 </script>
 
 <template>
   <div class="save-status" :data-state="tone">
-    <p role="status" aria-label="Save status"><strong>{{ title }}</strong> · {{ message }}</p>
+    <p role="status" :aria-label="t({ en: 'Save status', ja: '保存の状態' })"><strong>{{ title }}</strong> · {{ message }}</p>
     <span class="actions">
-      <button v-if="status === 'conflict'" type="button" @click="emit('reload')">Load latest version</button>
-      <button v-if="status === 'uncertain'" type="button" @click="emit('reconcile')">Check with server</button>
-      <button v-if="status === 'rejected' || status === 'conflict' || status === 'uncertain'" type="button" @click="emit('dismiss')">Dismiss save message</button>
+      <button v-if="status === 'conflict'" type="button" @click="emit('reload')">{{ t({ en: 'Load latest version', ja: '最新の版を読み込む' }) }}</button>
+      <button v-if="status === 'uncertain'" type="button" @click="emit('reconcile')">{{ t({ en: 'Check with server', ja: 'サーバーに確認' }) }}</button>
+      <button v-if="status === 'rejected' || status === 'conflict' || status === 'uncertain'" type="button" @click="emit('dismiss')">{{ t({ en: 'Dismiss save message', ja: '保存のメッセージを閉じる' }) }}</button>
     </span>
   </div>
 </template>

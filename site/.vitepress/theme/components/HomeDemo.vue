@@ -4,9 +4,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { GanttChart, NetworkGraph, type GraphEdge, type NetworkNode, type TimeRange, type TimelineBar, type TimelineEdit } from '../../../../src'
 import { useMountedDark, useSiteLocale } from '../i18n'
+import { useDemoLocale } from '../../../../examples/i18n'
 
 const { locale } = useSiteLocale()
 const isDark = useMountedDark()
+const { labels: componentLabels } = useDemoLocale()
 const hour = 3_600_000
 const start = Date.UTC(2026, 10, 9, 8)
 const range = { start, end: start + 9 * hour }
@@ -46,9 +48,9 @@ function commit(change: TimelineEdit) {
 <template>
   <div class="vw-site-home-demo" :class="{ 'vw-theme-dark': isDark }" :data-ready="ready || undefined">
     <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :options="{ direction: 'LR', nodeWidth: 120, nodeHeight: 48 }" :height="230"
-      :labels="{ region: locale === 'ja' ? '工程のネットワークグラフ' : 'Plan network graph' }" />
+      :labels="{ ...componentLabels.graph, region: locale === 'ja' ? '工程のネットワークグラフ' : 'Plan network graph' }" />
     <GanttChart :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :selected-ids="selectedIds" :pixels-per-unit="50 / hour"
-      :height="190" :row-height="56" :labels="{ region: locale === 'ja' ? '工程のガントチャート' : 'Plan Gantt chart' }"
+      :height="190" :row-height="56" :labels="{ ...componentLabels.gantt, region: locale === 'ja' ? '工程のガントチャート' : 'Plan Gantt chart' }"
       @select="id => selected = id" @edit="commit" />
   </div>
 </template>
