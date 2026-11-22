@@ -20,7 +20,7 @@ import type { RowMoveValidator, TimelineRowMove } from '../core/types.js'
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
 import { tickLabelsWithRoom } from '../core/workingTimeScale.js'
-import { progressAt, progressTime, segmentPieces, snapProgress } from '../core/barSegments.js'
+import { progressAt, progressTime, snapProgress } from '../core/barSegments.js'
 import { lagLabelPoint, progressLinePoints, progressLineTime } from '../core/barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, type BaselineTextOptions } from '../core/barSegments.js'
 import { timelineBaselineId } from '../core/timeline.js'
@@ -28,14 +28,13 @@ import { timelineConstraintKinds } from '../core/timeline.js'
 import type { ConstraintEditValidator, TimelineConstraintEdit, TimelineConstraintKind } from '../core/types.js'
 import type { TimelineEditCancel, TimelineEditCancelReason, TimelineSelectDetail } from '../core/types.js'
 import type { LoadViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
-import { resolveLoadTargets } from '../core/viewBindings.js'
 import { fieldValuesEqual, formatFieldValue, parseFieldValue, validateFieldValue } from '../core/fieldEditing.js'
 import type { FieldCheck, FieldValue, TimelineFieldEdit, TimelineFieldSpec } from '../core/fieldEditing.js'
 import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import type { TimelineDrop } from './types.js'
 import type { TimelineVisibleWindow } from '../core/windowedData.js'
 import {
-  canvasInset, clipSpan, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox,
+  canvasInset, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox,
   rowScrollTop, sameItems, sameRange, type RowWindow,
 } from './ganttChart/geometry.js'
 import { validateGanttProps, type GanttLoad } from './ganttChart/validateProps.js'
@@ -53,6 +52,12 @@ import { constraintView, type ConstraintPreview } from './ganttChart/constraints
 import { shownBaselines, type BaselineContext } from './ganttChart/baselines.js'
 import { linkEnds, linkHandles, linkKey, type CanvasHandle, type LinkDraft, type LinkEnd } from './ganttChart/linkHandles.js'
 import { clampZoom, maxZoom, minZoom, useZoomGestures } from './ganttChart/useZoomGestures.js'
+import {
+  headLines as headLinesOf, markerEntries as markerEntriesOf, nonWorkingSpans, shownBands as bandsIn, shownRanges as rangesIn,
+} from './ganttChart/overlays.js'
+import { loadSegmentMarks, shownLoadRows as loadRowsIn } from './ganttChart/loadRows.js'
+import { barOverlay as overlayOf, segmentGeometry, workSegments as shiftedSegments, type BarOverlay } from './ganttChart/barOverlay.js'
+import { visibleWindowReport } from './ganttChart/visibleWindow.js'
 import { contextTarget, isMenuKey, keyboardMenuRequest, pointerMenuRequest } from './ganttChart/contextMenu.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
@@ -1095,11 +1100,7 @@ const rowWindow = computed<RowWindow>(previous => {
 })
 /** The part of the axis that can be drawn: `range` inside the visible time window. Overlays are clipped to it. */
 const drawnWindow = computed(() => drawableWindow(stableRange.value, timeWindow.value))
-const shownBands = computed(() => (activeBands.value ?? []).map(level => level.flatMap(band => {
-  const span = clipSpan(band.start, band.end, drawnWindow.value)
-  if (!span) return []
-  return [{ ...band, x: axis.value.toX(span.start), width: axis.value.toX(span.end) - axis.value.toX(span.start) }]
-})))
+const shownBands = computed(() => bandsIn(activeBands.value ?? [], drawnWindow.value, axis.value.toX))
 // With `stickyBandLabels`, a band that starts before the visible part of the axis indents its label to the visible start.
 // The indent leaves the band's own padding, set by the stylesheet or a theme, unchanged.
 function stickyBandStyle(x: number) {
@@ -1108,16 +1109,8 @@ function stickyBandStyle(x: number) {
 }
 const shownMarkers = computed(() => (props.markers ?? []).filter(item => inTimeWindow(item.time, timeWindow.value)))
 /** The visible part of each marker range (`markerRanges`), clipped to the drawn window. */
-const shownRanges = computed(() => {
-  if (validationError.value || !props.markerRanges?.length) return []
-  return props.markerRanges.flatMap(item => {
-    const span = clipSpan(item.start, item.end, drawnWindow.value)
-    if (!span) return []
-    const left = axis.value.toX(span.start)
-    const tone = item.tone === undefined ? [] : [`vw-tone-${item.tone}`, 'vw-has-tone']
-    return [{ item, left, width: axis.value.toX(span.end) - left, tone, name: `${item.label} ${props.formatTime(item.start)}–${props.formatTime(item.end)}` }]
-  })
-})
+const shownRanges = computed(() => validationError.value || !props.markerRanges?.length ? []
+  : rangesIn(props.markerRanges, drawnWindow.value, axis.value.toX, props.formatTime))
 /** The rows a marker range with `rowIds` is drawn on: those displayed inside the virtual row window, once each. */
 function rangeRows(rowIds: readonly string[]) {
   return [...new Set(rowIds)].flatMap(rowId => {
@@ -1130,62 +1123,17 @@ const statusTime = computed(() => {
   const time = props.statusDate
   return time !== undefined && !validationError.value && inRangeAndWindow(time, stableRange.value, timeWindow.value) ? time : undefined
 })
-type OverlayElement = { key: string; classes: string | string[]; style: Record<string, string>; role?: string; name?: string; hidden?: 'true' }
-type MarkerEntry = OverlayElement & { label: string }
-/**
- * The vertical overlays across the body, in paint order: marker range bands (one per row for a range with `rowIds`),
- * markers, then the status date. They share one template element so that a chart without marker ranges or a status
- * date renders exactly the markup it did before.
- */
+/** Marker range bands, markers and the status date across the body (`markerEntries`). */
 const markerEntries = computed(() => {
-  const entries: MarkerEntry[] = []
-  for (const { item, left, width, tone } of shownRanges.value) {
-    const style = { [inlineSide.value]: canvasInset(left), width: `${width}px` }
-    if (!item.rowIds) {
-      entries.push({ key: 'range:' + item.id, label: '', classes: ['vw-gantt-range', ...tone], style, hidden: 'true' })
-      continue
-    }
-    for (const { rowId, index } of rangeRows(item.rowIds)) {
-      entries.push({
-        key: 'range:' + item.id + ':' + rowId, label: '', classes: ['vw-gantt-range', 'vw-is-row', ...tone], hidden: 'true',
-        style: { ...style, top: `calc(var(--vw-header-height) + ${index * props.rowHeight}px)`, height: `${props.rowHeight}px` },
-      })
-    }
-  }
-  for (const item of shownMarkers.value) {
-    entries.push({
-      key: 'marker:' + item.id, label: item.label, classes: 'vw-gantt-marker',
-      style: { [inlineSide.value]: canvasInset(axis.value.toX(item.time)) },
-    })
-  }
   const time = statusTime.value
-  if (time !== undefined) {
-    const label = messages.value.statusDate!
-    entries.push({
-      key: 'status', label, classes: ['vw-gantt-marker', 'vw-gantt-status-date'], role: 'img', name: `${label} ${props.formatTime(time)}`,
-      style: { [inlineSide.value]: canvasInset(axis.value.toX(time)) },
-    })
-  }
-  return entries
+  return markerEntriesOf({
+    ranges: shownRanges.value, rangeRows, markers: shownMarkers.value,
+    ...(time === undefined ? {} : { status: { time, label: messages.value.statusDate! } }),
+    side: inlineSide.value, toX: axis.value.toX, rowHeight: props.rowHeight, formatTime: props.formatTime,
+  })
 })
-type HeadLine = OverlayElement & { text: string }
-/**
- * The elements of the time header behind the tick labels: the tick lines, then the header labels of the marker ranges
- * (named like a status-date marker). They share one template element so that a chart without marker ranges renders
- * exactly the markup it did before.
- */
-const headLines = computed(() => {
-  const lines: HeadLine[] = tickXs.value.map(line => ({
-    key: 'line-' + line.tick, text: '', classes: 'vw-gantt-tick-line', style: { [inlineSide.value]: `${line.x}px` }, hidden: 'true',
-  }))
-  for (const { item, left, width, tone, name } of shownRanges.value) {
-    lines.push({
-      key: 'range-' + item.id, text: item.label, classes: ['vw-gantt-range-label', ...tone], role: 'img', name,
-      style: { [inlineSide.value]: `${left}px`, width: `${width}px` },
-    })
-  }
-  return lines
-})
+/** The tick lines and marker range labels of the time header (`headLines`). */
+const headLines = computed(() => headLinesOf(tickXs.value, shownRanges.value, inlineSide.value))
 /**
  * The progress line through one displayed row, in row coordinates of the visible time window: a vertical line at the
  * status date that kinks to the progress point of each bar that is behind or ahead (`progressLineTime`). Every bar of
@@ -1346,57 +1294,26 @@ const shownRows = computed(() => {
   })
 })
 
-// Critical, float, deadline and segment overlays. A bar without these fields gets no overlay and renders as a plain bar.
-type BarOverlay = {
-  description?: string
-  late: boolean
-  segments?: { pieces: { key: number; style: Record<string, string>; filled: number }[]; gaps: { key: number; style: Record<string, string> }[] }
-}
+// Critical, float, deadline and segment overlays (`barOverlay`).
 const barIndex = computed(() => new Map((validationError.value ? [] : props.bars).map((bar, index) => [bar.id, index])))
 function barOverlay(bar: TimelineBar): BarOverlay | undefined {
   const range = rangeOf(bar)
   // Named baseline sets (or `baselineIds`) add each selected baseline with its variance to the description.
   const strips = baselineChoice.value.described ? baselineStrips(bar, range, baselineChoice.value, baselineText.value) : []
-  const constraints = barConstraints(bar)
-  const note = bar.description?.trim()
-  if (!note && !bar.critical && bar.latestEnd === undefined && bar.deadline === undefined && !bar.segments && !strips.length && !constraints.length) return undefined
-  const parts: string[] = []
-  // The application's own text comes first; a trailing full stop is dropped because the parts are joined with '. '.
-  if (note) parts.push(note.replace(/\.+$/, ''))
-  if (bar.critical) parts.push(messages.value.critical!)
-  if (bar.latestEnd !== undefined) parts.push(`${messages.value.float} ${props.formatTime(bar.latestEnd)}`)
-  if (bar.deadline !== undefined) parts.push(`${messages.value.deadline} ${props.formatTime(bar.deadline)}`)
-  const late = bar.deadline !== undefined && range.end > bar.deadline
-  if (late) parts.push(messages.value.late!)
-  for (const item of constraints) parts.push(constraintText(item))
-  for (const strip of strips) parts.push(`${strip.label} ${strip.dates}: ${strip.variance}`)
-  return { description: parts.length ? parts.join('. ') + '.' : undefined, late, segments: segmentGeometry(bar, range) }
-}
-/**
- * Pixel geometry of a segmented bar. A move preview shifts the segments with the bar; a resize preview draws the bar
- * unsegmented, because the parent reschedules the work and supplies new segments.
- */
-function segmentGeometry(bar: TimelineBar, range: TimeRange): BarOverlay['segments'] {
-  const shifted = workSegments(bar, range)
-  if (!shifted) return undefined
-  const { pieces, gaps } = segmentPieces(range, shifted, shownProgress(bar))
-  const origin = axis.value.toX(range.start)
-  // Children are positioned inside the 1px bar border.
-  const place = (part: TimeRange) => {
-    const left = axis.value.toX(part.start) - origin
-    return { [inlineSide.value]: `${left - 1}px`, width: `${axis.value.toX(part.end) - origin - left}px` }
-  }
-  return {
-    pieces: pieces.map(piece => ({ key: piece.start, style: place(piece), filled: piece.filled })),
-    gaps: gaps.map(gap => ({ key: gap.start, style: place(gap) })),
-  }
+  return overlayOf(bar, {
+    range, constraints: barConstraints(bar).map(constraintText), baselines: strips.map(strip => `${strip.label} ${strip.dates}: ${strip.variance}`),
+    labels: messages.value, formatTime: props.formatTime,
+    // A move preview shifts the segments with the bar; a resize preview draws the bar unsegmented, because the parent
+    // reschedules the work and supplies new segments.
+    segments: () => {
+      const shifted = workSegments(bar, range)
+      return shifted && segmentGeometry(range, shifted, shownProgress(bar), axis.value.toX, inlineSide.value)
+    },
+  })
 }
 /** The drawn work pieces: shifted with a move preview, and none during a resize preview or without segments. */
 function workSegments(bar: TimelineBar, range: TimeRange) {
-  const preview = previews.value?.get(bar.id)
-  if (!bar.segments || (preview && preview.mode !== 'move')) return undefined
-  const delta = range.start - bar.start
-  return delta ? bar.segments.map(segment => ({ start: segment.start + delta, end: segment.end + delta })) : bar.segments
+  return shiftedSegments(bar, range, previews.value?.get(bar.id)?.mode)
 }
 /** Progress as drawn: the pointer preview of a progress drag, otherwise the bar's own value. */
 function shownProgress(bar: TimelineBar) {
@@ -1443,15 +1360,8 @@ function deadlineStyle(bar: TimelineBar, deadline: number) {
   }
 }
 // Non-working time is drawn behind the grid over the task rows and inside each load row, clipped to the visible window.
-const shownNonWorking = computed(() => {
-  if (validationError.value || !props.nonWorkingPeriods?.length) return []
-  return props.nonWorkingPeriods.flatMap((period, index) => {
-    const span = clipSpan(period.start, period.end, drawnWindow.value)
-    if (!span) return []
-    const left = axis.value.toX(span.start)
-    return [{ key: index, left, width: axis.value.toX(span.end) - left }]
-  })
-})
+const shownNonWorking = computed(() => validationError.value || !props.nonWorkingPeriods?.length ? []
+  : nonWorkingSpans(props.nonWorkingPeriods, drawnWindow.value, axis.value.toX))
 
 /** The name of a dependency end: the bar label or, for a summary row end (`summaryDependencies`), the row label. */
 function endLabel(id: string) {
@@ -3124,45 +3034,17 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
 
 // Load histogram rows follow the task rows on the same scroll surface.
 const loadHeight = computed(() => loadHistogram.value ? (props.loadRows?.length ?? 0) * props.loadRowHeight : 0)
-// Load segments matched by `highlightedLoadTargets` and `selectedLoadTargets`, found again by range overlap.
-const loadSegmentMarks = computed(() => {
-  const segments = props.loadSegments ?? []
-  const marks = (targets: readonly LoadViewTarget[] | undefined) =>
-    new Set<TimelineLoadSegment>(targets?.length ? resolveLoadTargets(segments, targets).segments : [])
-  return { highlighted: marks(props.highlightedLoadTargets), selected: marks(props.selectedLoadTargets) }
-})
+const loadMarks = computed(() => loadSegmentMarks(props.loadSegments ?? [], props.highlightedLoadTargets, props.selectedLoadTargets))
 const shownLoadRows = computed(() => {
   const histogram = loadHistogram.value
-  const marks = loadSegmentMarks.value
+  const marks = loadMarks.value
   if (!histogram || !props.loadRows?.length) return []
-  const offset = Math.max(0, viewport.value.top - bodyHeight.value)
-  const covered = Math.max(0, bodyHeight.value - viewport.value.top)
-  const visible = Math.max(0, viewport.value.height - headerHeight.value - covered)
-  const { first, afterLast } = visibleRows(offset, visible, props.loadRowHeight, props.loadRows.length)
-  return props.loadRows.slice(first, afterLast).map((row, i) => {
-    const { segments, peak } = histogram.get(row.id)!
-    const scale = Math.max(1e-9, peak)
-    return {
-      row, index: first + i, peak,
-      segments: segments.filter(segment => intersectsWindow(segment, timeWindow.value)).map(segment => {
-        const overload = segment.overload ?? Math.max(0, segment.load - segment.capacity)
-        const left = axis.value.toX(segment.start)
-        return {
-          segment, overload,
-          key: segment.start,
-          highlighted: marks.highlighted.has(segment), selected: marks.selected.has(segment),
-          left, width: axis.value.toX(segment.end) - left,
-          fill: Math.min(segment.load, segment.capacity) / scale * 100,
-          over: overload / scale * 100,
-          capacity: segment.capacity / scale * 100,
-          label: `${row.label} ${props.formatTime(segment.start)}–${props.formatTime(segment.end)}: ${messages.value.load} ${segment.load} / ${messages.value.capacity} ${segment.capacity}`
-            + (overload > 0 ? `, ${messages.value.overload} ${overload}` : ''),
-        }
-      }),
-    }
+  return loadRowsIn({
+    rows: props.loadRows, histogram, marks, top: viewport.value.top, height: viewport.value.height, headerHeight: headerHeight.value,
+    bodyHeight: bodyHeight.value, rowHeight: props.loadRowHeight, window: timeWindow.value, toX: axis.value.toX,
+    formatTime: props.formatTime, labels: messages.value,
   })
 })
-
 function scrollToTime(time: number) {
   if (!Number.isFinite(time)) throw new RangeError('time must be finite')
   if (scroller.value) setScrollStart(scroller.value, axis.value.toX(time))
@@ -3271,27 +3153,11 @@ const visibleWindow = computed<TimelineVisibleWindow | undefined>(() => {
   const { start, end } = timeWindow.value
   return { start, end: Math.max(start, end), rowIds, expandedIds: expandedParentIds.value }
 })
-let visibleWindowTimer: ReturnType<typeof setTimeout> | undefined
-let visibleWindowSince = 0
-let reportedWindow = ''
-function scheduleVisibleWindow() {
-  if (!mounted) return
-  const delay = Math.max(0, Number.isFinite(props.visibleWindowDelay) ? props.visibleWindowDelay! : 100)
-  if (visibleWindowTimer === undefined) visibleWindowSince = Date.now()
-  else if (Date.now() - visibleWindowSince < 3 * delay) clearTimeout(visibleWindowTimer)
-  else return
-  visibleWindowTimer = setTimeout(reportVisibleWindow, delay)
-}
-function reportVisibleWindow() {
-  visibleWindowTimer = undefined
-  const value = visibleWindow.value
-  if (!mounted || !value) return
-  const key = JSON.stringify([value.start, value.end, value.rowIds, value.expandedIds])
-  if (key === reportedWindow) return
-  reportedWindow = key
-  emit('visible-window-change', { start: value.start, end: value.end, rowIds: [...value.rowIds], expandedIds: [...value.expandedIds] })
-}
-watch(visibleWindow, scheduleVisibleWindow)
+const visibleWindowReporter = visibleWindowReport({
+  window: () => visibleWindow.value, delay: () => props.visibleWindowDelay, mounted: () => mounted,
+  report: value => emit('visible-window-change', value),
+})
+watch(visibleWindow, visibleWindowReporter.schedule)
 
 defineExpose({ scrollToTime, scrollToRow, cancelEdit: () => cancelEdit('api'), exportSvg, exportPng, fitToBars, revealBar })
 
@@ -3325,7 +3191,7 @@ onMounted(() => {
   observer = new ResizeObserver(syncViewport)
   observer.observe(scroller.value)
   observeCorner(cornerEl.value)
-  scheduleVisibleWindow()
+  visibleWindowReporter.schedule()
   attachZoomGestures()
 })
 onBeforeUnmount(() => {
@@ -3339,8 +3205,7 @@ onUnmounted(() => {
   observer = undefined
   observedCorner = undefined
   if (nowTimer !== undefined) clearInterval(nowTimer)
-  if (visibleWindowTimer !== undefined) clearTimeout(visibleWindowTimer)
-  visibleWindowTimer = undefined
+  visibleWindowReporter.stop()
 })
 </script>
 
