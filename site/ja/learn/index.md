@@ -18,7 +18,7 @@ Vue `^3.5.0` はピア依存です。アプリにまだ Vue がなければ、np
 import '@eightkk/vue-weave/style.css'
 ```
 
-Vite など CSS に対応したバンドラーは、この import をそのまま扱えます。Nuxt では `nuxt.config.ts` の `css` に指定します。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合は [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#the-stylesheet-and-typescript) を参照してください。
+Vite など CSS に対応したバンドラーは、この import をそのまま扱えます。Nuxt では `nuxt.config.ts` の `css` に指定します。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合は [The stylesheet and TypeScript](../api/guides/setup.md#the-stylesheet-and-typescript) を参照してください。
 
 ## ネットワークグラフ
 
@@ -94,15 +94,15 @@ function commit(change: TimelineEdit) {
 - 操作中に元データが変わると、その操作は取り消され、`edit-cancel` で通知されます。
 - `useEditHistory` で元に戻す・やり直しを、`useEditTransaction` で競合処理付きのサーバー保存を追加できます。
 
-詳しくは [Editing contract](https://github.com/EightKK/vue-weave/blob/main/docs/api.md#editing-contract) を参照してください。
+詳しくは [Editing contract](../api/components/gantt-chart.md#editing-contract) を参照してください。
 
 ## サーバーサイドレンダリング
 
-コンポーネントはサーバーでレンダリングできます。DOM の計測と `ResizeObserver` はマウント後にだけ使い、サーバーでの初回描画では決まった仮のビューポートサイズを使ってから実際のコンテナーを計測します。SVG の ID は Vue の `useId` で作ります。データと `formatTime` の出力はサーバーとクライアントで同じにしてください。タイムゾーンに依存するラベルには、`timeZone` とロケールを明示した `Intl.DateTimeFormat` を使います。[Nuxt](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#nuxt) も参照してください。
+コンポーネントはサーバーでレンダリングできます。DOM の計測と `ResizeObserver` はマウント後にだけ使い、サーバーでの初回描画では決まった仮のビューポートサイズを使ってから実際のコンテナーを計測します。SVG の ID は Vue の `useId` で作ります。データと `formatTime` の出力はサーバーとクライアントで同じにしてください。タイムゾーンに依存するラベルには、`timeZone` とロケールを明示した `Intl.DateTimeFormat` を使います。[Nuxt](../api/guides/setup.md#nuxt) も参照してください。
 
 ## コアだけを使う: サーバーと Worker
 
-`@eightkk/vue-weave/core` は Vue、DOM、ブラウザーのグローバルを読み込まないため、日程計算、レイアウト、相互変換、SVG 出力を Node.js 22.18 以降、Worker、サーバーレス関数で実行できます。[Core only](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#core-only-servers-and-workers) を参照してください。
+`@eightkk/vue-weave/core` は Vue、DOM、ブラウザーのグローバルを読み込まないため、日程計算、レイアウト、相互変換、SVG 出力を Node.js 22.18 以降、Worker、サーバーレス関数で実行できます。[Core only](../api/guides/setup.md#core-only-servers-and-workers) を参照してください。
 
 ## 次に読むもの
 

@@ -1,5 +1,7 @@
 # Architecture and scope
 
+<!-- #region architecture -->
+
 The package has three boundaries.
 
 - src/core contains typed graph/interval inputs, validation, graph traversal, layout, time mapping, interval editing, work calendars, scheduling and resource-load analysis. It has no Vue or browser imports.
@@ -120,3 +122,5 @@ SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` bu
 ## Right-to-left layout
 
 GanttChart measures every horizontal position from the inline-start edge of the time axis. In right-to-left mode the same offsets are written as `right` instead of `left`, the scroll offset is read as the distance from the inline start (`-scrollLeft` in a right-to-left scroll container), and pointer deltas are negated. The time scale itself is not mirrored, so `toX`/`toTime` round trips, snapping and edit proposals are identical in both directions. SVG layers (dependency paths and their hit areas) are flipped with a CSS transform. The SVG exporter has no CSS, so it mirrors the axis with `mirrorTimeScale` instead. NetworkGraph geometry is direction-independent; only the controls and label alignment change.
+
+<!-- #endregion architecture -->
