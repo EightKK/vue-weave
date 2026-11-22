@@ -6,7 +6,7 @@ import { layoutGraphIncrementally, type GraphKnownPosition } from './graphIncrem
 import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkNode } from './types.js'
 import { defaultNodeHeight, defaultNodeWidth } from './graphOptions.js'
-import { isXmlCodePoint, parseXml, xmlAttribute, type XmlElement } from './interchangeXml.js'
+import { parseXml, predefinedEntities, referencedCharacter, xmlAttribute, type XmlElement } from './interchangeXml.js'
 import {
   checkGraphInterchangeInput, createGraphCollector, formatNumber, graphDrawioMarkers, graphShapeFormat, isChartTone,
   readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName,
@@ -194,7 +194,7 @@ function parseStyle(text: string) {
   return { style, styleName }
 }
 
-const htmlEntities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ' }
+const htmlEntities: Record<string, string> = { ...predefinedEntities, nbsp: ' ' }
 
 /** The text of an HTML label: line breaks from `<br>` and block ends, tags removed, entities decoded. */
 function htmlText(html: string) {
@@ -206,7 +206,7 @@ function htmlText(html: string) {
       if (name !== undefined) return Object.hasOwn(htmlEntities, name.toLowerCase()) ? htmlEntities[name.toLowerCase()]! : match
       const code = dec !== undefined ? Number(dec) : parseInt(hex!, 16)
       // The code points XML allows, as in the XML reader; any other reference stays as written.
-      return isXmlCodePoint(code) ? String.fromCodePoint(code) : match
+      return referencedCharacter(code) ?? match
     })
 }
 

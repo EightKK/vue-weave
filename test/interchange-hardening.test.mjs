@@ -39,6 +39,78 @@ test('fromDrawio orders containers listed children first by depth', () => {
   assert.deepEqual(imported.groups.map(group => [group.id, group.parentId]), [['a', undefined], ['b', 'a'], ['c', 'b']])
 })
 
+/** A chain of `depth` nested groups, each holding one node. */
+function nestedGroups(depth) {
+  const nodes = [], groups = []
+  for (let i = 0; i < depth; i++) {
+    nodes.push({ id: 'n' + i, label: 'N' + i })
+    groups.push({ id: 'g' + i, label: 'G' + i, nodeIds: ['n' + i], ...(i ? { parentId: 'g' + (i - 1) } : {}) })
+  }
+  return { nodes, edges: [{ id: 'e', from: 'n0', to: 'n' + (depth - 1) }], groups }
+}
+
+for (const [format, write, read] of [['toGraphMl', toGraphMl, fromGraphMl], ['toMermaid', toMermaid, fromMermaid]]) {
+  test(`${format} writes 20,000 nested groups with bounded indentation, and they read back`, () => {
+    const depth = 20_000
+    const graph = nestedGroups(depth)
+    const started = performance.now()
+    // Indenting every level made the text grow quadratically; GraphML threw "Invalid string length" here.
+    const text = write(graph)
+    const imported = read(text)
+    assert.ok(performance.now() - started < 10_000, 'deep nesting is written and read in linear time')
+    assert.ok(text.length < 20_000_000, 'the text grows linearly with the depth')
+    assert.equal(imported.groups.length, depth)
+    assert.equal(imported.groups.at(-1).parentId, 'g' + (depth - 2))
+    assert.deepEqual(imported.groups.at(-1).nodeIds, ['n' + (depth - 1)])
+    assert.deepEqual(imported.edges.map(edge => [edge.from, edge.to]), [['n0', 'n' + (depth - 1)]])
+  })
+}
+
+test('the graph writers check group hierarchies listed children first in linear time', () => {
+  const depth = 20_000
+  const graph = nestedGroups(depth)
+  const reversed = { ...graph, groups: [...graph.groups].reverse() }
+  const started = performance.now()
+  const text = toGraphMl(reversed)
+  assert.ok(performance.now() - started < 10_000, 'group depths are found in linear time')
+  assert.equal(text, toGraphMl(graph))
+  const nodes = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
+  const cycle = [
+    { id: 'x', label: 'X', nodeIds: ['a'], parentId: 'y' },
+    { id: 'y', label: 'Y', nodeIds: ['b'], parentId: 'z' },
+    { id: 'z', label: 'Z', nodeIds: ['c'], parentId: 'y' },
+  ]
+  for (const write of [toGraphMl, toMermaid, toDrawio]) {
+    assert.throws(() => write({ nodes, edges: [], groups: cycle }), { message: 'Graph group hierarchy contains a cycle at group: x' })
+    assert.throws(() => write({ nodes, edges: [], groups: [{ id: 'x', label: 'X', nodeIds: ['a'], parentId: 'x' }] }), {
+      message: 'Graph group hierarchy contains a cycle at group: x',
+    })
+  }
+})
+
+test('fromMermaid skips an accDescr block up to the first } after it', () => {
+  // A } earlier on the line sent the reader back before the block, which it then skipped again without end.
+  const repeated = fromMermaid('flowchart LR\naccDescr {\none\n}; accDescr {\ntwo\n}\na --> b')
+  assert.deepEqual(repeated.edges.map(edge => [edge.from, edge.to]), [['a', 'b']])
+  assert.deepEqual(repeated.warnings.map(warning => [warning.code, warning.line]), [['unsupported-statement', 2], ['unsupported-statement', 4]])
+  const quoted = fromMermaid('flowchart LR\na["x}y"]; accDescr { about } ; a --> b')
+  assert.equal(quoted.nodes[0].label, 'x}y')
+  assert.equal(quoted.edges.length, 1)
+  assert.throws(() => fromMermaid('flowchart LR\na["}"]; accDescr {\nno end'), { message: 'Invalid Mermaid flowchart at line 2, column 9: unterminated accDescr { … }' })
+})
+
+test('the graph writers indent the first 32 nesting levels and no deeper', () => {
+  const graph = nestedGroups(40)
+  const indents = (text, pattern) => text.split('\n').filter(line => pattern.test(line)).map(line => line.length - line.trimStart().length)
+  const mermaid = indents(toMermaid(graph), /^\s*subgraph /)
+  assert.deepEqual(mermaid.slice(0, 3), [2, 4, 6])
+  assert.equal(mermaid[31], 64)
+  assert.deepEqual(new Set(mermaid.slice(31)), new Set([64]))
+  const graphMl = indents(toGraphMl(graph), /^\s*<node id="g/)
+  assert.deepEqual(graphMl.slice(0, 3), [4, 8, 12])
+  assert.deepEqual(new Set(graphMl.slice(31)), new Set([128]))
+})
+
 test('fromDrawio collects many edge label cells in linear time and counts them against maxItems', () => {
   const labels = 40_000
   const cells = [

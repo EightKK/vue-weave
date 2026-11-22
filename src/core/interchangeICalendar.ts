@@ -1,6 +1,9 @@
 // iCalendar (RFC 5545): `toICalendar`, `fromICalendar` and `timelineFromICalendar`. Pure string builders and readers
 // without a DOM. Re-exported by `interchange.ts`.
-import { basicWall, checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, monthLength, toSecond, wallTime, weekdayCodes } from './interchangeShared.js'
+import {
+  basicWall, checkOffset, checkText, checkTime, dayMs, durationMs, minuteMs, monthLength, pad2, pushWarning, stripBom, toSecond, wallTime,
+  weekdayCodes,
+} from './interchangeShared.js'
 import { rfc5545ZonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import type { TimelineBar, TimelineRow } from './types.js'
 import { checkId } from './ids.js'
@@ -48,7 +51,7 @@ const encoder = new TextEncoder()
 /** UTC date-time in iCalendar basic format, such as 20261109T080000Z, rounded to the nearest whole second. */
 function icalTime(time: number) {
   checkTime(time, 'An event time')
-  return isoText(toSecond(time)).slice(0, 19).replace(/[-:]/g, '') + 'Z'
+  return basicWall(toSecond(time)) + 'Z'
 }
 
 /** Escape an iCalendar TEXT value and drop control characters other than tab and line breaks. */
@@ -80,9 +83,8 @@ function fold(line: string) {
 /** A UTC offset in milliseconds as `+hhmm` (or `+hhmmss`). */
 function offsetText(offset: number) {
   const total = Math.round(Math.abs(offset) / 1000)
-  const pad = (value: number) => String(value).padStart(2, '0')
   const seconds = total % 60
-  return (offset < 0 ? '-' : '+') + pad(Math.floor(total / 3600)) + pad(Math.floor((total % 3600) / 60)) + (seconds ? pad(seconds) : '')
+  return (offset < 0 ? '-' : '+') + pad2(Math.floor(total / 3600)) + pad2(Math.floor((total % 3600) / 60)) + (seconds ? pad2(seconds) : '')
 }
 
 /** The UTC offset changes of a zone in one year, found with `Intl`. */
@@ -90,10 +92,10 @@ function zoneChanges(format: Intl.DateTimeFormat, year: number) {
   const yearStart = wallTime(year, 1, 1, 0, 0, 0)!, yearEnd = wallTime(year + 1, 1, 1, 0, 0, 0)!
   let previous = zoneOffset(format, yearStart)
   const changes: { at: number; from: number; to: number }[] = []
-  for (let time = yearStart + 86_400_000; time <= yearEnd; time += 86_400_000) {
+  for (let time = yearStart + dayMs; time <= yearEnd; time += dayMs) {
     const offset = zoneOffset(format, time)
     if (offset === previous) continue
-    changes.push({ at: zoneTransition(format, time - 86_400_000, time, previous), from: previous, to: offset })
+    changes.push({ at: zoneTransition(format, time - dayMs, time, previous), from: previous, to: offset })
     previous = offset
   }
   return { initial: zoneOffset(format, yearStart), changes }
@@ -127,7 +129,7 @@ function timeZoneLines(timeZone: string, firstYear: number) {
     const ordinal = day + 7 > monthLength(changeYear, month) ? -1 : Math.ceil(day / 7)
     // The same rule in the next year: the nth (or last) such weekday of the month at the same local time.
     const nextDay = nthWeekday(changeYear + 1, month, weekday, ordinal)
-    const next = nextDay + (wall - Math.floor(wall / 86_400_000) * 86_400_000) - change.from
+    const next = nextDay + (wall - Math.floor(wall / dayMs) * dayMs) - change.from
     if (zoneOffset(format, next - 1000) === change.from && zoneOffset(format, next) === change.to) {
       lines.push(`RRULE:FREQ=YEARLY;BYMONTH=${month + 1};BYDAY=${ordinal}${weekdayCodes[weekday]}`)
       repeated.add(next)
@@ -144,8 +146,7 @@ function timeZoneLines(timeZone: string, firstYear: number) {
 
 /** A fixed UTC offset in minutes as a TZID such as `UTC+0900` or `UTC-0330`, which `Intl` does not know. */
 function fixedZoneId(minutes: number) {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `UTC${minutes < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(minutes) / 60))}${pad(Math.abs(minutes) % 60)}`
+  return `UTC${minutes < 0 ? '-' : '+'}${pad2(Math.floor(Math.abs(minutes) / 60))}${pad2(Math.abs(minutes) % 60)}`
 }
 
 /** How the times of a series are written: UTC, or local times with a TZID (an IANA zone or a fixed offset). */
@@ -183,9 +184,9 @@ function writeZoneOf(recurrence: CalendarRecurrence): WriteZone | undefined {
 /** The wall midnight of the nth (or, for -1, the last) weekday of a month. */
 function nthWeekday(year: number, month: number, weekday: number, ordinal: number) {
   const first = wallTime(year, month + 1, 1, 0, 0, 0)!
-  if (ordinal > 0) return first + (((weekday - new Date(first).getUTCDay() + 7) % 7) + (ordinal - 1) * 7) * 86_400_000
-  const last = first + (monthLength(year, month) - 1) * 86_400_000
-  return last - ((new Date(last).getUTCDay() - weekday + 7) % 7) * 86_400_000
+  if (ordinal > 0) return first + (((weekday - new Date(first).getUTCDay() + 7) % 7) + (ordinal - 1) * 7) * dayMs
+  const last = first + (monthLength(year, month) - 1) * dayMs
+  return last - ((new Date(last).getUTCDay() - weekday + 7) % 7) * dayMs
 }
 
 /**
@@ -352,7 +353,7 @@ interface ICalendarProperty {
 const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
 const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 // `Intl` formats instants up to ±8.64e15 ms; a zoned wall time is resolved with a day of margin on each side.
-const maxZonedWall = 8.64e15 - 2 * 86_400_000
+const maxZonedWall = 8.64e15 - 2 * dayMs
 const maxTime = 8.64e15
 
 /** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
@@ -441,6 +442,198 @@ function icalZone(tzid: string) {
   return undefined
 }
 
+/** Unfold content lines: a line that starts with a space or tab continues the one before it. Empty lines are dropped. */
+function unfoldLines(source: string) {
+  const lines: { text: string; line: number }[] = []
+  const physical = source.split(/\r\n|\n|\r/)
+  physical.forEach((content, index) => {
+    if ((content[0] === ' ' || content[0] === '\t') && lines.length) lines[lines.length - 1]!.text += content.slice(1)
+    else if (content !== '') lines.push({ text: content, line: index + 1 })
+  })
+  return lines
+}
+
+/** Every UID of a file, so an ID made up for an event without one never takes the UID of a later event. */
+function fileUids(lines: readonly { text: string }[]) {
+  const uids = new Set<string>()
+  for (const { text: line } of lines) {
+    if (!/^UID[;:]/i.test(line)) continue
+    const property = icalProperty(line, 0)
+    if (property) uids.add(icalUnescape(property.value))
+  }
+  return uids
+}
+
+type ICalendarWarn = (code: ICalendarImportWarningCode, message: string, line?: number, eventId?: string) => void
+
+/**
+ * A date or date-time read from a property. `wall` is the local wall-clock time and `zone` the resolved TZID, for
+ * adding the days of a DURATION in local time. `zoneName` is the IANA name of a resolved TZID and `utc` marks a UTC
+ * time, for the zone of a recurrence. `offsetMinutes` is the offset of a TZID that a fixed-offset VTIMEZONE defines.
+ */
+interface ReadTime { time: number; date: boolean; wall: number; zone?: Intl.DateTimeFormat; zoneName?: string; utc?: boolean; offsetMinutes?: number }
+
+/** Reads a date or date-time value of a property, with the property's TZID; undefined when it cannot be read. */
+type TimeReader = (value: string, property: ICalendarProperty, eventId: string) => ReadTime | undefined
+
+/**
+ * The time reader of a file: UTC times are exact, a TZID is resolved with `Intl` or the file's fixed-offset
+ * VTIMEZONEs, and other times (floating, dates and unknown TZIDs, which are reported) are local at `offset`.
+ */
+function timeReader(fixedZones: ReadonlyMap<string, number>, offset: number, warn: ICalendarWarn): TimeReader {
+  return (value, property, eventId) => {
+    const match = icalDateTime.exec(value.trim())
+    if (!match) return undefined
+    const [y, mo, d, h = 0, mi = 0, sec = 0] = match.slice(1, 7).map(part => part === undefined ? undefined : Number(part)) as number[]
+    const wall = wallTime(y!, mo!, d!, h, mi, sec)
+    if (wall === undefined) return undefined
+    const date = match[4] === undefined
+    if (match[7] === 'Z') return { time: wall, date, wall, utc: true }
+    const tzid = property.params.get('TZID')
+    if (tzid !== undefined && !date) {
+      const zone = icalZone(tzid)
+      if (zone) return { time: rfc5545ZonedInstant(zone.format, wall), date, wall, zone: zone.format, zoneName: zone.name }
+      const fixed = fixedZones.get(tzid)
+      if (fixed !== undefined) return { time: wall - fixed * minuteMs, date, wall, offsetMinutes: fixed }
+      warn('unknown-time-zone', `The time zone ${tzid} is unknown; the time was read as local time at the given offset`, property.line, eventId)
+    }
+    return { time: wall - offset * minuteMs, date, wall }
+  }
+}
+
+/** What reading the events of a file needs: the options, the file's UIDs, the IDs taken so far and the time reader. */
+interface EventReading {
+  mode: 'first' | 'series' | ICalendarExpandOptions
+  offset: number
+  uids: ReadonlySet<string>
+  ids: Set<string>
+  timeValue: TimeReader
+  warn: ICalendarWarn
+}
+
+/** The recurrence of a series: its rule, EXDATEs and RDATEs, in the zone of DTSTART. Throws for an unsupported rule. */
+function readRecurrence(properties: readonly ICalendarProperty[], start: ReadTime, eventId: string, reading: EventReading) {
+  const { offset, timeValue, warn } = reading
+  const zone: RecurrenceZoneOptions = start.zoneName !== undefined ? { timeZone: start.zoneName } : start.utc ? { timeZone: 'UTC' }
+    : { utcOffsetMinutes: start.offsetMinutes ?? offset }
+  const recurrence: CalendarRecurrence & { rule?: RecurrenceRule } = { ...zone }
+  const rule = properties.find(property => property.name === 'RRULE')
+  if (rule) recurrence.rule = parseRecurrenceRule(rule.value, zone)
+  for (const name of ['EXDATE', 'RDATE'] as const) {
+    const times: number[] = []
+    for (const property of properties) {
+      if (property.name !== name) continue
+      for (const part of property.value.split(',')) {
+        // An RDATE period (start/end or start/duration) adds its start; the series keeps its own duration.
+        const read = timeValue(part.split('/')[0]!, property, eventId)
+        if (read) times.push(read.time)
+        else warn('invalid-value', `The ${name} value ${part.trim()} of event ${eventId} cannot be read and was ignored`, property.line, eventId)
+      }
+    }
+    if (times.length) recurrence[name === 'EXDATE' ? 'exdates' : 'rdates'] = [...new Set(times)].sort((a, b) => a - b)
+  }
+  return recurrence
+}
+
+/**
+ * The end of an event: DTEND, else DTSTART plus DURATION, else the start plus one day for a date and the start itself
+ * for a date-time. An unreadable or inverted DTEND and an unreadable or negative DURATION make the event an instant.
+ */
+function readEventEnd(properties: readonly ICalendarProperty[], start: ReadTime, label: string, reading: EventReading) {
+  const { timeValue, warn } = reading
+  const endProperty = properties.find(property => property.name === 'DTEND')
+  const durationProperty = properties.find(property => property.name === 'DURATION')
+  if (endProperty) {
+    const parsed = timeValue(endProperty.value, endProperty, label)
+    let end = start.time
+    if (!parsed) warn('invalid-value', `The DTEND of event ${label} cannot be read; the event is an instant`, endProperty.line, label)
+    else if (parsed.time < start.time) warn('invalid-value', `The DTEND of event ${label} is before its DTSTART; the event is an instant`, endProperty.line, label)
+    else end = parsed.time
+    if (durationProperty) warn('invalid-value', `Event ${label} has both DTEND and DURATION; DURATION was ignored`, durationProperty.line, label)
+    return end
+  }
+  if (durationProperty) {
+    const match = icalDuration.exec(durationProperty.value.trim())
+    const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = (match?.slice(2) ?? []).map(part => part === undefined ? undefined : Number(part)) as number[]
+    // RFC 5545 3.3.6: weeks and days are nominal and are added to the local date first, then the exact hours,
+    // minutes and seconds as elapsed time. They differ only in a time zone with daylight saving.
+    const nominal = durationMs(weeks, days, 0, 0, 0), exact = durationMs(0, 0, hours, minutes, seconds)
+    const local = start.wall + nominal
+    const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
+      && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
+    const sum = readable ? (start.zone ? rfc5545ZonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
+    // An end beyond the range of Date (±8.64e15 ms) is not a time.
+    if (Math.abs(sum) <= maxTime) return sum
+    warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
+    return start.time
+  }
+  return start.date ? start.time + dayMs : start.time
+}
+
+/**
+ * The event of the properties of one VEVENT that starts at `line`, or undefined when it is skipped (with a warning).
+ * `count` is the number of events read before it, for the ID of an event without a UID.
+ */
+function readEvent(properties: readonly ICalendarProperty[], line: number, count: number, reading: EventReading): ICalendarImportEvent | undefined {
+  const { mode, uids, ids, timeValue, warn } = reading
+  const find = (propertyName: string) => properties.find(property => property.name === propertyName)
+  const time = (property: ICalendarProperty, eventId: string) => timeValue(property.value, property, eventId)
+  const uid = find('UID')
+  let id = uid === undefined ? undefined : icalUnescape(uid.value)
+  if (!id) {
+    let number = count + 1
+    while (uids.has('event-' + number) || ids.has('event-' + number)) number++
+    id = 'event-' + number
+    warn('missing-uid', `The event at line ${line} has no UID and was named ${id}`, line, id)
+  }
+  const label = id
+  const startProperty = find('DTSTART')
+  const start = startProperty && time(startProperty, label)
+  const recurrenceIdProperty = find('RECURRENCE-ID')
+  let changed: number | undefined
+  if (recurrenceIdProperty) {
+    const original = mode === 'first' ? undefined : time(recurrenceIdProperty, label)
+    if (!original || recurrenceIdProperty.params.get('RANGE')?.toUpperCase() === 'THISANDFUTURE') {
+      warn('skipped-event', mode === 'first'
+        ? `Event ${label} changes one instance of a recurring event (RECURRENCE-ID) and was skipped`
+        : `Event ${label} has a RECURRENCE-ID that cannot be read or has a RANGE, and was skipped`, line, label)
+      return undefined
+    }
+    changed = original.time
+    id = `${id}:${changed}`
+  }
+  if (!start) {
+    warn('skipped-event', `Event ${label} has no valid DTSTART and was skipped`, line, label)
+    return undefined
+  }
+  if (ids.has(id)) {
+    warn('skipped-event', `Event ${label} repeats a UID and was skipped`, line, label)
+    return undefined
+  }
+  ids.add(id)
+  const end = readEventEnd(properties, start, label, reading)
+  const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
+  const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')
+  if (summary) event.summary = icalUnescape(summary.value)
+  if (description) event.description = icalUnescape(description.value)
+  if (rule) event.recurrenceRule = rule.value.trim()
+  if (changed !== undefined) {
+    event.seriesId = label
+    event.recurrenceId = changed
+    return event
+  }
+  const repeats = rule ?? find('RDATE') ?? find('EXDATE')
+  if (repeats && mode !== 'first') {
+    try {
+      event.recurrence = readRecurrence(properties, start, label, reading)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      warn('recurrence', `Event ${label} repeats by a rule that cannot be expanded (${reason}); only its first instance was imported`, repeats.line, label)
+    }
+  } else if (repeats) warn('recurrence', `Event ${label} repeats; only its first instance was imported`, repeats.line, label)
+  return event
+}
+
 /**
  * Read RFC 5545 text, such as `toICalendar` output or an export of a calendar application, into events. Pure string
  * parsing without a DOM, network or file access, done with loops. Lines are unfolded (CRLF, LF or CR line ends; a
@@ -489,161 +682,21 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     checkMax(mode.maxOccurrences)
   }
   if (typeof text !== 'string') throw new Error('iCalendar text must be a string')
-  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
-  // Unfold: a line that starts with a space or tab continues the one before it.
-  const lines: { text: string; line: number }[] = []
-  const physical = source.split(/\r\n|\n|\r/)
-  physical.forEach((content, index) => {
-    if ((content[0] === ' ' || content[0] === '\t') && lines.length) lines[lines.length - 1]!.text += content.slice(1)
-    else if (content !== '') lines.push({ text: content, line: index + 1 })
-  })
+  const lines = unfoldLines(stripBom(text))
   const warnings: ICalendarImportWarning[] = []
-  const warn = (code: ICalendarImportWarningCode, message: string, line?: number, eventId?: string) => {
-    warnings.push({ code, ...(eventId === undefined ? {} : { eventId }), ...(line === undefined ? {} : { line }), message })
+  const warn: ICalendarWarn = (code, message, line, eventId) => {
+    pushWarning(warnings, code, message, { eventId, line })
   }
   if (!lines.some(({ text: line }) => /^BEGIN:VCALENDAR\s*$/i.test(line))) throw new Error('Not an iCalendar document: there is no BEGIN:VCALENDAR')
-  const fixedZones = fixedOffsetZones(lines)
-  // Every UID of the file, so an ID made up for an event without one never takes the UID of a later event.
-  const uids = new Set<string>()
-  for (const { text: line } of lines) {
-    if (!/^UID[;:]/i.test(line)) continue
-    const property = icalProperty(line, 0)
-    if (property) uids.add(icalUnescape(property.value))
+  const reading: EventReading = {
+    mode, offset, uids: fileUids(lines), ids: new Set(), timeValue: timeReader(fixedOffsetZones(lines), offset, warn), warn,
   }
-
   const events: ICalendarImportEvent[] = []
-  const ids = new Set<string>()
   let name: string | undefined
+  // The open components, and the properties of the VEVENT directly in the VCALENDAR that is being read.
   const stack: string[] = []
   let current: ICalendarProperty[] | undefined
   let currentLine = 0
-  // `wall` is the local wall-clock time and `zone` the resolved TZID, for adding the days of a DURATION in local time.
-  // `zoneName` is the IANA name of a resolved TZID and `utc` marks a UTC time, for the zone of a recurrence.
-  // `offsetMinutes` is the offset of a TZID that a fixed-offset VTIMEZONE defines.
-  interface ReadTime { time: number; date: boolean; wall: number; zone?: Intl.DateTimeFormat; zoneName?: string; utc?: boolean; offsetMinutes?: number }
-  const timeValue = (value: string, property: ICalendarProperty, eventId: string): ReadTime | undefined => {
-    const match = icalDateTime.exec(value.trim())
-    if (!match) return undefined
-    const [y, mo, d, h = 0, mi = 0, sec = 0] = match.slice(1, 7).map(part => part === undefined ? undefined : Number(part)) as number[]
-    const wall = wallTime(y!, mo!, d!, h, mi, sec)
-    if (wall === undefined) return undefined
-    const date = match[4] === undefined
-    if (match[7] === 'Z') return { time: wall, date, wall, utc: true }
-    const tzid = property.params.get('TZID')
-    if (tzid !== undefined && !date) {
-      const zone = icalZone(tzid)
-      if (zone) return { time: rfc5545ZonedInstant(zone.format, wall), date, wall, zone: zone.format, zoneName: zone.name }
-      const fixed = fixedZones.get(tzid)
-      if (fixed !== undefined) return { time: wall - fixed * minuteMs, date, wall, offsetMinutes: fixed }
-      warn('unknown-time-zone', `The time zone ${tzid} is unknown; the time was read as local time at the given offset`, property.line, eventId)
-    }
-    return { time: wall - offset * minuteMs, date, wall }
-  }
-  const time = (property: ICalendarProperty, eventId: string) => timeValue(property.value, property, eventId)
-  /** The recurrence of a series: its rule, EXDATEs and RDATEs, in the zone of DTSTART. Throws for an unsupported rule. */
-  const recurrenceOf = (properties: ICalendarProperty[], start: ReadTime, eventId: string) => {
-    const zone: RecurrenceZoneOptions = start.zoneName !== undefined ? { timeZone: start.zoneName } : start.utc ? { timeZone: 'UTC' }
-      : { utcOffsetMinutes: start.offsetMinutes ?? offset }
-    const recurrence: CalendarRecurrence & { rule?: RecurrenceRule } = { ...zone }
-    const rule = properties.find(property => property.name === 'RRULE')
-    if (rule) recurrence.rule = parseRecurrenceRule(rule.value, zone)
-    for (const name of ['EXDATE', 'RDATE'] as const) {
-      const times: number[] = []
-      for (const property of properties) {
-        if (property.name !== name) continue
-        for (const part of property.value.split(',')) {
-          // An RDATE period (start/end or start/duration) adds its start; the series keeps its own duration.
-          const read = timeValue(part.split('/')[0]!, property, eventId)
-          if (read) times.push(read.time)
-          else warn('invalid-value', `The ${name} value ${part.trim()} of event ${eventId} cannot be read and was ignored`, property.line, eventId)
-        }
-      }
-      if (times.length) recurrence[name === 'EXDATE' ? 'exdates' : 'rdates'] = [...new Set(times)].sort((a, b) => a - b)
-    }
-    return recurrence
-  }
-  const finish = () => {
-    const properties = current!
-    current = undefined
-    const find = (propertyName: string) => properties.find(property => property.name === propertyName)
-    const uid = find('UID')
-    let id = uid === undefined ? undefined : icalUnescape(uid.value)
-    if (!id) {
-      let number = events.length + 1
-      while (uids.has('event-' + number) || ids.has('event-' + number)) number++
-      id = 'event-' + number
-      warn('missing-uid', `The event at line ${currentLine} has no UID and was named ${id}`, currentLine, id)
-    }
-    const label = id
-    const startProperty = find('DTSTART')
-    const start = startProperty && time(startProperty, label)
-    const recurrenceIdProperty = find('RECURRENCE-ID')
-    let changed: number | undefined
-    if (recurrenceIdProperty) {
-      const original = mode === 'first' ? undefined : time(recurrenceIdProperty, label)
-      if (!original || recurrenceIdProperty.params.get('RANGE')?.toUpperCase() === 'THISANDFUTURE') {
-        warn('skipped-event', mode === 'first'
-          ? `Event ${label} changes one instance of a recurring event (RECURRENCE-ID) and was skipped`
-          : `Event ${label} has a RECURRENCE-ID that cannot be read or has a RANGE, and was skipped`, currentLine, label)
-        return
-      }
-      changed = original.time
-      id = `${id}:${changed}`
-    }
-    if (!start) {
-      warn('skipped-event', `Event ${label} has no valid DTSTART and was skipped`, currentLine, label)
-      return
-    }
-    if (ids.has(id)) {
-      warn('skipped-event', `Event ${label} repeats a UID and was skipped`, currentLine, label)
-      return
-    }
-    ids.add(id)
-    let end = start.time
-    const endProperty = find('DTEND'), durationProperty = find('DURATION')
-    if (endProperty) {
-      const parsed = time(endProperty, label)
-      if (!parsed) warn('invalid-value', `The DTEND of event ${label} cannot be read; the event is an instant`, endProperty.line, label)
-      else if (parsed.time < start.time) warn('invalid-value', `The DTEND of event ${label} is before its DTSTART; the event is an instant`, endProperty.line, label)
-      else end = parsed.time
-      if (durationProperty) warn('invalid-value', `Event ${label} has both DTEND and DURATION; DURATION was ignored`, durationProperty.line, label)
-    } else if (durationProperty) {
-      const match = icalDuration.exec(durationProperty.value.trim())
-      const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = (match?.slice(2) ?? []).map(part => part === undefined ? undefined : Number(part)) as number[]
-      // RFC 5545 3.3.6: weeks and days are nominal and are added to the local date first, then the exact hours,
-      // minutes and seconds as elapsed time. They differ only in a time zone with daylight saving.
-      const nominal = durationMs(weeks, days, 0, 0, 0), exact = durationMs(0, 0, hours, minutes, seconds)
-      const local = start.wall + nominal
-      const readable = match !== null && /\d/.test(durationProperty.value) && match[1] !== '-'
-        && Number.isFinite(start.time + nominal + exact) && (start.zone === undefined || Math.abs(local) <= maxZonedWall)
-      const sum = readable ? (start.zone ? rfc5545ZonedInstant(start.zone, local) : start.time + nominal) + exact : NaN
-      // An end beyond the range of Date (±8.64e15 ms) is not a time.
-      if (!(Math.abs(sum) <= maxTime)) {
-        warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
-      } else end = sum
-    } else if (start.date) end = start.time + 86_400_000
-    const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
-    const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')
-    if (summary) event.summary = icalUnescape(summary.value)
-    if (description) event.description = icalUnescape(description.value)
-    if (rule) event.recurrenceRule = rule.value.trim()
-    if (changed !== undefined) {
-      event.seriesId = label
-      event.recurrenceId = changed
-      events.push(event)
-      return
-    }
-    const repeats = rule ?? find('RDATE') ?? find('EXDATE')
-    if (repeats && mode !== 'first') {
-      try {
-        event.recurrence = recurrenceOf(properties, start, label)
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        warn('recurrence', `Event ${label} repeats by a rule that cannot be expanded (${reason}); only its first instance was imported`, repeats.line, label)
-      }
-    } else if (repeats) warn('recurrence', `Event ${label} repeats; only its first instance was imported`, repeats.line, label)
-    events.push(event)
-  }
   for (const { text: lineText, line } of lines) {
     const upper = lineText.toUpperCase()
     if (upper.startsWith('BEGIN:')) {
@@ -662,7 +715,11 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
         continue
       }
       stack.pop()
-      if (kind === 'VEVENT' && current) finish()
+      if (kind === 'VEVENT' && current) {
+        const event = readEvent(current, currentLine, events.length, reading)
+        current = undefined
+        if (event) events.push(event)
+      }
       continue
     }
     const inEvent = stack.at(-1) === 'VEVENT' && current !== undefined

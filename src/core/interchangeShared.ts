@@ -1,9 +1,21 @@
-// Internal helpers shared by the interchange formats (`interchangeMsProject.ts`, `interchangeICalendar.ts`) and
-// `recurrence.ts`: input checks and date-time arithmetic in epoch milliseconds. Not exported from index.ts.
+// Internal helpers shared by the interchange formats (`interchangeMsProject.ts`, `interchangeICalendar.ts`,
+// `interchangeGraph.ts`) and `recurrence.ts`: input checks, import warnings and date-time arithmetic in epoch
+// milliseconds. Not exported from index.ts.
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
+export const dayMs = 86_400_000
 export const minuteMs = 60_000
 export const secondMs = 1000
+
+/** Text without a leading byte order mark. */
+export function stripBom(text: string) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
+/** A number of at most two digits with a leading zero, such as `09`. */
+export function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
 
 export function checkTime(value: number, what: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 8.64e15) throw new RangeError(what + ' must be a finite time')
@@ -19,6 +31,19 @@ export function checkOffset(value: number | undefined) {
     throw new RangeError(`utcOffsetMinutes must be an integer between -${maxUtcOffsetMinutes} and ${maxUtcOffsetMinutes}`)
   }
   return offset
+}
+
+/**
+ * Append `{ code, ...about, message }` to `warnings`, leaving out the fields of `about` that are undefined. The import
+ * warnings of the MS Project, iCalendar and graph readers have this shape.
+ */
+export function pushWarning<W extends { code: string; message: string }>(
+  warnings: W[], code: W['code'], message: string, about?: { readonly [K in Exclude<keyof W, 'code' | 'message'>]?: W[K] | undefined },
+) {
+  const warning: Record<string, unknown> = { code }
+  for (const [key, value] of Object.entries(about ?? {})) if (value !== undefined) warning[key] = value
+  warning.message = message
+  warnings.push(warning as W)
 }
 
 /** Round a time to the nearest whole second (halves up), the resolution of MSPDI and iCalendar date-times. */

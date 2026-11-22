@@ -7,6 +7,7 @@ import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkGroup, NetworkNode, NetworkNodeShape } from './types.js'
 import { checkGraphGroups, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
 import { isId } from './ids.js'
+import { pushWarning } from './interchangeShared.js'
 
 /**
  * A NetworkGraph diagram for the graph writers (`toMermaid`, `toGraphMl`, `toDrawio`): the `nodes`, `edges` and
@@ -180,6 +181,32 @@ export interface CheckedGraph {
 }
 
 /**
+ * The nesting depth of each group (0 at the top level), as `collapseGraphGroups` checks the hierarchy: each group's
+ * parent chain is climbed only up to the first group with a known depth, so the work is linear in the number of groups.
+ * A group on the chain being climbed is marked with depth -1; meeting it again is a cycle.
+ */
+function groupDepths(groups: readonly NetworkGroup[], byId: ReadonlyMap<string, NetworkGroup>) {
+  const depth = new Map<string, number>()
+  for (const group of groups) {
+    const chain: NetworkGroup[] = []
+    let current: NetworkGroup | undefined = group
+    while (current && !depth.has(current.id)) {
+      depth.set(current.id, -1)
+      chain.push(current)
+      if (current.parentId === undefined) current = undefined
+      else {
+        current = byId.get(current.parentId)
+        if (!current) throw unknownParentGroupError(chain.at(-1)!)
+      }
+    }
+    if (current && depth.get(current.id) === -1) throw groupCycleError(group.id)
+    let level = current ? depth.get(current.id)! + 1 : 0
+    for (let i = chain.length - 1; i >= 0; i--) depth.set(chain[i]!.id, level++)
+  }
+  return depth
+}
+
+/**
  * Check a writer input as NetworkGraph would: node, edge, port and group IDs, edge ends, group members and parents
  * (`indexGraph` and the group checks throw their usual Errors), labels (Error) and positions and sizes (RangeError).
  */
@@ -205,32 +232,13 @@ export function checkGraphInterchangeInput(graph: GraphInterchangeInput, format:
   for (const group of groups) {
     if (typeof group.label !== 'string') throw new Error('Invalid label of graph group: ' + group.id)
   }
-  // Depths by climbing each parent chain once, as `collapseGraphGroups` checks it.
-  const depth = new Map<string, number>()
+  const depth = groupDepths(groups, byId)
   const childGroups = new Map<string, NetworkGroup[]>()
   for (const group of groups) {
-    const chain: NetworkGroup[] = []
-    const onChain = new Set<string>()
-    let current: NetworkGroup | undefined = group
-    while (current && !depth.has(current.id)) {
-      if (onChain.has(current.id)) throw groupCycleError(group.id)
-      onChain.add(current.id)
-      chain.push(current)
-      if (current.parentId === undefined) {
-        current = undefined
-        break
-      }
-      const parent = byId.get(current.parentId)
-      if (!parent) throw unknownParentGroupError(current)
-      current = parent
-    }
-    let level = current ? depth.get(current.id)! + 1 : 0
-    for (let i = chain.length - 1; i >= 0; i--) depth.set(chain[i]!.id, level++)
-    if (group.parentId !== undefined) {
-      const siblings = childGroups.get(group.parentId)
-      if (siblings) siblings.push(group)
-      else childGroups.set(group.parentId, [group])
-    }
+    if (group.parentId === undefined) continue
+    const siblings = childGroups.get(group.parentId)
+    if (siblings) siblings.push(group)
+    else childGroups.set(group.parentId, [group])
   }
   const ordered = [...groups].sort((a, b) => depth.get(a.id)! - depth.get(b.id)!)
   const isMap = (value: unknown) => typeof (value as Map<string, unknown>)?.get === 'function' && typeof (value as Map<string, unknown>)[Symbol.iterator] === 'function'
@@ -252,6 +260,17 @@ export function uniqueName(base: string, taken: Set<string>) {
   for (let n = 2; taken.has(name); n++) name = base + '-' + n
   taken.add(name)
   return name
+}
+
+/**
+ * The deepest nesting level the writers indent. Deeper groups keep this indentation, so the output of a deep hierarchy
+ * grows linearly with its depth instead of quadratically. The readers ignore indentation.
+ */
+const maxIndentLevel = 32
+
+/** The indentation of a nesting `level`: `unit` repeated `level` times, at most `maxIndentLevel` times. */
+export function nestedIndent(unit: string, level: number) {
+  return unit.repeat(Math.min(level, maxIndentLevel))
 }
 
 /** A number for XML output, exact (the shortest text that reads back as the same number), without `-0`. */
@@ -313,7 +332,7 @@ export function createGraphCollector(format: string, options: GraphInterchangeIm
     if (++items > maxItems) throw new RangeError(`The ${format} file has more than ${maxItems} nodes, edges and groups (maxItems)`)
   }
   const warn: GraphWarn = (code, message, id, line) => {
-    warnings.push({ code, ...(id === undefined ? {} : { id }), ...(line === undefined ? {} : { line }), message })
+    pushWarning(warnings, code, message, { id, line })
   }
   /** Add a node and return whether it was added; an invalid or repeated ID is skipped with a warning. */
   const addNode = (node: NetworkNode, line?: number) => {

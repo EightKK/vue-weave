@@ -47,6 +47,8 @@
 - EventCalendar and TaskBoard: a blank or whitespace-only rejection reason from `validateEdit`, `validateCreate` or `validateCardMove` now rejects with the default text (`labels.rejected`, `labels.createRejected`, `labels.moveRejected`), as PropertyInspector already did, instead of emitting and announcing an empty reason.
 - EventCalendar: a pointer drag in the day or week time grid that rests near the top or bottom of the visible grid now scrolls it, so an event can be moved, resized or created into hours scrolled out of view.
 - GraphPalette and PropertyInspector use the default colours of the other components when `--vw-muted` and `--vw-surface-hover` are unset: secondary text is `#4c6371` (was `#4f6574`) and hovered palette items and inspector buttons are `#edf5fa` (was `#e4ecf2` and `#e3edf5`). The stylesheet now defines these shared defaults once on the component roots; themes set through `--vw-*` variables are unaffected.
+- `toGraphMl` and `toMermaid` indent nested groups at most 32 levels deep, so their output grows linearly with the nesting depth instead of quadratically: `toGraphMl` threw "Invalid string length" for 20,000 nested groups. Output for 32 or fewer levels is unchanged.
+- `fromMermaid` skips an `accDescr { … }` block up to the first `}` after it. A `}` earlier on the same line (such as `}; accDescr {` or a quoted label) sent the reader back before the block, so it looped without end, adding warnings until memory ran out, or failed with a misleading syntax error.
 
 These fix the unreleased recurring events:
 
