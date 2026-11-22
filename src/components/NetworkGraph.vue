@@ -46,6 +46,9 @@ import {
   movedBounds, type Corner,
 } from './networkGraph/editGeometry.js'
 import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
+import {
+  chartDelta, grabPointer, ownsPointer, pointerSession, releaseSession, sessionPastThreshold, type PointerSession,
+} from './networkGraph/pointerSession.js'
 import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 
@@ -895,12 +898,9 @@ function startPan(event: PointerEvent) {
   beginGesture('pointer', pan.box ? 'box-select' : 'pan')
 }
 
-// `camera` is the camera when the drag started; auto-pan moves the camera during the drag. `guides` holds the boxes the
-// alignment guides align with, collected on the first move of the drag.
-let nodeDrag: {
-  pointerId: number; start: GraphPoint; before: Map<string, GraphPoint>; target: SVGElement; node?: string; group?: string; camera: GraphPoint
-  guides?: GraphRect[]
-} | undefined
+// The session records the camera when the drag started; auto-pan moves the camera during the drag. `guides` holds the
+// boxes the alignment guides align with, collected on the first move of the drag.
+let nodeDrag: (PointerSession & { before: Map<string, GraphPoint>; node?: string; group?: string; guides?: GraphRect[] }) | undefined
 let suppressClick: string | undefined
 // The group whose label was dragged, so the click that ends the drag does not activate it.
 let suppressGroupClick: string | undefined
@@ -1013,28 +1013,22 @@ function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string
   if (node && nodesById.value.get(node)?.draggable === false) return
   const before = movablePositions(ids)
   if (!before.size) return
-  const target = event.currentTarget as SVGElement
-  nodeDrag = {
-    pointerId: event.pointerId, target, before, node, group, start: { x: event.clientX, y: event.clientY },
-    camera: { x: camera.value.x, y: camera.value.y },
-  }
+  nodeDrag = { ...pointerSession(event, camera.value), before, node, group }
   gestureIds.value = new Set(before.keys())
-  target.focus({ preventScroll: true })
-  capturePointer(target, event.pointerId)
+  grabPointer(nodeDrag)
   startAutoPan(event)
   beginGesture('pointer', before.size > 1 ? 'nodes-drag' : 'node-drag')
 }
 
 function updateNodePreview(clientX: number, clientY: number) {
   if (!nodeDrag) return
-  const dx = clientX - nodeDrag.start.x, dy = clientY - nodeDrag.start.y
-  if (!dragPreview.value && !pastThreshold(nodeDrag.start, { clientX, clientY })) return
-  const { x, y, scale } = camera.value
+  if (!dragPreview.value && !sessionPastThreshold(nodeDrag, clientX, clientY)) return
   // Camera movement during the drag (auto-pan) moves the chart under a still pointer.
-  dragPreview.value = dragPositions(nodeDrag, (dx - (x - nodeDrag.camera.x)) / scale, (dy - (y - nodeDrag.camera.y)) / scale)
+  const delta = chartDelta(nodeDrag, clientX, clientY, camera.value)
+  dragPreview.value = dragPositions(nodeDrag, delta.x, delta.y)
 }
 function moveNode(event: PointerEvent) {
-  if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) return
+  if (!ownsPointer(nodeDrag, event)) return
   gesturePointer = { x: event.clientX, y: event.clientY }
   updateNodePreview(event.clientX, event.clientY)
 }
@@ -1048,10 +1042,10 @@ function cancelNodeDrag() {
     suppressGroupClick = drag.group
   }
   dragPreview.value = undefined
-  if (drag) releasePointer(drag.target, drag.pointerId)
+  releaseSession(drag)
 }
 function finishNodeDrag(event: PointerEvent) {
-  if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) return
+  if (!ownsPointer(nodeDrag, event)) return
   if (event.type !== 'pointerup') {
     cancelNodeDrag()
     endGesture('pointer', 'cancelled')
@@ -1109,7 +1103,7 @@ type ConnectionDraft = { fixed: PortRef; end: 'from' | 'to'; edge?: GraphEdge }
 const draft = ref<ConnectionDraft>()
 const activeEdgeId = ref<string>()
 const connectionPoint = ref<GraphPoint>()
-let connectionDrag: { pointerId: number; target: SVGElement; start: GraphPoint } | undefined
+let connectionDrag: PointerSession | undefined
 let skipHandleClick = false
 // The edge whose reconnect handles are shown. A controlled edge selection hides them once the edge leaves it.
 const currentEdgeId = computed(() => {
@@ -1191,10 +1185,8 @@ const connectionPath = computed(() => {
   return `M ${origin.x} ${origin.y} L ${end.x} ${end.y}`
 })
 function captureConnection(event: PointerEvent) {
-  const target = event.currentTarget as SVGElement
-  connectionDrag = { pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
-  target.focus({ preventScroll: true })
-  capturePointer(target, event.pointerId)
+  connectionDrag = pointerSession(event)
+  grabPointer(connectionDrag)
   startAutoPan(event)
 }
 function startPort(event: PointerEvent, handle: PortHandle) {
@@ -1213,9 +1205,9 @@ function reconnectEdge(edge: GraphEdge, end: 'from' | 'to', event?: PointerEvent
   beginGesture('connection', 'reconnect', event ? 'pointer' : 'keyboard')
 }
 function moveConnection(event: PointerEvent) {
-  if (connectionDrag?.pointerId !== event.pointerId) return
+  if (!ownsPointer(connectionDrag, event)) return
   gesturePointer = { x: event.clientX, y: event.clientY }
-  if (connectionPoint.value || pastThreshold(connectionDrag.start, event)) {
+  if (connectionPoint.value || sessionPastThreshold(connectionDrag, event.clientX, event.clientY)) {
     connectionPoint.value = worldPoint(event.clientX, event.clientY)
   }
 }
@@ -1223,10 +1215,10 @@ function clearConnectionCapture() {
   const drag = connectionDrag
   connectionDrag = undefined
   connectionPoint.value = undefined
-  if (drag) releasePointer(drag.target, drag.pointerId)
+  releaseSession(drag)
 }
 function finishConnection(event: PointerEvent) {
-  if (connectionDrag?.pointerId !== event.pointerId) return
+  if (!ownsPointer(connectionDrag, event)) return
   if (event.type !== 'pointerup') {
     clearConnectionCapture()
     draft.value = undefined
@@ -1608,17 +1600,12 @@ function resizeKeys(event: KeyboardEvent, id: string, corner: Corner) {
 
 // Pointer drags of waypoint, insert and resize handles.
 // Handle drags do not auto-pan, and a camera change (zoom, pan keys, pinch, fit) cancels them, so the camera stays put.
-type HandleDrag = {
-  pointerId: number; target: SVGElement; start: GraphPoint; kind: 'move' | 'add' | 'resize'
-  id: string; index: number; origin: GraphPoint; corner?: Corner; box?: GraphRect
-}
+type HandleDrag = PointerSession & { kind: 'move' | 'add' | 'resize'; id: string; index: number; origin: GraphPoint; corner?: Corner; box?: GraphRect }
 let handleDrag: HandleDrag | undefined
-function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId' | 'target' | 'start'>) {
+function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, keyof PointerSession>) {
   if (!event.isPrimary || event.button !== 0 || gestureInFlight()) return
-  const target = event.currentTarget as SVGElement
-  handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
-  target.focus({ preventScroll: true })
-  capturePointer(target, event.pointerId)
+  handleDrag = { ...drag, ...pointerSession(event) }
+  grabPointer(handleDrag)
   beginGesture('pointer', drag.kind === 'resize' ? 'node-resize' : 'edge-reshape')
 }
 function startWaypointDrag(event: PointerEvent, handle: WaypointHandle) {
@@ -1634,10 +1621,10 @@ function snapOrKeep(value: number) {
 }
 function moveHandle(event: PointerEvent) {
   const drag = handleDrag
-  if (!drag || drag.pointerId !== event.pointerId) return
-  if (!resizePreview.value && !reshapePreview.value && !pastThreshold(drag.start, event)) return
-  const { scale } = camera.value
-  const dx = (event.clientX - drag.start.x) / scale, dy = (event.clientY - drag.start.y) / scale
+  if (!ownsPointer(drag, event)) return
+  if (!resizePreview.value && !reshapePreview.value && !sessionPastThreshold(drag, event.clientX, event.clientY)) return
+  // The session has no start camera: a camera change cancels a handle drag.
+  const { x: dx, y: dy } = chartDelta(drag, event.clientX, event.clientY, camera.value)
   if (drag.kind === 'resize') {
     const box = drag.box!
     resizePreview.value = { id: drag.id, box: resizeBox(box, drag.corner!, snapOrKeep(box.x + dx), snapOrKeep(box.y + dy),
@@ -1657,11 +1644,11 @@ function cancelHandleDrag() {
   handleDrag = undefined
   resizePreview.value = undefined
   reshapePreview.value = undefined
-  if (drag) releasePointer(drag.target, drag.pointerId)
+  releaseSession(drag)
 }
 function finishHandle(event: PointerEvent) {
   const drag = handleDrag
-  if (!drag || drag.pointerId !== event.pointerId) return
+  if (!ownsPointer(drag, event)) return
   if (event.type !== 'pointerup') {
     cancelHandleDrag()
     endGesture('pointer', 'cancelled')
