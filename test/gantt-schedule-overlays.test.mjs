@@ -7,6 +7,7 @@ import {
   validateTimelineData,
 } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
+import { ganttScale } from './helpers/builders.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 import { hour } from './helpers/time.mjs'
 
@@ -183,7 +184,7 @@ test('renderTimelineSvg is unchanged without the new inputs and validates nonWor
   }
 })
 
-const chartProps = { rows, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
+const chartProps = { rows, ...ganttScale() }
 
 test('GanttChart renders shading, critical, float, deadline and segments on the server', async () => {
   const html = await renderComponent(GanttChart, {

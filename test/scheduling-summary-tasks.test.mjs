@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { sparseLink as link, task } from './helpers/builders.mjs'
+import { datesById, sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
 import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 const {
@@ -13,9 +13,8 @@ const range = { start: 0, end: 100 }
 const sub = (id, duration, parentId, fields = {}) => ({ id, duration, parentId, ...fields })
 const dates = result => {
   assert.equal(result.ok, true, JSON.stringify(result))
-  return Object.fromEntries(result.tasks.map(item => [item.id, [item.start, item.end]]))
+  return datesById(result)
 }
-const byId = (result, id) => result.tasks.find(item => item.id === id)
 
 test('a summary task spans its subtasks and ignores its own duration', () => {
   const input = {

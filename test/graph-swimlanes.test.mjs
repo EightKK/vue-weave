@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { graphPathBounds, graphSwimlaneAt, layoutSwimlaneGraph, renderGraphSvg, routeGraphEdges } from '@eightkk/vue-weave/core'
 import { NetworkGraph, layoutSwimlaneGraph as rootLayoutSwimlaneGraph } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const directions = ['LR', 'RL', 'TB', 'BT']
 const lanes = [{ id: 'buy', label: 'Purchasing' }, { id: 'make', label: 'Machining' }, { id: 'check', label: 'Inspection' }, 'ship']
@@ -181,7 +181,7 @@ test('graphSwimlaneAt finds the lane of a point or box centre, and nothing in a 
   assert.equal(graphSwimlaneAt(layout.lanes, { x: make.x + 200, y: make.y - 20, width: 144, height: 58 })?.id, 'make')
 })
 
-const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph draws lanes on the server behind the graph, and the markup without lanes is unchanged', async () => {
   const layout = layoutSwimlaneGraph(nodes, edges, { lanes, laneOf })

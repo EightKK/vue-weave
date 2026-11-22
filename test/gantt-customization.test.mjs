@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { GanttChart } from '@eightkk/vue-weave'
+import { ganttScale } from './helpers/builders.mjs'
 import { hour } from './helpers/time.mjs'
 
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
@@ -12,7 +13,7 @@ const bars = [
   { id: 'm', rowId: 'r2', label: 'Launch', start: 7 * hour, end: 7 * hour },
 ]
 
-const chartProps = { rows, bars, dependencies: [{ id: 'ab', from: 'a', to: 'b' }], range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
+const chartProps = { rows, bars, dependencies: [{ id: 'ab', from: 'a', to: 'b' }], ...ganttScale() }
 
 function renderChart(props = {}, slots) {
   const app = createSSRApp({ render: () => h(GanttChart, { ...chartProps, ...props }, slots) })

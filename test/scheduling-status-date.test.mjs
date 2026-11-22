@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { rescheduleFromActuals, rescheduleFromStatusDate, scheduleTasks } from '@eightkk/vue-weave/core'
+import { datesWithWork } from './helpers/builders.mjs'
 
 const plan = {
   range: { start: 0, end: 100 },
@@ -11,7 +12,7 @@ const plan = {
   dependencies: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'bc', from: 'b', to: 'c' }, { id: 'cm', from: 'c', to: 'm' }],
 }
 
-const dates = result => Object.fromEntries(result.tasks.map(task => [task.id, [task.start, task.end, task.work.map(w => [w.start, w.end])]]))
+const dates = datesWithWork
 const finishLinked = (type, lag, extra = {}) => ({
   range: { start: 0, end: 20 },
   tasks: [{ id: 'a', duration: 6 }, { id: 'b', duration: 4, ...extra }],

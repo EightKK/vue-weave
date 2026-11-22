@@ -6,7 +6,7 @@ import {
 } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
 import { byId, centre, deepFreeze as freeze, onBorder, polyline } from './helpers/builders.mjs'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 // Signed distance of a point from the line through a and b, positive on the side of the normal (a.y - b.y, b.x - a.x).
 const side = (a, b, point) => ((a.y - b.y) * (point.x - a.x) + (b.x - a.x) * (point.y - a.y)) / Math.hypot(b.x - a.x, b.y - a.y)
@@ -277,7 +277,7 @@ test('renderGraphSvg draws diamond, ellipse and hexagon nodes with centred text 
   assert.match(tall, /<text x="72" y="55" text-anchor="middle"[^>]*>Prepare/)
 })
 
-const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph server markup is unchanged by default values of the edge and shape fields', async () => {
   const plain = await render({ edgesSelectable: true })

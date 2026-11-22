@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { sparseLink as link, task } from './helpers/builders.mjs'
+import { sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
 import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 
@@ -18,7 +18,6 @@ test('progress-percentage rescheduling gives the same results as before recorded
 
 const { actualsTimelineBars, rescheduleFromActuals, scheduleTasks, timelineBaselineId } = core
 const range = { start: 0, end: 100 }
-const byId = (result, id) => result.tasks.find(item => item.id === id)
 const span = item => [item.start, item.end]
 const codes = result => result.diagnostics.map(item => [item.code, item.entities.map(entity => entity.id).join(',')])
 // a (4) → b (4) → c (2), continuous time: planned a [0, 4), b [4, 8), c [8, 10).

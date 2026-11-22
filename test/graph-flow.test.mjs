@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { graphFlowBands, layoutFlowGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
 import { NetworkGraph, layoutFlowGraph as rootLayoutFlowGraph } from '@eightkk/vue-weave'
 import { chainEdges, nodeIds } from './helpers/builders.mjs'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const node = (id, label = id) => ({ id, label })
 const flowEdge = (id, from, to, quantity, unit = 'pcs') => ({ id, from, to, data: { quantity, unit } })
@@ -310,7 +310,7 @@ test('renderGraphSvg draws bands with their widths, reference bands dashed, and 
   assert.throws(() => renderGraphSvg(flow, nodes, edges, { edgeBands: new Map([['lot-a', { width: -1 }]]) }), RangeError)
 })
 
-const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph draws bands with real width and named hit areas on the server; the markup without edgeBands is unchanged', async () => {
   const flow = layoutFlowGraph(nodes, edges, options)

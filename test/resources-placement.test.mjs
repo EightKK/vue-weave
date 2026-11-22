@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildPlacementInput, calculateResourceLoad, levelResources, scheduleTasks } from '@eightkk/vue-weave/core'
+import { datesById } from './helpers/builders.mjs'
 import { seededRandom } from './helpers/seeded.mjs'
 
 const range = { start: 0, end: 10 }
@@ -73,7 +74,7 @@ test('malformed placement input still throws', () => {
 
 // Summary tasks: leaving out an unplaced summary must not change what binds its placed subtasks.
 const wide = { start: 0, end: 100 }
-const datesOf = result => Object.fromEntries(result.tasks.map(item => [item.id, [item.start, item.end]]))
+const datesOf = datesById
 
 test('a placed subtask keeps the startNoEarlierThan and inactive state of its unplaced summary', () => {
   const input = { range: wide, tasks: [{ id: 'P', duration: 0, startNoEarlierThan: 10 }, { id: 'A', duration: 2, parentId: 'P' }] }

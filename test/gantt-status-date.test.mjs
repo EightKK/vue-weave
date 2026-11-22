@@ -4,7 +4,8 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createTimeScale, renderTimelineSvg } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
+import { ganttScale } from './helpers/builders.mjs'
 import { hour } from './helpers/time.mjs'
 
 const chartRows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]
@@ -13,8 +14,8 @@ const chartBars = [
   { id: 'b', rowId: 'r2', label: 'B', start: 4 * hour, end: 6 * hour },
 ]
 
-const chartProps = { rows: chartRows, bars: chartBars, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
+const chartProps = { rows: chartRows, bars: chartBars, ...ganttScale() }
+const render = renderWith(GanttChart, chartProps)
 
 test('GanttChart renders the status date and a progress line on the server', async () => {
   const html = await render({ statusDate: 2.5 * hour, showProgressLine: true, labels: { statusDate: 'Stichtag' } })
