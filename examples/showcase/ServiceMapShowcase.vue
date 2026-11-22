@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import {
   GanttChart, NetworkGraph, completeGraphLayout, traverseGraph,
   type GraphBox, type GraphEdge, type GraphLayout, type GraphShownEdge, type GraphShownNode, type NetworkGroup, type NetworkNode,
@@ -166,6 +166,7 @@ const scenario = ref<Scenario>({})
 const live = ref(false)
 const selectedId = ref<string>()
 const collapsed = ref<ReadonlySet<string>>(new Set())
+const graph = shallowRef<InstanceType<typeof NetworkGraph>>()
 const status = ref('Paused at 14:30:00 UTC · 22 services in 2 regions; Recommender is degraded since its 14:19 deploy. Press Live to stream metrics.')
 const uid = useId()
 const ids = { ok: uid + '-ok', degraded: uid + '-degraded', critical: uid + '-critical', idle: uid + '-idle', glow: uid + '-glow' }
@@ -189,9 +190,11 @@ const nodes = computed<Svc[]>(() => {
 function layoutMap(shown: readonly GraphShownNode<Svc, NetworkGroup>[], links: readonly GraphShownEdge<Call, NetworkGroup>[]): GraphLayout {
   const boxes = new Map<string, GraphBox>()
   for (const node of shown) {
+    // A collapsed group's proxy sits in the middle of the area its services had.
     const spots = (svcById.has(node.id) ? [node.id] : membersOf(node.id)).map(id => svcById.get(id)!.data)
-    const col = Math.min(...spots.map(spot => spot.col)), row = Math.min(...spots.map(spot => spot.row))
-    boxes.set(node.id, { x: colX[col]!, y: rowY(row), width: W, height: H, rank: col })
+    const xs = spots.map(spot => colX[spot.col]!), ys = spots.map(spot => rowY(spot.row))
+    const x = (Math.min(...xs) + Math.max(...xs)) / 2, y = (Math.min(...ys) + Math.max(...ys)) / 2
+    boxes.set(node.id, { x, y, width: W, height: H, rank: Math.min(...spots.map(spot => spot.col)) })
   }
   return completeGraphLayout({ boxes, paths: new Map(), edgeLabels: new Map(), width: mapWidth, height: mapHeight }, shown, links).layout
 }
@@ -284,7 +287,7 @@ interface Alert { id: string; service: string; label: string; severity: 'info' |
 const minute = 60_000
 const staticAlerts: Alert[] = [
   { id: 'a-search', service: 'search', label: 'p95 over SLO', severity: 'warn', start: T0 - 26 * minute, end: T0 - 19 * minute },
-  { id: 'a-gateway', service: 'gateway', label: '5xx burst', severity: 'crit', start: T0 - 18.5 * minute, end: T0 - 16 * minute },
+  { id: 'a-gateway', service: 'gateway', label: '5xx burst', severity: 'crit', start: T0 - 16.5 * minute, end: T0 - 14.5 * minute },
   { id: 'a-cache', service: 'cache', label: 'Evictions', severity: 'warn', start: T0 - 15 * minute, end: T0 - 12 * minute },
   { id: 'a-recommend', service: 'recommend', label: 'Error rate 1.6%', severity: 'warn', start: T0 - 8.5 * minute },
 ]
@@ -297,7 +300,7 @@ const alerts = computed<Alert[]>(() => {
   const { incidentAt, failoverAt } = scenario.value
   const close = failoverAt !== undefined ? T0 + failoverAt * tickMs : undefined
   const list = [...staticAlerts]
-  if (close !== undefined) list.push({ id: 'a-failover', service: 'payments', label: 'Traffic shift to eu-west-1', severity: 'info', start: close, end: close + minute })
+  if (close !== undefined) list.push({ id: 'a-failover', service: 'payments', label: 'Failover', severity: 'info', start: close, end: close + 2 * minute })
   if (incidentAt === undefined) return list
   const at = (offset: number) => T0 + (incidentAt + offset) * tickMs
   list.push({ id: 'a-pdb', service: 'payments-db', label: 'p95 490 ms', severity: 'crit', start: at(0) })
@@ -327,7 +330,7 @@ const shownBars = computed(() => {
   const rows = new Set(timelineRows.value.map(row => row.id))
   return bars.value.filter(bar => rows.has(bar.rowId))
 })
-const timelineHeight = computed(() => Math.min(260, Math.max(150, 44 + timelineRows.value.length * 34)) + 'px')
+const timelineHeight = computed(() => Math.min(330, Math.max(150, 44 + timelineRows.value.length * 34)) + 'px')
 const selectedBars = computed(() => new Set(bars.value.filter(bar => bar.rowId === selectedId.value).map(bar => bar.id)))
 
 function selectService(id: string | undefined) {
@@ -355,6 +358,7 @@ function reset() {
   selectedId.value = undefined
   collapsed.value = new Set()
   status.value = 'Reset to 14:30:00 UTC: steady state, paused.'
+  void nextTick(() => graph.value?.fit())
 }
 function step() {
   tick.value++
@@ -364,16 +368,31 @@ function commitCollapse(next: ReadonlySet<string>) {
   collapsed.value = next
   const id = added ?? removed
   if (id) status.value = `${added ? 'Collapsed' : 'Expanded'} ${groupById.get(id)!.label}: ${membersOf(id).length} services ${added ? 'behind one node' : 'shown'}.`
+  // Frame the changed map once it has rendered.
+  void nextTick(() => graph.value?.fit())
 }
 
+// The timeline shows the last 30 minutes across its width: measured after mounting, 24 px a minute before that.
+const timelineBox = ref<HTMLElement>()
+const pixelsPerMinute = ref(24)
+let resize: ResizeObserver | undefined
 let timer: ReturnType<typeof setInterval> | undefined
 function syncTimer() {
   if (timer !== undefined) clearInterval(timer)
   timer = live.value ? setInterval(step, 1000) : undefined
 }
-onMounted(() => watch(live, syncTimer, { immediate: true }))
+onMounted(() => {
+  watch(live, syncTimer, { immediate: true })
+  const box = timelineBox.value
+  if (!box || typeof ResizeObserver === 'undefined') return
+  resize = new ResizeObserver(() => {
+    pixelsPerMinute.value = Math.max(12, Math.floor((box.clientWidth - 150) / 30 * 10) / 10)
+  })
+  resize.observe(box)
+})
 onBeforeUnmount(() => {
   if (timer !== undefined) clearInterval(timer)
+  resize?.disconnect()
 })
 </script>
 
@@ -413,8 +432,8 @@ onBeforeUnmount(() => {
     </div>
     <div class="sc-svc-stage">
       <NetworkGraph
-        :selected-id="selectedId" unstyled-node-slots class="sc-svc-graph" :nodes="nodes" :edges="calls" :groups="groups" :layout="layoutMap"
-        height="clamp(480px, 50vw, 660px)" background="dots" collapsible-groups :collapsed-group-ids="collapsed"
+        ref="graph" :selected-id="selectedId" unstyled-node-slots class="sc-svc-graph" :nodes="nodes" :edges="calls" :groups="groups" :layout="layoutMap"
+        height="clamp(380px, 50vw, 660px)" background="dots" collapsible-groups :collapsed-group-ids="collapsed"
         :highlighted-node-ids="blast.nodeIds" :highlighted-edge-ids="blast.edgeIds" :dimmed-ids="dimmedIds"
         :labels="{ region: 'Service topology' }" @update:collapsed-group-ids="commitCollapse" @update:selected-id="selectService"
       >
@@ -479,10 +498,10 @@ onBeforeUnmount(() => {
       </ul>
     </div>
     <div class="sc-svc-bottom">
-      <div class="sc-svc-timeline">
+      <div ref="timelineBox" class="sc-svc-timeline">
         <h3>Incident timeline <span>{{ selected ? selected.item.label + ' and its dependency chain' : 'all services' }} · last 30 min</span></h3>
         <GanttChart
-          :rows="timelineRows" :bars="shownBars" :range="range" :pixels-per-unit="24 / minute" :tick-steps="[5 * minute]" :format-time="time => clock(time, false)"
+          :rows="timelineRows" :bars="shownBars" :range="range" :pixels-per-unit="pixelsPerMinute / minute" :tick-steps="[5 * minute]" :format-time="time => clock(time, false)"
           :markers="deploys" show-now :now="now" readonly :row-height="34" :height="timelineHeight" :show-controls="false"
           :selected-ids="selectedBars" :labels="{ region: 'Incident timeline', rows: 'Service', now: 'Now', empty: 'No alerts in this window' }"
           @select="id => selectService(alerts.find(item => item.id === id)?.service)"
@@ -601,9 +620,9 @@ onBeforeUnmount(() => {
 .sc-svc-clock { padding: 5px 10px; border-radius: 8px; background: #0e1626; border: 1px solid #1e2a42; font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c7d4f5; font-variant-numeric: tabular-nums; }
 .sc-svc-clock small { color: #7d8ba6; font-size: 10px; }
 .sc-svc-stage { position: relative; }
-.sc-svc-legend { position: absolute; bottom: 12px; left: 12px; display: grid; grid-template-columns: repeat(4, auto); gap: 6px 12px; max-width: 300px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid #1e2a42; border-radius: 10px; background: rgb(10 16 29 / 86%); font-size: 11px; color: #b7c3d9; pointer-events: none; }
+.sc-svc-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 8px 0 0; padding: 0 4px; list-style: none; font-size: 11px; color: #b7c3d9; }
 .sc-svc-legend li { display: flex; align-items: center; gap: 6px; }
-.sc-svc-legend .sc-svc-legend-note { grid-column: 1 / -1; display: block; color: #7d8ba6; line-height: 1.4; }
+.sc-svc-legend .sc-svc-legend-note { margin-inline-start: auto; color: #7d8ba6; }
 .sc-svc-swatch { width: 14px; height: 4px; border-radius: 2px; background: currentColor; }
 .sc-svc-swatch.sc-svc-ok, .sc-svc-dot.sc-svc-ok { color: var(--sc-svc-ok); }
 .sc-svc-swatch.sc-svc-degraded, .sc-svc-dot.sc-svc-degraded { color: var(--sc-svc-degraded); }
@@ -716,6 +735,6 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .sc-svc { padding: 12px; }
   .sc-svc-bottom { grid-template-columns: minmax(0, 1fr); }
-  .sc-svc-legend { display: none; }
+  .sc-svc-legend .sc-svc-legend-note { margin-inline-start: 0; }
 }
 </style>
