@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gantt header sort and filter fixture</title>
+    <link rel="stylesheet" href="/gantt-header-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/gantt-header-test/vue.js", "@eightkk/vue-weave": "/gantt-header-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref } from 'vue'
+      import { GanttChart, useTimelineView } from '@eightkk/vue-weave'
+
+      // Header sorting and filtering wired to useTimelineView: the chart proposes `update:sort` and `update:filters`, the
+      // view state applies them and the projection feeds the rows back. Query parameters: rtl, dark, ignore (the parent
+      // ignores every proposal). Events are logged in order to the "Events" status as JSON lines; window.applyView
+      // changes the view from a script, for example in the middle of a drag.
+      const query = new URLSearchParams(location.search)
+      const rows = [
+        { id: 'p1', label: 'Phase 1', owner: '', status: 'open' },
+        { id: 'a', parentId: 'p1', label: 'Alpha', owner: 'Ann', status: 'open' },
+        { id: 'b', parentId: 'p1', label: 'Beta', owner: 'Ben', status: 'done' },
+        { id: 'p2', label: 'Phase 2', owner: '', status: 'open' },
+        { id: 'c', parentId: 'p2', label: 'Gamma', owner: 'Cy', status: 'late' },
+        { id: 'd', parentId: 'p2', label: 'Delta', owner: 'Ann', status: 'done' },
+      ]
+      const bars = rows.filter(row => row.parentId).map((row, index) => ({
+        id: 'bar-' + row.id, rowId: row.id, label: 'Bar ' + row.label, start: index * 2, end: index * 2 + 2, editable: true,
+      }))
+      const statuses = [{ value: 'open', label: 'Open' }, { value: 'done', label: 'Done' }, { value: 'late', label: 'Late' }]
+      const columns = [
+        { id: 'owner', label: 'Owner', width: 90, value: row => row.owner },
+        { id: 'status', label: 'Status', width: 90, value: row => statuses.find(item => item.value === row.status).label,
+          field: { id: 'status', kind: 'select', choices: statuses, get: row => row.status } },
+      ]
+      const view = useTimelineView({ rows, bars, columns })
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      window.applyView = patch => {
+        if (patch.sort) view.setSort(patch.sort)
+        if (patch.filters) view.setFilters(patch.filters)
+      }
+      createApp({
+        setup: () => () => h('div', { class: query.has('dark') ? 'vw-theme-dark' : undefined }, [
+          h('button', { type: 'button', onClick: () => { log.value = [] } }, 'Clear log'),
+          h(GanttChart, {
+            dir: query.has('rtl') ? 'rtl' : 'ltr', height: 360, rowHeight: 40, pixelsPerUnit: 40, snap: 1, tickSteps: [1], formatTime: String,
+            range: { start: 0, end: 10 }, columns, rows: view.projection.value.rows, bars: view.projection.value.bars,
+            sortableColumns: true, filterableColumns: true, sort: view.state.value.sort, filters: view.state.value.filters ?? [],
+            'onUpdate:sort': sort => { record('sort', sort); if (!query.has('ignore')) view.setSort(sort) },
+            'onUpdate:filters': filters => { record('filters', filters); if (!query.has('ignore')) view.setFilters(filters) },
+            'onEdit-cancel': event => record('edit-cancel', event.reason, event.barIds),
+          }),
+          h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

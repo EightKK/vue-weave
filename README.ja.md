@@ -224,7 +224,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **描画：** 独自のSVGを描く `node`・`edge`・`group`・`minimap-node` スロット、HTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロット。ひし形・楕円・六角形のノード、直角・直線の辺（`edgeStyle`）、ノードを避ける経路（`avoidNodes`）、ノードや他のラベルと重ならない辺ラベルの配置（`edgeLabelPlacement`）、経由点、端の記号、アニメーションする辺、平行な辺の振り分け。
 - **変更案としての編集：** ノードの移動、型付きのポートルール（`connectionRules`）で検査する接続と接続先のヒント、ラベルのその場編集、矩形・投げ縄による選択、入れ子で折りたためるグループ、ノードのサイズ変更、グリッドへの吸着と整列ガイド、パレットからのドロップ、クリップボード、キーボードによる削除。
 - **表示範囲の操作：** ミニマップ、大規模グラフ向けの表示範囲外の描画省略と縮小時の簡略表示、ピンチズーム、検索結果の強調（`matchIds`）、`focusNode(id)`、`fit({ ids })`。
-- **ダイアグラムエディタ部品：** `GraphPalette` はノードのテンプレートを並べ、グラフへのドラッグとキーボードでの追加を提供します。`PropertyInspector` は選択中のノードを型付きフィールドで編集します。どちらも変更案をイベントで通知します。詳しくは[Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-editor-parts)を参照してください。
+- **ダイアグラムエディタ部品：** `GraphPalette` はノードのテンプレートを並べ、グラフへのドラッグとキーボードでの追加を提供します。`PropertyInspector` は選択中のノードを型付きフィールドで編集し、リソース割り当てと依存関係の表も編集できます。どちらも変更案をイベントで通知します。詳しくは[Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-editor-parts)を参照してください。
 
 ### GanttChart
 
@@ -257,7 +257,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 - **ビューの連動：** `useLinkedSelection` はグラフ、ガントチャート、負荷行をエンティティの対応づけで連動させます。`revealNode`、`revealBar`、`revealLinkedTarget` は折り畳まれたグループや行の中も含めて項目へ移動し、`timelineBarsInRange` と `resolveTimeRangeTargets` はある時間範囲に作業していた対象を強調します。詳しくは[Linking views](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#linking-views)を参照してください。
 - **大規模データ：** `useWindowedData` はアプリの `load` 関数を通じて表示中の範囲だけを取得し、中断、重複排除、再試行に対応します。グラフ展開ヘルパーと `layoutGraphIncrementally` は、表示中のノードを動かさずにグラフを1ホップずつ読み込みます。`useAsyncGraphLayout` はWorkerでレイアウトを計算し、`routingPolicy="preserve"` はエンジンの配線を保持します。詳しくは[Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#loading-only-what-is-visible)を参照してください。
-- **表示と保存：** 行を検索・並べ替える `useTimelineView`、Undo／Redoの `useEditHistory`、サーバーのアダプターを通じて版競合も扱いながら保存する `useEditTransaction`、版付きで検証されたJSONとして保存・復元する `serializeWeaveSnapshot` と `restoreWeaveSnapshot`。
+- **表示と保存：** 行を検索・並べ替え・絞り込みする `useTimelineView`（オプトインのGanttChartの列見出しの並べ替えボタンと列フィルターが変更案を出します）、Undo／Redoの `useEditHistory`、サーバーのアダプターを通じて版競合も扱いながら保存する `useEditTransaction`、版付きで検証されたJSONとして保存・復元する `serializeWeaveSnapshot` と `restoreWeaveSnapshot`。
 
 ### 書き出し・テーマ・アクセシビリティ
 

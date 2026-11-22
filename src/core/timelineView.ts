@@ -1,4 +1,4 @@
-import { createTimelineRowTree, summarizeTimelineRows, validateTimelineData } from './timeline.js'
+import { createTimelineRowTree, summarizeTimelineRows, timelineLabelColumnId, validateTimelineData } from './timeline.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import type { TimeRange } from './timeline.js'
 import type { TimelineBar, TimelineColumn, TimelineDependency, TimelineRow } from './types.js'
@@ -22,6 +22,23 @@ export interface TimelineViewSort {
   direction: 'asc' | 'desc'
 }
 
+/**
+ * A column filter of a view. A row matches when it meets every condition given; rows that match every filter (and the
+ * search) stay with their ancestors.
+ */
+export interface TimelineViewFilter {
+  /** A column ID, or `timelineLabelColumnId` for the row label. */
+  columnId: string
+  /** Text that the column's displayed value must contain, ignoring case. Empty or omitted: no text condition. */
+  text?: string
+  /**
+   * Values to keep, compared with the column's raw `field.get` value (else its displayed value; the row label for
+   * `timelineLabelColumnId`). A multiple selection matches when one of its entries does. Omitted: no value condition;
+   * an empty list matches no row.
+   */
+  values?: (string | number)[]
+}
+
 /** Declarative, JSON-safe view state. It holds no functions, DOM state, hover state or edit drafts. */
 export interface TimelineViewState {
   version: 1
@@ -29,6 +46,8 @@ export interface TimelineViewState {
   columns: TimelineViewColumn[]
   search: TimelineViewSearch
   sort: TimelineViewSort[]
+  /** Column filters, combined with the search and with each other. Optional, so states saved without filters still parse. */
+  filters?: TimelineViewFilter[]
   /** Collapsed row IDs. The projection passes them through; the chart applies them. */
   collapsedIds: string[]
   /** Visible time window. */
@@ -79,7 +98,10 @@ export interface TimelineViewProjection<R extends TimelineRow = TimelineRow, B e
   rows: R[]
   bars: B[]
   dependencies: D[]
-  /** IDs of the rows that matched the search (without the ancestors that were kept for them). Empty without a search. */
+  /**
+   * IDs of the rows that matched the search and the filters (without the ancestors that were kept for them). Empty
+   * without a search or filter.
+   */
   matchedRowIds: string[]
   /** Dependencies dropped because an endpoint bar is not shown. */
   removedDependencyIds: string[]
@@ -150,6 +172,20 @@ export function parseTimelineViewState(value: unknown): TimelineViewState {
     version: 1, columns, search: parsedSearch, sort,
     collapsedIds: list(root.collapsedIds, 'collapsed IDs').map(id => text(id, 'collapsed ID')),
   }
+  if (root.filters !== undefined) {
+    state.filters = list(root.filters, 'filters').map((item): TimelineViewFilter => {
+      const filter = object(item, 'filter')
+      const result: TimelineViewFilter = { columnId: text(filter.columnId, 'filter column') }
+      if (filter.text !== undefined) result.text = text(filter.text, 'filter text')
+      if (filter.values !== undefined) {
+        result.values = list(filter.values, 'filter values').map(entry => {
+          if (typeof entry === 'string' || (typeof entry === 'number' && Number.isFinite(entry))) return entry
+          throw new Error('Invalid timeline view: filter value')
+        })
+      }
+      return result
+    })
+  }
   if (root.window !== undefined) {
     const window = object(root.window, 'window')
     if (typeof window.start !== 'number' || typeof window.end !== 'number') throw new Error('Invalid timeline view: window')
@@ -209,6 +245,47 @@ export function resolveTimelineColumns<C extends Pick<TimelineColumn, 'id' | 'wi
   return { columns: resolved, diagnostics: reconciled.diagnostics }
 }
 
+/**
+ * The rows that match `predicate`, each with its ancestors so that summary rows stay as context, in their original
+ * order. Throws like `createTimelineRowTree` for duplicate IDs, unknown parents and cycles. Does not change `rows`.
+ */
+export function filterTimelineRows<R extends TimelineRow>(rows: readonly R[], predicate: (row: R) => boolean): R[] {
+  createTimelineRowTree(rows)
+  const byId = new Map(rows.map(row => [row.id, row]))
+  const keep = new Set<string>()
+  for (const row of rows) {
+    if (!predicate(row)) continue
+    for (let id: string | undefined = row.id; id !== undefined && !keep.has(id); id = byId.get(id)!.parentId) keep.add(id)
+  }
+  return rows.filter(row => keep.has(row.id))
+}
+
+/**
+ * The sort after activating a column's sort control: a column that is not the primary sort becomes the only rule,
+ * ascending; ascending turns descending; descending clears the sort. Returns a new array.
+ */
+export function nextTimelineSort(sort: readonly TimelineViewSort[], columnId: string): TimelineViewSort[] {
+  const current = sort[0]
+  if (current?.ruleId !== columnId) return [{ ruleId: columnId, direction: 'asc' }]
+  return current.direction === 'asc' ? [{ ruleId: columnId, direction: 'desc' }] : []
+}
+
+/**
+ * Whether a row meets one column filter. `column` is undefined for `timelineLabelColumnId`, which reads the row label.
+ * `summary` is passed to `column.value`.
+ */
+function matchesFilter<R extends TimelineRow>(
+  filter: TimelineViewFilter, row: R, column: TimelineColumn<R> | undefined, summary: Parameters<TimelineColumn<R>['value']>[1],
+) {
+  const shown = column ? column.value(row, summary) : row.label
+  const query = filter.text?.trim().toLowerCase()
+  if (query && !String(shown).toLowerCase().includes(query)) return false
+  if (!filter.values) return true
+  const raw = column?.field ? column.field.get(row) : shown
+  const entries = Array.isArray(raw) ? raw : [raw]
+  return entries.some(entry => (typeof entry === 'string' || typeof entry === 'number') && filter.values!.includes(entry))
+}
+
 function compareValues(a: string | number, b: string | number) {
   if (typeof a === 'number' && typeof b === 'number') return a < b ? -1 : a > b ? 1 : 0
   const left = String(a)
@@ -217,7 +294,8 @@ function compareValues(a: string | number, b: string | number) {
 }
 
 /**
- * Project the data for display. Rows that match the search stay with their ancestors, siblings are sorted
+ * Project the data for display. Rows that match the search and every column filter stay with their ancestors (a
+ * filter or sort on `timelineLabelColumnId` reads the row label), siblings are sorted
  * stably, and dependencies to hidden bars are removed and reported. The result passes
  * `validateTimelineData`. Inputs are not changed, and WBS codes come from the original rows.
  */
@@ -241,14 +319,21 @@ export function projectTimelineView<R extends TimelineRow, B extends TimelineBar
   }
   const collapsedIds = state.collapsedIds.filter(id => rowIds.has(id))
 
-  // Search: matching rows plus the ancestors they need.
+  // Search and filters: matching rows plus the ancestors they need.
   const query = state.search.text.trim().toLowerCase()
+  const known = new Set(columns.map(column => column.id))
+  const columnById = new Map(columns.map(column => [column.id, column]))
+  const filters: { filter: TimelineViewFilter; column?: TimelineColumn<R> }[] = []
+  for (const filter of state.filters ?? []) {
+    if (filter.columnId === timelineLabelColumnId && !known.has(filter.columnId)) filters.push({ filter })
+    else if (known.has(filter.columnId)) filters.push({ filter, column: columnById.get(filter.columnId)! })
+    else diagnostics.push({ code: 'unknown-column', id: filter.columnId, message: 'Unknown filter column in the saved view: ' + filter.columnId })
+  }
   let kept: ReadonlySet<string> = rowIds
   const matched: string[] = []
-  if (query) {
+  if (query || filters.length) {
     const summaries = summarizeTimelineRows(tree, bars)
-    const known = new Set(columns.map(column => column.id))
-    for (const id of state.search.columnIds ?? []) {
+    for (const id of query ? state.search.columnIds ?? [] : []) {
       if (!known.has(id)) diagnostics.push({ code: 'unknown-column', id, message: 'Unknown search column in the saved view: ' + id })
     }
     const searched = state.search.columnIds ? columns.filter(column => state.search.columnIds!.includes(column.id)) : columns
@@ -258,28 +343,30 @@ export function projectTimelineView<R extends TimelineRow, B extends TimelineBar
       if (labels) labels.push(bar.label)
       else barLabels.set(bar.rowId, [bar.label])
     }
-    const byId = new Map(rows.map(row => [row.id, row]))
-    const keep = new Set<string>()
-    for (const row of rows) {
-      const texts = searched.map(column => String(column.value(row, summaries.get(row.id))))
-      if (!state.search.columnIds) texts.push(row.label, row.detail ?? '', ...(barLabels.get(row.id) ?? []))
-      if (!texts.some(text => text.toLowerCase().includes(query))) continue
+    const matches = (row: R) => {
+      const summary = summaries.get(row.id)
+      if (query) {
+        const texts = searched.map(column => String(column.value(row, summary)))
+        if (!state.search.columnIds) texts.push(row.label, row.detail ?? '', ...(barLabels.get(row.id) ?? []))
+        if (!texts.some(text => text.toLowerCase().includes(query))) return false
+      }
+      if (!filters.every(({ filter, column }) => matchesFilter(filter, row, column, summary))) return false
       matched.push(row.id)
-      for (let id: string | undefined = row.id; id !== undefined && !keep.has(id); id = byId.get(id)!.parentId) keep.add(id)
+      return true
     }
-    kept = keep
+    kept = new Set(filterTimelineRows(rows, matches).map(row => row.id))
   }
 
   let shownRows = rows.filter(row => kept.has(row.id))
 
   // Sort siblings stably; ties keep the original order.
   const rules: { compare: TimelineRowCompare<R>; sign: number }[] = []
-  const columnById = new Map(columns.map(column => [column.id, column]))
   for (const sort of state.sort) {
     const registered = input.sortRules?.[sort.ruleId]
     const column = columnById.get(sort.ruleId)
     const compare: TimelineRowCompare<R> | undefined = registered
       ?? (column ? (a, b) => compareValues(column.value(a), column.value(b)) : undefined)
+      ?? (sort.ruleId === timelineLabelColumnId ? (a, b) => compareValues(a.label, b.label) : undefined)
     if (!compare) {
       diagnostics.push({ code: 'unknown-sort-rule', id: sort.ruleId, message: 'Unknown sort rule in the saved view: ' + sort.ruleId })
       continue

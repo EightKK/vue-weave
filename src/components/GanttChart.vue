@@ -49,6 +49,8 @@ import {
 } from './ganttChart/rowMoves.js'
 
 import { sheetKey, useSheet } from './ganttChart/sheet.js'
+import { nextTimelineSort, type TimelineViewFilter, type TimelineViewSort } from '../core/timelineView.js'
+import { filterActive, headerColumnIds, withColumnFilter } from './ganttChart/headerControls.js'
 import type { TimelineSheetEdit } from '../core/types.js'
 
 const props = withDefaults(defineProps<{
@@ -206,6 +208,25 @@ const props = withDefaults(defineProps<{
   showProgressLine?: boolean
   /** Shows resize separators on the row label column and each extra column, proposing new widths through `column-resize`. Opt-in. Default: false. */
   columnsResizable?: boolean
+  /**
+   * Shows a sort button in the header of these columns: `true` for the row label column and every extra column, or a
+   * list of column IDs (`timelineLabelColumnId` for the row label column). Activating it proposes the next sort
+   * (ascending, descending, none) through `update:sort`; the chart never reorders rows itself. Opt-in. Default: false.
+   */
+  sortableColumns?: boolean | readonly string[]
+  /**
+   * The applied sort, shown through `aria-sort` on the header of its first rule's column (`ruleId` is the column ID).
+   * Supports `v-model:sort`, for example with `useTimelineView`'s `state.sort` and `setSort`. Default: none.
+   */
+  sort?: readonly TimelineViewSort[]
+  /**
+   * Shows a filter button in the header of these columns (`true`: the row label column and every extra column). It
+   * opens a small dialog with a text filter, plus a value list for a `select` field, and proposes the filters through
+   * `update:filters`; the chart never filters rows itself. Opt-in. Default: false.
+   */
+  filterableColumns?: boolean | readonly string[]
+  /** The applied column filters, shown on the filter buttons. Supports `v-model:filters`. Default: none. */
+  filters?: readonly TimelineViewFilter[]
   /** Width in pixels of the row label column; finite and positive. Default: the theme width. */
   labelWidth?: number
   /** Smallest width in pixels that a column resize may propose. Default: 48. */
@@ -348,6 +369,16 @@ const emit = defineEmits<{
   'column-resize': [change: TimelineColumnResize]
   /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
   'column-resize-rejected': [change: TimelineColumnResize, reason: string]
+  /**
+   * A header sort button (`sortableColumns`) proposes a new sort: one ascending or descending rule, or none. Apply it to
+   * the rows, for example with `useTimelineView`'s `setSort`, and pass it back as `sort`. Supports `v-model:sort`.
+   */
+  'update:sort': [sort: TimelineViewSort[]]
+  /**
+   * A header filter (`filterableColumns`) proposes the new list of column filters. Apply it to the rows, for example with
+   * `useTimelineView`'s `setFilters`, and pass it back as `filters`. Supports `v-model:filters`.
+   */
+  'update:filters': [filters: TimelineViewFilter[]]
   /** Proposal to move or remove a bar constraint; carries the bar ID, kind, `before`, `after` and source. Apply it with `applyTimelineConstraintEdit`. */
   'constraint-edit': [change: TimelineConstraintEdit]
   /** A constraint edit was rejected by `validateConstraintEdit`; carries the proposal and the reason. */
@@ -417,6 +448,8 @@ const messages = computed<GanttLabels>(() => ({
   createIn: 'Add bar to', createRejected: 'This new bar was rejected.',
   moveRow: 'Move row', rowMoveRejected: 'This row move was rejected.', statusDate: 'Status date',
   resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.', lag: 'Lag',
+  sortBy: 'Sort by', filterBy: 'Filter', filtered: 'filtered', filterContains: 'Contains', filterValues: 'Show values',
+  clearFilter: 'Clear filter',
   startNoEarlierThan: 'Start no earlier than', startNoLaterThan: 'Start no later than', finishNoEarlierThan: 'Finish no earlier than',
   finishNoLaterThan: 'Finish no later than', fixedStart: 'Must start on', constraintViolated: 'violated',
   constraintHint: 'Arrow keys move the constraint by one snap step, Shift+arrow and Page keys by one tick step. Delete removes it. Escape cancels a drag.',
@@ -464,7 +497,7 @@ function validateProps() {
     nonWorkingPeriods: props.nonWorkingPeriods, progressStep: props.progressStep, tooltipDelay: props.tooltipDelay,
     dependencyStyle: props.dependencyStyle, createDuration: props.createDuration, statusDate: props.statusDate,
     labelWidth: props.labelWidth, minColumnWidth: props.minColumnWidth, maxColumnWidth: props.maxColumnWidth,
-    columnsResizable: props.columnsResizable, columns: props.columns, headerBands: activeBands.value, markers: props.markers,
+    columnsResizable: props.columnsResizable || Boolean(props.sortableColumns) || Boolean(props.filterableColumns), columns: props.columns, headerBands: activeBands.value, markers: props.markers,
     markerRanges: props.markerRanges, baselineIds: stableBaselineIds.value, loadRows: props.loadRows,
     loadSegments: props.loadSegments, loadRowHeight: props.loadRowHeight,
   })
@@ -477,7 +510,7 @@ watch([
   () => props.now, () => props.nonWorkingPeriods, () => props.progressStep, () => props.tooltipDelay, () => props.dependencyStyle, () => props.createDuration,
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
   () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value, () => props.markerRanges,
-  () => props.summaryDependencies,
+  () => props.summaryDependencies, () => Boolean(props.sortableColumns) || Boolean(props.filterableColumns),
 ], () => {
   try {
     const result = validateProps()
@@ -2592,6 +2625,8 @@ interface HeaderCell {
   attrs: Record<string, string | number>
   on: Record<string, (event: Event) => void>
   text: string
+  /** Sort and filter controls (`sortableColumns`, `filterableColumns`); absent keeps the plain header cell. */
+  controls?: HeaderControls
 }
 function handleCell(handle: ResizeHandle): HeaderCell {
   const pointer = (event: Event) => event as PointerEvent
@@ -2619,11 +2654,125 @@ const headerCells = computed(() => {
   const handles = resizeHandles.value
   const cells: HeaderCell[] = handles.length ? [handleCell(handles[0]!)] : []
   ;(props.columns ?? []).forEach((column, index) => {
-    cells.push({ key: column.id, className: 'vw-extra-column', style: { width: shownColumnWidth(column) + 'px' }, attrs: {}, on: {}, text: column.label })
+    const controls = validationError.value ? undefined : headerControls(column.id, column.label, column)
+    cells.push({
+      key: column.id, className: controls ? 'vw-extra-column vw-header-controls' : 'vw-extra-column', style: { width: shownColumnWidth(column) + 'px' },
+      attrs: controls?.attrs ?? {}, on: controls ? headerControlEvents(controls) : {}, text: column.label, ...(controls ? { controls } : {}),
+    })
     if (handles[index + 1]) cells.push(handleCell(handles[index + 1]!))
   })
   return cells
 })
+
+// Header sorting and filtering (`sortableColumns`, `filterableColumns`). The header shows the controlled `sort` and
+// `filters` and proposes changes; the parent reorders or filters the rows (for example with `useTimelineView`), and the
+// new rows cancel an in-flight gesture like any other source change.
+const sortableIds = computed(() => headerColumnIds(props.sortableColumns, props.columns ?? []))
+const filterableIds = computed(() => headerColumnIds(props.filterableColumns, props.columns ?? []))
+interface HeaderControls {
+  id: string
+  label: string
+  sortable: boolean
+  filterable: boolean
+  direction?: TimelineViewSort['direction']
+  filter?: TimelineViewFilter
+  filtered: boolean
+  attrs: Record<string, string>
+  choices?: readonly { value: string | number; label?: string }[]
+}
+function headerControls(id: string, label: string, column?: TimelineColumn<R>): HeaderControls | undefined {
+  const sortable = sortableIds.value.has(id), filterable = filterableIds.value.has(id)
+  if (!sortable && !filterable) return undefined
+  const rule = props.sort?.[0]
+  const direction = rule?.ruleId === id ? rule.direction : undefined
+  const filter = props.filters?.find(item => item.columnId === id)
+  const attrs: Record<string, string> = { role: 'columnheader', 'data-vw-header': id }
+  if (sortable) attrs['aria-sort'] = direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
+  const choices = column?.field?.kind === 'select' ? column.field.choices : undefined
+  return { id, label, sortable, filterable, direction, filter, filtered: filterActive(filter), attrs, ...(choices ? { choices } : {}) }
+}
+const labelHeader = computed(() => validationError.value ? undefined : headerControls(timelineLabelColumnId, messages.value.rows))
+const labelHeaderKey = '\u0000header:' + timelineLabelColumnId
+/** `headerCells`, after the label column's own header when that has controls. */
+const headerList = computed<HeaderCell[]>(() => {
+  const controls = labelHeader.value
+  if (!controls) return headerCells.value
+  return [{ key: labelHeaderKey, className: 'vw-name-column vw-header-controls', style: {}, attrs: controls.attrs, on: headerControlEvents(controls), text: messages.value.rows, controls }, ...headerCells.value]
+})
+function filterText(controls: HeaderControls, event: Event) {
+  proposeFilter(controls.id, { text: (event.target as HTMLInputElement).value })
+}
+function clearFilter(controls: HeaderControls) {
+  proposeFilter(controls.id, { text: '', values: null })
+  headerCellOf(controls.id)?.querySelector<HTMLInputElement>('.vw-column-filter-popover input[type="search"]')?.focus({ preventScroll: true })
+}
+const sortGlyph = (direction: TimelineViewSort['direction'] | undefined) => direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'
+function toggleSort(id: string) {
+  emit('update:sort', nextTimelineSort(props.sort ?? [], id))
+}
+const filterName = (controls: HeaderControls) => `${messages.value.filterBy} ${controls.label}`
+const filterButtonName = (controls: HeaderControls) => filterName(controls) + (controls.filtered ? ` (${messages.value.filtered})` : '')
+function proposeFilter(id: string, patch: { text?: string; values?: (string | number)[] | null }) {
+  emit('update:filters', withColumnFilter(props.filters ?? [], id, patch))
+}
+/** Whether a value-list choice is shown: every choice is while the filter has no value list. */
+function choiceShown(controls: HeaderControls, value: string | number) {
+  return !controls.filter?.values || controls.filter.values.includes(value)
+}
+function toggleChoice(controls: HeaderControls, value: string | number, event: Event) {
+  const all = controls.choices!.map(choice => choice.value)
+  const shown = all.filter(item => choiceShown(controls, item))
+  const next = shown.includes(value) ? shown.filter(item => item !== value) : all.filter(item => item === value || shown.includes(item))
+  proposeFilter(controls.id, { values: next.length === all.length ? null : next })
+  // The box shows the applied filter: the parent's update checks it, and an ignored proposal leaves it as it was.
+  ;(event.target as HTMLInputElement).checked = choiceShown(controls, value)
+}
+// The filter dialog of one column. It never renders on the server; Escape or a press outside closes it.
+const openFilter = ref<string>()
+function headerCellOf(id: string) {
+  return [...(root.value?.querySelectorAll<HTMLElement>('[data-vw-header]') ?? [])].find(element => element.dataset.vwHeader === id)
+}
+function onOutsidePress(event: PointerEvent) {
+  const id = openFilter.value
+  if (id === undefined) return
+  const cell = headerCellOf(id)
+  if (!cell || !cell.contains(event.target as Node)) closeFilter(false)
+}
+function closeFilter(restoreFocus: boolean) {
+  const id = openFilter.value
+  if (id === undefined) return
+  openFilter.value = undefined
+  document.removeEventListener('pointerdown', onOutsidePress, true)
+  if (restoreFocus) headerCellOf(id)?.querySelector<HTMLElement>('[data-vw-column-filter]')?.focus({ preventScroll: true })
+}
+function toggleFilter(id: string) {
+  if (openFilter.value === id) return closeFilter(true)
+  closeFilter(false)
+  openFilter.value = id
+  document.addEventListener('pointerdown', onOutsidePress, true)
+  void nextTick(() => headerCellOf(id)?.querySelector<HTMLElement>('.vw-column-filter-popover input')?.focus({ preventScroll: true }))
+}
+function filterKeys(event: KeyboardEvent) {
+  // Keys typed into the dialog are not chart shortcuts.
+  event.stopPropagation()
+  if (event.key === 'Escape' && !event.isComposing) {
+    event.preventDefault()
+    closeFilter(true)
+  }
+}
+function filterFocusOut(event: FocusEvent, id: string) {
+  const next = event.relatedTarget as Node | null
+  if (next && openFilter.value === id && !headerCellOf(id)?.contains(next)) closeFilter(false)
+}
+function headerControlEvents(controls: HeaderControls): HeaderCell['on'] {
+  return controls.filterable ? { focusout: event => filterFocusOut(event as FocusEvent, controls.id) } : {}
+}
+// A column that loses its filter control, or a chart that turns invalid, closes the dialog.
+watch([filterableIds, validationError], () => {
+  if (openFilter.value !== undefined && (validationError.value || !filterableIds.value.has(openFilter.value))) closeFilter(false)
+})
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePress, true))
+
 function proposeColumnResize(change: TimelineColumnResize) {
   if (change.before === change.after) return
   const reason = settle(props.validateColumnResize?.(change), messages.value.columnResizeRejected!)
@@ -3521,9 +3670,44 @@ onUnmounted(() => {
       }">
         <div class="vw-gantt-head">
           <div ref="cornerEl" class="vw-gantt-corner" :class="{ 'vw-column-group': columns?.length }">
-            <div class="vw-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
-            <!-- Column headers and, with columnsResizable, their resize separators share one list so that the default markup stays unchanged. -->
-            <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>
+            <div v-if="!labelHeader" class="vw-name-column"><slot name="row-heading">{{ messages.rows }}</slot></div>
+            <!-- Column headers and, with columnsResizable, their resize separators share one list so that the default markup stays unchanged.
+              With sortableColumns or filterableColumns, the label column header joins the list and the headers get their controls. -->
+            <template v-if="!labelHeader && !headerCells.some(cell => cell.controls)">
+              <div v-for="cell in headerCells" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">{{ cell.text }}</div>
+            </template>
+            <template v-else>
+              <div v-for="cell in headerList" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">
+                <template v-if="cell.controls">
+                  <button v-if="cell.controls.sortable" type="button" class="vw-column-sort" :class="{ 'vw-is-sorted': cell.controls.direction }"
+                    :aria-label="`${messages.sortBy} ${cell.controls.label}`" @pointerdown.stop @click="toggleSort(cell.controls.id)">
+                    <span class="vw-column-title"><slot v-if="cell.key === labelHeaderKey" name="row-heading">{{ messages.rows }}</slot><template v-else>{{ cell.text }}</template></span>
+                    <span class="vw-sort-indicator" aria-hidden="true">{{ sortGlyph(cell.controls.direction) }}</span>
+                  </button>
+                  <span v-else class="vw-column-title"><slot v-if="cell.key === labelHeaderKey" name="row-heading">{{ messages.rows }}</slot><template v-else>{{ cell.text }}</template></span>
+                  <template v-if="cell.controls.filterable">
+                    <button type="button" class="vw-column-filter" :class="{ 'vw-is-active': cell.controls.filtered }" data-vw-column-filter
+                      aria-haspopup="dialog" :aria-expanded="openFilter === cell.controls.id" :aria-label="filterButtonName(cell.controls)"
+                      @pointerdown.stop @click="toggleFilter(cell.controls.id)" @keydown.esc.stop="closeFilter(true)"><span aria-hidden="true">⏷</span></button>
+                    <div v-if="openFilter === cell.controls.id" class="vw-column-filter-popover" role="dialog" :aria-label="filterName(cell.controls)"
+                      @pointerdown.stop @keydown="filterKeys">
+                      <label class="vw-column-filter-text"><span>{{ messages.filterContains }}</span>
+                        <input type="search" autocomplete="off" :value="cell.controls.filter?.text ?? ''" @input="filterText(cell.controls, $event)">
+                      </label>
+                      <fieldset v-if="cell.controls.choices" class="vw-column-filter-values">
+                        <legend>{{ messages.filterValues }}</legend>
+                        <label v-for="(choice, index) in cell.controls.choices" :key="index">
+                          <input type="checkbox" :checked="choiceShown(cell.controls, choice.value)" @change="toggleChoice(cell.controls, choice.value, $event)">
+                          {{ choice.label ?? String(choice.value) }}
+                        </label>
+                      </fieldset>
+                      <button type="button" class="vw-column-filter-clear" :disabled="!cell.controls.filter" @click="clearFilter(cell.controls)">{{ messages.clearFilter }}</button>
+                    </div>
+                  </template>
+                </template>
+                <template v-else>{{ cell.text }}</template>
+              </div>
+            </template>
           </div>
           <div class="vw-gantt-time-head" :style="{ top: (headerHeight - 40) + 'px' }">
             <span v-for="line in headLines" :key="line.key" :class="line.classes" :style="line.style" :role="line.role" :aria-label="line.name" :title="line.name" :aria-hidden="line.hidden">{{ line.text }}</span>

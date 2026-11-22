@@ -421,6 +421,18 @@ export interface GanttLabels {
   resizeColumn?: string
   /** Announced when `validateColumnResize` returns false. Default "This column resize was rejected." */
   columnResizeRejected?: string
+  /** Accessible name prefix of a header sort button (`sortableColumns`), followed by the column label. Default "Sort by". */
+  sortBy?: string
+  /** Accessible name prefix of a header filter button and its dialog (`filterableColumns`), followed by the column label. Default "Filter". */
+  filterBy?: string
+  /** Added in parentheses to the name of a filter button whose column is filtered. Default "filtered". */
+  filtered?: string
+  /** Label of the text box of a filter dialog. Default "Contains". */
+  filterContains?: string
+  /** Legend of the value list of a filter dialog for a `select` field. Default "Show values". */
+  filterValues?: string
+  /** Text of the button that removes a column's filter. Default "Clear filter". */
+  clearFilter?: string
   /** Description prefix of a dependency with a non-zero `lag`, before the formatted lag. Default "Lag". */
   lag?: string
   /** Text of a `startNoEarlierThan` constraint in descriptions and handle names. Default "Start no earlier than". */

@@ -4,7 +4,7 @@ import { h } from 'vue'
 import {
   GraphPalette, PropertyInspector, graphPaletteMimeType, readPaletteDrop,
   type GraphDrop, type GraphPaletteDrop, type GraphPaletteExposed, type GraphPaletteItem, type InspectorChange, type InspectorField,
-  type InspectorFieldKind, type NetworkNode, type PropertyInspectorExposed, type PropertyInspectorFieldSlot, type TimelineDrop,
+  type InspectorFieldKind, type InspectorListChange, type InspectorListField, type NetworkNode, type PropertyInspectorExposed, type PropertyInspectorFieldSlot, type TimelineDrop,
 } from '../../src'
 import type { GraphPaletteItem as CoreItem, InspectorField as CoreField } from '../../src/core/index'
 
@@ -46,6 +46,20 @@ const inspectorRef = undefined as PropertyInspectorExposed<Node> | undefined
 inspectorRef?.focusField('label')
 inspectorRef?.cancelEdits()
 void h(PropertyInspector, { item: null, fields: [] })
+
+// List fields sit in `fields` beside value fields and report through `list-change`; `change` keeps FieldValue.
+interface Task { id: string; crew: { resourceId: string; units: number }[] }
+const taskFields: (InspectorField<Task> | InspectorListField<Task>)[] = [
+  { id: 'id', kind: 'text', label: 'ID', get: item => item.id },
+  { id: 'crew', kind: 'assignments', label: 'Crew', get: item => item.crew, options: [{ value: 'crane', label: 'Crane' }], maxUnits: 2 },
+  { id: 'links', kind: 'dependencies', label: 'Links', get: () => [{ predecessorId: 'a', type: 'SS', lag: 0 }], options: [{ value: 'a' }] },
+]
+// @ts-expect-error not a dependency type
+const badLink: InspectorListField<Task> = { id: 'l', kind: 'dependencies', label: 'L', get: () => [{ predecessorId: 'a', type: 'XX', lag: 0 }], options: [] }
+const taskInspector = new PropertyInspector({ item: { id: 't', crew: [] } as Task, fields: taskFields })
+assertType<Equal<Parameters<NonNullable<(typeof taskInspector.$props)['onList-change']>>[0], InspectorListChange>>()
+assertType<Equal<Parameters<NonNullable<typeof taskInspector.$props.onChange>>[0], InspectorChange>>()
+void badLink
 void h(GraphPalette, { items: [], searchable: true })
 
 declare const graphDrop: GraphDrop

@@ -619,7 +619,7 @@ async function showInGraph(nodeId: string) {
 
 ## Search, sort and saved views
 
-Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input.
+Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Column filters (`TimelineViewState.filters`) keep the ancestors of matching rows like the search. GanttChart can offer both in its header: pass `sortable-columns` and `filterable-columns`, bind `sort` and `filters` to the view state and apply `update:sort` and `update:filters` with `setSort` and `setFilters` (see [Header sorting and filtering](api.md#header-sorting-and-filtering)); the chart never sorts or filters by itself. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input.
 
 To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
 
@@ -1053,7 +1053,7 @@ The parent derives the bars from its rows, so the chart follows every applied ch
 
 ## Diagram editor parts
 
-`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change`, and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
+`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change` (or a `list-change` for its `assignments` and `dependencies` tables, see [Inspector list fields](api.md#inspector-list-fields)), and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
 
 ```vue
 <script setup lang="ts">

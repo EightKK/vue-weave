@@ -43,6 +43,7 @@ export interface GanttValidationInput<R extends TimelineRow> {
   labelWidth: number | undefined
   minColumnWidth: number | undefined
   maxColumnWidth: number | undefined
+  /** True with `columnsResizable`, `sortableColumns` or `filterableColumns`: the header addresses the label column by ID. */
   columnsResizable: boolean | undefined
   columns: readonly TimelineColumn<R>[] | undefined
   headerBands: readonly (readonly TimelineBand[])[] | undefined

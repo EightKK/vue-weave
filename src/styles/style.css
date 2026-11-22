@@ -325,6 +325,27 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vw-border, #c3d2dc); }
 .vw-column-resize:hover::after, .vw-column-resize.vw-is-active::after { background: var(--vw-accent, #245e96); }
 .vw-column-resize:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
+/* Opt-in header sorting and filtering (sortableColumns, filterableColumns): a sort button with a direction glyph, a filter
+   button and the filter dialog, which opens under its header cell. Logical properties keep them right in RTL charts. */
+.vw-gantt .vw-header-controls { position: relative; display: flex; flex-direction: row; align-items: center; gap: 2px; overflow: visible; }
+.vw-gantt-corner:not(.vw-column-group) > .vw-header-controls { width: 100%; }
+.vw-column-sort { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; font: inherit; text-align: start; }
+.vw-column-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-header-controls > .vw-column-title { flex: 1 1 auto; }
+.vw-sort-indicator { flex: none; font-size: 9px; opacity: .45; }
+.vw-column-sort.vw-is-sorted .vw-sort-indicator { opacity: 1; color: var(--vw-accent, #245e96); }
+.vw-column-sort:hover, .vw-column-filter:hover { background: var(--vw-surface-hover, #e3edf5); }
+.vw-column-filter { flex: none; padding: 2px 3px; border: 0; border-radius: 3px; background: transparent; font: inherit; font-size: 10px; line-height: 1; opacity: .6; }
+.vw-column-filter.vw-is-active, .vw-column-filter[aria-expanded="true"] { opacity: 1; color: var(--vw-accent, #245e96); background: var(--vw-surface-hover, #e3edf5); }
+.vw-column-filter-popover { position: absolute; top: calc(100% - 4px); inset-inline-start: 0; z-index: 6; display: flex; flex-direction: column; gap: 8px; width: max-content; min-width: 190px; max-width: 280px; padding: 10px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 6px 18px rgb(0 0 0 / .18); font-size: 12px; font-weight: 400; white-space: normal; }
+.vw-column-filter-text { display: flex; flex-direction: column; gap: 4px; font-weight: 650; }
+.vw-column-filter-text input { min-height: 28px; padding: 3px 7px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 5px; background: var(--vw-surface, #fff); color: inherit; font: inherit; font-weight: 400; }
+.vw-column-filter-values { display: flex; flex-direction: column; gap: 3px; max-height: 180px; margin: 0; padding: 0; overflow: auto; border: 0; }
+.vw-column-filter-values legend { margin-bottom: 4px; padding: 0; font-weight: 650; }
+.vw-column-filter-values label { display: flex; align-items: center; gap: 6px; }
+.vw-column-filter-values input { margin: 0; accent-color: var(--vw-accent, #245e96); }
+.vw-column-filter-clear { align-self: flex-start; padding: 3px 9px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 5px; background: var(--vw-surface-muted, #f6f9fb); font: inherit; }
+.vw-column-filter-text input:focus-visible, .vw-column-filter-values input:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
 /* Scheduling constraints (TimelineBar.constraints), and their handles with constraintsEditable. The 26 × 14 px box is
    centred on the time and holds the flag: at the top for a start bound, at the bottom for a finish bound, pointing
    towards the allowed times (vw-is-lower: later; vw-is-upper: earlier). A fixed start is an I-beam. The stem (::after)
@@ -466,6 +487,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-gantt-progress-handle:focus-visible { outline: 3px solid Highlight; }
   .vw-column-resize::after { forced-color-adjust: none; background: CanvasText; }
   .vw-column-resize:focus-visible { outline-color: Highlight; }
+  .vw-column-filter.vw-is-active { outline: 1px solid CanvasText; }
+  .vw-column-filter-popover { border-color: CanvasText; box-shadow: none; }
   .vw-gantt-tooltip { border-color: CanvasText; }
   .vw-gantt-create-preview, .vw-gantt-cascade-preview { forced-color-adjust: none; border-color: Highlight; background: transparent; box-shadow: none; }
   .vw-network.vw-network-patterned { background: Canvas; }
@@ -488,7 +511,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-zoom-tools, .vw-gantt-zoom, .vw-gantt-presets, .vw-minimap, .vw-bar-handle, .vw-gantt-link-handle, .vw-gantt-reconnect-handle,
   .vw-connect-handle, .vw-reconnect-handle, .vw-box-selection, .vw-lasso-selection, .vw-node-toolbar, .vw-edge-toolbar, .vw-label-editor, .vw-connection-preview, .vw-gantt-link-preview, .vw-edge-hit, .vw-dependency-hit,
   .vw-network-tooltip, .vw-gantt-progress-handle, .vw-gantt-tooltip, .vw-gantt-create-button, .vw-gantt-create-preview, .vw-gantt-cascade-preview, .vw-guides,
-  .vw-group-toggle, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle, .vw-row-move-handle, .vw-gantt-row-drop, .vw-column-resize { display: none !important; }
+  .vw-group-toggle, .vw-waypoint-handle, .vw-waypoint-add, .vw-resize-handle, .vw-row-move-handle, .vw-gantt-row-drop, .vw-column-resize, .vw-column-filter, .vw-column-filter-popover { display: none !important; }
   .vw-gantt-toolbar { display: none; }
   .vw-network-edge.vw-is-animated { animation: none; }
   .vw-gantt-scroll { height: auto !important; max-height: none; overflow: visible; }
@@ -605,6 +628,24 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-inspector-description { margin: 0; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
 .vw-inspector-error { margin: 0; color: var(--vw-inspector-error, #b3261e); font-size: 12px; font-weight: 600; }
 .vw-inspector-field.vw-is-invalid .vw-inspector-input, .vw-inspector-field.vw-is-invalid .vw-inspector-swatch { border-color: var(--vw-inspector-error, #b3261e); }
+/* List fields (assignments, dependencies): a compact table with add and remove buttons. */
+.vw-inspector-list { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.vw-inspector-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.vw-inspector-table th { padding: 0 4px 2px 0; color: var(--vw-muted, #4f6574); font-size: 11px; font-weight: 600; text-align: start; }
+.vw-inspector-table th:last-child { width: 30px; }
+.vw-inspector-table td { padding: 2px 4px 2px 0; vertical-align: middle; }
+.vw-inspector-table td:last-child, .vw-inspector-table th:last-child { padding-inline-end: 0; }
+.vw-inspector-table .vw-inspector-input { min-height: 28px; padding: 3px 6px; }
+.vw-inspector-type { min-width: 56px; }
+.vw-inspector-number { display: flex; align-items: center; gap: 4px; }
+.vw-inspector-unit { flex: none; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
+.vw-inspector-none { margin: 0; color: var(--vw-muted, #4f6574); font-size: 12px; }
+.vw-inspector-remove, .vw-inspector-add { min-height: 28px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface-muted, #f6f9fb); color: inherit; font: inherit; cursor: pointer; }
+.vw-inspector-remove { width: 28px; padding: 0; font-size: 15px; line-height: 1; }
+.vw-inspector-add { padding: 3px 10px; }
+.vw-inspector-remove:hover, .vw-inspector-add:hover { background: var(--vw-surface-hover, #e3edf5); }
+.vw-inspector-add:disabled { cursor: default; opacity: .5; }
+.vw-inspector-remove:focus-visible, .vw-inspector-add:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
 .vw-theme-dark { --vw-inspector-error: #ff8a80; }
 @media (prefers-color-scheme: dark) {
   .vw-theme-auto { --vw-inspector-error: #ff8a80; }

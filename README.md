@@ -224,7 +224,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), edge labels placed clear of nodes and each other (`edgeLabelPlacement`), waypoints, end markers, animated edges and spread parallel edges.
 - **Editing as proposals:** node moves, connections checked against typed port rules (`connectionRules`) with valid-target hints, inline label editing, box or lasso selection, nested and collapsible groups, node resizing, snap to grid with alignment guides, palette drops, clipboard, and keyboard deletion.
 - **Navigation:** minimap, viewport culling and level of detail for large graphs, pinch zoom, search highlighting (`matchIds`), `focusNode(id)` and `fit({ ids })`.
-- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-editor-parts).
+- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields, plus resource assignment and dependency tables; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-editor-parts).
 
 ### GanttChart
 
@@ -257,7 +257,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 
 - **Linked views:** `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings; `revealNode`, `revealBar` and `revealLinkedTarget` move to an item, also inside collapsed groups and rows; `timelineBarsInRange` and `resolveTimeRangeTargets` highlight what was worked on in a time range. See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#linking-views).
 - **Large data:** `useWindowedData` fetches only the visible window through your `load` function, with aborts, deduplication and retry; graph expansion helpers and `layoutGraphIncrementally` load a graph one hop at a time without moving the nodes on display; `useAsyncGraphLayout` runs a layout in a Worker, and `routingPolicy="preserve"` keeps the engine's routes. See [Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#loading-only-what-is-visible).
-- **Views and saving:** `useTimelineView` for searched and sorted rows, `useEditHistory` for undo and redo, `useEditTransaction` to save through your server adapter with conflict handling, and `serializeWeaveSnapshot` and `restoreWeaveSnapshot` for versioned, validated JSON.
+- **Views and saving:** `useTimelineView` for searched, sorted and filtered rows (opt-in GanttChart header sort buttons and column filters propose the changes), `useEditHistory` for undo and redo, `useEditTransaction` to save through your server adapter with conflict handling, and `serializeWeaveSnapshot` and `restoreWeaveSnapshot` for versioned, validated JSON.
 
 ### Export, themes and accessibility
 

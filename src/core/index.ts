@@ -161,10 +161,12 @@ export type {
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
 } from './eventCalendar.js'
-export { graphPaletteMimeType } from './diagramEditor.js'
+export { graphPaletteMimeType, validateInspectorList } from './diagramEditor.js'
 export type {
   GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,
-  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot,
+  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot, InspectorListFieldKind, InspectorOption,
+  InspectorAssignment, InspectorDependency, InspectorAssignmentsField, InspectorDependenciesField, InspectorListField,
+  InspectorListChange, InspectorListChangeValidator,
 } from './diagramEditor.js'
 export { groupBoardCards, boardCardPosition, applyBoardCardMove } from './taskBoard.js'
 export type {
