@@ -1,5 +1,7 @@
 // Gesture cancellation in both components: context menus, fresh but equal props, a second pointer, changed source data and gesture events.
-import { expect, test, chainNode, dragBy, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors, type Page } from './support'
+import {
+  expect, test, centerOf, chainNode, dragBy, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors, pressAndMove, type Page,
+} from './support'
 
 // A second, primary pen pointer as synthetic events: isPrimary is per pointer type, so a pen is primary next to the
 // mouse. Chromium's input emulation routes pen and mouse through one device, so the events are dispatched directly;
@@ -223,7 +225,7 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
   expect(errors).toEqual([])
 })
 
-test('fresh but equal inline graph groups and labels keep a drag or pan alive; a real change still cancels', async ({ page }) => {
+test('fresh but equal inline graph groups, labels and avoidNodes keep a drag or pan alive; a real change still cancels', async ({ page }) => {
   const errors = pageErrors(page)
   for (const search of ['?chart=graph', '?chart=graph&collapsed=1']) {
     const { proposals, last, control } = await openGestureFixture(page, search)
@@ -243,6 +245,9 @@ test('fresh but equal inline graph groups and labels keep a drag or pan alive; a
     const after = (await node.boundingBox())!
     expect(after.x - before.x).toBeCloseTo(60, 0)
     expect(after.y - before.y).toBeCloseTo(-20, 0)
+    // A real change of the obstacle clearance mid-drag cancels the drag without a proposal.
+    await dragBy(page, node, 60, 40, () => control('Change clearance').dispatchEvent('click'))
+    await expect(proposals).toHaveText('1')
     // A real change of the groups mid-drag cancels the drag without a proposal.
     await dragBy(page, node, 60, 40, () => control('Change groups').dispatchEvent('click'))
     await expect(page.getByRole('button', { name: 'Move group First 1', exact: true })).toBeVisible()
@@ -330,16 +335,9 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
     all.push(...expected)
     await page.evaluate(() => (window as any).__vw.clearGestureLog())
   }
-  const center = async (name: string) => {
-    const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  }
-  async function pressAndMove(name: string) {
-    const { x, y } = await center(name)
-    await page.mouse.move(x, y)
-    await page.mouse.down()
-    await page.mouse.move(x + 30, y + 12, { steps: 3 })
-  }
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  const center = (name: string) => centerOf(button(name))
+  const pressAndMoveNode = (name: string) => pressAndMove(page, button(name), 30, 12)
   // The pointer ID of the last press, for synthetic cancellation events.
   await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
   const dispatch = (type: string) => page.evaluate((eventType) => {
@@ -351,7 +349,7 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   }, type)
 
   // A committed drag: the proposal comes before the end.
-  await pressAndMove('N0002')
+  await pressAndMoveNode('N0002')
   await expect(log).toHaveText('start node-drag pointer')
   await expect(open).toHaveText('1')
   await page.mouse.up()
@@ -359,14 +357,14 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
 
   // Escape.
-  await pressAndMove('N0003')
+  await pressAndMoveNode('N0003')
   await page.keyboard.press('Escape')
   await expect(open).toHaveText('0')
   await page.mouse.up()
   await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
 
   // New source data during the drag.
-  await pressAndMove('N0003')
+  await pressAndMoveNode('N0003')
   await page.evaluate(() => (window as any).__vw.refresh())
   await expect(open).toHaveText('0')
   await page.mouse.up()
@@ -374,7 +372,7 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
 
   // Pointer cancellation and a context menu during the drag.
   for (const type of ['pointercancel', 'contextmenu']) {
-    await pressAndMove('N0004')
+    await pressAndMoveNode('N0004')
     await dispatch(type)
     await expect(open).toHaveText('0')
     await page.mouse.up()
@@ -383,7 +381,7 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   await expect(page.getByRole('status', { name: 'Move events' })).toHaveText('1')
 
   // A camera method during the drag.
-  await pressAndMove('N0004')
+  await pressAndMoveNode('N0004')
   await page.evaluate(() => (window as any).__vw.graph().zoom(1.1))
   await page.mouse.up()
   await expectEvents(['start node-drag pointer', 'end node-drag pointer cancelled'])
@@ -438,6 +436,56 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   for (let i = 0; i < all.length; i += 2) {
     expect(all[i]).toMatch(/^start /)
     expect(all[i + 1]).toMatch(new RegExp('^end ' + all[i]!.slice('start '.length) + ' (committed|cancelled)$'))
+  }
+  expect(errors).toEqual([])
+})
+
+test('graph resize, waypoint and reconnect drags end cancelled without a proposal on Escape, new source data and pointercancel', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&draggable=1&resizable=1&editableedges=1&reconnectable=1&gestures=1')
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  const log = page.getByRole('status', { name: 'Gesture events' })
+  const open = page.getByRole('status', { name: 'Open gestures' })
+  const proposals = page.getByRole('status', { name: 'Edit proposals' })
+  await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
+  const cancellations: Record<string, () => Promise<void>> = {
+    Escape: () => page.keyboard.press('Escape'),
+    'new source data': () => page.evaluate(() => (window as any).__vw.refresh()),
+    pointercancel: () => page.evaluate(() => {
+      const event = new PointerEvent('pointercancel', { bubbles: true, pointerId: (window as any).__pointerId, isPrimary: true })
+      document.querySelector('.vw-network-stage')!.dispatchEvent(event)
+    }),
+  }
+  // Each drag: how to start it (selecting its node or edge first), its gesture kind and what its preview changes.
+  const drags = [
+    {
+      kind: 'node-resize', handle: 'Resize N0002 · bottom right', select: () => button('N0002').click(),
+      preview: () => chainNode(page, 'N0002').locator('rect').first().getAttribute('width'),
+    },
+    {
+      kind: 'edge-reshape', handle: 'Add waypoint 1 · e3', select: () => button('Select edge e3').press('Enter'),
+      preview: () => page.locator('.vw-edge-hit[data-vw-edge="e3"]').getAttribute('d'),
+    },
+    {
+      kind: 'reconnect', handle: 'Reconnect target of e3', select: () => button('Select edge e3').press('Enter'),
+      preview: () => page.locator('.vw-connection-preview').count().then(String),
+    },
+  ]
+  for (const drag of drags) {
+    for (const [name, cancel] of Object.entries(cancellations)) {
+      await drag.select()
+      await page.evaluate(() => (window as any).__vw.clearGestureLog())
+      const before = await drag.preview()
+      await pressAndMove(page, button(drag.handle), 30, 25)
+      await expect(log, `${drag.kind} ${name}`).toHaveText(`start ${drag.kind} pointer`)
+      await expect.poll(drag.preview, `${drag.kind} ${name} preview`).not.toBe(before)
+      await cancel()
+      await expect(open, `${drag.kind} ${name}`).toHaveText('0')
+      await expect(log).toHaveText(`start ${drag.kind} pointer | end ${drag.kind} pointer cancelled`)
+      await expect.poll(drag.preview, `${drag.kind} ${name} preview`).toBe(before)
+      await page.mouse.up()
+      await expect(proposals, `${drag.kind} ${name}`).toHaveText('')
+    }
   }
   expect(errors).toEqual([])
 })

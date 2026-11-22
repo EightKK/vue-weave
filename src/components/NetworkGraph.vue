@@ -36,7 +36,7 @@ import { keep, keepIds, sameGeometry, sameRecord } from './networkGraph/equality
 import { placeBox, sortExtents, type Extent } from './networkGraph/previewGeometry.js'
 import { hasPorts, previewLayout, type ParallelSlots, type PreviewContext } from './networkGraph/previewLayout.js'
 import { indexAvoidedRoutes, obstructedEdges } from './networkGraph/obstructedEdges.js'
-import { edgePathBounds, placePreviewLabels, resolveEdgeLabelPlacement } from './networkGraph/labelPlacement.js'
+import { edgePathBounds, placePreviewLabels, resolveEdgeLabelPlacement, withBandWidths } from './networkGraph/labelPlacement.js'
 import {
   addGroupChain, groupBounds, groupRect, groupShapes, groupTree as buildGroupTree, type GroupBounds, type GroupRect, type GroupShape,
 } from './networkGraph/groupFrames.js'
@@ -427,19 +427,25 @@ const policy = computed<GraphRoutingPolicy>(() => {
 const nodesById = computed(() => new Map(viewNodes.value.map(node => [node.id, node])))
 const edgesById = computed(() => new Map(viewEdges.value.map(edge => [edge.id, edge])))
 const direction = computed(() => options.value.direction ?? 'LR')
-const dragPreview = ref<ReadonlyMap<string, GraphPoint>>()
+// Shallow, like the other previews: the positions are emitted as they are, so they must stay plain objects.
+const dragPreview = shallowRef<ReadonlyMap<string, GraphPoint>>()
 // Previews of a node resize and of an edge's waypoints during a pointer drag.
 const resizePreview = shallowRef<{ id: string; box: GraphRect }>()
 const reshapePreview = shallowRef<{ id: string; points: GraphPoint[] }>()
-// The uncollapsed layout with saved positions. Only read when groups are collapsed, to place proxies and move members.
-const expandedLayout = computed(() => {
-  const base = props.layout ? props.layout(props.nodes, props.edges) : layoutLayeredGraph(props.nodes, props.edges, options.value)
-  return props.positions?.size ? applyGraphPositions(base, props.edges, props.positions, direction.value) : base
-})
+// The uncollapsed layout. Only read when groups are collapsed, to place proxies and move members; a change of the saved
+// positions does not lay it out again, since only the top-left corners of its boxes are read (see expandedCorner).
+const expandedBase = computed(() => props.layout ? props.layout(props.nodes, props.edges) : layoutLayeredGraph(props.nodes, props.edges, options.value))
+// The top-left corner of a node's box in the uncollapsed layout with the saved positions.
+function expandedCorner(id: string): GraphPoint | undefined {
+  const box = expandedBase.value.boxes.get(id)
+  if (!box) return undefined
+  const saved = props.positions?.get(id)
+  return saved ? { x: saved.x, y: saved.y } : { x: box.x, y: box.y }
+}
 function memberCorner(ids: readonly string[]): GraphPoint {
   let x = Infinity, y = Infinity
   for (const id of ids) {
-    const box = expandedLayout.value.boxes.get(id)
+    const box = expandedCorner(id)
     if (!box) continue
     x = Math.min(x, box.x)
     y = Math.min(y, box.y)
@@ -466,9 +472,15 @@ const parallelSpacing = computed(() => {
   if (spacing !== undefined && !(Number.isFinite(spacing) && spacing > 0)) throw new RangeError('parallelEdgeSpacing must be a positive finite number of chart units')
   return spacing
 })
+// `avoidNodes` is memoised by value like `options`, so an inline `{ clearance }` literal in a parent template does not
+// route every edge around the boxes again or cancel a gesture each time the parent renders.
+const avoidNodes = computed<boolean | GraphObstacleAvoidance | undefined>((previous) => {
+  const next = props.avoidNodes
+  return typeof previous === 'object' && typeof next === 'object' && sameRecord(previous, next) ? previous : next
+})
 // The corner radius only applies to orthogonal routes, which an edge can also choose with its own edgeStyle.
 const routeOptions = computed(() => ({
-  style: props.edgeStyle, direction: direction.value, cornerRadius: 6, parallelSpacing: parallelSpacing.value, avoidNodes: props.avoidNodes,
+  style: props.edgeStyle, direction: direction.value, cornerRadius: 6, parallelSpacing: parallelSpacing.value, avoidNodes: avoidNodes.value,
 }))
 // The places of parallel edges among the edges between the same two nodes, over the whole view, so that routing a few
 // edges of a preview spreads them as routing the whole graph does.
@@ -481,7 +493,17 @@ const savedRouted = computed(() => routeGraphEdgesWithSlots(
   savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value, true,
 ))
 // Opt-in label placement over the routed layout; without it the saved geometry is the routed layout itself.
-const labelPlacement = computed(() => resolveEdgeLabelPlacement(props.edgeLabelPlacement))
+// `edgeBands`, validated once per change.
+const edgeBands = computed(() => {
+  const bands = props.edgeBands
+  if (bands) assertGraphEdgeBands(bands, 'NetworkGraph edgeBands')
+  return bands
+})
+// With `edgeBands`, labels keep their gap from the outer side of each band and stay off the other bands.
+const labelPlacement = computed(() => {
+  const placement = resolveEdgeLabelPlacement(props.edgeLabelPlacement)
+  return placement && withBandWidths(placement, edgeBands.value)
+})
 const savedGeometry = computed(() => {
   const placement = labelPlacement.value
   return placement ? placeGraphEdgeLabels(savedRouted.value, viewEdges.value, placement) : savedRouted.value
@@ -558,7 +580,7 @@ const savedRouteExtents = computed(() => {
 // avoid (see obstructedEdges). Beyond `previewRerouteLimit` such edges, the frame reroutes none of them and they follow
 // once the move is saved.
 const previewRerouteLimit = 32
-const avoidance = computed(() => resolveObstacleAvoidance(props.avoidNodes))
+const avoidance = computed(() => resolveObstacleAvoidance(avoidNodes.value))
 const avoidedRoutes = computed(() => {
   const settings = avoidance.value
   return settings && indexAvoidedRoutes(savedRouted.value, viewEdges.value, props.edgeStyle, settings.clearance)
@@ -602,7 +624,9 @@ const layout = computed(() => {
     previewSources.set(preview, source)
     return preview
   }
-  const placed = placePreviewLabels(preview, viewEdges.value, edgesById.value, savedPathBounds.value, source.nodes, source.edges, placement)
+  const placed = placePreviewLabels(
+    preview, savedGeometry.value, viewEdges.value, edgesById.value, savedPathBounds.value, source.nodes, source.edges, placement,
+  )
   previewSources.set(placed.layout, { ...source, edges: placed.edges })
   return placed.layout
 })
@@ -869,9 +893,11 @@ function startPan(event: PointerEvent) {
   beginGesture('pointer', pan.box ? 'box-select' : 'pan')
 }
 
-// `camera` is the camera when the drag started; auto-pan moves the camera during the drag.
+// `camera` is the camera when the drag started; auto-pan moves the camera during the drag. `guides` holds the boxes the
+// alignment guides align with, collected on the first move of the drag.
 let nodeDrag: {
   pointerId: number; start: GraphPoint; before: Map<string, GraphPoint>; target: SVGElement; node?: string; group?: string; camera: GraphPoint
+  guides?: GraphRect[]
 } | undefined
 let suppressClick: string | undefined
 // Ends the pointer capture of a gesture that the element still holds.
@@ -888,6 +914,14 @@ const notice = ref('')
 // when it accepts (`true` or nothing).
 function rejection(result: boolean | string | void, fallback: string) {
   return typeof result === 'string' ? result : result === false ? fallback : undefined
+}
+// Checks a proposal with the result of its validator: clears the last announcement and, when the result rejects the
+// proposal, announces the reason and returns it. The caller emits the matching event.
+function checkProposal(result: boolean | string | void, fallback: string): string | undefined {
+  notice.value = ''
+  const reason = rejection(result, fallback)
+  if (reason !== undefined) notice.value = reason
+  return reason
 }
 
 function movablePositions(ids: Iterable<string>) {
@@ -918,7 +952,7 @@ function proxyMoves(ids: readonly string[], after: GraphPoint): GraphNodeMove[] 
   const corner = memberCorner(ids)
   const changes: GraphNodeMove[] = []
   for (const id of ids) {
-    const box = expandedLayout.value.boxes.get(id)
+    const box = expandedCorner(id)
     if (!box || realNodesById.value.get(id)?.draggable === false) continue
     const point = { x: Math.max(0, box.x - corner.x + after.x), y: Math.max(0, box.y - corner.y + after.y) }
     if (point.x !== box.x || point.y !== box.y) changes.push({ id, before: { x: box.x, y: box.y }, after: point })
@@ -926,7 +960,8 @@ function proxyMoves(ids: readonly string[], after: GraphPoint): GraphNodeMove[] 
   return changes
 }
 
-// Non-moving node boxes that guides align with: every node, or only the rendered ones when culling is on.
+// Non-moving node boxes that guides align with: every node, or only the rendered ones when culling is on. Collected
+// once per drag: the saved layout cannot change during a drag without cancelling it.
 function guideCandidates(moving: ReadonlyMap<string, GraphPoint>) {
   const rendered = visible.value?.nodes
   const rects: GraphRect[] = []
@@ -936,6 +971,12 @@ function guideCandidates(moving: ReadonlyMap<string, GraphPoint>) {
   return rects
 }
 const guideLines = shallowRef<GraphAlignmentGuide[]>()
+// The guide lines of a pointer drag, drawn in the stage or in the overlay.
+const GuideLines: FunctionalComponent = () => h('g', { class: 'vw-guides', 'aria-hidden': 'true' }, (guideLines.value ?? []).map(guide => h('line', {
+  key: guide.axis + guide.position, class: 'vw-guide',
+  x1: guide.axis === 'x' ? guide.position : guide.from, x2: guide.axis === 'x' ? guide.position : guide.to,
+  y1: guide.axis === 'y' ? guide.position : guide.from, y2: guide.axis === 'y' ? guide.position : guide.to,
+})))
 // The positions of a pointer drag. With a grid or guides, the reference point of the move (see referencePoint) snaps
 // and the other moved nodes keep their offsets from it.
 function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: number) {
@@ -947,7 +988,7 @@ function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: numbe
   const bounds = movedBounds(drag.before, boxes)
   let gridX = grid, gridY = grid, others: GraphRect[] = []
   if (props.alignmentGuides) {
-    others = guideCandidates(drag.before)
+    others = drag.guides ??= guideCandidates(drag.before)
     // Guides win over the grid on the axis they align.
     const match = graphAlignmentGuides({ ...bounds, x: bounds.x + dx, y: bounds.y + dy }, others, props.guideThreshold / camera.value.scale)
     if (match.guides.some(guide => guide.axis === 'x')) {
@@ -1051,7 +1092,7 @@ function movingIds(id: string) {
   return props.selectedIds?.has(id) ? props.selectedIds : [id]
 }
 function moveWithKeys(event: KeyboardEvent, ids: Iterable<string>, node?: string) {
-  if (!props.draggable || nodeDrag) return
+  if (!props.draggable || gestureInFlight()) return
   const offset = arrowOffsets[event.key]
   if (!offset) return
   const before = movablePositions(ids)
@@ -1240,9 +1281,8 @@ function proposeConnection(pending: ConnectionDraft | undefined, handle: PortHan
   const edge = pending.edge
   if (edge && edge.from === connection.from && edge.to === connection.to && edge.fromPort === connection.fromPort && edge.toPort === connection.toPort) return
   const ruled = connectionChecker.value?.check(connection, edge?.id)
-  const reason = rejection(ruled && !ruled.ok ? ruled.reason : props.validateConnection?.(connection, edge?.id), messages.value.rejected!)
+  const reason = checkProposal(ruled && !ruled.ok ? ruled.reason : props.validateConnection?.(connection, edge?.id), messages.value.rejected!)
   if (reason !== undefined) {
-    notice.value = reason
     emit('connect-rejected', connection, reason)
   } else if (edge) {
     const before = connectionBetween({ node: edge.from, port: edge.fromPort }, { node: edge.to, port: edge.toPort })
@@ -1474,10 +1514,8 @@ const waypointHandles = computed(() => {
 })
 function proposeReshape(edge: GraphEdge, after: GraphPoint[]) {
   const change: GraphEdgeReshape = { id: edge.id, before: (edge.points ?? []).map(point => ({ x: point.x, y: point.y })), after }
-  notice.value = ''
-  const reason = rejection(props.validateEdgeReshape?.(change), messages.value.reshapeRejected!)
+  const reason = checkProposal(props.validateEdgeReshape?.(change), messages.value.reshapeRejected!)
   if (reason !== undefined) {
-    notice.value = reason
     emit('edge-reshape-rejected', change, reason)
     return
   }
@@ -1554,10 +1592,8 @@ function savedBox(id: string): GraphRect | undefined {
 function proposeResize(id: string, before: GraphRect, after: GraphRect) {
   if (before.x === after.x && before.y === after.y && before.width === after.width && before.height === after.height) return
   const change: GraphNodeResize = { id, before, after }
-  notice.value = ''
-  const reason = rejection(props.validateNodeResize?.(change), messages.value.resizeRejected!)
+  const reason = checkProposal(props.validateNodeResize?.(change), messages.value.resizeRejected!)
   if (reason !== undefined) {
-    notice.value = reason
     emit('node-resize-rejected', change, reason)
     return
   }
@@ -1577,15 +1613,16 @@ function resizeKeys(event: KeyboardEvent, id: string, corner: Corner) {
 }
 
 // Pointer drags of waypoint, insert and resize handles.
+// Handle drags do not auto-pan, and a camera change (zoom, pan keys, pinch, fit) cancels them, so the camera stays put.
 type HandleDrag = {
-  pointerId: number; target: SVGElement; start: GraphPoint; camera: GraphPoint; kind: 'move' | 'add' | 'resize'
+  pointerId: number; target: SVGElement; start: GraphPoint; kind: 'move' | 'add' | 'resize'
   id: string; index: number; origin: GraphPoint; corner?: Corner; box?: GraphRect
 }
 let handleDrag: HandleDrag | undefined
-function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId' | 'target' | 'start' | 'camera'>) {
+function startHandleDrag(event: PointerEvent, drag: Omit<HandleDrag, 'pointerId' | 'target' | 'start'>) {
   if (!event.isPrimary || event.button !== 0 || gestureInFlight()) return
   const target = event.currentTarget as SVGElement
-  handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY }, camera: { x: camera.value.x, y: camera.value.y } }
+  handleDrag = { ...drag, pointerId: event.pointerId, target, start: { x: event.clientX, y: event.clientY } }
   target.focus({ preventScroll: true })
   target.setPointerCapture(event.pointerId)
   beginGesture('pointer', drag.kind === 'resize' ? 'node-resize' : 'edge-reshape')
@@ -1605,8 +1642,8 @@ function moveHandle(event: PointerEvent) {
   const drag = handleDrag
   if (!drag || drag.pointerId !== event.pointerId) return
   if (!resizePreview.value && !reshapePreview.value && Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) < 4) return
-  const { x, y, scale } = camera.value
-  const dx = (event.clientX - drag.start.x - (x - drag.camera.x)) / scale, dy = (event.clientY - drag.start.y - (y - drag.camera.y)) / scale
+  const { scale } = camera.value
+  const dx = (event.clientX - drag.start.x) / scale, dy = (event.clientY - drag.start.y) / scale
   if (drag.kind === 'resize') {
     const box = drag.box!
     resizePreview.value = { id: drag.id, box: resizeBox(box, drag.corner!, snapOrKeep(box.x + dx), snapOrKeep(box.y + dy),
@@ -1693,10 +1730,8 @@ function closeLabelEditor(commit: boolean, restoreFocus: boolean) {
   const after = labelDraft.value
   if (!commit || after === editor.before) return
   const change: GraphLabelEdit = { kind: editor.kind, id: editor.id, before: editor.before, after }
-  notice.value = ''
-  const reason = rejection(props.validateLabelEdit?.(change), messages.value.labelRejected!)
+  const reason = checkProposal(props.validateLabelEdit?.(change), messages.value.labelRejected!)
   if (reason !== undefined) {
-    notice.value = reason
     emit('label-edit-rejected', change, reason)
     return
   }
@@ -2028,10 +2063,8 @@ function deleteWithKeys(event: KeyboardEvent) {
   const deletion = deletionFor(element)
   if (!deletion) return
   event.preventDefault()
-  notice.value = ''
-  const reason = rejection(props.validateDelete?.(deletion), messages.value.deleteRejected!)
+  const reason = checkProposal(props.validateDelete?.(deletion), messages.value.deleteRejected!)
   if (reason !== undefined) {
-    notice.value = reason
     emit('delete-rejected', deletion, reason)
     return
   }
@@ -2060,8 +2093,10 @@ function requestContextMenu(target: GraphContextMenuTarget, clientX: number, cli
 }
 function openContextMenu(event: MouseEvent) {
   // A menu opened mid-gesture (macOS Control-click) can swallow pointerup, so the gesture ends here without a proposal.
-  const dragging = Boolean(dragPreview.value || connectionPoint.value || boxPreview.value || lassoPreview.value || pinch)
-  if (nodeDrag || connectionDrag || handleDrag || pinch || pan) cancelInteraction()
+  const dragging = Boolean(
+    dragPreview.value || resizePreview.value || reshapePreview.value || connectionPoint.value || boxPreview.value || lassoPreview.value || pinch,
+  )
+  if (pointerGestureActive()) cancelInteraction()
   if (!props.contextMenu || editable(event.target)) return
   event.preventDefault()
   // The browser may follow a handled ContextMenu key or Shift+F10 with its own event; it was already reported.
@@ -2337,7 +2372,7 @@ function hideTooltip() {
   tooltip.value = undefined
 }
 function hoverTooltip(kind: TooltipState['kind'], id: string) {
-  if (!slots.tooltip || tooltipBlocked.value || nodeDrag || pan || connectionDrag) return
+  if (!slots.tooltip || tooltipBlocked.value || pointerGestureActive()) return
   clearTimeout(hideTimer)
   hideTimer = undefined
   if (tooltip.value?.kind === kind && tooltip.value.id === id) return
@@ -2695,12 +2730,6 @@ const EdgeList: FunctionalComponent<ListProps<typeof slots.edge>> = ({ itemSlot:
 }
 
 NodeList.props = EdgeList.props = ['itemSlot', 'tooltips']
-// `edgeBands`, validated once per change.
-const edgeBands = computed(() => {
-  const bands = props.edgeBands
-  if (bands) assertGraphEdgeBands(bands, 'NetworkGraph edgeBands')
-  return bands
-})
 
 // The minimap rectangles and the connection handles are items of their own too. Each reads the box ref of its node,
 // so a drag preview re-renders the items of the moved nodes, and the lists render again only when the nodes, the
@@ -2990,20 +3019,12 @@ onUnmounted(() => {
         <NodeList :item-slot="$slots.node" :tooltips="Boolean($slots.tooltip)" />
         <path v-if="connectionPath && !overlay" class="vw-connection-preview" :d="connectionPath" />
         <!-- Guides only appear during a node drag, never with a connection preview, so they share its conditional. -->
-        <g v-else-if="guideLines?.length && !overlay" class="vw-guides" aria-hidden="true">
-          <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vw-guide"
-            :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
-            :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
-        </g>
+        <GuideLines v-else-if="guideLines?.length && !overlay" />
         <!-- With collapsible groups, editable edges or resizable nodes, one overlay holds the previews and the handles,
           so the markup without those inputs is unchanged. -->
         <g v-else-if="overlay" class="vw-network-overlay">
           <path v-if="connectionPath" class="vw-connection-preview" :d="connectionPath" />
-          <g v-if="guideLines?.length" class="vw-guides" aria-hidden="true">
-            <line v-for="guide in guideLines" :key="guide.axis + guide.position" class="vw-guide"
-              :x1="guide.axis === 'x' ? guide.position : guide.from" :x2="guide.axis === 'x' ? guide.position : guide.to"
-              :y1="guide.axis === 'y' ? guide.position : guide.from" :y2="guide.axis === 'y' ? guide.position : guide.to" />
-          </g>
+          <GuideLines v-if="guideLines?.length" />
           <g v-for="toggle in groupToggles" :key="'toggle:' + toggle.id" class="vw-group-toggle" :class="{ 'vw-is-collapsed': !toggle.expanded }"
             :transform="`translate(${toggle.x} ${toggle.y})`" role="button" tabindex="0" :aria-label="toggle.label"
             :aria-expanded="toggle.expanded" :data-vw-toggle="toggle.id"

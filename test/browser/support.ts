@@ -137,9 +137,32 @@ export async function openGraphEditor(page: Page) {
 
 export const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })
 
+/** The centre of an element's bounding box in viewport pixels. */
+export async function centerOf(target: Locator) {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('centerOf needs a visible element')
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+/** Presses the mouse at the centre of an element and moves it by `dx`, `dy` in a few steps, keeping the button down. */
+export async function pressAndMove(page: Page, target: Locator, dx: number, dy: number) {
+  const { x, y } = await centerOf(target)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + dx, y + dy, { steps: 3 })
+}
+
+/** Waits for `count` animation frames of the page, so work scheduled per frame (such as auto-pan) has had its turn. */
+export async function animationFrames(page: Page, count = 2) {
+  await page.evaluate(frames => new Promise<void>(resolve => {
+    let left = frames
+    const step = () => (--left <= 0 ? resolve() : requestAnimationFrame(step))
+    requestAnimationFrame(step)
+  }), count)
+}
+
 export async function dragBy(page: Page, target: ReturnType<Page['locator']>, dx: number, dy: number, hold?: () => Promise<void>) {
-  const box = (await target.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  const { x, y } = await centerOf(target)
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x + dx, y + dy, { steps: 6 })

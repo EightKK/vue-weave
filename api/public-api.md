@@ -3536,9 +3536,10 @@ type GraphEdgeLabelPlacement<E extends GraphEdge = GraphEdge> = 'midpoint' | 'av
 interface GraphEdgeLabelPlacementOptions<E extends GraphEdge = GraphEdge> {
     fontSize?: number;
     glyphWidth?: number;
-    labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | undefined;
+    labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | null | undefined;
     labelText?: (edge: E) => string | undefined;
     gap?: number;
+    edgeWidth?: (edge: E) => number | null | undefined;
     margin?: number;
     samples?: number;
     edgeIds?: Iterable<string>;
