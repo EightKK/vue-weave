@@ -63,8 +63,12 @@
     "@playwright/test": "^1.57.0",
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "6.0.10",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.14.1",
+    "typedoc-vitepress-theme": "^1.1.4",
     "typescript": "~6.0.3",
     "vite": "8.3.7",
+    "vitepress": "^2.0.0-alpha.21",
     "vue": "3.5.45",
     "vue-tsc": "^3.2.0"
   },
@@ -77,5 +81,10 @@
     "gantt",
     "timeline",
     "typescript"
-  ]
+  ],
+  "overrides": {
+    "typedoc": {
+      "minimatch": "^11.0.9"
+    }
+  }
 }
