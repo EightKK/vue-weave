@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (238)
+## Entry `.`: runtime exports (241)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -62,6 +62,7 @@ in public signatures, so changes to them can break consumers too.
 - `dependencyTimes: function`
 - `dependencyTypeForEnds: function`
 - `detectGraphCommunities: function`
+- `diffStructure: function`
 - `editTimeRange: function`
 - `escapeXml: function`
 - `eventCalendarDays: function`
@@ -119,6 +120,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphRectsIntersect: function`
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
+- `graphTracePath: function`
 - `graphViewportRect: function`
 - `groupBoardCards: function`
 - `indentTimelineRow: function`
@@ -160,6 +162,7 @@ in public signatures, so changes to them can break consumers too.
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
+- `projectTimelineRows: function`
 - `projectTimelineView: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
@@ -246,7 +249,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (570)
+## Entry `.`: type-only exports (585)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -375,6 +378,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
 - `GraphEdgeStyle`
+- `GraphExpansionKeyOptions`
 - `GraphExpansionPage`
 - `GraphExpansionState`
 - `GraphExpansionView`
@@ -475,13 +479,18 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlanePoolBand`
 - `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
+- `GraphTracedPath`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
 - `GraphTraversalResult`
+- `GraphTraversalStep`
+- `GraphTraversalTruncation`
+- `GraphTraversalVia`
 - `GraphTreeLayoutOptions`
 - `GraphViewTarget`
 - `GraphViewport`
 - `GraphVisibleIds`
+- `GraphWalkDirection`
 - `HistoryReset`
 - `ICalendarEvent`
 - `ICalendarExpandOptions`
@@ -690,6 +699,12 @@ in public signatures, so changes to them can break consumers too.
 - `SnapshotSortRule`
 - `SplitDanglingLinks`
 - `SplitDanglingLinksOptions`
+- `StructureChange`
+- `StructureDiff`
+- `StructureDiffOptions`
+- `StructureFieldChange`
+- `StructureKeyAccessor`
+- `StructureMove`
 - `SvgExportOptions`
 - `SvgExportTheme`
 - `SvgExportThemeInput`
@@ -758,6 +773,9 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowCompare`
 - `TimelineRowMove`
 - `TimelineRowPosition`
+- `TimelineRowViewState`
+- `TimelineRowsInput`
+- `TimelineRowsProjection`
 - `TimelineSelectDetail`
 - `TimelineSheetAppliers`
 - `TimelineSheetChanges`
@@ -819,7 +837,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (223)
+## Entry `./core`: runtime exports (226)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -870,6 +888,7 @@ in public signatures, so changes to them can break consumers too.
 - `dependencyTimes: function`
 - `dependencyTypeForEnds: function`
 - `detectGraphCommunities: function`
+- `diffStructure: function`
 - `editTimeRange: function`
 - `escapeXml: function`
 - `eventCalendarDays: function`
@@ -926,6 +945,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphRectsIntersect: function`
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
+- `graphTracePath: function`
 - `graphViewportRect: function`
 - `groupBoardCards: function`
 - `indentTimelineRow: function`
@@ -967,6 +987,7 @@ in public signatures, so changes to them can break consumers too.
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
+- `projectTimelineRows: function`
 - `projectTimelineView: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
@@ -1045,7 +1066,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (532)
+## Entry `./core`: type-only exports (547)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1163,6 +1184,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
 - `GraphEdgeStyle`
+- `GraphExpansionKeyOptions`
 - `GraphExpansionPage`
 - `GraphExpansionState`
 - `GraphExpansionView`
@@ -1259,13 +1281,18 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlanePoolBand`
 - `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
+- `GraphTracedPath`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
 - `GraphTraversalResult`
+- `GraphTraversalStep`
+- `GraphTraversalTruncation`
+- `GraphTraversalVia`
 - `GraphTreeLayoutOptions`
 - `GraphViewTarget`
 - `GraphViewport`
 - `GraphVisibleIds`
+- `GraphWalkDirection`
 - `ICalendarEvent`
 - `ICalendarExpandOptions`
 - `ICalendarImport`
@@ -1461,6 +1488,12 @@ in public signatures, so changes to them can break consumers too.
 - `SnapshotSortRule`
 - `SplitDanglingLinks`
 - `SplitDanglingLinksOptions`
+- `StructureChange`
+- `StructureDiff`
+- `StructureDiffOptions`
+- `StructureFieldChange`
+- `StructureKeyAccessor`
+- `StructureMove`
 - `SvgExportOptions`
 - `SvgExportTheme`
 - `SvgExportThemeInput`
@@ -1526,6 +1559,9 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineRowCompare`
 - `TimelineRowMove`
 - `TimelineRowPosition`
+- `TimelineRowViewState`
+- `TimelineRowsInput`
+- `TimelineRowsProjection`
 - `TimelineSelectDetail`
 - `TimelineSheetAppliers`
 - `TimelineSheetChanges`
@@ -3604,6 +3640,14 @@ interface GraphEdgeRouteOptions {
 type GraphEdgeStyle = 'curve' | 'orthogonal' | 'straight';
 ```
 
+### `GraphExpansionKeyOptions`
+
+```ts
+interface GraphExpansionKeyOptions {
+    key?: string;
+}
+```
+
 ### `GraphExpansionPage`
 
 ```ts
@@ -3629,6 +3673,8 @@ interface GraphExpansionState<N extends {
     readonly edges: ReadonlyMap<string, E>;
     readonly expandedIds: ReadonlySet<string>;
     readonly pendingIds: ReadonlySet<string>;
+    readonly expandedIdsByKey?: ReadonlyMap<string, ReadonlySet<string>>;
+    readonly pendingIdsByKey?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 ```
 
@@ -4762,6 +4808,16 @@ interface GraphSwimlaneSpec {
 }
 ```
 
+### `GraphTracedPath`
+
+```ts
+interface GraphTracedPath {
+    direction?: GraphWalkDirection;
+    nodeIds: string[];
+    edgeIds: string[];
+}
+```
+
 ### `GraphTraversalDirection`
 
 ```ts
@@ -4771,9 +4827,12 @@ type GraphTraversalDirection = 'forward' | 'backward' | 'both';
 ### `GraphTraversalOptions`
 
 ```ts
-interface GraphTraversalOptions {
+interface GraphTraversalOptions<E extends GraphEdge = GraphEdge> {
     direction?: GraphTraversalDirection;
     maxHops?: number;
+    edgeFilter?: (edge: E, direction: GraphWalkDirection) => boolean;
+    maxNodes?: number;
+    paths?: boolean;
 }
 ```
 
@@ -4784,6 +4843,37 @@ interface GraphTraversalResult {
     nodeIds: string[];
     edgeIds: string[];
     unknownIds: string[];
+    truncated?: GraphTraversalTruncation[];
+    via?: GraphTraversalVia;
+    multiplyReachedIds?: string[];
+}
+```
+
+### `GraphTraversalStep`
+
+```ts
+interface GraphTraversalStep {
+    edgeId: string;
+    previousId: string;
+}
+```
+
+### `GraphTraversalTruncation`
+
+```ts
+interface GraphTraversalTruncation {
+    nodeId: string;
+    direction: GraphWalkDirection;
+    reason: 'max-hops' | 'max-nodes';
+}
+```
+
+### `GraphTraversalVia`
+
+```ts
+interface GraphTraversalVia {
+    forward?: Map<string, GraphTraversalStep>;
+    backward?: Map<string, GraphTraversalStep>;
 }
 ```
 
@@ -4820,6 +4910,12 @@ interface GraphVisibleIds {
     nodes: Set<string>;
     edges: Set<string>;
 }
+```
+
+### `GraphWalkDirection`
+
+```ts
+type GraphWalkDirection = 'forward' | 'backward';
 ```
 
 ### `HistoryReset`
@@ -7064,6 +7160,63 @@ interface SplitDanglingLinksOptions<L> {
 }
 ```
 
+### `StructureChange`
+
+```ts
+interface StructureChange {
+    key: string;
+    fields: readonly StructureFieldChange[];
+}
+```
+
+### `StructureDiff`
+
+```ts
+interface StructureDiff {
+    added: readonly string[];
+    removed: readonly string[];
+    changed: readonly StructureChange[];
+    moved: readonly StructureMove[];
+}
+```
+
+### `StructureDiffOptions`
+
+```ts
+interface StructureDiffOptions<T> {
+    key: StructureKeyAccessor<T, string>;
+    fields?: readonly (keyof T & string)[] | ((item: T) => Readonly<Record<string, unknown>>);
+    parentKey?: StructureKeyAccessor<T, string | null | undefined>;
+    equals?: (before: unknown, after: unknown, field: string) => boolean;
+}
+```
+
+### `StructureFieldChange`
+
+```ts
+interface StructureFieldChange {
+    name: string;
+    before: unknown;
+    after: unknown;
+}
+```
+
+### `StructureKeyAccessor`
+
+```ts
+type StructureKeyAccessor<T, K> = (keyof T & string) | ((item: T) => K);
+```
+
+### `StructureMove`
+
+```ts
+interface StructureMove {
+    key: string;
+    beforeParent?: string;
+    afterParent?: string;
+}
+```
+
 ### `SvgExportOptions`
 
 ```ts
@@ -7829,6 +7982,35 @@ interface TimelineRowMove {
 interface TimelineRowPosition {
     parentId?: string;
     index: number;
+}
+```
+
+### `TimelineRowViewState`
+
+```ts
+type TimelineRowViewState = Pick<TimelineViewState, 'search' | 'sort' | 'filters' | 'collapsedIds'>;
+```
+
+### `TimelineRowsInput`
+
+```ts
+interface TimelineRowsInput<R extends TimelineRow = TimelineRow> {
+    rows: readonly R[];
+    columns?: readonly TimelineColumn<R>[];
+    sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>;
+    bars?: readonly TimelineBar[];
+}
+```
+
+### `TimelineRowsProjection`
+
+```ts
+interface TimelineRowsProjection<R extends TimelineRow = TimelineRow> {
+    rows: R[];
+    matchedRowIds: string[];
+    wbs: Map<string, string>;
+    collapsedIds: string[];
+    diagnostics: TimelineViewDiagnostic[];
 }
 ```
 
@@ -8629,7 +8811,7 @@ function baselineVariance(bar: TimeRange, baseline: TimeRange): TimelineBaseline
 ```ts
 function beginGraphExpansion<N extends {
     id: string;
-}, E extends GraphEdge>(state: GraphExpansionState<N, E>, ids: Iterable<string>): GraphExpansionState<N, E>;
+}, E extends GraphEdge>(state: GraphExpansionState<N, E>, ids: Iterable<string>, options?: GraphExpansionKeyOptions): GraphExpansionState<N, E>;
 ```
 
 ### `beginTransaction`
@@ -8693,7 +8875,7 @@ function calendarZoomPresets(range: TimeRange, options?: CalendarZoomPresetOptio
 ```ts
 function cancelGraphExpansion<N extends {
     id: string;
-}, E extends GraphEdge>(state: GraphExpansionState<N, E>, ids: Iterable<string>): GraphExpansionState<N, E>;
+}, E extends GraphEdge>(state: GraphExpansionState<N, E>, ids: Iterable<string>, options?: GraphExpansionKeyOptions): GraphExpansionState<N, E>;
 ```
 
 ### `cancelWindowedRequests`
@@ -8869,6 +9051,12 @@ function dependencyTypeForEnds(from: TimelineBarEnd, to: TimelineBarEnd): Timeli
 
 ```ts
 function detectGraphCommunities(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options?: GraphCommunityOptions): GraphCommunityResult;
+```
+
+### `diffStructure`
+
+```ts
+function diffStructure<T>(before: readonly T[], after: readonly T[], options: StructureDiffOptions<T>): StructureDiff;
 ```
 
 ### `editTimeRange`
@@ -9101,7 +9289,7 @@ function graphEdgeEndpoint(layout: GraphLayout, nodes: ReadonlyMap<string, Ident
 ```ts
 function graphExpansionView<N extends {
     id: string;
-}, E extends GraphEdge>(state: GraphExpansionState<N, E>): GraphExpansionView<N, E>;
+}, E extends GraphEdge>(state: GraphExpansionState<N, E>, options?: GraphExpansionKeyOptions): GraphExpansionView<N, E>;
 ```
 
 ### `graphFlowBands`
@@ -9231,6 +9419,14 @@ function graphSmoothPath(points: readonly GraphPoint[]): string;
 
 ```ts
 function graphSwimlaneAt<L extends GraphSwimlaneBand>(lanes: readonly L[], target: GraphPoint | GraphRect): L | undefined;
+```
+
+### `graphTracePath`
+
+```ts
+function graphTracePath(result: Pick<GraphTraversalResult, 'nodeIds' | 'via'>, nodeId: string, options?: {
+    direction?: GraphWalkDirection;
+}): GraphTracedPath | undefined;
 ```
 
 ### `graphViewportRect`
@@ -9387,7 +9583,7 @@ const maxEarnedValuePoints = 100000;
 ```ts
 function mergeGraphExpansionPage<N extends {
     id: string;
-}, E extends GraphEdge>(state: GraphExpansionState<N, E>, page: GraphExpansionPage<N, E>, expandedIds?: Iterable<string>): GraphExpansionState<N, E>;
+}, E extends GraphEdge>(state: GraphExpansionState<N, E>, page: GraphExpansionPage<N, E>, expandedIds?: Iterable<string>, options?: GraphExpansionKeyOptions): GraphExpansionState<N, E>;
 ```
 
 ### `mirrorTimeScale`
@@ -9500,6 +9696,12 @@ function planComparisonTargets(comparison: PlanComparison, index: ViewBindingInd
 
 ```ts
 function projectResourceTimeline<D = unknown, R = unknown>(input: ResourceTimelineInput<D, R>, options?: ResourceTimelineOptions<D, R>): ResourceTimelineProjection<D, R>;
+```
+
+### `projectTimelineRows`
+
+```ts
+function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsInput<R>, state: TimelineRowViewState): TimelineRowsProjection<R>;
 ```
 
 ### `projectTimelineView`
@@ -9950,12 +10152,12 @@ function topologicalOrder(nodes: readonly IdentifiedNode[], edges: readonly Grap
 ### `traverseGraph`
 
 ```ts
-function traverseGraph(graph: {
+function traverseGraph<E extends GraphEdge = GraphEdge>(graph: {
     nodes: readonly {
         id: string;
     }[];
-    edges: readonly GraphEdge[];
-}, startIds: Iterable<string>, options?: GraphTraversalOptions): GraphTraversalResult;
+    edges: readonly E[];
+}, startIds: Iterable<string>, options?: GraphTraversalOptions<E>): GraphTraversalResult;
 ```
 
 ### `useAsyncGraphLayout`
@@ -10016,6 +10218,7 @@ function useEditTransaction<S, P>(options: UseEditTransactionOptions<S, P>): {
 function useLinkedSelection(options: UseLinkedSelectionOptions): {
     owner: import("vue").ComputedRef<"load" | "graph" | "timeline" | undefined>;
     selectedEntities: import("vue").ComputedRef<EntityRef[]>;
+    selectionSource: import("vue").ComputedRef<string | undefined>;
     hoveredEntities: import("vue").ComputedRef<readonly EntityRef[]>;
     timeRange: import("vue").ComputedRef<TimeRangeTargets | undefined>;
     graph: import("vue").ComputedRef<LinkedGraphSets>;
@@ -10024,6 +10227,12 @@ function useLinkedSelection(options: UseLinkedSelectionOptions): {
     select: (view: LinkedViewName, targets: readonly ViewTarget[]) => {
         changed: boolean;
         unknown: ViewTarget[];
+    };
+    selectEntities: (entities: Iterable<EntityRef>, selectOptions?: {
+        source?: string;
+    }) => {
+        changed: boolean;
+        unknown: EntityRef[];
     };
     clearSelection: () => boolean;
     hoverEnter: (view: LinkedViewName, target: ViewTarget) => void;

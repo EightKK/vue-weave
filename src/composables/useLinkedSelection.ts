@@ -198,8 +198,9 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     hover.value = undefined
   }
 
-  const selectedEntities = computed<readonly EntityRef[]>(() => selection.value.byEntities
-    ? selection.value.entities
+  // Typed as a mutable array like before entity selections existed; each read gets its own copy.
+  const selectedEntities = computed<EntityRef[]>(() => selection.value.byEntities
+    ? selection.value.entities.map(entity => ({ ...entity }))
     : resolveEntityRefs(index.value, selection.value.targets).entities)
 
   const timeRange = computed<TimeRangeTargets | undefined>(() => {
