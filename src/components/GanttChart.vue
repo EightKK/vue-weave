@@ -52,6 +52,7 @@ import { sheetKey, useSheet } from './ganttChart/sheet.js'
 import { constraintView, type ConstraintPreview } from './ganttChart/constraints.js'
 import { shownBaselines, type BaselineContext } from './ganttChart/baselines.js'
 import { linkEnds, linkHandles, linkKey, type CanvasHandle, type LinkDraft, type LinkEnd } from './ganttChart/linkHandles.js'
+import { clampZoom, maxZoom, minZoom, useZoomGestures } from './ganttChart/useZoomGestures.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource, type ValidatorResult } from './shared/validation.js'
@@ -1030,8 +1031,6 @@ function toggleRow(id: string) {
   emit('update:collapsedIds', next)
 }
 const zoom = ref(1)
-const minZoom = 0.65
-const maxZoom = 3
 const axis = computed<TimeScale>(() => {
   const base = props.scale ?? createTimeScale(stableRange.value, activePixelsPerUnit.value)
   if (!Number.isFinite(base.width) || base.width <= 0) throw new RangeError('Invalid time scale width')
@@ -1662,17 +1661,6 @@ function timeAreaWidth(el: HTMLElement) {
   return Math.max(0, el.clientWidth - viewport.value.labels)
 }
 
-/** Change the zoom factor while keeping the time at `anchor` (pixels from the timeline's visible left edge) in place. */
-async function applyZoom(next: number, anchor?: number) {
-  const el = scroller.value
-  if (!el) return
-  const offset = anchor ?? timeAreaWidth(el) / 2
-  const time = axis.value.toTime(scrollStart(el) + offset)
-  zoom.value = Math.max(minZoom, Math.min(maxZoom, next))
-  await nextTick()
-  setScrollStart(el, axis.value.toX(time) - offset)
-  syncViewport()
-}
 
 async function setZoom(factor: number) {
   if (!scroller.value || scrollingGesture()) return
@@ -2435,95 +2423,17 @@ function cancelLinkDraft(reason: TimelineEditCancelReason) {
   if (fixed) emit('edit-cancel', { reason, barIds: [fixed.bar] })
 }
 
-// Two-pointer touch pinch zooms the time axis around the midpoint. A second touch cancels any in-flight edit.
-const touches = new Map<number, { x: number; y: number }>()
-function touchSpan() {
-  const [a, b] = [...touches.values()]
-  return { distance: Math.hypot(a!.x - b!.x, a!.y - b!.y), x: (a!.x + b!.x) / 2 }
-}
-function trackTouch(event: PointerEvent) {
-  if (!props.pinchZoom || event.pointerType !== 'touch') return
-  touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
-  const el = scroller.value
-  if (touches.size !== 2 || !el) return
-  cancelGestures('pointer-cancel')
-  hideTooltip()
-  const span = touchSpan()
-  gesture = { type: 'pinch', distance: Math.max(1, span.distance), zoom: zoom.value, anchor: Math.max(0, timeAreaOffset(span.x, el.getBoundingClientRect())) }
-}
-function moveTouch(event: PointerEvent) {
-  if (!touches.has(event.pointerId)) return
-  touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
-  const pinch = gestureOf('pinch')
-  if (!pinch || touches.size !== 2) return
-  event.preventDefault()
-  const next = Math.max(minZoom, Math.min(maxZoom, pinch.zoom * touchSpan().distance / pinch.distance))
-  if (Math.abs(next - zoom.value) > 0.001) void applyZoom(next, pinch.anchor)
-}
-function endTouch(event: PointerEvent) {
-  touches.delete(event.pointerId)
-  if (touches.size < 2) endGesture('pinch')
-}
-watch(() => props.pinchZoom, () => {
-  touches.clear()
-  endGesture('pinch')
+// Pinch and Ctrl+wheel zoom (`pinchZoom`, `wheelZoom`). A pinch is the gesture in flight while it lasts.
+const { applyZoom, trackTouch, moveTouch, endTouch, attach: attachZoomGestures, detach: detachZoomGestures } = useZoomGestures({
+  zoom, scroller, pinchZoom: () => props.pinchZoom, wheelZoom: () => props.wheelZoom, valid: () => !validationError.value,
+  axis: () => axis.value, timeAreaOffset, timeAreaWidth, scrollStart, setScrollStart, syncViewport, gestureActive, cancelGestures,
+  hideTooltip: () => hideTooltip(),
+  pinch: {
+    begin: state => { gesture = { type: 'pinch', ...state } },
+    current: () => gestureOf('pinch'),
+    end: () => { endGesture('pinch') },
+  },
 })
-// `touch-action: pan-x pan-y` keeps one-finger scrolling native but lets the browser take over a two-finger pan,
-// which ends the pinch with `pointercancel`. A non-passive `touchmove` listener refuses that takeover while two
-// touches are down; single-touch moves stay untouched.
-function holdPinch(event: TouchEvent) {
-  if (props.pinchZoom && event.touches.length >= 2 && event.cancelable) event.preventDefault()
-}
-
-// Ctrl+wheel and Meta+wheel (`wheelZoom`) zoom the time axis around the pointer. Desktop trackpad pinches arrive as
-// Ctrl+wheel with small deltas, so the factor follows deltaY and is clamped per event to one zoom button step. The
-// listener is non-passive, so it is attached only while the prop is set; a plain wheel is never prevented.
-const wheelStep = 1.35
-let wheelTarget: HTMLElement | undefined
-/** The time and anchor of a zoom whose scroll position is not applied yet; later events in the same tick build on it. */
-let wheelPending: { time: number; offset: number } | undefined
-function wheelDelta(event: WheelEvent, el: HTMLElement) {
-  if (event.deltaMode === 1) return event.deltaY * 16
-  if (event.deltaMode === 2) return event.deltaY * el.clientHeight
-  return event.deltaY
-}
-async function zoomWithWheel(event: WheelEvent) {
-  if (!(event.ctrlKey || event.metaKey) || !props.wheelZoom) return
-  const el = scroller.value
-  if (!el || validationError.value) return
-  // Keep the browser from zooming the page, also at the zoom limits.
-  if (event.cancelable) event.preventDefault()
-  const delta = wheelDelta(event, el)
-  if (!delta) return
-  // A zoom changes the coordinate system, as a pinch does: in-flight gestures end without a proposal.
-  if (gestureActive()) cancelGestures('source-changed')
-  hideTooltip()
-  const factor = Math.max(1 / wheelStep, Math.min(wheelStep, Math.exp(-delta * Math.log(wheelStep) / 100)))
-  const next = Math.max(minZoom, Math.min(maxZoom, zoom.value * factor))
-  if (Math.abs(next - zoom.value) < 1e-6) return
-  const offset = Math.max(0, Math.min(timeAreaWidth(el), timeAreaOffset(event.clientX, el.getBoundingClientRect())))
-  const pending = wheelPending
-  // Until a pending zoom has scrolled, its anchor time defines where the axis will be.
-  const time = pending
-    ? axis.value.toTime(axis.value.toX(pending.time) - pending.offset + offset)
-    : axis.value.toTime(scrollStart(el) + offset)
-  zoom.value = next
-  const mine = wheelPending = { time, offset }
-  await nextTick()
-  if (wheelPending !== mine) return
-  wheelPending = undefined
-  setScrollStart(el, axis.value.toX(time) - offset)
-  syncViewport()
-}
-function syncWheelListener() {
-  const el = props.wheelZoom && mounted ? scroller.value : undefined
-  if (el === wheelTarget) return
-  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
-  wheelTarget = el
-  wheelTarget?.addEventListener('wheel', zoomWithWheel, { passive: false })
-}
-watch(() => props.wheelZoom, syncWheelListener, { flush: 'post' })
-
 // A new source interval or coordinate system invalidates an in-flight gesture.
 watch([
   () => props.bars, () => props.rows, () => props.collapsedIds, localCollapsed, () => props.headerBands, () => props.columns, () => stableRange.value,
@@ -3296,7 +3206,7 @@ function fitToBars(ids?: Iterable<string>, options: TimelineFitOptions = {}): Pr
   // The coordinate system changes: cancel pointer gestures (an armed keyboard connection is kept).
   if (gesture && gesture.type !== 'row' && gesture.type !== 'column') cancelGestures('source-changed')
   hideTooltip()
-  if (span > 0) zoom.value = Math.max(minZoom, Math.min(maxZoom, available / span))
+  if (span > 0) zoom.value = clampZoom(available / span)
   return nextTick().then(() => {
     if (!el) return
     const left = axis.value.toX(start), right = axis.value.toX(end)
@@ -3509,13 +3419,10 @@ onMounted(() => {
   observer.observe(scroller.value)
   observeCorner(cornerEl.value)
   scheduleVisibleWindow()
-  scroller.value.addEventListener('touchmove', holdPinch, { passive: false })
-  syncWheelListener()
+  attachZoomGestures()
 })
 onBeforeUnmount(() => {
-  scroller.value?.removeEventListener('touchmove', holdPinch)
-  wheelTarget?.removeEventListener('wheel', zoomWithWheel)
-  wheelTarget = undefined
+  detachZoomGestures()
 })
 onUnmounted(() => {
   mounted = false
