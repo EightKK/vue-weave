@@ -148,6 +148,33 @@ See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integr
 
 All screenshots are from the [demo app](#run-the-demo) in this repository.
 
+### Design gallery
+
+Showcases that combine several features and restyle the components with slots, `--vw-*` variables and `vw-` classes only. Open them from **Design gallery** in the [demo](https://eightkk.github.io/vue-weave/).
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-pipeline.png" alt="CI/CD pipeline showcase: a dark run monitor with a 16-job graph (checkout, install, lint, typecheck, unit tests on three Node versions, build, three end-to-end shards, a security scan, staging, an approval gate, canary and production) above a timeline of each job's run, with KPI tiles for elapsed time, passed, running and failed jobs and the critical path" width="100%"><br>
+      <b>CI/CD pipeline.</b> A live job graph and run timeline on one simulated clock, with failure injection, retry, an approval gate and linked selection (<code>useLinkedSelection</code>, <code>topologicalOrder</code>).
+    </td>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-knowledge-graph.png" alt="Knowledge graph showcase: 164 computer-science topics on a dark canvas, coloured by community and sized by PageRank, with the shortest path from RSA to Diffusion models highlighted as a dashed line and a ranked list of the most central topics" width="100%"><br>
+      <b>Knowledge graph.</b> Force layout, PageRank sizes, community colours, search, neighbourhood focus and shortest paths (<code>layoutForceGraph</code>, <code>detectGraphCommunities</code>, <code>shortestGraphPath</code>).
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-construction.png" alt="Construction program showcase: the master schedule of a nine-storey office tower with KPI tiles for forecast handover, SPI, CPI, EAC and percent complete, and a Gantt chart with work breakdown, critical path in orange, float lines, baseline strips and a status date line" width="100%"><br>
+      <b>Construction program.</b> A scheduled master programme with critical path, baselines, crew leveling, earned value and a what-if delay (<code>scheduleTasks</code>, <code>levelResources</code>, <code>computeEarnedValue</code>).
+    </td>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-service-map.png" alt="Service map showcase: 22 services in nested region and namespace groups with health rings, sparklines and traffic bands; a payments database incident marks Payments critical and five upstream services degraded, above an incident timeline and a needs-attention list" width="100%"><br>
+      <b>Service map.</b> Nested collapsible groups, traffic-weighted edges, an incident blast radius from <code>traverseGraph</code> and a linked alert timeline.
+    </td>
+  </tr>
+</table>
+
 ![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/network-graph.png)
 
 ![GanttChart in the scheduling demo: a calendar-aware schedule with a status date and progress line, critical-path outlines, float lines, split bars, a lead label, a deadline flag, Finish and Float columns, and a shaded plant closure day](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/gantt-chart.png)

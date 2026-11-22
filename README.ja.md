@@ -148,6 +148,33 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 画像はすべて、このリポジトリの[デモ](#デモを起動する)の画面です。
 
+### デザインギャラリー
+
+複数の機能を組み合わせ、スロット、`--vw-*` 変数、`vw-` クラスだけで見た目を作り替えた作例です。[デモ](https://eightkk.github.io/vue-weave/)の **Design gallery** から開けます。
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-pipeline.png" alt="CI/CDパイプラインの作例。チェックアウト、インストール、Lint、型チェック、3つのNodeバージョンでの単体テスト、ビルド、3分割のE2Eテスト、セキュリティスキャン、ステージング、承認ゲート、カナリア、本番の16ジョブのグラフと、各ジョブの実行期間を示すタイムライン。経過時間、成功・実行中・失敗の件数、クリティカルパスの指標" width="100%"><br>
+      <b>CI/CDパイプライン。</b>ジョブのグラフと実行タイムラインが同じ模擬時計で動きます。失敗の注入、再実行、承認ゲート、ビューの連動選択（<code>useLinkedSelection</code>、<code>topologicalOrder</code>）。
+    </td>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-knowledge-graph.png" alt="ナレッジグラフの作例。コンピューターサイエンスの164トピックを暗い背景に配置し、コミュニティで色分け、PageRankで大きさを変え、RSAからDiffusion modelsまでの最短経路を破線で強調。中心性の高いトピックの一覧" width="100%"><br>
+      <b>ナレッジグラフ。</b>力学モデルによる配置、PageRankによる大きさ、コミュニティの色分け、検索、近傍の絞り込み、最短経路（<code>layoutForceGraph</code>、<code>detectGraphCommunities</code>、<code>shortestGraphPath</code>）。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-construction.png" alt="建設工事の工程の作例。9階建てオフィスビルの全体工程表。引き渡し予測、SPI、CPI、EAC、進捗率の指標と、作業分解構成、オレンジのクリティカルパス、余裕日数の線、ベースライン、ステータス日の線を表示したガントチャート" width="100%"><br>
+      <b>建設工事の工程。</b>スケジューラーで計算した全体工程表。クリティカルパス、ベースライン、作業班の平準化、アーンドバリュー、遅延のwhat-if（<code>scheduleTasks</code>、<code>levelResources</code>、<code>computeEarnedValue</code>）。
+    </td>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-service-map.png" alt="サービスマップの作例。リージョンと名前空間で入れ子にした22サービスを、ヘルスリング、スパークライン、通信量の帯で表示。決済DBの障害でPaymentsが危険、上流の5サービスが劣化と表示され、下に障害タイムラインと要対応リスト" width="100%"><br>
+      <b>サービスマップ。</b>折りたためる入れ子のグループ、通信量に応じた辺、<code>traverseGraph</code> による障害の影響範囲、連動するアラートのタイムライン。
+    </td>
+  </tr>
+</table>
+
 ![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/network-graph.png)
 
 ![スケジューリングデモのGanttChart。ステータス日付線とイナズマ線、クリティカルパスの枠線、余裕日数の線、分割バー、リードのラベル、締切フラグ、完了日と余裕日数の列、網掛けされた工場休業日を表示したカレンダー対応スケジュール](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/gantt-chart.png)
