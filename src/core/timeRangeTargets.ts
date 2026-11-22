@@ -71,7 +71,8 @@ export interface TimeRangeTargetsOptions {
   /**
    * How to find related entities, as for `traverseGraph`: `{ direction: 'forward' }` for all successors, `'backward'` for
    * all predecessors, `'both'` for both, and `{ direction: 'both', maxHops: 1 }` for direct neighbours. `maxHops` limits
-   * the depth. Omit it to relate nothing.
+   * the depth, `edgeFilter` the relations followed and `maxNodes` the number of graph nodes reached. Omit it to relate
+   * nothing.
    */
   traversal?: GraphTraversalOptions
 }

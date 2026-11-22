@@ -613,7 +613,7 @@ async function showInGraph(nodeId: string) {
 - IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities.
 - Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
-- For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached, and `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
+- For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached. Opt-in `edgeFilter` follows only some relations (it is told the walk direction, so upstream and downstream can follow different ones), `maxNodes` caps the result nearest first and `truncated` lists where a limit stopped the walk (the places to offer "show more"), and `paths: true` lets `graphTracePath(result, id)` rebuild the edges from a start to a node (why it is affected) and lists in `multiplyReachedIds` the nodes reached by more than one path; see [Traversal filters, limits and paths](api.md#traversal-filters-limits-and-paths). `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
 - To explore a time range (what ran on machine X between 14:00 and 16:00), pass `timeRange: { range, bars, rowIds, graph, traversal }` to `useLinkedSelection`. Bars are tested by their work `segments` when they have them, so a pause covering the range does not count. Active tasks join the highlight sets and related tasks the `related*` sets, for example `:related-ids="linked.graph.value.relatedNodeIds"` on NetworkGraph. Nothing is selected, so Delete never removes them. `timelineBarsInRange` and `resolveTimeRangeTargets` do the same in core; see [Time range exploration](api.md#time-range-exploration).
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
 
@@ -1017,6 +1017,23 @@ watch(shown, ({ nodes, edges }) => {
 ```
 
 Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).
+
+To expand one direction or relation at a time ("show callers" and "show callees" as separate actions), pass a `key` to the same functions. Each key has its own frontier, so a node expanded downstream still offers its upstream expansion:
+
+```ts
+async function expandDirection(id: string, key: 'forward' | 'backward') {
+  graph.value = beginGraphExpansion(graph.value, [id], { key })
+  try {
+    const page = await api.neighbours(id, key) // only the successors or only the predecessors of id
+    graph.value = mergeGraphExpansionPage(graph.value, page, [id], { key })
+  } catch (error) {
+    graph.value = cancelGraphExpansion(graph.value, [id], { key })
+  }
+}
+const canExpandBackward = (id: string) => graphExpansionView(graph.value, { key: 'backward' }).frontierIds.includes(id)
+```
+
+A page merged without a key still marks its nodes expanded for every key, and a node expanded for some keys only stays in the unkeyed `frontierIds`. See [Partial data loading](api.md#partial-data-loading) for every rule.
 
 ## Spreadsheet editing in a schedule
 

@@ -36,6 +36,59 @@ export function walkWithinHops<T>(
 }
 
 /**
+ * Breadth-first walks from the same `starts`, one per entry of `walks` (each the adjacency of that walk), advanced
+ * together one hop at a time: every walk handles all its nodes `k` steps from a start before any walk handles a node
+ * `k + 1` steps away, and at the same hop the walks run in the order given. Each walk keeps its own depths, so a node
+ * reached by one walk is still walked by another. For every step from a node closer than `maxHops`, `onStep(walk, from,
+ * step, seen)` is called in discovery order, with `seen` true when the step leads to a node this walk already holds; it
+ * returns whether the walk may enter an unseen node (the return value is ignored for a seen one). A node at `maxHops`
+ * is not expanded and is passed to `onHopLimit(walk, id)` instead. Iterative; terminates on cycles.
+ */
+export function walkInLockstep<T>(
+  starts: readonly string[],
+  walks: readonly ((id: string) => readonly T[] | undefined)[],
+  target: (step: T) => string,
+  maxHops: number,
+  onStep: (walk: number, from: string, step: T, seen: boolean) => boolean,
+  onHopLimit: (walk: number, id: string) => void,
+): void {
+  const states = walks.map(() => ({ depth: new Map<string, number>(), queue: [] as string[], cursor: 0 }))
+  for (const state of states) {
+    for (const id of starts) {
+      if (state.depth.has(id)) continue
+      state.depth.set(id, 0)
+      state.queue.push(id)
+    }
+  }
+  for (let hop = 0; ; hop++) {
+    let pending = false
+    for (let w = 0; w < walks.length; w++) {
+      const state = states[w]!
+      while (state.cursor < state.queue.length) {
+        const id = state.queue[state.cursor]!
+        const d = state.depth.get(id)!
+        if (d > hop) break
+        state.cursor++
+        if (d >= maxHops) {
+          onHopLimit(w, id)
+          continue
+        }
+        for (const step of walks[w]!(id) ?? []) {
+          const next = target(step)
+          const seen = state.depth.has(next)
+          if (onStep(w, id, step, seen) && !seen) {
+            state.depth.set(next, d + 1)
+            state.queue.push(next)
+          }
+        }
+      }
+      if (state.cursor < state.queue.length) pending = true
+    }
+    if (!pending) return
+  }
+}
+
+/**
  * Strongly connected components of the graph given by `outgoing`, found with an iterative Tarjan walk that starts from
  * the keys of `outgoing` in their order. Components are returned in the order Tarjan completes them, which is a reverse
  * topological order of the condensation. Members are listed in the order they leave the walk stack.
