@@ -129,3 +129,16 @@ export type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEve
 ) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>)
   & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>
 export const EventCalendar = EventCalendarVue as unknown as EventCalendarComponent
+
+// TreeGrid: a controlled tree grid and matrix with two-dimensional virtualization, generic over its row type.
+import TreeGridVue from './components/TreeGrid.vue'
+import type { TreeGridColumn, TreeGridRow } from './core/treeGrid.js'
+type TreeGridSfc<R extends TreeGridRow> = typeof TreeGridVue<R>
+/** Methods that TreeGrid exposes on its template ref. `R` is the row type of the grid. */
+export type TreeGridExposed<R extends TreeGridRow = TreeGridRow> = SfcExposed<TreeGridSfc<R>>
+/** The type of the `TreeGrid` component. In a template, the row type is inferred from `rows`. */
+export type TreeGridComponent = (new <R extends TreeGridRow = TreeGridRow>(
+  props: { rows: readonly R[]; columns: readonly TreeGridColumn<R>[] } & Record<string, unknown>,
+) => SfcInstance<TreeGridSfc<R & TreeGridRow>>)
+  & SfcDefaultComponent<TreeGridSfc<TreeGridRow>>
+export const TreeGrid = TreeGridVue as unknown as TreeGridComponent
