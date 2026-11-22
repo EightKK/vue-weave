@@ -10,7 +10,7 @@ import {
 } from './graphOptions.js'
 import { isFiniteRect } from './graphGeometry.js'
 import type { GraphRect } from './graphView.js'
-import { duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
+import { checkId, duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
 /** One lane of a swimlane layout, in the order the caller lists it. `label` defaults to the ID. */
 export interface GraphSwimlaneSpec {
@@ -121,9 +121,7 @@ export function assertGraphSwimlanePools(pools: readonly GraphSwimlanePoolBand[]
   if (!Array.isArray(pools)) throw new Error(where + ' pools must be an array')
   const ids = new Set<string>()
   for (const pool of pools) {
-    if (!isId(pool?.id)) throw invalidIdError('swimlane pool', pool?.id)
-    if (ids.has(pool.id)) throw duplicateIdError('swimlane pool', pool.id)
-    ids.add(pool.id)
+    checkId('swimlane pool', pool?.id, ids)
     if (typeof pool.label !== 'string') throw new Error(where + ' pool ' + pool.id + ' needs a string label')
     if (!Array.isArray(pool.laneIds) || !pool.laneIds.every(isId)) throw new Error(where + ' pool ' + pool.id + ' needs an array of lane IDs')
     for (const rect of [pool, pool.header]) {
@@ -142,9 +140,7 @@ export function assertGraphSwimlaneBands(lanes: readonly GraphSwimlaneBand[], wh
   if (!Array.isArray(lanes)) throw new Error(where + ' lanes must be an array')
   const ids = new Set<string>()
   for (const lane of lanes) {
-    if (!isId(lane?.id)) throw invalidIdError('swimlane', lane?.id)
-    if (ids.has(lane.id)) throw duplicateIdError('swimlane', lane.id)
-    ids.add(lane.id)
+    checkId('swimlane', lane?.id, ids)
     if (typeof lane.label !== 'string') throw new Error(where + ' lane ' + lane.id + ' needs a string label')
     for (const rect of [lane, lane.header]) {
       if (!isFiniteRect(rect)) {
@@ -267,10 +263,7 @@ function resolvePools(specs: readonly GraphSwimlanePoolSpec[], laneIndex: Readon
   const list: { id: string; label: string; first: number; last: number }[] = []
   const ids = new Set<string>()
   for (const spec of specs) {
-    const id: unknown = spec?.id
-    if (!isId(id)) throw invalidIdError('swimlane pool', id)
-    if (ids.has(id)) throw duplicateIdError('swimlane pool', id)
-    ids.add(id)
+    const id = checkId('swimlane pool', spec?.id, ids)
     const label = spec.label ?? id
     if (typeof label !== 'string') throw new Error('Swimlane pool label must be a string: ' + id)
     if (!Array.isArray(spec.lanes) || !spec.lanes.length) throw new Error('Swimlane pool needs at least one lane: ' + id)

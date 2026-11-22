@@ -4,6 +4,7 @@ import { KeyedMinHeap } from './graphHeap.js'
 import { unknownReferenceError } from './ids.js'
 import { checkLayoutNumber } from './graphOptions.js'
 import { traverseGraph } from './graphTraversal.js'
+import { stronglyConnectedComponents } from './graphWalk.js'
 
 export interface TopologicalOrderResult {
   /** Nodes in dependency order (input order breaks ties). Nodes on or behind a cycle are omitted. */
@@ -41,53 +42,10 @@ export function findGraphCycles(nodes: readonly IdentifiedNode[], edges: readonl
   const position = new Map(nodes.map((node, i) => [node.id, i]))
   const selfLoops = new Set(edges.filter(edge => edge.from === edge.to).map(edge => edge.from))
 
-  // Iterative Tarjan.
-  const number = new Map<string, number>()
-  const low = new Map<string, number>()
-  const onStack = new Set<string>()
-  const component: string[] = []
   const found: string[][] = []
-  let counter = 0
-
-  for (const { id: root } of nodes) {
-    if (number.has(root)) continue
-    const frames = [{ id: root, cursor: 0 }]
-    number.set(root, counter)
-    low.set(root, counter++)
-    component.push(root)
-    onStack.add(root)
-
-    while (frames.length) {
-      const frame = frames[frames.length - 1]!
-      const children = index.outgoing.get(frame.id)!
-      if (frame.cursor < children.length) {
-        const next = children[frame.cursor++]!
-        if (!number.has(next)) {
-          number.set(next, counter)
-          low.set(next, counter++)
-          component.push(next)
-          onStack.add(next)
-          frames.push({ id: next, cursor: 0 })
-        } else if (onStack.has(next)) {
-          low.set(frame.id, Math.min(low.get(frame.id)!, number.get(next)!))
-        }
-        continue
-      }
-      frames.pop()
-      const parent = frames[frames.length - 1]
-      if (parent) low.set(parent.id, Math.min(low.get(parent.id)!, low.get(frame.id)!))
-      if (low.get(frame.id) === number.get(frame.id)) {
-        const members: string[] = []
-        for (;;) {
-          const member = component.pop()!
-          onStack.delete(member)
-          members.push(member)
-          if (member === frame.id) break
-        }
-        if (members.length > 1 || selfLoops.has(members[0]!)) {
-          found.push(members.sort((a, b) => position.get(a)! - position.get(b)!))
-        }
-      }
+  for (const members of stronglyConnectedComponents(index.outgoing)) {
+    if (members.length > 1 || selfLoops.has(members[0]!)) {
+      found.push(members.sort((a, b) => position.get(a)! - position.get(b)!))
     }
   }
   return found.sort((a, b) => position.get(a[0]!)! - position.get(b[0]!)!)

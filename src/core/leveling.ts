@@ -1,9 +1,10 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
-import { firstIndex, joinTouching, rangesOverlap } from './intervals.js'
+import { appendJoined, firstIndex, joinTouching, rangesOverlap, subtractPeriods } from './intervals.js'
 import {
-  addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
-  slotFor, summarySlot, summaryUpper, topologicalOrder, type ModelTask, type Slot, type SummaryUpper, type WorkClock,
+  buildScheduleModel, diagnose, limitsOf, lowerBounds, manualSlot, slotFor, summarySlot, topologicalOrder, type ModelTask,
+  type ScheduleModel, type Slot, type WorkClock,
 } from './scheduleModel.js'
+import { latestSlots } from './schedulePasses.js'
 import {
   explainOption, recordManualReason, recordSlotReasons, ScheduleTraceRecorder, type ExplainedLevelResourcesResult,
   type ScheduleOptions,
@@ -115,10 +116,7 @@ class Profile {
     const result: TimeRange[] = []
     for (let i = this.indexAt(from); i < this.times.length; i++) {
       if (this.values[i]! >= units) continue
-      const start = this.times[i]!, end = this.times[i + 1] ?? rangeEnd
-      const previous = result.at(-1)
-      if (previous?.end === start) previous.end = end
-      else result.push({ start, end })
+      appendJoined(result, this.times[i]!, this.times[i + 1] ?? rangeEnd)
     }
     return result
   }
@@ -129,25 +127,10 @@ class Profile {
  * are skipped, so the first range can start later than it would otherwise, but never after `clock.workAt(from)`.
  */
 function freeWork(clock: WorkClock, blocked: readonly TimeRange[], from = -Infinity): TimeRange[] {
-  const result: TimeRange[] = []
-  const add = (from: number, to: number) => {
-    if (from >= to) return
-    const start = clock.workAt(from), end = clock.workAt(to)
-    const previous = result.at(-1)
-    if (previous?.end === start) previous.end = end
-    else result.push({ start, end })
-  }
-  let b = 0
   const { periods } = clock
-  for (let p = firstIndex(periods.length, i => periods[i]!.end > from); p < periods.length; p++) {
-    const period = periods[p]!
-    let start = period.start
-    while (b < blocked.length && blocked[b]!.end <= start) b++
-    for (let i = b; i < blocked.length && blocked[i]!.start < period.end; i++) {
-      add(start, Math.min(blocked[i]!.start, period.end))
-      start = Math.max(start, blocked[i]!.end)
-    }
-    add(start, period.end)
+  const result: TimeRange[] = []
+  for (const part of subtractPeriods(periods, blocked, firstIndex(periods.length, i => periods[i]!.end > from))) {
+    appendJoined(result, clock.workAt(part.start), clock.workAt(part.end))
   }
   return result
 }
@@ -275,9 +258,7 @@ function interruptedPieces(pieces: readonly WorkPiece[], first: number, lastStar
       const start = Math.max(free[i]!.start, cursor)
       if (!chunks.length && start > lastStart) return undefined
       const take = Math.min(free[i]!.end - start, remaining)
-      const previous = chunks.at(-1)
-      if (previous?.end === start) previous.end = start + take
-      else chunks.push({ start, end: start + take })
+      appendJoined(chunks, start, start + take)
       remaining -= take
       cursor = start + take
     }
@@ -317,11 +298,7 @@ export function levelResources(input: LevelResourcesInput, options: ScheduleOpti
 export function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult
 export function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult {
   const explain = explainOption(options)
-  for (const task of input.tasks) {
-    if (task.mode !== undefined && task.mode !== 'asap' && task.mode !== 'alap') throw new Error('Invalid scheduling mode: ' + task.id)
-    if (task.priority !== undefined && !Number.isFinite(task.priority)) throw new RangeError('Invalid task priority: ' + task.id)
-    if (task.splittable !== undefined && typeof task.splittable !== 'boolean') throw new Error('Invalid splittable flag: ' + task.id)
-  }
+  checkLevelingFields(input.tasks)
   const plain: ScheduleInput = {
     range: input.range, quantum: input.quantum, calendars: input.calendars, defaultCalendarId: input.defaultCalendarId,
     tasks: input.tasks.map(withoutMode), dependencies: input.dependencies, deadline: input.deadline,
@@ -329,10 +306,78 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const base = scheduleTasks(plain)
   if (!base.ok) return base
   const model = buildScheduleModel(plain, explain)
-  const { range, tasks } = model
+  const { tasks } = model
   const trace = explain ? new ScheduleTraceRecorder(plain.tasks.filter(task => tasks.has(task.id)).map(task => task.id)) : undefined
-  const holdings = explain ? new Map<string, Holdings>() : undefined
+  const demands = buildDemands(model, input)
 
+  // Latest dates that keep every successor feasible, without holding the unleveled finish.
+  const sorted = topologicalOrder(model)
+  const order = 'order' in sorted ? sorted.order : []
+  const unleveled = new Map(base.tasks.map(task => [task.id, task]))
+  const horizon = latestSlots(model, order, unleveled, trace)
+  if (!(horizon instanceof Map)) return horizon
+
+  const state: LevelingState = {
+    model, trace, holdings: explain ? new Map() : undefined, horizon,
+    placed: new Map(), raised: new Set(), unresolved: new Set(), added: new Map(), reserved: new Map(),
+  }
+  // Priority: manual tasks (which never move) first, then explicit priority (higher first), total float, early start,
+  // then ID in code-unit order. Manual tasks wait for no predecessor, so they are all placed before any other task.
+  const entry = (task: ModelTask) => {
+    const { totalFloat, start } = unleveled.get(task.id)!
+    return { task, manual: Boolean(task.manual), priority: task.source.priority ?? 0, totalFloat, start }
+  }
+  const queue = new MinHeap<ReturnType<typeof entry>>((a, b) => a.manual !== b.manual ? a.manual
+    : a.priority !== b.priority ? a.priority > b.priority
+      : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
+        : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
+  const waiting = new Map<string, number>()
+  // A summary waits for its children and is placed at their span.
+  for (const task of tasks.values()) {
+    const count = task.incoming.length + (task.summary?.children.length ?? 0)
+    waiting.set(task.id, count)
+    if (!count) queue.push(entry(task))
+  }
+  const release = (task: ModelTask) => {
+    const next = task.outgoing.map(link => link.to)
+    if (task.parent !== undefined) next.push(task.parent)
+    for (const id of next) {
+      const count = waiting.get(id)! - 1
+      waiting.set(id, count)
+      if (!count) queue.push(entry(tasks.get(id)!))
+    }
+  }
+  while (queue.size) {
+    const { task } = queue.pop()
+    if (task.summary) state.placed.set(task.id, summarySlot(task, state.placed))
+    else {
+      const needs = demands.get(task.id) ?? []
+      if (task.manual) placeManual(state, task, needs)
+      else {
+        const failure = placeTask(state, task, needs)
+        if (failure) return failure
+      }
+    }
+    release(task)
+  }
+  return report(state, input, plain, base)
+}
+
+/** Checks the task fields that only leveling reads. */
+function checkLevelingFields(tasks: readonly ScheduleTask[]) {
+  for (const task of tasks) {
+    if (task.mode !== undefined && task.mode !== 'asap' && task.mode !== 'alap') throw new Error('Invalid scheduling mode: ' + task.id)
+    if (task.priority !== undefined && !Number.isFinite(task.priority)) throw new RangeError('Invalid task priority: ' + task.id)
+    if (task.splittable !== undefined && typeof task.splittable !== 'boolean') throw new Error('Invalid splittable flag: ' + task.id)
+  }
+}
+
+/**
+ * The remaining capacity profile of every resource and the needs of every task that does work, from the validated
+ * resources and assignments. Assignments of inactive and summary tasks take no capacity.
+ */
+function buildDemands(model: ScheduleModel, input: LevelResourcesInput): Map<string, Need[]> {
+  const { range, tasks } = model
   const profiles = new Map<string, Profile>()
   const resourceIds = new Set<string>()
   for (const resource of input.resources) {
@@ -364,252 +409,224 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     if (part) need.part = part
     list.push(need)
   }
+  return demands
+}
 
-  // Latest dates that keep every successor feasible, without holding the unleveled finish.
-  const sorted = topologicalOrder(model)
-  const order = 'order' in sorted ? sorted.order : []
-  const horizon = new Map<string, Slot>()
-  const unleveled = new Map(base.tasks.map(task => [task.id, task]))
-  const inherited = new Map<string, SummaryUpper>()
-  for (let i = order.length - 1; i >= 0; i--) {
-    const task = tasks.get(order[i]!)!
-    if (task.summary) {
-      inherited.set(task.id, summaryUpper(model, task, horizon, inherited, unleveled))
-      continue
+/** What the serial placement of `levelResources` has decided so far. */
+interface LevelingState {
+  model: ScheduleModel
+  trace: ScheduleTraceRecorder | undefined
+  /** The reservations of each resource, kept only when explaining. */
+  holdings: Map<string, Holdings> | undefined
+  /** The latest slot of each task, which leveling may not pass. */
+  horizon: ReadonlyMap<string, Slot>
+  placed: Map<string, Slot>
+  /** Tasks that capacity delayed. */
+  raised: Set<string>
+  unresolved: Set<string>
+  /** The pauses added to split tasks. */
+  added: Map<string, TimeRange[]>
+  /** The joined work slices reserved for each task with needs. */
+  reserved: Map<string, TimeRange[]>
+}
+
+/**
+ * Record the shortages of every resource the task needs in `window` as `capacity` reasons. Capacity is reserved
+ * before this task, so each holding names a task that occupies the resource first. Adjacent shortages with the same
+ * capacity form one reason that names every task holding the resource in it, so a task delayed behind many short
+ * reservations gets one reason, not one per reservation. The profile and the reservations are swept once, from the
+ * start of the window.
+ */
+function recordCapacity(
+  state: LevelingState, recorder: ScheduleTraceRecorder, task: ModelTask, needs: readonly Need[], defaultWindow: TimeRange,
+  startMoved: boolean, early: TimeRange, slot: TimeRange, windows?: ReadonlyMap<Need, TimeRange>,
+) {
+  const { range } = state.model
+  for (const need of needs) {
+    const { profile, units, resourceId } = need
+    // A partial assignment only competes for its resource during its part of the work.
+    const window = windows?.get(need) ?? defaultWindow
+    const held = state.holdings!.get(resourceId)?.overlapping(window) ?? []
+    const pieces: { start: number; end: number; capacity: number; holders: Set<Holding> }[] = []
+    const active: Holding[] = []
+    let next = 0
+    const { times, values } = profile, { workAt } = task.clock
+    for (let i = profile.indexAt(window.start); i < times.length && times[i]! < window.end; i++) {
+      if (values[i]! >= units) continue
+      const start = Math.max(times[i]!, window.start), end = Math.min(times[i + 1] ?? range.end, window.end)
+      // Only a shortage in the task's working time can hold it up.
+      if (start >= end || workAt(end) <= workAt(start)) continue
+      while (next < held.length && held[next]!.start < end) active.push(held[next++]!)
+      // Keep the reservations that still overlap this segment; every one of them started before its end.
+      let kept = 0, capacity = values[i]!
+      for (const holding of active) {
+        if (holding.end <= start) continue
+        active[kept++] = holding
+        capacity += holding.units
+      }
+      active.length = kept
+      const previous = pieces.at(-1)
+      if (previous?.end === start && previous.capacity === capacity) {
+        previous.end = end
+        for (const holding of active) previous.holders.add(holding)
+      } else pieces.push({ start, end, capacity, holders: new Set(active) })
     }
-    if (task.manual) {
-      if (trace) recordManualReason(trace, 'latest', task)
-      horizon.set(task.id, manualSlot(task))
-      continue
-    }
-    const bounds = addSummaryUpper(addUpperBounds(cloneBounds(task.bounds), task, horizon), task, inherited, unleveled)
-    const limits = limitsOf(bounds)
-    const slot = slotFor(task.clock, task.duration, limits, true)
-    if (!slot) return diagnose(model, task, bounds)
-    if (trace) {
-      recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, {
-        linkParents: link => trace.ids('latest', link.to), links: model.links,
+    for (const piece of pieces) {
+      const taskIds = [...new Set([...piece.holders].sort((a, b) => a.order - b.order).map(holding => holding.taskId))]
+      // Each task has its own reasons, so the holders' reason IDs never repeat.
+      recorder.add({
+        taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
+        candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
+        resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: taskIds,
+        range: { start: piece.start, end: piece.end },
+        parentReasonIds: taskIds.flatMap(id => recorder.ids('leveling', id)),
       })
     }
-    horizon.set(task.id, slot)
   }
+}
 
-  // Priority: manual tasks (which never move) first, then explicit priority (higher first), total float, early start,
-  // then ID in code-unit order. Manual tasks wait for no predecessor, so they are all placed before any other task.
-  const entry = (task: ModelTask) => {
-    const { totalFloat, start } = unleveled.get(task.id)!
-    return { task, manual: Boolean(task.manual), priority: task.source.priority ?? 0, totalFloat, start }
+/** Reserve the work slices of a task on every resource it needs, or only the part of them that a need covers. */
+function reserve(state: LevelingState, task: ModelTask, needs: readonly Need[], slices: readonly TimeRange[]) {
+  const { holdings } = state, { range } = state.model
+  for (const need of needs) {
+    for (const slice of need.part ? needSlices(need, slices) : slices) {
+      need.profile.reserve(slice, need.units, range.end)
+      if (holdings) {
+        let list = holdings.get(need.resourceId)
+        if (!list) holdings.set(need.resourceId, list = new Holdings())
+        list.add(task.id, slice, need.units)
+      }
+    }
   }
-  const queue = new MinHeap<ReturnType<typeof entry>>((a, b) => a.manual !== b.manual ? a.manual
-    : a.priority !== b.priority ? a.priority > b.priority
-      : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
-        : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
-  const waiting = new Map<string, number>()
-  // A summary waits for its children and is placed at their span.
-  for (const task of tasks.values()) {
-    const count = task.incoming.length + (task.summary?.children.length ?? 0)
-    waiting.set(task.id, count)
-    if (!count) queue.push(entry(task))
-  }
+  if (needs.length) state.reserved.set(task.id, joinTouching(slices))
+}
 
-  const placed = new Map<string, Slot>()
-  const raised = new Set<string>(), unresolved = new Set<string>(), added = new Map<string, TimeRange[]>()
-  const reserved = new Map<string, TimeRange[]>()
-  /**
-   * Record the shortages of every resource the task needs in `window` as `capacity` reasons. Capacity is reserved
-   * before this task, so each holding names a task that occupies the resource first. Adjacent shortages with the same
-   * capacity form one reason that names every task holding the resource in it, so a task delayed behind many short
-   * reservations gets one reason, not one per reservation. The profile and the reservations are swept once, from the
-   * start of the window.
-   */
-  const recordCapacity = (
-    recorder: ScheduleTraceRecorder, task: ModelTask, needs: readonly Need[], defaultWindow: TimeRange, startMoved: boolean,
-    early: TimeRange, slot: TimeRange, windows?: ReadonlyMap<Need, TimeRange>,
-  ) => {
-    for (const need of needs) {
-      const { profile, units, resourceId } = need
-      // A partial assignment only competes for its resource during its part of the work.
-      const window = windows?.get(need) ?? defaultWindow
-      const held = holdings!.get(resourceId)?.overlapping(window) ?? []
-      const pieces: { start: number; end: number; capacity: number; holders: Set<Holding> }[] = []
-      const active: Holding[] = []
-      let next = 0
-      const { times, values } = profile, { workAt } = task.clock
-      for (let i = profile.indexAt(window.start); i < times.length && times[i]! < window.end; i++) {
-        if (values[i]! >= units) continue
-        const start = Math.max(times[i]!, window.start), end = Math.min(times[i + 1] ?? range.end, window.end)
-        // Only a shortage in the task's working time can hold it up.
-        if (start >= end || workAt(end) <= workAt(start)) continue
-        while (next < held.length && held[next]!.start < end) active.push(held[next++]!)
-        // Keep the reservations that still overlap this segment; every one of them started before its end.
-        let kept = 0, capacity = values[i]!
-        for (const holding of active) {
-          if (holding.end <= start) continue
-          active[kept++] = holding
-          capacity += holding.units
-        }
-        active.length = kept
-        const previous = pieces.at(-1)
-        if (previous?.end === start && previous.capacity === capacity) {
-          previous.end = end
-          for (const holding of active) previous.holders.add(holding)
-        } else pieces.push({ start, end, capacity, holders: new Set(active) })
+/** A manual task stays at its dates. Its work takes capacity even where too little remains. */
+function placeManual(state: LevelingState, task: ModelTask, needs: readonly Need[]) {
+  const { trace, unresolved } = state, { range } = state.model
+  const slot = manualSlot(task)
+  if (trace) recordManualReason(trace, 'leveling', task)
+  const slices = slot.start < slot.end ? task.clock.slices(slot) : []
+  if (needs.length && slices.length) {
+    if (needs.some(need => need.part)) {
+      // Each need is checked over its own part of the work; a part clipped to nothing takes no capacity.
+      const windows = new Map<Need, TimeRange>()
+      let short = false
+      for (const need of needs) {
+        const own = needSlices(need, slices)
+        if (!own.length) continue
+        windows.set(need, need.part ? { start: own[0]!.start, end: own.at(-1)!.end } : slot)
+        if (rangesOverlap(own, need.profile.blocked(need.units, range.end, slot.start))) short = true
       }
-      for (const piece of pieces) {
-        const taskIds = [...new Set([...piece.holders].sort((a, b) => a.order - b.order).map(holding => holding.taskId))]
-        // Each task has its own reasons, so the holders' reason IDs never repeat.
-        recorder.add({
-          taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
-          candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
-          resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: taskIds,
-          range: { start: piece.start, end: piece.end },
-          parentReasonIds: taskIds.flatMap(id => recorder.ids('leveling', id)),
-        })
+      if (short) {
+        unresolved.add(task.id)
+        if (trace) recordCapacity(state, trace, task, [...windows.keys()], slot, true, slot, slot, windows)
+      }
+    } else {
+      if (rangesOverlap(slices, blockedBy(needs, range, slot.start))) {
+        unresolved.add(task.id)
+        if (trace) recordCapacity(state, trace, task, needs, slot, true, slot, slot)
       }
     }
+    reserve(state, task, needs, slices)
   }
-  /** Reserve the work slices of a task on every resource it needs, or only the part of them that a need covers. */
-  const reserve = (task: ModelTask, needs: readonly Need[], slices: readonly TimeRange[]) => {
-    for (const need of needs) {
-      for (const slice of need.part ? needSlices(need, slices) : slices) {
-        need.profile.reserve(slice, need.units, range.end)
-        if (holdings) {
-          let list = holdings.get(need.resourceId)
-          if (!list) holdings.set(need.resourceId, list = new Holdings())
-          list.add(task.id, slice, need.units)
-        }
-      }
-    }
-    if (needs.length) reserved.set(task.id, joinTouching(slices))
+  state.placed.set(task.id, slot)
+}
+
+/**
+ * Place a task that leveling may move at the earliest dates where its needs find capacity, within its bounds and
+ * horizon, and reserve its work. A task without such a placement stays at its earliest dates and is unresolved.
+ * Returns the failure when the task has no feasible slot at all.
+ */
+function placeTask(state: LevelingState, task: ModelTask, needs: readonly Need[]): ScheduleFailure | undefined {
+  const { model, trace, unresolved } = state, { range } = model
+  const { clock, duration } = task
+  const late = state.horizon.get(task.id)!
+  const bounds = lowerBounds(task, state.placed)
+  bounds.startUpper.push({ value: late.start })
+  bounds.endUpper.push({ value: late.end })
+  const limits = limitsOf(bounds)
+  const early = slotFor(clock, duration, limits, false)
+  if (!early) return diagnose(model, task, bounds)
+  if (trace) {
+    recordSlotReasons(trace, 'leveling', task, bounds, limits, early, false, {
+      linkParents: link => trace.ids('leveling', link.from), horizon: trace.ids('latest', task.id),
+    })
   }
-  const release = (task: ModelTask) => {
-    const next = task.outgoing.map(link => link.to)
-    if (task.parent !== undefined) next.push(task.parent)
-    for (const id of next) {
-      const count = waiting.get(id)! - 1
-      waiting.set(id, count)
-      if (!count) queue.push(entry(tasks.get(id)!))
-    }
+  let chunks: TimeRange[] = [{ start: early.workStart, end: early.workStart + duration }]
+  let lastSlot: Slot | undefined
+  // The work units of each need; a partial need clipped to nothing takes no capacity.
+  const spans = new Map<Need, TimeRange>()
+  for (const need of needs) {
+    const from = need.part ? Math.min(need.part.offset / model.quantum, duration) : 0
+    const to = need.part?.duration === undefined ? duration : Math.min(from + need.part.duration / model.quantum, duration)
+    if (from < to) spans.set(need, { start: from, end: to })
   }
-  while (queue.size) {
-    const { task } = queue.pop()
-    const { clock, duration } = task
-    if (task.summary) {
-      placed.set(task.id, summarySlot(task, placed))
-      release(task)
-      continue
-    }
-    const needs = demands.get(task.id) ?? []
-    if (task.manual) {
-      // A manual task stays at its dates. Its work takes capacity even where too little remains.
-      const slot = manualSlot(task)
-      if (trace) recordManualReason(trace, 'leveling', task)
-      const slices = slot.start < slot.end ? clock.slices(slot) : []
-      if (needs.length && slices.length) {
-        if (needs.some(need => need.part)) {
-          // Each need is checked over its own part of the work; a part clipped to nothing takes no capacity.
-          const windows = new Map<Need, TimeRange>()
-          let short = false
-          for (const need of needs) {
-            const own = needSlices(need, slices)
-            if (!own.length) continue
-            windows.set(need, need.part ? { start: own[0]!.start, end: own.at(-1)!.end } : slot)
-            if (rangesOverlap(own, need.profile.blocked(need.units, range.end, slot.start))) short = true
-          }
-          if (short) {
-            unresolved.add(task.id)
-            if (trace) recordCapacity(trace, task, [...windows.keys()], slot, true, slot, slot, windows)
-          }
-        } else {
-          if (rangesOverlap(slices, blockedBy(needs, range, slot.start))) {
-            unresolved.add(task.id)
-            if (trace) recordCapacity(trace, task, needs, slot, true, slot, slot)
-          }
-        }
-        reserve(task, needs, slices)
+  const whole = spans.size === needs.length && [...spans.values()].every(span => span.start === 0 && span.end === duration)
+  if (duration > 0 && needs.length && whole) {
+    const free = freeWork(clock, blockedBy(needs, range, early.start), early.start)
+    lastSlot = slotFor(clock, duration, limits, true)!
+    const lastStart = lastSlot.workStart
+    const found = task.source.splittable
+      ? interrupted(free, early.workStart, duration, lastStart, clock.workAt(limits.endUpper))
+      : contiguous(free, early.workStart, duration, lastStart)
+    if (found) chunks = found
+    else unresolved.add(task.id)
+  } else if (duration > 0 && spans.size) {
+    const pieces = workPieces(clock, duration, spans, range, early.start)
+    lastSlot = slotFor(clock, duration, limits, true)!
+    const lastStart = lastSlot.workStart
+    const found = task.source.splittable
+      ? interruptedPieces(pieces, early.workStart, lastStart, clock.workAt(limits.endUpper))
+      : contiguousPieces(pieces, early.workStart, duration, lastStart)
+    if (found) chunks = found
+    else unresolved.add(task.id)
+  }
+  const slot = duration
+    ? { start: clock.dateAt(chunks[0]!.start, false), end: clock.dateAt(chunks.at(-1)!.end, true), workStart: chunks[0]!.start }
+    : early
+  const slices = duration
+    ? chunks.flatMap(chunk => clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) }))
+    : []
+  if (trace && lastSlot && (slot.start > early.start || chunks.length > 1 || unresolved.has(task.id))) {
+    const stuck = unresolved.has(task.id)
+    const window = { start: early.start, end: Math.max(slot.end, early.end) }
+    if (whole) recordCapacity(state, trace, task, needs, window, slot.start > early.start || stuck, early, slot)
+    else {
+      // A partial need can only have been short between the earliest start of its part and the end of its placed part.
+      const windows = new Map<Need, TimeRange>()
+      for (const [need, span] of spans) {
+        const start = Math.max(window.start, clock.dateAt(early.workStart + span.start, false))
+        const end = Math.min(window.end, needSlices(need, slices).at(-1)?.end ?? window.end)
+        if (start < end) windows.set(need, { start, end })
       }
-      placed.set(task.id, slot)
-      release(task)
-      continue
+      recordCapacity(state, trace, task, [...windows.keys()], window, slot.start > early.start || stuck, early, slot, windows)
     }
-    const late = horizon.get(task.id)!
-    const bounds = lowerBounds(task, placed)
-    bounds.startUpper.push({ value: late.start })
-    bounds.endUpper.push({ value: late.end })
-    const limits = limitsOf(bounds)
-    const early = slotFor(clock, duration, limits, false)
-    if (!early) return diagnose(model, task, bounds)
-    if (trace) {
-      recordSlotReasons(trace, 'leveling', task, bounds, limits, early, false, {
-        linkParents: link => trace.ids('leveling', link.from), horizon: trace.ids('latest', task.id),
+    if (stuck) {
+      recordSlotReasons(trace, 'leveling', task, bounds, limits, lastSlot, true, {
+        linkParents: () => [], horizon: trace.ids('latest', task.id), links: model.links,
       })
     }
-    let chunks: TimeRange[] = [{ start: early.workStart, end: early.workStart + duration }]
-    let lastSlot: Slot | undefined
-    // The work units of each need; a partial need clipped to nothing takes no capacity.
-    const spans = new Map<Need, TimeRange>()
-    for (const need of needs) {
-      const from = need.part ? Math.min(need.part.offset / model.quantum, duration) : 0
-      const to = need.part?.duration === undefined ? duration : Math.min(from + need.part.duration / model.quantum, duration)
-      if (from < to) spans.set(need, { start: from, end: to })
-    }
-    const whole = spans.size === needs.length && [...spans.values()].every(span => span.start === 0 && span.end === duration)
-    if (duration > 0 && needs.length && whole) {
-      const free = freeWork(clock, blockedBy(needs, range, early.start), early.start)
-      lastSlot = slotFor(clock, duration, limits, true)!
-      const lastStart = lastSlot.workStart
-      const found = task.source.splittable
-        ? interrupted(free, early.workStart, duration, lastStart, clock.workAt(limits.endUpper))
-        : contiguous(free, early.workStart, duration, lastStart)
-      if (found) chunks = found
-      else unresolved.add(task.id)
-    } else if (duration > 0 && spans.size) {
-      const pieces = workPieces(clock, duration, spans, range, early.start)
-      lastSlot = slotFor(clock, duration, limits, true)!
-      const lastStart = lastSlot.workStart
-      const found = task.source.splittable
-        ? interruptedPieces(pieces, early.workStart, lastStart, clock.workAt(limits.endUpper))
-        : contiguousPieces(pieces, early.workStart, duration, lastStart)
-      if (found) chunks = found
-      else unresolved.add(task.id)
-    }
-    const slot = duration
-      ? { start: clock.dateAt(chunks[0]!.start, false), end: clock.dateAt(chunks.at(-1)!.end, true), workStart: chunks[0]!.start }
-      : early
-    const slices = duration
-      ? chunks.flatMap(chunk => clock.slices({ start: clock.dateAt(chunk.start, false), end: clock.dateAt(chunk.end, true) }))
-      : []
-    if (trace && lastSlot && (slot.start > early.start || chunks.length > 1 || unresolved.has(task.id))) {
-      const stuck = unresolved.has(task.id)
-      const window = { start: early.start, end: Math.max(slot.end, early.end) }
-      if (whole) recordCapacity(trace, task, needs, window, slot.start > early.start || stuck, early, slot)
-      else {
-        // A partial need can only have been short between the earliest start of its part and the end of its placed part.
-        const windows = new Map<Need, TimeRange>()
-        for (const [need, span] of spans) {
-          const start = Math.max(window.start, clock.dateAt(early.workStart + span.start, false))
-          const end = Math.min(window.end, needSlices(need, slices).at(-1)?.end ?? window.end)
-          if (start < end) windows.set(need, { start, end })
-        }
-        recordCapacity(trace, task, [...windows.keys()], window, slot.start > early.start || stuck, early, slot, windows)
-      }
-      if (stuck) {
-        recordSlotReasons(trace, 'leveling', task, bounds, limits, lastSlot, true, {
-          linkParents: () => [], horizon: trace.ids('latest', task.id), links: model.links,
-        })
-      }
-    }
-    if (slot.start > early.start) raised.add(task.id)
-    if (chunks.length > 1) {
-      added.set(task.id, chunks.slice(1).map((chunk, i) => ({
-        start: clock.dateAt(chunks[i]!.end, false), end: clock.dateAt(chunk.start, false),
-      })))
-    }
-    if (duration) reserve(task, needs, slices)
-    placed.set(task.id, slot)
-    release(task)
   }
+  if (slot.start > early.start) state.raised.add(task.id)
+  if (chunks.length > 1) {
+    state.added.set(task.id, chunks.slice(1).map((chunk, i) => ({
+      start: clock.dateAt(chunks[i]!.end, false), end: clock.dateAt(chunk.start, false),
+    })))
+  }
+  if (duration) reserve(state, task, needs, slices)
+  state.placed.set(task.id, slot)
+  return undefined
+}
 
+/**
+ * Replay the placement with `scheduleTasks` and build the result: the leveled tasks, the delays against the unleveled
+ * plan `base`, the remaining overloads and the unresolved tasks.
+ */
+function report(
+  state: LevelingState, input: LevelResourcesInput, plain: ScheduleInput, base: ScheduleSuccess,
+): LevelResourcesResult | ExplainedLevelResourcesResult {
+  const { model, trace, placed, raised, unresolved, added, reserved } = state
   // `raised` explains a delay; the pinned start keeps the reserved placement. A split task is pinned even when it
   // starts at its earliest date, because its added pauses alone would let an end bound (finishNoEarlierThan, FF, SF)
   // pull the start earlier than the reserved work.
@@ -640,7 +657,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       delay: after.start - before.start, cause: raised.has(after.id) || pauses.length ? 'capacity' : 'predecessor', pauses,
     })
   })
-  const overloads = calculateResourceLoad(range, leveled.tasks, input.resources, input.assignments,
+  const overloads = calculateResourceLoad(model.range, leveled.tasks, input.resources, input.assignments,
     { inactiveTaskIds: model.inactive }).filter(segment => segment.overload > 0)
   const success: LevelResourcesSuccess = {
     ...leveled, leveledTasks, delays, overloads,

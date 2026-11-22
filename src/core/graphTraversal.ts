@@ -1,6 +1,7 @@
 import type { GraphEdge } from './graph.js'
 import type { GraphCollapseResult } from './graphCollapse.js'
 import { checkId, uniqueIds, unknownReferenceError } from './ids.js'
+import { walkWithinHops } from './graphWalk.js'
 
 export type GraphTraversalDirection = 'forward' | 'backward' | 'both'
 
@@ -66,24 +67,10 @@ export function traverseGraph(
   const reachedEdges = new Set<string>()
   const adjacencies = direction === 'forward' ? [outgoing] : direction === 'backward' ? [incoming] : [incoming, outgoing]
   for (const adjacency of adjacencies) {
-    const depth = new Map<string, number>()
-    const queue: string[] = []
-    for (const id of starts) {
-      depth.set(id, 0)
-      queue.push(id)
-    }
-    for (let i = 0; i < queue.length; i++) {
-      const id = queue[i]!
-      const d = depth.get(id)!
-      if (d >= maxHops) continue
-      for (const next of adjacency.get(id) ?? []) {
-        reachedEdges.add(next.edge)
-        if (depth.has(next.node)) continue
-        depth.set(next.node, d + 1)
-        reachedNodes.add(next.node)
-        queue.push(next.node)
-      }
-    }
+    walkWithinHops(starts, id => adjacency.get(id), next => next.node, maxHops, (next, reached) => {
+      reachedEdges.add(next.edge)
+      if (reached) reachedNodes.add(next.node)
+    })
   }
   return { nodeIds: [...reachedNodes], edgeIds: [...reachedEdges], unknownIds }
 }

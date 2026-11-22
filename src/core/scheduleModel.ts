@@ -3,7 +3,7 @@ import type {
   ScheduleConstraintName, ScheduleCycle, ScheduleInput, ScheduleLink, ScheduleTask, ScheduleFailure,
 } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
-import { firstIndex, subtractPeriods } from './intervals.js'
+import { firstIndex, subtractPeriods, workBefore } from './intervals.js'
 import { assertScheduleRange, integerPeriodMessage, normalizeWorkPeriods } from './workCalendar.js'
 import { checkId, unknownEndpointError } from './ids.js'
 import { isDependencyType } from './dependencyTypes.js'
@@ -23,20 +23,16 @@ export type Slot = TimeRange & { workStart: number }
 
 /** Work starts and finishes have different inverses at shift boundaries. */
 export function workClock(periods: readonly TimeRange[], quantum: number) {
+  // before[i]: work before periods[i]; before[periods.length]: the total.
+  const before = [0]
   let total = 0
-  const entries = periods.map(period => {
-    const before = total
-    total += (period.end - period.start) / quantum
-    return { ...period, before, after: total }
-  })
+  for (const period of periods) before.push(total += (period.end - period.start) / quantum)
   function workAt(time: number) {
-    const period = entries[firstIndex(entries.length, i => entries[i]!.end > time)]
-    return period ? period.before + Math.max(0, time - period.start) / quantum : total
+    return workBefore(periods, before, time, quantum)
   }
   function dateAt(work: number, finish: boolean) {
-    const index = firstIndex(entries.length, i => finish ? entries[i]!.after >= work : entries[i]!.after > work)
-    const period = entries[index]!
-    return period.start + (work - period.before) * quantum
+    const index = firstIndex(periods.length, i => finish ? before[i + 1]! >= work : before[i + 1]! > work)
+    return periods[index]!.start + (work - before[index]!) * quantum
   }
   function minFinishWork(time: number) {
     const work = workAt(time)
@@ -48,8 +44,8 @@ export function workClock(periods: readonly TimeRange[], quantum: number) {
   }
   function slices(interval: TimeRange): TimeRange[] {
     const work: TimeRange[] = []
-    for (let i = firstIndex(entries.length, index => entries[index]!.end > interval.start); i < entries.length; i++) {
-      const period = entries[i]!
+    for (let i = firstIndex(periods.length, index => periods[index]!.end > interval.start); i < periods.length; i++) {
+      const period = periods[i]!
       if (period.start >= interval.end) break
       work.push({ start: Math.max(period.start, interval.start), end: Math.min(period.end, interval.end) })
     }
@@ -130,18 +126,6 @@ export interface ScheduleModel {
   links: ReadonlyMap<string, ScheduleLink>
 }
 
-/**
- * Subtasks whose start has happened, keyed by the input object they belong to. They do not inherit the start bounds of
- * their summary tasks (links into a summary and its `startNoEarlierThan`). Only `rescheduleFromStatusDate` and
- * `rescheduleFromActuals` set it.
- */
-export const startedSubtasks = new WeakMap<ScheduleInput, ReadonlySet<string>>()
-
-/** `input`, with `started` recorded as its started subtasks when there are any. */
-export function withStartedSubtasks(input: ScheduleInput, started: ReadonlySet<string>): ScheduleInput {
-  if (started.size) startedSubtasks.set(input, started)
-  return input
-}
 
 /** Check the status date of `rescheduleFromStatusDate` and `rescheduleFromActuals` against a model. */
 export function checkStatusDate(model: ScheduleModel, statusDate: number) {
@@ -177,7 +161,12 @@ const summaryForbidden = ['fixedStart', 'startNoLaterThan', 'finishNoEarlierThan
  * Validate a scheduling input and index it. Throws for malformed input. With `explain`, each task also keeps its
  * calendar clock without pauses, so that a trace can tell calendar time off from pauses.
  */
-export function buildScheduleModel(input: ScheduleInput, explain = false): ScheduleModel {
+/**
+ * The scheduling model of `input`. `started` lists subtasks whose start has happened: they do not inherit the start
+ * bounds of their summary tasks (links into a summary and its `startNoEarlierThan`). Only `rescheduleFromStatusDate`
+ * and `rescheduleFromActuals` pass it.
+ */
+export function buildScheduleModel(input: ScheduleInput, explain = false, started?: ReadonlySet<string>): ScheduleModel {
   const { range, quantum = 1, deadline, dependencies = [] } = input
   assertScheduleRange(range)
   if (!Number.isSafeInteger(quantum) || quantum <= 0) throw new RangeError('Invalid scheduling quantum')
@@ -258,7 +247,6 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
     if (explain) modelTask.calendar = { continuous, clock: calendarClock, id: task.calendarId ?? input.defaultCalendarId }
     tasks.set(task.id, modelTask)
   })
-  const started = startedSubtasks.get(input)
   const hierarchy = input.tasks.some(task => task.parentId !== undefined)
     ? buildHierarchy(input.tasks, tasks, inactive, started) : undefined
   const leaves = hierarchy?.leaves ?? []

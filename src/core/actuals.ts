@@ -1,13 +1,13 @@
-import { subtractPeriods, uniteRanges } from './intervals.js'
+import { subtractPeriods, uniteRanges, uniteSorted } from './intervals.js'
 import { withContext } from './ids.js'
 import {
-  buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
+  buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, type ScheduleModel,
 } from './scheduleModel.js'
-import {
-  scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleSuccess, type ScheduleTask,
-  type ScheduledTask,
+import type {
+  ScheduleFailure, ScheduleInput, ScheduleLink, ScheduleResult, ScheduleSuccess, ScheduleTask, ScheduledTask,
 } from './scheduling.js'
 import { toPlanningDiagnostics, type PlanningDiagnostic, type PlanningDiagnosticSeverity } from './scheduleDiagnostics.js'
+import { scheduleWithModel } from './schedulePasses.js'
 import { timelineBaselineId, type TimeRange } from './timeline.js'
 import type { ChartTone, TimelineBar } from './types.js'
 import type { EntityRef } from './viewBindings.js'
@@ -189,16 +189,8 @@ export function rescheduleFromActuals(
     if (!modelled || modelled.summary) continue
     const entry = actuals.get(task.id)
     const sorted = (entry?.intervals ?? []).map(({ start, end }) => ({ start, end })).sort((a, b) => a.start - b.start || a.end - b.end)
-    const union: TimeRange[] = []
     const overlaps: TimeRange[] = []
-    for (const interval of sorted) {
-      const last = union.at(-1)
-      if (last && interval.start < last.end) {
-        overlaps.push({ start: interval.start, end: Math.min(interval.end, last.end) })
-        last.end = Math.max(last.end, interval.end)
-      } else if (last && interval.start === last.end) last.end = interval.end
-      else union.push({ ...interval })
-    }
+    const union = uniteSorted(sorted, overlaps)
     const performed = union.reduce((sum, part) => sum + part.end - part.start, 0)
     let remaining: number
     if (modelled.manual) remaining = 0
@@ -259,8 +251,9 @@ export function rescheduleFromActuals(
     dependencies.push(standIn ? { ...link, from: standIn } : link)
   }
   const started = new Set([...finished, ...startStandIns.keys(), ...startStandIns.values()])
-  const raw = scheduleTasks(withStartedSubtasks({ ...input, tasks, dependencies }, started))
-  const plan = scheduleTasks(input)
+  const remainingInput = { ...input, tasks, dependencies }
+  const raw = scheduleWithModel(remainingInput, buildScheduleModel(remainingInput, false, started), false)
+  const plan = scheduleWithModel(input, model, false)
 
   const owner = new Map([...startStandIns].map(([id, standIn]) => [standIn, id]))
   const real = (id: string) => owner.get(id) ?? id

@@ -1,8 +1,9 @@
 import {
   buildScheduleModel, checkStatusDate, isMapLike, limitsOf, lowerBounds, slotFor, summarySlot, targetFinish, topologicalOrder,
-  withStartedSubtasks, type WorkClock,
+  type WorkClock,
 } from './scheduleModel.js'
-import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
+import type { ScheduleInput, ScheduleResult, ScheduleTask } from './scheduling.js'
+import { scheduleWithModel } from './schedulePasses.js'
 import type { TimeRange } from './timeline.js'
 
 /**
@@ -54,7 +55,7 @@ export function rescheduleFromStatusDate(
       throw new RangeError('Progress must be between zero and one: ' + id)
     }
   }
-  const base = scheduleTasks(input)
+  const base = scheduleWithModel(input, model, false)
   if (!base.ok) return base
   const current = new Map(base.tasks.map(task => [task.id, task]))
   const completed = new Set<string>()
@@ -91,8 +92,9 @@ export function rescheduleFromStatusDate(
   const dependencies = (input.dependencies ?? []).filter(link =>
     !completed.has(link.to) && !(resumes.has(link.to) && !targetFinish(link)))
   const started = new Set([...completed, ...resumes.keys()])
-  const adjusted = withStartedSubtasks({ ...input, tasks, dependencies }, started)
-  return scheduleTasks(withStartedSubtasks({ ...input, tasks: delayRemainingWork(adjusted, resumes), dependencies }, started))
+  const adjusted = { ...input, tasks, dependencies }
+  const final = { ...input, tasks: delayRemainingWork(adjusted, resumes, started), dependencies }
+  return scheduleWithModel(final, buildScheduleModel(final, false, started), false)
 }
 
 /** A partly done task: its own pauses, where its done work ends, its remaining work and its clock without the gap. */
@@ -112,9 +114,9 @@ interface Resume {
  * pauses. It stops at the first task without a slot and at a finish that does not fit in the horizon; scheduling the
  * returned plan then reports that failure.
  */
-function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>): ScheduleTask[] {
+function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>, started: ReadonlySet<string>): ScheduleTask[] {
   const tasks = [...adjusted.tasks]
-  const model = buildScheduleModel(adjusted)
+  const model = buildScheduleModel(adjusted, false, started)
   if (!resumes.size) return tasks
   const sorted = topologicalOrder(model)
   if ('cycles' in sorted) return tasks

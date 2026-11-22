@@ -1,4 +1,5 @@
 import type { TimeRange } from './timeline.js'
+import { clipRanges, uniteRanges } from './intervals.js'
 import { zonedInstant, zoneFormat, zoneOffset } from './timeZone.js'
 
 export interface WorkCalendar {
@@ -52,24 +53,14 @@ export function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeR
  */
 function mergePeriods(periods: readonly TimeRange[], range: TimeRange, integers: boolean): TimeRange[] {
   const valid = integers ? Number.isSafeInteger : Number.isFinite
-  const clipped: TimeRange[] = []
   for (const period of periods) {
     if (!valid(period.start) || !valid(period.end) || period.end <= period.start) {
       throw new RangeError(integers
         ? integerPeriodMessage
         : 'Working periods must have finite endpoints and positive length')
     }
-    const start = Math.max(period.start, range.start), end = Math.min(period.end, range.end)
-    if (start < end) clipped.push({ start, end })
   }
-  clipped.sort((a, b) => a.start - b.start || a.end - b.end)
-  const merged: TimeRange[] = []
-  for (const period of clipped) {
-    const previous = merged.at(-1)
-    if (previous && period.start <= previous.end) previous.end = Math.max(previous.end, period.end)
-    else merged.push(period)
-  }
-  return merged
+  return uniteRanges(clipRanges(periods, range))
 }
 
 /**
