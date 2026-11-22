@@ -54,6 +54,11 @@ export interface GanttValidationInput<R extends TimelineRow> {
   filterableColumns: boolean | readonly string[] | undefined
   /** The row tree of the same `rows` from an earlier valid run; reused instead of building it again. */
   tree?: ReturnType<typeof createTimelineRowTree<R>>
+  /**
+   * The load of an earlier valid run. When its `loadRows`, `loadSegments` and `loadRowHeight` are the ones of this run,
+   * it is reused instead of checking and building the histogram again.
+   */
+  load?: GanttLoad
 
   headerBands: readonly (readonly TimelineBand[])[] | undefined
   markers: readonly TimelineMarker[] | undefined
@@ -64,9 +69,22 @@ export interface GanttValidationInput<R extends TimelineRow> {
   loadRowHeight: number
 }
 
-function validateLoad<R extends TimelineRow>(input: GanttValidationInput<R>) {
+/** The load rows and segments a histogram was built from, and the histogram (undefined without load rows). */
+export interface GanttLoad {
+  rows: readonly TimelineLoadRow[] | undefined
+  segments: readonly TimelineLoadSegment[] | undefined
+  height: number
+  histogram: ReturnType<typeof resourceLoadHistogram> | undefined
+}
+
+function validateLoad<R extends TimelineRow>(input: GanttValidationInput<R>): GanttLoad {
+  const previous = input.load
+  if (previous && previous.rows === input.loadRows && previous.segments === input.loadSegments && previous.height === input.loadRowHeight) {
+    return previous
+  }
   const ids = checkLoadRows(input.loadRows, input.loadSegments, input.loadRowHeight)
-  return ids && resourceLoadHistogram(input.loadSegments ?? [], ids)
+  const histogram = ids && resourceLoadHistogram(input.loadSegments ?? [], ids)
+  return { rows: input.loadRows, segments: input.loadSegments, height: input.loadRowHeight, histogram }
 }
 
 function validatePresets<R extends TimelineRow>(input: GanttValidationInput<R>) {
@@ -86,7 +104,7 @@ function validateDisplay<R extends TimelineRow>(input: GanttValidationInput<R>) 
   baselineSelection(input.bars, input.baselineIds)
 }
 
-/** Throw the first problem of the props, otherwise return the row tree and the load histogram (when there are load rows). */
+/** Throw the first problem of the props, otherwise return the row tree and the load (with its histogram when there are load rows). */
 export function validateGanttProps<R extends TimelineRow>(input: GanttValidationInput<R>) {
   validateTimelineData(input.rows, input.bars, input.dependencies, input.laneCount, { summaryDependencies: input.summaryDependencies })
   validatePresets(input)

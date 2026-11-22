@@ -9,7 +9,7 @@ import {
   createTimeScale, createTimelineRowTree, dependencyPath, dependencyTimes, editTimeRange, intersectsWindow,
   summarizeTimelineRows, timeTicks, timelineLabelColumnId, visibleRows, type DependencyPathStyle, type EditMode, type TimeRange, type TimeScale,
 } from '../core/timeline.js'
-import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges, type ResourceLoadHistogram } from '../core/timeline.js'
+import { dependencyEndsForType, dependencyTypeForEnds, moveTimeRanges } from '../core/timeline.js'
 import { formatDependencyLag } from '../core/timeline.js'
 import type { ChartDirection, GanttExportOptions, GanttPngExportOptions, TimelineMarkerRange } from '../core/types.js'
 import type {
@@ -38,7 +38,7 @@ import {
   canvasInset, clipSpan, drawableWindow, inRangeAndWindow, inRowWindow, inTimeWindow, intervalBox as axisBox, linkHandleOffset,
   rowScrollTop, sameItems, sameRange, type RowWindow,
 } from './ganttChart/geometry.js'
-import { validateGanttProps } from './ganttChart/validateProps.js'
+import { validateGanttProps, type GanttLoad } from './ganttChart/validateProps.js'
 import { useBarTooltip } from './ganttChart/useBarTooltip.js'
 import {
   cascadeChanges, cascadeChangeKey, clampWidth, columnWidthForKey, constraintForKey, createSpan, fitInBounds, freeLane, progressForKey,
@@ -51,7 +51,7 @@ import {
 import { sheetKey, useSheet } from './ganttChart/sheet.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
-import { rejectionReason, type ValidatorResult } from './shared/validation.js'
+import { rejectionReason, useValidatedSource, type ValidatorResult } from './shared/validation.js'
 import { nextTimelineSort, type TimelineViewFilter, type TimelineViewSort } from '../core/timelineView.js'
 import { filterActive, headerColumnIds, sameOption, withColumnFilter } from './ganttChart/headerControls.js'
 import type { TimelineSheetEdit } from '../core/types.js'
@@ -489,22 +489,20 @@ const activeTickSteps = computed(() => activePreset.value?.tickSteps ?? stableTi
 const activeBands = computed(() => activePreset.value?.headerBands ?? props.headerBands)
 const activeSnap = computed(() => activePreset.value?.snap ?? props.snap)
 const minimum = computed(() => props.minDuration ?? activeSnap.value)
-// Invalid input is reported through `validation-error` and never rendered. The error is rethrown so
-// development builds still surface it (production Vue logs it instead of rendering invalid data).
-const validationError = ref<Error>()
-const tree = shallowRef<ReturnType<typeof createTimelineRowTree<R>>>([])
-// The `rows` that `tree` was built from. Other validated props (`now`, `markers`, ...) reuse the tree, so a change of
-// them neither rebuilds the rows nor cancels a gesture that depends on them.
-let treeRows: readonly R[] | undefined
-const loadHistogram = shallowRef<Map<string, ResourceLoadHistogram>>()
 // Header sorting and filtering (`sortableColumns`, `filterableColumns`): the column IDs that get controls. Lists are
 // compared by value, so an inline literal in a parent template does not count as a change.
 const stableSortable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.sortableColumns))
 const stableFilterable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.filterableColumns))
 const sortableIds = computed(() => headerColumnIds(stableSortable.value, props.columns ?? []))
 const filterableIds = computed(() => headerColumnIds(stableFilterable.value, props.columns ?? []))
+// The last valid result and the `rows` its tree was built from. Other validated props (`now`, `markers`, ...) reuse the
+// tree, and the load histogram is reused while its own props stay the same, so a change of them neither rebuilds the
+// rows nor cancels a gesture that depends on them.
+let lastValid: { rows: readonly R[]; result: ReturnType<typeof validateGanttProps<R>> } | undefined
 function validateProps() {
-  return validateGanttProps({
+  const previous = lastValid
+  lastValid = undefined
+  const result = validateGanttProps({
     rows: props.rows, bars: props.bars, dependencies: props.dependencies, laneCount: props.laneCount,
     summaryDependencies: props.summaryDependencies, zoomPresets: props.zoomPresets, zoomPreset: props.zoomPreset,
     range: stableRange.value, pixelsPerUnit: activePixelsPerUnit.value, bounds: bounds.value, rowHeight: props.rowHeight,
@@ -517,11 +515,16 @@ function validateProps() {
     headerBands: activeBands.value, markers: props.markers,
     markerRanges: props.markerRanges, baselineIds: stableBaselineIds.value, loadRows: props.loadRows,
     loadSegments: props.loadSegments, loadRowHeight: props.loadRowHeight,
-    ...(treeRows !== undefined && treeRows === props.rows ? { tree: tree.value } : {}),
+    ...(previous?.rows === props.rows ? { tree: previous.result.tree } : {}),
+    load: previous?.result.load,
   })
+  lastValid = { rows: props.rows, result }
+  return result
 }
-// Controlled props are watched by reference. Pass new arrays and objects instead of mutating them in place.
-watch([
+// Controlled props are watched by reference. Pass new arrays and objects instead of mutating them in place. Invalid
+// input is reported through `validation-error` and never rendered. The error is rethrown so development builds still
+// surface it (production Vue logs it instead of rendering invalid data).
+const validated = useValidatedSource<{ tree: ReturnType<typeof createTimelineRowTree<R>>; load?: GanttLoad }>([
   () => props.rows, () => props.bars, () => props.dependencies, () => props.laneCount, () => props.rowHeight, () => props.snap,
   () => stableRange.value, () => stableEditBounds.value, () => props.minDuration, () => stableTickSteps.value, () => props.pixelsPerUnit, () => props.scale,
   () => props.zoomPresets, () => props.zoomPreset, activePreset, () => props.loadRows, () => props.loadSegments, () => props.loadRowHeight,
@@ -529,23 +532,10 @@ watch([
   () => props.statusDate, () => props.labelWidth, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable,
   () => props.columns, () => props.headerBands, () => props.markers, () => stableBaselineIds.value, () => props.markerRanges,
   () => props.summaryDependencies, stableSortable, stableFilterable,
-], () => {
-  try {
-    const result = validateProps()
-    if (result.tree !== tree.value) tree.value = result.tree
-    treeRows = props.rows
-    loadHistogram.value = result.load
-    validationError.value = undefined
-  } catch (error) {
-    const failure = error instanceof Error ? error : new Error(String(error))
-    treeRows = undefined
-    tree.value = []
-    loadHistogram.value = undefined
-    validationError.value = failure
-    emit('validation-error', failure)
-    throw error
-  }
-}, { immediate: true })
+], validateProps, { fallback: { tree: [], load: undefined }, report: error => emit('validation-error', error) })
+const validationError = validated.error
+const tree = computed(() => validated.value.value.tree)
+const loadHistogram = computed(() => validated.value.value.load?.histogram)
 const marker = useId()
 const scroller = ref<HTMLElement>()
 const canvas = ref<HTMLElement>()
