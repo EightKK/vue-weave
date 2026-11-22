@@ -226,12 +226,12 @@ const curveSummary = computed(() => `S-curve to ${formatDate(range.end)}: planne
 .evm-key.evm-ac { border-color: #b4531a; }
 .evm-key.evm-forecast { border-top-style: dotted; border-color: #b4531a; }
 .evm-key.evm-bac { border-top: 1px dotted var(--vw-muted, #526579); }
-:global(.dark) .evm-pv { stroke: #9fb2c4; }
-:global(.dark) .evm-ev { stroke: #4fc1ae; }
-:global(.dark) .evm-ac, :global(.dark) .evm-forecast { stroke: #f0965a; }
-:global(.dark) .evm-key.evm-pv { border-color: #9fb2c4; }
-:global(.dark) .evm-key.evm-ev { border-color: #4fc1ae; }
-:global(.dark) .evm-key.evm-ac, :global(.dark) .evm-key.evm-forecast { border-color: #f0965a; }
+:global(.dark .evm-pv) { stroke: #9fb2c4; }
+:global(.dark .evm-ev) { stroke: #4fc1ae; }
+:global(.dark .evm-ac), :global(.dark .evm-forecast) { stroke: #f0965a; }
+:global(.dark .evm-key.evm-pv) { border-color: #9fb2c4; }
+:global(.dark .evm-key.evm-ev) { border-color: #4fc1ae; }
+:global(.dark .evm-key.evm-ac), :global(.dark .evm-key.evm-forecast) { border-color: #f0965a; }
 @media (forced-colors: active) {
   .evm-line, .evm-bac, .evm-status { stroke: CanvasText; }
   .evm-key { border-color: CanvasText !important; }
