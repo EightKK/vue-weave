@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Demo
+
+- Four new design gallery showcases: **CI/CD pipeline** (a live job DAG linked to a run timeline, with failure injection and retry), **Knowledge graph** (a force-directed graph with clusters, search, neighbourhoods and shortest paths), **Construction program** (a scheduled master programme with critical path, baseline, resource leveling, earned value and a what-if delay) and **Service map** (a live service topology with grouped namespaces, traffic-weighted edges, an incident blast radius and an alert timeline).
+
 ### Development
 
 - The npm release workflow now waits up to about 10 minutes, instead of 90 seconds, for the registry to list a new version before it compares the integrity, and logs each wait. npm took longer than 90 seconds for 1.1.0 and 1.2.0, so the job failed after a successful publish and needed a rerun.

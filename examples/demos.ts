@@ -21,6 +21,10 @@ import RoadmapShowcase from './showcase/RoadmapShowcase.vue'
 import SprintGanttShowcase from './showcase/SprintGanttShowcase.vue'
 import BookingShowcase from './showcase/BookingShowcase.vue'
 import CalendarShowcase from './showcase/CalendarShowcase.vue'
+import PipelineShowcase from './showcase/PipelineShowcase.vue'
+import KnowledgeGraphShowcase from './showcase/KnowledgeGraphShowcase.vue'
+import ConstructionShowcase from './showcase/ConstructionShowcase.vue'
+import ServiceMapShowcase from './showcase/ServiceMapShowcase.vue'
 import EventCalendarDemo from './EventCalendarDemo.vue'
 import BpmnDemo from './BpmnDemo.vue'
 
@@ -71,6 +75,10 @@ export const demos: readonly DemoEntry[] = [
   { id: 'sprint', label: 'Sprint plan', group: 'gallery', component: SprintGanttShowcase },
   { id: 'booking', label: 'Room bookings', group: 'gallery', component: BookingShowcase },
   { id: 'calendar', label: 'Calendar views', group: 'gallery', component: CalendarShowcase },
+  { id: 'pipeline', label: 'CI/CD pipeline', group: 'gallery', component: PipelineShowcase },
+  { id: 'knowledge', label: 'Knowledge graph', group: 'gallery', component: KnowledgeGraphShowcase },
+  { id: 'construction', label: 'Construction program', group: 'gallery', component: ConstructionShowcase },
+  { id: 'service-map', label: 'Service map', group: 'gallery', component: ServiceMapShowcase },
   { id: 'bpmn', label: 'BPMN process', group: 'standalone', component: BpmnDemo },
 ]
 
