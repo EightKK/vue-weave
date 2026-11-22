@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent">
-import { computed, nextTick, onMounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import {
   eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents, packCalendarEventLanes,
   shiftEventCalendarDate, validateCalendarEvents, type CalendarEvent, type CalendarResource, type EventCalendarCreate,
@@ -10,12 +10,13 @@ import { intlTimeFormatter } from '../core/calendarFormat.js'
 import { cachedDateFormat, zoneFormat } from '../core/timeZone.js'
 import type { TimeRange } from '../core/timeline.js'
 import type { ChartDirection } from '../core/types.js'
+import { elementWithData, usePendingFocus } from './shared/focus.js'
+import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
+import { rejectionReason, useValidatedSource } from './shared/validation.js'
 
 const minute = 60_000
 const hour = 3_600_000
 const dayMs = 86_400_000
-/** Pointer travel in pixels before a press becomes a drag. */
-const dragThreshold = 4
 /** Smallest drawn height of a timed event in pixels. */
 const minEventHeight = 18
 /** Height of an event lane in the all-day row and the month view, and of a month day's header, in pixels. */
@@ -23,6 +24,8 @@ const laneHeight = 22
 /** Space below the last event lane of the all-day row and of a month week, in pixels. */
 const lanePadding = 6
 const monthHeader = 26
+/** Time in milliseconds a drag must rest near the top or bottom of the time grid before it scrolls. */
+const edgeScrollDelay = 250
 
 const props = withDefaults(defineProps<{
   /** Events by ID with a half-open `[start, end)` interval in epoch milliseconds. Required. */
@@ -151,8 +154,6 @@ const notice = ref('')
 const root = ref<HTMLElement>()
 const scroller = ref<HTMLElement>()
 
-// Invalid input is reported through `validation-error` and never rendered; the error is rethrown like GanttChart does.
-const validationError = ref<Error>()
 function checkProps() {
   validateCalendarEvents(props.events, props.resources)
   if (!['day', 'week', 'month'].includes(view.value)) throw new RangeError('Unknown event calendar view: ' + String(view.value))
@@ -180,22 +181,13 @@ function checkProps() {
   }
   if (!['ltr', 'rtl', 'auto'].includes(props.dir)) throw new RangeError('dir must be ltr, rtl or auto: ' + String(props.dir))
 }
-watch([
+// Invalid input is reported through `validation-error` and never rendered; the error is rethrown like GanttChart does.
+const { error: validationError } = useValidatedSource([
   () => props.events, () => props.resources, view, localDate, () => props.weekStartsOn, () => props.timeZone, () => props.dayStart,
   () => props.dayEnd, () => props.hourHeight, () => props.snap, () => props.createDuration, () => props.maxMonthLanes, () => props.now,
   // By value, so a locale array written inline does not validate again on every render of the parent.
   () => JSON.stringify(props.locale), () => props.height, () => props.dir,
-], () => {
-  try {
-    checkProps()
-    validationError.value = undefined
-  } catch (error) {
-    const failure = error instanceof Error ? error : new Error(String(error))
-    validationError.value = failure
-    emit('validation-error', failure)
-    throw error
-  }
-}, { immediate: true })
+], checkProps, { report: error => emit('validation-error', error), fallback: undefined })
 const valid = computed(() => validationError.value === undefined)
 
 const options = computed(() => ({ timeZone: props.timeZone, weekStartsOn: props.weekStartsOn }))
@@ -469,8 +461,9 @@ function select(event: E) {
 }
 
 // Proposals ----------------------------------------------------------------------------------------------------------
+/** Announce the rejection reason of a validator result (see `rejectionReason`), or clear the notice; returns the reason. */
 function settle(result: boolean | string | void, fallback: string) {
-  const reason = result === false ? fallback : typeof result === 'string' ? result : undefined
+  const reason = rejectionReason(result, fallback)
   notice.value = reason ?? ''
   return reason
 }
@@ -511,6 +504,9 @@ interface Gesture {
   target: number
   x: number
   y: number
+  /** The latest pointer position, for edge auto-scroll. */
+  clientX: number
+  clientY: number
   /** Grid: the time of day under the pointer when it was pressed, in the origin column. */
   downOffset: number
   started: boolean
@@ -550,13 +546,6 @@ function offsetAt(index: number, y: number) {
 }
 const floorSnap = (offset: number) => Math.floor(offset / snapMs.value) * snapMs.value
 
-function capture(event: PointerEvent, element: Element) {
-  try {
-    element.setPointerCapture(event.pointerId)
-  } catch {
-    // Synthetic events without an active pointer cannot be captured; the gesture still follows bubbled events.
-  }
-}
 function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, kind: Gesture['kind']) {
   if (pointer.button !== 0 || gesture || !editable(event) || !valid.value) return
   if (kind !== 'move') pointer.stopPropagation()
@@ -565,9 +554,10 @@ function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, 
   if (area === 'days') origin = indexAt(cellElements(), pointer.clientX, pointer.clientY, view.value !== 'month', origin)
   gesture = {
     pointerId: pointer.pointerId, kind, area, event, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
-    downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
+    clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
-  capture(pointer, element)
+  // Synthetic events without an active pointer cannot be captured; the gesture then follows bubbled events.
+  capturePointer(element, pointer.pointerId)
 }
 function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   if (pointer.button !== 0 || gesture || props.readonly || !props.creatable || !valid.value) return
@@ -576,9 +566,9 @@ function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   const element = pointer.currentTarget as Element
   gesture = {
     pointerId: pointer.pointerId, kind: 'create', area, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
-    downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
+    clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
-  capture(pointer, element)
+  capturePointer(element, pointer.pointerId)
   preview.value = createPreview(gesture)
 }
 
@@ -637,18 +627,37 @@ function createPreview(active: Gesture): Preview {
 function movePointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
-  if (!active.started && Math.hypot(pointer.clientX - active.x, pointer.clientY - active.y) < dragThreshold) return
+  if (!active.started && !pastThreshold(active, pointer)) return
   active.started = true
-  const result = gestureResult(active, pointer.clientX, pointer.clientY)
+  active.clientX = pointer.clientX
+  active.clientY = pointer.clientY
+  showPreview(active)
+  if (active.area === 'grid') edgeScroll.start()
+}
+function showPreview(active: Gesture) {
+  const result = gestureResult(active, active.clientX, active.clientY)
   const label = active.event ? active.event.label : ''
   preview.value = { area: active.area, range: result.range, index: result.index, label, eventId: active.event?.id }
 }
-function releasePointer(pointer: PointerEvent) {
+/**
+ * While a drag in the time grid is held near the top or bottom of the visible part of its scroller, scroll it, so the
+ * drag reaches hours scrolled out of view; the preview follows the time now under the pointer. Scrolling starts after the
+ * pointer rests in the band for `edgeScrollDelay`, so a drag that passes through it does not scroll, and a pointer that
+ * leaves the scroller (or the window) stops it.
+ */
+const edgeScroll = edgeScroller(() => {
+  const active = gesture, element = scroller.value
+  return active?.started && active.area === 'grid' && element ? { scroller: element, clientX: active.clientX, clientY: active.clientY } : undefined
+}, () => { if (gesture) showPreview(gesture) }, { axis: 'y', insideOnly: true, clipToWindow: true, delay: edgeScrollDelay })
+onBeforeUnmount(() => edgeScroll.stop())
+/** End the gesture of a released pointer with its proposal. */
+function finishPointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
   gesture = undefined
   preview.value = undefined
-  releaseCapture(active)
+  edgeScroll.stop()
+  releasePointer(active.element, active.pointerId)
   if (active.kind === 'create') {
     const result = gestureResult(active, pointer.clientX, pointer.clientY)
     proposeCreate({
@@ -662,16 +671,9 @@ function releasePointer(pointer: PointerEvent) {
   suppressClick = true
   propose(editOf(active.event!, result.range, active.kind as EventCalendarEdit['mode'], 'pointer', result.resourceId))
 }
-function releaseCapture(active: Gesture) {
-  try {
-    if (active.element.hasPointerCapture(active.pointerId)) active.element.releasePointerCapture(active.pointerId)
-  } catch {
-    // The element may be gone already.
-  }
-}
 /** `pointerup` on the calendar: finish the gesture, and forget a suppressed click once the click has been dispatched. */
 function pointerUp(pointer: PointerEvent) {
-  releasePointer(pointer)
+  finishPointer(pointer)
   if (suppressClick) setTimeout(() => { suppressClick = false })
 }
 function cancelPointer(pointer: PointerEvent) {
@@ -683,7 +685,8 @@ function cancelGesture(reason: EventCalendarEditCancelReason) {
   if (!active) return false
   gesture = undefined
   preview.value = undefined
-  releaseCapture(active)
+  edgeScroll.stop()
+  releasePointer(active.element, active.pointerId)
   // The click that follows the release of a cancelled drag selects nothing. A cancelled pointer has no release and no
   // click, so it leaves the next click alone.
   if (reason !== 'pointer-cancel' && (active.started || active.kind === 'create')) suppressClick = true
@@ -732,7 +735,6 @@ const previewSpans = computed(() => {
 })
 
 // Keyboard -----------------------------------------------------------------------------------------------------------
-let pendingFocus: string | undefined
 function isRtl() {
   return props.dir === 'rtl' || (props.dir === 'auto' && root.value !== undefined && getComputedStyle(root.value).direction === 'rtl')
 }
@@ -776,7 +778,7 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   }
   if (!change) return
   key.preventDefault()
-  if (propose(change)) pendingFocus = event.id
+  if (propose(change)) pendingFocus.request(event.id)
 }
 /**
  * Focus that leaves an event for another place drops a pending focus request. A redraw that moves or removes the focused
@@ -785,19 +787,11 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
 function eventBlur(focus: FocusEvent) {
   const element = focus.target as Element
   queueMicrotask(() => {
-    if (element.isConnected && document.activeElement !== element) pendingFocus = undefined
+    if (element.isConnected && document.activeElement !== element) pendingFocus.cancel()
   })
 }
 // After the parent applies a keyboard edit, the event may be drawn by another element: keep the focus on it.
-watch(() => props.events, () => {
-  const id = pendingFocus
-  pendingFocus = undefined
-  if (id === undefined) return
-  void nextTick(() => {
-    const element = [...(root.value?.querySelectorAll<HTMLElement>('[data-vw-event]') ?? [])].find(item => item.dataset.vwEvent === id)
-    element?.focus()
-  })
-}, { flush: 'post' })
+const pendingFocus = usePendingFocus(() => props.events, id => elementWithData(root.value, 'vwEvent', id)?.focus(), { flush: 'post' })
 
 /** Scroll the time grid so that the time of day of `time` is at the top. */
 function scrollToTime(time: number) {

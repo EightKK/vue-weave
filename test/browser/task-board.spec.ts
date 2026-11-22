@@ -381,3 +381,15 @@ test('a toggle the parent does not apply keeps its state', async ({ page }) => {
   await expect(board.getByRole('button', { name: 'Alpha', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('a blank rejection reason from validateCardMove rejects with the default text', async ({ page }) => {
+  const { errors, board, card, control, log } = await openBoardFixture(page)
+  await control('Reject moves with a blank reason').click()
+  await card('Bravo').focus()
+  await page.keyboard.press('Space')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(log).toHaveText('rejected bravo: This card move was rejected.')
+  await expect(board.locator('xpath=..').locator('[aria-live="polite"]')).toHaveText('This card move was rejected.')
+  expect(errors).toEqual([])
+})

@@ -35,10 +35,17 @@
           const applyToggles = ref(true)
           const renders = ref(0)
           const boardLog = ref('none')
+          const rejectBlank = ref(false)
 
           const calendar = ref()
           const events = shallowRef([{ id: 'review', label: 'Review', start: at('10:00'), end: at('11:00') }])
           const calendarLog = ref('none')
+
+          // A day view taller than its scroller, for edge auto-scroll and blank rejection reasons.
+          const longEvents = shallowRef([{ id: 'standup', label: 'Standup', start: at('02:00'), end: at('03:00') }])
+          const longLog = ref('none')
+          const rejectLongBlank = ref(false)
+          const clock = time => new Date(time).toISOString().slice(11, 16)
 
           return () => h('main', [
             h('section', { 'aria-label': 'Board fixture' }, [
@@ -47,6 +54,7 @@
               control('Collapse the Done column', () => { collapsed.value = ['done'] }),
               control('Ignore toggles', () => { applyToggles.value = false }),
               control('Cancel move', () => board.value.cancelMove()),
+              control('Reject moves with a blank reason', () => { rejectBlank.value = true }),
               h('output', { role: 'status', 'aria-label': 'Board renders' }, String(renders.value)),
               h('output', { role: 'status', 'aria-label': 'Board log' }, boardLog.value),
               h(TaskBoard, {
@@ -62,6 +70,8 @@
                   boardLog.value = `move ${change.id} ${change.after.columnId} ${change.after.index}`
                 },
                 onCardMoveCancel: event => { boardLog.value = `cancel ${event.id} ${event.reason}` },
+                validateCardMove: () => rejectBlank.value ? '  ' : true,
+                onCardMoveRejected: (change, reason) => { boardLog.value = `rejected ${change.id}: ${reason}` },
               }),
             ]),
             h('section', { 'aria-label': 'Calendar fixture' }, [
@@ -77,6 +87,20 @@
                   calendarLog.value = 'edit ' + change.id
                 },
                 onEditCancel: event => { calendarLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
+              }),
+            ]),
+            h('section', { 'aria-label': 'Scrolling calendar fixture' }, [
+              control('Reject edits with a blank reason', () => { rejectLongBlank.value = true }),
+              h('output', { role: 'status', 'aria-label': 'Scrolling calendar log' }, longLog.value),
+              h(EventCalendar, {
+                events: longEvents.value, date: at('10:00'), view: 'day', height: 240, labels: { region: 'Scrolling calendar' },
+                validateEdit: () => rejectLongBlank.value ? '' : true,
+                onEdit: change => {
+                  longEvents.value = longEvents.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
+                  longLog.value = `edit ${change.id} ${clock(change.after.start)}–${clock(change.after.end)}`
+                },
+                onEditRejected: (change, reason) => { longLog.value = `rejected ${change.id}: ${reason}` },
+                onEditCancel: event => { longLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
               }),
             ]),
           ])

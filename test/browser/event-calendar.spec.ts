@@ -1,6 +1,6 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, openDemo, pageErrors, serveFixture, type Page } from './support'
+import { expect, test, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
@@ -312,5 +312,76 @@ test('cancelEdit(), new events and pointer cancellation end a drag with their re
   await review.focus()
   await page.keyboard.press('Space')
   await expect(log).toHaveText('select review')
+  expect(errors).toEqual([])
+})
+
+/** The scrolling fixture: a whole day at 48 px per hour in a 240 px scroller, with one event at 02:00–03:00. */
+async function openScrollingCalendar(page: Page) {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
+  await page.goto('/board-calendar-test/')
+  const section = page.getByRole('region', { name: 'Scrolling calendar fixture', exact: true })
+  const calendar = section.getByRole('region', { name: 'Scrolling calendar', exact: true })
+  await expect(calendar).toBeVisible()
+  return {
+    errors,
+    standup: calendar.getByRole('button', { name: /^Standup, / }),
+    scroller: calendar.locator('.vw-calendar-scroll'),
+    control: (name: string) => section.getByRole('button', { name, exact: true }),
+    log: section.getByRole('status', { name: 'Scrolling calendar log', exact: true }),
+    announcement: calendar.locator('[aria-live="polite"]'),
+  }
+}
+
+/** Press the middle of an event and move, in steps, to 4 px above the bottom edge of the scroller, holding the button. */
+async function holdNearBottom(page: Page, event: Locator, scroller: Locator) {
+  const box = (await event.boundingBox())!, view = (await scroller.boundingBox())!
+  const x = box.x + box.width / 2
+  await page.mouse.move(x, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, view.y + view.height - 4, { steps: 8 })
+}
+
+test('a drag held near the bottom of the time grid scrolls it and moves the event into hours that were out of view', async ({ page }) => {
+  const { errors, standup, scroller, log } = await openScrollingCalendar(page)
+  const scrollTop = () => scroller.evaluate(element => element.scrollTop)
+  expect(await scrollTop()).toBe(0)
+  await holdNearBottom(page, standup, scroller)
+  // Held still near the bottom edge, the grid keeps scrolling.
+  await expect.poll(scrollTop).toBeGreaterThan(200)
+  await page.mouse.up()
+  // The first 240 px show hours 0 to 5; the event lands past them.
+  await expect(log).toHaveText(/^edit standup \d\d:\d\d–\d\d:\d\d$/)
+  const hour = Number((await log.textContent())!.slice('edit standup '.length).slice(0, 2))
+  expect(hour).toBeGreaterThanOrEqual(6)
+  // After the release, scrolling stops.
+  const top = await scrollTop()
+  await page.waitForTimeout(150)
+  expect(await scrollTop()).toBe(top)
+  expect(errors).toEqual([])
+})
+
+test('Escape during an edge auto-scroll cancels the drag and stops scrolling', async ({ page }) => {
+  const { errors, standup, scroller, log } = await openScrollingCalendar(page)
+  const scrollTop = () => scroller.evaluate(element => element.scrollTop)
+  await holdNearBottom(page, standup, scroller)
+  await expect.poll(scrollTop).toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
+  await expect(log).toHaveText('cancel standup escape')
+  const top = await scrollTop()
+  await page.waitForTimeout(150)
+  expect(await scrollTop()).toBe(top)
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel standup escape')
+  expect(errors).toEqual([])
+})
+
+test('a blank rejection reason from validateEdit rejects with the default text', async ({ page }) => {
+  const { errors, standup, control, log, announcement } = await openScrollingCalendar(page)
+  await control('Reject edits with a blank reason').click()
+  await standup.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('rejected standup: This change was rejected.')
+  await expect(announcement).toHaveText('This change was rejected.')
   expect(errors).toEqual([])
 })
