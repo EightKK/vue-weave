@@ -4,7 +4,7 @@ import type { GraphEdge, GraphEdgeMarker, GraphLayoutDirection } from './graph.j
 import type { NetworkGroup, NetworkNode, NetworkNodeShape } from './types.js'
 import {
   checkGraphInterchangeInput, createGraphCollector, graphShapeFormat, nestedIndent, readGraphShape,
-  type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
+  type GraphCollector, type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput, type GraphWarn,
 } from './interchangeGraph.js'
 import { dropInvalidXmlChars, predefinedEntities, referencedCharacter } from './interchangeXml.js'
 import { stripBom } from './interchangeShared.js'
@@ -208,6 +208,512 @@ interface Link {
   id?: string
 }
 
+interface ParsedGroup {
+  id: string
+  label: string
+  parentId?: string
+  line: number
+}
+
+interface ParsedEdge {
+  from: string
+  to: string
+  link: Link
+  line: number
+}
+
+/** The directions of the flowchart header, with `TD` read as `TB` and the arrow forms. */
+const headerDirections: Readonly<Record<string, GraphLayoutDirection>> = {
+  TD: 'TB', TB: 'TB', LR: 'LR', RL: 'RL', BT: 'BT', '>': 'LR', '<': 'RL', '^': 'BT', V: 'TB',
+}
+
+const markerOf = (char: string | undefined): GraphEdgeMarker => char === undefined ? 'none' : markerOfChar[char]!
+
+/**
+ * The statement reader of `fromMermaid`: a cursor over the lines of the text (`lineIndex`, `source`, the current line,
+ * and `pos`) and the nodes, subgraphs and edges read so far, in file order. Every method moves the cursor forward with
+ * loops; none recurses.
+ */
+class FlowchartReader {
+  readonly parsed = new Map<string, ParsedNode>()
+  readonly groups: ParsedGroup[] = []
+  readonly edges: ParsedEdge[] = []
+  /** The subgraph each node belongs to, and the parent of each subgraph. */
+  readonly groupOf = new Map<string, string>()
+  private readonly groupParent = new Map<string, string | undefined>()
+  /** The subgraphs open at the cursor, innermost last. */
+  private readonly open: string[] = []
+  private subgraphCount = 0
+  // Node and group IDs met so far (a subgraph mentioned as a node counts once, as the collector counts it). With the
+  // edges they must stay within maxItems while the text is read, not only when the result is collected.
+  private readonly seenIds = new Set<string>()
+  private readonly lines: readonly string[]
+  private readonly warn: GraphWarn
+  private readonly maxItems: number
+  /** Only text that toMermaid wrote with encoded IDs has the marker; other files keep their `vw_` IDs as written. */
+  private readonly decodeIds: boolean
+  private lineIndex = 0
+  private source = ''
+  private pos = 0
+
+  constructor(lines: readonly string[], warn: GraphWarn, maxItems: number) {
+    this.lines = lines
+    this.warn = warn
+    this.maxItems = maxItems
+    this.decodeIds = lines.some(line => line.trim() === encodedIdsMarker)
+  }
+
+  private fail(reason: string, at = this.pos): never {
+    throw new Error(`Invalid Mermaid flowchart at line ${this.lineIndex + 1}, column ${at + 1}: ${reason}`)
+  }
+
+  private decodeId(id: string) {
+    return this.decodeIds ? decodeMermaidId(id) : id
+  }
+
+  private skipSpace() {
+    while (this.pos < this.source.length && (this.source[this.pos] === ' ' || this.source[this.pos] === '\t')) this.pos++
+  }
+
+  private startLine(index: number) {
+    this.lineIndex = index
+    this.source = this.lines[index]!
+    this.pos = 0
+  }
+
+  private tooMany() {
+    return new RangeError(`The Mermaid file has more than ${this.maxItems} nodes, edges and groups (maxItems)`)
+  }
+
+  private see(id: string) {
+    if (this.seenIds.has(id)) return
+    if (this.seenIds.size + this.edges.length + 1 > this.maxItems) throw this.tooMany()
+    this.seenIds.add(id)
+  }
+
+  /** The index of the `"` that closes the quoted text starting at the cursor. */
+  private quoteEnd() {
+    const close = this.source.indexOf('"', this.pos + 1)
+    if (close < 0) this.fail('unterminated quoted text')
+    return close
+  }
+
+  /**
+   * Skip the comments, directives and front matter before the header and read the header line. Returns the direction,
+   * `TB` when the header has none.
+   */
+  readHeader(): GraphLayoutDirection {
+    const { lines } = this
+    const blank = (line: string) => /^\s*(?:%%.*)?$/.test(line)
+    let index = 0
+    while (index < lines.length && blank(lines[index]!)) index++
+    if (index < lines.length && lines[index]!.trim() === '---') {
+      const start = index
+      for (index++; index < lines.length && lines[index]!.trim() !== '---'; index++);
+      if (index >= lines.length) {
+        this.lineIndex = start
+        this.fail('unterminated front matter', 0)
+      }
+      this.warn('unsupported-statement', 'The front matter was ignored', undefined, start + 1)
+      index++
+      while (index < lines.length && blank(lines[index]!)) index++
+    }
+    if (index >= lines.length) throw new Error('Not a Mermaid flowchart: the text has no diagram')
+    this.startLine(index)
+    this.skipSpace()
+    header.lastIndex = this.pos
+    const head = header.exec(this.source)
+    if (!head) {
+      const type = diagramTypes.exec(this.source.slice(this.pos))
+      if (type) throw new Error(`Unsupported Mermaid diagram type: ${type[1]}. Only flowchart and graph diagrams can be read`)
+      throw new Error('Not a Mermaid flowchart: the text does not start with flowchart or graph')
+    }
+    let direction: GraphLayoutDirection = 'TB'
+    if (head[1] !== undefined) {
+      const value = head[1].toUpperCase()
+      if (!Object.hasOwn(headerDirections, value)) this.fail('unknown direction ' + head[1], this.pos + this.source.slice(this.pos).indexOf(head[1]))
+      direction = headerDirections[value]!
+    }
+    this.pos = header.lastIndex
+    return direction
+  }
+
+  /** Read the statements after the header up to the end of the text. */
+  readStatements() {
+    for (;;) {
+      this.skipSpace()
+      if (this.pos >= this.source.length) {
+        if (this.lineIndex + 1 >= this.lines.length) break
+        this.startLine(this.lineIndex + 1)
+        continue
+      }
+      if (this.source[this.pos] === ';') {
+        this.pos++
+        continue
+      }
+      if (this.source.startsWith('%%', this.pos)) {
+        this.pos = this.source.length
+        continue
+      }
+      keyword.lastIndex = this.pos
+      const word = keyword.exec(this.source)?.[1]
+      if (word === undefined) this.readChain()
+      else this.readKeywordStatement(word, keyword.lastIndex)
+    }
+    if (this.open.length) {
+      this.lineIndex = this.lines.length - 1
+      throw new Error(`Invalid Mermaid flowchart: subgraph ${this.open.at(-1)} has no end`)
+    }
+  }
+
+  /** A statement that starts with a keyword, which ends at `end`. */
+  private readKeywordStatement(word: string, end: number) {
+    if (word === 'subgraph') {
+      this.readSubgraph(end)
+      return
+    }
+    if (word === 'end') {
+      if (!this.open.length) this.fail('end without a subgraph')
+      this.open.pop()
+      this.pos = end
+      return
+    }
+    if (word === 'direction') {
+      this.pos = end
+      const value = this.restOfStatement().trim()
+      this.warn('unsupported-statement', `The direction ${value} inside a subgraph was ignored`, this.open.at(-1), this.lineIndex + 1)
+      return
+    }
+    if (word === 'accDescr' && /^accDescr\s*\{/.test(this.source.slice(this.pos))) {
+      this.skipDescriptionBlock()
+      return
+    }
+    this.warn('unsupported-statement', `The ${word} statement was ignored`, undefined, this.lineIndex + 1)
+    // Skip only this statement: `style a fill:red; b --> c` still reads the link after the semicolon.
+    this.pos = end
+    this.restOfStatement()
+  }
+
+  /** `subgraph id`, `subgraph id[title]` or `subgraph title`, which opens a group. */
+  private readSubgraph(end: number) {
+    this.pos = end
+    // The subgraph statement ends at a `;` outside quotes, like the others: `subgraph g; a --> b; end` is one line.
+    const rest = this.restOfStatement().trim()
+    if (rest === '') this.fail('expected a subgraph ID or title', end)
+    let id: string | undefined, raw: string
+    const titled = /^([^\s[\]"]+)\s*\[(.*)\]$/.exec(rest)
+    if (titled) {
+      id = this.decodeId(titled[1]!)
+      raw = titled[2]!.trim()
+    } else if (/^[^\s"]+$/.test(rest)) {
+      id = this.decodeId(rest)
+      raw = rest
+    } else raw = rest
+    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) raw = raw.slice(1, -1)
+    if (id === undefined) id = 'subGraph' + this.subgraphCount
+    this.subgraphCount++
+    const parentId = this.open.at(-1)
+    this.see(id)
+    this.groups.push({ id, label: decodeMermaidText(raw.replace(lineBreak, '\n')), ...(parentId === undefined ? {} : { parentId }), line: this.lineIndex + 1 })
+    if (!this.groupParent.has(id)) this.groupParent.set(id, parentId)
+    this.open.push(id)
+  }
+
+  /** Skip an `accDescr { … }` block, which may span lines. */
+  private skipDescriptionBlock() {
+    const start = this.lineIndex
+    let index = start
+    while (index < this.lines.length && !this.lines[index]!.includes('}')) index++
+    if (index >= this.lines.length) this.fail('unterminated accDescr { … }')
+    this.warn('unsupported-statement', 'The accessible description was ignored', undefined, start + 1)
+    this.startLine(index)
+    this.pos = this.source.indexOf('}') + 1
+  }
+
+  /** The text up to the next `;` outside double quotes, or to the end of the line; the cursor stops at that `;`. */
+  private restOfStatement() {
+    let end = this.pos
+    let quoted = false
+    for (; end < this.source.length; end++) {
+      if (this.source[end] === '"') quoted = !quoted
+      else if (this.source[end] === ';' && !quoted) break
+    }
+    const rest = this.source.slice(this.pos, end)
+    this.pos = end
+    return rest
+  }
+
+  /** Whether group `inner` is `outer` or nested in it. */
+  private within(inner: string, outer: string) {
+    for (let current: string | undefined = inner; current !== undefined; current = this.groupParent.get(current)) {
+      if (current === outer) return true
+    }
+    return false
+  }
+
+  /** Record a mention of a node: the first one creates it, and one inside a subgraph may put it there. */
+  private mention(id: string) {
+    let node = this.parsed.get(id)
+    if (!node) {
+      this.see(id)
+      node = { line: this.lineIndex + 1 }
+      this.parsed.set(id, node)
+    }
+    const group = this.open.at(-1)
+    if (group === undefined) return node
+    const current = this.groupOf.get(id)
+    if (current === undefined || this.within(group, current)) this.groupOf.set(id, group)
+    else if (!this.within(current, group)) {
+      this.warn('group-member', `Node ${id} is in subgraph ${current} and stays there, not in ${group}`, id, this.lineIndex + 1)
+    }
+    return node
+  }
+
+  /** Read quoted or unquoted text up to one of the closers; returns the raw text and the closer that ended it. */
+  private readDelimited(enders: readonly (readonly [string, string])[]) {
+    const start = this.pos
+    const expected = () => enders.map(([token]) => token).join(' or ')
+    if (this.source[this.pos] === '"') {
+      const close = this.quoteEnd()
+      const raw = this.source.slice(this.pos + 1, close)
+      this.pos = close + 1
+      this.skipSpace()
+      const ender = enders.find(([token]) => this.source.startsWith(token, this.pos))
+      if (!ender) this.fail(`expected ${expected()} after the quoted text`)
+      this.pos += ender[0].length
+      return { raw, name: ender[1] }
+    }
+    let best: { index: number; ender: readonly [string, string] } | undefined
+    for (const ender of enders) {
+      const index = this.source.indexOf(ender[0], this.pos)
+      if (index >= 0 && (!best || index < best.index)) best = { index, ender }
+    }
+    if (!best) this.fail(`expected ${expected()}`, start)
+    this.pos = best.index + best.ender[0].length
+    return { raw: this.source.slice(start, best.index).trim(), name: best.ender[1] }
+  }
+
+  /** Read `@{ key: value, … }` after a node ID. */
+  private readProperties() {
+    const start = this.pos
+    this.pos += 2
+    const properties = new Map<string, string>()
+    for (;;) {
+      while (this.pos < this.source.length && /[\s,]/.test(this.source[this.pos]!)) this.pos++
+      if (this.pos >= this.source.length) this.fail('unterminated @{ … }', start)
+      if (this.source[this.pos] === '}') {
+        this.pos++
+        return properties
+      }
+      const key = /([A-Za-z][\w-]*)\s*:\s*/y
+      key.lastIndex = this.pos
+      const match = key.exec(this.source)
+      if (!match) this.fail('expected a property name in @{ … }')
+      this.pos = key.lastIndex
+      let value: string
+      if (this.source[this.pos] === '"') {
+        const close = this.quoteEnd()
+        value = this.source.slice(this.pos + 1, close)
+        this.pos = close + 1
+      } else {
+        const end = /[,}]/g
+        end.lastIndex = this.pos
+        const found = end.exec(this.source)
+        if (!found) this.fail('unterminated @{ … }', start)
+        value = this.source.slice(this.pos, found.index).trim()
+        this.pos = found.index
+      }
+      properties.set(match[1]!, value)
+    }
+  }
+
+  /** A node ID with an optional shape and text (delimiters or `@{ … }`) and `:::class`; returns the ID. */
+  private readNode() {
+    nodeIdPattern.lastIndex = this.pos
+    const match = nodeIdPattern.exec(this.source)
+    if (!match) this.fail('expected a node ID')
+    const id = this.decodeId(match[0])
+    this.pos = nodeIdPattern.lastIndex
+    const node = this.mention(id)
+    let raw: string | undefined, shape: string | undefined
+    if (this.source.startsWith('@{', this.pos)) {
+      const properties = this.readProperties()
+      if (properties.has('shape')) shape = properties.get('shape')!
+      if (properties.has('label')) raw = properties.get('label')!
+      for (const key of properties.keys()) {
+        if (key !== 'shape' && key !== 'label') this.warn('unsupported-statement', `The node property ${key} was ignored`, id, this.lineIndex + 1)
+      }
+      if (shape !== undefined || raw !== undefined) shape ??= node.shape ?? 'box'
+    } else {
+      const token = shapeTokens.find(({ open }) => this.source.startsWith(open, this.pos))
+      if (token) {
+        this.pos += token.open.length
+        const text = this.readDelimited(token.closers)
+        raw = text.raw
+        shape = text.name
+      }
+    }
+    if (shape !== undefined) {
+      node.shape = shape
+      node.line = this.lineIndex + 1
+      if (raw !== undefined) {
+        const { label, detail } = readNodeText(raw)
+        node.label = label
+        node.detail = detail
+      }
+    }
+    classSuffix.lastIndex = this.pos
+    if (classSuffix.exec(this.source)) {
+      this.warn('unsupported-statement', 'The class assignment ' + this.source.slice(this.pos, classSuffix.lastIndex) + ' was ignored', id, this.lineIndex + 1)
+      this.pos = classSuffix.lastIndex
+    }
+    return id
+  }
+
+  /** Nodes joined by `&`. */
+  private readNodeList() {
+    const ids = [this.readNode()]
+    for (;;) {
+      this.skipSpace()
+      if (this.source[this.pos] !== '&') return ids
+      this.pos++
+      this.skipSpace()
+      ids.push(this.readNode())
+    }
+  }
+
+  /** A link with its `id@`, its `-- text -->` or `|text|` label; undefined when no link starts at the cursor. */
+  private readLink(): Link | undefined {
+    let id: string | undefined
+    edgeIdPattern.lastIndex = this.pos
+    const named = edgeIdPattern.exec(this.source)
+    if (named) {
+      id = this.decodeId(named[1]!)
+      this.pos = edgeIdPattern.lastIndex
+    }
+    const link = this.readArrow() ?? this.readTextArrow()
+    if (!link) {
+      if (id !== undefined) this.fail('expected a link after the edge ID')
+      return undefined
+    }
+    this.skipSpace()
+    if (this.source[this.pos] === '|') link.label = this.readPipeLabel()
+    if (id !== undefined) link.id = id
+    return link
+  }
+
+  /** A link without text (`-->`, `---`, `-.->`, `==>`, `~~~`, …); the cursor stays when there is none. */
+  private readArrow(): Link | undefined {
+    plainLink.lastIndex = this.pos
+    const plain = plainLink.exec(this.source)
+    if (!plain) return undefined
+    const body = plain[2]!
+    // `--` and `==` without an end open a link with text, read by `readTextArrow`.
+    if ((body === '--' || body === '==') && plain[3] === undefined) return undefined
+    this.pos = plainLink.lastIndex
+    return { start: markerOf(plain[1]), end: markerOf(plain[3]), invisible: body[0] === '~' }
+  }
+
+  /** A link with text inside it (`-- text -->`, `== text ==>`, `-. text .->`). */
+  private readTextArrow(): Link | undefined {
+    const start = this.pos
+    linkOpener.lastIndex = this.pos
+    const opener = linkOpener.exec(this.source)
+    if (!opener) return undefined
+    this.pos = linkOpener.lastIndex
+    this.skipSpace()
+    let label: string | undefined
+    let searchFrom = this.pos
+    if (this.source[this.pos] === '"') {
+      const close = this.quoteEnd()
+      label = this.source.slice(this.pos + 1, close)
+      searchFrom = close + 1
+    }
+    const closer = closers[opener[2]!]!
+    closer.lastIndex = searchFrom
+    let found: RegExpExecArray | null
+    for (;;) {
+      found = closer.exec(this.source)
+      if (!found) this.fail('unterminated link text', start)
+      if (opener[2] === '-.' || found[2] !== undefined || found[1]!.length >= 3) break
+    }
+    if (label === undefined) label = this.source.slice(this.pos, found.index).trim()
+    else if (this.source.slice(searchFrom, found.index).trim() !== '') this.fail('unexpected text after the quoted link text', searchFrom)
+    this.pos = closer.lastIndex
+    return { start: markerOf(opener[1]), end: markerOf(found[2]), label: decodeMermaidText(label), invisible: false }
+  }
+
+  /** The `|text|` label after a link; the cursor is at the first `|`. */
+  private readPipeLabel() {
+    this.pos++
+    let raw: string
+    if (this.source[this.pos] === '"') {
+      const close = this.quoteEnd()
+      raw = this.source.slice(this.pos + 1, close)
+      this.pos = close + 1
+      this.skipSpace()
+      if (this.source[this.pos] !== '|') this.fail('expected | after the link text')
+      this.pos++
+    } else {
+      const close = this.source.indexOf('|', this.pos)
+      if (close < 0) this.fail('unterminated |link text|')
+      raw = this.source.slice(this.pos, close).trim()
+      this.pos = close + 1
+    }
+    return decodeMermaidText(raw.replace(lineBreak, '\n'))
+  }
+
+  /** A statement of nodes and links: `a --> b`, chains (`a --> b --> c`) and `&` lists (`a & b --> c`). */
+  private readChain() {
+    let current = this.readNodeList()
+    for (;;) {
+      this.skipSpace()
+      if (this.pos >= this.source.length || this.source[this.pos] === ';' || this.source.startsWith('%%', this.pos)) return
+      const link = this.readLink()
+      if (!link) this.fail('expected a link, & or the end of the statement')
+      this.skipSpace()
+      const next = this.readNodeList()
+      if (link.invisible) {
+        this.warn('unsupported-statement', 'An invisible link (~~~) was ignored', undefined, this.lineIndex + 1)
+      } else {
+        // `a & b --> c & d` expands to every pair. Check the count before expanding, so a few `&` lists cannot build an
+        // edge list far beyond maxItems before the collector rejects it.
+        if (this.edges.length + current.length * next.length + this.seenIds.size > this.maxItems) throw this.tooMany()
+        for (const from of current) for (const to of next) this.edges.push({ from, to, link, line: this.lineIndex + 1 })
+      }
+      current = next
+    }
+  }
+}
+
+/** Hand what a reader read to the collector: groups first, so a node or edge that names a subgraph is reported against it. */
+function collectFlowchart(reader: FlowchartReader, collector: GraphCollector) {
+  for (const group of reader.groups) collector.addGroup(group, group.line)
+  for (const [id, node] of reader.parsed) {
+    if (collector.groups.has(id) && node.shape === undefined) continue
+    const shape: NetworkNodeShape = node.shape === undefined ? 'box' : readGraphShape(node.shape, collector.warn, id, node.line)
+    const item: NetworkNode = {
+      id,
+      label: node.label ?? id,
+      ...(node.detail === undefined ? {} : { detail: node.detail }),
+      ...(shape === 'box' ? {} : { shape }),
+    }
+    if (!collector.addNode(item, node.line)) continue
+    const group = reader.groupOf.get(id)
+    if (group !== undefined && collector.groups.has(group)) collector.addMember(group, id, node.line)
+  }
+  for (const { from, to, link, line } of reader.edges) {
+    const edge: Omit<GraphEdge, 'id'> & { id?: string } = {
+      ...(link.id === undefined ? {} : { id: link.id }),
+      from, to,
+      ...(link.label === undefined || link.label === '' ? {} : { label: link.label }),
+      ...(link.end === 'arrow' ? {} : { markerEnd: link.end }),
+      ...(link.start === 'none' ? {} : { markerStart: link.start }),
+    }
+    collector.addEdge(edge, line)
+  }
+}
+
 /**
  * Read a Mermaid flowchart into NetworkGraph nodes, edges and groups. Pure string parsing without a DOM, done with
  * loops. The text starts with `flowchart` or `graph` and an optional direction (`TD`, `TB`, `LR`, `RL`, `BT`, returned
@@ -233,431 +739,9 @@ interface Link {
 export function fromMermaid(text: string, options: GraphInterchangeImportOptions = {}): GraphInterchangeImport {
   if (typeof text !== 'string') throw new Error('Mermaid text must be a string')
   const collector = createGraphCollector('Mermaid', options)
-  const maxItems = options.maxItems ?? 100_000
-  const { warn } = collector
-  const lines = stripBom(text).split(/\r\n|\n|\r/)
-  // Only text that toMermaid wrote with encoded IDs has the marker; other files keep their `vw_` IDs as written.
-  const decodeIds = lines.some(line => line.trim() === encodedIdsMarker)
-  const decodeId = (id: string) => decodeIds ? decodeMermaidId(id) : id
-  let lineIndex = 0
-  let source = ''
-  let pos = 0
-  const fail = (reason: string, at = pos): never => {
-    throw new Error(`Invalid Mermaid flowchart at line ${lineIndex + 1}, column ${at + 1}: ${reason}`)
-  }
-  const skipSpace = () => {
-    while (pos < source.length && (source[pos] === ' ' || source[pos] === '\t')) pos++
-  }
-  const blank = (line: string) => /^\s*(?:%%.*)?$/.test(line)
-
-  // Front matter, comments and directives before the header.
-  while (lineIndex < lines.length && blank(lines[lineIndex]!)) lineIndex++
-  if (lineIndex < lines.length && lines[lineIndex]!.trim() === '---') {
-    const start = lineIndex
-    for (lineIndex++; lineIndex < lines.length && lines[lineIndex]!.trim() !== '---'; lineIndex++);
-    if (lineIndex >= lines.length) {
-      lineIndex = start
-      fail('unterminated front matter', 0)
-    }
-    warn('unsupported-statement', 'The front matter was ignored', undefined, start + 1)
-    lineIndex++
-    while (lineIndex < lines.length && blank(lines[lineIndex]!)) lineIndex++
-  }
-  if (lineIndex >= lines.length) throw new Error('Not a Mermaid flowchart: the text has no diagram')
-  source = lines[lineIndex]!
-  pos = 0
-  skipSpace()
-  header.lastIndex = pos
-  const head = header.exec(source)
-  if (!head) {
-    const type = diagramTypes.exec(source.slice(pos))
-    if (type) throw new Error(`Unsupported Mermaid diagram type: ${type[1]}. Only flowchart and graph diagrams can be read`)
-    throw new Error('Not a Mermaid flowchart: the text does not start with flowchart or graph')
-  }
-  let direction: GraphLayoutDirection = 'TB'
-  if (head[1] !== undefined) {
-    const value = head[1].toUpperCase()
-    const named: Record<string, GraphLayoutDirection> = { TD: 'TB', TB: 'TB', LR: 'LR', RL: 'RL', BT: 'BT', '>': 'LR', '<': 'RL', '^': 'BT', V: 'TB' }
-    if (!Object.hasOwn(named, value)) fail('unknown direction ' + head[1], pos + source.slice(pos).indexOf(head[1]))
-    direction = named[value]!
-  }
-  pos = header.lastIndex
-
-  const parsed = new Map<string, ParsedNode>()
-  const groupOf = new Map<string, string>()
-  const groupParent = new Map<string, string | undefined>()
-  const groups: { id: string; label: string; parentId?: string; line: number }[] = []
-  const edges: { from: string; to: string; link: Link; line: number }[] = []
-  const open: string[] = []
-  let subgraphCount = 0
-  // Node and group IDs met so far (a subgraph mentioned as a node counts once, as the collector counts it). With the
-  // edges they must stay within maxItems while the text is read, not only when the result is collected.
-  const seenIds = new Set<string>()
-  const tooMany = () => new RangeError(`The Mermaid file has more than ${maxItems} nodes, edges and groups (maxItems)`)
-  const see = (id: string) => {
-    if (seenIds.has(id)) return
-    if (seenIds.size + edges.length + 1 > maxItems) throw tooMany()
-    seenIds.add(id)
-  }
-
-  /** Whether group `inner` is `outer` or nested in it. */
-  const within = (inner: string, outer: string) => {
-    for (let current: string | undefined = inner; current !== undefined; current = groupParent.get(current)) {
-      if (current === outer) return true
-    }
-    return false
-  }
-  const mention = (id: string) => {
-    let node = parsed.get(id)
-    if (!node) {
-      see(id)
-      node = { line: lineIndex + 1 }
-      parsed.set(id, node)
-    }
-    const group = open.at(-1)
-    if (group === undefined) return node
-    const current = groupOf.get(id)
-    if (current === undefined || within(group, current)) groupOf.set(id, group)
-    else if (!within(current, group)) {
-      warn('group-member', `Node ${id} is in subgraph ${current} and stays there, not in ${group}`, id, lineIndex + 1)
-    }
-    return node
-  }
-
-  /** Read quoted or unquoted text up to one of the closers; returns the raw text and the closer that ended it. */
-  const readDelimited = (enders: readonly (readonly [string, string])[]) => {
-    const start = pos
-    if (source[pos] === '"') {
-      const close = source.indexOf('"', pos + 1)
-      if (close < 0) fail('unterminated quoted text')
-      const raw = source.slice(pos + 1, close)
-      pos = close + 1
-      skipSpace()
-      const ender = enders.find(([token]) => source.startsWith(token, pos))
-      if (!ender) fail(`expected ${enders.map(([token]) => token).join(' or ')} after the quoted text`)
-      pos += ender![0].length
-      return { raw, name: ender![1] }
-    }
-    let best: { index: number; ender: readonly [string, string] } | undefined
-    for (const ender of enders) {
-      const index = source.indexOf(ender[0], pos)
-      if (index >= 0 && (!best || index < best.index)) best = { index, ender }
-    }
-    if (!best) fail(`expected ${enders.map(([token]) => token).join(' or ')}`, start)
-    pos = best!.index + best!.ender[0].length
-    return { raw: source.slice(start, best!.index).trim(), name: best!.ender[1] }
-  }
-
-  /** Read `@{ key: value, … }` after a node ID. */
-  const readProperties = () => {
-    const start = pos
-    pos += 2
-    const properties = new Map<string, string>()
-    for (;;) {
-      while (pos < source.length && /[\s,]/.test(source[pos]!)) pos++
-      if (pos >= source.length) fail('unterminated @{ … }', start)
-      if (source[pos] === '}') {
-        pos++
-        return properties
-      }
-      const key = /([A-Za-z][\w-]*)\s*:\s*/y
-      key.lastIndex = pos
-      const match = key.exec(source)
-      if (!match) fail('expected a property name in @{ … }')
-      pos = key.lastIndex
-      let value: string
-      if (source[pos] === '"') {
-        const close = source.indexOf('"', pos + 1)
-        if (close < 0) fail('unterminated quoted text')
-        value = source.slice(pos + 1, close)
-        pos = close + 1
-      } else {
-        const end = /[,}]/g
-        end.lastIndex = pos
-        const found = end.exec(source)
-        if (!found) fail('unterminated @{ … }', start)
-        value = source.slice(pos, found!.index).trim()
-        pos = found!.index
-      }
-      properties.set(match![1]!, value)
-    }
-  }
-
-  const readNode = () => {
-    nodeIdPattern.lastIndex = pos
-    const match = nodeIdPattern.exec(source)
-    if (!match) fail('expected a node ID')
-    const id = decodeId(match![0])
-    pos = nodeIdPattern.lastIndex
-    const node = mention(id)
-    let raw: string | undefined, shape: string | undefined
-    if (source.startsWith('@{', pos)) {
-      const properties = readProperties()
-      if (properties.has('shape')) shape = properties.get('shape')!
-      if (properties.has('label')) raw = properties.get('label')!
-      for (const key of properties.keys()) {
-        if (key !== 'shape' && key !== 'label') warn('unsupported-statement', `The node property ${key} was ignored`, id, lineIndex + 1)
-      }
-      if (shape !== undefined || raw !== undefined) shape ??= node.shape ?? 'box'
-    } else {
-      const token = shapeTokens.find(({ open }) => source.startsWith(open, pos))
-      if (token) {
-        pos += token.open.length
-        const text = readDelimited(token.closers)
-        raw = text.raw
-        shape = text.name
-      }
-    }
-    if (shape !== undefined) {
-      node.shape = shape
-      node.line = lineIndex + 1
-      if (raw !== undefined) {
-        const { label, detail } = readNodeText(raw)
-        node.label = label
-        node.detail = detail
-      }
-    }
-    classSuffix.lastIndex = pos
-    if (classSuffix.exec(source)) {
-      warn('unsupported-statement', 'The class assignment ' + source.slice(pos, classSuffix.lastIndex) + ' was ignored', id, lineIndex + 1)
-      pos = classSuffix.lastIndex
-    }
-    return id
-  }
-
-  const readNodeList = () => {
-    const ids = [readNode()]
-    for (;;) {
-      skipSpace()
-      if (source[pos] !== '&') return ids
-      pos++
-      skipSpace()
-      ids.push(readNode())
-    }
-  }
-
-  const readLink = (): Link | undefined => {
-    let id: string | undefined
-    edgeIdPattern.lastIndex = pos
-    const named = edgeIdPattern.exec(source)
-    if (named) {
-      id = decodeId(named[1]!)
-      pos = edgeIdPattern.lastIndex
-    }
-    const start = pos
-    plainLink.lastIndex = pos
-    const plain = plainLink.exec(source)
-    let link: Link | undefined
-    if (plain) {
-      const body = plain[2]!
-      const isOpener = (body === '--' || body === '==') && plain[3] === undefined
-      if (!isOpener) {
-        pos = plainLink.lastIndex
-        link = {
-          start: plain[1] === undefined ? 'none' : markerOfChar[plain[1]]!,
-          end: plain[3] === undefined ? 'none' : markerOfChar[plain[3]]!,
-          invisible: body[0] === '~',
-        }
-      }
-    }
-    if (!link) {
-      linkOpener.lastIndex = pos
-      const opener = linkOpener.exec(source)
-      if (!opener) {
-        if (id !== undefined) fail('expected a link after the edge ID')
-        return undefined
-      }
-      pos = linkOpener.lastIndex
-      skipSpace()
-      let label: string | undefined
-      let searchFrom = pos
-      if (source[pos] === '"') {
-        const close = source.indexOf('"', pos + 1)
-        if (close < 0) fail('unterminated quoted text')
-        label = source.slice(pos + 1, close)
-        searchFrom = close + 1
-      }
-      const closer = closers[opener[2]!]!
-      closer.lastIndex = searchFrom
-      let found: RegExpExecArray | null
-      for (;;) {
-        found = closer.exec(source)
-        if (!found) fail('unterminated link text', start)
-        if (opener[2] === '-.' || found![2] !== undefined || found![1]!.length >= 3) break
-      }
-      if (label === undefined) label = source.slice(pos, found!.index).trim()
-      else if (source.slice(searchFrom, found!.index).trim() !== '') fail('unexpected text after the quoted link text', searchFrom)
-      pos = closer.lastIndex
-      link = {
-        start: opener[1] === undefined ? 'none' : markerOfChar[opener[1]]!,
-        end: found![2] === undefined ? 'none' : markerOfChar[found![2]]!,
-        label: decodeMermaidText(label),
-        invisible: false,
-      }
-    }
-    skipSpace()
-    if (source[pos] === '|') {
-      pos++
-      let raw: string
-      if (source[pos] === '"') {
-        const close = source.indexOf('"', pos + 1)
-        if (close < 0) fail('unterminated quoted text')
-        raw = source.slice(pos + 1, close)
-        pos = close + 1
-        skipSpace()
-        if (source[pos] !== '|') fail('expected | after the link text')
-        pos++
-      } else {
-        const close = source.indexOf('|', pos)
-        if (close < 0) fail('unterminated |link text|')
-        raw = source.slice(pos, close).trim()
-        pos = close + 1
-      }
-      link.label = decodeMermaidText(raw.replace(lineBreak, '\n'))
-    }
-    if (id !== undefined) link.id = id
-    return link
-  }
-
-  const readChain = () => {
-    let current = readNodeList()
-    for (;;) {
-      skipSpace()
-      if (pos >= source.length || source[pos] === ';' || source.startsWith('%%', pos)) return
-      const link = readLink()
-      if (!link) fail('expected a link, & or the end of the statement')
-      skipSpace()
-      const next = readNodeList()
-      if (link!.invisible) {
-        warn('unsupported-statement', 'An invisible link (~~~) was ignored', undefined, lineIndex + 1)
-      } else {
-        // `a & b --> c & d` expands to every pair. Check the count before expanding, so a few `&` lists cannot build an
-        // edge list far beyond maxItems before the collector rejects it.
-        if (edges.length + current.length * next.length + seenIds.size > maxItems) throw tooMany()
-        for (const from of current) for (const to of next) edges.push({ from, to, link: link!, line: lineIndex + 1 })
-      }
-      current = next
-    }
-  }
-
-  // The text up to the next `;` outside double quotes, or to the end of the line; `pos` stops at that `;`.
-  const restOfStatement = () => {
-    let end = pos
-    let quoted = false
-    for (; end < source.length; end++) {
-      if (source[end] === '"') quoted = !quoted
-      else if (source[end] === ';' && !quoted) break
-    }
-    const rest = source.slice(pos, end)
-    pos = end
-    return rest
-  }
-
-  for (;;) {
-    skipSpace()
-    if (pos >= source.length) {
-      lineIndex++
-      if (lineIndex >= lines.length) break
-      source = lines[lineIndex]!
-      pos = 0
-      continue
-    }
-    if (source[pos] === ';') {
-      pos++
-      continue
-    }
-    if (source.startsWith('%%', pos)) {
-      pos = source.length
-      continue
-    }
-    keyword.lastIndex = pos
-    const word = keyword.exec(source)?.[1]
-    if (word === 'subgraph') {
-      pos = keyword.lastIndex
-      // The subgraph statement ends at a `;` outside quotes, like the others: `subgraph g; a --> b; end` is one line.
-      const rest = restOfStatement().trim()
-      if (rest === '') fail('expected a subgraph ID or title', keyword.lastIndex)
-      let id: string | undefined, raw: string
-      const titled = /^([^\s[\]"]+)\s*\[(.*)\]$/.exec(rest)
-      if (titled) {
-        id = decodeId(titled[1]!)
-        raw = titled[2]!.trim()
-      } else if (/^[^\s"]+$/.test(rest)) {
-        id = decodeId(rest)
-        raw = rest
-      } else raw = rest
-      if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) raw = raw.slice(1, -1)
-      if (id === undefined) id = 'subGraph' + subgraphCount
-      subgraphCount++
-      const parentId = open.at(-1)
-      see(id)
-      groups.push({ id, label: decodeMermaidText(raw.replace(lineBreak, '\n')), ...(parentId === undefined ? {} : { parentId }), line: lineIndex + 1 })
-      if (!groupParent.has(id)) groupParent.set(id, parentId)
-      open.push(id)
-      continue
-    }
-    if (word === 'end') {
-      if (!open.length) fail('end without a subgraph')
-      open.pop()
-      pos = keyword.lastIndex
-      continue
-    }
-    if (word === 'direction') {
-      pos = keyword.lastIndex
-      const value = restOfStatement().trim()
-      warn('unsupported-statement', `The direction ${value} inside a subgraph was ignored`, open.at(-1), lineIndex + 1)
-      continue
-    }
-    if (word === 'accDescr' && /^accDescr\s*\{/.test(source.slice(pos))) {
-      const start = lineIndex
-      while (lineIndex < lines.length && !lines[lineIndex]!.includes('}')) lineIndex++
-      if (lineIndex >= lines.length) {
-        lineIndex = start
-        fail('unterminated accDescr { … }', pos)
-      }
-      warn('unsupported-statement', 'The accessible description was ignored', undefined, start + 1)
-      source = lines[lineIndex]!
-      pos = source.indexOf('}') + 1
-      continue
-    }
-    if (word !== undefined) {
-      warn('unsupported-statement', `The ${word} statement was ignored`, undefined, lineIndex + 1)
-      // Skip only this statement: `style a fill:red; b --> c` still reads the link after the semicolon.
-      pos = keyword.lastIndex
-      restOfStatement()
-      continue
-    }
-    readChain()
-  }
-  if (open.length) {
-    lineIndex = lines.length - 1
-    throw new Error(`Invalid Mermaid flowchart: subgraph ${open.at(-1)} has no end`)
-  }
-
-  // Groups first, so a node or edge that names a subgraph is reported against it.
-  for (const group of groups) collector.addGroup(group, group.line)
-  for (const [id, node] of parsed) {
-    if (collector.groups.has(id) && node.shape === undefined) continue
-    const shape: NetworkNodeShape = node.shape === undefined ? 'box' : readGraphShape(node.shape, warn, id, node.line)
-    const item: NetworkNode = {
-      id,
-      label: node.label ?? id,
-      ...(node.detail === undefined ? {} : { detail: node.detail }),
-      ...(shape === 'box' ? {} : { shape }),
-    }
-    if (!collector.addNode(item, node.line)) continue
-    const group = groupOf.get(id)
-    if (group !== undefined && collector.groups.has(group)) collector.addMember(group, id, node.line)
-  }
-  for (const { from, to, link, line } of edges) {
-    const edge: Omit<GraphEdge, 'id'> & { id?: string } = {
-      ...(link.id === undefined ? {} : { id: link.id }),
-      from, to,
-      ...(link.label === undefined || link.label === '' ? {} : { label: link.label }),
-      ...(link.end === 'arrow' ? {} : { markerEnd: link.end }),
-      ...(link.start === 'none' ? {} : { markerStart: link.start }),
-    }
-    collector.addEdge(edge, line)
-  }
+  const reader = new FlowchartReader(stripBom(text).split(/\r\n|\n|\r/), collector.warn, options.maxItems ?? 100_000)
+  const direction = reader.readHeader()
+  reader.readStatements()
+  collectFlowchart(reader, collector)
   return collector.finish(direction)
 }
