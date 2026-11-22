@@ -1073,6 +1073,7 @@ const shownColumns = columns.slice(start, end)
 - **Not loaded is not zero.** A column outside `loaded` has status `unloaded` (or `loading`, `failed`) and value null. A loaded column without items is `loaded-empty`: 0 for `sum` and `count`, null for the other rules. Show the three differently.
 - **Ratios from their parts.** Aggregate a rate from numerator and denominator with the `ratio` rule; never average the percentages of the columns. Totals and parent rows sum the cells' `numerator` and `denominator`.
 - **Precomputed values.** When the server already aggregates per period, use `precomputed`: one value per row and column, passed through unchanged.
+- **In a TreeGrid.** Map each cell to a `TreeGridCell`: a loaded value to `{ value }`, a loaded null to `{ status: 'none' }` and `unloaded`, `loading` or `failed` to that `status`. TreeGrid does not accept the `loaded` statuses or a null value. The "Period table" demo does this, with the columns following a GanttChart's visible window.
 
 See [Time bucket tables](api.md#time-bucket-tables) for every rule and error.
 

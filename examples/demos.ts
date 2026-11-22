@@ -14,6 +14,7 @@ import GraphInterchangeDemo from './GraphInterchangeDemo.vue'
 import DiagramEditorDemo from './DiagramEditorDemo.vue'
 import TaskBoardDemo from './TaskBoardDemo.vue'
 import TreeGridDemo from './TreeGridDemo.vue'
+import PeriodTableDemo from './PeriodTableDemo.vue'
 import EarnedValueDemo from './EarnedValueDemo.vue'
 import WorkflowShowcase from './showcase/WorkflowShowcase.vue'
 import SchemaShowcase from './showcase/SchemaShowcase.vue'
@@ -69,6 +70,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'diagram-editor', label: 'Diagram editor', group: 'standalone', component: DiagramEditorDemo },
   { id: 'task-board', label: 'Task board', group: 'standalone', component: TaskBoardDemo },
   { id: 'tree-grid', label: 'Tree grid', group: 'standalone', component: TreeGridDemo },
+  { id: 'period-table', label: 'Period table', group: 'standalone', component: PeriodTableDemo },
   { id: 'earned-value', label: 'Earned value', group: 'standalone', component: EarnedValueDemo },
   { id: 'workflow', label: 'Workflow builder', group: 'gallery', component: WorkflowShowcase },
   { id: 'schema', label: 'Database schema', group: 'gallery', component: SchemaShowcase },
