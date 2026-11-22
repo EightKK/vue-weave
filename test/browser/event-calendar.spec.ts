@@ -7,6 +7,8 @@ async function openCalendar(page: Page) {
   await openDemo(page, 'Event calendar')
   const calendar = page.getByRole('region', { name: 'Room bookings', exact: true })
   await expect(calendar).toBeVisible()
+  // Pointer drags use page coordinates, so keep the time grid in the viewport whatever the height of the demo navigation.
+  await calendar.evaluate(element => element.scrollIntoView({ block: 'center' }))
   const status = page.getByRole('status', { name: 'Calendar status', exact: true })
   const event = (name: string | RegExp) => calendar.getByRole('button', { name: typeof name === 'string' ? new RegExp('^' + name + ',') : name })
   const button = (name: string) => calendar.getByRole('button', { name, exact: true })
