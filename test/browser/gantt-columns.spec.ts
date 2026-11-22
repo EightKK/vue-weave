@@ -1,7 +1,7 @@
 // GanttChart editing: columns and their resizing, field and cell editing with input methods, file import, external
 // drops and edits cancelled by new source data.
 import {
-  expect, test, boxCenter, dragBy, openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, type LinkedFixture, type Page,
+  expect, test, boxCenter, dragBy, openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, type LinkedFixture, type Page, openExample,
 } from './support'
 
 /**
@@ -19,7 +19,7 @@ async function compositionKey(target: ReturnType<Page['getByRole']>, key: 'Enter
 
 test('timeline columns edit through validation and keep summary bars when collapsed', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')
@@ -305,7 +305,7 @@ test('gantt cell inputs leave Enter and Escape of an input method composition to
 
 test('gantt plain cell inputs keep composed text on Enter and Escape of an input method', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')

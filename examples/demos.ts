@@ -30,6 +30,7 @@ import ServiceMapShowcase from './showcase/ServiceMapShowcase.vue'
 import BomShowcase from './showcase/BomShowcase.vue'
 import EventCalendarDemo from './EventCalendarDemo.vue'
 import BpmnDemo from './BpmnDemo.vue'
+import { datasets } from './data'
 
 /**
  * - `dataset`: a data set for the graph and timeline of the main page (see `makeExample` in data.ts).
@@ -51,10 +52,7 @@ export interface DemoEntry {
 
 /** Every example of the demo app, in navigation order within each group. */
 export const demos: readonly DemoEntry[] = [
-  { id: 'manufacturing', label: 'Manufacturing', group: 'dataset' },
-  { id: 'project', label: 'Project delivery', group: 'dataset' },
-  { id: 'scale', label: '1,000 resources', group: 'dataset' },
-  { id: 'large', label: 'Large graph', group: 'dataset' },
+  ...datasets.map(item => ({ ...item, group: 'dataset' as const })),
   { id: 'scheduling', label: 'Scheduling', group: 'standalone', component: SchedulingDemo },
   { id: 'editing', label: 'Timeline editing', group: 'standalone', component: GanttEditingDemo },
   { id: 'linked', label: 'Linked views', group: 'standalone', component: LinkedPlanningDemo },

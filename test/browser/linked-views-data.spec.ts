@@ -1,9 +1,9 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openExample, openDemo, pageErrors, pressAndMove, type Page } from './support'
+import { expect, test, openExample, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Saved editing')
+  await openExample(page, 'saved-editing')
   const chart = page.getByRole('region', { name: 'Saved timeline', exact: true })
   await expect(chart).toBeVisible()
   return {
@@ -29,7 +29,7 @@ async function openLinkedDemo(page: Page) {
 
 async function openAsyncDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Async layout')
+  await openExample(page, 'async-layout')
   const demo = page.locator('section[aria-labelledby="async-title"]')
   await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
   return {
@@ -42,7 +42,7 @@ async function openAsyncDemo(page: Page) {
 
 async function openLargePlanDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Large plan')
+  await openExample(page, 'large-plan')
   const demo = page.locator('section[aria-labelledby="large-plan-title"]')
   const status = demo.getByRole('status', { name: 'Window status' })
   const loaded = demo.getByLabel('Loaded bars', { exact: true })

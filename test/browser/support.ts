@@ -139,7 +139,7 @@ export async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>[
 
 export async function openTimelineEditing(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Timeline editing')
+  await openExample(page, 'timeline-editing')
   const chart = page.getByRole('region', { name: 'Editable timeline', exact: true })
   await expect(chart).toBeVisible()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -172,7 +172,7 @@ export async function openGanttFixture(page: Page, search: string) {
 
 export async function openGraphEditor(page: Page) {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })

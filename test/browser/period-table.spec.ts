@@ -2,11 +2,11 @@
 // aggregateTimeBuckets) that follow a GanttChart's visible window. Covers load states that are never shown as 0, a
 // mid-week shortage inside a positive week, demand edits that recompute balances with undo, the chart window driving the
 // table's periods, linked order highlights and the day/week toggle.
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openExample, pageErrors, type Page } from './support'
 
 async function openPeriodTable(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Period table')
+  await openExample(page, 'period-table')
   const demo = page.locator('section[aria-labelledby="period-table-title"]')
   const grid = demo.getByRole('treegrid', { name: 'Period table', exact: true })
   const chart = demo.getByRole('region', { name: 'Supply orders', exact: true })

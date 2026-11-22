@@ -62,8 +62,9 @@ footer { padding-block: 6px; }
   .load-table th, .load-table td { padding: 4px 3px; }
 }
 
-.export-actions { display: flex; gap: 6px; margin-inline: auto 16px; }
-.export-actions button { padding: 2px 8px; font-size: 11px; line-height: 1.4; }
+.graph-gantt-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; }
+.graph-gantt-bar nav { margin: 0; }
+.graph-gantt-actions { flex-wrap: wrap; gap: 6px 8px; margin-inline-start: auto; }
 
 .graph-menu { position: fixed; z-index: 20; min-width: 168px; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--vw-border, #c6d7e2); border-radius: 8px; background: var(--vw-surface, #fff); color: var(--vw-text, #162e40); box-shadow: 0 8px 24px rgb(15 35 50 / 18%); }
 .graph-menu button { border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; padding: 7px 10px; }
@@ -82,3 +83,4 @@ footer { padding-block: 6px; }
 .demo-minimap-node { fill: var(--vw-edge, #76929f); }
 .demo-minimap-node.is-selected { fill: var(--vw-accent, #245e96); }
 .vw-node-toolbar button, .vw-edge-toolbar button { padding: 3px 8px; font-size: 11px; }
+.event-calendar-placeholder { height: 495px; }

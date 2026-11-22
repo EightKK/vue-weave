@@ -107,7 +107,7 @@ test('gantt context menu opens by right-click and Shift+F10, adds a task at the 
   await page.mouse.click(header.x + 300, header.y + header.height / 2, { button: 'right' })
   const chartMenu = page.getByRole('menu', { name: 'Timeline actions', exact: true })
   await expect(chartMenu.getByRole('menuitem')).toHaveText(['Fit all bars'])
-  await page.getByRole('heading', { name: 'Timeline editing', exact: true }).click()
+  await page.getByRole('region', { name: 'Live demo' }).getByRole('heading', { name: 'Timeline editing', exact: true }).click()
   await expect(chartMenu).toHaveCount(0)
   expect(errors).toEqual([])
 })

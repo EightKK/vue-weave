@@ -1,9 +1,9 @@
 // The earned value demo: KPI tiles, the S-curve, the EVM columns of GanttChart and the status date control.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('the earned value demo recalculates PV, EV, AC and the indicators when the status date changes', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Earned value')
+  await openExample(page, 'earned-value')
   const panel = page.getByRole('region', { name: 'Earned value', exact: true })
   const summary = page.getByRole('status', { name: 'Earned value summary', exact: true })
   const tiles = page.getByRole('definition')

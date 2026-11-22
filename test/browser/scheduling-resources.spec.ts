@@ -1,9 +1,9 @@
 // The scheduling demo (calendars, constraints, status date, exports, network view, manual tasks, summary links, actuals, scenarios) and resource planning.
-import { expect, test, dragBy, dragTo, openExample, openDemo, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
+import { expect, test, dragBy, dragTo, openExample, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
 
 async function openResourcePlanning(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Resource planning')
+  await openExample(page, 'resource-planning')
   const chart = page.getByRole('region', { name: 'Resource plan', exact: true })
   await expect(chart).toBeVisible()
   return { errors, chart, notice: page.getByRole('status', { name: 'Planning notice', exact: true }), summary: page.getByRole('status', { name: 'Plan summary', exact: true }) }

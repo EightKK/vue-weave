@@ -1,8 +1,8 @@
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('the BPMN demo draws pools, lanes, shapes and decorative markers with the labels as accessible names', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'BPMN process')
+  await openExample(page, 'bpmn-process')
   const stage = page.getByLabel('Purchase order process', { exact: true })
   await expect(stage).toBeVisible()
   // Pools are groups named by their titles and hold their lanes.
@@ -30,7 +30,7 @@ test('the BPMN demo draws pools, lanes, shapes and decorative markers with the l
 
 test('BPMN steps stay selectable and connectable by accessible name', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'BPMN process')
+  await openExample(page, 'bpmn-process')
   const stage = page.getByLabel('Purchase order process', { exact: true })
   const status = page.getByRole('status', { name: 'BPMN status' })
   const check = stage.getByRole('button', { name: 'Check order', exact: true })
@@ -61,7 +61,7 @@ test('BPMN steps stay selectable and connectable by accessible name', async ({ p
 
 test('the BPMN demo exports pools, shapes and markers to SVG and draws right-to-left labels', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'BPMN process')
+  await openExample(page, 'bpmn-process')
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
   const file = await download

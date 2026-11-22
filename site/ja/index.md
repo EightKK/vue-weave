@@ -12,7 +12,7 @@ hero:
       text: はじめる
       link: /ja/learn/
     - theme: alt
-      text: 例を見る
+      text: 作例を見る
       link: /ja/examples/
     - theme: alt
       text: GitHub
@@ -46,6 +46,6 @@ import '@eightkk/vue-weave/style.css'
 import { NetworkGraph, GanttChart } from '@eightkk/vue-weave'
 ```
 
-ピア依存は Vue `^3.5.0` だけで、実行時の依存パッケージはありません。続きは[はじめに](./learn/)をご覧ください。[例](./examples/)、[ショーケース](./showcase/)、[API リファレンス](./api/)もあります。
+ピア依存は Vue `^3.5.0` だけで、実行時の依存パッケージはありません。続きは[はじめに](./learn/)をご覧ください。[作例](./examples/)、[ショーケース](./showcase/)、[API リファレンス](./api/)もあります。
 
 </div>

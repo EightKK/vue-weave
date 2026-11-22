@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { deflateRawSync } from 'node:zlib'
-import { expect, test, dragBy, openDemo, pageErrors, type Page } from './support'
+import { expect, test, dragBy, openExample, pageErrors, type Page } from './support'
 
 async function openInterchange(page: Page) {
-  await openDemo(page, 'Diagram import/export')
+  await openExample(page, 'diagram-interchange')
   const demo = page.locator('section[aria-labelledby="interchange-title"]')
   await expect(demo.getByRole('heading', { name: 'Diagram import/export' })).toBeVisible()
   return {

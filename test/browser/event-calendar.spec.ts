@@ -1,10 +1,10 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, animationFrames, dragBy, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
+import { expect, test, animationFrames, dragBy, openExample, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Event calendar')
+  await openExample(page, 'event-calendar')
   const calendar = page.getByRole('region', { name: 'Room bookings', exact: true })
   await expect(calendar).toBeVisible()
   // Pointer drags use page coordinates, so keep the time grid in the viewport whatever the height of the demo navigation.

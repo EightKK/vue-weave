@@ -35,7 +35,7 @@ type Locale = 'en' | 'ja'
 function nav(locale: Locale): DefaultTheme.NavItem[] {
   const prefix = locale === 'ja' ? '/ja' : ''
   const text = locale === 'ja'
-    ? { learn: '学ぶ', examples: '例', showcase: 'ショーケース', api: 'API' }
+    ? { learn: 'ガイド', examples: '作例', showcase: 'ショーケース', api: 'API' }
     : { learn: 'Learn', examples: 'Examples', showcase: 'Showcase', api: 'API' }
   return [
     { text: text.learn, link: `${prefix}/learn/`, activeMatch: `^${prefix}/learn/` },

@@ -1,9 +1,9 @@
 // TaskBoard: pointer and keyboard card moves, validation, cancellation and the selection shared with GanttChart.
-import { expect, test, boxCenter, dragTo, openDemo, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
+import { expect, test, boxCenter, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
 
 async function openTaskBoard(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Task board')
+  await openExample(page, 'task-board')
   const demo = page.locator('section[aria-labelledby="task-board-title"]')
   const board = demo.getByRole('region', { name: 'Sprint board', exact: true })
   await expect(board).toBeVisible()

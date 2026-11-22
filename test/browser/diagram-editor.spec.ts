@@ -1,10 +1,10 @@
 // Diagram editor parts: GraphPalette drags and keyboard inserts onto NetworkGraph, and PropertyInspector edits of the
 // selected node (accepted, refused by the field checks, rejected by validateChange and cancelled by stale data), and its list fields.
-import { expect, test, fixtureStatus, openDemo, pageErrors, serveFixture, type Page } from './support'
+import { expect, test, fixtureStatus, openExample, pageErrors, serveFixture, type Page } from './support'
 
 async function openEditor(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Diagram editor')
+  await openExample(page, 'diagram-editor')
   const demo = page.locator('section[aria-labelledby="diagram-editor-title"]')
   const palette = demo.getByRole('listbox', { name: 'Shapes', exact: true })
   const canvas = demo.getByLabel('Diagram canvas', { exact: true })
