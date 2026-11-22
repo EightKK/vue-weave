@@ -12,6 +12,18 @@
 - Timeline views: `TimelineViewState.filters` (`TimelineViewFilter`: `columnId`, optional `text` and `values`), optional so states saved without filters still parse; `projectTimelineView` keeps the ancestors of filtered rows and sorts or filters by row label for `timelineLabelColumnId`. New core helpers `filterTimelineRows(rows, predicate)` (matches with their ancestors) and `nextTimelineSort(sort, columnId)`.
 - PropertyInspector list fields, opt-in: `assignments` (resource select, units, add and remove) and `dependencies` (predecessor, FS/SS/FF/SF type, lag, add and remove) tables in `fields`, with accessible names such as "Units for Crane" and "Remove Crane". Each edit proposes the whole list through the new `list-change` event, checked by the new core `validateInspectorList` and a synchronous `validateListChange` (`list-change-rejected`, reason shown inline). New types `InspectorListFieldKind`, `InspectorOption`, `InspectorAssignment`, `InspectorDependency`, `InspectorAssignmentsField`, `InspectorDependenciesField`, `InspectorListField`, `InspectorListChange` and `InspectorListChangeValidator`, and optional `PropertyInspectorLabels` entries for the table. `change` and `InspectorChange` are unchanged.
 
+### Fixed
+
+These fix the unreleased recurring events:
+
+- `applyRecurringEdit` with `'following'` no longer throws "Duplicate event ID" after an `'occurrence'` edit of the same occurrence; the dropped override frees its ID for the new series.
+- `applyRecurringEdit` with `'following'` on an RDATE now ends the series before it and starts the new series at the next rule instance, with the changed occurrence as an RDATE, instead of moving the rule onto the RDATE's weekday. A `recurrenceId` that is not an occurrence of the series throws an Error.
+- `applyRecurringEdit` throws an Error, instead of silently changing the rule's meaning, for a move to another day of a rule with BYDAY ordinals (`2MO`), BYSETPOS, BYMONTHDAY days outside 1–28, or BYMONTH when the occurrence changes month. Moves within the day are unchanged.
+- `toICalendar` writes a series with a nonzero `utcOffsetMinutes` as local times with a fixed-offset TZID (`UTC+0900`) and VTIMEZONE instead of UTC, so BYDAY and BYMONTHDAY keep their local days; `fromICalendar` reads such a fixed-offset VTIMEZONE back as `utcOffsetMinutes`.
+- `toICalendar` writes overrides (`seriesId` and `recurrenceId`, new optional fields of `ICalendarEvent`) of a series in the same export with the series' UID and a RECURRENCE-ID, so a reimport with `{ range }` no longer shows the changed occurrence twice.
+- VTIMEZONE observances written by `toICalendar` now begin in the year before the zone's first event instead of after it (for example in the southern hemisphere).
+- Rules that can never match, such as `FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30`, are detected up front instead of walking 146,097 days on every expansion.
+
 ### Demo
 
 - Four new design gallery showcases: **CI/CD pipeline** (a live job DAG linked to a run timeline, with failure injection and retry), **Knowledge graph** (a force-directed graph with clusters, search, neighbourhoods and shortest paths), **Construction program** (a scheduled master programme with critical path, baseline, resource leveling, earned value and a what-if delay) and **Service map** (a live service topology with grouped namespaces, traffic-weighted edges, an incident blast radius and an alert timeline).

@@ -4827,6 +4827,8 @@ interface ICalendarEvent {
     end: number;
     description?: string;
     recurrence?: CalendarRecurrence;
+    seriesId?: string;
+    recurrenceId?: number;
 }
 ```
 

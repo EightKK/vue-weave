@@ -1,5 +1,5 @@
-// Internal helpers shared by the interchange formats (`interchangeMsProject.ts`, `interchangeICalendar.ts`): input
-// checks and date-time arithmetic in epoch milliseconds. Not exported from index.ts.
+// Internal helpers shared by the interchange formats (`interchangeMsProject.ts`, `interchangeICalendar.ts`) and
+// `recurrence.ts`: input checks and date-time arithmetic in epoch milliseconds. Not exported from index.ts.
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
 export const minuteMs = 60_000
@@ -31,6 +31,21 @@ export function isoText(time: number) {
   const iso = new Date(time).toISOString()
   if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
   return iso
+}
+
+/** A wall time in iCalendar basic format without zone, such as 20261109T080000 (years 0 to 9999). */
+export function basicWall(wall: number) {
+  return isoText(wall).slice(0, 19).replace(/[-:]/g, '')
+}
+
+/** RFC 5545 weekday codes, indexed like `Date#getUTCDay` (0 = Sunday). */
+export const weekdayCodes = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
+
+/** The number of days of a month (`monthIndex` 0 to 11, or beyond, which rolls over into later years). */
+export function monthLength(year: number, monthIndex: number) {
+  const date = new Date(0)
+  date.setUTCFullYear(year, monthIndex + 1, 0)
+  return date.getUTCDate()
 }
 
 /** Milliseconds of a duration in weeks, days (of 24 hours), hours, minutes and seconds. */

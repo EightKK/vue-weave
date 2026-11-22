@@ -275,6 +275,108 @@ test('applyRecurringEdit validates its input and never mutates it', () => {
   assert.equal(events[0].recurrence.rule, meeting.recurrence.rule)
 })
 
+test('applyRecurringEdit splits a series at an occurrence that already has an override', () => {
+  // "This event" first adds the override sync:<recurrenceId>; "this and following" then replaces it with a new series
+  // whose default ID is that same ID.
+  const target = { seriesId: 'sync', recurrenceId: utc('2026-11-09T09:00') }
+  const once = applyRecurringEdit([meeting], target, { start: utc('2026-11-09T10:00'), end: utc('2026-11-09T11:00') }, 'occurrence')
+  const split = applyRecurringEdit(once, target, { start: utc('2026-11-09T11:00'), end: utc('2026-11-09T12:00') }, 'following')
+  assert.deepEqual(split.map(event => [event.id, event.recurrence?.rule]), [['sync', 'FREQ=WEEKLY;COUNT=2;BYDAY=MO,WE'], ['sync:' + target.recurrenceId, 'FREQ=WEEKLY;COUNT=4;BYDAY=MO,WE']])
+  assert.deepEqual(expandRecurringEvents(split, november).map(event => iso(event.start)), [
+    '2026-11-02T09:00', '2026-11-04T09:00', '2026-11-09T11:00', '2026-11-11T11:00', '2026-11-16T11:00', '2026-11-18T11:00',
+  ])
+  // An event that is not the dropped override still blocks the ID.
+  assert.throws(() => applyRecurringEdit([...once, { id: 'x', label: 'x', start: 0, end: 0 }], target, { start: 0, end: 0 }, 'following', { newSeriesId: 'x' }), /Duplicate event ID: x/)
+})
+
+test('applyRecurringEdit splits at an RDATE without changing the pattern of the rule', () => {
+  // Weekly on Thursdays (COUNT=4) with an extra Saturday: the Saturday is between the second and the third Thursday.
+  const thursday = utc('2026-11-05T09:00'), saturday = utc('2026-11-14T09:00')
+  const series = { id: 't', label: 'T', start: thursday, end: thursday + hour, recurrence: { rule: 'FREQ=WEEKLY;COUNT=4', rdates: [saturday] } }
+  const target = { seriesId: 't', recurrenceId: saturday }
+  const split = applyRecurringEdit([series], target, { start: utc('2026-11-14T11:00'), end: utc('2026-11-14T11:30') }, 'following', { newSeriesId: 't2' })
+  assert.deepEqual(split[0].recurrence, { rule: 'FREQ=WEEKLY;COUNT=2', rdates: [] })
+  // The new series starts at the next Thursday, moved by the same two hours, and the Saturday is one of its RDATEs.
+  assert.deepEqual(split[1], {
+    ...series, id: 't2', start: utc('2026-11-19T11:00'), end: utc('2026-11-19T11:30'), recurrence: { rule: 'FREQ=WEEKLY;COUNT=2', rdates: [utc('2026-11-14T11:00')] },
+  })
+  assert.deepEqual(expandRecurringEvents(split, november).map(event => [iso(event.start), iso(event.end)]), [
+    ['2026-11-05T09:00', '2026-11-05T10:00'], ['2026-11-12T09:00', '2026-11-12T10:00'], ['2026-11-14T11:00', '2026-11-14T11:30'],
+    ['2026-11-19T11:00', '2026-11-19T11:30'], ['2026-11-26T11:00', '2026-11-26T11:30'],
+  ])
+  // An RDATE after the last rule instance: the new series has no rule.
+  const late = { ...series, recurrence: { rule: 'FREQ=WEEKLY;COUNT=2', rdates: [saturday] } }
+  const tail = applyRecurringEdit([late], target, { start: saturday + hour, end: saturday + 2 * hour }, 'following', { newSeriesId: 't2' })
+  assert.deepEqual(tail[1].recurrence, { rdates: [] })
+  assert.deepEqual(expandRecurringEvents(tail, november).map(event => iso(event.start)), ['2026-11-05T09:00', '2026-11-12T09:00', '2026-11-14T10:00'])
+  // A start that is neither a rule instance nor an RDATE is not an occurrence.
+  assert.throws(() => applyRecurringEdit([series], { seriesId: 't', recurrenceId: utc('2026-11-13T09:00') }, 'delete', 'following'), /Event t has no occurrence at/)
+})
+
+test('applyRecurringEdit rejects moves to another day that would change the meaning of the rule', () => {
+  const monday = utc('2026-11-09T09:00')
+  const move = (rule, change, scope = 'series', start = monday) => applyRecurringEdit(
+    [{ id: 's', label: 'S', start, end: start + hour, recurrence: { rule } }], { seriesId: 's', recurrenceId: start }, change, scope,
+  )
+  const nextDay = { start: monday + day, end: monday + day + hour }
+  for (const rule of ['FREQ=MONTHLY;BYDAY=2MO', 'FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2', 'FREQ=YEARLY;BYMONTH=11;BYDAY=2MO']) {
+    assert.throws(() => move(rule, nextDay), /Event s cannot move to another day: its recurrence rule has (BYDAY ordinals|BYSETPOS)/, rule)
+  }
+  // The 31st does not exist in every month, so moving the 30th to the 31st (or the other way) is rejected too.
+  const thirtieth = utc('2026-11-30T09:00')
+  assert.throws(() => move('FREQ=MONTHLY;BYMONTHDAY=30', { start: thirtieth + day, end: thirtieth + day + hour }, 'series', thirtieth), /BYMONTHDAY/)
+  // BYMONTH stays only while the occurrence stays in its month.
+  assert.throws(() => move('FREQ=WEEKLY;BYMONTH=11', { start: thirtieth + day, end: thirtieth + day + hour }, 'series', thirtieth), /BYMONTH, and the occurrence moves to another month/)
+  assert.equal(move('FREQ=WEEKLY;BYMONTH=11;BYDAY=MO', nextDay)[0].recurrence.rule, 'FREQ=WEEKLY;BYMONTH=11;BYDAY=TU')
+  // A move within the day keeps such rules, and a plain BYMONTHDAY moves with the occurrence.
+  assert.equal(move('FREQ=MONTHLY;BYDAY=2MO', { start: monday + 2 * hour, end: monday + 3 * hour })[0].recurrence.rule, 'FREQ=MONTHLY;BYDAY=2MO')
+  assert.equal(move('FREQ=MONTHLY;BYMONTHDAY=9,20', nextDay)[0].recurrence.rule, 'FREQ=MONTHLY;BYMONTHDAY=10,21')
+  // "This and following" checks the same.
+  const later = utc('2026-12-14T09:00')
+  assert.throws(() => applyRecurringEdit([{ id: 's', label: 'S', start: monday, end: monday + hour, recurrence: { rule: 'FREQ=MONTHLY;BYDAY=2MO' } }],
+    { seriesId: 's', recurrenceId: later }, { start: later + day, end: later + day + hour }, 'following'), /BYDAY ordinals/)
+})
+
+test('rules that can never match return the first instance without walking a Gregorian cycle', () => {
+  const start = utc('2026-01-31T10:00')
+  const never = [
+    'FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=DAILY;BYMONTH=4,6,9,11;BYMONTHDAY=31,-31', 'FREQ=MONTHLY;BYMONTH=2,4', 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-30',
+    'FREQ=MONTHLY;BYDAY=6MO,-6FR', 'FREQ=DAILY;BYDAY=MO;BYSETPOS=2', 'FREQ=WEEKLY;BYDAY=MO;BYSETPOS=8,-8',
+  ]
+  const began = performance.now()
+  for (let round = 0; round < 150; round++) {
+    for (const rule of never) assert.deepEqual(starts({ id: 'n', start, end: start, rule }), ['2026-01-31T10:00'], rule)
+  }
+  // About a thousand expansions; walking 146,097 days each took over 100 ms per expansion.
+  assert.ok(performance.now() - began < 2000)
+  // Rules that match rarely still match.
+  const leap = utc('2024-02-29T00:00')
+  assert.deepEqual(starts({ id: 'l', start: leap, end: leap, rule: 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;COUNT=2' }), ['2024-02-29T00:00', '2028-02-29T00:00'])
+  assert.deepEqual(starts({ id: 'f', start, end: start, rule: 'FREQ=MONTHLY;BYDAY=5FR;COUNT=2' }), ['2026-01-31T10:00', '2026-05-29T10:00'])
+  assert.deepEqual(starts({ id: 'p', start, end: start, rule: 'FREQ=DAILY;BYDAY=MO;BYSETPOS=1;COUNT=2' }), ['2026-01-31T10:00', '2026-02-02T10:00'])
+})
+
+test('a weekly rule keeps the local time across the southern-hemisphere daylight-saving changes of Sydney', () => {
+  // Sydney leaves daylight saving on Sunday, April 5, 2026 (+11:00 to +10:00) and starts it again on October 4.
+  const april = Date.parse('2026-03-30T09:00:00+11:00')
+  assert.deepEqual(starts({ id: 's', start: april, end: april + hour, rule: 'FREQ=WEEKLY;BYDAY=MO;COUNT=3', timeZone: 'Australia/Sydney' }), [
+    '2026-03-29T22:00', '2026-04-05T23:00', '2026-04-12T23:00',
+  ])
+  const october = Date.parse('2026-09-28T09:00:00+10:00')
+  assert.deepEqual(starts({ id: 's', start: october, end: october + hour, rule: 'FREQ=WEEKLY;BYDAY=MO;COUNT=3', timeZone: 'Australia/Sydney' }), [
+    '2026-09-27T23:00', '2026-10-04T22:00', '2026-10-11T22:00',
+  ])
+})
+
+test('maxOccurrences may equal the number of instances', () => {
+  const start = utc('2026-01-01T10:00')
+  assert.equal(expandRecurrence({ id: 'c', start, end: start, rule: 'FREQ=DAILY;COUNT=5' }, all, { maxOccurrences: 5 }).length, 5)
+  assert.throws(() => expandRecurrence({ id: 'c', start, end: start, rule: 'FREQ=DAILY;COUNT=5' }, all, { maxOccurrences: 4 }), RangeError)
+  const range = { start, end: start + 10 * day }
+  assert.equal(expandRecurrence({ id: 'd', start, end: start, rule: 'FREQ=DAILY' }, range, { maxOccurrences: 10 }).length, 10)
+  assert.throws(() => expandRecurrence({ id: 'd', start, end: start, rule: 'FREQ=DAILY' }, range, { maxOccurrences: 9 }), RangeError)
+})
+
 test('EventCalendar names occurrences of a recurring series and leaves other events unchanged', async () => {
   const events = expandRecurringEvents([meeting, { id: 'lunch', label: 'Lunch', start: utc('2026-11-03T12:00'), end: utc('2026-11-03T13:00') }], november)
   const html = await renderComponent(EventCalendar, { events, date: utc('2026-11-04T10:00') })
