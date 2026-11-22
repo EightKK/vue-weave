@@ -1,10 +1,10 @@
 // The service map showcase of the design gallery: a simulated service topology with nested collapsible groups, an
 // incident scenario whose blast radius comes from traverseGraph, a service panel and a linked incident timeline.
 import type { Page } from '@playwright/test'
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 async function openServiceMap(page: Page) {
-  await openDemo(page, 'Service map')
+  await openExample(page, 'service-map', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Service map', exact: true })
   await expect(showcase.getByRole('heading', { name: 'Service map', exact: true })).toBeVisible()
   // The zoom percentage is an <output>, which also has the status role.

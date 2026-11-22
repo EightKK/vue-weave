@@ -2,7 +2,11 @@
 // page loads only the demo it shows. Add a pattern here if a registered demo lives in another directory.
 import { defineAsyncComponent, type Component } from 'vue'
 
-const modules = import.meta.glob<{ default: Component }>(['../../../examples/*.vue', '../../../examples/showcase/*.vue'])
+const modules = import.meta.glob<{ default: Component }>([
+  '../../../examples/*.vue',
+  '../../../examples/showcase/*.vue',
+  '../../../examples/production/ProductionShowcase.vue',
+])
 
 const components = new Map<string, Component>()
 

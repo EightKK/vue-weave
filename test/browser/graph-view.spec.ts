@@ -1,6 +1,6 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
 import {
-  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo, openExample,
   openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
 } from './support'
 
@@ -651,14 +651,15 @@ test('keyboard focus on a selected node is visibly distinct from selection alone
 
 test('unstyledNodeSlots keeps the library hover stroke off custom node content', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Workflow builder')
-  const card = page.getByRole('button', { name: 'Look up customer', exact: true })
+  const demo = await openExample(page, 'workflow', { kind: 'showcase' })
+  const card = demo.getByRole('button', { name: 'Look up customer', exact: true })
   await expect(card).toHaveClass(/vw-is-unstyled/)
   const strokes = () => card.locator('rect').evaluateAll(rects => rects.map(rect => getComputedStyle(rect).strokeWidth))
   const before = await strokes()
   await card.hover()
   expect(await strokes()).toEqual(before)
-  // Without the prop, the main demo's custom nodes still take the stylesheet's hover stroke.
+  // Without the prop, the legacy gallery's main demo's custom nodes still take the stylesheet's hover stroke.
+  await page.goto('gallery.html')
   await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
   await page.getByLabel('Custom nodes').check()
   const split = page.locator('.vw-network-node[data-vw-node="split"]')

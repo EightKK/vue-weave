@@ -1,10 +1,10 @@
 // The knowledge graph showcase of the design gallery: search dimming, the topic details panel, neighbourhood focus,
 // shortest paths and the community filter.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('knowledge graph showcase searches, explains a topic, finds a shortest path and filters communities', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Knowledge graph')
+  await openExample(page, 'knowledge', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Knowledge graph', exact: true })
   // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
   const status = showcase.getByRole('status').last()

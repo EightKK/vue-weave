@@ -1,9 +1,9 @@
 // The CI/CD pipeline showcase: a simulated run shown as a job graph and a linked timeline.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 import type { Page } from './support'
 
 async function openPipeline(page: Page) {
-  await openDemo(page, 'CI/CD pipeline')
+  await openExample(page, 'pipeline', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'CI/CD pipeline', exact: true })
   // Graph cards are named "<job> <status>", timeline bars "<job> <start>–<end>", so both can be found in the showcase.
   const graph = showcase

@@ -1,5 +1,6 @@
-// The demo shell, themes, forced colours, reduced motion, print, image export and the design gallery showcases.
-import { expect, test, ganttRegion, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+// The demo shell, themes, forced colours, reduced motion, print, image export and the showcases of the site.
+import { expect, test, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import { examplesOfKind } from '../../site/examples/registry'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
   const errors = pageErrors(page)
@@ -192,7 +193,7 @@ test('the graph Undo and Redo buttons are hidden in the scheduling and timeline 
 
 test('the workflow builder showcase applies step moves and connections through the controlled API', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Workflow builder')
+  await openExample(page, 'workflow', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Workflow builder' })
   // The zoom percentage is an <output>, which also has the status role.
   const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
@@ -221,7 +222,7 @@ test('the workflow builder showcase applies step moves and connections through t
 
 test('the database schema showcase traces relationships and keeps table moves controlled', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Database schema')
+  await openExample(page, 'schema', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Database schema' })
   const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
 
@@ -246,7 +247,7 @@ test('the database schema showcase traces relationships and keeps table moves co
 
 test('org chart showcase traces a reporting line and folds a team', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Org chart')
+  await openExample(page, 'org', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Org chart', exact: true })
   // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
   const status = showcase.getByRole('status').last()
@@ -269,7 +270,7 @@ test('org chart showcase traces a reporting line and folds a team', async ({ pag
 
 test('room bookings showcase moves stays and refuses an overlap', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Room bookings')
+  await openExample(page, 'booking', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Room bookings', exact: true })
   // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
   const status = showcase.getByRole('status').last()
@@ -288,7 +289,7 @@ test('room bookings showcase moves stays and refuses an overlap', async ({ page 
 
 test('the product roadmap showcase moves projects through controlled edits and keeps shipped work fixed', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Product roadmap')
+  await openExample(page, 'roadmap', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
   await expect(showcase.getByRole('heading', { name: 'Product roadmap', exact: true })).toBeVisible()
   await expect(showcase.getByRole('list', { name: 'Legend', exact: true })).toContainText('At risk')
@@ -311,7 +312,7 @@ test('the product roadmap showcase moves projects through controlled edits and k
 
 test('the sprint plan showcase rejects a move before a predecessor ends and accepts moves and progress edits', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Sprint plan')
+  await openExample(page, 'sprint', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Sprint plan', exact: true })
   await expect(showcase.getByRole('heading', { name: 'Sprint plan', exact: true })).toBeVisible()
   // Query rewriting starts exactly when Ranking signals ends, so one day earlier breaks the finish-to-start link.
@@ -331,14 +332,20 @@ test('the sprint plan showcase rejects a move before a predecessor ends and acce
   expect(errors).toEqual([])
 })
 
-test('every design gallery showcase fits a phone-width page', async ({ page }) => {
+test('every showcase page of the site fits a phone-width page', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('gallery.html')
-  for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views',
-    'CI/CD pipeline', 'Knowledge graph', 'Construction program', 'Service map', 'BOM editor']) {
-    await page.getByRole('button', { name, exact: true }).click()
-    await expect(page.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()
+  const showcases = examplesOfKind('showcase')
+  expect(showcases.map(entry => entry.title.en)).toEqual(expect.arrayContaining(['Workflow builder', 'Database schema', 'Org chart',
+    'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views', 'CI/CD pipeline', 'Knowledge graph', 'Construction program', 'Service map',
+    'BOM editor', 'Production planning']))
+  for (const entry of showcases) {
+    const name = entry.title.en
+    const demo = await openExample(page, entry.id, { kind: 'showcase' })
+    await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible()
+    // The design gallery showcases name their region and heading after themselves; the production demo names its views.
+    if (entry.legacyId) await expect(demo.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()
+    else await expect(demo.getByRole('heading', { name: 'Production planning', exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth), name).toBe(390)
   }
   expect(errors).toEqual([])
@@ -346,7 +353,7 @@ test('every design gallery showcase fits a phone-width page', async ({ page }) =
 
 test('the calendar views showcase switches calendar zoom presets and locales and highlights marker ranges', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Calendar views')
+  await openExample(page, 'calendar', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Calendar views', exact: true })
   await expect(showcase.getByRole('heading', { name: 'Calendar views', exact: true })).toBeVisible()
   const levels = showcase.getByRole('group', { name: 'Zoom level', exact: true })
