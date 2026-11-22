@@ -6,10 +6,10 @@ import { layoutGraphIncrementally, type GraphKnownPosition } from './graphIncrem
 import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkNode } from './types.js'
 import { defaultNodeHeight, defaultNodeWidth } from './graphOptions.js'
-import { parseXml, type XmlElement } from './interchangeXml.js'
+import { isXmlCodePoint, parseXml, xmlAttribute, type XmlElement } from './interchangeXml.js'
 import {
   checkGraphInterchangeInput, createGraphCollector, formatNumber, graphDrawioMarkers, graphShapeFormat, isChartTone,
-  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName, xmlAttribute,
+  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName,
   type GraphCollector, type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
 
@@ -57,7 +57,7 @@ function markerStyle(end: 'start' | 'end', marker: GraphEdgeMarker) {
  * Write a diagram as an uncompressed draw.io file (`mxfile` with one `diagram` page holding an `mxGraphModel`). Nodes
  * become vertex cells with the node ID, the label (and a line break and the detail) as value, a style for the shape
  * (`rounded=0`, `rounded=1`, `rhombus`, `ellipse`, `shape=hexagon`; other shapes as rectangles) and the tone (fill
- * and stroke colours plus `vwTone`), and the geometry from `positions` and `sizes` (default 144 by 58). Nodes without
+ * and stroke colours plus `vwTone`; a label with a line break also as URI-encoded `vwLabel`), and the geometry from `positions` and `sizes` (default 144 by 58). Nodes without
  * a position are placed with `layoutLayeredGraph` in `options.direction`. Groups become container cells
  * (`container=1`) framing their members and nested groups, whose geometry is relative to the container as draw.io
  * expects. Edges become edge cells in the layer with `endArrow`/`startArrow` for the markers, the edge style,
@@ -139,6 +139,8 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
   for (const node of nodes) {
     let style = graphShapeFormat(node.shape).drawio
     if (isChartTone(node.tone)) style += `fillColor=${toneColors[node.tone].fill};strokeColor=${toneColors[node.tone].stroke};vwTone=${node.tone};`
+    // A label with a line break is kept whole in `vwLabel`, so the reader does not split it into label and detail.
+    if (node.label.includes('\n')) style += `vwLabel=${encodeURIComponent(node.label)};`
     const value = node.detail === undefined ? node.label : node.label + '\n' + node.detail
     const owner = ownerOf.get(node.id)
     lines.push(`        <mxCell id="${xmlAttribute(node.id)}" value="${xmlAttribute(value)}" style="${xmlAttribute(style)}"`
@@ -203,12 +205,35 @@ function htmlText(html: string) {
     .replace(/&(?:#(\d{1,7})|#x([0-9a-f]{1,6})|([a-z]+));/gi, (match, dec: string | undefined, hex: string | undefined, name: string | undefined) => {
       if (name !== undefined) return Object.hasOwn(htmlEntities, name.toLowerCase()) ? htmlEntities[name.toLowerCase()]! : match
       const code = dec !== undefined ? Number(dec) : parseInt(hex!, 16)
-      return code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : match
+      // The code points XML allows, as in the XML reader; any other reference stays as written.
+      return isXmlCodePoint(code) ? String.fromCodePoint(code) : match
     })
 }
 
 function cellText(cell: Cell) {
   return cell.style.get('html') === '1' ? htmlText(cell.value) : cell.value
+}
+
+/**
+ * Label and detail of a node cell. The text is split at its first line break, unless the cell has the `vwLabel` style
+ * of `toDrawio` (a label with line breaks, URI-encoded) and its text still starts with that label.
+ */
+function nodeText(cell: Cell): { label: string; detail?: string } {
+  const text = cellText(cell)
+  const encoded = cell.style.get('vwLabel')
+  if (encoded !== undefined) {
+    let label: string | undefined
+    try {
+      label = decodeURIComponent(encoded)
+    } catch {
+      label = undefined
+    }
+    if (label !== undefined && label !== '') {
+      if (text === label) return { label }
+      if (text.startsWith(label + '\n')) return { label, detail: text.slice(label.length + 1) }
+    }
+  }
+  return splitLabel(text)
 }
 
 /** The cells of an `mxGraphModel`, including those wrapped in `UserObject` or `object` elements. */
@@ -288,15 +313,31 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
     }
     return origin.get(cell.id)!
   }
-  // Groups, parents first: by depth in the container chain (a cycle counts as the top level).
+  // Groups, parents first: by depth in the container chain (the cells of a cycle count as the top level). Each chain
+  // is climbed once with a loop and its depths are kept, so deep nesting takes linear time.
+  const depths = new Map<string, number>()
   const groupDepth = (cell: Cell) => {
-    let level = 0
-    const seen = new Set<string>([cell.id])
-    for (let parent = parentVertex(cell); parent && !seen.has(parent.id); parent = parentVertex(parent)) {
-      seen.add(parent.id)
-      level++
+    const chain: Cell[] = []
+    const onChain = new Map<string, number>()
+    let base = -1
+    for (let current = cell as Cell | undefined; current; current = parentVertex(current)) {
+      const known = depths.get(current.id)
+      if (known !== undefined) {
+        base = known
+        break
+      }
+      const at = onChain.get(current.id)
+      if (at !== undefined) {
+        for (let i = at; i < chain.length; i++) depths.set(chain[i]!.id, 0)
+        chain.length = at
+        base = 0
+        break
+      }
+      onChain.set(current.id, chain.length)
+      chain.push(current)
     }
-    return level
+    for (let i = chain.length - 1; i >= 0; i--) depths.set(chain[i]!.id, ++base)
+    return depths.get(cell.id)!
   }
   const groupCells = [...cells.values()].filter(cell => containers.has(cell.id))
     .map((cell, index) => ({ cell, index, level: groupDepth(cell) }))
@@ -310,11 +351,17 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
     if (!cell.vertex || containers.has(cell.id)) continue
     const parent = cell.parent === undefined ? undefined : cells.get(cell.parent)
     if (parent?.edge) {
+      // Label cells count against maxItems like the items they are part of.
+      collector.count()
       const text = cellText(cell)
-      if (text !== '') edgeLabels.set(parent.id, [...edgeLabels.get(parent.id) ?? [], text])
+      if (text !== '') {
+        const list = edgeLabels.get(parent.id)
+        if (list) list.push(text)
+        else edgeLabels.set(parent.id, [text])
+      }
       continue
     }
-    const { label, detail } = splitLabel(cellText(cell))
+    const { label, detail } = nodeText(cell)
     const node: NetworkNode = { id: cell.id, label, ...(detail === undefined ? {} : { detail }) }
     const shapeStyle = cell.style.get('shape')
     // `shape=mxgraph.flowchart.decision` is read by its last part; a named style (`ellipse`) or `rounded=1` otherwise.
@@ -426,7 +473,7 @@ function selectPage(xml: string, page: number | string | undefined) {
  * entities are never expanded and nothing outside the text is loaded.
  *
  * Vertex cells become nodes: the value (as text; HTML labels with `html=1` lose their markup and keep line breaks) is
- * split into label (first line) and detail, the style gives the shape (`rhombus` diamond, `ellipse` ellipse,
+ * split into label (first line) and detail (a label with line breaks that `toDrawio` wrote is kept whole), the style gives the shape (`rhombus` diamond, `ellipse` ellipse,
  * `shape=hexagon` hexagon, `rounded=1` rounded; other shapes are boxes with an `unsupported-shape` warning) and the tone
  * (`vwTone`, or a fill colour that `toDrawio` writes), and the geometry the position and size. A vertex that contains
  * other vertices is a group (container, swimlane or `group` cell) and its frame is not kept; child geometry relative to
@@ -436,7 +483,8 @@ function selectPage(xml: string, page: number | string | undefined) {
  * both ends, or connected to a group, is left out with a warning.
  *
  * Throws an Error for malformed XML, a root element other than `mxfile` or `mxGraphModel`, a missing page and a
- * compressed page (read it with `fromDrawioAsync`), and a RangeError for an invalid `page` and past `maxItems`.
+ * compressed page (read it with `fromDrawioAsync`), and a RangeError for an invalid `page` and past `maxItems` (which
+ * counts nodes, edges, groups and the label cells of edges).
  */
 export function fromDrawio(xml: string, options: DrawioImportOptions = {}): GraphInterchangeImport {
   const collector = createGraphCollector('draw.io', options)

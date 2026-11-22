@@ -92,7 +92,8 @@ test('renderGraphSvg validates options and geometry', () => {
   assert.throws(() => renderGraphSvg(layout, [...graphNodes, { id: 'd', label: 'D' }], graphEdges), /layout box: d/)
   assert.throws(() => renderGraphSvg(layout, graphNodes, graphEdges, { groups: [{ id: 'g', label: 'G', x: 0, y: 0, width: -1, height: 1 }] }), RangeError)
   assert.throws(() => renderGraphSvg(layout, graphNodes, graphEdges, { theme: { edge: 5 } }), /colour/)
-  const hostile = renderGraphSvg(layout, graphNodes, graphEdges, { theme: { edge: 'red" onload="alert(1)' }, fontFamily: 'x"><script>' })
+  assert.throws(() => renderGraphSvg(layout, graphNodes, graphEdges, { theme: { edge: 'red" onload="alert(1)' } }), { name: 'RangeError', message: /edge/ })
+  const hostile = renderGraphSvg(layout, graphNodes, graphEdges, { fontFamily: 'x"><script>' })
   assertWellFormed(hostile)
 })
 
@@ -223,6 +224,32 @@ test('SVG exports fall back to blue for inherited tone names and reject inherite
   for (const key of ['toString', 'constructor', 'hasOwnProperty']) {
     assert.throws(() => renderGraphSvg(layout, graphNodes, graphEdges, { theme: { [key]: '#123456' } }), { name: 'Error', message: 'Invalid export theme colour: ' + key })
   }
+})
+
+test('SVG export theme colours must be CSS colours without external references', () => {
+  const layout = layoutLayeredGraph(graphNodes, graphEdges)
+  const render = theme => renderGraphSvg(layout, graphNodes, graphEdges, { theme })
+  // Forms that computed styles and hand-written themes use.
+  for (const colour of [
+    '#123', '#123456', '#12345678', 'red', 'Transparent', 'currentColor', 'rgb(1, 2, 3)', 'rgba(1,2,3,.5)', 'rgb(1 2 3 / 50%)',
+    'hsl(210 50% 40%)', 'hsla(210, 50%, 40%, 0.5)', 'hwb(210 10% 20%)', 'lab(50% 20 -30)', 'lch(50% 30 200)',
+    'oklab(0.5 0.1 -0.1)', 'oklch(0.6 0.1 250 / 0.8)', 'color(srgb 0.1 0.2 0.3)', 'color(display-p3 1 0 0)',
+    'color-mix(in srgb, #245e96 20%, transparent)', 'light-dark(#fff, #000)', 'var(--brand, #123456)',
+    'rgb(from red r g calc(b + 10))', 'RGB(1, 2, 3)',
+  ]) {
+    assert.match(render({ edge: colour }), new RegExp('stroke="' + colour.replace(/[()+.]/g, '\\$&') + '"'), colour)
+    assert.doesNotThrow(() => render({ tones: { blue: { pale: colour } } }), colour)
+  }
+  for (const colour of [
+    'url(https://evil.example/x.svg#p)', 'URL(#p)', 'red url(#p)', 'rgb(1,2,3) url(x)', 'image(x.png)', 'image-set(x.png 1x)',
+    'expression(alert(1))', 'red;stroke:url(#p)', 'red" onload="x', '<b>', 'u\\72l(x)', 'red)', 'rgb(1, 2, 3', 'src(x)',
+    'myrgb(1, 2, 3)', 'a-1color(x)', 'element(#p)', 'cross-fade(red, blue)', 'red /* x */',
+  ]) {
+    assert.throws(() => render({ edge: colour }), { name: 'RangeError', message: /^Invalid export theme colour: edge must be a CSS colour/ }, colour)
+    assert.throws(() => render({ tones: { violet: { solid: colour } } }), { name: 'RangeError', message: /violet\.solid/ }, colour)
+  }
+  // Empty and blank values still fall back to the default.
+  assert.equal(render({ edge: '  ', tones: { blue: { pale: '' } } }), render({}))
 })
 
 test('escapeXml escapes markup characters and drops characters XML forbids', () => {

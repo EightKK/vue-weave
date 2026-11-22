@@ -6,6 +6,7 @@ import {
   checkGraphInterchangeInput, createGraphCollector, graphShapeFormat, readGraphShape,
   type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
+import { dropInvalidXmlChars, isXmlCodePoint } from './interchangeXml.js'
 
 /** The direction written after `flowchart`. `TD` and `TB` both mean top to bottom. */
 export type MermaidDirection = 'TD' | 'TB' | 'LR' | 'RL' | 'BT'
@@ -57,9 +58,13 @@ function decodeMermaidId(id: string) {
   return id.slice(3).replace(/_([0-9a-f]{1,6})_/g, (_, hex: string) => String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff)))
 }
 
-/** Text for a quoted Mermaid label: characters that could end the label or be read as markup become `#<code>;`. */
+/**
+ * Text for a quoted Mermaid label: characters that could end the label or be read as markup become `#<code>;`, and
+ * characters that no reader decodes (C0 controls other than tab and line breaks, U+FFFE, U+FFFF and unpaired
+ * surrogates) are dropped, as in the XML writers.
+ */
 function mermaidText(text: string) {
-  return text.replace(/[#"<>&|`\r\n]/g, char => '#' + char.codePointAt(0) + ';')
+  return dropInvalidXmlChars(text).replace(/[#"<>&|`\r\n]/g, char => '#' + char.codePointAt(0) + ';')
 }
 
 const namedEntities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: '\'', nbsp: ' ', num: '#' }
@@ -68,7 +73,8 @@ function decodeMermaidText(text: string) {
   return text.replace(/#(?:(\d{1,7})|([A-Za-z]+));/g, (match, code: string | undefined, name: string | undefined) => {
     if (code !== undefined) {
       const value = Number(code)
-      return value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : match
+      // The code points XML allows, as in the XML reader; any other reference stays as written.
+      return isXmlCodePoint(value) ? String.fromCodePoint(value) : match
     }
     return Object.hasOwn(namedEntities, name!) ? namedEntities[name!]! : match
   })

@@ -1,6 +1,6 @@
 // Microsoft Project XML (MSPDI): `toMsProjectXml`, `fromMsProjectXml` and the conversions of a plan to work calendars,
 // resource load and GanttChart data. Pure string builders and readers without a DOM. Re-exported by `interchange.ts`.
-import { escapeXml } from './exportSvg.js'
+import { xmlText } from './interchangeXml.js'
 import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, secondMs, toSecond, wallTime } from './interchangeShared.js'
 import { childMap, parseXml, type XmlElement } from './interchangeXml.js'
 import type { ResourceAssignment, ResourceCapacity } from './resourceLoad.js'
@@ -331,7 +331,7 @@ function calendarXml(calendar: MsProjectCalendar, uid: number) {
     days.push(`<WeekDay><DayType>0</DayType><DayWorking>${shifts.length ? 1 : 0}</DayWorking>`
       + `<TimePeriod><FromDate>${date}T00:00:00</FromDate><ToDate>${date}T23:59:00</ToDate></TimePeriod>${shifts.length ? workingTimesXml(shifts) : ''}</WeekDay>`)
   }
-  return `<Calendar><UID>${uid}</UID><Name>${escapeXml(calendar.name)}</Name><IsBaseCalendar>1</IsBaseCalendar>`
+  return `<Calendar><UID>${uid}</UID><Name>${xmlText(calendar.name)}</Name><IsBaseCalendar>1</IsBaseCalendar>`
     + `<WeekDays>${days.join('')}</WeekDays></Calendar>`
 }
 
@@ -406,7 +406,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
     const duration = isoDuration(milestone ? 0 : finishTime - startTime)
     const [constraintType, constraintDate] = constraintElements(task.constraints, offset)
     return '<Task>'
-      + `<UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(task.name)}</Name>`
+      + `<UID>${uid}</UID><ID>${uid}</ID><Name>${xmlText(task.name)}</Name>`
       + `<Active>${task.inactive === true ? 0 : 1}</Active><Manual>${task.manual === false ? 0 : 1}</Manual>`
       + `<WBS>${number}</WBS><OutlineNumber>${number}</OutlineNumber><OutlineLevel>${level}</OutlineLevel>`
       + `<Start>${start}</Start><Finish>${finish}</Finish><Duration>${duration}</Duration>`
@@ -425,7 +425,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
       }).join('')
       + '</Task>'
   })
-  const name = escapeXml(project.name)
+  const name = xmlText(project.name)
   const dates = project.tasks.length
     ? `<StartDate>${localIso(projectStart, offset)}</StartDate><FinishDate>${localIso(projectEnd, offset)}</FinishDate>` : ''
   const defaultCalendar = project.defaultCalendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(project.defaultCalendarId)}</CalendarUID>`
@@ -434,7 +434,7 @@ export function toMsProjectXml(project: MsProjectInput, options: MsProjectXmlOpt
   const resources = project.resources?.length
     ? '<Resources>' + project.resources.map(resource => {
       const uid = resourceUids.get(resource.id)!
-      return `<Resource><UID>${uid}</UID><ID>${uid}</ID><Name>${escapeXml(resource.name)}</Name>`
+      return `<Resource><UID>${uid}</UID><ID>${uid}</ID><Name>${xmlText(resource.name)}</Name>`
         + `<Type>${resourceTypes[resource.type ?? 'work']}</Type><IsNull>0</IsNull>${resource.maxUnits === undefined ? '' : `<MaxUnits>${resource.maxUnits}</MaxUnits>`}`
         + (resource.calendarId === undefined ? '' : `<CalendarUID>${calendarUids.get(resource.calendarId)}</CalendarUID>`)
         + (resource.type === 'cost' ? '<IsCostResource>1</IsCostResource>' : '') + '</Resource>'
@@ -562,6 +562,8 @@ function msDurationValue(text: string): number | undefined {
 
 const isTrue = (text: string | undefined) => text === '1' || text === 'true'
 const uidPattern = /^\d+$/
+/** A UID without leading zeros, so `007` and `7` name the same item. */
+const normalizeUid = (uid: string) => uid.replace(/^0+(?=\d)/, '')
 
 type MsWarn = (code: MsProjectImportWarningCode, message: string, subject?: string | { taskId?: string; calendarId?: string; resourceId?: string }) => void
 
@@ -780,7 +782,7 @@ function readMsCalendars(section: XmlElement | undefined, offset: number, warn: 
       warn('skipped-calendar', 'A calendar without a valid UID was skipped')
       continue
     }
-    const id = uid.replace(/^0+(?=\d)/, '')
+    const id = normalizeUid(uid)
     if (raws.has(id)) {
       warn('skipped-calendar', `Calendar ${id} repeats a UID and was skipped`, { calendarId: id })
       continue
@@ -790,7 +792,7 @@ function readMsCalendars(section: XmlElement | undefined, offset: number, warn: 
       id, name: fields.get('Name')?.text ?? '', base: isTrue(fields.get('IsBaseCalendar')?.text.trim()),
       weekly: Array.from({ length: 7 }, () => undefined), exceptions: new Map(),
     }
-    if (baseText !== undefined && uidPattern.test(baseText)) raw.baseId = baseText.replace(/^0+(?=\d)/, '')
+    if (baseText !== undefined && uidPattern.test(baseText)) raw.baseId = normalizeUid(baseText)
     else if (baseText !== undefined && baseText !== '-1' && baseText !== '') {
       warn('invalid-calendar', `Calendar ${id} has a base calendar UID that cannot be read`, { calendarId: id })
     }
@@ -917,7 +919,7 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
   // A calendar UID of -1 or 0 means "none"; anything else must be an imported calendar.
   const calendarRef = (text: string | undefined, subject: { taskId?: string; resourceId?: string } | undefined, what: string) => {
     if (text === undefined || text === '' || text === '-1') return undefined
-    const id = uidPattern.test(text) ? text.replace(/^0+(?=\d)/, '') : undefined
+    const id = uidPattern.test(text) ? normalizeUid(text) : undefined
     if (id === undefined) warn('invalid-value', `${what} has a calendar UID that cannot be read: ${text}`, subject)
     else if (id !== '0') {
       if (calendarIds.has(id)) return id
@@ -940,7 +942,7 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       warn('skipped-task', 'A task without a valid UID was skipped')
       continue
     }
-    const id = uid.replace(/^0+(?=\d)/, '')
+    const id = normalizeUid(uid)
     if (id === '0') continue
     if (ids.has(id)) {
       warn('skipped-task', `Task ${id} repeats a UID and was skipped`, id)
@@ -1020,7 +1022,8 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
     for (const element of elements) {
       const fields = childMap(element)
       const value = (name: string) => fields.get(name)?.text.trim()
-      const from = value('PredecessorUID')?.replace(/^0+(?=\d)/, '')
+      const predecessor = value('PredecessorUID')
+      const from = predecessor === undefined ? undefined : normalizeUid(predecessor)
       if (isTrue(value('CrossProject'))) {
         warn('skipped-link', `A link to task ${id} from another project was skipped`, id)
         continue
@@ -1070,7 +1073,7 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
       warn('skipped-resource', 'A resource without a valid UID was skipped')
       continue
     }
-    const id = uid.replace(/^0+(?=\d)/, '')
+    const id = normalizeUid(uid)
     // Resource 0 is Microsoft Project's placeholder for unassigned work.
     if (id === '0') continue
     if (resourceIds.has(id)) {
@@ -1103,8 +1106,8 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
     const fields = childMap(element)
     const value = (field: string) => fields.get(field)?.text.trim()
     const taskUid = value('TaskUID'), resourceUid = value('ResourceUID')
-    const taskId = taskUid !== undefined && uidPattern.test(taskUid) ? taskUid.replace(/^0+(?=\d)/, '') : undefined
-    const resourceId = resourceUid !== undefined && uidPattern.test(resourceUid) ? resourceUid.replace(/^0+(?=\d)/, '') : undefined
+    const taskId = taskUid !== undefined && uidPattern.test(taskUid) ? normalizeUid(taskUid) : undefined
+    const resourceId = resourceUid !== undefined && uidPattern.test(resourceUid) ? normalizeUid(resourceUid) : undefined
     // Unassigned work (resource -65535 or 0) and the project summary task (0) are not assignments.
     if (taskId === '0' || resourceId === '0' || resourceUid === '-65535') continue
     if (taskId === undefined || resourceId === undefined || !ids.has(taskId) || !resourceIds.has(resourceId)) {

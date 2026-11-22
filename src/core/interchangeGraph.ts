@@ -7,7 +7,6 @@ import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkGroup, NetworkNode, NetworkNodeShape } from './types.js'
 import { checkGraphGroups, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
 import { isId } from './ids.js'
-import { escapeXml } from './exportSvg.js'
 
 /**
  * A NetworkGraph diagram for the graph writers (`toMermaid`, `toGraphMl`, `toDrawio`): the `nodes`, `edges` and
@@ -69,7 +68,8 @@ export interface GraphInterchangeImport {
 export interface GraphInterchangeImportOptions {
   /**
    * The largest number of nodes, edges and groups together that the reader accepts before it throws a RangeError, to
-   * bound the work done for an untrusted file. Default 100,000.
+   * bound the work done for an untrusted file. `fromDrawio` and `fromDrawioAsync` also count the label cells of edges.
+   * Default 100,000.
    */
   maxItems?: number
 }
@@ -259,16 +259,6 @@ export function formatNumber(value: number) {
   return String(value === 0 ? 0 : value)
 }
 
-/** XML text for an attribute value: escaped, with tabs and line breaks as character references so they survive. */
-export function xmlAttribute(value: string) {
-  return escapeXml(value).replace(/[\t\n\r]/g, char => '&#' + char.charCodeAt(0) + ';')
-}
-
-/** XML text for element content: escaped, with carriage returns as character references. */
-export function xmlText(value: string) {
-  return escapeXml(value).replace(/\r/g, '&#13;')
-}
-
 const decimal = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/
 
 /** A finite number from XML text, or undefined. */
@@ -318,6 +308,7 @@ export function createGraphCollector(format: string, options: GraphInterchangeIm
   const sizes = new Map<string, GraphNodeSize>()
   const warnings: GraphInterchangeWarning[] = []
   let items = 0
+  /** Count one item against `maxItems`: a node, edge or group, or another item a reader builds (draw.io edge labels). */
   const count = () => {
     if (++items > maxItems) throw new RangeError(`The ${format} file has more than ${maxItems} nodes, edges and groups (maxItems)`)
   }
@@ -446,7 +437,7 @@ export function createGraphCollector(format: string, options: GraphInterchangeIm
       warnings,
     }
   }
-  return { nodes, groups, memberOf, positions, sizes, warn, addNode, addGroup, addMember, addEdge, finish }
+  return { nodes, groups, memberOf, positions, sizes, warn, count, addNode, addGroup, addMember, addEdge, finish }
 }
 
 export type GraphCollector = ReturnType<typeof createGraphCollector>

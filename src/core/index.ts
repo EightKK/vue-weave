@@ -78,7 +78,7 @@ export type {
   MsProjectImportWarning, MsProjectImportWarningCode, MsProjectTimelineOptions, MsProjectTimeline, MsProjectCalendar, MsProjectResource,
   MsProjectAssignment, MsProjectResourceLoadOptions, MsProjectResourceLoad, ICalendarEvent, ICalendarOptions, ICalendarImport,
   ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline, ICalendarExpandOptions,
-  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  CsvCell, CsvOptions, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { toMermaid, fromMermaid, toGraphMl, fromGraphMl, toDrawio, fromDrawio, fromDrawioAsync } from './interchange.js'
 export type {

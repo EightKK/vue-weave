@@ -15,7 +15,7 @@ export type {
 } from './interchangeICalendar.js'
 export { toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchangeCsv.js'
 export type {
-  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  CsvCell, CsvOptions, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchangeCsv.js'
 export { toMermaid, fromMermaid } from './interchangeMermaid.js'
 export type { MermaidDirection, MermaidOptions } from './interchangeMermaid.js'
