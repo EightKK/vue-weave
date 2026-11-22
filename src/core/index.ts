@@ -151,7 +151,7 @@ export type {
 export {
   createGraphExpansion, beginGraphExpansion, cancelGraphExpansion, mergeGraphExpansionPage, graphExpansionView,
 } from './graphExpansion.js'
-export type { GraphExpansionState, GraphExpansionPage, GraphExpansionView } from './graphExpansion.js'
+export type { GraphExpansionState, GraphExpansionPage, GraphExpansionView, GraphExpansionKeyOptions } from './graphExpansion.js'
 export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncremental.js'
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,

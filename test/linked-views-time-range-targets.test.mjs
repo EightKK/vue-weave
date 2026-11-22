@@ -109,6 +109,12 @@ test('resolveTimeRangeTargets: traversal terminates on a cyclic graph and keeps 
   assert.ok(!successors.relatedTargets.some(t => t.id === 'n-a' || t.id === 'bar-a'))
   assert.ok(successors.relatedTargets.some(t => t.view === 'timeline' && t.id === 'bar-d'))
 
+  // The traversal filter and node cap of traverseGraph pass through.
+  const filtered = resolveTimeRangeTargets(index, ['bar-a'], { graph: mappedGraph, traversal: { direction: 'forward', edgeFilter: edge => edge.id !== 'e-bc' } })
+  assert.deepEqual(filtered.relatedEntities, [task('b'), dep('ab')])
+  const capped = resolveTimeRangeTargets(index, ['bar-a'], { graph: mappedGraph, traversal: { direction: 'forward', maxNodes: 2 } })
+  assert.deepEqual(capped.relatedEntities, [task('b'), dep('ab')])
+
   const neighbours = resolveTimeRangeTargets(index, ['bar-a'], { graph: mappedGraph, traversal: { direction: 'both', maxHops: 1 } })
   assert.deepEqual(neighbours.relatedEntities.filter(e => e.kind === 'task'), [task('c'), task('b')])
   const predecessors = resolveTimeRangeTargets(index, ['bar-a'], { graph: mappedGraph, traversal: { direction: 'backward', maxHops: 1 } })
