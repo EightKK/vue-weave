@@ -159,6 +159,88 @@ test('useLinkedSelection: hover enters and leaves, unbound targets and reactive 
   assert.deepEqual([...linked.timeline.value.highlightedBarIds], ['b1'])
 })
 
+test('useLinkedSelection selectEntities: an external view selects by entity, without an owner', () => {
+  const seen = []
+  const linked = useLinkedSelection({
+    bindings,
+    onSelect: (entities, owner) => seen.push([entities.map(e => e.kind + ':' + e.id), owner, linked.selectionSource.value]),
+  })
+  const ghost = { kind: 'task', id: 'ghost' }
+  const res = linked.selectEntities([task('A'), ghost, task('A')], { source: 'table' })
+  assert.equal(res.changed, true)
+  assert.deepEqual(res.unknown, [ghost])
+  // Deduplicated, in input order, unbound entities included.
+  assert.deepEqual(linked.selectedEntities.value, [task('A'), ghost])
+  assert.equal(linked.owner.value, undefined)
+  assert.equal(linked.selectionSource.value, 'table')
+  // No view owns it: nothing is selected, everything bound is highlighted.
+  assert.deepEqual([...linked.graph.value.selectedNodeIds], [])
+  assert.deepEqual([...linked.graph.value.highlightedNodeIds].sort(), ['n1', 'n2'])
+  assert.deepEqual([...linked.timeline.value.selectedBarIds], [])
+  assert.deepEqual([...linked.timeline.value.highlightedBarIds].sort(), ['b1', 'b2'])
+  assert.deepEqual(seen, [[['task:A', 'task:ghost'], undefined, 'table']])
+
+  // The same entity set from the same source, as an echoed table event would report it, changes nothing.
+  assert.equal(linked.selectEntities(new Set([ghost, task('A')]), { source: 'table' }).changed, false)
+  assert.equal(seen.length, 1)
+  // Another source is a new selection.
+  assert.equal(linked.selectEntities([task('A'), ghost]).changed, true)
+  assert.equal(linked.selectionSource.value, undefined)
+  assert.equal(seen.length, 2)
+
+  // A view selection replaces it, and an entity selection replaces a view selection.
+  linked.select('graph', [node('n1')])
+  assert.equal(linked.owner.value, 'graph')
+  assert.equal(linked.selectionSource.value, undefined)
+  assert.deepEqual([...linked.graph.value.selectedNodeIds], ['n1'])
+  assert.equal(linked.selectEntities([task('A')], { source: 'table' }).changed, true)
+  assert.equal(linked.owner.value, undefined)
+  assert.deepEqual([...linked.graph.value.selectedNodeIds], [])
+  assert.deepEqual([...linked.graph.value.highlightedNodeIds].sort(), ['n1', 'n2'])
+  assert.equal(linked.select('graph', [node('n1')]).changed, true)
+
+  // clearSelection and an empty input clear an entity selection.
+  linked.selectEntities([task('A')], { source: 'table' })
+  assert.equal(linked.clearSelection(), true)
+  assert.deepEqual(linked.selectedEntities.value, [])
+  assert.deepEqual([...linked.timeline.value.highlightedBarIds], [])
+  assert.equal(linked.clearSelection(), false)
+  linked.selectEntities([task('A')], { source: 'table' })
+  assert.deepEqual(linked.selectEntities([], { source: 'table' }), { changed: true, unknown: [] })
+  assert.deepEqual(linked.selectedEntities.value, [])
+  assert.deepEqual(linked.selectEntities([]), { changed: false, unknown: [] })
+  assert.deepEqual(seen.at(-1), [[], undefined, undefined])
+})
+
+test('useLinkedSelection selectEntities: input validation and re-resolution on bindings changes', async () => {
+  const source = ref([{ entity: task('A'), target: bar('b1') }])
+  const calls = []
+  const linked = useLinkedSelection({ bindings: source, onSelect: entities => calls.push(entities) })
+  assert.throws(() => linked.selectEntities([{ kind: '', id: 'x' }]), /Invalid entity reference/)
+  assert.throws(() => linked.selectEntities([{ kind: 'task', id: '' }]), Error)
+  assert.throws(() => linked.selectEntities([null]), /Invalid entity reference/)
+  assert.throws(() => linked.selectEntities([task('A')], { source: 3 }), /source must be a string/)
+  // A rejected call leaves the selection and onSelect untouched.
+  assert.deepEqual(linked.selectedEntities.value, [])
+  assert.deepEqual(calls, [])
+
+  const input = [task('B')]
+  const res = linked.selectEntities(input, { source: 'list' })
+  assert.deepEqual(res.unknown, [task('B')])
+  assert.deepEqual([...linked.timeline.value.highlightedBarIds], [])
+  // The input is not kept by reference.
+  input.push(task('A'))
+  assert.deepEqual(linked.selectedEntities.value, [task('B')])
+  source.value = [...source.value, { entity: task('B'), target: bar('b2') }, { entity: task('B'), target: node('n7') }]
+  await nextTick()
+  assert.deepEqual([...linked.timeline.value.highlightedBarIds], ['b2'])
+  assert.deepEqual([...linked.graph.value.highlightedNodeIds], ['n7'])
+  assert.deepEqual(linked.selectedEntities.value, [task('B')])
+  // Hover still adds its own highlights on top.
+  linked.hoverEnter('timeline', bar('b1'))
+  assert.deepEqual([...linked.timeline.value.highlightedBarIds].sort(), ['b1', 'b2'])
+})
+
 test('revealLinkedTarget expands only what the application accepts and never reports a declined reveal as revealed', async () => {
   // A fake view: `n` is hidden in group `inner`, which is hidden in collapsed group `outer`.
   const collapsed = new Set(['outer', 'inner'])
