@@ -26,6 +26,7 @@ import PipelineShowcase from './showcase/PipelineShowcase.vue'
 import KnowledgeGraphShowcase from './showcase/KnowledgeGraphShowcase.vue'
 import ConstructionShowcase from './showcase/ConstructionShowcase.vue'
 import ServiceMapShowcase from './showcase/ServiceMapShowcase.vue'
+import BomShowcase from './showcase/BomShowcase.vue'
 import EventCalendarDemo from './EventCalendarDemo.vue'
 import BpmnDemo from './BpmnDemo.vue'
 
@@ -81,6 +82,7 @@ export const demos: readonly DemoEntry[] = [
   { id: 'knowledge', label: 'Knowledge graph', group: 'gallery', component: KnowledgeGraphShowcase },
   { id: 'construction', label: 'Construction program', group: 'gallery', component: ConstructionShowcase },
   { id: 'service-map', label: 'Service map', group: 'gallery', component: ServiceMapShowcase },
+  { id: 'bom', label: 'BOM editor', group: 'gallery', component: BomShowcase },
   { id: 'bpmn', label: 'BPMN process', group: 'standalone', component: BpmnDemo },
 ]
 
