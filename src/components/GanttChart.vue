@@ -1253,7 +1253,24 @@ type Gesture =
   | { type: 'column'; id: string; pointerId: number; target: HTMLElement; x: number; before: number }
   | { type: 'pinch'; distance: number; zoom: number; anchor: number }
 type GestureType = Gesture['type']
+type PointerGesture = Exclude<Gesture, { type: 'pinch' }>
+/** What a gesture start records besides the pointer and the captured element, which `beginGesture` adds. */
+type GestureStart = PointerGesture extends infer G ? G extends PointerGesture ? Omit<G, 'pointerId' | 'target'> : never : never
 let gesture: Gesture | undefined
+/** Whether a press may start a pointer gesture: the primary button of a primary pointer, with no gesture in flight. */
+function primaryPress(event: PointerEvent) {
+  return event.isPrimary && event.button === 0 && !gestureActive()
+}
+/**
+ * Start a pointer gesture on `target`: hide the tooltip, focus the element (so that Escape cancels), record the gesture
+ * and capture the pointer on the element.
+ */
+function beginGesture(event: PointerEvent, target: HTMLElement, start: GestureStart) {
+  hideTooltip()
+  target.focus({ preventScroll: true })
+  gesture = { ...start, pointerId: event.pointerId, target } as PointerGesture
+  capturePointer(target, event.pointerId)
+}
 /** The gesture of `type` when it is the one in flight, and, with an event, when that event's pointer owns it. */
 function gestureOf<T extends GestureType>(type: T, event?: PointerEvent): Extract<Gesture, { type: T }> | undefined {
   const active = gesture
@@ -1759,19 +1776,32 @@ function cancelForSource(fill = false) {
   cancelGestures(hidden ? 'hidden' : 'source-changed', !fill)
 }
 
+/**
+ * What each kind of gesture does with the moves and the release of its pointer, and how it is reset. `move` and
+ * `finish` get the gesture in flight; `finish` runs on `pointerup` only, any other ending cancels the gesture first.
+ * A pinch follows the touches instead (`moveTouch`, `endTouch`), and column separators handle their own events.
+ */
+type GestureHandlers = { [T in GestureType]: {
+  move?: (active: Extract<Gesture, { type: T }>, event: PointerEvent) => void
+  finish?: (active: Extract<Gesture, { type: T }>, event: PointerEvent) => void
+  cancel: () => void
+} }
+const gestureHandlers: GestureHandlers = {
+  bar: { move: moveEdit, finish: finishEdit, cancel: cancelBarEdit },
+  link: { move: moveLink, finish: finishLink, cancel: cancelLink },
+  progress: { move: moveProgress, finish: finishProgress, cancel: cancelProgress },
+  create: { move: moveCreate, finish: finishCreate, cancel: cancelCreate },
+  row: { move: moveRowDrag, finish: finishRowDrag, cancel: cancelRowDrag },
+  column: { move: moveColumnResize, finish: finishColumnResize, cancel: cancelColumnResize },
+  constraint: { move: moveConstraint, finish: finishConstraint, cancel: cancelConstraint },
+  pinch: { cancel: () => endGesture('pinch') },
+}
+function handlersOf(active: Gesture) {
+  return gestureHandlers[active.type] as { move?: (active: Gesture, event: PointerEvent) => void; finish?: (active: Gesture, event: PointerEvent) => void }
+}
 /** Reset every pointer gesture and armed connection without reporting it; with `keepFill`, not a fill handle drag. */
 function resetGestures(keepFill = false) {
-  endGesture('bar')
-  previews.value = undefined
-  stopAutoScroll()
-  cancelLink()
-  cancelProgress()
-  cancelCreate()
-  cancelRowDrag()
-  cancelColumnResize()
-  cancelConstraint()
-  clearCascade()
-  endGesture('pinch')
+  for (const handlers of Object.values(gestureHandlers)) handlers.cancel()
   if (!keepFill) sheet.cancelFill()
 }
 
@@ -1783,16 +1813,17 @@ function resetGestures(keepFill = false) {
 function pointerGestureActive(): boolean {
   return gesture !== undefined || Boolean(sheet.fill.value)
 }
+/** The pointer gesture that the pointer of `event` owns. */
+function ownedGesture(event: PointerEvent) {
+  const active = gesture
+  return active && active.type !== 'pinch' && active.pointerId === event.pointerId ? active : undefined
+}
 // Pointer events of the scroll viewport. The gestures capture the pointer on an element inside it, so their events
-// bubble here; each handler ignores events of other pointers and gestures. Column separators handle their own events.
+// bubble here; events of other pointers are ignored. Column separators handle their own events.
 function movePointer(event: PointerEvent) {
   moveTouch(event)
-  moveEdit(event)
-  moveLink(event)
-  moveProgress(event)
-  moveConstraint(event)
-  moveCreate(event)
-  moveRowDrag(event)
+  const active = ownedGesture(event)
+  if (active && active.type !== 'column') handlersOf(active).move?.(active, event)
 }
 /** `pointerup` and `pointercancel`: end a touch of a pinch, then finish (or cancel) the gesture of the pointer. */
 function pointerReleased(event: PointerEvent) {
@@ -1801,12 +1832,12 @@ function pointerReleased(event: PointerEvent) {
 }
 /** Finish the gesture of the pointer on release; any other event, such as a lost capture, cancels it. */
 function finishGesture(event: PointerEvent) {
-  finishEdit(event)
-  finishLink(event)
-  finishProgress(event)
-  finishConstraint(event)
-  finishCreate(event)
-  finishRowDrag(event)
+  const active = ownedGesture(event)
+  if (active && active.type !== 'column') endOwnedGesture(active, event)
+}
+function endOwnedGesture(active: PointerGesture, event: PointerEvent) {
+  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
+  handlersOf(active).finish?.(active, event)
 }
 /** Whether a gesture owns the pointer or keyboard: a pointer gesture or an armed connection. */
 function gestureActive(): boolean {
@@ -1930,30 +1961,35 @@ function buildChanges(group: readonly TimelineBar[], ranges: readonly TimeRange[
 
 function startEdit(event: PointerEvent, bar: TimelineBar) {
   suppressSelection = undefined
-  if (!editable(bar) || !event.isPrimary || event.button !== 0 || gestureActive()) return
+  if (!editable(bar) || !primaryPress(event)) return
   const target = event.target as HTMLElement
   const mode = (target.closest<HTMLElement>('[data-edit-mode]')?.dataset.editMode ?? 'move') as EditMode
   if (mode !== 'move' && bar.end - bar.start < minimum.value) return
-  const control = event.currentTarget as HTMLElement
-  control.focus({ preventScroll: true })
-  gesture = {
-    type: 'bar', id: bar.id, pointerId: event.pointerId,
+  beginGesture(event, event.currentTarget as HTMLElement, {
+    type: 'bar', id: bar.id,
     initialX: inlineClientX(event.clientX) + (scroller.value ? scrollStart(scroller.value) : 0),
     initialY: event.clientY + (scroller.value?.scrollTop ?? 0),
-    initial: { start: bar.start, end: bar.end }, mode, target: control,
+    initial: { start: bar.start, end: bar.end }, mode,
     group: mode === 'move' ? movingGroup(bar) : [bar],
-  }
-  capturePointer(control, event.pointerId)
-  lastClientX = event.clientX
-  lastClientY = event.clientY
+  })
+  trackPointer(event)
   startAutoScroll()
 }
-
-function moveEdit(event: PointerEvent) {
-  if (!gestureOf('bar', event)) return
+/** Record the latest pointer position of a gesture that scrolls at the viewport edges. */
+function trackPointer(event: PointerEvent) {
   lastClientX = event.clientX
   lastClientY = event.clientY
+}
+
+function moveEdit(_active: unknown, event: PointerEvent) {
+  trackPointer(event)
   updatePreview()
+}
+function cancelBarEdit() {
+  endGesture('bar')
+  previews.value = undefined
+  stopAutoScroll()
+  clearCascade()
 }
 
 function updatePreview() {
@@ -2006,12 +2042,8 @@ function stopAutoScroll() {
   autoScroller.stop()
 }
 
-function finishEdit(event: PointerEvent) {
-  const drag = gestureOf('bar', event)
-  if (!drag) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  lastClientX = event.clientX
-  lastClientY = event.clientY
+function finishEdit(drag: Extract<Gesture, { type: 'bar' }>, event: PointerEvent) {
+  trackPointer(event)
   updatePreview()
   const { group, mode, id } = drag
   const preview = previews.value
@@ -2197,14 +2229,10 @@ function rowHandleKeys(event: KeyboardEvent, row: TimelineRow) {
 }
 const rowDrop = shallowRef<RowDrop>()
 function startRowDrag(event: PointerEvent, row: TimelineRow) {
-  if (!rowHandlesVisible.value || gestureActive() || !event.isPrimary || event.button !== 0) return
-  const target = event.currentTarget as HTMLElement
-  // Keep a mouse drag from selecting text; focus the handle so that Escape cancels.
+  if (!rowHandlesVisible.value || !primaryPress(event)) return
+  // Keep a mouse drag from selecting text; the handle takes focus so that Escape cancels.
   if (event.pointerType !== 'touch') event.preventDefault()
-  target.focus({ preventScroll: true })
-  hideTooltip()
-  gesture = { type: 'row', id: row.id, pointerId: event.pointerId, target, y: event.clientY, moved: false }
-  capturePointer(target, event.pointerId)
+  beginGesture(event, event.currentTarget as HTMLElement, { type: 'row', id: row.id, y: event.clientY, moved: false })
 }
 /** The drop position under a client y coordinate (`rowDropAt` of the row move helpers). */
 function rowDropUnder(id: string, clientY: number): RowDrop | undefined {
@@ -2213,9 +2241,7 @@ function rowDropUnder(id: string, clientY: number): RowDrop | undefined {
   const y = clientY - canvas.value.getBoundingClientRect().top - headerHeight.value
   return rowDropAt(id, y, rows, props.rowHeight, rowChildren.value, rowById.value, collapsed.value)
 }
-function moveRowDrag(event: PointerEvent) {
-  const active = gestureOf('row', event)
-  if (!active) return
+function moveRowDrag(active: Extract<Gesture, { type: 'row' }>, event: PointerEvent) {
   if (!active.moved && Math.abs(event.clientY - active.y) < DRAG_THRESHOLD) return
   active.moved = true
   rowDrop.value = rowDropUnder(active.id, event.clientY)
@@ -2224,11 +2250,8 @@ function cancelRowDrag() {
   endGesture('row')
   rowDrop.value = undefined
 }
-function finishRowDrag(event: PointerEvent) {
-  const active = gestureOf('row', event)
-  if (!active) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveRowDrag(event)
+function finishRowDrag(active: Extract<Gesture, { type: 'row' }>, event: PointerEvent) {
+  moveRowDrag(active, event)
   const drop = active.moved ? rowDrop.value : undefined
   const row = rowById.value.get(active.id)
   cancelRowDrag()
@@ -2310,20 +2333,16 @@ const linkPreviewPath = computed(() => {
   return origin ? `M ${origin.x} ${origin.y} L ${point.x} ${point.y}` : undefined
 })
 function captureLink(event: PointerEvent) {
-  const target = event.currentTarget as HTMLElement
-  gesture = { type: 'link', pointerId: event.pointerId, target, x: event.clientX, y: event.clientY }
-  target.focus({ preventScroll: true })
-  capturePointer(target, event.pointerId)
+  beginGesture(event, event.currentTarget as HTMLElement, { type: 'link', x: event.clientX, y: event.clientY })
 }
 function startLink(event: PointerEvent, id: string, end: TimelineBarEnd) {
   skipLinkClick = false
-  if (!props.connectable || !event.isPrimary || event.button !== 0 || gestureActive()) return
+  if (!props.connectable || !primaryPress(event)) return
   linkDraft.value = { fixed: { bar: id, end }, role: 'to' }
   captureLink(event)
 }
-function moveLink(event: PointerEvent) {
-  const linkDrag = gestureOf('link', event)
-  if (!linkDrag || !canvas.value) return
+function moveLink(linkDrag: Extract<Gesture, { type: 'link' }>, event: PointerEvent) {
+  if (!canvas.value) return
   if (!linkPoint.value && !pastThreshold(linkDrag, event)) return
   const rect = canvas.value.getBoundingClientRect()
   linkPoint.value = { x: timeAreaOffset(event.clientX, rect), y: event.clientY - rect.top - headerHeight.value }
@@ -2337,10 +2356,8 @@ function cancelLink() {
   if (clearLinkCapture()) skipLinkClick = true
   linkDraft.value = undefined
 }
-function finishLink(event: PointerEvent) {
-  if (!gestureOf('link', event)) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveLink(event)
+function finishLink(active: Extract<Gesture, { type: 'link' }>, event: PointerEvent) {
+  moveLink(active, event)
   const dragged = Boolean(linkPoint.value)
   clearLinkCapture()
   skipLinkClick = true
@@ -2687,10 +2704,10 @@ function handleCell(handle: ResizeHandle): HeaderCell {
     },
     on: {
       pointerdown: event => startColumnResize(pointer(event), handle),
-      pointermove: event => moveColumnResize(pointer(event)),
-      pointerup: event => finishColumnResize(pointer(event)),
-      pointercancel: event => finishColumnResize(pointer(event)),
-      lostpointercapture: event => finishColumnResize(pointer(event)),
+      pointermove: event => columnPointer(pointer(event), false),
+      pointerup: event => columnPointer(pointer(event), true),
+      pointercancel: event => columnPointer(pointer(event), true),
+      lostpointercapture: event => columnPointer(pointer(event), true),
       keydown: event => columnResizeKeys(event as KeyboardEvent, handle),
     },
     text: '',
@@ -2847,18 +2864,18 @@ function proposeColumnResize(change: TimelineColumnResize) {
 function startColumnResize(event: PointerEvent, handle: ResizeHandle) {
   // The scroller would otherwise treat the press as the start of a pan, selection or new bar.
   event.stopPropagation()
-  if (!props.columnsResizable || gestureActive() || !event.isPrimary || event.button !== 0) return
-  const target = event.currentTarget as HTMLElement
-  // Keep a mouse drag from selecting text; focus the handle so that Escape cancels.
+  if (!props.columnsResizable || !primaryPress(event)) return
+  // Keep a mouse drag from selecting text; the separator takes focus so that Escape cancels.
   if (event.pointerType !== 'touch') event.preventDefault()
-  target.focus({ preventScroll: true })
-  hideTooltip()
-  gesture = { type: 'column', id: handle.id, pointerId: event.pointerId, target, x: inlineClientX(event.clientX), before: handle.width }
-  capturePointer(target, event.pointerId)
+  beginGesture(event, event.currentTarget as HTMLElement, { type: 'column', id: handle.id, x: inlineClientX(event.clientX), before: handle.width })
 }
-function moveColumnResize(event: PointerEvent) {
+/** Pointer events of a column separator: a move, or the end (`pointerup`, `pointercancel` or a lost capture) of its drag. */
+function columnPointer(event: PointerEvent, end: boolean) {
   const active = gestureOf('column', event)
-  if (!active) return
+  if (active && end) endOwnedGesture(active, event)
+  else if (active) moveColumnResize(active, event)
+}
+function moveColumnResize(active: Extract<Gesture, { type: 'column' }>, event: PointerEvent) {
   // Dragging towards the inline end widens the column: right in left-to-right charts, left in right-to-left charts.
   const width = clampColumnWidth(active.before + inlineClientX(event.clientX) - active.x)
   if (columnResize.value?.id !== active.id || columnResize.value.width !== width) columnResize.value = { id: active.id, width }
@@ -2867,11 +2884,8 @@ function cancelColumnResize() {
   endGesture('column')
   columnResize.value = undefined
 }
-function finishColumnResize(event: PointerEvent) {
-  const active = gestureOf('column', event)
-  if (!active) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveColumnResize(event)
+function finishColumnResize(active: Extract<Gesture, { type: 'column' }>, event: PointerEvent) {
+  moveColumnResize(active, event)
   const after = columnResize.value?.width ?? active.before
   cancelColumnResize()
   proposeColumnResize({ id: active.id, before: active.before, after, source: 'pointer' })
@@ -2971,28 +2985,20 @@ function proposeProgress(change: TimelineProgressEdit) {
   else emit('progress-edit', change)
 }
 function startProgress(event: PointerEvent, bar: TimelineBar) {
-  if (!canEditProgress(bar) || gestureActive() || !event.isPrimary || event.button !== 0) return
-  const target = event.currentTarget as HTMLElement
-  hideTooltip()
-  target.focus({ preventScroll: true })
-  gesture = { type: 'progress', id: bar.id, pointerId: event.pointerId, target, x: event.clientX }
-  capturePointer(target, event.pointerId)
+  if (!canEditProgress(bar) || !primaryPress(event)) return
+  beginGesture(event, event.currentTarget as HTMLElement, { type: 'progress', id: bar.id, x: event.clientX })
 }
 /** Map the pointer to progress over the bar, or over its working time when it has segments, as the fill is drawn. */
-function moveProgress(event: PointerEvent) {
-  const active = gestureOf('progress', event)
-  if (!active || !canvas.value) return
+function moveProgress(active: Extract<Gesture, { type: 'progress' }>, event: PointerEvent) {
+  if (!canvas.value) return
   if (!progressPreview.value && Math.abs(event.clientX - active.x) < 2) return
   const bar = barById.value.get(active.id)
   if (!bar) return cancelProgress()
   const time = timeUnder(event.clientX, canvas.value)
   progressPreview.value = { id: bar.id, value: snapProgress(progressAt(bar, workSegments(bar, bar), time), props.progressStep) }
 }
-function finishProgress(event: PointerEvent) {
-  const active = gestureOf('progress', event)
-  if (!active) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveProgress(event)
+function finishProgress(active: Extract<Gesture, { type: 'progress' }>, event: PointerEvent) {
+  moveProgress(active, event)
   const preview = progressPreview.value
   const bar = barById.value.get(active.id)
   cancelProgress()
@@ -3105,27 +3111,19 @@ function proposeConstraint(change: TimelineConstraintEdit) {
 }
 function startConstraint(event: PointerEvent, bar: TimelineBar, kind: TimelineConstraintKind) {
   const before = bar.constraints?.[kind]
-  if (!canEditConstraints(bar) || before === undefined || gestureActive() || !event.isPrimary || event.button !== 0 || !canvas.value) return
-  const target = event.currentTarget as HTMLElement
-  hideTooltip()
-  target.focus({ preventScroll: true })
+  if (!canEditConstraints(bar) || before === undefined || !primaryPress(event) || !canvas.value) return
   const origin = timeUnder(event.clientX, canvas.value)
-  gesture = { type: 'constraint', id: bar.id, kind, pointerId: event.pointerId, target, x: event.clientX, origin, before }
-  capturePointer(target, event.pointerId)
+  beginGesture(event, event.currentTarget as HTMLElement, { type: 'constraint', id: bar.id, kind, x: event.clientX, origin, before })
 }
 /** Move the constraint by the snapped time between the press and the pointer. */
-function moveConstraint(event: PointerEvent) {
-  const active = gestureOf('constraint', event)
-  if (!active || !canvas.value) return
+function moveConstraint(active: Extract<Gesture, { type: 'constraint' }>, event: PointerEvent) {
+  if (!canvas.value) return
   if (!constraintPreview.value && Math.abs(event.clientX - active.x) < 2) return
   const time = timeUnder(event.clientX, canvas.value)
   constraintPreview.value = { id: active.id, kind: active.kind, time: constraintTime(active.before, time - active.origin) }
 }
-function finishConstraint(event: PointerEvent) {
-  const active = gestureOf('constraint', event)
-  if (!active) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveConstraint(event)
+function finishConstraint(active: Extract<Gesture, { type: 'constraint' }>, event: PointerEvent) {
+  moveConstraint(active, event)
   const preview = constraintPreview.value
   cancelConstraint()
   if (preview) proposeConstraint({ id: active.id, kind: active.kind, before: active.before, after: preview.time, source: 'pointer' })
@@ -3183,24 +3181,17 @@ function laneAt(rowId: string, clientY: number) {
 function pressRow(event: PointerEvent, row: R) {
   // Bars, handles, cells and the heading column are descendants; only the row's own background is empty.
   const el = scroller.value, area = canvas.value
-  if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !event.isPrimary || event.button !== 0 || gestureActive()) return
+  if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !primaryPress(event)) return
   const x = timeAreaOffset(event.clientX, area.getBoundingClientRect())
   if (x < 0 || x > axis.value.width) return
   // Keep a mouse drag from selecting text; focus goes to the region so that Escape cancels.
   if (event.pointerType !== 'touch') event.preventDefault()
-  el.focus({ preventScroll: true })
-  hideTooltip()
-  gesture = { type: 'create', pointerId: event.pointerId, target: el, rowId: row.id, time: axis.value.toTime(x), x: event.clientX, moved: false }
-  capturePointer(el, event.pointerId)
-  lastClientX = event.clientX
-  lastClientY = event.clientY
+  beginGesture(event, el, { type: 'create', rowId: row.id, time: axis.value.toTime(x), x: event.clientX, moved: false })
+  trackPointer(event)
   startAutoScroll()
 }
-function moveCreate(event: PointerEvent) {
-  const active = gestureOf('create', event)
-  if (!active) return
-  lastClientX = event.clientX
-  lastClientY = event.clientY
+function moveCreate(active: Extract<Gesture, { type: 'create' }>, event: PointerEvent) {
+  trackPointer(event)
   if (!active.moved && Math.abs(event.clientX - active.x) < 3) return
   active.moved = true
   updateCreatePreview()
@@ -3215,11 +3206,8 @@ function cancelCreate() {
   createPreview.value = undefined
   if (active) stopAutoScroll()
 }
-function finishCreate(event: PointerEvent) {
-  const active = gestureOf('create', event)
-  if (!active) return
-  if (event.type !== 'pointerup') return cancelGestures('pointer-cancel')
-  moveCreate(event)
+function finishCreate(active: Extract<Gesture, { type: 'create' }>, event: PointerEvent) {
+  moveCreate(active, event)
   const row = displayedRows.value[rowOrder.value.get(active.rowId) ?? -1]?.row
   const lane = laneAt(active.rowId, event.clientY)
   // A click without movement proposes `createDuration` from the snapped press time.
