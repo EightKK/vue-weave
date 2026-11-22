@@ -336,7 +336,7 @@ test('every design gallery showcase fits a phone-width page', async ({ page }) =
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/gallery.html')
   for (const name of ['Workflow builder', 'Database schema', 'Org chart', 'Product roadmap', 'Sprint plan', 'Room bookings', 'Calendar views',
-    'CI/CD pipeline', 'Knowledge graph', 'Construction program', 'Service map']) {
+    'CI/CD pipeline', 'Knowledge graph', 'Construction program', 'Service map', 'BOM editor']) {
     await page.getByRole('button', { name, exact: true }).click()
     await expect(page.getByRole('region', { name, exact: true }).getByRole('heading', { name, exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth), name).toBe(390)
