@@ -26,7 +26,7 @@ The API pages (`site/api/` and `site/ja/api/`) have a short hand-written overvie
 To add an example or showcase:
 
 1. Write the demo component in `examples/` (or `examples/showcase/`), importing the library from `../src` like the other demos. It must render on the server: touch the DOM only in `onMounted`.
-2. Add an entry to `site/examples/registry.ts`: `id` (the URL segment), `kind` (`example` or `showcase`), `category`, `title` and `description` in English and Japanese, `component` and `sources` (repository-relative paths) and related `api` links. The pages `/examples/<id>/` and `/ja/examples/<id>/` (or `/showcase/...`) are generated from it. A demo outside `examples/*.vue` and `examples/showcase/*.vue` also needs a pattern in `site/.vitepress/theme/demos.ts`.
+2. Add an entry to `site/examples/registry.ts`: `id` (the URL segment), `kind` (`example` or `showcase`), `category`, `title` and `description` in English and Japanese, `component` and `sources` (repository-relative paths) and related `api` links. The pages `/examples/<id>/` and `/ja/examples/<id>/` (or `/showcase/...`) are generated from it. A showcase also takes a one-line `summary` and `tags` (the components and APIs it uses) for its card, and `featured: true` puts it in the featured row of the showcase index. A demo outside `examples/*.vue` and `examples/showcase/*.vue` also needs a pattern in `site/.vitepress/theme/demos.ts`.
 3. Run `npm run build:demo`, then `node scripts/site-thumbnails.mjs <id>` to write `site/public/thumbnails/<id>.png`, and commit it.
 4. Test the demo in the spec of its area under `test/browser/`, opening it with `openExample(page, '<id>')` (add `{ kind: 'showcase' }` for a showcase).
 

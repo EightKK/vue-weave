@@ -6,6 +6,7 @@ import {
   type GraphPort, type GraphReconnect, type NetworkNode,
 } from '../../src'
 import { unusedNumber } from '../ids'
+import { useDemoLocale } from '../i18n'
 
 // A node-based automation editor: white step cards with an icon tile, named input and output ports (two outputs on
 // the condition), an animated path for the run in progress and controlled moves and connections.
@@ -15,6 +16,8 @@ type StepData = { kind: StepKind; subtitle: string; status: StepStatus }
 type Step = NetworkNode<StepData> & { data: StepData }
 type Flow = GraphEdge
 
+const { t, labels, locale } = useDemoLocale()
+
 const cardWidth = 224
 const cardHeight = 84
 const conditionHeight = 136
@@ -22,30 +25,30 @@ const padding = 32
 const grid = 16
 
 const kinds: Record<StepKind, { category: string; color: string; icon: readonly string[] }> = {
-  trigger: { category: 'Trigger', color: '#ef6a2e', icon: ['M13 2 4 14h7l-1 8 9-12h-7z'] },
+  trigger: { category: t({ en: 'Trigger', ja: 'トリガー' }), color: '#ef6a2e', icon: ['M13 2 4 14h7l-1 8 9-12h-7z'] },
   http: {
     category: 'HTTP', color: '#3a78ea',
     icon: ['M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z', 'M3 12h18', 'M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9s1.2-6.4 3.8-9z'],
   },
-  condition: { category: 'Condition', color: '#d9900f', icon: ['M3.5 4.5h17l-6.5 8v6l-4 2v-8z'] },
+  condition: { category: t({ en: 'Condition', ja: '条件' }), color: '#d9900f', icon: ['M3.5 4.5h17l-6.5 8v6l-4 2v-8z'] },
   ai: { category: 'AI agent', color: '#7a5af5', icon: ['M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z', 'M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z'] },
-  mail: { category: 'Email', color: '#1497d4', icon: ['M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M3.5 7.5 12 13l8.5-5.5'] },
+  mail: { category: t({ en: 'Email', ja: 'メール' }), color: '#1497d4', icon: ['M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z', 'M3.5 7.5 12 13l8.5-5.5'] },
   database: {
-    category: 'Database', color: '#139a6a',
+    category: t({ en: 'Database', ja: 'データベース' }), color: '#139a6a',
     icon: ['M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z', 'M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6', 'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'],
   },
-  chat: { category: 'Chat', color: '#d9467f', icon: ['M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z', 'M8.5 9.5h7', 'M8.5 12.5h4'] },
-  log: { category: 'Log', color: '#5f6b7d', icon: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M9 13h6', 'M9 17h4'] },
+  chat: { category: t({ en: 'Chat', ja: 'チャット' }), color: '#d9467f', icon: ['M20 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z', 'M8.5 9.5h7', 'M8.5 12.5h4'] },
+  log: { category: t({ en: 'Log', ja: 'ログ' }), color: '#5f6b7d', icon: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M9 13h6', 'M9 17h4'] },
 }
 const statuses: Record<StepStatus, { label: string; width: number }> = {
-  done: { label: 'Success', width: 66 },
-  running: { label: 'Running', width: 68 },
-  queued: { label: 'Queued', width: 60 },
-  skipped: { label: 'Skipped', width: 66 },
+  done: { label: t({ en: 'Success', ja: '成功' }), width: t({ en: 66, ja: 50 }) },
+  running: { label: t({ en: 'Running', ja: '実行中' }), width: t({ en: 68, ja: 62 }) },
+  queued: { label: t({ en: 'Queued', ja: '待機中' }), width: t({ en: 60, ja: 62 }) },
+  skipped: { label: t({ en: 'Skipped', ja: 'スキップ' }), width: t({ en: 66, ja: 72 }) },
 }
 
-const input: GraphPort = { id: 'in', side: 'left', direction: 'target', label: 'input' }
-const output: GraphPort = { id: 'out', side: 'right', direction: 'source', label: 'output' }
+const input: GraphPort = { id: 'in', side: 'left', direction: 'target', label: t({ en: 'input', ja: '入力' }) }
+const output: GraphPort = { id: 'out', side: 'right', direction: 'source', label: t({ en: 'output', ja: '出力' }) }
 function step(id: string, label: string, kind: StepKind, subtitle: string, status: StepStatus): Step {
   const ports: GraphPort[] = kind === 'trigger' ? [output]
     : kind === 'condition'
@@ -58,14 +61,14 @@ function step(id: string, label: string, kind: StepKind, subtitle: string, statu
   return { id, label, ports, data: { kind, subtitle, status } }
 }
 const steps: readonly Step[] = [
-  step('webhook', 'Order webhook', 'trigger', 'POST /hooks/orders', 'done'),
-  step('lookup', 'Look up customer', 'http', 'GET /customers/:id', 'done'),
-  step('check', 'Check payment', 'condition', 'status is paid', 'done'),
-  step('summarize', 'Summarize order', 'ai', 'Summary + sentiment', 'running'),
-  step('receipt', 'Send receipt', 'mail', 'To the customer', 'queued'),
-  step('crm', 'Update CRM', 'database', 'Upsert contact', 'queued'),
-  step('notify', 'Notify team', 'chat', 'Post to #orders', 'queued'),
-  step('log', 'Log skipped order', 'log', 'Append to audit log', 'skipped'),
+  step('webhook', t({ en: 'Order webhook', ja: '注文Webhook' }), 'trigger', 'POST /hooks/orders', 'done'),
+  step('lookup', t({ en: 'Look up customer', ja: '顧客を検索' }), 'http', 'GET /customers/:id', 'done'),
+  step('check', t({ en: 'Check payment', ja: '支払いを確認' }), 'condition', 'status is paid', 'done'),
+  step('summarize', t({ en: 'Summarize order', ja: '注文を要約' }), 'ai', t({ en: 'Summary + sentiment', ja: '要約と感情分析' }), 'running'),
+  step('receipt', t({ en: 'Send receipt', ja: '領収書を送信' }), 'mail', t({ en: 'To the customer', ja: '顧客へ' }), 'queued'),
+  step('crm', t({ en: 'Update CRM', ja: 'CRMを更新' }), 'database', t({ en: 'Upsert contact', ja: '連絡先を登録・更新' }), 'queued'),
+  step('notify', t({ en: 'Notify team', ja: 'チームに通知' }), 'chat', t({ en: 'Post to #orders', ja: '#orders に投稿' }), 'queued'),
+  step('log', t({ en: 'Log skipped order', ja: '対象外の注文を記録' }), 'log', t({ en: 'Append to audit log', ja: '監査ログに追記' }), 'skipped'),
 ]
 // Top-left corners on the 16-unit grid, before the canvas padding.
 const placement: Readonly<Record<string, GraphPoint>> = {
@@ -103,7 +106,7 @@ function portName(id: string, port: string | undefined) {
 // The edge slot does not draw the label; it names the edge's hit area and reconnect handles, for example
 // "Select edge Check payment (true) to Summarize order".
 function flow(id: string, connection: GraphConnection): Flow {
-  return { id, ...connection, label: `${portName(connection.from, connection.fromPort)} to ${label(connection.to)}` }
+  return { id, ...connection, label: t({ en: `${portName(connection.from, connection.fromPort)} to ${label(connection.to)}`, ja: `${portName(connection.from, connection.fromPort)} から ${label(connection.to)}` }) }
 }
 
 const edges = ref<Flow[]>([
@@ -120,7 +123,10 @@ const runEdgeIds = ref<ReadonlySet<string>>(new Set(['flow-1', 'flow-2', 'flow-3
 const positions = ref<ReadonlyMap<string, GraphPoint>>(new Map())
 const selectedId = ref<string>()
 const edgeStyle = ref<GraphEdgeStyle>('curve')
-const status = ref('Run #1042 is at Summarize order: 3 steps succeeded, 1 is running.')
+const status = ref(t({
+  en: 'Run #1042 is at Summarize order: 3 steps succeeded, 1 is running.',
+  ja: '実行 #1042 は「注文を要約」の段階です。3 ステップが成功し、1 ステップが実行中です。',
+}))
 
 const doneCount = steps.filter(item => item.data.status === 'done').length
 // SVG IDs come from useId, so they are unique on the page and stable between server and client renders.
@@ -135,7 +141,9 @@ function commitMoves(changes: readonly GraphNodeMove[]) {
   const next = new Map(positions.value)
   for (const change of changes) next.set(change.id, change.after)
   positions.value = next
-  status.value = changes.length === 1 ? `Moved ${label(changes[0]!.id)}.` : `Moved ${changes.length} steps.`
+  status.value = changes.length === 1
+    ? t({ en: `Moved ${label(changes[0]!.id)}.`, ja: `${label(changes[0]!.id)} を移動しました。` })
+    : t({ en: `Moved ${changes.length} steps.`, ja: `${changes.length} 個のステップを移動しました。` })
 }
 // True when `target` can be reached from `start` along the edges, ignoring the edge being replaced (breadth-first).
 function reaches(start: string, target: string, ignored?: string) {
@@ -155,19 +163,25 @@ function reaches(start: string, target: string, ignored?: string) {
 function validateConnection(connection: GraphConnection, replacing?: string) {
   if (connection.from === connection.to) return 'A step cannot connect to itself.'
   if (edges.value.some(edge => edge.id !== replacing && edge.from === connection.from && edge.to === connection.to
-    && edge.fromPort === connection.fromPort && edge.toPort === connection.toPort)) return 'These steps are already connected.'
-  if (reaches(connection.to, connection.from, replacing)) return 'That connection would create a loop.'
+    && edge.fromPort === connection.fromPort && edge.toPort === connection.toPort)) return t({ en: 'These steps are already connected.', ja: 'これらのステップはすでに接続されています。' })
+  if (reaches(connection.to, connection.from, replacing)) return t({ en: 'That connection would create a loop.', ja: 'この接続はループになります。' })
   return true
 }
 function commitConnection(connection: GraphConnection) {
   const number = unusedNumber(edges.value, 'flow-', edges.value.length + 1)
   edges.value = [...edges.value, flow('flow-' + number, connection)]
-  status.value = `Connected ${portName(connection.from, connection.fromPort)} to ${label(connection.to)}.`
+  status.value = t({
+    en: `Connected ${portName(connection.from, connection.fromPort)} to ${label(connection.to)}.`,
+    ja: `${portName(connection.from, connection.fromPort)} を ${label(connection.to)} に接続しました。`,
+  })
 }
 function commitReconnect(change: GraphReconnect) {
   edges.value = edges.value.map(edge => edge.id === change.id ? flow(edge.id, change.after) : edge)
   if (runEdgeIds.value.has(change.id)) runEdgeIds.value = new Set([...runEdgeIds.value].filter(id => id !== change.id))
-  status.value = `Rewired ${portName(change.after.from, change.after.fromPort)} to ${label(change.after.to)}.`
+  status.value = t({
+    en: `Rewired ${portName(change.after.from, change.after.fromPort)} to ${label(change.after.to)}.`,
+    ja: `${portName(change.after.from, change.after.fromPort)} を ${label(change.after.to)} につなぎ替えました。`,
+  })
 }
 </script>
 
@@ -191,24 +205,25 @@ function commitReconnect(change: GraphReconnect) {
     </svg>
     <div class="sc-workflow-head">
       <div class="sc-workflow-intro">
-        <h2 id="sc-workflow-title">Workflow builder</h2>
-        <p>Step cards and the animated run path come from the node and edge slots, inputs and branch outputs are named ports, and <code>--vw-*</code> variables and <code>vw-</code> classes restyle the canvas, minimap and zoom controls.</p>
+        <h2 id="sc-workflow-title">{{ t({ en: 'Workflow builder', ja: 'ワークフロービルダー' }) }}</h2>
+        <p v-if="locale === 'ja'">ステップカードと実行経路のアニメーションはノードと辺のスロットで描き、入力と分岐の出力は名前付きポートです。キャンバス、ミニマップ、ズーム操作は <code>--vw-*</code> 変数と <code>vw-</code> クラスで装飾しています。</p>
+        <p v-else>Step cards and the animated run path come from the node and edge slots, inputs and branch outputs are named ports, and <code>--vw-*</code> variables and <code>vw-</code> classes restyle the canvas, minimap and zoom controls.</p>
       </div>
       <div class="sc-workflow-toolbar">
-        <span class="sc-workflow-run"><span class="sc-workflow-run-dot" aria-hidden="true" />Run #1042 · {{ doneCount }} of {{ steps.length }} steps</span>
-        <div class="sc-workflow-segmented" role="group" aria-label="Edge style">
-          <button type="button" :aria-pressed="edgeStyle === 'curve'" @click="edgeStyle = 'curve'">Curved</button>
-          <button type="button" :aria-pressed="edgeStyle === 'orthogonal'" @click="edgeStyle = 'orthogonal'">Step</button>
+        <span class="sc-workflow-run"><span class="sc-workflow-run-dot" aria-hidden="true" />{{ t({ en: `Run #1042 · ${doneCount} of ${steps.length} steps`, ja: `実行 #1042 · ${steps.length} ステップ中 ${doneCount} 完了` }) }}</span>
+        <div class="sc-workflow-segmented" role="group" :aria-label="t({ en: 'Edge style', ja: '辺のスタイル' })">
+          <button type="button" :aria-pressed="edgeStyle === 'curve'" @click="edgeStyle = 'curve'">{{ t({ en: 'Curved', ja: '曲線' }) }}</button>
+          <button type="button" :aria-pressed="edgeStyle === 'orthogonal'" @click="edgeStyle = 'orthogonal'">{{ t({ en: 'Step', ja: '直角' }) }}</button>
         </div>
       </div>
     </div>
     <NetworkGraph
       v-model:selected-id="selectedId" unstyled-node-slots class="sc-workflow-graph" :nodes="steps" :edges="edges" :layout="layoutSteps" :positions="positions"
       :height="'clamp(440px, 40vw, 520px)'" :edge-style="edgeStyle" background="dots" :snap-grid="grid"
-      draggable connectable reconnectable show-minimap :labels="{ region: 'Workflow canvas' }"
+      draggable connectable reconnectable show-minimap :labels="{ ...labels.graph, region: t({ en: 'Workflow canvas', ja: 'ワークフローのキャンバス' }) }"
       :validate-connection="validateConnection"
       @node-move="commitMoves([$event])" @nodes-move="commitMoves" @connect="commitConnection" @reconnect="commitReconnect"
-      @connect-rejected="(_connection, reason) => status = 'Rejected: ' + reason"
+      @connect-rejected="(_connection, reason) => status = t({ en: 'Rejected: ', ja: '却下: ' }) + reason"
     >
       <template #node="{ node, box, selected }">
         <rect class="sc-workflow-ring" x="-5" y="-5" :width="box.width + 10" :height="box.height + 10" rx="16" />
@@ -229,8 +244,8 @@ function commitReconnect(change: GraphReconnect) {
         </g>
         <template v-if="node.data.kind === 'condition'">
           <line class="sc-workflow-divider" x1="1" :x2="box.width - 1" y1="84" y2="84" />
-          <text class="sc-workflow-branch" x="16" y="106">Order is paid</text>
-          <text class="sc-workflow-branch" x="16" y="124">Otherwise</text>
+          <text class="sc-workflow-branch" x="16" y="106">{{ t({ en: 'Order is paid', ja: '支払い済み' }) }}</text>
+          <text class="sc-workflow-branch" x="16" y="124">{{ t({ en: 'Otherwise', ja: 'それ以外' }) }}</text>
           <g class="sc-workflow-chip sc-workflow-chip-true" :transform="`translate(${box.width - 50} 94)`">
             <rect width="36" height="16" rx="4" /><text x="18" y="11.6">true</text>
           </g>
@@ -249,7 +264,10 @@ function commitReconnect(change: GraphReconnect) {
     </NetworkGraph>
     <div class="sc-workflow-foot">
       <p class="sc-workflow-status" role="status">{{ status }}</p>
-      <p class="sc-workflow-hint">Drag cards (they snap to the dot grid) · drag from an output port to an input port · select an edge to move its ends</p>
+      <p class="sc-workflow-hint">{{ t({
+        en: 'Drag cards (they snap to the dot grid) · drag from an output port to an input port · select an edge to move its ends',
+        ja: 'カードをドラッグ(ドットグリッドにスナップ) · 出力ポートから入力ポートへドラッグして接続 · 辺を選んで端をつなぎ替え',
+      }) }}</p>
     </div>
   </section>
 </template>

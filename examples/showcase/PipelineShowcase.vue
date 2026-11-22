@@ -5,6 +5,7 @@ import {
   type GraphBox, type GraphEdge, type GraphLayout, type NetworkNode, type TimelineBar, type TimelineRow, type ViewBinding,
   type ViewTargetEvent,
 } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 // A live CI/CD run monitor. The run is simulated on its own clock (milliseconds since the run started) with fixed
 // durations, so every state is a pure function of the clock and of the user's actions: inject a failure, retry, approve.
@@ -14,6 +15,8 @@ interface Job { id: string; name: string; matrix?: string; needs: string[]; dura
 interface Attempt { start: number; end: number; result: 'passed' | 'failed' }
 interface Plan { attempts: Attempt[]; done: number; outcome: 'passed' | 'failed' | 'skipped'; pending?: boolean }
 type JobNode = NetworkNode<Job> & { data: Job }
+
+const { t, labels } = useDemoLocale()
 
 const second = 1000
 const unit = (matrix: string, duration: number, pickup: number): Job =>
@@ -48,7 +51,7 @@ const columns: { width: number; ids: string[] }[] = [
   { width: 116, ids: ['approval'] }, { width: 124, ids: ['canary'] }, { width: 124, ids: ['production'] },
 ]
 const cardHeight = 60, columnGap = 26, rowGap = 12, padding = 16
-const edges: GraphEdge[] = jobs.flatMap(job => job.needs.map(from => ({ id: `${from}->${job.id}`, from, to: job.id, label: `${nameOf(from)} to ${fullName(job)}` })))
+const edges: GraphEdge[] = jobs.flatMap(job => job.needs.map(from => ({ id: `${from}->${job.id}`, from, to: job.id, label: t({ en: `${nameOf(from)} to ${fullName(job)}`, ja: `${nameOf(from)} から ${fullName(job)}` }) })))
 
 function layoutJobs(nodes: readonly JobNode[], links: readonly GraphEdge[]): GraphLayout {
   const tallest = Math.max(...columns.map(column => column.ids.length))
@@ -74,7 +77,10 @@ const chaos = ref(false)
 const failure = ref<{ at: number }>()
 const retryAt = ref<number>()
 const approvedAt = ref<number>()
-const message = ref('Run #2184 is paused in the end-to-end shards. Press Play, inject a failure, or select a job.')
+const message = ref(t({
+  en: 'Run #2184 is paused in the end-to-end shards. Press Play, inject a failure, or select a job.',
+  ja: '実行 #2184 は E2E シャードの途中で一時停止しています。再生するか、障害を起こすか、ジョブを選んでください。',
+}))
 
 // Plans every job from its needs: a failed or skipped need skips it; the approval gate holds until approved (projected
 // as approved now); the failing job fails at the injection, or a third of the way in, and its retry passes.
@@ -118,7 +124,10 @@ function statusOf(job: Job, plan: Plan, now: number): Status {
 }
 const statuses = computed(() => new Map(jobs.map(job => [job.id, statusOf(job, plans.value.get(job.id)!, clock.value)])))
 const status = (id: string) => statuses.value.get(id) ?? 'queued'
-const statusLabels: Record<Status, string> = { queued: 'Queued', running: 'Running', passed: 'Passed', failed: 'Failed', skipped: 'Skipped', waiting: 'Waiting for approval' }
+const statusLabels: Record<Status, string> = t({
+  en: { queued: 'Queued', running: 'Running', passed: 'Passed', failed: 'Failed', skipped: 'Skipped', waiting: 'Waiting for approval' },
+  ja: { queued: '待機中', running: '実行中', passed: '成功', failed: '失敗', skipped: 'スキップ', waiting: '承認待ち' },
+})
 
 const time = (ms: number) => {
   const total = Math.max(0, Math.round(ms / second))
@@ -136,8 +145,8 @@ function progress(id: string) {
 }
 function durationText(id: string) {
   const job = jobById.get(id)!, attempt = current(id), state = status(id)
-  if (state === 'skipped') return 'skipped'
-  if (!attempt || state === 'queued') return job.gate ? 'manual' : `~${time(job.duration * second)}`
+  if (state === 'skipped') return t({ en: 'skipped', ja: 'スキップ' })
+  if (!attempt || state === 'queued') return job.gate ? t({ en: 'manual', ja: '手動' }) : `~${time(job.duration * second)}`
   return time(Math.min(clock.value, attempt.end) - attempt.start)
 }
 
@@ -160,9 +169,9 @@ function edgeState(edge: GraphEdge) {
 const bars = computed<TimelineBar[]>(() => {
   const now = clock.value, critical = criticalPath.value.ids
   return jobs.flatMap(job => plans.value.get(job.id)!.attempts.map((attempt, index): TimelineBar => {
-    const id = `${job.id}:${index + 1}`, label = index ? `${fullName(job)} · attempt ${index + 1}` : fullName(job)
+    const id = `${job.id}:${index + 1}`, label = index ? t({ en: `${fullName(job)} · attempt ${index + 1}`, ja: `${fullName(job)} · ${index + 1} 回目` }) : fullName(job)
     if (now <= attempt.start) {
-      return { id, rowId: job.id, label, start: attempt.start, end: job.gate ? attempt.start : attempt.end, appearance: 'outline', tone: 'blue', description: 'Estimated' }
+      return { id, rowId: job.id, label, start: attempt.start, end: job.gate ? attempt.start : attempt.end, appearance: 'outline', tone: 'blue', description: t({ en: 'Estimated', ja: '見込み' }) }
     }
     const end = Math.min(attempt.end, now), running = now < attempt.end || (job.gate && plans.value.get(job.id)!.pending)
     const tone = job.gate ? 'amber' : running ? 'blue' : attempt.result === 'failed' ? 'violet' : 'teal'
@@ -204,10 +213,10 @@ const counts = computed(() => {
 const finished = computed(() => counts.value.running + counts.value.queued === 0)
 const finish = computed(() => Math.max(...[...plans.value.values()].map(plan => plan.done)))
 const runState = computed(() => {
-  if (counts.value.failed) return { tone: 'failed', label: counts.value.running ? 'Failing' : 'Failed' }
-  if (finished.value) return { tone: 'passed', label: 'Succeeded' }
-  if (status('approval') === 'waiting' && counts.value.running === 1) return { tone: 'waiting', label: 'Waiting for approval' }
-  return { tone: 'running', label: playing.value ? 'In progress' : 'Paused' }
+  if (counts.value.failed) return { tone: 'failed', label: counts.value.running ? t({ en: 'Failing', ja: '失敗あり' }) : t({ en: 'Failed', ja: '失敗' }) }
+  if (finished.value) return { tone: 'passed', label: t({ en: 'Succeeded', ja: '成功' }) }
+  if (status('approval') === 'waiting' && counts.value.running === 1) return { tone: 'waiting', label: t({ en: 'Waiting for approval', ja: '承認待ち' }) }
+  return { tone: 'running', label: playing.value ? t({ en: 'In progress', ja: '実行中' }) : t({ en: 'Paused', ja: '一時停止中' }) }
 })
 
 // Linked selection: a job is one entity, bound to its graph node, its timeline row and every bar of its attempts.
@@ -224,9 +233,10 @@ const selectedJob = computed(() => linked.selectedEntities.value[0]?.id)
 const isLinked = (id: string) => linked.graph.value.highlightedNodeIds.has(id) || linked.graph.value.selectedNodeIds.has(id)
 function describe(id: string) {
   const job = jobById.get(id)!, state = status(id), attempts = plans.value.get(id)!.attempts.length
-  const needs = job.needs.length ? ` · needs ${job.needs.map(nameOf).join(', ')}` : ''
+  const needs = job.needs.length ? t({ en: ` · needs ${job.needs.map(nameOf).join(', ')}`, ja: ` · 前提 ${job.needs.map(nameOf).join(', ')}` }) : ''
   const timing = state === 'queued' || state === 'skipped' ? '' : ` · ${durationText(id)}`
-  return `${fullName(job)} · ${statusLabels[state]}${timing}${attempts > 1 ? ` · attempt ${attempts}` : ''}${needs}.`
+  const attempt = attempts > 1 ? t({ en: ` · attempt ${attempts}`, ja: ` · ${attempts} 回目` }) : ''
+  return `${fullName(job)} · ${statusLabels[state]}${timing}${attempt}${needs}${t({ en: '.', ja: '。' })}`
 }
 const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
 const enter = (event: ViewTargetEvent) => linked.hoverEnter(event.target.view, event.target)
@@ -244,19 +254,21 @@ function tick() {
   clock.value = Math.min(clock.value + 1200, range.value.end, 30 * 60000)
   if (finished.value || clock.value >= 30 * 60000) {
     stop()
-    message.value = counts.value.failed ? `Run failed after ${time(finish.value)}: ${counts.value.skipped} jobs skipped.` : `Run succeeded in ${time(finish.value)}.`
+    message.value = counts.value.failed
+      ? t({ en: `Run failed after ${time(finish.value)}: ${counts.value.skipped} jobs skipped.`, ja: `実行は ${time(finish.value)} 後に失敗しました。${counts.value.skipped} 件のジョブをスキップしました。` })
+      : t({ en: `Run succeeded in ${time(finish.value)}.`, ja: `実行は ${time(finish.value)} で成功しました。` })
   }
 }
 function togglePlay() {
   if (playing.value) {
     stop()
-    message.value = `Paused at ${time(clock.value)}.`
+    message.value = t({ en: `Paused at ${time(clock.value)}.`, ja: `${time(clock.value)} で一時停止しました。` })
     return
   }
   if (finished.value) return restart()
   playing.value = true
   timer = setInterval(tick, 100)
-  message.value = 'Playing.'
+  message.value = t({ en: 'Playing.', ja: '再生中です。' })
 }
 function restart() {
   stop()
@@ -267,7 +279,9 @@ function restart() {
   linked.clearSelection()
   playing.value = true
   timer = setInterval(tick, 100)
-  message.value = chaos.value ? 'Restarted run #2184 with a failure armed in E2E tests · shard 2/3.' : 'Restarted run #2184.'
+  message.value = chaos.value
+    ? t({ en: 'Restarted run #2184 with a failure armed in E2E tests · shard 2/3.', ja: 'E2E tests · shard 2/3 に障害を仕込んで実行 #2184 を再開しました。' })
+    : t({ en: 'Restarted run #2184.', ja: '実行 #2184 を再開しました。' })
 }
 // Injecting fails the shard now (or a third of the way in, if it has not started). A failure that has happened stays
 // in the run's history when the toggle is turned off; one that has not happened yet is disarmed.
@@ -275,34 +289,37 @@ function toggleChaos() {
   chaos.value = !chaos.value
   const name = nameOf(failingJob)
   if (chaos.value) {
-    if (status(failingJob) === 'passed' && retryAt.value === undefined) message.value = `${name} already passed; restart the run to see the failure.`
+    if (status(failingJob) === 'passed' && retryAt.value === undefined) message.value = t({ en: `${name} already passed; restart the run to see the failure.`, ja: `${name} はすでに成功しています。障害を見るには実行をやり直してください。` })
     else if (!failure.value) {
       failure.value = { at: clock.value }
       message.value = status(failingJob) === 'failed'
-        ? `${name} failed: 3 tests timed out. ${counts.value.skipped} downstream jobs skipped.` : `Failure armed in ${name}.`
+        ? t({ en: `${name} failed: 3 tests timed out. ${counts.value.skipped} downstream jobs skipped.`, ja: `${name} が失敗しました。3 件のテストがタイムアウトし、後続の ${counts.value.skipped} 件のジョブをスキップしました。` })
+        : t({ en: `Failure armed in ${name}.`, ja: `${name} に障害を仕込みました。` })
     }
   } else if (failure.value && status(failingJob) !== 'failed' && retryAt.value === undefined) {
     failure.value = undefined
-    message.value = 'Failure disarmed.'
-  } else message.value = 'The failure stays in this run; retry it or restart the run.'
+    message.value = t({ en: 'Failure disarmed.', ja: '障害を解除しました。' })
+  } else message.value = t({ en: 'The failure stays in this run; retry it or restart the run.', ja: 'この実行の障害は残ります。再実行するか、実行をやり直してください。' })
 }
 const canRetry = computed(() => status(failingJob) === 'failed' && retryAt.value === undefined)
 function retry() {
   if (!canRetry.value) return
   retryAt.value = clock.value
-  message.value = `Retrying ${nameOf(failingJob)} (attempt 2). Downstream jobs are queued again.`
+  message.value = t({ en: `Retrying ${nameOf(failingJob)} (attempt 2). Downstream jobs are queued again.`, ja: `${nameOf(failingJob)} を再実行しています(2 回目)。後続のジョブは再び待機中です。` })
 }
 const canApprove = computed(() => status('approval') === 'waiting')
 function approve() {
   if (!canApprove.value) return
   approvedAt.value = clock.value
-  message.value = `Approved the production deployment after waiting ${time(clock.value - plans.value.get('approval')!.attempts[0]!.start)}.`
+  const waited = time(clock.value - plans.value.get('approval')!.attempts[0]!.start)
+  message.value = t({ en: `Approved the production deployment after waiting ${waited}.`, ja: `${waited} 待って本番デプロイを承認しました。` })
 }
 onBeforeUnmount(stop)
 
 const legend = [
-  { tone: 'teal', label: 'Passed' }, { tone: 'blue', label: 'Running' }, { tone: 'violet', label: 'Failed' },
-  { tone: 'amber', label: 'Approval wait' }, { tone: 'outline', label: 'Estimate' }, { tone: 'critical', label: 'Critical path' },
+  { tone: 'teal', label: t({ en: 'Passed', ja: '成功' }) }, { tone: 'blue', label: t({ en: 'Running', ja: '実行中' }) },
+  { tone: 'violet', label: t({ en: 'Failed', ja: '失敗' }) }, { tone: 'amber', label: t({ en: 'Approval wait', ja: '承認待ち' }) },
+  { tone: 'outline', label: t({ en: 'Estimate', ja: '見込み' }) }, { tone: 'critical', label: t({ en: 'Critical path', ja: 'クリティカルパス' }) },
 ]
 // Status glyphs drawn on a 16 × 16 grid, inside the cards and in the timeline rows.
 const marks: Record<Status, string[]> = {
@@ -312,11 +329,14 @@ const marks: Record<Status, string[]> = {
 </script>
 
 <template>
-  <section class="showcase sc-pipe" aria-label="CI/CD pipeline">
+  <section class="showcase sc-pipe" :aria-label="t({ en: 'CI/CD pipeline', ja: 'CI/CDパイプライン' })">
     <div class="sc-pipe-head">
       <div class="sc-pipe-intro">
-        <h2>CI/CD pipeline</h2>
-        <p>A live run monitor: the job graph and the timeline share one simulated clock and one linked selection. Cards come from the node slot, running paths animate in the edge slot, and bars grow as jobs run.</p>
+        <h2>{{ t({ en: 'CI/CD pipeline', ja: 'CI/CDパイプライン' }) }}</h2>
+        <p>{{ t({
+          en: 'A live run monitor: the job graph and the timeline share one simulated clock and one linked selection. Cards come from the node slot, running paths animate in the edge slot, and bars grow as jobs run.',
+          ja: '実行状況のライブモニターです。ジョブのグラフとタイムラインが1つの模擬クロックと連動選択を共有します。カードはノードのスロット、実行中の経路のアニメーションは辺のスロットで描き、バーはジョブの進行に合わせて伸びます。',
+        }) }}</p>
       </div>
       <div class="sc-pipe-run">
         <span class="sc-pipe-pill" :class="'sc-pipe-pill-' + runState.tone"><i aria-hidden="true" />{{ runState.label }}</span>
@@ -325,22 +345,22 @@ const marks: Record<Status, string[]> = {
     </div>
 
     <dl class="sc-pipe-kpis">
-      <div><dt>Elapsed</dt><dd>{{ time(Math.min(clock, finish)) }}</dd><small>{{ finished ? 'finished' : `ETA ${time(finish)}` }}</small></div>
-      <div class="sc-pipe-kpi-passed"><dt>Passed</dt><dd>{{ counts.passed }}<span>/{{ jobs.length }}</span></dd><small>{{ counts.queued }} queued</small></div>
-      <div class="sc-pipe-kpi-running"><dt>Running</dt><dd>{{ counts.running }}</dd><small>{{ status('approval') === 'waiting' ? '1 awaiting approval' : 'jobs in progress' }}</small></div>
-      <div class="sc-pipe-kpi-failed"><dt>Failed</dt><dd>{{ counts.failed }}</dd><small>{{ counts.skipped }} skipped</small></div>
-      <div class="sc-pipe-kpi-wide"><dt>Critical path</dt><dd>{{ time(criticalPath.total) }}</dd><small>{{ criticalPath.ids.size }} jobs · via {{ criticalPath.via.map(nameOf).join(' → ') }}</small></div>
+      <div><dt>{{ t({ en: 'Elapsed', ja: '経過時間' }) }}</dt><dd>{{ time(Math.min(clock, finish)) }}</dd><small>{{ finished ? t({ en: 'finished', ja: '完了' }) : t({ en: `ETA ${time(finish)}`, ja: `完了見込み ${time(finish)}` }) }}</small></div>
+      <div class="sc-pipe-kpi-passed"><dt>{{ t({ en: 'Passed', ja: '成功' }) }}</dt><dd>{{ counts.passed }}<span>/{{ jobs.length }}</span></dd><small>{{ t({ en: `${counts.queued} queued`, ja: `待機中 ${counts.queued}` }) }}</small></div>
+      <div class="sc-pipe-kpi-running"><dt>{{ t({ en: 'Running', ja: '実行中' }) }}</dt><dd>{{ counts.running }}</dd><small>{{ status('approval') === 'waiting' ? t({ en: '1 awaiting approval', ja: '承認待ち 1' }) : t({ en: 'jobs in progress', ja: 'ジョブが進行中' }) }}</small></div>
+      <div class="sc-pipe-kpi-failed"><dt>{{ t({ en: 'Failed', ja: '失敗' }) }}</dt><dd>{{ counts.failed }}</dd><small>{{ t({ en: `${counts.skipped} skipped`, ja: `スキップ ${counts.skipped}` }) }}</small></div>
+      <div class="sc-pipe-kpi-wide"><dt>{{ t({ en: 'Critical path', ja: 'クリティカルパス' }) }}</dt><dd>{{ time(criticalPath.total) }}</dd><small>{{ t({ en: `${criticalPath.ids.size} jobs · via `, ja: `${criticalPath.ids.size} 件のジョブ · 経路 ` }) }}{{ criticalPath.via.map(nameOf).join(' → ') }}</small></div>
     </dl>
 
     <div class="sc-pipe-toolbar">
       <div class="sc-pipe-actions">
         <button type="button" class="sc-pipe-primary" @click="togglePlay">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="playing ? 'M5 3.5v9M11 3.5v9' : 'M5 3.2v9.6L12.6 8z'" /></svg>{{ playing ? 'Pause' : 'Play' }}
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="playing ? 'M5 3.5v9M11 3.5v9' : 'M5 3.2v9.6L12.6 8z'" /></svg>{{ playing ? t({ en: 'Pause', ja: '一時停止' }) : t({ en: 'Play', ja: '再生' }) }}
         </button>
-        <button type="button" @click="restart">Restart run</button>
-        <button type="button" :aria-pressed="chaos" class="sc-pipe-chaos" @click="toggleChaos"><i aria-hidden="true" />Inject failure</button>
-        <button type="button" :disabled="!canRetry" @click="retry">Retry failed</button>
-        <button type="button" :disabled="!canApprove" class="sc-pipe-approve" @click="approve">Approve production</button>
+        <button type="button" @click="restart">{{ t({ en: 'Restart run', ja: '実行をやり直す' }) }}</button>
+        <button type="button" :aria-pressed="chaos" class="sc-pipe-chaos" @click="toggleChaos"><i aria-hidden="true" />{{ t({ en: 'Inject failure', ja: '障害を起こす' }) }}</button>
+        <button type="button" :disabled="!canRetry" @click="retry">{{ t({ en: 'Retry failed', ja: '失敗したジョブを再実行' }) }}</button>
+        <button type="button" :disabled="!canApprove" class="sc-pipe-approve" @click="approve">{{ t({ en: 'Approve production', ja: '本番デプロイを承認' }) }}</button>
       </div>
       <ol class="sc-pipe-strip" aria-hidden="true">
         <li v-for="job in jobs" :key="job.id" :class="'sc-pipe-' + status(job.id)" :title="`${fullName(job)}: ${statusLabels[status(job.id)]}`" />
@@ -350,7 +370,7 @@ const marks: Record<Status, string[]> = {
     <NetworkGraph
       unstyled-node-slots class="sc-pipe-graph" :nodes="nodes" :edges="edges" :layout="layoutJobs" edge-style="orthogonal"
       height="372px" background="dots" :selected-ids="linked.graph.value.selectedNodeIds"
-      :highlighted-node-ids="linked.graph.value.highlightedNodeIds" :labels="{ region: 'Pipeline graph' }"
+      :highlighted-node-ids="linked.graph.value.highlightedNodeIds" :labels="{ ...labels.graph, region: t({ en: 'Pipeline graph', ja: 'パイプラインのグラフ' }) }"
       @update:selected-ids="clearIfEmpty" @target-activate="activate" @target-enter="enter" @target-leave="leave"
     >
       <template #node="{ node, box }">
@@ -362,7 +382,7 @@ const marks: Record<Status, string[]> = {
           <path v-for="d in marks[status(node.id)]" :key="d" :d="d" />
         </g>
         <text class="sc-pipe-name" x="32" y="22.5">{{ node.data.name }}</text>
-        <text class="sc-pipe-time" x="12" y="42">{{ status(node.id) === 'waiting' ? `waiting ${durationText(node.id)}` : durationText(node.id) }}</text>
+        <text class="sc-pipe-time" x="12" y="42">{{ status(node.id) === 'waiting' ? t({ en: `waiting ${durationText(node.id)}`, ja: `待機 ${durationText(node.id)}` }) : durationText(node.id) }}</text>
         <g v-if="node.data.matrix" class="sc-pipe-badge" :transform="`translate(${box.width - 10 - node.data.matrix.length * 5.6 - 10} 31)`">
           <rect :width="node.data.matrix.length * 5.6 + 10" height="15" rx="4" />
           <text x="5" y="10.8">{{ node.data.matrix }}</text>
@@ -376,8 +396,8 @@ const marks: Record<Status, string[]> = {
       </template>
       <template #node-toolbar="{ node }">
         <div class="sc-pipe-popover">
-          <button v-if="node.id === 'approval'" type="button" :disabled="!canApprove" @click="approve">Approve</button>
-          <button v-else-if="node.id === failingJob && canRetry" type="button" @click="retry">Retry job</button>
+          <button v-if="node.id === 'approval'" type="button" :disabled="!canApprove" @click="approve">{{ t({ en: 'Approve', ja: '承認' }) }}</button>
+          <button v-else-if="node.id === failingJob && canRetry" type="button" @click="retry">{{ t({ en: 'Retry job', ja: 'ジョブを再実行' }) }}</button>
           <span v-else>{{ statusLabels[status(node.id)] }} · {{ durationText(node.id) }}</span>
         </div>
       </template>
@@ -387,15 +407,15 @@ const marks: Record<Status, string[]> = {
       class="sc-pipe-gantt" :rows="rows" :bars="bars" :range="range" :pixels-per-unit="pixelsPerMinute / 60000"
       :tick-steps="[60000, 120000, 300000]" :format-time="time" show-now :now="clock" readonly :row-height="28" height="auto"
       :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"
-      :show-controls="false" :labels="{ region: 'Job timeline', rows: 'Jobs' }"
+      :show-controls="false" :labels="{ ...labels.gantt, region: t({ en: 'Job timeline', ja: 'ジョブのタイムライン' }), rows: t({ en: 'Jobs', ja: 'ジョブ' }) }"
       @target-activate="activate" @target-enter="enter" @target-leave="leave"
     >
       <template #legend>
-        <ul class="sc-pipe-legend" aria-label="Legend">
+        <ul class="sc-pipe-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
           <li v-for="item in legend" :key="item.tone"><i :class="'sc-pipe-swatch sc-pipe-swatch-' + item.tone" aria-hidden="true" />{{ item.label }}</li>
         </ul>
       </template>
-      <template #row-heading><span class="sc-pipe-corner">Jobs <small>{{ jobs.length }}</small></span></template>
+      <template #row-heading><span class="sc-pipe-corner">{{ t({ en: 'Jobs', ja: 'ジョブ' }) }} <small>{{ jobs.length }}</small></span></template>
       <template #row="{ row }">
         <span class="sc-pipe-row" :class="{ 'sc-pipe-is-linked': linked.timeline.value.highlightedRowIds.has(row.id) || selectedJob === row.id }">
           <svg class="sc-pipe-ic" :class="'sc-pipe-ic-' + status(row.id)" viewBox="0 0 16 16" aria-hidden="true">

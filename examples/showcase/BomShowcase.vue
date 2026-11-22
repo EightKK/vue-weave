@@ -12,6 +12,7 @@ import {
   alternates, comparedFields, expandBom, explodeBom, formatDate, formatQty, itemGraph, itemMap, linesByParent, parseDate,
   revisionA, revisionB, usageRecord, type Bom, type Item, type ItemEdge, type Line, type Unit, type UsageData, type UsageRow,
 } from './bomData'
+import { useDemoLocale } from '../i18n'
 
 // A multi-level bill of materials for a small pump family. The BOM lines are the model; the tree grid shows them
 // expanded into usage positions (row ID = usage key, row entity = the item), so a shared subassembly appears under every
@@ -23,6 +24,9 @@ type GraphNodeData = { item: Item; product: boolean; change?: Change }
 type GraphNode = NetworkNode<GraphNodeData> & { data: GraphNodeData }
 type GraphLink = Omit<ItemEdge, 'kind'> & { kind: ItemEdge['kind'] | 'removed'; change?: Change }
 
+// Item names and part numbers are data and stay in English; the interface follows the page language.
+const { t, labels, isJapanese } = useDemoLocale()
+
 const history = useEditHistory<Bom>(revisionB)
 const bom = computed(() => history.state.value)
 const items = computed(() => itemMap(bom.value))
@@ -31,7 +35,10 @@ const rowsA = expandBom(revisionA)
 const rowsAById = new Map(rowsA.map(row => [row.id, row]))
 const itemsA = itemMap(revisionA)
 const nameOf = (id: string | undefined) => (id && (items.value.get(id) ?? itemsA.get(id))?.name) || id || ''
-const status = ref('Revision B is open for editing. Select a row or a node; Ctrl+Z and Ctrl+Shift+Z undo and redo.')
+const status = ref(t({
+  en: 'Revision B is open for editing. Select a row or a node; Ctrl+Z and Ctrl+Shift+Z undo and redo.',
+  ja: '改訂 B を編集中です。行かノードを選んでください。Ctrl+Z と Ctrl+Shift+Z で元に戻す・やり直しができます。',
+}))
 
 // ---- revision comparison: diffStructure over the usage records of revision A and the working revision B ----
 const comparing = ref(false)
@@ -45,23 +52,27 @@ const changes = computed(() => {
   for (const move of diff.value.moved) Object.assign(entry(move.key), { from: move.beforeParent, to: move.afterParent }).kinds.push('moved')
   return map
 })
-const fieldLabels: Record<string, string> = {
-  pos: 'position', pn: 'part number', name: 'name', qty: 'quantity', unit: 'unit', rev: 'item revision', source: 'make/buy', from: 'effective from',
-}
+const fieldLabels: Record<string, string> = t({
+  en: { pos: 'position', pn: 'part number', name: 'name', qty: 'quantity', unit: 'unit', rev: 'item revision', source: 'make/buy', from: 'effective from' },
+  ja: { pos: '位置', pn: '品番', name: '名称', qty: '数量', unit: '単位', rev: '品目改訂', source: '内外作', from: '適用開始' },
+})
 const show = (name: string, value: unknown) => value === undefined || value === null ? '–' : name === 'from' ? formatDate(value) : String(value)
-const rowLabel = (key: string | undefined) => key ? (rows.value.find(row => row.id === key) ?? rowsAById.get(key))?.label ?? key : 'the top level'
+const rowLabel = (key: string | undefined) => key ? (rows.value.find(row => row.id === key) ?? rowsAById.get(key))?.label ?? key : t({ en: 'the top level', ja: '最上位' })
 function describeChange(key: string) {
   const change = changes.value.get(key)!
   const parts: string[] = []
   const row = rows.value.find(item => item.id === key) ?? rowsAById.get(key)!
-  if (change.kinds.includes('added')) parts.push(`added to ${rowLabel(row.parentId)}`)
-  if (change.kinds.includes('removed')) parts.push(`removed from ${rowLabel(row.parentId)}`)
-  if (change.kinds.includes('moved')) parts.push(`moved from ${rowLabel(change.from)} to ${rowLabel(change.to)}`)
+  if (change.kinds.includes('added')) parts.push(t({ en: `added to ${rowLabel(row.parentId)}`, ja: `${rowLabel(row.parentId)} に追加` }))
+  if (change.kinds.includes('removed')) parts.push(t({ en: `removed from ${rowLabel(row.parentId)}`, ja: `${rowLabel(row.parentId)} から削除` }))
+  if (change.kinds.includes('moved')) parts.push(t({ en: `moved from ${rowLabel(change.from)} to ${rowLabel(change.to)}`, ja: `${rowLabel(change.from)} から ${rowLabel(change.to)} へ移動` }))
   for (const field of change.fields) parts.push(`${fieldLabels[field.name]} ${show(field.name, field.before)} → ${show(field.name, field.after)}`)
   return parts.join('; ')
 }
 const kindOf = (kinds: readonly Change[]): Change => kinds.includes('removed') ? 'removed' : kinds.includes('added') ? 'added' : kinds.includes('moved') ? 'moved' : 'changed'
-const kindLabel: Record<Change, string> = { added: 'Added', removed: 'Removed', changed: 'Changed', moved: 'Moved' }
+const kindLabel: Record<Change, string> = t({
+  en: { added: 'Added', removed: 'Removed', changed: 'Changed', moved: 'Moved' },
+  ja: { added: '追加', removed: '削除', changed: '変更', moved: '移動' },
+})
 
 // Rows shown in the grid: revision B, plus the rows revision A had and B removed while comparing (read-only ghosts,
 // placed after their previous sibling of revision A, else first under their parent).
@@ -69,7 +80,9 @@ const comparedRows = computed<UsageRow[]>(() => {
   if (!comparing.value) return rows.value
   const out: UsageRow[] = rows.value.map((row) => {
     const change = changes.value.get(row.id)
-    return change ? { ...row, detail: `${row.detail}. ${kindLabel[kindOf(change.kinds)]} in revision B: ${describeChange(row.id)}` } : row
+    if (!change) return row
+    const kind = kindLabel[kindOf(change.kinds)]
+    return { ...row, detail: t({ en: `${row.detail}. ${kind} in revision B: ${describeChange(row.id)}`, ja: `${row.detail}。改訂 B で${kind}: ${describeChange(row.id)}` }) }
   })
   for (const key of diff.value.removed) {
     const ghost = rowsAById.get(key)!
@@ -77,7 +90,7 @@ const comparedRows = computed<UsageRow[]>(() => {
     let at = -1
     for (let i = siblings.indexOf(ghost) - 1; i >= 0 && at < 0; i--) at = out.findIndex(row => row.id === siblings[i]!.id)
     if (at < 0) at = out.findIndex(row => row.id === ghost.parentId)
-    out.splice(at + 1, 0, { ...ghost, detail: `${ghost.detail}. Removed in revision B`, data: { ...ghost.data, ghost: true } })
+    out.splice(at + 1, 0, { ...ghost, detail: t({ en: `${ghost.detail}. Removed in revision B`, ja: `${ghost.detail}。改訂 B で削除` }), data: { ...ghost.data, ghost: true } })
   }
   return out
 })
@@ -125,7 +138,10 @@ watch(() => query.value.trim(), () => {
   const parents = new Set(result.rows.map(row => row.parentId).filter(id => id !== undefined))
   searchExpanded.value = [...parents]
   const count = result.matchedRowIds.length
-  status.value = `${count} row${count === 1 ? '' : 's'} match “${query.value.trim()}”, shown with their assemblies.`
+  status.value = t({
+    en: `${count} row${count === 1 ? '' : 's'} match “${query.value.trim()}”, shown with their assemblies.`,
+    ja: `「${query.value.trim()}」に一致する ${count} 行を、上位のアセンブリと一緒に表示しています。`,
+  })
 })
 const expanded = computed({
   get: () => projection.value ? searchExpanded.value : expandedIds.value,
@@ -147,57 +163,63 @@ const isLine = (row: UsageRow) => Boolean(row.data.lineId) && !row.data.ghost
 const isLive = (row: UsageRow) => !row.data.ghost
 const field = <K extends keyof UsageData>(key: K) => (row: UsageRow, value: unknown): UsageRow => ({ ...row, data: { ...row.data, [key]: value } })
 const columns: TreeGridColumn<UsageRow>[] = [
-  { id: 'pos', label: 'Pos.', width: 64, value: row => row.data.pos, editor: { kind: 'number', min: 1, integer: true, required: true }, editable: isLine, update: field('pos') },
-  { id: 'pn', label: 'Part number', width: 100, value: row => row.data.pn, editor: { kind: 'text', required: true }, editable: isLine, update: field('pn') },
-  { id: 'name', label: 'Name', width: 190, value: row => row.data.name, editor: { kind: 'text', required: true }, editable: isLive, update: field('name') },
-  { id: 'qty', label: 'Qty', width: 68, value: row => row.data.qty, editor: { kind: 'number', min: 0, required: true }, editable: isLine, update: field('qty') },
+  { id: 'pos', label: t({ en: 'Pos.', ja: '位置' }), width: 64, value: row => row.data.pos, editor: { kind: 'number', min: 1, integer: true, required: true }, editable: isLine, update: field('pos') },
+  { id: 'pn', label: t({ en: 'Part number', ja: '品番' }), width: 100, value: row => row.data.pn, editor: { kind: 'text', required: true }, editable: isLine, update: field('pn') },
+  { id: 'name', label: t({ en: 'Name', ja: '名称' }), width: 190, value: row => row.data.name, editor: { kind: 'text', required: true }, editable: isLive, update: field('name') },
+  { id: 'qty', label: t({ en: 'Qty', ja: '数量' }), width: 68, value: row => row.data.qty, editor: { kind: 'number', min: 0, required: true }, editable: isLine, update: field('qty') },
   {
-    id: 'unit', label: 'Unit', width: 72, value: row => row.data.unit,
+    id: 'unit', label: t({ en: 'Unit', ja: '単位' }), width: 72, value: row => row.data.unit,
     editor: { kind: 'select', required: true, choices: units.map(unit => ({ value: unit, label: unit })) }, editable: isLive, update: field('unit'),
   },
-  { id: 'rev', label: 'Item rev.', width: 76, value: row => row.data.rev, editor: { kind: 'text', required: true }, editable: isLive, update: field('rev') },
+  { id: 'rev', label: t({ en: 'Item rev.', ja: '品目改訂' }), width: 76, value: row => row.data.rev, editor: { kind: 'text', required: true }, editable: isLive, update: field('rev') },
   {
-    id: 'source', label: 'Make/buy', width: 88, value: row => row.data.source,
-    editor: { kind: 'select', required: true, choices: [{ value: 'make', label: 'Make' }, { value: 'buy', label: 'Buy' }] }, editable: isLive, update: field('source'),
+    id: 'source', label: t({ en: 'Make/buy', ja: '内外作' }), width: 88, value: row => row.data.source,
+    editor: { kind: 'select', required: true, choices: [{ value: 'make', label: t({ en: 'Make', ja: '内作' }) }, { value: 'buy', label: t({ en: 'Buy', ja: '購入' }) }] }, editable: isLive, update: field('source'),
   },
   {
-    id: 'from', label: 'Effective from', width: 118, value: row => row.data.from,
+    id: 'from', label: t({ en: 'Effective from', ja: '適用開始' }), width: 118, value: row => row.data.from,
     editor: { kind: 'time', required: true, parse: parseDate, format: formatDate }, editable: isLine, update: field('from'),
   },
-  { id: 'ext', label: 'Per product', width: 96, align: 'end', value: row => ({ value: row.data.ext, label: `${formatQty(row.data.ext)} ${row.data.unit}` }) },
+  { id: 'ext', label: t({ en: 'Per product', ja: '製品あたり' }), width: 96, align: 'end', value: row => ({ value: row.data.ext, label: `${formatQty(row.data.ext)} ${row.data.unit}` }) },
 ]
 
 // ---- checks shared by the validators ----
 const structure = computed(() => itemGraph(bom.value))
 /** Why `childId` cannot be used inside `parentId`, or undefined: the parent would end up inside its own structure. */
 function cycleReason(childId: string, parentId: string) {
-  if (childId === parentId) return `${nameOf(childId)} cannot contain itself.`
+  if (childId === parentId) return t({ en: `${nameOf(childId)} cannot contain itself.`, ja: `${nameOf(childId)} は自分自身を含められません。` })
   const walk = traverseGraph(structure.value, [childId], { direction: 'forward', edgeFilter: edge => edge.kind === 'structure', paths: true })
   if (!walk.nodeIds.includes(parentId)) return undefined
   const path = graphTracePath(walk, parentId, { direction: 'forward' })!
-  return `Cycle: ${nameOf(childId)} already contains ${nameOf(parentId)} (${path.nodeIds.map(nameOf).join(' → ')}), so it cannot go inside it.`
+  return t({
+    en: `Cycle: ${nameOf(childId)} already contains ${nameOf(parentId)} (${path.nodeIds.map(nameOf).join(' → ')}), so it cannot go inside it.`,
+    ja: `循環: ${nameOf(childId)} はすでに ${nameOf(parentId)} を含んでいるため(${path.nodeIds.map(nameOf).join(' → ')})、その中には入れられません。`,
+  })
 }
 const lineOf = (row: UsageRow) => bom.value.lines.find(line => line.id === row.data.lineId)
-const readOnly = 'Rows that revision B removed are read only.'
+const readOnly = t({ en: 'Rows that revision B removed are read only.', ja: '改訂 B で削除した行は読み取り専用です。' })
 function checkCell(change: TreeGridCellEdit): true | string {
   const row = rowById.value.get(change.rowId)
   if (!row || row.data.ghost) return readOnly
   const value = change.after
-  if (value === null || value === '') return `${columns.find(column => column.id === change.columnId)?.label ?? 'This field'} needs a value.`
+  if (value === null || value === '') {
+    const name = columns.find(column => column.id === change.columnId)?.label
+    return t({ en: `${name ?? 'This field'} needs a value.`, ja: `${name ?? 'この項目'}を入力してください。` })
+  }
   if (change.columnId === 'qty') {
-    if (typeof value !== 'number' || value <= 0) return 'Quantity must be greater than 0.'
-    if (row.data.unit === 'pcs' && !Number.isInteger(value)) return 'Parts counted in pcs need a whole quantity.'
+    if (typeof value !== 'number' || value <= 0) return t({ en: 'Quantity must be greater than 0.', ja: '数量は 0 より大きくしてください。' })
+    if (row.data.unit === 'pcs' && !Number.isInteger(value)) return t({ en: 'Parts counted in pcs need a whole quantity.', ja: '単位が pcs の部品は整数で入力してください。' })
   }
   const line = lineOf(row)
   if (change.columnId === 'pos' && line) {
     const other = bom.value.lines.find(item => item.parent === line.parent && item.id !== line.id && item.pos === value)
-    if (other) return `Position ${value} of ${nameOf(line.parent)} is already used by ${nameOf(other.child)}.`
+    if (other) return t({ en: `Position ${value} of ${nameOf(line.parent)} is already used by ${nameOf(other.child)}.`, ja: `${nameOf(line.parent)} の位置 ${value} はすでに ${nameOf(other.child)} が使っています。` })
   }
   if (change.columnId === 'pn' && line) {
     const pn = String(value).trim()
     const existing = bom.value.items.find(item => item.pn.toLowerCase() === pn.toLowerCase())
     if (existing) return cycleReason(existing.id, line.parent) ?? true
-    if (bom.value.lines.some(item => item.parent === line.child)) return `${nameOf(line.child)} has lines of its own: replace it with an existing part number.`
+    if (bom.value.lines.some(item => item.parent === line.child)) return t({ en: `${nameOf(line.child)} has lines of its own: replace it with an existing part number.`, ja: `${nameOf(line.child)} には子の明細があります。既存の品番に置き換えてください。` })
   }
   return true
 }
@@ -244,16 +266,23 @@ function onCellEdit(change: TreeGridCellEdit) {
   const row = rowById.value.get(change.rowId)!
   const lineField = change.columnId === 'pos' || change.columnId === 'qty' || change.columnId === 'from'
   const column = columns.find(item => item.id === change.columnId)!
-  const where = change.columnId === 'pn' ? `replaced by ${String(change.after)}`
-    : `${column.label.toLowerCase()} ${show(change.columnId, change.before)} → ${show(change.columnId, change.after)}`
+  const where = change.columnId === 'pn' ? t({ en: `replaced by ${String(change.after)}`, ja: `${String(change.after)} に置き換え` })
+    : `${isJapanese.value ? column.label : column.label.toLowerCase()} ${show(change.columnId, change.before)} → ${show(change.columnId, change.after)}`
   const count = lineField || change.columnId === 'pn' ? usages(row.data.parentItemId!) : usages(row.data.itemId)
-  commit(applyCellEdits([change]), `${row.label}: ${where}${count > 1 ? ` (all ${count} usages)` : ''}.`)
+  commit(applyCellEdits([change]), `${row.label}: ${where}${count > 1 ? allUsages(count) : ''}${t({ en: '.', ja: '。' })}`)
 }
 function onSheetEdit(change: TreeGridSheetEdit) {
-  commit(applyCellEdits(change.edits), `${change.action}: ${change.edits.length} cell${change.edits.length === 1 ? '' : 's'} changed.`)
+  commit(applyCellEdits(change.edits), t({
+    en: `${change.action}: ${change.edits.length} cell${change.edits.length === 1 ? '' : 's'} changed.`,
+    ja: `${change.action}: ${change.edits.length} 個のセルを変更しました。`,
+  }))
 }
-function onRejected(_change: unknown, reason: string) { status.value = 'Rejected: ' + reason }
-function onCancel(event: TreeGridEditCancel) { status.value = `Edit cancelled (${event.kind}, ${event.reason}).` }
+function onRejected(_change: unknown, reason: string) { status.value = t({ en: 'Rejected: ', ja: '却下: ' }) + reason }
+function onCancel(event: TreeGridEditCancel) {
+  status.value = t({ en: `Edit cancelled (${event.kind}, ${event.reason}).`, ja: `編集を取り消しました(${event.kind}, ${event.reason})。` })
+}
+/** " (all 3 usages)": the note of an edit that changes a shared assembly everywhere it is used. */
+const allUsages = (count: number) => t({ en: ` (all ${count} usages)`, ja: `(使用箇所 ${count} か所すべて)` })
 
 /** Inserts `line` after the line of the previous shown sibling, else before the next one, else last. */
 function placeLine(lines: readonly Line[], line: Line, siblings: readonly UsageRow[], id: string): Line[] {
@@ -268,20 +297,23 @@ function placeLine(lines: readonly Line[], line: Line, siblings: readonly UsageR
 const nextPos = (lines: readonly Line[], parent: string) => Math.max(0, ...lines.filter(line => line.parent === parent).map(line => line.pos)) + 10
 
 function validateRowCreate(change: TreeGridRowCreate) {
-  if (change.parentId === undefined) return 'The products are fixed: add parts inside an assembly.'
+  if (change.parentId === undefined) return t({ en: 'The products are fixed: add parts inside an assembly.', ja: '製品は固定です。部品はアセンブリの中に追加してください。' })
   return rowById.value.get(change.parentId)?.data.ghost ? readOnly : true
 }
 async function onRowCreate(change: TreeGridRowCreate) {
   const parent = rowById.value.get(change.parentId!)!
   const n = ++created
-  const item: Item = { id: `NEW-${n}`, pn: `NEW-${n}`, name: `New part ${n}`, unit: 'pcs', rev: 'A', source: 'buy' }
+  const item: Item = { id: `NEW-${n}`, pn: `NEW-${n}`, name: t({ en: `New part ${n}`, ja: `新しい部品 ${n}` }), unit: 'pcs', rev: 'A', source: 'buy' }
   const line: Line = { id: `N${n}`, parent: parent.data.itemId, child: item.id, pos: nextPos(bom.value.lines, parent.data.itemId), qty: 1, from: Date.UTC(2026, 2, 2) }
   const draft: UsageRow = { id: `draft-${n}`, parentId: parent.id, label: item.name, data: { ...parent.data, lineId: line.id, itemId: item.id } }
   const next = insertTreeGridRow(gridRows.value, change, draft)
   const count = usages(parent.data.itemId)
   commit(
     { ...bom.value, items: [...bom.value.items, item], lines: placeLine(bom.value.lines, line, next.filter(row => row.parentId === parent.id), draft.id) },
-    `Added ${item.name} to ${parent.label} at position ${line.pos}${count > 1 ? ` (all ${count} usages)` : ''}.`,
+    t({
+      en: `Added ${item.name} to ${parent.label} at position ${line.pos}${count > 1 ? allUsages(count) : ''}.`,
+      ja: `${item.name} を ${parent.label} の位置 ${line.pos} に追加しました${count > 1 ? allUsages(count) : ''}。`,
+    }),
   )
   if (!expanded.value.includes(parent.id)) expanded.value = [...expanded.value, parent.id]
   const added = rows.value.find(row => row.parentId === parent.id && row.data.lineId === line.id)
@@ -295,7 +327,7 @@ function validateRowDelete(change: TreeGridRowDelete) {
   for (const id of change.ids) {
     const row = rowById.value.get(id)
     if (!row || row.data.ghost) return readOnly
-    if (!row.data.lineId) return 'Products cannot be deleted.'
+    if (!row.data.lineId) return t({ en: 'Products cannot be deleted.', ja: '製品は削除できません。' })
   }
   return true
 }
@@ -307,7 +339,10 @@ function onRowDelete(change: TreeGridRowDelete) {
   const ids = new Set(gone.map(row => row.data.lineId!))
   const shared = gone.some(row => usages(row.data.parentItemId!) > 1)
   commit({ ...bom.value, lines: bom.value.lines.filter(line => !ids.has(line.id)) },
-    `Removed ${gone.map(row => row.label).join(', ')} from ${gone.map(row => nameOf(row.data.parentItemId)).join(', ')}${shared ? ' (every usage of the assembly)' : ''}.`)
+    t({
+      en: `Removed ${gone.map(row => row.label).join(', ')} from ${gone.map(row => nameOf(row.data.parentItemId)).join(', ')}${shared ? ' (every usage of the assembly)' : ''}.`,
+      ja: `${gone.map(row => nameOf(row.data.parentItemId)).join(', ')} から ${gone.map(row => row.label).join(', ')} を削除しました${shared ? '(アセンブリのすべての使用箇所)' : ''}。`,
+    }))
 }
 function validateRowMove(change: TimelineRowMove) {
   const row = rowById.value.get(change.id)
@@ -318,8 +353,8 @@ function validateRowMove(change: TimelineRowMove) {
     const reason = cycleReason(row.data.itemId, target.data.itemId)
     if (reason) return reason
   }
-  if (!row.data.lineId && target) return 'A product stays at the top level.'
-  if (row.data.lineId && !target) return 'Only products sit at the top level.'
+  if (!row.data.lineId && target) return t({ en: 'A product stays at the top level.', ja: '製品は最上位から動かせません。' })
+  if (row.data.lineId && !target) return t({ en: 'Only products sit at the top level.', ja: '最上位に置けるのは製品だけです。' })
   return true
 }
 async function onRowMove(change: TimelineRowMove) {
@@ -328,7 +363,7 @@ async function onRowMove(change: TimelineRowMove) {
   const siblings = next.filter(item => item.parentId === change.after.parentId)
   if (!row.data.lineId) {
     const order = siblings.filter(item => !item.data.ghost).map(item => item.data.itemId)
-    commit({ ...bom.value, roots: [...order, ...bom.value.roots.filter(id => !order.includes(id))] }, `Moved ${row.label} among the products.`)
+    commit({ ...bom.value, roots: [...order, ...bom.value.roots.filter(id => !order.includes(id))] }, t({ en: `Moved ${row.label} among the products.`, ja: `${row.label} を製品の間で移動しました。` }))
     return
   }
   const target = rowById.value.get(change.after.parentId!)!
@@ -338,8 +373,11 @@ async function onRowMove(change: TimelineRowMove) {
   const moved: Line = { ...line, parent: target.data.itemId, pos: clash ? nextPos(bom.value.lines, target.data.itemId) : line.pos }
   const count = usages(target.data.itemId)
   commit({ ...bom.value, lines: placeLine(bom.value.lines, moved, siblings, change.id) }, moving
-    ? `Moved ${row.label} into ${target.label}${clash ? `, renumbered to position ${moved.pos}` : ''}${count > 1 ? ` (all ${count} usages)` : ''}.`
-    : `Moved ${row.label} within ${target.label}.`)
+    ? t({
+      en: `Moved ${row.label} into ${target.label}${clash ? `, renumbered to position ${moved.pos}` : ''}${count > 1 ? allUsages(count) : ''}.`,
+      ja: `${row.label} を ${target.label} の中へ移動しました${clash ? `(位置を ${moved.pos} に振り直し)` : ''}${count > 1 ? allUsages(count) : ''}。`,
+    })
+    : t({ en: `Moved ${row.label} within ${target.label}.`, ja: `${row.label} を ${target.label} の中で移動しました。` }))
   if (!expanded.value.includes(target.id)) expanded.value = [...expanded.value, target.id]
   const now = rows.value.find(item => item.parentId === target.id && item.data.lineId === line.id)
   if (now && now.id !== change.id) {
@@ -378,7 +416,7 @@ const fullGraph = computed(() => {
     const item = items.value.get(id) ?? itemsA.get(id)!
     const change = nodeStatus.get(id)
     return {
-      id, label: item.name, detail: item.pn + (change ? ` · ${kindLabel[change].toLowerCase()} in revision B` : ''),
+      id, label: item.name, detail: item.pn + (change ? t({ en: ` · ${kindLabel[change].toLowerCase()} in revision B`, ja: ` · 改訂 B で${kindLabel[change]}` }) : ''),
       data: { item, product: bom.value.roots.includes(id), ...change && { change } },
     }
   })
@@ -386,12 +424,12 @@ const fullGraph = computed(() => {
   const edges: GraphLink[] = [
     ...bom.value.lines.filter(line => used.has(line.parent)).map((line) => {
       const change = lineStatus.get(line.id), before = qtyBefore.get(line.id)
-      const was = change && before !== undefined && before !== line.qty ? ` (was ×${formatQty(before)})` : ''
+      const was = change && before !== undefined && before !== line.qty ? t({ en: ` (was ×${formatQty(before)})`, ja: `(旧 ×${formatQty(before)})` }) : ''
       return { id: line.id, from: line.parent, to: line.child, kind: 'structure' as const, label: `×${formatQty(line.qty)}${was}`, ...change && { change } }
     }),
-    ...alternates.filter(link => ids.has(link.from) && ids.has(link.to)).map(link => ({ ...link, kind: 'alternate' as const, label: 'alternate', dashed: true, markerEnd: 'none' as const })),
+    ...alternates.filter(link => ids.has(link.from) && ids.has(link.to)).map(link => ({ ...link, kind: 'alternate' as const, label: t({ en: 'alternate', ja: '代替' }), dashed: true, markerEnd: 'none' as const })),
     ...removedLines.filter(line => ids.has(line.parent)).map(line => ({
-      id: 'removed-' + line.id, from: line.parent, to: line.child, kind: 'removed' as const, label: `×${formatQty(line.qty)} removed`, dashed: true, change: 'removed' as const,
+      id: 'removed-' + line.id, from: line.parent, to: line.child, kind: 'removed' as const, label: t({ en: `×${formatQty(line.qty)} removed`, ja: `×${formatQty(line.qty)} 削除` }), dashed: true, change: 'removed' as const,
     })),
   ]
   return { nodes, edges, ids }
@@ -428,14 +466,14 @@ function onGridActivate(activation: TreeGridActivation) {
   linked.selectEntities(activation.entities, { source: 'grid' })
   const id = activation.entities[0]?.id
   const count = highlightedRowIds.value.length
-  if (id) status.value = `${nameOf(id)} (${items.value.get(id)?.pn ?? id}) is used in ${count} row${count === 1 ? '' : 's'}.`
+  if (id) status.value = t({ en: `${nameOf(id)} (${items.value.get(id)?.pn ?? id}) is used in ${count} row${count === 1 ? '' : 's'}.`, ja: `${nameOf(id)}(${items.value.get(id)?.pn ?? id})は ${count} 行で使われています。` })
 }
 function onGraphActivate(event: ViewTargetEvent) {
   if (event.target.view !== 'graph' || event.target.kind !== 'node') return
   gridSelection.value = []
   linked.select('graph', [event.target])
   const count = highlightedRowIds.value.length
-  status.value = `${nameOf(event.target.id)} is used in ${count} row${count === 1 ? '' : 's'}.`
+  status.value = t({ en: `${nameOf(event.target.id)} is used in ${count} row${count === 1 ? '' : 's'}.`, ja: `${nameOf(event.target.id)} は ${count} 行で使われています。` })
 }
 
 // ---- where-used: traverseGraph backward over structure edges only, with a node limit and paths ----
@@ -483,7 +521,10 @@ function rowOfTrace() {
 async function traceTo(productId: string) {
   tracedId.value = productId
   const row = rowOfTrace()
-  status.value = `Path to ${nameOf(productId)}: ${trace.value!.nodeIds.map(nameOf).reverse().join(' → ')}.`
+  status.value = t({
+    en: `Path to ${nameOf(productId)}: ${trace.value!.nodeIds.map(nameOf).reverse().join(' → ')}.`,
+    ja: `${nameOf(productId)} までの経路: ${trace.value!.nodeIds.map(nameOf).reverse().join(' → ')}。`,
+  })
   if (row) await reveal(row.id)
 }
 const graph = ref<NetworkGraphExposed<GraphNode, GraphLink>>()
@@ -508,8 +549,8 @@ const rollup = computed(() => [...explodeBom(bom.value, rollupProduct.value)]
   .sort((a, b) => a.item.pn.localeCompare(b.item.pn)))
 
 // ---- undo, redo and the comparison toggle ----
-function undo() { if (history.canUndo.value) { history.undo(); status.value = 'Undone.' } }
-function redo() { if (history.canRedo.value) { history.redo(); status.value = 'Redone.' } }
+function undo() { if (history.canUndo.value) { history.undo(); status.value = t({ en: 'Undone.', ja: '元に戻しました。' }) } }
+function redo() { if (history.canRedo.value) { history.redo(); status.value = t({ en: 'Redone.', ja: 'やり直しました。' }) } }
 function onKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement
   if (!(event.ctrlKey || event.metaKey) || target.closest('input, select, textarea')) return
@@ -520,19 +561,26 @@ function onKeydown(event: KeyboardEvent) {
 function toggleCompare() {
   comparing.value = !comparing.value
   const total = changeList.value.length
-  status.value = comparing.value ? `Revision A → B: ${total} change${total === 1 ? '' : 's'}.` : 'Comparison off.'
+  status.value = comparing.value
+    ? t({ en: `Revision A → B: ${total} change${total === 1 ? '' : 's'}.`, ja: `改訂 A → B: ${total} 件の変更。` })
+    : t({ en: 'Comparison off.', ja: '比較を終了しました。' })
 }
 const stats = computed(() => ({ items: fullGraph.value.nodes.filter(node => !node.data.change || node.data.change !== 'removed').length, lines: bom.value.lines.length, rows: rows.value.length }))
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+const plural = (count: number, word: string) => isJapanese.value ? `${count} 件の品目` : `${count} ${word}${count === 1 ? '' : 's'}`
 const selectedItem = computed(() => selectedItemId.value ? items.value.get(selectedItemId.value) : undefined)
 </script>
 
 <template>
-  <section class="showcase sc-bom" aria-label="BOM editor" @keydown="onKeydown">
+  <section class="showcase sc-bom" :aria-label="t({ en: 'BOM editor', ja: 'BOMエディター' })" @keydown="onKeydown">
     <div class="sc-bom-head">
       <div>
-        <h2>BOM editor</h2>
-        <p>
+        <h2>{{ t({ en: 'BOM editor', ja: 'BOMエディター' }) }}</h2>
+        <p v-if="isJapanese">
+          ポンプ製品群の5階層の部品表で、共通のサブアセンブリを含みます。<code>TreeGrid</code> は使用位置を表示し、コアの行・セル用ヘルパーで編集します。
+          <code>NetworkGraph</code> は品目と使用関係を表示し、両方向に連動します。<code>traverseGraph</code> で使用先を求め、<code>diffStructure</code> で改訂を比較し、
+          積み上げはデモのコードです。
+        </p>
+        <p v-else>
           A five-level bill of materials for a pump family, with shared subassemblies. <code>TreeGrid</code> shows usage
           positions and edits them through the core row and cell helpers; <code>NetworkGraph</code> shows items and usages,
           linked both ways. <code>traverseGraph</code> answers where-used, <code>diffStructure</code> compares revisions and
@@ -540,23 +588,23 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
         </p>
       </div>
       <dl class="sc-bom-stats">
-        <div><dt>Items</dt><dd>{{ stats.items }}</dd></div>
-        <div><dt>BOM lines</dt><dd>{{ stats.lines }}</dd></div>
-        <div><dt>Usage rows</dt><dd>{{ stats.rows }}</dd></div>
+        <div><dt>{{ t({ en: 'Items', ja: '品目' }) }}</dt><dd>{{ stats.items }}</dd></div>
+        <div><dt>{{ t({ en: 'BOM lines', ja: 'BOM 明細' }) }}</dt><dd>{{ stats.lines }}</dd></div>
+        <div><dt>{{ t({ en: 'Usage rows', ja: '使用行' }) }}</dt><dd>{{ stats.rows }}</dd></div>
       </dl>
     </div>
 
     <div class="sc-bom-toolbar">
       <label class="sc-bom-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
-        <input v-model="query" type="search" aria-label="Search part number or name" placeholder="Search part number or name…">
+        <input v-model="query" type="search" :aria-label="t({ en: 'Search part number or name', ja: '品番か名称で検索' })" :placeholder="t({ en: 'Search part number or name…', ja: '品番か名称で検索…' })">
       </label>
-      <div class="sc-bom-group" role="group" aria-label="History">
-        <button type="button" :disabled="!history.canUndo.value" @click="undo">Undo</button>
-        <button type="button" :disabled="!history.canRedo.value" @click="redo">Redo</button>
+      <div class="sc-bom-group" role="group" :aria-label="t({ en: 'History', ja: '履歴' })">
+        <button type="button" :disabled="!history.canUndo.value" @click="undo">{{ t({ en: 'Undo', ja: '元に戻す' }) }}</button>
+        <button type="button" :disabled="!history.canRedo.value" @click="redo">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
       </div>
-      <button type="button" class="sc-bom-compare" :aria-pressed="comparing" @click="toggleCompare">Compare with revision A</button>
-      <ul v-if="comparing" class="sc-bom-legend" aria-label="Change legend">
+      <button type="button" class="sc-bom-compare" :aria-pressed="comparing" @click="toggleCompare">{{ t({ en: 'Compare with revision A', ja: '改訂 A と比較' }) }}</button>
+      <ul v-if="comparing" class="sc-bom-legend" :aria-label="t({ en: 'Change legend', ja: '変更の凡例' })">
         <li v-for="kind in (['added', 'changed', 'moved', 'removed'] as const)" :key="kind" :data-change="kind">
           <span class="sc-bom-chip" :data-change="kind">{{ kindLabel[kind] }}</span> {{ changeCounts[kind] }}
         </li>
@@ -571,7 +619,7 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
           :selected-row-ids="gridSelection" :highlighted-row-ids="highlightedRowIds" :highlighted-cells="changedCells"
           :validate-cell-edit="validateCellEdit" :validate-sheet-edit="validateSheetEdit" :validate-row-create="validateRowCreate"
           :validate-row-delete="validateRowDelete" :validate-row-move="validateRowMove"
-          :labels="{ grid: 'Bill of materials', treeColumn: 'Structure' }"
+          :labels="{ ...labels.treeGrid, grid: t({ en: 'Bill of materials', ja: '部品表' }), treeColumn: t({ en: 'Structure', ja: '構成' }) }"
           @row-activate="onGridActivate" @cell-activate="onGridActivate"
           @cell-edit="onCellEdit" @cell-edit-rejected="onRejected" @sheet-edit="onSheetEdit" @sheet-edit-rejected="onRejected"
           @edit-cancel="onCancel" @row-create="onRowCreate" @row-delete="onRowDelete" @row-move="onRowMove"
@@ -583,16 +631,20 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
             <span v-if="comparing && changes.has(row.id)" class="sc-bom-chip" :data-change="kindOf(changes.get(row.id)!.kinds)">{{ kindLabel[kindOf(changes.get(row.id)!.kinds)] }}</span>
           </template>
         </TreeGrid>
-        <p class="sc-bom-status" role="status" aria-label="BOM status">{{ status }}</p>
-        <p class="sc-bom-hint">
+        <p class="sc-bom-status" role="status" :aria-label="t({ en: 'BOM status', ja: 'BOM の状態' })">{{ status }}</p>
+        <p v-if="isJapanese" class="sc-bom-hint">
+          Enter、F2 または文字入力でセルを編集 · Ctrl+Enter で明細を追加、Delete で削除 · Alt+矢印かドラッグで行を移動 ·
+          名称、単位、改訂、内外作は品目に属し、すべての使用箇所が変わります。位置、数量、適用開始は明細に属します。
+        </p>
+        <p v-else class="sc-bom-hint">
           Enter, F2 or typing edits a cell · Ctrl+Enter adds a line, Delete removes one · Alt+arrows or a drag move a row ·
           name, unit, revision and make/buy belong to the item and change every usage; position, quantity and effectivity belong to the line.
         </p>
       </div>
 
-      <aside class="sc-bom-side" aria-label="Item details">
-        <section v-if="comparing" class="sc-bom-panel" aria-label="Revision changes">
-          <h3>Revision A → B <span class="sc-bom-count">{{ changeList.length }}</span></h3>
+      <aside class="sc-bom-side" :aria-label="t({ en: 'Item details', ja: '品目の詳細' })">
+        <section v-if="comparing" class="sc-bom-panel" :aria-label="t({ en: 'Revision changes', ja: '改訂の変更' })">
+          <h3>{{ t({ en: 'Revision A → B', ja: '改訂 A → B' }) }} <span class="sc-bom-count">{{ changeList.length }}</span></h3>
           <ul class="sc-bom-changes">
             <li v-for="entry in changeList" :key="entry.key">
               <button type="button" :data-change="entry.kind" @click="reveal(entry.key, entry.columnId)">
@@ -600,52 +652,55 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
               </button>
             </li>
           </ul>
-          <p v-if="!changeList.length" class="sc-bom-muted">No differences.</p>
+          <p v-if="!changeList.length" class="sc-bom-muted">{{ t({ en: 'No differences.', ja: '差分はありません。' }) }}</p>
         </section>
 
-        <section class="sc-bom-panel" aria-label="Where used">
+        <section class="sc-bom-panel" :aria-label="t({ en: 'Where used', ja: '使用先' })">
           <div class="sc-bom-panel-head">
-            <h3>Where used</h3>
-            <div class="sc-bom-segmented" role="group" aria-label="Follow relation">
-              <button type="button" :aria-pressed="follow === 'structure'" @click="follow = 'structure'">Structure</button>
-              <button type="button" :aria-pressed="follow === 'alternate'" @click="follow = 'alternate'">Alternates</button>
+            <h3>{{ t({ en: 'Where used', ja: '使用先' }) }}</h3>
+            <div class="sc-bom-segmented" role="group" :aria-label="t({ en: 'Follow relation', ja: 'たどる関係' })">
+              <button type="button" :aria-pressed="follow === 'structure'" @click="follow = 'structure'">{{ t({ en: 'Structure', ja: '構成' }) }}</button>
+              <button type="button" :aria-pressed="follow === 'alternate'" @click="follow = 'alternate'">{{ t({ en: 'Alternates', ja: '代替品' }) }}</button>
             </div>
           </div>
           <template v-if="selectedItem && whereUsed">
             <p class="sc-bom-selected"><strong>{{ selectedItem.name }}</strong> <small>{{ selectedItem.pn }}</small></p>
             <template v-if="follow === 'structure'">
-              <h4>Used directly in</h4>
-              <ul v-if="parentsOf.length" class="sc-bom-list" aria-label="Parent assemblies">
+              <h4>{{ t({ en: 'Used directly in', ja: '直接の使用先' }) }}</h4>
+              <ul v-if="parentsOf.length" class="sc-bom-list" :aria-label="t({ en: 'Parent assemblies', ja: '親アセンブリ' })">
                 <li v-for="line in parentsOf" :key="line.id">
-                  <button type="button" @click="selectItem(line.parent, 'where-used')">{{ nameOf(line.parent) }} <small>pos {{ line.pos }} · ×{{ formatQty(line.qty) }}</small></button>
+                  <button type="button" @click="selectItem(line.parent, 'where-used')">{{ nameOf(line.parent) }} <small>{{ t({ en: 'pos', ja: '位置' }) }} {{ line.pos }} · ×{{ formatQty(line.qty) }}</small></button>
                 </li>
               </ul>
-              <p v-else class="sc-bom-muted">Not used in an assembly: a product or an unused part.</p>
-              <h4>Products</h4>
-              <ul v-if="products.length" class="sc-bom-list" aria-label="Products using the item">
+              <p v-else class="sc-bom-muted">{{ t({ en: 'Not used in an assembly: a product or an unused part.', ja: 'アセンブリでは使われていません(製品か未使用の部品)。' }) }}</p>
+              <h4>{{ t({ en: 'Products', ja: '製品' }) }}</h4>
+              <ul v-if="products.length" class="sc-bom-list" :aria-label="t({ en: 'Products using the item', ja: 'この品目を使う製品' })">
                 <li v-for="id in products" :key="id">
-                  <button type="button" :aria-pressed="trace?.nodeIds.at(-1) === id" @click="traceTo(id)">{{ nameOf(id) }} <small>show path</small></button>
+                  <button type="button" :aria-pressed="trace?.nodeIds.at(-1) === id" @click="traceTo(id)">{{ nameOf(id) }} <small>{{ t({ en: 'show path', ja: '経路を表示' }) }}</small></button>
                 </li>
               </ul>
-              <p v-else class="sc-bom-muted">No product reached{{ whereUsed.truncated?.length ? ' within the limit' : '' }}.</p>
+              <p v-else class="sc-bom-muted">{{ whereUsed.truncated?.length ? t({ en: 'No product reached within the limit.', ja: '上限内では製品に届きません。' }) : t({ en: 'No product reached.', ja: '製品に届きません。' }) }}</p>
               <p v-if="whereUsed.truncated?.length" class="sc-bom-note" role="note">
-                Limit of {{ limit }} items reached at {{ whereUsed.truncated.map(step => nameOf(step.nodeId)).join(', ') }}: more not shown.
-                <button type="button" @click="limit = Infinity">Show all</button>
+                {{ t({
+                  en: `Limit of ${limit} items reached at ${whereUsed.truncated.map(step => nameOf(step.nodeId)).join(', ')}: more not shown.`,
+                  ja: `${whereUsed.truncated.map(step => nameOf(step.nodeId)).join(', ')} で上限の ${limit} 品目に達したため、残りは表示していません。`,
+                }) }}
+                <button type="button" @click="limit = Infinity">{{ t({ en: 'Show all', ja: 'すべて表示' }) }}</button>
               </p>
-              <p v-else-if="limit === Infinity" class="sc-bom-muted">All {{ plural(whereUsed.nodeIds.length - 1, 'item') }} above it are shown. <button type="button" class="sc-bom-link" @click="limit = 8">Limit to 8</button></p>
-              <p v-if="leaked.length" class="sc-bom-muted" aria-label="Ignored alternate links">
-                Alternate links are not followed: they would add {{ leaked.map(nameOf).join(', ') }}.
+              <p v-else-if="limit === Infinity" class="sc-bom-muted">{{ t({ en: `All ${plural(whereUsed.nodeIds.length - 1, 'item')} above it are shown.`, ja: `上位の ${plural(whereUsed.nodeIds.length - 1, 'item')}をすべて表示しています。` }) }} <button type="button" class="sc-bom-link" @click="limit = 8">{{ t({ en: 'Limit to 8', ja: '8 件までにする' }) }}</button></p>
+              <p v-if="leaked.length" class="sc-bom-muted" :aria-label="t({ en: 'Ignored alternate links', ja: '無視した代替リンク' })">
+                {{ t({ en: `Alternate links are not followed: they would add ${leaked.map(nameOf).join(', ')}.`, ja: `代替リンクはたどりません。たどると ${leaked.map(nameOf).join(', ')} が加わります。` }) }}
               </p>
             </template>
             <template v-else>
-              <h4>Approved alternates</h4>
-              <ul v-if="alternateIds.length" class="sc-bom-list" aria-label="Alternate parts">
+              <h4>{{ t({ en: 'Approved alternates', ja: '承認済みの代替品' }) }}</h4>
+              <ul v-if="alternateIds.length" class="sc-bom-list" :aria-label="t({ en: 'Alternate parts', ja: '代替部品' })">
                 <li v-for="id in alternateIds" :key="id"><button type="button" @click="selectItem(id, 'where-used')">{{ nameOf(id) }}</button></li>
               </ul>
-              <p v-else class="sc-bom-muted">No alternate parts.</p>
+              <p v-else class="sc-bom-muted">{{ t({ en: 'No alternate parts.', ja: '代替部品はありません。' }) }}</p>
             </template>
           </template>
-          <p v-else class="sc-bom-muted">Select a row or a node to see the assemblies and products that use the item.</p>
+          <p v-else class="sc-bom-muted">{{ t({ en: 'Select a row or a node to see the assemblies and products that use the item.', ja: '行かノードを選ぶと、その品目を使うアセンブリと製品を表示します。' }) }}</p>
         </section>
       </aside>
     </div>
@@ -656,7 +711,7 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
           ref="graph" :nodes="graphNodes" :edges="graphEdges" unstyled-node-slots :height="460"
           :options="{ direction: 'LR', nodeWidth: 184, nodeHeight: 44, columnGap: 72, rowGap: 12 }"
           :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="graphHighlightedNodes"
-          :highlighted-edge-ids="graphHighlightedEdges" :dimmed-ids="dimmedIds" :labels="{ region: 'Item structure' }"
+          :highlighted-edge-ids="graphHighlightedEdges" :dimmed-ids="dimmedIds" :labels="{ ...labels.graph, region: t({ en: 'Item structure', ja: '品目の構成' }) }"
           @target-activate="onGraphActivate"
         >
           <template #node="{ node, box, selected, highlighted }">
@@ -669,23 +724,29 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
           </template>
         </NetworkGraph>
         <div class="sc-bom-graph-foot">
-          <label class="sc-bom-check"><input v-model="showParts" type="checkbox"> Show purchased parts</label>
-          <p class="sc-bom-hint">Edges are usages labelled with their quantity; dashed edges link alternate parts. The path from the selected item to a product is highlighted.</p>
+          <label class="sc-bom-check"><input v-model="showParts" type="checkbox"> {{ t({ en: 'Show purchased parts', ja: '購入部品を表示' }) }}</label>
+          <p class="sc-bom-hint">{{ t({
+            en: 'Edges are usages labelled with their quantity; dashed edges link alternate parts. The path from the selected item to a product is highlighted.',
+            ja: '辺は数量付きの使用関係で、破線は代替部品を結びます。選んだ品目から製品までの経路を強調表示します。',
+          }) }}</p>
         </div>
       </div>
 
-      <section class="sc-bom-panel sc-bom-rollup" aria-label="Rollup">
+      <section class="sc-bom-panel sc-bom-rollup" :aria-label="t({ en: 'Rollup', ja: '積み上げ' })">
         <div class="sc-bom-panel-head">
-          <h3>Rollup</h3>
-          <select v-model="rollupProduct" aria-label="Rollup product">
+          <h3>{{ t({ en: 'Rollup', ja: '積み上げ' }) }}</h3>
+          <select v-model="rollupProduct" :aria-label="t({ en: 'Rollup product', ja: '積み上げる製品' })">
             <option v-for="id in bom.roots" :key="id" :value="id">{{ nameOf(id) }}</option>
           </select>
         </div>
-        <label class="sc-bom-check"><input v-model="purchasedOnly" type="checkbox"> Purchased parts only</label>
-        <p class="sc-bom-muted">Total quantity per item for one {{ nameOf(rollupProduct) }}: shared subassemblies are multiplied along every path. Demo code, not library behaviour.</p>
+        <label class="sc-bom-check"><input v-model="purchasedOnly" type="checkbox"> {{ t({ en: 'Purchased parts only', ja: '購入部品のみ' }) }}</label>
+        <p class="sc-bom-muted">{{ t({
+          en: `Total quantity per item for one ${nameOf(rollupProduct)}: shared subassemblies are multiplied along every path. Demo code, not library behaviour.`,
+          ja: `${nameOf(rollupProduct)} 1 台あたりの品目ごとの総数量です。共通のサブアセンブリはすべての経路に沿って掛け合わせます。ライブラリの機能ではなくデモのコードです。`,
+        }) }}</p>
         <div class="sc-bom-rollup-scroll">
-          <table aria-label="Rollup quantities">
-            <thead><tr><th scope="col">Part</th><th scope="col">Name</th><th scope="col">Total</th></tr></thead>
+          <table :aria-label="t({ en: 'Rollup quantities', ja: '積み上げ数量' })">
+            <thead><tr><th scope="col">{{ t({ en: 'Part', ja: '品番' }) }}</th><th scope="col">{{ t({ en: 'Name', ja: '名称' }) }}</th><th scope="col">{{ t({ en: 'Total', ja: '合計' }) }}</th></tr></thead>
             <tbody>
               <tr v-for="entry in rollup" :key="entry.item.id" :class="{ 'sc-bom-is-selected': entry.item.id === selectedItemId }">
                 <td>{{ entry.item.pn }}</td>

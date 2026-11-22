@@ -1,9 +1,9 @@
 // The CI/CD pipeline showcase: a simulated run shown as a job graph and a linked timeline.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 import type { Page } from './support'
 
 async function openPipeline(page: Page) {
-  await openDemo(page, 'CI/CD pipeline')
+  await openExample(page, 'pipeline', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'CI/CD pipeline', exact: true })
   // Graph cards are named "<job> <status>", timeline bars "<job> <start>–<end>", so both can be found in the showcase.
   const graph = showcase
@@ -97,5 +97,20 @@ test('the pipeline showcase links a selected job between the graph and the timel
   await expect(graph.locator('[data-vw-node="security"]')).toHaveClass(/vw-is-highlighted/)
   await expect(build).toHaveAttribute('aria-pressed', 'false')
   await expect(buildBar).not.toHaveClass(/vw-is-highlighted/)
+  expect(errors).toEqual([])
+})
+
+test('on the Japanese page the pipeline names its views, controls and job states in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'pipeline', { kind: 'showcase', locale: 'ja' })
+  const showcase = demo.getByRole('region', { name: 'CI/CDパイプライン', exact: true })
+  const status = showcase.getByRole('status').last()
+  await expect(status).toHaveText('実行 #2184 は E2E シャードの途中で一時停止しています。再生するか、障害を起こすか、ジョブを選んでください。')
+  const build = showcase.getByRole('button', { name: 'Build 成功', exact: true })
+  await expect(build).toBeVisible()
+  await expect(showcase.getByRole('region', { name: 'ジョブのタイムライン', exact: true })).toBeVisible()
+  await expect(showcase.getByRole('button', { name: '再生', exact: true })).toBeVisible()
+  await build.click()
+  await expect(status).toHaveText(/^Build · 成功 · .+ · 前提 .+。$/)
   expect(errors).toEqual([])
 })

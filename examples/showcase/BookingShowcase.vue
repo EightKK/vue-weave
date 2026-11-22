@@ -5,6 +5,9 @@ import {
   type TimelineSelectDetail, type TimelineZoomState,
 } from '../../src'
 import { day } from '../data'
+import { useDemoLocale } from '../i18n'
+
+const { t, labels, isJapanese } = useDemoLocale()
 
 // Fixed dates in UTC milliseconds keep the calendar deterministic. Day 0 is Monday 23 November 2026; stays run from
 // noon on the arrival day to noon on the departure day, and "today" is Wednesday 25 November at noon.
@@ -14,21 +17,28 @@ const noon = (offset: number) => start + offset * day + day / 2
 const today = noon(2)
 const pixelsPerDay = 75
 
-const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekdays = t({ en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], ja: ['日', '月', '火', '水', '木', '金', '土'] })
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 // Bar names and tick labels read "Wed 25"; the bar slot and the tick slot add the rest.
 const formatTime = (time: number) => {
   const date = new Date(time)
-  return `${weekdays[date.getUTCDay()]} ${date.getUTCDate()}`
+  return isJapanese.value ? `${date.getUTCDate()}日(${weekdays[date.getUTCDay()]})` : `${weekdays[date.getUTCDay()]} ${date.getUTCDate()}`
 }
 const headerBands = [calendarBands(range, 'month', {
-  label: from => `${months[new Date(from).getUTCMonth()]} ${new Date(from).getUTCFullYear()}`,
+  label: from => t({
+    en: `${months[new Date(from).getUTCMonth()]} ${new Date(from).getUTCFullYear()}`,
+    ja: `${new Date(from).getUTCFullYear()}年${new Date(from).getUTCMonth() + 1}月`,
+  }),
 })]
 // Saturdays and Sundays of the two weeks.
 const weekends: TimeRange[] = [5, 12].map(offset => ({ start: start + offset * day, end: start + (offset + 2) * day }))
-const markers: TimelineMarker[] = [{ id: 'today', time: today, label: 'Today' }]
+const markers: TimelineMarker[] = [{ id: 'today', time: today, label: t({ en: 'Today', ja: '今日' }) }]
 
 type RoomType = 'Single' | 'Double' | 'Suite'
+const roomTypes: Record<RoomType, string> = t({
+  en: { Single: 'Single', Double: 'Double', Suite: 'Suite' },
+  ja: { Single: 'シングル', Double: 'ダブル', Suite: 'スイート' },
+})
 interface Room { floor: number; number: string; type: RoomType; clean: boolean }
 const rooms: Room[] = [
   { floor: 1, number: '101', type: 'Single', clean: true },
@@ -46,8 +56,8 @@ const floors = [1, 2, 3]
 const roomById = new Map(rooms.map(room => [`room-${room.number}`, room]))
 // Floors are parent rows; rooms are their children.
 const rows: TimelineRow[] = floors.flatMap(floor => [
-  { id: `floor-${floor}`, label: `Floor ${floor}` },
-  ...rooms.filter(room => room.floor === floor).map(room => ({ id: `room-${room.number}`, parentId: `floor-${floor}`, label: `Room ${room.number}` })),
+  { id: `floor-${floor}`, label: t({ en: `Floor ${floor}`, ja: `${floor}階` }) },
+  ...rooms.filter(room => room.floor === floor).map(room => ({ id: `room-${room.number}`, parentId: `floor-${floor}`, label: t({ en: `Room ${room.number}`, ja: `${room.number}号室` }) })),
 ])
 
 type Status = 'confirmed' | 'checked-in' | 'pending' | 'blocked'
@@ -55,7 +65,14 @@ type Channel = 'Direct' | 'OTA' | 'Corporate'
 interface StayInfo { status: Status; channel?: Channel; note?: string }
 // Each status maps to one tone, and the stylesheet below restyles the four tones of this chart.
 const tones = { confirmed: 'blue', 'checked-in': 'teal', pending: 'amber', blocked: 'violet' } as const
-const statusLabels: Record<Status, string> = { confirmed: 'Confirmed', 'checked-in': 'Checked in', pending: 'Pending', blocked: 'Out of order' }
+const statusLabels: Record<Status, string> = t({
+  en: { confirmed: 'Confirmed', 'checked-in': 'Checked in', pending: 'Pending', blocked: 'Out of order' },
+  ja: { confirmed: '確定', 'checked-in': 'チェックイン済み', pending: '仮予約', blocked: '使用不可' },
+})
+const channelLabels: Record<Channel, string> = t({
+  en: { Direct: 'Direct', OTA: 'OTA', Corporate: 'Corporate' },
+  ja: { Direct: '直販', OTA: 'OTA', Corporate: '法人' },
+})
 
 function stay(room: string, label: string, from: number, to: number, info: StayInfo): TimelineBar<StayInfo> {
   return {
@@ -79,14 +96,14 @@ const initialStays = [
   stay('202', 'Hannah Schmidt', 2, 4, { status: 'confirmed', channel: 'Direct' }),
   stay('202', 'Luca Bianchi', 7, 10, { status: 'pending', channel: 'OTA' }),
   stay('202', 'Yuki Sato', 11, 13, { status: 'confirmed', channel: 'Direct' }),
-  stay('203', 'Maintenance 203', 3, 6, { status: 'blocked', note: 'Bathroom refit' }),
+  stay('203', t({ en: 'Maintenance 203', ja: '保守 203' }), 3, 6, { status: 'blocked', note: t({ en: 'Bathroom refit', ja: '浴室の改修' }) }),
   stay('203', 'Daniel Kim', 8, 12, { status: 'confirmed', channel: 'Corporate' }),
   stay('301', 'Aisha Khan', 0, 5, { status: 'checked-in', channel: 'OTA' }),
   stay('301', 'Tom Becker', 6, 8, { status: 'pending', channel: 'Direct' }),
   stay('302', 'Sara Haddad', 3, 6, { status: 'confirmed', channel: 'Direct' }),
   stay('302', 'Max Müller', 6, 9, { status: 'confirmed', channel: 'OTA' }),
   stay('303', 'Ruth Ellis', 4, 9, { status: 'confirmed', channel: 'Corporate' }),
-  stay('303', 'Maintenance 303', 10, 12, { status: 'blocked', note: 'Carpet replacement' }),
+  stay('303', t({ en: 'Maintenance 303', ja: '保守 303' }), 10, 12, { status: 'blocked', note: t({ en: 'Carpet replacement', ja: 'カーペットの交換' }) }),
 ]
 
 // Controlled state: the chart proposes edits and this component applies the accepted ones to its own copies.
@@ -94,11 +111,14 @@ const stays = ref(initialStays)
 const selectedIds = ref<ReadonlySet<string>>(new Set())
 const collapsedFloors = ref<ReadonlySet<string>>(new Set())
 const zoom = ref(1)
-const status = ref('Drag a stay, or focus it and use the arrow keys: Left and Right move it by a night, Shift and Alt change check-out and check-in, Up and Down change the room.')
+const status = ref(t({
+  en: 'Drag a stay, or focus it and use the arrow keys: Left and Right move it by a night, Shift and Alt change check-out and check-in, Up and Down change the room.',
+  ja: '宿泊をドラッグするか、フォーカスして矢印キーを使います。左右で1泊ずつ移動、Shift と Alt でチェックアウトとチェックインを変更、上下で客室を変えます。',
+}))
 
 const infoOf = (bar: TimelineBar<StayInfo>) => bar.data ?? { status: 'confirmed' as const }
 const nights = (bar: TimeRange) => Math.round((bar.end - bar.start) / day)
-const nightsText = (count: number) => `${count} night${count === 1 ? '' : 's'}`
+const nightsText = (count: number) => t({ en: `${count} night${count === 1 ? '' : 's'}`, ja: `${count}泊` })
 const roomNumber = (rowId: string) => roomById.get(rowId)?.number ?? rowId
 const isRoom = (rowId: string) => roomById.has(rowId)
 
@@ -110,7 +130,7 @@ const departures = computed(() => stays.value.filter(bar => infoOf(bar).status !
 function floorSummary(rowId: string) {
   const onFloor = rooms.filter(room => `floor-${room.floor}` === rowId).map(room => `room-${room.number}`)
   const occupied = new Set(inHouse.value.map(bar => bar.rowId).filter(id => onFloor.includes(id))).size
-  return `${occupied} of ${onFloor.length} occupied tonight`
+  return t({ en: `${occupied} of ${onFloor.length} occupied tonight`, ja: `今夜 ${onFloor.length} 室中 ${occupied} 室使用` })
 }
 
 // With rowDraggable, Up and Down (or a drag) can land on a floor heading. The app then continues in the direction of
@@ -129,20 +149,32 @@ function targetRoom(change: TimelineEdit, bar: TimelineBar): string | undefined 
 // Synchronous rules, checked before the chart emits `edit`. The returned text is announced and shown in the status line.
 function validateEdit(change: TimelineEdit): true | string {
   const bar = stays.value.find(item => item.id === change.id)
-  if (!bar) return 'This stay no longer exists.'
+  if (!bar) return t({ en: 'This stay no longer exists.', ja: 'この宿泊はもうありません。' })
   const info = infoOf(bar)
   const room = targetRoom(change, bar)
   const { start: from, end: to } = change.after
-  if (!room) return `There is no room ${change.row && displayedRowIds.value.indexOf(change.row.after) < displayedRowIds.value.indexOf(change.row.before) ? 'above' : 'below'} Room ${roomNumber(bar.rowId)}.`
-  if (info.status === 'blocked' && room !== bar.rowId) return 'Maintenance blocks stay with their room.'
-  if (info.status === 'checked-in' && (change.mode !== 'end' || room !== bar.rowId)) return `${bar.label} is already checked in, so only the check-out can change.`
-  if (from !== bar.start && from < today) return `${bar.label} can't arrive before today (${formatTime(today)}).`
-  if (to < today) return `${bar.label} can't check out before today (${formatTime(today)}).`
+  if (!room) {
+    const above = change.row && displayedRowIds.value.indexOf(change.row.after) < displayedRowIds.value.indexOf(change.row.before)
+    return t({
+      en: `There is no room ${above ? 'above' : 'below'} Room ${roomNumber(bar.rowId)}.`,
+      ja: `${roomNumber(bar.rowId)}号室の${above ? '上' : '下'}に客室はありません。`,
+    })
+  }
+  if (info.status === 'blocked' && room !== bar.rowId) return t({ en: 'Maintenance blocks stay with their room.', ja: '保守の期間は客室を移せません。' })
+  if (info.status === 'checked-in' && (change.mode !== 'end' || room !== bar.rowId)) return t({ en: `${bar.label} is already checked in, so only the check-out can change.`, ja: `${bar.label} はチェックイン済みのため、チェックアウトだけを変更できます。` })
+  if (from !== bar.start && from < today) return t({ en: `${bar.label} can't arrive before today (${formatTime(today)}).`, ja: `${bar.label} の到着を今日(${formatTime(today)})より前にはできません。` })
+  if (to < today) return t({ en: `${bar.label} can't check out before today (${formatTime(today)}).`, ja: `${bar.label} のチェックアウトを今日(${formatTime(today)})より前にはできません。` })
   const clash = stays.value.find(other => other.id !== bar.id && other.rowId === room && other.start < to && from < other.end)
   if (clash) {
     return infoOf(clash).status === 'blocked'
-      ? `Room ${roomNumber(room)} is out of order ${formatTime(clash.start)}–${formatTime(clash.end)}.`
-      : `Room ${roomNumber(room)} is taken by ${clash.label} ${formatTime(clash.start)}–${formatTime(clash.end)}.`
+      ? t({
+        en: `Room ${roomNumber(room)} is out of order ${formatTime(clash.start)}–${formatTime(clash.end)}.`,
+        ja: `${roomNumber(room)}号室は ${formatTime(clash.start)}–${formatTime(clash.end)} に使用できません。`,
+      })
+      : t({
+        en: `Room ${roomNumber(room)} is taken by ${clash.label} ${formatTime(clash.start)}–${formatTime(clash.end)}.`,
+        ja: `${roomNumber(room)}号室は ${clash.label} ${formatTime(clash.start)}–${formatTime(clash.end)} の予約で埋まっています。`,
+      })
   }
   return true
 }
@@ -152,9 +184,11 @@ function applyEdit(change: TimelineEdit) {
   if (!bar || !room) return
   stays.value = stays.value.map(item => item.id === bar.id ? { ...item, rowId: room, start: change.after.start, end: change.after.end } : item)
   const when = `${formatTime(change.after.start)}–${formatTime(change.after.end)} (${nightsText(nights(change.after))})`
-  status.value = room !== bar.rowId ? `Moved ${bar.label} to Room ${roomNumber(room)}, ${when}.`
-    : change.mode === 'move' ? `Moved ${bar.label} to ${when} in Room ${roomNumber(room)}.`
-      : `${bar.label} now stays ${when}.`
+  status.value = room !== bar.rowId
+    ? t({ en: `Moved ${bar.label} to Room ${roomNumber(room)}, ${when}.`, ja: `${bar.label} を ${roomNumber(room)}号室、${when} に移動しました。` })
+    : change.mode === 'move'
+      ? t({ en: `Moved ${bar.label} to ${when} in Room ${roomNumber(room)}.`, ja: `${bar.label} を ${roomNumber(room)}号室の ${when} に移動しました。` })
+      : t({ en: `${bar.label} now stays ${when}.`, ja: `${bar.label} の宿泊は ${when} になりました。` })
 }
 function reject(_change: TimelineEdit, reason: string) {
   status.value = reason
@@ -166,8 +200,11 @@ function select(id: string, selection: TimelineSelectDetail) {
   selectedIds.value = new Set([id])
   if (selection.dragged) return
   const info = infoOf(bar)
-  const detail = info.status === 'blocked' ? info.note : `${nightsText(nights(bar))} · ${info.channel}`
-  status.value = `${bar.label} · Room ${roomNumber(bar.rowId)} · ${formatTime(bar.start)}–${formatTime(bar.end)} · ${detail} · ${statusLabels[info.status]}.`
+  const detail = info.status === 'blocked' ? info.note : `${nightsText(nights(bar))} · ${info.channel ? channelLabels[info.channel] : ''}`
+  status.value = t({
+    en: `${bar.label} · Room ${roomNumber(bar.rowId)} · ${formatTime(bar.start)}–${formatTime(bar.end)} · ${detail} · ${statusLabels[info.status]}.`,
+    ja: `${bar.label} · ${roomNumber(bar.rowId)}号室 · ${formatTime(bar.start)}–${formatTime(bar.end)} · ${detail} · ${statusLabels[info.status]}。`,
+  })
 }
 // A stay that began before the visible range keeps its text in view: the part before the axis start is skipped.
 const hiddenLead = (shown: TimeRange) => shown.start < range.start ? `${(range.start - shown.start) / day * pixelsPerDay * zoom.value}px` : undefined
@@ -185,13 +222,16 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
   <section class="showcase sc-booking" aria-labelledby="sc-booking-title" :style="{ '--sc-booking-day': `${pixelsPerDay * zoom}px` }">
     <div class="sc-booking-head">
       <div>
-        <h2 id="sc-booking-title">Room bookings</h2>
-        <p>A dark resource calendar: rooms grouped by floor, noon-to-noon stays drawn as status pills, weekday ticks, weekend shading and a Today marker. Stays can be dragged to other dates or rooms; overlaps are refused.</p>
+        <h2 id="sc-booking-title">{{ t({ en: 'Room bookings', ja: '客室予約' }) }}</h2>
+        <p>{{ t({
+          en: 'A dark resource calendar: rooms grouped by floor, noon-to-noon stays drawn as status pills, weekday ticks, weekend shading and a Today marker. Stays can be dragged to other dates or rooms; overlaps are refused.',
+          ja: 'ダークなリソースカレンダーです。客室をフロアごとにまとめ、正午から正午までの宿泊をステータス付きのバーで表し、曜日の目盛り、週末の網掛け、今日のマーカーを表示します。宿泊は別の日付や客室へドラッグでき、重なる移動は拒否されます。',
+        }) }}</p>
       </div>
       <dl class="sc-booking-kpis">
-        <div><dt>Occupied tonight</dt><dd>{{ occupancy }}%</dd></div>
-        <div><dt>Arrivals today</dt><dd>{{ arrivals }}</dd></div>
-        <div><dt>Departures today</dt><dd>{{ departures }}</dd></div>
+        <div><dt>{{ t({ en: 'Occupied tonight', ja: '今夜の稼働率' }) }}</dt><dd>{{ occupancy }}%</dd></div>
+        <div><dt>{{ t({ en: 'Arrivals today', ja: '本日の到着' }) }}</dt><dd>{{ arrivals }}</dd></div>
+        <div><dt>{{ t({ en: 'Departures today', ja: '本日の出発' }) }}</dt><dd>{{ departures }}</dd></div>
       </dl>
     </div>
 
@@ -200,18 +240,18 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
       :tick-steps="[day]" :snap="day" :min-duration="day" :edit-bounds="editBounds" :format-time="formatTime"
       :header-bands="headerBands" :non-working-periods="weekends" :markers="markers" :selected-ids="selectedIds"
       :row-height="48" height="auto" row-draggable :validate-edit="validateEdit"
-      :labels="{ region: 'Room booking calendar', rows: 'Rooms' }"
+      :labels="{ ...labels.gantt, region: t({ en: 'Room booking calendar', ja: '客室予約カレンダー' }), rows: t({ en: 'Rooms', ja: '客室' }) }"
       sticky-band-labels @edit="applyEdit" @edit-rejected="reject" @select="select" @zoom-change="onZoom"
     >
       <template #legend>
-        <ul class="sc-booking-legend" aria-label="Legend">
+        <ul class="sc-booking-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
           <li v-for="item in legend" :key="item.status"><i :class="`sc-booking-swatch sc-booking-${item.status}`" aria-hidden="true"></i>{{ item.label }}</li>
-          <li class="sc-booking-legend-gap"><i class="sc-booking-dot sc-booking-clean" aria-hidden="true"></i>Clean</li>
-          <li><i class="sc-booking-dot sc-booking-dirty" aria-hidden="true"></i>Needs cleaning</li>
+          <li class="sc-booking-legend-gap"><i class="sc-booking-dot sc-booking-clean" aria-hidden="true"></i>{{ t({ en: 'Clean', ja: '清掃済み' }) }}</li>
+          <li><i class="sc-booking-dot sc-booking-dirty" aria-hidden="true"></i>{{ t({ en: 'Needs cleaning', ja: '要清掃' }) }}</li>
         </ul>
       </template>
       <template #row-heading>
-        <span class="sc-booking-corner">Rooms <small>{{ rooms.length }}</small></span>
+        <span class="sc-booking-corner">{{ t({ en: 'Rooms', ja: '客室' }) }} <small>{{ rooms.length }}</small></span>
       </template>
       <template #tick="{ time }">
         <span class="sc-booking-tick" :class="{ 'sc-booking-tick-today': isToday(time), 'sc-booking-tick-weekend': isWeekend(time) }">
@@ -222,10 +262,10 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
       <template #row="{ row }">
         <span v-if="roomById.get(row.id)" class="sc-booking-room">
           <b>{{ roomById.get(row.id)!.number }}</b>
-          <span class="sc-booking-type">{{ roomById.get(row.id)!.type }}</span>
+          <span class="sc-booking-type">{{ roomTypes[roomById.get(row.id)!.type] }}</span>
           <span class="sc-booking-hk">
             <i class="sc-booking-dot" :class="roomById.get(row.id)!.clean ? 'sc-booking-clean' : 'sc-booking-dirty'" aria-hidden="true"></i>
-            {{ roomById.get(row.id)!.clean ? 'Clean' : 'Needs cleaning' }}
+            {{ roomById.get(row.id)!.clean ? t({ en: 'Clean', ja: '清掃済み' }) : t({ en: 'Needs cleaning', ja: '要清掃' }) }}
           </span>
         </span>
         <span v-else class="sc-booking-floor">
@@ -237,7 +277,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
         <span v-if="infoOf(bar).status === 'blocked'" class="sc-booking-stay">
           <span class="sc-booking-guest">
             <svg class="sc-booking-wrench" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 1.5a4 4 0 0 0-4 5.1L1.9 11.3a1.6 1.6 0 1 0 2.3 2.3l4.7-4.7a4 4 0 0 0 5.1-4l-2.3 2.3-2.2-.6-.6-2.2 2.3-2.3a4 4 0 0 0-.6-.6Z" /></svg>
-            Out of order
+            {{ t({ en: 'Out of order', ja: '使用不可' }) }}
           </span>
           <span class="sc-booking-meta">{{ infoOf(bar).note }}</span>
         </span>
@@ -245,7 +285,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
           <span class="sc-booking-guest">{{ bar.label }}</span>
           <span class="sc-booking-meta">
             {{ nightsText(nights(shown)) }}
-            <span v-if="nights(shown) > 1" class="sc-booking-channel">{{ infoOf(bar).channel }}</span>
+            <span v-if="nights(shown) > 1 && infoOf(bar).channel" class="sc-booking-channel">{{ channelLabels[infoOf(bar).channel!] }}</span>
           </span>
         </span>
       </template>

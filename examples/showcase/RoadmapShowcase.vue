@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { GanttChart, calendarBands, type TimelineBar, type TimelineEdit, type TimelineRow, type TimelineSelectDetail } from '../../src'
 import { day } from '../data'
+import { useDemoLocale } from '../i18n'
 
 // A calm product roadmap: initiatives with their projects as child rows, pastel status pills and milestone diamonds.
 // Everything is restyled through slots, --vw-* variables and .sc-roadmap-scoped overrides of the vw- classes.
@@ -12,6 +13,16 @@ interface BarData { status: Status; people: readonly Person[] }
 interface RoadmapRow extends TimelineRow<RowData> { data: RowData }
 interface RoadmapBar extends TimelineBar<BarData> { data: BarData }
 
+const { t, labels, isJapanese } = useDemoLocale()
+/** A project or milestone name in the page language. */
+const n = (en: string) => t({ en, ja: japaneseNames[en] ?? en })
+const japaneseNames: Record<string, string> = {
+  Onboarding: 'オンボーディング', 'Guided setup': 'ガイド付きセットアップ', 'Template gallery': 'テンプレート集', 'Welcome emails': 'ウェルカムメール',
+  Collaboration: 'コラボレーション', 'Live cursors': 'ライブカーソル', 'Comments v2': 'コメント v2', 'Shared views': '共有ビュー',
+  Platform: 'プラットフォーム', 'Search index': '検索インデックス', 'Audit log': '監査ログ', 'Usage billing': '従量課金',
+  'Onboarding beta': 'オンボーディング β版', 'Cursors GA': 'カーソル正式版', 'Public API': '公開 API',
+}
+
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 /** Midnight UTC of a day in 2027, so the data never depends on the local clock or time zone. */
@@ -19,17 +30,17 @@ const on = (month: number, date: number) => Date.UTC(2027, month - 1, date)
 /** "Jan 5": tick labels, accessible bar names and the status line. */
 function formatTime(time: number) {
   const date = new Date(time)
-  return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`
+  return isJapanese.value ? `${date.getUTCMonth() + 1}月${date.getUTCDate()}日` : `${months[date.getUTCMonth()]} ${date.getUTCDate()}`
 }
 
 const range = { start: on(1, 4), end: on(7, 1) }
 const today = on(2, 17)
 const rowHeight = 46
 const headerBands = [
-  calendarBands(range, 'month', { step: 3, label: (_start, _end, local) => `Q${(local.month + 2) / 3} ${local.year}` }),
-  calendarBands(range, 'month', { label: (_start, _end, local) => monthNames[local.month - 1]! }),
+  calendarBands(range, 'month', { step: 3, label: (_start, _end, local) => t({ en: `Q${(local.month + 2) / 3} ${local.year}`, ja: `${local.year}年 第${(local.month + 2) / 3}四半期` }) }),
+  calendarBands(range, 'month', { label: (_start, _end, local) => t({ en: monthNames[local.month - 1]!, ja: `${local.month}月` }) }),
 ]
-const markers = [{ id: 'today', time: today, label: 'Today' }]
+const markers = [{ id: 'today', time: today, label: t({ en: 'Today', ja: '今日' }) }]
 
 const people = {
   maya: { name: 'Maya Chen', initials: 'MC', color: '#7a5bd3' },
@@ -46,22 +57,25 @@ const initiative = (id: string, label: string, color: string, lead: Person): Roa
 const project = (id: string, parentId: string, label: string, color: string, lead: Person): RoadmapRow =>
   ({ id, parentId, label, data: { kind: 'project', color, lead } })
 const rows: RoadmapRow[] = [
-  initiative('onboarding', 'Onboarding', '#7a5bd3', people.maya),
-  project('setup', 'onboarding', 'Guided setup', '#7a5bd3', people.leo),
-  project('templates', 'onboarding', 'Template gallery', '#7a5bd3', people.ana),
-  project('emails', 'onboarding', 'Welcome emails', '#7a5bd3', people.sam),
-  initiative('collab', 'Collaboration', '#2b8a7e', people.priya),
-  project('cursors', 'collab', 'Live cursors', '#2b8a7e', people.jonas),
-  project('comments', 'collab', 'Comments v2', '#2b8a7e', people.priya),
-  project('views', 'collab', 'Shared views', '#2b8a7e', people.leo),
-  initiative('platform', 'Platform', '#d0607a', people.tomas),
-  project('search', 'platform', 'Search index', '#d0607a', people.tomas),
-  project('audit', 'platform', 'Audit log', '#d0607a', people.ana),
-  project('billing', 'platform', 'Usage billing', '#d0607a', people.jonas),
+  initiative('onboarding', n('Onboarding'), '#7a5bd3', people.maya),
+  project('setup', 'onboarding', n('Guided setup'), '#7a5bd3', people.leo),
+  project('templates', 'onboarding', n('Template gallery'), '#7a5bd3', people.ana),
+  project('emails', 'onboarding', n('Welcome emails'), '#7a5bd3', people.sam),
+  initiative('collab', n('Collaboration'), '#2b8a7e', people.priya),
+  project('cursors', 'collab', n('Live cursors'), '#2b8a7e', people.jonas),
+  project('comments', 'collab', n('Comments v2'), '#2b8a7e', people.priya),
+  project('views', 'collab', n('Shared views'), '#2b8a7e', people.leo),
+  initiative('platform', n('Platform'), '#d0607a', people.tomas),
+  project('search', 'platform', n('Search index'), '#d0607a', people.tomas),
+  project('audit', 'platform', n('Audit log'), '#d0607a', people.ana),
+  project('billing', 'platform', n('Usage billing'), '#d0607a', people.jonas),
 ]
 
 const statusTone = { planned: 'violet', progress: 'blue', risk: 'amber', done: 'teal' } as const
-const statusLabel: Record<Status, string> = { planned: 'Planned', progress: 'In progress', risk: 'At risk', done: 'Done' }
+const statusLabel: Record<Status, string> = t({
+  en: { planned: 'Planned', progress: 'In progress', risk: 'At risk', done: 'Done' },
+  ja: { planned: '計画中', progress: '進行中', risk: '要注意', done: '完了' },
+})
 function item(id: string, rowId: string, label: string, start: number, end: number, status: Status, team: readonly Person[], progress?: number): RoadmapBar {
   return {
     id, rowId, label, start, end, progress, tone: statusTone[status], appearance: 'outline',
@@ -70,24 +84,27 @@ function item(id: string, rowId: string, label: string, start: number, end: numb
   }
 }
 const initialBars: RoadmapBar[] = [
-  item('setup', 'setup', 'Guided setup', on(1, 11), on(2, 22), 'progress', [people.leo, people.maya], 0.55),
-  item('templates', 'templates', 'Template gallery', on(2, 22), on(4, 5), 'planned', [people.ana], 0),
-  item('beta', 'templates', 'Onboarding beta', on(4, 12), on(4, 12), 'planned', []),
-  item('emails', 'emails', 'Welcome emails', on(1, 4), on(1, 29), 'done', [people.sam], 1),
-  item('cursors', 'cursors', 'Live cursors', on(1, 4), on(2, 8), 'done', [people.jonas, people.leo], 1),
-  item('cursors-ga', 'cursors', 'Cursors GA', on(2, 15), on(2, 15), 'done', []),
-  item('comments', 'comments', 'Comments v2', on(2, 1), on(3, 22), 'risk', [people.priya, people.sam], 0.35),
-  item('views', 'views', 'Shared views', on(3, 29), on(5, 17), 'planned', [people.leo], 0),
-  item('search', 'search', 'Search index', on(1, 18), on(3, 15), 'progress', [people.tomas, people.jonas], 0.6),
-  item('audit', 'audit', 'Audit log', on(4, 5), on(5, 31), 'planned', [people.ana], 0),
-  item('api', 'audit', 'Public API', on(6, 14), on(6, 14), 'planned', []),
-  item('billing', 'billing', 'Usage billing', on(3, 8), on(4, 26), 'risk', [people.jonas], 0.15),
+  item('setup', 'setup', n('Guided setup'), on(1, 11), on(2, 22), 'progress', [people.leo, people.maya], 0.55),
+  item('templates', 'templates', n('Template gallery'), on(2, 22), on(4, 5), 'planned', [people.ana], 0),
+  item('beta', 'templates', n('Onboarding beta'), on(4, 12), on(4, 12), 'planned', []),
+  item('emails', 'emails', n('Welcome emails'), on(1, 4), on(1, 29), 'done', [people.sam], 1),
+  item('cursors', 'cursors', n('Live cursors'), on(1, 4), on(2, 8), 'done', [people.jonas, people.leo], 1),
+  item('cursors-ga', 'cursors', n('Cursors GA'), on(2, 15), on(2, 15), 'done', []),
+  item('comments', 'comments', n('Comments v2'), on(2, 1), on(3, 22), 'risk', [people.priya, people.sam], 0.35),
+  item('views', 'views', n('Shared views'), on(3, 29), on(5, 17), 'planned', [people.leo], 0),
+  item('search', 'search', n('Search index'), on(1, 18), on(3, 15), 'progress', [people.tomas, people.jonas], 0.6),
+  item('audit', 'audit', n('Audit log'), on(4, 5), on(5, 31), 'planned', [people.ana], 0),
+  item('api', 'audit', n('Public API'), on(6, 14), on(6, 14), 'planned', []),
+  item('billing', 'billing', n('Usage billing'), on(3, 8), on(4, 26), 'risk', [people.jonas], 0.15),
 ]
 
 const bars = ref<RoadmapBar[]>(initialBars)
 const selected = ref<ReadonlySet<string>>(new Set())
 const collapsed = ref<ReadonlySet<string>>(new Set())
-const status = ref('Drag a project to reschedule it or drag its ends to resize it. Arrow keys move a focused project by one day.')
+const status = ref(t({
+  en: 'Drag a project to reschedule it or drag its ends to resize it. Arrow keys move a focused project by one day.',
+  ja: 'プロジェクトをドラッグして日程を変え、両端をドラッグして期間を変えます。矢印キーでフォーカス中のプロジェクトを1日ずつ動かせます。',
+}))
 // The chart is as tall as the expanded rows, so the card grows and shrinks with the hierarchy instead of scrolling.
 const shownRows = computed(() => rows.filter(row => row.parentId === undefined || !collapsed.value.has(row.parentId)).length)
 const chartHeight = computed(() => 40 + 26 * headerBands.length + shownRows.value * rowHeight + 14)
@@ -107,43 +124,48 @@ function onEdit(change: TimelineEdit) {
   bars.value = bars.value.map(entry => entry.id === change.id ? { ...entry, ...change.after } : entry)
   const when = change.after.start === change.after.end ? formatTime(change.after.start)
     : `${formatTime(change.after.start)} – ${formatTime(change.after.end)}`
-  status.value = `${change.mode === 'move' ? 'Moved' : 'Resized'} ${bar.label} to ${when}`
+  status.value = t({
+    en: `${change.mode === 'move' ? 'Moved' : 'Resized'} ${bar.label} to ${when}`,
+    ja: `${bar.label} を ${when} に${change.mode === 'move' ? '移動' : '変更'}しました`,
+  })
 }
 // The click that ends a drag also emits select (detail.dragged); it keeps the "Moved …" message of that gesture.
 function onSelect(id: string, detail: TimelineSelectDetail) {
   selected.value = new Set([id])
   const bar = bars.value.find(entry => entry.id === id)
   if (!bar || detail.dragged) return
-  const team = bar.data.people.map(person => person.name).join(' and ')
+  const team = bar.data.people.map(person => person.name).join(t({ en: ' and ', ja: '、' }))
+  const done = Math.round((bar.progress ?? 0) * 100)
   status.value = bar.start === bar.end
-    ? `${bar.label} · milestone on ${formatTime(bar.start)}`
-    : `${bar.label} · ${statusLabel[bar.data.status]} · ${Math.round((bar.progress ?? 0) * 100)}% done${team ? ' · ' + team : ''}`
+    ? t({ en: `${bar.label} · milestone on ${formatTime(bar.start)}`, ja: `${bar.label} · ${formatTime(bar.start)} のマイルストーン` })
+    : `${bar.label} · ${statusLabel[bar.data.status]} · ${t({ en: `${done}% done`, ja: `${done}% 完了` })}${team ? ' · ' + team : ''}`
 }
 </script>
 
 <template>
   <section class="showcase sc-roadmap" aria-labelledby="sc-roadmap-title">
-    <h2 id="sc-roadmap-title">Product roadmap</h2>
-    <p class="sc-roadmap-intro">
-      Pastel status pills with sticky labels, milestone diamonds and glyph and avatar rows from the bar, row and legend
-      slots, with quarter and month bands, a Today marker, tone variables and restyled vw- classes.
-    </p>
+    <h2 id="sc-roadmap-title">{{ t({ en: 'Product roadmap', ja: 'プロダクトロードマップ' }) }}</h2>
+    <p class="sc-roadmap-intro">{{ t({
+      en: 'Pastel status pills with sticky labels, milestone diamonds and glyph and avatar rows from the bar, row and legend slots, with quarter and month bands, a Today marker, tone variables and restyled vw- classes.',
+      ja: 'ラベルが追従するパステル調のステータス、マイルストーンのひし形、アイコンとアバターの行をバー・行・凡例のスロットで描き、四半期と月の帯、今日のマーカー、トーン変数、装飾し直した vw- クラスを組み合わせています。',
+    }) }}</p>
     <GanttChart
       :rows="rows" :bars="bars" :range="range" :pixels-per-unit="14 / day" :tick-steps="[7 * day, 14 * day, 28 * day]"
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :markers="markers" :row-height="rowHeight"
       :height="chartHeight" :selected-ids="selected" :collapsed-ids="collapsed" show-summaries
-      :labels="{ region: 'Product roadmap timeline', rows: 'Projects' }"
+      :labels="{ ...labels.gantt, region: t({ en: 'Product roadmap timeline', ja: 'プロダクトロードマップのタイムライン' }), rows: t({ en: 'Projects', ja: 'プロジェクト' }) }"
       sticky-band-labels @update:collapsed-ids="collapsed = $event" @edit="onEdit" @select="onSelect"
     >
       <template #legend>
-        <ul class="sc-roadmap-legend" aria-label="Legend">
+        <ul class="sc-roadmap-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
           <li v-for="(label, key) in statusLabel" :key="key"><span class="sc-roadmap-dot" :class="`sc-roadmap-is-${key}`"></span>{{ label }}</li>
-          <li><span class="sc-roadmap-diamond sc-roadmap-is-planned"></span>Milestone</li>
-          <li><span class="sc-roadmap-today"></span>Today</li>
+          <li><span class="sc-roadmap-diamond sc-roadmap-is-planned"></span>{{ t({ en: 'Milestone', ja: 'マイルストーン' }) }}</li>
+          <li><span class="sc-roadmap-today"></span>{{ t({ en: 'Today', ja: '今日' }) }}</li>
         </ul>
       </template>
       <template #row-heading>
-        <span class="sc-roadmap-heading"><span>Initiatives<span class="sc-roadmap-wide"> &amp; projects</span></span><span>Lead</span></span>
+        <span v-if="isJapanese" class="sc-roadmap-heading"><span>施策<span class="sc-roadmap-wide">とプロジェクト</span></span><span>担当</span></span>
+        <span v-else class="sc-roadmap-heading"><span>Initiatives<span class="sc-roadmap-wide"> &amp; projects</span></span><span>Lead</span></span>
       </template>
       <template #row="{ row }">
         <span class="sc-roadmap-row" :class="`sc-roadmap-row-${row.data.kind}`">
@@ -158,7 +180,7 @@ function onSelect(id: string, detail: TimelineSelectDetail) {
           </svg>
           <span class="sc-roadmap-row-text">
             <span class="sc-roadmap-row-name">{{ row.label }}</span>
-            <span v-if="row.data.kind === 'initiative'" class="sc-roadmap-row-meta">{{ projectCount(row.id) }} projects</span>
+            <span v-if="row.data.kind === 'initiative'" class="sc-roadmap-row-meta">{{ t({ en: `${projectCount(row.id)} projects`, ja: `${projectCount(row.id)} 件のプロジェクト` }) }}</span>
           </span>
           <span class="sc-roadmap-avatar" :style="{ background: row.data.lead.color }" :title="row.data.lead.name">{{ row.data.lead.initials }}</span>
         </span>

@@ -730,7 +730,7 @@ test('gantt marker ranges line up with the time axis in both directions and appe
 
 test('gantt select reports drags, sticky band labels follow the scroll and rounded dependencies draw curves', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Product roadmap')
+  await openExample(page, 'roadmap', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
   // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
   const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
@@ -752,8 +752,9 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const padding = parseFloat(await quarter.evaluate(el => getComputedStyle(el).paddingLeft))
   expect(label.x + padding + await indent()).toBeGreaterThan(area.x)
 
-  await page.getByRole('button', { name: 'Sprint plan', exact: true }).click()
-  const links = page.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  const sprint = await openExample(page, 'sprint', { kind: 'showcase' })
+  const links = sprint.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  await expect(links.first()).toBeAttached()
   expect(await links.count()).toBeGreaterThan(0)
   for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
   expect(errors).toEqual([])
