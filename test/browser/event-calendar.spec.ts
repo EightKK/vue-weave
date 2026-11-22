@@ -224,3 +224,25 @@ test('occurrences of a recurring series render, and an edit carries the occurren
   await expect(sync('24', '16:15–16:45')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('"this and following" splits the series, also at an occurrence that was changed on its own before', async ({ page }) => {
+  const { errors, calendar, status, button } = await openCalendar(page)
+  const sync = (date: string, time: string) => calendar.getByRole('button', { name: `Weekly sync, Tue, Nov ${date} ${time}, Borealis, Recurring`, exact: true })
+  // First "this event", which adds an override of the November 10 occurrence.
+  await sync('10', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:15–16:45 (this event).')
+  // Then "this and following" on the same occurrence: the override gives way to a new series from November 10.
+  await page.getByRole('combobox', { name: 'Recurring edits' }).selectOption('following')
+  await sync('10', '16:15–16:45').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:30–17:00 (this and following events).')
+  await expect(sync('10', '16:30–17:00')).toBeVisible()
+  await button('Next').click()
+  await expect(sync('17', '16:30–17:00')).toBeVisible()
+  // Earlier occurrences keep their time.
+  await button('Previous').click()
+  await button('Previous').click()
+  await expect(sync('3', '16:00–16:30')).toBeVisible()
+  expect(errors).toEqual([])
+})

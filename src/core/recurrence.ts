@@ -8,7 +8,7 @@
 // wall time that does not exist (skipped by a forward change) or exists twice is resolved as RFC 5545 section 3.3.5
 // says, like `fromICalendar` resolves a TZID: a skipped time takes the offset before the gap, a repeated time its first
 // occurrence.
-import { checkOffset, wallTime } from './interchangeShared.js'
+import { basicWall, checkOffset, monthLength, wallTime, weekdayCodes } from './interchangeShared.js'
 import { invalidIdError, isId } from './ids.js'
 import { rfc5545ZonedInstant, zoneFormat, zoneOffset } from './timeZone.js'
 import type { CalendarEvent } from './eventCalendar.js'
@@ -123,7 +123,6 @@ export interface RecurringEditOptions {
 // Calendar arithmetic on wall times ----------------------------------------------------------------------------------
 
 const frequencies: readonly RecurrenceFrequency[] = ['daily', 'weekly', 'monthly', 'yearly']
-const weekdayCodes = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
 /** Days, weeks, months and years of the 400-year Gregorian cycle, after which every calendar pattern repeats. */
 const cycleUnits: Record<RecurrenceFrequency, number> = { daily: 146_097, weekly: 20_871, monthly: 4_800, yearly: 400 }
 
@@ -139,8 +138,6 @@ function fieldsOf(wall: number) {
   const date = new Date(wall)
   return { year: date.getUTCFullYear(), month: date.getUTCMonth(), day: date.getUTCDate(), weekday: date.getUTCDay() }
 }
-
-const monthLength = (year: number, monthIndex: number) => new Date(dateWall(year, monthIndex + 1, 0)).getUTCDate()
 
 interface Clock {
   wall(instant: number): number
@@ -313,12 +310,6 @@ export function parseRecurrenceRule(text: string, options: RecurrenceZoneOptions
   return normalizeRule(rule)
 }
 
-function basicTime(wall: number) {
-  const iso = new Date(wall).toISOString()
-  if (!/^\d{4}-/.test(iso)) throw new RangeError('Dates must be between the years 0 and 9999')
-  return iso.slice(0, 19).replace(/[-:]/g, '')
-}
-
 /**
  * Write a `RecurrenceRule` as RRULE text without the `RRULE:` prefix, in the order FREQ, COUNT or UNTIL, INTERVAL,
  * BYMONTH, BYMONTHDAY, BYDAY, BYSETPOS and WKST. UNTIL is written in UTC (`20261231T235959Z`, whole seconds rounded
@@ -331,8 +322,8 @@ export function formatRecurrenceRule(rule: RecurrenceRule, options: RecurrenceZo
   if (checked.count !== undefined) parts.push('COUNT=' + checked.count)
   if (checked.until !== undefined) {
     parts.push('UNTIL=' + (options.allDay
-      ? basicTime(clockOf(options).wall(checked.until)).slice(0, 8)
-      : basicTime(Math.floor(checked.until / 1000) * 1000) + 'Z'))
+      ? basicWall(clockOf(options).wall(checked.until)).slice(0, 8)
+      : basicWall(Math.floor(checked.until / 1000) * 1000) + 'Z'))
   }
   if (checked.interval !== undefined) parts.push('INTERVAL=' + checked.interval)
   if (checked.byMonth) parts.push('BYMONTH=' + checked.byMonth.join(','))
@@ -422,10 +413,33 @@ function periodDays(rule: RecurrenceRule, periodStart: number, first: ReturnType
   return byWeekday ? days.filter(wall => matchesWeekday(byWeekday, wall, !byMonth)) : days
 }
 
+/** The most days a period of each frequency can hold, for BYSETPOS positions that no period reaches. */
+const periodSize: Record<RecurrenceFrequency, number> = { daily: 1, weekly: 7, monthly: 31, yearly: 366 }
+
+/**
+ * Whether a rule can never give an instance after DTSTART, checked up front so that it is not walked for a whole
+ * Gregorian cycle: month days that none of the allowed months has (BYMONTH=2;BYMONTHDAY=30, or the DTSTART day 31 of a
+ * MONTHLY or YEARLY rule limited to short months), BYDAY ordinals beyond the fifth weekday of a month, or BYSETPOS
+ * positions beyond the size of every period.
+ */
+function neverMatches(rule: RecurrenceRule, firstDay: number) {
+  const { byWeekday, byMonthDay, byMonth, bySetPosition, frequency } = rule
+  const monthly = frequency === 'monthly' || (frequency === 'yearly' && byMonth !== undefined)
+  const days = byMonthDay ?? (frequency !== 'daily' && frequency !== 'weekly' && !byWeekday ? [firstDay] : undefined)
+  if (days) {
+    // Month lengths of a leap year, in which every month day that exists at all occurs.
+    const months = byMonth ?? (frequency === 'yearly' && !byMonthDay ? [] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    if (months.length && !months.some(month => days.some(day => Math.abs(day) <= monthLength(2000, month - 1)))) return true
+  }
+  if (monthly && byWeekday && byWeekday.every(entry => entry.ordinal !== undefined && Math.abs(entry.ordinal) > 5)) return true
+  return bySetPosition !== undefined && bySetPosition.every(position => Math.abs(position) > periodSize[frequency])
+}
+
 /**
  * The wall start times of a rule, ascending: DTSTART first, then every instance after it. With `jumpWall` (only
- * without COUNT), periods that end before it are skipped. Stops after a whole Gregorian cycle of periods without a
- * candidate (such as BYMONTH=2;BYMONTHDAY=30) and at the end of the supported time range.
+ * without COUNT), periods that end before it are skipped. A rule that can never match (see `neverMatches`) yields only
+ * DTSTART; as a safeguard the walk also stops after a whole Gregorian cycle of periods without a candidate, and at the
+ * end of the supported time range.
  */
 function* ruleWalls(rule: RecurrenceRule, startWall: number, jumpWall?: number): Generator<number> {
   const startDay = floorDay(startWall)
@@ -452,6 +466,7 @@ function* ruleWalls(rule: RecurrenceRule, startWall: number, jumpWall?: number):
     index = Math.max(0, Math.floor(units / interval))
   }
   if (index === 0) yield startWall
+  if (neverMatches(rule, first.day)) return
   let empty = 0
   for (;; index++) {
     const from = periodStart(index * interval)
@@ -514,13 +529,15 @@ function prepare(series: RecurrenceSeries, fallbackZone: string | undefined): Pr
   }
 }
 
-function checkRange(range: TimeRange) {
+/** Internal (not exported from index.ts): check an expansion range, as `expandRecurrence` does. */
+export function checkRange(range: TimeRange) {
   checkFinite(range?.start, 'range.start')
   checkFinite(range.end, 'range.end')
   if (range.end <= range.start) throw new RangeError('range.end must be after range.start')
 }
 
-function checkMax(value: number | undefined) {
+/** Internal (not exported from index.ts): check `maxOccurrences` and return it or the default. */
+export function checkMax(value: number | undefined) {
   return value === undefined ? defaultMaxOccurrences : checkInteger(value, 'maxOccurrences', 1, Number.MAX_SAFE_INTEGER)
 }
 
@@ -599,12 +616,12 @@ export function expandRecurrence(series: RecurrenceSeries, range: TimeRange, opt
 
 const overrideKey = (seriesId: string, recurrenceId: number) => seriesId + '\u0000' + recurrenceId
 
-function withoutRecurrence<E extends CalendarEvent>(event: E): E {
+function withoutRecurrence<E extends ExpandableEvent>(event: E): E {
   const { recurrence: _recurrence, ...rest } = event
   return rest as E
 }
 
-function seriesOf(event: CalendarEvent): RecurrenceSeries {
+function seriesOf(event: ExpandableEvent): RecurrenceSeries {
   return { id: event.id, start: event.start, end: event.end, ...event.recurrence }
 }
 
@@ -624,7 +641,22 @@ function seriesOf(event: CalendarEvent): RecurrenceSeries {
 export function expandRecurringEvents<E extends CalendarEvent>(events: readonly E[], range: TimeRange, options: RecurrenceExpandOptions = {}): E[] {
   if (!Array.isArray(events as unknown)) throw new RangeError('events must be an array')
   checkRange(range)
-  const max = checkMax(options.maxOccurrences)
+  return expandEventList(events, range, checkMax(options.maxOccurrences), options.timeZone)
+}
+
+/** The fields of an event that `expandEventList` reads: a series has `recurrence`, an override `seriesId` and `recurrenceId`. */
+export interface ExpandableEvent extends TimeRange {
+  id: string
+  recurrence?: CalendarRecurrence
+  seriesId?: string
+  recurrenceId?: number
+}
+
+/**
+ * Internal (not exported from index.ts), shared by `expandRecurringEvents` and `fromICalendar`: replace each series by
+ * its occurrences in a checked `range`, leaving out the ones an override replaces, and keep the other events.
+ */
+export function expandEventList<E extends ExpandableEvent>(events: readonly E[], range: TimeRange, max: number, fallbackZone?: string): E[] {
   const overridden = new Set<string>()
   for (const event of events) {
     if (event && event.recurrence === undefined && event.seriesId !== undefined && event.recurrenceId !== undefined) {
@@ -638,7 +670,7 @@ export function expandRecurringEvents<E extends CalendarEvent>(events: readonly 
       continue
     }
     const base = withoutRecurrence(event)
-    for (const occurrence of expandPrepared(prepare(seriesOf(event), options.timeZone), range, max)) {
+    for (const occurrence of expandPrepared(prepare(seriesOf(event), fallbackZone), range, max)) {
       if (overridden.has(overrideKey(event.id, occurrence.recurrenceId))) continue
       result.push({ ...base, id: occurrence.id, start: occurrence.start, end: occurrence.end, seriesId: event.id, recurrenceId: occurrence.recurrenceId })
     }
@@ -650,13 +682,24 @@ export function expandRecurringEvents<E extends CalendarEvent>(events: readonly 
 
 const scopes: readonly RecurringEditScope[] = ['occurrence', 'following', 'series']
 
-/** A rule moved by whole local days: weekdays of BYDAY, and BYMONTHDAY days while they stay within the month range. */
-function shiftRule(rule: RecurrenceRule, days: number, shiftTime: (time: number) => number): RecurrenceRule {
+/**
+ * A rule moved by whole local days: weekdays of BYDAY, and BYMONTHDAY days. Throws an Error when a move to another day
+ * would change what the rule means: BYDAY ordinals (2MO is not the day before 2TU), BYSETPOS (positions pick other
+ * days), BYMONTHDAY days outside 1–28 (or −28 to −1) before or after the move (not every month has them), and BYMONTH
+ * when the edited occurrence moves to another month.
+ */
+function shiftRule(rule: RecurrenceRule, days: number, monthChanges: boolean, shiftTime: (time: number) => number, seriesId: string): RecurrenceRule {
   const result: RecurrenceRule = { ...rule }
-  if (days && rule.byWeekday) result.byWeekday = rule.byWeekday.map(entry => ({ ...entry, weekday: (((entry.weekday + days) % 7) + 7) % 7 }))
-  if (days && rule.byMonthDay) {
-    const moved = rule.byMonthDay.map(day => day + days)
-    if (moved.every((day, index) => Math.sign(day) === Math.sign(rule.byMonthDay![index]!) && Math.abs(day) <= 31)) result.byMonthDay = moved
+  if (days) {
+    const reason = rule.byWeekday?.some(entry => entry.ordinal !== undefined) ? 'BYDAY ordinals such as 2MO'
+      : rule.bySetPosition ? 'BYSETPOS'
+        : rule.byMonthDay?.some(day => Math.abs(day) > 28 || Math.sign(day + days) !== Math.sign(day) || Math.abs(day + days) > 28) ? 'BYMONTHDAY days that not every month has'
+          : rule.byMonth && monthChanges ? 'BYMONTH, and the occurrence moves to another month' : undefined
+    if (reason) {
+      throw new Error(`Event ${seriesId} cannot move to another day: its recurrence rule has ${reason}, whose meaning would change; change the rule instead`)
+    }
+    if (rule.byWeekday) result.byWeekday = rule.byWeekday.map(entry => ({ ...entry, weekday: (((entry.weekday + days) % 7) + 7) % 7 }))
+    if (rule.byMonthDay) result.byMonthDay = rule.byMonthDay.map(day => day + days)
   }
   if (rule.until !== undefined) result.until = shiftTime(rule.until)
   return result
@@ -667,100 +710,111 @@ function ruleAsGiven(original: RecurrenceRule | string, rule: RecurrenceRule, ev
   return typeof original === 'string' ? formatRecurrenceRule(rule, { ...zone, allDay: event.allDay }) : rule
 }
 
-/**
- * Apply an edit of one occurrence of a recurring event to the events of a calendar and return the new events (the
- * input is not modified). `target` names the occurrence (`seriesId`, `recurrenceId`, as in
- * `EventCalendarEdit.occurrence`), `change` is its new `start`, `end` and optionally `resourceId`, or `'delete'`.
- *
- * - `occurrence`: a change adds an override event (`id` `<seriesId>:<recurrenceId>`, the series' fields without
- *   `recurrence`) or updates the existing one; a delete adds the start to the series' `exdates` and removes the
- *   override.
- * - `following`: the series ends before the occurrence (UNTIL one millisecond before it, or a smaller COUNT) and,
- *   for a change, a new series (`options.newSeriesId`, default `<seriesId>:<recurrenceId>`) starts at the changed
- *   occurrence with the rest of the instances (the remaining COUNT), exdates, rdates and overrides. For the first
- *   occurrence it is the same as `series`.
- * - `series`: the whole series moves by the change of the occurrence in local wall-clock time and takes its new
- *   duration; exdates, rdates, UNTIL and the `recurrenceId`s of overrides move with it. A delete removes the series and
- *   its overrides.
- *
- * When the change moves the occurrence to another local day, BYDAY weekdays (and BYMONTHDAY days that stay within
- * 1–31) move by the same number of days; the other parts of the rule are kept. An override of the edited occurrence is
- * dropped by `following` and `series`, since the change replaces it. The series zone is resolved as in
- * `expandRecurrence`. A rule given as text is returned as text.
- *
- * Throws an Error for an unknown series, an unknown scope or an ID that is already used, and a RangeError for invalid
- * times.
- */
-export function applyRecurringEdit<E extends CalendarEvent>(
-  events: readonly E[], target: RecurringEditTarget, change: RecurringEditChange | 'delete', scope: RecurringEditScope,
-  options: RecurringEditOptions = {},
-): E[] {
-  if (!Array.isArray(events as unknown)) throw new RangeError('events must be an array')
-  if (!scopes.includes(scope)) throw new Error('Unknown recurring edit scope: ' + String(scope))
-  const recurrenceId = checkFinite(target?.recurrenceId, 'recurrenceId')
-  const index = events.findIndex(event => event?.id === target.seriesId && event.recurrence !== undefined)
-  if (index < 0) throw new Error('Unknown recurring event: ' + String(target.seriesId))
-  const series = events[index]!
-  const recurrence = series.recurrence!
-  if (change !== 'delete') {
-    checkFinite(change?.start, 'change.start')
-    checkFinite(change.end, 'change.end')
-    if (change.end < change.start) throw new RangeError('change.end must not be before change.start')
-  }
-  const prepared = prepare(seriesOf(series), options.timeZone)
-  const { clock } = prepared
-  const zone: RecurrenceZoneOptions = recurrence.timeZone !== undefined || recurrence.utcOffsetMinutes !== undefined
-    ? { timeZone: recurrence.timeZone, utcOffsetMinutes: recurrence.utcOffsetMinutes } : { timeZone: options.timeZone }
-  const isOverride = (event: E, at?: number) => event.recurrence === undefined && event.seriesId === series.id
-    && event.recurrenceId !== undefined && (at === undefined || event.recurrenceId === at)
-  const ids = new Set(events.map(event => event?.id))
-  const resource = (event: E): E => change !== 'delete' && change.resourceId !== undefined ? { ...event, resourceId: change.resourceId } : event
+/** The checked input of `applyRecurringEdit`, shared by the functions of the three scopes. */
+interface EditContext<E extends CalendarEvent> {
+  events: readonly E[]
+  series: E
+  recurrence: CalendarRecurrence
+  prepared: PreparedSeries
+  recurrenceId: number
+  /** The zone of the series as given, or the fallback zone, for writing a rule given as text. */
+  zone: RecurrenceZoneOptions
+  change: RecurringEditChange | 'delete'
+}
 
-  if (scope === 'occurrence') {
-    if (change === 'delete') {
-      const exdates = [...new Set([...prepared.exdates, recurrenceId])].sort((a, b) => a - b)
-      return events.filter(event => !isOverride(event, recurrenceId))
-        .map(event => event === series ? { ...series, recurrence: { ...recurrence, exdates } } : event)
-    }
-    const existing = events.findIndex(event => isOverride(event, recurrenceId))
-    if (existing >= 0) return events.map((event, at) => at === existing ? resource({ ...event, start: change.start, end: change.end }) : event)
-    const id = `${series.id}:${recurrenceId}`
-    if (ids.has(id)) throw new Error('Duplicate event ID: ' + id)
-    return [...events, resource({ ...withoutRecurrence(series), id, start: change.start, end: change.end, seriesId: series.id, recurrenceId })]
-  }
+/** How `series` and `following` move later instances: by the move of the edited occurrence in local wall-clock time. */
+interface EditMove {
+  shift(time: number): number
+  /** The end of an instance that starts at `start`, with the new local duration. */
+  endOf(start: number): number
+  rule(rule: RecurrenceRule): RecurrenceRule
+}
 
-  // The move of the edited occurrence in local wall-clock time, which `series` and `following` apply to later instances.
+function isOverrideOf(event: CalendarEvent | undefined, seriesId: string, at?: number) {
+  return !!event && event.recurrence === undefined && event.seriesId === seriesId && event.recurrenceId !== undefined
+    && (at === undefined || event.recurrenceId === at)
+}
+
+function withResource<E extends CalendarEvent>(context: EditContext<E>, event: E): E {
+  const { change } = context
+  return change !== 'delete' && change.resourceId !== undefined ? { ...event, resourceId: change.resourceId } : event
+}
+
+function withoutRule(recurrence: CalendarRecurrence): CalendarRecurrence {
+  const { rule: _rule, ...rest } = recurrence
+  return rest
+}
+
+function moveOf<E extends CalendarEvent>(context: EditContext<E>): EditMove {
+  const { prepared: { clock }, change, recurrenceId, series } = context
   const fromWall = clock.wall(recurrenceId)
   const deltaWall = change === 'delete' ? 0 : clock.wall(change.start) - fromWall
-  const deltaDays = change === 'delete' ? 0 : Math.round((floorDay(fromWall + deltaWall) - floorDay(fromWall)) / dayMs)
+  const toWall = fromWall + deltaWall
+  const deltaDays = Math.round((floorDay(toWall) - floorDay(fromWall)) / dayMs)
+  const monthChanges = fieldsOf(fromWall).month !== fieldsOf(toWall).month
   const shift = (time: number) => deltaWall === 0 ? time : clock.instant(clock.wall(time) + deltaWall)
-  const durationWall = change === 'delete' ? prepared.durationWall : clock.wall(change.end) - clock.wall(change.start)
-  const moved = (rule: RecurrenceRule | undefined) => rule && shiftRule(rule, deltaDays, shift)
-
-  if (scope === 'series' || recurrenceId <= series.start) {
-    if (change === 'delete') return events.filter(event => event !== series && !isOverride(event))
-    const start = shift(series.start)
-    const rule = moved(prepared.rule)
-    const next: E = resource({
-      ...series, start, end: durationWall === 0 ? start : clock.instant(clock.wall(start) + durationWall),
-      recurrence: {
-        ...recurrence,
-        ...(rule ? { rule: ruleAsGiven(recurrence.rule!, rule, series, zone) } : {}),
-        ...(recurrence.exdates ? { exdates: [...prepared.exdates].map(shift) } : {}),
-        ...(recurrence.rdates ? { rdates: prepared.rdates.map(shift) } : {}),
-      },
-    })
-    return events.filter(event => !isOverride(event, recurrenceId))
-      .map(event => event === series ? next : isOverride(event) ? { ...event, recurrenceId: shift(event.recurrenceId!) } : event)
+  const durationWall = change === 'delete' ? context.prepared.durationWall : clock.wall(change.end) - clock.wall(change.start)
+  return {
+    shift,
+    endOf: start => durationWall === 0 ? start : clock.instant(clock.wall(start) + durationWall),
+    rule: rule => shiftRule(rule, deltaDays, monthChanges, shift, series.id),
   }
+}
 
-  // `following` after the first instance: count the rule instances before the occurrence for COUNT.
-  let before = 0
-  visitRule(prepared, start => {
-    if (start >= recurrenceId) return false
-    before++
-    return true
+/** `occurrence`: add or update the override of the occurrence, or leave it out with an EXDATE. */
+function editOccurrence<E extends CalendarEvent>(context: EditContext<E>): E[] {
+  const { events, series, recurrence, prepared, recurrenceId, change } = context
+  if (change === 'delete') {
+    const exdates = [...new Set([...prepared.exdates, recurrenceId])].sort((a, b) => a - b)
+    return events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
+      .map(event => event === series ? { ...series, recurrence: { ...recurrence, exdates } } : event)
+  }
+  const existing = events.findIndex(event => isOverrideOf(event, series.id, recurrenceId))
+  if (existing >= 0) return events.map((event, at) => at === existing ? withResource(context, { ...event, start: change.start, end: change.end }) : event)
+  const id = `${series.id}:${recurrenceId}`
+  if (events.some(event => event?.id === id)) throw new Error('Duplicate event ID: ' + id)
+  return [...events, withResource(context, { ...withoutRecurrence(series), id, start: change.start, end: change.end, seriesId: series.id, recurrenceId })]
+}
+
+/** `series` (or `following` from the first instance): move the whole series, or delete it with its overrides. */
+function editSeries<E extends CalendarEvent>(context: EditContext<E>): E[] {
+  const { events, series, recurrence, prepared, recurrenceId, zone, change } = context
+  if (change === 'delete') return events.filter(event => event !== series && !isOverrideOf(event, series.id))
+  const move = moveOf(context)
+  const start = move.shift(series.start)
+  const rule = prepared.rule && move.rule(prepared.rule)
+  const next: E = withResource(context, {
+    ...series, start, end: move.endOf(start),
+    recurrence: {
+      ...recurrence,
+      ...(rule ? { rule: ruleAsGiven(recurrence.rule!, rule, series, zone) } : {}),
+      ...(recurrence.exdates ? { exdates: [...prepared.exdates].map(move.shift) } : {}),
+      ...(recurrence.rdates ? { rdates: prepared.rdates.map(move.shift) } : {}),
+    },
   })
+  return events.filter(event => !isOverrideOf(event, series.id, recurrenceId))
+    .map(event => event === series ? next : isOverrideOf(event, series.id) ? { ...event, recurrenceId: move.shift(event.recurrenceId!) } : event)
+}
+
+/**
+ * `following` after the first instance: end the series before the occurrence and, for a change, start a new series
+ * with the rest. When the occurrence is an RDATE between rule instances, the new series starts at the next rule instance
+ * (so its rule keeps the pattern of the original) and the changed occurrence becomes one of its RDATEs.
+ */
+function editFollowing<E extends CalendarEvent>(context: EditContext<E>, options: RecurringEditOptions): E[] {
+  const { events, series, recurrence, prepared, recurrenceId, zone, change } = context
+  // Count the rule instances before the occurrence (for COUNT), and find whether it is one, or else the next one.
+  let before = 0, ruleInstance = false
+  let nextInstance: number | undefined
+  visitRule(prepared, start => {
+    if (start < recurrenceId) before++
+    else if (start === recurrenceId) ruleInstance = true
+    else nextInstance = start
+    return start < recurrenceId
+  })
+  if (!ruleInstance && !prepared.rdates.includes(recurrenceId)) {
+    throw new Error(`Event ${series.id} has no occurrence at ${recurrenceId} to edit with its following occurrences`)
+  }
   const oldRule = prepared.rule && (prepared.rule.count !== undefined
     ? { ...prepared.rule, count: Math.max(1, before) }
     : { ...prepared.rule, until: Math.min(prepared.rule.until ?? Infinity, recurrenceId - 1) })
@@ -775,27 +829,88 @@ export function applyRecurringEdit<E extends CalendarEvent>(
     },
   }
   if (change === 'delete') {
-    return events.filter(event => !(isOverride(event) && event.recurrenceId! >= recurrenceId)).map(event => event === series ? truncated : event)
+    return events.filter(event => !(isOverrideOf(event, series.id) && event.recurrenceId! >= recurrenceId)).map(event => event === series ? truncated : event)
   }
   const newId = options.newSeriesId ?? `${series.id}:${recurrenceId}`
   if (!isId(newId)) throw invalidIdError('event', newId)
-  if (ids.has(newId)) throw new Error('Duplicate event ID: ' + newId)
-  const later = prepared.rule && moved(prepared.rule.count !== undefined ? { ...prepared.rule, count: Math.max(1, prepared.rule.count - before) } : prepared.rule)
-  const following: E = resource({
-    ...series, id: newId, start: change.start, end: change.end,
+  // The override of the edited occurrence is dropped below, which frees its ID (the default ID of the new series).
+  if (events.some(event => event?.id === newId && !isOverrideOf(event, series.id, recurrenceId))) throw new Error('Duplicate event ID: ' + newId)
+  const move = moveOf(context)
+  // The rest of the rule, unless the occurrence is an RDATE after the last rule instance.
+  const rest = prepared.rule && (ruleInstance || nextInstance !== undefined)
+    ? move.rule(prepared.rule.count !== undefined ? { ...prepared.rule, count: Math.max(1, prepared.rule.count - before) } : prepared.rule)
+    : undefined
+  const fromRdate = !ruleInstance && rest !== undefined
+  const start = fromRdate ? move.shift(nextInstance!) : change.start
+  const later = prepared.rdates.filter(time => time > recurrenceId).map(move.shift)
+  const rdates = fromRdate ? [...new Set([change.start, ...later])].sort((a, b) => a - b) : later
+  const following: E = withResource(context, {
+    ...series, id: newId, start, end: fromRdate ? move.endOf(start) : change.end,
     recurrence: {
-      ...recurrence,
-      ...(later ? { rule: ruleAsGiven(recurrence.rule!, later, series, zone) } : {}),
-      ...(recurrence.exdates ? { exdates: [...prepared.exdates].filter(time => !earlier(time)).map(shift) } : {}),
-      ...(recurrence.rdates ? { rdates: prepared.rdates.filter(time => !earlier(time)).map(shift) } : {}),
+      ...withoutRule(recurrence),
+      ...(rest ? { rule: ruleAsGiven(recurrence.rule!, rest, series, zone) } : {}),
+      ...(recurrence.exdates ? { exdates: [...prepared.exdates].filter(time => !earlier(time)).map(move.shift) } : {}),
+      ...(recurrence.rdates ? { rdates } : {}),
     },
   })
   const result: E[] = []
   for (const event of events) {
     if (event === series) result.push(truncated, following)
-    else if (isOverride(event, recurrenceId)) continue
-    else if (isOverride(event) && event.recurrenceId! > recurrenceId) result.push({ ...event, seriesId: newId, recurrenceId: shift(event.recurrenceId!) })
+    else if (isOverrideOf(event, series.id, recurrenceId)) continue
+    else if (isOverrideOf(event, series.id) && event.recurrenceId! > recurrenceId) result.push({ ...event, seriesId: newId, recurrenceId: move.shift(event.recurrenceId!) })
     else result.push(event)
   }
   return result
+}
+
+/**
+ * Apply an edit of one occurrence of a recurring event to the events of a calendar and return the new events (the
+ * input is not modified). `target` names the occurrence (`seriesId`, `recurrenceId`, as in
+ * `EventCalendarEdit.occurrence`), `change` is its new `start`, `end` and optionally `resourceId`, or `'delete'`.
+ *
+ * - `occurrence`: a change adds an override event (`id` `<seriesId>:<recurrenceId>`, the series' fields without
+ *   `recurrence`) or updates the existing one; a delete adds the start to the series' `exdates` and removes the
+ *   override.
+ * - `following`: the series ends before the occurrence (UNTIL one millisecond before it, or a smaller COUNT) and,
+ *   for a change, a new series (`options.newSeriesId`, default `<seriesId>:<recurrenceId>`) starts at the changed
+ *   occurrence with the rest of the instances (the remaining COUNT), exdates, rdates and overrides. When the
+ *   occurrence is an RDATE rather than a rule instance, the new series starts at the next rule instance (moved like
+ *   the occurrence) and the changed occurrence becomes one of its RDATEs, so the rule keeps its pattern; after the last
+ *   rule instance the new series has no rule. For the first occurrence it is the same as `series`.
+ * - `series`: the whole series moves by the change of the occurrence in local wall-clock time and takes its new
+ *   duration; exdates, rdates, UNTIL and the `recurrenceId`s of overrides move with it. A delete removes the series and
+ *   its overrides.
+ *
+ * When the change moves the occurrence to another local day, BYDAY weekdays and BYMONTHDAY days move by the same number
+ * of days; the other parts of the rule are kept. A move to another day throws an Error when it would change what the
+ * rule means: with BYDAY ordinals (such as `2MO`), BYSETPOS, BYMONTHDAY days outside 1–28 (or −28 to −1) before or
+ * after the move, or BYMONTH when the occurrence moves to another month. Change the rule itself in those cases; a move
+ * within the same day always works. An override of the edited occurrence is dropped by `following` and `series`, since
+ * the change replaces it (so its ID, the default `newSeriesId`, is free again). The series zone is resolved as in
+ * `expandRecurrence`. A rule given as text is returned as text.
+ *
+ * Throws an Error for an unknown series, an unknown scope, an ID that is already used and, with `following`, a
+ * `recurrenceId` that is neither a rule instance nor an RDATE of the series; a RangeError for invalid times.
+ */
+export function applyRecurringEdit<E extends CalendarEvent>(
+  events: readonly E[], target: RecurringEditTarget, change: RecurringEditChange | 'delete', scope: RecurringEditScope,
+  options: RecurringEditOptions = {},
+): E[] {
+  if (!Array.isArray(events as unknown)) throw new RangeError('events must be an array')
+  if (!scopes.includes(scope)) throw new Error('Unknown recurring edit scope: ' + String(scope))
+  const recurrenceId = checkFinite(target?.recurrenceId, 'recurrenceId')
+  const series = events.find(event => event?.id === target.seriesId && event.recurrence !== undefined)
+  if (!series) throw new Error('Unknown recurring event: ' + String(target.seriesId))
+  const recurrence = series.recurrence!
+  if (change !== 'delete') {
+    checkFinite(change?.start, 'change.start')
+    checkFinite(change.end, 'change.end')
+    if (change.end < change.start) throw new RangeError('change.end must not be before change.start')
+  }
+  const zone: RecurrenceZoneOptions = recurrence.timeZone !== undefined || recurrence.utcOffsetMinutes !== undefined
+    ? { timeZone: recurrence.timeZone, utcOffsetMinutes: recurrence.utcOffsetMinutes } : { timeZone: options.timeZone }
+  const context: EditContext<E> = { events, series, recurrence, prepared: prepare(seriesOf(series), options.timeZone), recurrenceId, zone, change }
+  if (scope === 'occurrence') return editOccurrence(context)
+  if (scope === 'series' || recurrenceId <= series.start) return editSeries(context)
+  return editFollowing(context, options)
 }
