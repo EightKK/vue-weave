@@ -32,6 +32,6 @@ function apply(change: EventCalendarEdit) {
 </template>
 ```
 
-**Examples:** the [example index](/examples/) lists the calendar demos. **Types:** [`CalendarEvent`](../reference/core/interfaces/CalendarEvent.md), [`EventCalendarEdit`](../reference/core/interfaces/EventCalendarEdit.md), [`EventCalendarExposed`](../reference/vue-weave/type-aliases/EventCalendarExposed.md). iCalendar import and export are on [Interchange and export](../core/interchange.md).
+**Examples:** [Event calendar](/examples/event-calendar/) and the [example index](/examples/). **Types:** [`CalendarEvent`](../reference/core/interfaces/CalendarEvent.md), [`EventCalendarEdit`](../reference/core/interfaces/EventCalendarEdit.md), [`EventCalendarExposed`](../reference/vue-weave/type-aliases/EventCalendarExposed.md). iCalendar import and export are on [Interchange and export](../core/interchange.md).
 
 <!--@include: ../../../docs/api.md#event-calendar-->

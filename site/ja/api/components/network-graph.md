@@ -34,7 +34,7 @@ const edges: GraphEdge[] = [
 </template>
 ```
 
-**例:** [連動ビュー](/ja/examples/linked-views/)、[部品表](/ja/showcase/bom/)、[例の一覧](/ja/examples/)。**ガイド:** [グラフの組み込み](../guides/graph.md)。**型:** [`NetworkNode`](/api/reference/core/interfaces/NetworkNode.md)、[`GraphEdge`](/api/reference/core/interfaces/GraphEdge.md)、[`NetworkGraphExposed`](/api/reference/vue-weave/type-aliases/NetworkGraphExposed.md)。コンポーネントが使うレイアウト関数は[グラフのレイアウトとルーティング](../core/graph-layout.md)にあります。
+**例:** [連動ビュー](/ja/examples/linked-views/)、[部品表](/ja/showcase/bom/)、[例の一覧](/ja/examples/)。**ガイド:** [グラフの組み込み](../guides/graph.md)。**型:** [`NetworkNode`](/ja/api/reference/core/interfaces/NetworkNode.md)、[`GraphEdge`](/ja/api/reference/core/interfaces/GraphEdge.md)、[`NetworkGraphExposed`](/ja/api/reference/vue-weave/type-aliases/NetworkGraphExposed.md)。コンポーネントが使うレイアウト関数は[グラフのレイアウトとルーティング](../core/graph-layout.md)にあります。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

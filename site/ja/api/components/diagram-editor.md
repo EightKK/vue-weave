@@ -49,7 +49,7 @@ function rename(change: InspectorChange) {
 </template>
 ```
 
-**例:** 旧ギャラリーの「Diagram editor」デモ([例の一覧](/ja/examples/)から開けます)。**ガイド:** [ダイアグラムエディターの部品](../guides/graph.md#diagram-editor-parts)。**型:** [`GraphPaletteItem`](/api/reference/core/interfaces/GraphPaletteItem.md)、[`InspectorField`](/api/reference/core/interfaces/InspectorField.md)、[`GraphPaletteExposed`](/api/reference/vue-weave/type-aliases/GraphPaletteExposed.md)、[`PropertyInspectorExposed`](/api/reference/vue-weave/type-aliases/PropertyInspectorExposed.md)。
+**例:** [ダイアグラムエディター](/ja/examples/diagram-editor/)。**ガイド:** [ダイアグラムエディターの部品](../guides/graph.md#diagram-editor-parts)。**型:** [`GraphPaletteItem`](/ja/api/reference/core/interfaces/GraphPaletteItem.md)、[`InspectorField`](/ja/api/reference/core/interfaces/InspectorField.md)、[`GraphPaletteExposed`](/ja/api/reference/vue-weave/type-aliases/GraphPaletteExposed.md)、[`PropertyInspectorExposed`](/ja/api/reference/vue-weave/type-aliases/PropertyInspectorExposed.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

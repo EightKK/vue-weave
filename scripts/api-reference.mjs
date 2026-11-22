@@ -1,6 +1,12 @@
 // Generates the type reference of the documentation site (site/api/reference/, gitignored) with TypeDoc,
 // typedoc-plugin-markdown and typedoc-vitepress-theme, from the options in typedoc.json. `npm run build:demo` and
 // `npm run dev` run it before VitePress.
+//
+// The reference is written in English only. The Japanese site gets a copy of the same pages under
+// site/ja/api/reference/ (also gitignored), so the language switch of a reference page leads to the English reference
+// with the Japanese site navigation instead of a missing page. Relative links between the pages stay within the copy.
+import { cpSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { Minimatch } from 'minimatch'
 import * as td from 'typedoc'
@@ -37,4 +43,8 @@ if (app.logger.hasErrors() || app.logger.hasWarnings()) {
   console.error('The type reference was generated with warnings or errors; see above.')
   process.exit(1)
 }
-console.log(`Type reference written to ${app.options.getValue('out')} in ${Math.round(performance.now() - start)} ms.`)
+const out = app.options.getValue('out')
+const japaneseOut = join(app.options.getValue('docsRoot'), 'ja', 'api', 'reference')
+rmSync(japaneseOut, { recursive: true, force: true })
+cpSync(out, japaneseOut, { recursive: true, filter: source => !source.endsWith('.json') })
+console.log(`Type reference written to ${out} and ${japaneseOut} in ${Math.round(performance.now() - start)} ms.`)

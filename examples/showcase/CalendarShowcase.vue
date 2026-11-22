@@ -40,7 +40,10 @@ const bars = ref<TimelineBar[]>([
 ])
 const markerRanges: TimelineMarkerRange[] = [
   { id: 'golden-week', start: on(4, 29), end: on(5, 7), label: t({ en: 'Golden Week', ja: 'ゴールデンウィーク' }), tone: 'teal', rowIds: ['tokyo'] },
-  { id: 'labour-day', start: on(5, 1), end: on(5, 2), label: t({ en: 'Office closed', ja: '拠点休業' }), tone: 'violet', rowIds: ['berlin', 'lisbon'] },
+  // The labels of all ranges share one strip in the time header, so the office holidays do not overlap Golden Week or
+  // the code freeze: a label drawn over another one would cut both.
+  { id: 'ascension', start: on(5, 14), end: on(5, 16), label: t({ en: 'Ascension Day', ja: 'キリスト昇天祭' }), tone: 'violet', rowIds: ['berlin'] },
+  { id: 'corpus-christi', start: on(6, 4), end: on(6, 5), label: t({ en: 'Corpus Christi', ja: '聖体祭' }), tone: 'violet', rowIds: ['lisbon'] },
   { id: 'freeze', start: on(5, 18), end: on(6, 1), label: t({ en: 'Code freeze', ja: 'コードフリーズ' }) },
   { id: 'shutdown', start: on(8, 10), end: on(8, 24), label: t({ en: 'Summer shutdown', ja: '夏季休業' }), tone: 'blue' },
 ]

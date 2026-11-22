@@ -23,7 +23,7 @@ if (project.warnings.length) console.warn(project.warnings)
 const mermaid = toMermaid({ nodes, edges })
 ```
 
-**例:** インポートとエクスポートのデモは[例の一覧](/ja/examples/)にあります。**ガイド:** [ダイアグラムのファイル](../guides/graph.md#diagram-files-mermaid-graphml-and-draw-io)、[表示状態の保存と復元](../guides/data.md#saving-and-restoring-a-view)、[SVG と PNG へのエクスポート](../guides/data.md#export-to-svg-and-png)。**型:** [`fromMsProjectXml`](/api/reference/core/functions/fromMsProjectXml.md)、[`toICalendar`](/api/reference/core/functions/toICalendar.md)、[`fromDrawio`](/api/reference/core/functions/fromDrawio.md)、[`serializeWeaveSnapshot`](/api/reference/core/functions/serializeWeaveSnapshot.md)。
+**例:** インポートとエクスポートのデモは[例の一覧](/ja/examples/)にあります。**ガイド:** [ダイアグラムのファイル](../guides/graph.md#diagram-files-mermaid-graphml-and-draw-io)、[表示状態の保存と復元](../guides/data.md#saving-and-restoring-a-view)、[SVG と PNG へのエクスポート](../guides/data.md#export-to-svg-and-png)。**型:** [`fromMsProjectXml`](/ja/api/reference/core/functions/fromMsProjectXml.md)、[`toICalendar`](/ja/api/reference/core/functions/toICalendar.md)、[`fromDrawio`](/ja/api/reference/core/functions/fromDrawio.md)、[`serializeWeaveSnapshot`](/ja/api/reference/core/functions/serializeWeaveSnapshot.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

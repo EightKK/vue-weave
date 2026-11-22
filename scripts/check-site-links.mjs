@@ -58,8 +58,6 @@ for (const file of pages) {
   for (const match of html.matchAll(/<a\b[^>]*?\shref="([^"]*)"[^>]*>/g)) {
     const href = decode(match[1])
     if (href === '' || href === '#' || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href)) continue
-    // The type reference is English only, so the language menu of its pages offers a Japanese page that does not exist.
-    if (/\shreflang="ja"/.test(match[0]) && href.startsWith(base + 'ja/api/reference/')) continue
     const url = new URL(href, 'http://site' + base + page.slice(1))
     if (!url.pathname.startsWith(base)) {
       problems.push(`${page}: ${href} leaves the site base ${base}`)

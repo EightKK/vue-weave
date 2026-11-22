@@ -37,6 +37,6 @@ function move(change: TaskBoardCardMove) {
 </template>
 ```
 
-**Examples:** the [example index](/examples/) lists the board demos. **Types:** [`TaskBoardCard`](../reference/core/interfaces/TaskBoardCard.md), [`TaskBoardColumn`](../reference/core/interfaces/TaskBoardColumn.md), [`TaskBoardCardMove`](../reference/core/interfaces/TaskBoardCardMove.md), [`TaskBoardExposed`](../reference/vue-weave/type-aliases/TaskBoardExposed.md).
+**Examples:** [Task board](/examples/task-board/) and the [example index](/examples/). **Types:** [`TaskBoardCard`](../reference/core/interfaces/TaskBoardCard.md), [`TaskBoardColumn`](../reference/core/interfaces/TaskBoardColumn.md), [`TaskBoardCardMove`](../reference/core/interfaces/TaskBoardCardMove.md), [`TaskBoardExposed`](../reference/vue-weave/type-aliases/TaskBoardExposed.md).
 
 <!--@include: ../../../docs/api.md#task-board-->

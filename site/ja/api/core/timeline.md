@@ -24,7 +24,7 @@ scale.toTime(160) // 7_200_000
 const moved = editTimeRange({ start: hour, end: 3 * hour }, 'move', 50 * 60_000, 15 * 60_000, range)
 ```
 
-**例:** [スケジューリング](/ja/examples/scheduling/)、[建設工程](/ja/showcase/construction/)。**ガイド:** [別の時間軸](../guides/data.md#alternative-time-scales)。**型:** [`TimeScale`](/api/reference/core/interfaces/TimeScale.md)、[`createTimeScale`](/api/reference/core/functions/createTimeScale.md)、[`editTimeRange`](/api/reference/core/functions/editTimeRange.md)、[`useTimelineView`](/api/reference/vue-weave/functions/useTimelineView.md)。
+**例:** [スケジューリング](/ja/examples/scheduling/)、[建設工程](/ja/showcase/construction/)。**ガイド:** [別の時間軸](../guides/data.md#alternative-time-scales)。**型:** [`TimeScale`](/ja/api/reference/core/interfaces/TimeScale.md)、[`createTimeScale`](/ja/api/reference/core/functions/createTimeScale.md)、[`editTimeRange`](/ja/api/reference/core/functions/editTimeRange.md)、[`useTimelineView`](/ja/api/reference/vue-weave/functions/useTimelineView.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

@@ -24,13 +24,22 @@ test('the home page renders the hero and a live graph and Gantt chart that share
   expect(errors).toEqual([])
 })
 
-test('the old URLs lead to the site, the production demo and the legacy gallery', async ({ page }) => {
+test('the old URLs lead to the site and the production demo, and gallery links to their example pages', async ({ page }) => {
   const errors = pageErrors(page)
   await page.goto('/')
   await expect(page).toHaveURL(/\/vue-weave\/$/)
+  // The retired gallery forwards its demo IDs (`legacyId` in the registry) to the example and showcase pages.
   await page.goto('/gallery.html')
-  await expect(page).toHaveURL(/\/vue-weave\/gallery\.html$/)
-  await expect(page.getByRole('button', { name: 'Scheduling', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/vue-weave\/examples\/$/)
+  await page.goto('gallery.html?demo=scheduling')
+  await expect(page).toHaveURL(/\/vue-weave\/examples\/scheduling\/$/)
+  await expect(page.locator('.vw-site-frame[data-ready]')).toBeVisible()
+  await page.goto('gallery.html#calendar')
+  await expect(page).toHaveURL(/\/vue-weave\/showcase\/calendar\/$/)
+  await page.goto('gallery.html?preset=project&lang=ja')
+  await expect(page).toHaveURL(/\/vue-weave\/ja\/examples\/graph-and-gantt\/$/)
+  await page.goto('gallery.html?demo=retired')
+  await expect(page).toHaveURL(/\/vue-weave\/examples\/$/)
   await page.goto('./?lang=ja')
   await expect(page).toHaveURL(/\/vue-weave\/ja\/$/)
   await page.goto('showcase/')

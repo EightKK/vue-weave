@@ -53,7 +53,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 // <NetworkGraph :selected-ids="linked.graph.value.selectedNodeIds" @target-activate="activate" ... />
 ```
 
-**例:** [連動ビュー](/ja/examples/linked-views/)、[ツリーグリッド](/ja/examples/tree-grid/)。**ガイド:** [データ、保存、連動ビュー](./guides/data.md)。**型:** [`useEditHistory`](/api/reference/vue-weave/functions/useEditHistory.md)、[`useEditTransaction`](/api/reference/vue-weave/functions/useEditTransaction.md)、[`useLinkedSelection`](/api/reference/vue-weave/functions/useLinkedSelection.md)、[`useTimelineView`](/api/reference/vue-weave/functions/useTimelineView.md)、[`useWindowedData`](/api/reference/vue-weave/functions/useWindowedData.md)、[`useAsyncGraphLayout`](/api/reference/vue-weave/functions/useAsyncGraphLayout.md)。
+**例:** [連動ビュー](/ja/examples/linked-views/)、[ツリーグリッド](/ja/examples/tree-grid/)。**ガイド:** [データ、保存、連動ビュー](./guides/data.md)。**型:** [`useEditHistory`](/ja/api/reference/vue-weave/functions/useEditHistory.md)、[`useEditTransaction`](/ja/api/reference/vue-weave/functions/useEditTransaction.md)、[`useLinkedSelection`](/ja/api/reference/vue-weave/functions/useLinkedSelection.md)、[`useTimelineView`](/ja/api/reference/vue-weave/functions/useTimelineView.md)、[`useWindowedData`](/ja/api/reference/vue-weave/functions/useWindowedData.md)、[`useAsyncGraphLayout`](/ja/api/reference/vue-weave/functions/useAsyncGraphLayout.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

@@ -28,7 +28,7 @@ diff.changed // [{ key: 'frame', fields: [{ name: 'quantity', before: 1, after: 
 diff.removed // ['bell']
 ```
 
-**例:** [連動ビュー](/ja/examples/linked-views/)、[ツリーグリッド](/ja/examples/tree-grid/)、[部品表](/ja/showcase/bom/)。**ガイド:** [データ、保存、連動ビュー](../guides/data.md)。**型:** [`diffStructure`](/api/reference/core/functions/diffStructure.md)、[`ViewBinding`](/api/reference/core/interfaces/ViewBinding.md)、[`useLinkedSelection`](/api/reference/vue-weave/functions/useLinkedSelection.md)、[`useWindowedData`](/api/reference/vue-weave/functions/useWindowedData.md)。
+**例:** [連動ビュー](/ja/examples/linked-views/)、[ツリーグリッド](/ja/examples/tree-grid/)、[部品表](/ja/showcase/bom/)。**ガイド:** [データ、保存、連動ビュー](../guides/data.md)。**型:** [`diffStructure`](/ja/api/reference/core/functions/diffStructure.md)、[`ViewBinding`](/ja/api/reference/core/interfaces/ViewBinding.md)、[`useLinkedSelection`](/ja/api/reference/vue-weave/functions/useLinkedSelection.md)、[`useWindowedData`](/ja/api/reference/vue-weave/functions/useWindowedData.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

@@ -1,6 +1,6 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
 import {
-  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo, openExample,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openExample,
   openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
 } from './support'
 
@@ -658,10 +658,9 @@ test('unstyledNodeSlots keeps the library hover stroke off custom node content',
   const before = await strokes()
   await card.hover()
   expect(await strokes()).toEqual(before)
-  // Without the prop, the legacy gallery's main demo's custom nodes still take the stylesheet's hover stroke.
-  await page.goto('gallery.html')
-  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
-  await page.getByLabel('Custom nodes').check()
+  // Without the prop, the custom nodes of the graph and Gantt example still take the stylesheet's hover stroke.
+  const basics = await openExample(page, 'graph-and-gantt')
+  await basics.getByLabel('Custom nodes').check()
   const split = page.locator('.vw-network-node[data-vw-node="split"]')
   await expect(split).not.toHaveClass(/vw-is-unstyled/)
   await split.hover()

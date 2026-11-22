@@ -22,7 +22,7 @@ const layout = layoutLayeredGraph(
 console.log(layout.boxes.get('b')) // { x, y, width, height }
 ```
 
-エクスポートは分野ごとに次のページにまとめています: [グラフのレイアウトとルーティング](./graph-layout.md)、[グラフのアルゴリズムと探索](./graph-algorithms.md)、[タイムラインと時間軸](./timeline.md)、[スケジューリングとリソース](./scheduling.md)、[連動ビューとデータ](./linked-data.md)、[インターチェンジとエクスポート](./interchange.md)。生成された[コアの型リファレンス](/api/reference/core/)には、すべてのエクスポートとシグネチャーが載っています(英語)。
+エクスポートは分野ごとに次のページにまとめています: [グラフのレイアウトとルーティング](./graph-layout.md)、[グラフのアルゴリズムと探索](./graph-algorithms.md)、[タイムラインと時間軸](./timeline.md)、[スケジューリングとリソース](./scheduling.md)、[連動ビューとデータ](./linked-data.md)、[インターチェンジとエクスポート](./interchange.md)。生成された[コアの型リファレンス](/ja/api/reference/core/)には、すべてのエクスポートとシグネチャーが載っています(英語)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

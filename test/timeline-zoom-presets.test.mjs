@@ -23,6 +23,9 @@ test('intlTimeFormatter follows the locale, IANA time zone and fixed offset', ()
   const date = { year: 'numeric', month: 'long', day: 'numeric' }
   assert.equal(intlTimeFormatter({ locale: 'de-DE', timeZone: 'Europe/Berlin', format: date })(instant), '1. Juli 2026')
   assert.equal(intlTimeFormatter({ locale: 'ja-JP', timeZone: 'Asia/Tokyo', format: date })(at('2026-06-30T20:00:00Z')), '2026年7月1日')
+  // Plain spaces where ICU versions differ (some write U+202F before the day period), so server and
+  // browser render the same text.
+  assert.equal(intlTimeFormatter({ format: { hour: 'numeric', minute: '2-digit', hour12: true } })(9 * hour), '9:00 AM')
   // The time zone option wins over a timeZone inside format.
   assert.equal(intlTimeFormatter({ timeZone: 'Asia/Tokyo', format: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' } })(0), '09:00')
 })
