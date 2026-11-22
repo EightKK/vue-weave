@@ -3,7 +3,7 @@ import type {
   ScheduleConstraintName, ScheduleCycle, ScheduleInput, ScheduleLink, ScheduleTask, ScheduleFailure,
 } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
-import { firstIndex, subtractPeriods } from './intervals.js'
+import { firstIndex, subtractPeriods, workBefore } from './intervals.js'
 import { assertScheduleRange, integerPeriodMessage, normalizeWorkPeriods } from './workCalendar.js'
 import { checkId, unknownEndpointError } from './ids.js'
 import { isDependencyType } from './dependencyTypes.js'
@@ -23,20 +23,16 @@ export type Slot = TimeRange & { workStart: number }
 
 /** Work starts and finishes have different inverses at shift boundaries. */
 export function workClock(periods: readonly TimeRange[], quantum: number) {
+  // before[i]: work before periods[i]; before[periods.length]: the total.
+  const before = [0]
   let total = 0
-  const entries = periods.map(period => {
-    const before = total
-    total += (period.end - period.start) / quantum
-    return { ...period, before, after: total }
-  })
+  for (const period of periods) before.push(total += (period.end - period.start) / quantum)
   function workAt(time: number) {
-    const period = entries[firstIndex(entries.length, i => entries[i]!.end > time)]
-    return period ? period.before + Math.max(0, time - period.start) / quantum : total
+    return workBefore(periods, before, time, quantum)
   }
   function dateAt(work: number, finish: boolean) {
-    const index = firstIndex(entries.length, i => finish ? entries[i]!.after >= work : entries[i]!.after > work)
-    const period = entries[index]!
-    return period.start + (work - period.before) * quantum
+    const index = firstIndex(periods.length, i => finish ? before[i + 1]! >= work : before[i + 1]! > work)
+    return periods[index]!.start + (work - before[index]!) * quantum
   }
   function minFinishWork(time: number) {
     const work = workAt(time)
@@ -48,8 +44,8 @@ export function workClock(periods: readonly TimeRange[], quantum: number) {
   }
   function slices(interval: TimeRange): TimeRange[] {
     const work: TimeRange[] = []
-    for (let i = firstIndex(entries.length, index => entries[index]!.end > interval.start); i < entries.length; i++) {
-      const period = entries[i]!
+    for (let i = firstIndex(periods.length, index => periods[index]!.end > interval.start); i < periods.length; i++) {
+      const period = periods[i]!
       if (period.start >= interval.end) break
       work.push({ start: Math.max(period.start, interval.start), end: Math.min(period.end, interval.end) })
     }

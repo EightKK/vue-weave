@@ -14,6 +14,17 @@ export function firstIndex(length: number, matches: (index: number) => boolean) 
 }
 
 /**
+ * Working time before `time` on sorted, disjoint `periods`. `before[i]` is the working time before `periods[i]` and
+ * `before[periods.length]` the total; time inside a period counts in units of `quantum`. Callers build `before`
+ * themselves, because the order in which they add up period lengths decides the rounding of fractional values.
+ */
+export function workBefore(periods: readonly TimeRange[], before: readonly number[], time: number, quantum = 1): number {
+  const index = firstIndex(periods.length, i => periods[i]!.end > time)
+  if (index === periods.length) return before[index]!
+  return before[index]! + Math.max(0, time - periods[index]!.start) / quantum
+}
+
+/**
  * Whether two intervals share time. A milestone (`start === end`) meets an interval that contains its time and a
  * milestone at the same time; two intervals meet when they overlap.
  */
