@@ -15,8 +15,10 @@ export const repositoryName = 'EightKK/vue-weave'
 export const registry = 'https://registry.npmjs.org'
 // npm reads the trusted-publishing OIDC token from 11.5.1 onwards.
 export const minimumNpmVersion = [11, 5, 1]
-// Waits between registry reads after publishing, about 90 seconds in total.
-export const registryRetryDelays = [2000, 4000, 8000, 16000, 30000, 30000]
+// Waits between registry reads after publishing, about 10 minutes in total. npm says a new version "may take a few
+// minutes to become available"; the 1.1.0 and 1.2.0 releases both took longer than the earlier 90 seconds, so the
+// check failed after a successful publish and needed a rerun.
+export const registryRetryDelays = [5000, 10000, 15000, 30000, ...Array(9).fill(60000)]
 
 function compareVersions(a, b) {
   for (let index = 0; index < 3; index++) {
@@ -92,9 +94,12 @@ export async function publishRelease({ env = process.env, root = fileURLToPath(n
     if (published === null) {
       // Stable releases always move the `latest` dist-tag (see CONTRIBUTING.md).
       await io.run('npm', ['publish', tarball, '--access', 'public', '--ignore-scripts', '--tag', 'latest', '--registry', registry])
+      let waited = 0
       for (let attempt = 0; attempt < delays.length && published === null; attempt++) {
         await io.sleep(delays[attempt])
+        waited += delays[attempt]
         published = await registryIntegrity()
+        if (published === null) io.log(`Waiting for the registry to list ${name}@${version} (${Math.round(waited / 1000)} s so far)…`)
       }
       assert.notEqual(
         published,

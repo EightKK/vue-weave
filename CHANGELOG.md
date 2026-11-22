@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-No changes yet.
+### Development
+
+- The npm release workflow now waits up to about 10 minutes, instead of 90 seconds, for the registry to list a new version before it compares the integrity, and logs each wait. npm took longer than 90 seconds for 1.1.0 and 1.2.0, so the job failed after a successful publish and needed a rerun.
 
 ## 1.2.0 - 2026-11-22
 
