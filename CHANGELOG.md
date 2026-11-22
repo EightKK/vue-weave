@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `resourceLoadHistogram` now throws a `RangeError`, not an `Error`, for load segments that overlap within a resource, like its other checks of times, load and capacity (an unknown resource still throws an `Error`). GanttChart reports overlapping `loadSegments` through `validation-error` with the same `RangeError`. Who is affected: code that tells this failure apart by its class, for example `error.constructor === Error` or `!(error instanceof RangeError)`. What to do: check for `RangeError`; the message is unchanged.
+
 ### Added
 
 - Recurring events (RFC 5545 RRULE), opt-in: new core functions `parseRecurrenceRule`, `formatRecurrenceRule`, `expandRecurrence`, `expandRecurringEvents` and `applyRecurringEdit` with the types `RecurrenceFrequency`, `RecurrenceWeekday`, `RecurrenceRule`, `RecurrenceZoneOptions`, `CalendarRecurrence`, `RecurrenceSeries`, `RecurrenceOccurrence`, `RecurrenceExpandOptions`, `RecurringEditScope`, `RecurringEditTarget`, `RecurringEditChange` and `RecurringEditOptions`. DAILY, WEEKLY, MONTHLY and YEARLY rules with INTERVAL, COUNT, UNTIL, BYDAY (with ordinals), BYMONTHDAY, BYMONTH, BYSETPOS and WKST, plus EXDATE and RDATE, expand in an IANA time zone or fixed offset and keep their local time across daylight-saving changes; sub-daily frequencies, BYHOUR, BYMINUTE, BYSECOND, BYYEARDAY and BYWEEKNO are rejected. `CalendarEvent` gains the optional `recurrence`, `seriesId` and `recurrenceId`, `EventCalendarEdit` the optional `occurrence`, and `EventCalendarLabels` the optional `recurring`; EventCalendar names occurrences "…, Recurring" and marks them with `vw-is-recurring`, while events without these fields render as before. `applyRecurringEdit` applies an edit to one occurrence (override or EXDATE), to it and the following ones (split series) or to the whole series. `fromICalendar` takes `recurrence: 'series'` (parsed rule, EXDATEs, RDATEs and RECURRENCE-ID overrides) or `recurrence: { range }` (expanded occurrences, new type `ICalendarExpandOptions`); the default is unchanged. `toICalendar` writes RRULE, EXDATE and RDATE for events with `recurrence`, with TZID times and a VTIMEZONE for an IANA zone. The "Event calendar" demo has a weekly sync with a choice of edit scope.
@@ -37,6 +41,18 @@ These fix the unreleased recurring events:
 - `toICalendar` writes overrides (`seriesId` and `recurrenceId`, new optional fields of `ICalendarEvent`) of a series in the same export with the series' UID and a RECURRENCE-ID, so a reimport with `{ range }` no longer shows the changed occurrence twice.
 - VTIMEZONE observances written by `toICalendar` now begin in the year before the zone's first event instead of after it (for example in the southern hemisphere).
 - Rules that can never match, such as `FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30`, are detected up front instead of walking 146,097 days on every expansion.
+
+### Fixed
+
+- `rescheduleFromStatusDate` lets a partly done task meet its own `finishNoEarlierThan`: the remaining work resumes later, as it already did for FF and SF links and as `rescheduleFromActuals` does, instead of returning `infeasible` with `['finishNoEarlierThan', 'fixedStart']`.
+- `levelResources` with `{ explain: true }` no longer takes cubic time: 1,000 unit tasks on one resource took about 16 seconds and recorded 503,500 reasons, and now take well under a second with 4,999. Adjacent capacity shortages with the same capacity now form one `capacity` reason that names every holding task (see [Explain a plan](docs/scheduling.md#explain-a-plan)). Leveling without `explain` scans each resource from a task's earliest start instead of from the start of the horizon; its results are unchanged.
+- `filterGraph` walks once from all matching nodes instead of once per match, so a 20,000-node chain where every node matches, with `neighborhood: 20000`, takes a fraction of a second instead of about two minutes. The result is unchanged.
+- `countGraphCrossings` validates its input: an unknown `direction` and a box without finite geometry and rank throw a `RangeError`, and an edge end without a box throws an `Error` (`Unknown node in graph edge <id>: <node>`) instead of being skipped silently.
+- `traverseGraph` rejects duplicate and empty node IDs with an `Error`, as it already did for edges.
+- `graphAlignmentGuides`, `snapGraphPoint`, `graphNodesInPolygon`, `findOrthogonalRoute` and `graphLayoutChangeMetrics` throw a `RangeError` instead of a `TypeError` for a missing (null or undefined) rectangle, box or point.
+- `layoutFlowGraph` with the default scale no longer throws for a rank too wide for 360 units (about 23 or more nodes): the default extent grows to that rank's gaps and minimum node sizes. Small graphs lay out as before, and an explicit `fitExtent` that is too small still throws.
+- `validateTimelineData` names the dependency in `Invalid dependency type: <id>`.
+- The numeric options of the graph routing, snapping, analysis and filter functions use the layout options' message format, `<option> must be <rule> (got <value>)`. Error classes are unchanged.
 
 ### Demo
 

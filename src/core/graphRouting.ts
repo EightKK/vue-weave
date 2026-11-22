@@ -4,6 +4,7 @@ import {
 } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
 import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { checkLayoutNumber } from './graphOptions.js'
 import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
 import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
 import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape, isGraphFlowchartShape } from './graphShapes.js'
@@ -223,7 +224,7 @@ function simplify(points: readonly GraphPoint[]): GraphPoint[] {
  * non-finite corner radius.
  */
 export function graphPolylinePath(points: readonly GraphPoint[], cornerRadius = 0): string {
-  if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
+  checkLayoutNumber('cornerRadius', cornerRadius, 'nonnegative')
   assertFinitePoints(points)
   if (!points.length) return ''
   const first = points[0]!
@@ -509,10 +510,8 @@ function validateRouteOptions(options: GraphEdgeRouteOptions) {
   if (!edgeStyles.includes(style)) throw new RangeError('Unknown edge style: ' + style)
   if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
   assertGraphLayoutDirection(direction)
-  if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
-  if (parallelSpacing !== undefined && !(Number.isFinite(parallelSpacing) && parallelSpacing > 0)) {
-    throw new RangeError('parallelSpacing must be a positive finite number of chart units')
-  }
+  checkLayoutNumber('cornerRadius', cornerRadius, 'nonnegative')
+  if (parallelSpacing !== undefined) checkLayoutNumber('parallelSpacing', parallelSpacing, 'positive')
   return { style, direction, cornerRadius, policy, spacing: parallelSpacing, avoid: resolveObstacleAvoidance(avoidNodes) }
 }
 

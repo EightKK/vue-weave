@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { rescheduleFromStatusDate, scheduleTasks } from '@eightkk/vue-weave/core'
+import { rescheduleFromActuals, rescheduleFromStatusDate, scheduleTasks } from '@eightkk/vue-weave/core'
 
 const plan = {
   range: { start: 0, end: 100 },
@@ -146,4 +146,18 @@ test('rescheduleFromStatusDate rejects progress that is not a map', () => {
   assert.throws(() => rescheduleFromStatusDate(input, 5, { a: 0.5 }), /Progress must be a Map/)
   assert.throws(() => rescheduleFromStatusDate(input, 5, undefined), /Progress must be a Map/)
   assert.equal(rescheduleFromStatusDate(input, 5, new Map([['a', 0.5]])).ok, true)
+})
+
+test('rescheduleFromStatusDate lets a partly done task meet its own finishNoEarlierThan, as rescheduleFromActuals does', () => {
+  const input = { range: { start: 0, end: 30 }, tasks: [{ id: 'b', duration: 4, finishNoEarlierThan: 8 }], dependencies: [] }
+  const result = rescheduleFromStatusDate(input, 2, new Map([['b', 0.5]]))
+  assert.equal(result.ok, true)
+  // Done work [0, 2); the remaining 2 units resume late enough to finish at the bound.
+  assert.deepEqual(dates(result).b, [0, 8, [[0, 2], [6, 8]]])
+  const actuals = rescheduleFromActuals(input, 2, new Map([['b', { intervals: [{ start: 0, end: 2 }] }]]))
+  assert.equal(actuals.ok, true)
+  assert.deepEqual(actuals.schedule.tasks[0].work, result.tasks[0].work)
+  // An earlier bound is already met: the remaining work resumes at the status date.
+  const met = rescheduleFromStatusDate({ ...input, tasks: [{ id: 'b', duration: 4, finishNoEarlierThan: 3 }] }, 2, new Map([['b', 0.5]]))
+  assert.deepEqual(dates(met).b, [0, 4, [[0, 4]]])
 })

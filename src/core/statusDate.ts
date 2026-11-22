@@ -21,8 +21,9 @@ import type { TimeRange } from './timeline.js'
  *
  * A started or finished task is pinned at its start: `startNoEarlierThan`, `startNoLaterThan`, `fixedStart` and
  * `mode` no longer apply, because its start has happened, and neither do incoming FS and SS dependencies, which bound
- * the start. Incoming FF and SF dependencies, with their lag, still bound the finish of a partly done task: when its
- * remaining work would finish too early, the remaining work resumes later, and the gap after the done work grows.
+ * the start. Incoming FF and SF dependencies, with their lag, and the task's own `finishNoEarlierThan` still bound the
+ * finish of a partly done task: when its remaining work would finish too early, the remaining work resumes later,
+ * and the gap after the done work grows.
  * A finished task ignores every incoming dependency. Finish bounds and outgoing dependencies still apply, so
  * successors follow the new finish. A kept link that cannot be met, for example because the required finish lies
  * after a `finishNoLaterThan`, the deadline or the horizon, makes the plan infeasible, and the failure names the
@@ -114,7 +115,7 @@ interface Resume {
 function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>): ScheduleTask[] {
   const tasks = [...adjusted.tasks]
   const model = buildScheduleModel(adjusted)
-  if (![...resumes.keys()].some(id => model.tasks.get(id)!.incoming.length)) return tasks
+  if (!resumes.size) return tasks
   const sorted = topologicalOrder(model)
   if ('cycles' in sorted) return tasks
   const earliest = new Map<string, TimeRange>()
@@ -130,8 +131,9 @@ function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string
     }
     const bounds = lowerBounds(task, earliest)
     const pinned = resumes.get(id)
-    if (pinned && task.incoming.length) {
-      const required = bounds.endLower.reduce((value, bound) => bound.dependencyId ? Math.max(value, bound.value) : value, -Infinity)
+    if (pinned) {
+      // Every lower finish bound applies: kept FF and SF links and the task's own finishNoEarlierThan.
+      const required = bounds.endLower.reduce((value, bound) => Math.max(value, bound.value), -Infinity)
       const { clock } = pinned
       const resume = Math.max(pinned.resume, clock.minFinishWork(required) - pinned.remaining)
       if (resume + pinned.remaining > clock.total) break

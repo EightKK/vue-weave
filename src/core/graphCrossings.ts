@@ -1,5 +1,7 @@
 import type { GraphEdge, GraphLayout, GraphLayoutDirection } from './graph.js'
-import { isVerticalDirection } from './graphOrient.js'
+import { isFiniteRect } from './graphGeometry.js'
+import { assertGraphLayoutDirection, isVerticalDirection } from './graphOrient.js'
+import { unknownReferenceError } from './ids.js'
 
 export interface CrossingItem {
   rank: number
@@ -35,14 +37,23 @@ export function countAdjacentCrossings(items: CrossingItem[]): number {
 
 /**
  * Count crossings between edges that connect adjacent ranks, measured on the node centres of a layout.
- * Long edges, same-rank edges and self-loops use their own routes and are not counted.
+ * Long edges, same-rank edges and self-loops use their own routes and are not counted. Throws a RangeError for an
+ * unknown direction or a box of an edge end without finite geometry and rank, and an Error for an edge end without a
+ * box.
  */
 export function countGraphCrossings(layout: GraphLayout, edges: readonly GraphEdge[], direction: GraphLayoutDirection = 'LR'): number {
+  assertGraphLayoutDirection(direction)
   const vertical = isVerticalDirection(direction)
   const items: CrossingItem[] = []
-  for (const { from, to } of edges) {
-    const source = layout.boxes.get(from), target = layout.boxes.get(to)
-    if (!source || !target || Math.abs(source.rank - target.rank) !== 1) continue
+  const boxOf = (id: string, edgeId: string) => {
+    const box = layout.boxes.get(id)
+    if (!box) throw unknownReferenceError('node', 'graph edge ' + edgeId, id)
+    if (!isFiniteRect(box, 'any') || !Number.isFinite(box.rank)) throw new RangeError('Graph box geometry must be finite: ' + id)
+    return box
+  }
+  for (const { id, from, to } of edges) {
+    const source = boxOf(from, id), target = boxOf(to, id)
+    if (Math.abs(source.rank - target.rank) !== 1) continue
     const [low, high] = source.rank < target.rank ? [source, target] : [target, source]
     const centre = (box: typeof low) => vertical ? box.x + box.width / 2 : box.y + box.height / 2
     items.push({ rank: low.rank, a: centre(low), b: centre(high) })

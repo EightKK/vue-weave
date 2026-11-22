@@ -9,9 +9,11 @@ import { renderComponent } from './helpers/ssr.mjs'
 // tasks and progress entries, run through `rescheduleFromStatusDate`, `scheduleTasks` and `toPlanningDiagnostics`. The
 // digest was produced before recorded actuals were added; it must not change, because progress-percentage input is
 // scheduled exactly as before. (It was updated once, when the trace reasons of links into summary tasks began to name
-// the leaf that binds; every date, rescheduled plan and diagnostic stayed the same.)
+// the leaf that binds; every date, rescheduled plan and diagnostic stayed the same. It was updated again when a partly
+// done task began to meet its own `finishNoEarlierThan` by resuming its remaining work later: the 7 plans that used to
+// fail as infeasible with ['finishNoEarlierThan', 'fixedStart'] now succeed, and nothing else changed.)
 test('progress-percentage rescheduling gives the same results as before recorded actuals', () => {
-  assert.equal(progressPlanDigest(), '39dc35e5f38ea5c2a86ed4d3f6df4df827a86d964e301e4fed76dff448721548')
+  assert.equal(progressPlanDigest(), 'cc26b00775f02096df2145af6b56a146b6657e7c31d63e3856e9267806368fbc')
 })
 
 const { actualsTimelineBars, rescheduleFromActuals, scheduleTasks, timelineBaselineId } = core

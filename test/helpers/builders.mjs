@@ -57,3 +57,19 @@ export const onBorder = (box, point) => {
 
 /** The centre point of a box. */
 export const centre = box => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
+
+/** Graph nodes with the given IDs, each labelled `label(id)` (by default the ID itself). */
+export const graphNodes = (ids, label = id => id) => ids.map(id => ({ id, label: label(id) }))
+
+/** Graph edges for `[from, to]` pairs, with the IDs `prefix + index` (by default '0', '1', ...). */
+export const graphEdges = (pairs, prefix = '') => pairs.map(([from, to], i) => ({ id: prefix + i, from, to }))
+
+/** The IDs 'n0', 'n1', ... of a graph with `count` nodes. */
+export const nodeIds = count => Array.from({ length: count }, (_, i) => 'n' + i)
+
+/** The edges 'e0', 'e1', ... of a chain through `ids`; with `cycle`, a last edge closes it into one cycle. */
+export const chainEdges = (ids, cycle = false) => {
+  const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+  if (cycle && ids.length) edges.push({ id: 'e' + edges.length, from: ids.at(-1), to: ids[0] })
+  return edges
+}

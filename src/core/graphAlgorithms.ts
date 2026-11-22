@@ -1,7 +1,9 @@
-import { graphNeighborhood, indexGraph } from './graph.js'
+import { indexGraph } from './graph.js'
 import type { GraphEdge, IdentifiedNode } from './graph.js'
-import { heapPop, heapPush } from './graphHeap.js'
+import { KeyedMinHeap } from './graphHeap.js'
 import { unknownReferenceError } from './ids.js'
+import { checkLayoutNumber } from './graphOptions.js'
+import { traverseGraph } from './graphTraversal.js'
 
 export interface TopologicalOrderResult {
   /** Nodes in dependency order (input order breaks ties). Nodes on or behind a cycle are omitted. */
@@ -130,14 +132,13 @@ export function shortestGraphPath(
 
   const distance = new Map<string, number>([[fromId, 0]])
   const via = new Map<string, { previous: string; edgeId: string }>()
-  // Binary min-heap ordered by distance, then insertion sequence for determinism.
-  const heap: [number, number, string][] = [[0, 0, fromId]]
-  let sequence = 1
-  const before = (a: [number, number, string], b: [number, number, string]) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+  // Ordered by distance, then insertion sequence for determinism.
+  const heap = new KeyedMinHeap<string>()
+  heap.push(0, fromId)
   const settled = new Set<string>()
 
-  while (heap.length) {
-    const [dist, , id] = heapPop(heap, before)!
+  while (heap.size) {
+    const [dist, id] = heap.pop()
     if (settled.has(id)) continue
     settled.add(id)
     if (id === toId) break
@@ -146,7 +147,7 @@ export function shortestGraphPath(
       if (settled.has(to) || next >= (distance.get(to) ?? Infinity)) continue
       distance.set(to, next)
       via.set(to, { previous: id, edgeId: edge.id })
-      heapPush(heap, [next, sequence++, to], before)
+      heap.push(next, to)
     }
   }
 
@@ -204,14 +205,12 @@ export function filterGraph<N extends IdentifiedNode, E extends GraphEdge>(
   options: GraphFilterOptions = {},
 ): { nodes: N[]; edges: E[] } {
   const { neighborhood = 0, fields = ['id', 'label'] } = options
-  if (!Number.isInteger(neighborhood) || neighborhood < 0) throw new RangeError('neighborhood must be a nonnegative integer')
-  const index = indexGraph(nodes, edges)
+  checkLayoutNumber('neighborhood', neighborhood, 'nonnegativeInteger')
+  indexGraph(nodes, edges)
   const test = typeof match === 'string' ? textMatcher<N>(match, fields) : match
-  const keep = new Set<string>()
-  for (const node of nodes) {
-    if (!test(node)) continue
-    for (const id of graphNeighborhood(index, node.id, neighborhood)) keep.add(id)
-  }
+  const matches = nodes.filter(node => test(node)).map(node => node.id)
+  // One walk from every match at once: each node is expanded once per direction, however many matches reach it.
+  const keep = new Set(neighborhood ? traverseGraph({ nodes, edges }, matches, { maxHops: neighborhood }).nodeIds : matches)
   return {
     nodes: nodes.filter(node => keep.has(node.id)),
     edges: edges.filter(edge => keep.has(edge.from) && keep.has(edge.to)),

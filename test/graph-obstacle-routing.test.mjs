@@ -95,6 +95,7 @@ test('findOrthogonalRoute validates its input', () => {
   assert.throws(() => findOrthogonalRoute(end, { x: 0, y: 0, side: 'middle' }, []), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [{ x: 0, y: 0, width: -1, height: 5 }]), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [{ x: NaN, y: 0, width: 1, height: 5 }]), RangeError)
+  assert.throws(() => findOrthogonalRoute(end, end, [null]), { name: 'RangeError', message: /Obstacle 0/ })
   assert.throws(() => findOrthogonalRoute(end, end, [], { clearance: -1 }), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [], { clearance: Infinity }), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [], { bendPenalty: NaN }), RangeError)

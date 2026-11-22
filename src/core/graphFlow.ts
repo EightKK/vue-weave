@@ -9,6 +9,9 @@ import { checkLayoutNumber, checkLayoutNumbers, defaultPadding } from './graphOp
  */
 export type GraphFlowScale = { pixelsPerUnit: number } | { fitExtent: number }
 
+/** The scale used when `options.scale` is left out; compared by identity to tell it from an explicit `fitExtent`. */
+const defaultScale: GraphFlowScale = { fitExtent: 360 }
+
 /** Options of `layoutFlowGraph`. `N` and `E` type the nodes and edges that the accessors receive. */
 export interface GraphFlowOptions<N extends IdentifiedNode = IdentifiedNode, E extends GraphEdge = GraphEdge> {
   /** The quantity that flows along an edge, in the edge's unit. Must be a finite number of at least 0. Required. */
@@ -31,7 +34,10 @@ export interface GraphFlowOptions<N extends IdentifiedNode = IdentifiedNode, E e
   rankGap?: number
   /** Margin around the picture. Default 20. */
   padding?: number
-  /** Default `{ fitExtent: 360 }`. */
+  /**
+   * Default `{ fitExtent: 360 }`, grown for a rank whose gaps and minimum node sizes do not fit into 360. An explicit
+   * `fitExtent` too small for a rank throws a RangeError instead.
+   */
   scale?: GraphFlowScale
   /** Smallest cross-flow size of a node box, so a node without flow stays visible. Positive. Default 2. */
   minNodeSize?: number
@@ -178,7 +184,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   nodes: readonly N[], edges: readonly E[], options: GraphFlowOptions<N, E>,
 ): GraphFlowLayout {
   const {
-    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = defaultPadding, scale = { fitExtent: 360 },
+    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = defaultPadding, scale = defaultScale,
     minNodeSize = 2, minBandWidth = 1, referenceGap = 12, crossingSweeps = 4,
   } = options ?? ({} as GraphFlowOptions<N, E>)
   if (typeof quantity !== 'function') throw new Error('layoutFlowGraph needs a quantity accessor')
@@ -281,7 +287,9 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
       const sum = column.reduce((total, id) => total + extentValue(id), 0)
       if (sum === 0) continue
       const empty = column.filter(id => extentValue(id) === 0).length
-      const available = fit - (column.length - 1) * nodeGap - empty * minNodeSize
+      // The default extent grows for a rank too full for it: to the rank's gaps plus `minNodeSize` for every node.
+      const extent = scale === defaultScale ? Math.max(fit, (column.length - 1) * nodeGap + column.length * minNodeSize) : fit
+      const available = extent - (column.length - 1) * nodeGap - empty * minNodeSize
       if (available <= 0) throw new RangeError('fitExtent is too small for the gaps and minimum node sizes of a rank')
       best = Math.min(best, available / sum)
     }
