@@ -1,6 +1,6 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
 import {
-  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openDemo, openGanttFixture, openGestureFixture,
+  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openDemo, openExample, openGanttFixture, openGestureFixture,
   openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
 } from './support'
 
@@ -18,7 +18,7 @@ async function recordWheelDefaults(page: Page) {
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Direction').selectOption('TB')
   await expect(graphStage(page)).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
@@ -40,7 +40,7 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Planning overlays').check()
   await expect(page.getByText('Operating window · UTC')).toBeVisible()
   await expect(page.getByText('Shift review', { exact: true })).toBeVisible()
@@ -761,7 +761,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
 
 test('compressing non-working time widens working bars and keeps edits snapped to valid times', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
   await expect(cutting).toBeVisible()
@@ -790,7 +790,7 @@ test('compressing non-working time widens working bars and keeps edits snapped t
 
 test('tick labels of a compressed working-time axis never overlap; squeezed ticks keep their grid lines', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const panel = page.getByRole('region', { name: 'Calendar-aware schedule', exact: true })
   await panel.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).check()
   const plan = panel.getByRole('region', { name: 'Gantt chart', exact: true }).first()

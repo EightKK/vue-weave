@@ -53,6 +53,10 @@ describe('demo build stamp', () => {
     await put('src/index.ts', 'export const a = 1\n')
     await put('src/extra.ts', '')
     assert.notEqual(await hashDemoInputs(root), before)
+    // The site's configuration lives in a hidden directory that is listed as an input of its own.
+    const withExtra = await hashDemoInputs(root)
+    await put('site/.vitepress/config.ts', 'export default {}\n')
+    assert.notEqual(await hashDemoInputs(root), withExtra)
   })
 
   it('reports missing, stale and current builds', async () => {

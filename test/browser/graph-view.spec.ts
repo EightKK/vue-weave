@@ -477,7 +477,7 @@ test('the large graph demo preset renders a viewport slice of thousands of nodes
 
 test('network direction, crossing reduction and layout controls', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const split = page.getByRole('button', { name: /^Split/ }).first()
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
@@ -531,7 +531,7 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
 
 test('force graph layout renders selectable nodes without overlapping boxes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const nodes = page.locator('.vw-network-node')
   await expect(nodes.first()).toBeVisible()
   const count = await nodes.count()
@@ -560,7 +560,7 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
 
 test('circular, grid and concentric graph layouts render selectable nodes without overlapping boxes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const nodes = page.locator('.vw-network-node')
   await expect(nodes.first()).toBeVisible()
   const count = await nodes.count()
@@ -595,7 +595,7 @@ test('circular, grid and concentric graph layouts render selectable nodes withou
 
 test('the demo offers the force layout up to 1,000 nodes and falls back to layered for the large graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const layout = page.getByLabel('Graph layout')
   const force = layout.locator('option', { hasText: 'force' })
   await layout.selectOption('force')
@@ -889,7 +889,7 @@ test('the analysis demo summarizes the network, groups and collapses communities
 
 test('the demo falls back to layered for the circular and concentric layouts of the large graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const layout = page.getByLabel('Graph layout')
   for (const name of ['circular', 'concentric']) {
     await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()

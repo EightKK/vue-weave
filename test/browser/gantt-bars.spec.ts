@@ -1,7 +1,7 @@
 // GanttChart editing: bar selection, moves and resizes, dependencies and lag, progress, constraints, deletion and
 // rejected proposals.
 import {
-  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors,
+  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
   pressAndMove, pressAndMoveTo, releaseLine,
 } from './support'
 
@@ -32,7 +32,7 @@ test('row hierarchy failures notify, cancel pending edits and recover on replace
 
 test('selection, controlled edits, validation and cancellation', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await expect(page).toHaveTitle('Vue Weave — Examples')
   await expect(page.getByRole('link', { name: `Vue Weave ${releaseLine}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
@@ -77,7 +77,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
 
 test('a move preview shifts the segments of a split bar and a resize preview draws it unsegmented', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
   // A requested start of 10:00 splits the cutting order around the lunch break.
@@ -120,7 +120,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
 test('a bar click or drag emits select once and keyboard edits keep focus in a narrow viewport', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   const count = page.getByRole('status', { name: 'Select events', exact: true })
   const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
   await expect(plan).toBeVisible()
@@ -147,7 +147,7 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
 test('dragging a bar near the viewport edge scrolls the timeline and keeps the preview in sync', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
   const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })

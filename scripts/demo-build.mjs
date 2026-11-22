@@ -4,8 +4,12 @@ import { existsSync } from 'node:fs'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-// The files that `npm run build:demo` turns into preview/. Changing any of them makes the built demo stale.
-export const demoInputs = ['examples', 'src', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.demo.config.ts']
+// The files that `npm run build:demo` turns into preview/: the documentation site (site/, whose hidden .vitepress
+// directory is listed on its own because hidden entries are skipped) and the demo pages. Changing any of them makes the
+// built demo stale.
+export const demoInputs = [
+  'site', 'site/.vitepress', 'docs', 'examples', 'src', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.demo.config.ts',
+]
 const stampFile = join('preview', 'demo-build.json')
 const stampFormat = 1
 

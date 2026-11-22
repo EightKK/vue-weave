@@ -2,7 +2,7 @@ import { expect, test, dragBy, pageErrors } from './support'
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /切断Aを予備機へ/ }).click()
@@ -25,7 +25,7 @@ test('production demo edits the schedule, graph and load from the homepage', asy
 
 test('a proposal highlights every task it moved from the adopted plan and reopening the adopted strategy keeps its moves', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   const scenario = page.getByRole('button', { name: /切断Aを予備機へ/ })
   await scenario.click()
@@ -47,7 +47,7 @@ test('a proposal highlights every task it moved from the adopted plan and reopen
 
 test('lot flow keeps the same network as the displayed unit and language change', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   await page.getByRole('button', { name: 'ロットの流れ' }).click()
   await expect(page.getByRole('heading', { name: 'ロットの流れ' })).toBeVisible()
@@ -70,7 +70,7 @@ test('lot flow keeps the same network as the displayed unit and language change'
 
 test('approval routes support new steps, cycle rejection and undo', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Approval workflow' }).click()
   await page.getByRole('button', { name: 'Add approval step' }).click()
@@ -94,7 +94,7 @@ test('approval routes support new steps, cycle rejection and undo', async ({ pag
 
 test('schedule sheet copies, pastes and fills selected cells atomically', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Schedule sheet' }).click()
   const cell = (name: string) => page.getByRole('button', { name, exact: true })
@@ -155,10 +155,10 @@ test.describe('with a Japanese browser locale', () => {
 
   test('the homepage opens in English unless the URL asks for Japanese', async ({ page }) => {
     const errors = pageErrors(page)
-    await page.goto('/')
+    await page.goto('demo/')
     await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('html')).toHaveAttribute('lang', 'en')
-    await page.goto('/?lang=ja')
+    await page.goto('demo/?lang=ja')
     await expect(page.getByRole('button', { name: '日本語' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
     expect(errors).toEqual([])

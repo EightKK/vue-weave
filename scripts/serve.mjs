@@ -12,6 +12,9 @@ if (process.argv.includes('--build-if-stale') && !await ensureDemoBuild(fileURLT
 }
 
 const root = fileURLToPath(new URL('../preview/', import.meta.url))
+// GitHub Pages serves the site under the repository name, and the site is built for that base (site/.vitepress/config.ts).
+// Serving preview/ under the same path keeps every link working locally; other paths redirect there.
+const base = '/vue-weave/'
 if (!existsSync(resolve(root, 'index.html'))) {
   console.error('The built demo is missing. Extract the entire ZIP, or run npm ci and npm run build:demo.')
   process.exit(1)
@@ -40,10 +43,13 @@ const server = createServer(async (request, response) => {
     return fail(response, 405, 'Method not allowed')
   }
 
-  let filename
+  let filename, url, inBase
   try {
-    const path = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
-    if (path.includes('\0') || path.includes('\\')) return fail(response, 400, 'Invalid path')
+    url = new URL(request.url, 'http://127.0.0.1')
+    const decoded = decodeURIComponent(url.pathname)
+    if (decoded.includes('\0') || decoded.includes('\\')) return fail(response, 400, 'Invalid path')
+    inBase = decoded.startsWith(base)
+    const path = inBase ? decoded.slice(base.length - 1) : decoded
     filename = resolve(root, `.${path.endsWith('/') ? path + 'index.html' : path}`)
   } catch {
     return fail(response, 400, 'Invalid path')
@@ -53,9 +59,19 @@ const server = createServer(async (request, response) => {
   if (isAbsolute(localPath) || localPath === '..' || localPath.startsWith(`..${sep}`)) {
     return fail(response, 403, 'Forbidden')
   }
+  // The root and the old URLs without the base (/gallery.html, /demo/) move to the same page under the base.
+  if (!inBase) {
+    const target = url.pathname === base.slice(0, -1) ? base : base + url.pathname.slice(1)
+    response.writeHead(302, { Location: target + url.search })
+    return response.end()
+  }
 
   try {
     const file = await stat(filename)
+    if (file.isDirectory()) {
+      response.writeHead(302, { Location: url.pathname + '/' + url.search })
+      return response.end()
+    }
     if (!file.isFile()) return fail(response, 404, 'Not found')
     response.writeHead(200, {
       'Content-Type': contentTypes[extname(filename)] ?? 'application/octet-stream',
@@ -99,7 +115,7 @@ server.on('error', (error) => {
 })
 
 server.once('listening', () => {
-  const url = `http://${host}:${server.address().port}/`
+  const url = `http://${host}:${server.address().port}${base}`
   console.log(`Vue Weave: ${url}`)
   console.log('Keep this window open. Press Ctrl+C to stop.')
   if (process.argv.includes('--open') && process.platform === 'win32') {

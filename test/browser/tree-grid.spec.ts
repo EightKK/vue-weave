@@ -1,10 +1,10 @@
 // TreeGrid: treegrid keyboard navigation inside and outside the rendered window, expansion and lazy children,
 // activation payloads and linked highlights, cell and spreadsheet editing, row structure proposals, undo and RTL.
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openExample, pageErrors, type Page } from './support'
 
 async function openTreeGrid(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Tree grid')
+  await openExample(page, 'tree-grid')
   const demo = page.locator('section[aria-labelledby="tree-grid-title"]')
   const grid = demo.getByRole('treegrid', { name: 'Product matrix', exact: true })
   await expect(grid).toBeVisible()

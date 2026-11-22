@@ -19,7 +19,7 @@ async function compositionKey(target: ReturnType<Page['getByRole']>, key: 'Enter
 
 test('timeline columns edit through validation and keep summary bars when collapsed', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')
@@ -305,7 +305,7 @@ test('gantt cell inputs leave Enter and Escape of an input method composition to
 
 test('gantt plain cell inputs keep composed text on Enter and Escape of an input method', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await page.goto('gallery.html')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
   await expect(input).toHaveValue('Machine 01')
