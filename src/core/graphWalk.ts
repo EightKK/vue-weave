@@ -34,3 +34,58 @@ export function walkWithinHops<T>(
     }
   }
 }
+
+/**
+ * Strongly connected components of the graph given by `outgoing`, found with an iterative Tarjan walk that starts from
+ * the keys of `outgoing` in their order. Components are returned in the order Tarjan completes them, which is a reverse
+ * topological order of the condensation. Members are listed in the order they leave the walk stack.
+ */
+export function stronglyConnectedComponents(outgoing: ReadonlyMap<string, readonly string[]>): string[][] {
+  const number = new Map<string, number>()
+  const low = new Map<string, number>()
+  const onStack = new Set<string>()
+  const stack: string[] = []
+  const found: string[][] = []
+  let counter = 0
+
+  for (const root of outgoing.keys()) {
+    if (number.has(root)) continue
+    const frames = [{ id: root, cursor: 0 }]
+    number.set(root, counter)
+    low.set(root, counter++)
+    stack.push(root)
+    onStack.add(root)
+
+    while (frames.length) {
+      const frame = frames[frames.length - 1]!
+      const children = outgoing.get(frame.id)!
+      if (frame.cursor < children.length) {
+        const next = children[frame.cursor++]!
+        if (!number.has(next)) {
+          number.set(next, counter)
+          low.set(next, counter++)
+          stack.push(next)
+          onStack.add(next)
+          frames.push({ id: next, cursor: 0 })
+        } else if (onStack.has(next)) {
+          low.set(frame.id, Math.min(low.get(frame.id)!, number.get(next)!))
+        }
+        continue
+      }
+      frames.pop()
+      const parent = frames[frames.length - 1]
+      if (parent) low.set(parent.id, Math.min(low.get(parent.id)!, low.get(frame.id)!))
+      if (low.get(frame.id) === number.get(frame.id)) {
+        const members: string[] = []
+        for (;;) {
+          const member = stack.pop()!
+          onStack.delete(member)
+          members.push(member)
+          if (member === frame.id) break
+        }
+        found.push(members)
+      }
+    }
+  }
+  return found
+}

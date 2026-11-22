@@ -11,7 +11,7 @@ import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 import { duplicateIdError, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 import type { GraphEdgeStyle } from './graphRouting.js'
-import { walkWithinHops } from './graphWalk.js'
+import { stronglyConnectedComponents, walkWithinHops } from './graphWalk.js'
 
 export interface GraphPort {
   id: string
@@ -130,51 +130,14 @@ export function graphNeighborhood(index: GraphIndex, id: string, maxHops = Infin
   return result
 }
 
+/** Component number of every node, numbered in topological order of the condensation. */
 function componentIds(index: GraphIndex): Map<string, number> {
-  const visited = new Set<string>()
-  const finishOrder: string[] = []
-
-  // Iterative Kosaraju traversal also works for deep chains.
-  for (const id of index.outgoing.keys()) {
-    if (visited.has(id)) continue
-    const stack = [{ id, cursor: 0 }]
-    visited.add(id)
-
-    while (stack.length) {
-      const frame = stack[stack.length - 1]!
-      const children = index.outgoing.get(frame.id)!
-      if (frame.cursor === children.length) {
-        finishOrder.push(frame.id)
-        stack.pop()
-        continue
-      }
-
-      const next = children[frame.cursor++]!
-      if (visited.has(next)) continue
-      visited.add(next)
-      stack.push({ id: next, cursor: 0 })
-    }
-  }
-
   const components = new Map<string, number>()
-  let component = 0
-
-  for (const id of finishOrder.reverse()) {
-    if (components.has(id)) continue
-    const stack = [id]
-    components.set(id, component)
-
-    while (stack.length) {
-      for (const parent of index.incoming.get(stack.pop()!)!) {
-        if (components.has(parent)) continue
-        components.set(parent, component)
-        stack.push(parent)
-      }
-    }
-
-    component++
+  // Tarjan completes the components in reverse topological order.
+  const found = stronglyConnectedComponents(index.outgoing)
+  for (let component = 0; component < found.length; component++) {
+    for (const id of found[found.length - 1 - component]!) components.set(id, component)
   }
-
   return components
 }
 
@@ -196,7 +159,7 @@ function computeRanks(index: GraphIndex): Map<string, number> {
     }
   }
 
-  // The second DFS pass assigns component IDs in topological order.
+  // componentIds numbers the components in topological order, so one pass in that order finds the longest paths.
   for (const [source, destinations] of children) {
     for (const target of destinations) {
       ranks.set(target, Math.max(ranks.get(target)!, ranks.get(source)! + 1))
