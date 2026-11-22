@@ -35,34 +35,59 @@ export function rangesOverlap(a: readonly TimeRange[], b: readonly TimeRange[]):
   return false
 }
 
+/** Appends `[start, end)` to sorted ranges, joining it to the last range when that one ends where it starts. */
+export function appendJoined(ranges: TimeRange[], start: number, end: number): void {
+  const previous = ranges.at(-1)
+  if (previous?.end === start) previous.end = end
+  else ranges.push({ start, end })
+}
+
 /** Copies of sorted ranges, with each range that starts where the one before it ends joined to it. */
 export function joinTouching(ranges: readonly TimeRange[]): TimeRange[] {
   const result: TimeRange[] = []
-  for (const range of ranges) {
+  for (const range of ranges) appendJoined(result, range.start, range.end)
+  return result
+}
+
+/**
+ * Copies of ranges already sorted by start, with overlapping and touching ones joined. With `overlaps`, the part of
+ * each range that overlaps the union of the ranges before it is appended there.
+ */
+export function uniteSorted(sorted: readonly TimeRange[], overlaps?: TimeRange[]): TimeRange[] {
+  const result: TimeRange[] = []
+  for (const range of sorted) {
     const previous = result.at(-1)
-    if (previous?.end === range.start) previous.end = range.end
-    else result.push({ start: range.start, end: range.end })
+    if (previous && previous.end >= range.start) {
+      if (overlaps && range.start < previous.end) overlaps.push({ start: range.start, end: Math.min(range.end, previous.end) })
+      previous.end = Math.max(previous.end, range.end)
+    } else result.push({ start: range.start, end: range.end })
   }
   return result
 }
 
 /** Sorted copies of ranges with overlapping and touching ones joined. */
 export function uniteRanges(ranges: readonly TimeRange[]): TimeRange[] {
-  const sorted = [...ranges].sort((a, b) => a.start - b.start)
+  return uniteSorted([...ranges].sort((a, b) => a.start - b.start))
+}
+
+/** The parts of ranges inside `window`, as new ranges in the same order. Ranges that do not overlap the window are dropped. */
+export function clipRanges(ranges: readonly TimeRange[], window: TimeRange): TimeRange[] {
   const result: TimeRange[] = []
-  for (const range of sorted) {
-    const previous = result.at(-1)
-    if (previous && previous.end >= range.start) previous.end = Math.max(previous.end, range.end)
-    else result.push({ start: range.start, end: range.end })
+  for (const range of ranges) {
+    const start = Math.max(range.start, window.start), end = Math.min(range.end, window.end)
+    if (start < end) result.push({ start, end })
   }
   return result
 }
 
-/** Remove half-open cuts from sorted, disjoint periods. Both inputs must be normalized. */
-export function subtractPeriods(periods: readonly TimeRange[], cuts: readonly TimeRange[]): TimeRange[] {
+/**
+ * Remove half-open cuts from sorted, disjoint periods, starting at `periods[first]`. Both inputs must be normalized.
+ */
+export function subtractPeriods(periods: readonly TimeRange[], cuts: readonly TimeRange[], first = 0): TimeRange[] {
   const result: TimeRange[] = []
   let c = 0
-  for (const period of periods) {
+  for (let p = first; p < periods.length; p++) {
+    const period = periods[p]!
     let start = period.start
     while (c < cuts.length && cuts[c]!.end <= start) c++
     for (let i = c; i < cuts.length && cuts[i]!.start < period.end; i++) {

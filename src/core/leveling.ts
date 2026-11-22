@@ -1,5 +1,5 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
-import { firstIndex, joinTouching, rangesOverlap } from './intervals.js'
+import { appendJoined, firstIndex, joinTouching, rangesOverlap, subtractPeriods } from './intervals.js'
 import {
   addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
   slotFor, summarySlot, summaryUpper, topologicalOrder, type ModelTask, type Slot, type SummaryUpper, type WorkClock,
@@ -115,10 +115,7 @@ class Profile {
     const result: TimeRange[] = []
     for (let i = this.indexAt(from); i < this.times.length; i++) {
       if (this.values[i]! >= units) continue
-      const start = this.times[i]!, end = this.times[i + 1] ?? rangeEnd
-      const previous = result.at(-1)
-      if (previous?.end === start) previous.end = end
-      else result.push({ start, end })
+      appendJoined(result, this.times[i]!, this.times[i + 1] ?? rangeEnd)
     }
     return result
   }
@@ -129,25 +126,10 @@ class Profile {
  * are skipped, so the first range can start later than it would otherwise, but never after `clock.workAt(from)`.
  */
 function freeWork(clock: WorkClock, blocked: readonly TimeRange[], from = -Infinity): TimeRange[] {
-  const result: TimeRange[] = []
-  const add = (from: number, to: number) => {
-    if (from >= to) return
-    const start = clock.workAt(from), end = clock.workAt(to)
-    const previous = result.at(-1)
-    if (previous?.end === start) previous.end = end
-    else result.push({ start, end })
-  }
-  let b = 0
   const { periods } = clock
-  for (let p = firstIndex(periods.length, i => periods[i]!.end > from); p < periods.length; p++) {
-    const period = periods[p]!
-    let start = period.start
-    while (b < blocked.length && blocked[b]!.end <= start) b++
-    for (let i = b; i < blocked.length && blocked[i]!.start < period.end; i++) {
-      add(start, Math.min(blocked[i]!.start, period.end))
-      start = Math.max(start, blocked[i]!.end)
-    }
-    add(start, period.end)
+  const result: TimeRange[] = []
+  for (const part of subtractPeriods(periods, blocked, firstIndex(periods.length, i => periods[i]!.end > from))) {
+    appendJoined(result, clock.workAt(part.start), clock.workAt(part.end))
   }
   return result
 }
@@ -275,9 +257,7 @@ function interruptedPieces(pieces: readonly WorkPiece[], first: number, lastStar
       const start = Math.max(free[i]!.start, cursor)
       if (!chunks.length && start > lastStart) return undefined
       const take = Math.min(free[i]!.end - start, remaining)
-      const previous = chunks.at(-1)
-      if (previous?.end === start) previous.end = start + take
-      else chunks.push({ start, end: start + take })
+      appendJoined(chunks, start, start + take)
       remaining -= take
       cursor = start + take
     }

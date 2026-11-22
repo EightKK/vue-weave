@@ -1,4 +1,4 @@
-import { subtractPeriods, uniteRanges } from './intervals.js'
+import { subtractPeriods, uniteRanges, uniteSorted } from './intervals.js'
 import { withContext } from './ids.js'
 import {
   buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
@@ -189,16 +189,8 @@ export function rescheduleFromActuals(
     if (!modelled || modelled.summary) continue
     const entry = actuals.get(task.id)
     const sorted = (entry?.intervals ?? []).map(({ start, end }) => ({ start, end })).sort((a, b) => a.start - b.start || a.end - b.end)
-    const union: TimeRange[] = []
     const overlaps: TimeRange[] = []
-    for (const interval of sorted) {
-      const last = union.at(-1)
-      if (last && interval.start < last.end) {
-        overlaps.push({ start: interval.start, end: Math.min(interval.end, last.end) })
-        last.end = Math.max(last.end, interval.end)
-      } else if (last && interval.start === last.end) last.end = interval.end
-      else union.push({ ...interval })
-    }
+    const union = uniteSorted(sorted, overlaps)
     const performed = union.reduce((sum, part) => sum + part.end - part.start, 0)
     let remaining: number
     if (modelled.manual) remaining = 0
