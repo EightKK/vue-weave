@@ -47,6 +47,14 @@ import {
 } from './networkGraph/editGeometry.js'
 import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
 import {
+  autoPanStep, cameraCenter, clampScale as clampToScale, contentBounds as boundsOf, contentCameraAt, fitCamera as fittedCamera, paddedScale,
+  panKeySteps, pinchCamera, rectsBounds, scaleError as scaleRangeError, validScale as inScaleRange, wholeScale as scaleToFit, zoomAround,
+  type ContentBounds,
+} from './networkGraph/camera.js'
+import {
+  edgeLabelEditorStyle, nodeLabelEditorStyle, stageEdges, stagePoint, toolbarPlacement, tooltipPlacement, type StageEdges,
+} from './networkGraph/overlayPlacement.js'
+import {
   chartDelta, grabPointer, ownsPointer, pointerSession, releaseSession, sessionPastThreshold, type PointerSession,
 } from './networkGraph/pointerSession.js'
 import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
@@ -732,67 +740,31 @@ const poolBands = computed(() => {
 // The layout box plus every group rectangle. A group frames its nodes with a label strip and padding, so a group at
 // the layout edge, and a parent of such a group, can reach past the layout's own origin and size.
 // The previous object while the bounds are equal, so a drag inside them does not re-render the minimap or the camera.
-const contentBounds = computed<{ left: number; top: number; right: number; bottom: number; width: number; height: number }>((previous) => {
-  let left = 0, top = 0, right = layout.value.width, bottom = layout.value.height
-  for (const group of shownGroups.value) {
-    left = Math.min(left, group.x)
-    top = Math.min(top, group.y)
-    right = Math.max(right, group.x + group.width)
-    bottom = Math.max(bottom, group.y + group.height)
-  }
-  for (const lane of [...laneBands.value ?? [], ...poolBands.value ?? []]) {
-    left = Math.min(left, lane.x)
-    top = Math.min(top, lane.y)
-    right = Math.max(right, lane.x + lane.width)
-    bottom = Math.max(bottom, lane.y + lane.height)
-  }
-  const next = { left, top, right, bottom, width: right - left, height: bottom - top }
-  return keep(previous, next)
-})
+const contentBounds = computed<ContentBounds>((previous) => keep(previous, boundsOf(
+  layout.value.width, layout.value.height, [...shownGroups.value, ...laneBands.value ?? [], ...poolBands.value ?? []],
+)))
 
 // Scale at which the whole graph fits the viewport.
-const wholeScale = computed(() => {
-  const { width, height } = viewport.value
-  const content = contentBounds.value
-  const scale = Math.min(width / content.width, height / content.height)
-  return Number.isFinite(scale) && scale > 0 ? scale : 1
-})
+const wholeScale = computed(() => scaleToFit(viewport.value, contentBounds.value))
 // The smallest scale is 0.1, or less when that is needed to show the whole graph.
 const minScale = computed(() => Math.min(0.1, wholeScale.value))
 function clampScale(scale: number) {
-  return Math.max(minScale.value, Math.min(3, scale))
+  return clampToScale(scale, minScale.value)
 }
 function validScale(scale: number) {
-  // A small tolerance keeps a fitted viewport restorable after floating-point round trips.
-  return Number.isFinite(scale) && scale >= minScale.value * (1 - 1e-9) && scale <= 3
+  return inScaleRange(scale, minScale.value)
 }
 function scaleError() {
-  return new RangeError(`Viewport scale must be between ${minScale.value === 0.1 ? '0.1' : 'the fit scale ' + minScale.value} and 3`)
+  return scaleRangeError(minScale.value)
 }
 
 // Screen margin requested by the last fit({ padding }) of the whole graph; plain fit() resets it to 0.
 let fitPadding = 0
+// The camera of Fit to view (`overview`) or of the automatic view, which keeps the selected node in a narrow stage.
 function fitCamera(overview = false) {
-  const { width, height } = viewport.value
   const geometry = layout.value
-  const content = contentBounds.value
-  const padded = overview && fitPadding > 0 ? Math.max(minScale.value, Math.min(
-    Math.max(1, width - 2 * fitPadding) / content.width, Math.max(1, height - 2 * fitPadding) / content.height,
-  )) : wholeScale.value
-  // Fit to view shows the whole graph at any scale. The automatic initial view keeps at least 0.1 to stay readable.
-  const overviewScale = Math.min(1.15, overview ? padded : Math.max(0.1, wholeScale.value))
-  const scale = overview || width >= 650 ? overviewScale
-    : Math.max(overviewScale, Math.min(0.72, height / content.height))
-  const canvasWidth = content.width * scale
-  const selected = props.selectedId ? geometry.boxes.get(props.selectedId) : undefined
-  const focusX = selected ? (selected.x + selected.width / 2) * scale : 0
-  const originX = -content.left * scale
-  return {
-    x: canvasWidth <= width ? (width - canvasWidth) / 2 + originX
-      : Math.max(width - canvasWidth + originX, Math.min(originX, width / 2 - focusX)),
-    y: (height - content.height * scale) / 2 - content.top * scale,
-    scale,
-  }
+  const focus = props.selectedId ? geometry.boxes.get(props.selectedId) : undefined
+  return fittedCamera(viewport.value, contentBounds.value, { overview, padding: fitPadding, minScale: minScale.value, wholeScale: wholeScale.value, focus })
 }
 
 const camera = ref(fitCamera())
@@ -850,18 +822,8 @@ function fit(options?: GraphFitOptions) {
   for (const id of ids) if (!nodesById.value.has(id)) throw new Error('Unknown node: ' + id)
   if (!ids.length) return
   cancelInteraction()
-  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-  for (const id of ids) {
-    const box = layout.value.boxes.get(id)!
-    left = Math.min(left, box.x)
-    top = Math.min(top, box.y)
-    right = Math.max(right, box.x + box.width)
-    bottom = Math.max(bottom, box.y + box.height)
-  }
-  const { width, height } = viewport.value
-  const scale = clampScale(Math.min(
-    1.15, Math.max(1, width - 2 * padding) / (right - left), Math.max(1, height - 2 * padding) / (bottom - top),
-  ))
+  const { left, top, right, bottom } = rectsBounds(ids.map(id => layout.value.boxes.get(id)!))
+  const scale = clampScale(Math.min(1.15, paddedScale(viewport.value, right - left, bottom - top, padding)))
   placeCamera(graphCameraAt({ x: (left + right) / 2, y: (top + bottom) / 2 }, viewport.value, scale))
 }
 
@@ -869,9 +831,7 @@ function zoom(factor: number, x = viewport.value.width / 2, y = viewport.value.h
   cancelInteraction()
   if (![factor, x, y].every(Number.isFinite) || factor <= 0) throw new RangeError('Zoom requires a positive finite factor and finite coordinates')
   const current = camera.value
-  const scale = clampScale(current.scale * factor)
-  const ratio = scale / current.scale
-  placeCamera({ x: x - (x - current.x) * ratio, y: y - (y - current.y) * ratio, scale })
+  placeCamera(zoomAround(current, clampScale(current.scale * factor), x, y))
 }
 
 function onWheel(event: WheelEvent) {
@@ -1309,11 +1269,7 @@ function navigateMinimap(event: MouseEvent) {
     x: (content.left + content.right) / 2, y: (content.top + content.bottom) / 2,
   }
   cancelInteraction()
-  placeCamera({
-    scale: camera.value.scale,
-    x: viewport.value.width / 2 - Math.min(content.right, Math.max(content.left, world.x)) * camera.value.scale,
-    y: viewport.value.height / 2 - Math.min(content.bottom, Math.max(content.top, world.y)) * camera.value.scale,
-  })
+  placeCamera(contentCameraAt(content, world, viewport.value, camera.value.scale))
 }
 
 function updateBox(clientX: number, clientY: number) {
@@ -1374,10 +1330,7 @@ function stopPan(event: PointerEvent) {
 }
 
 function panWithKeys(event: KeyboardEvent) {
-  const directions: Record<string, [number, number]> = {
-    ArrowLeft: [35, 0], ArrowRight: [-35, 0], ArrowUp: [0, 35], ArrowDown: [0, -35],
-  }
-  const step = directions[event.key]
+  const step = panKeySteps[event.key]
   if (!step) return
   cancelInteraction()
   event.preventDefault()
@@ -1385,20 +1338,18 @@ function panWithKeys(event: KeyboardEvent) {
 }
 
 // Auto-pan. While a node drag, connection or box selection is held near the stage edge, the camera pans every frame,
-// faster the closer the pointer is to the edge, and the preview follows the pointer.
-const autoPanEdge = 40
-const autoPanSpeed = 20
+// faster the closer the pointer is to the edge (see autoPanStep), and the preview follows the pointer.
 let autoPanFrame = 0
 let gesturePointer: GraphPoint | undefined
 function startAutoPan(event: PointerEvent) {
   gesturePointer = { x: event.clientX, y: event.clientY }
-  if (props.autoPan && !autoPanFrame && typeof requestAnimationFrame === 'function') autoPanFrame = requestAnimationFrame(autoPanStep)
+  if (props.autoPan && !autoPanFrame && typeof requestAnimationFrame === 'function') autoPanFrame = requestAnimationFrame(autoPanFrameStep)
 }
 function stopAutoPan() {
   if (autoPanFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(autoPanFrame)
   autoPanFrame = 0
 }
-function autoPanStep() {
+function autoPanFrameStep() {
   autoPanFrame = 0
   const point = gesturePointer
   // A gesture that has not moved yet waits; a finished or cancelled one ends the loop.
@@ -1406,25 +1357,16 @@ function autoPanStep() {
     : pan?.box ? Boolean(boxPreview.value || lassoPreview.value) : undefined
   if (moving === undefined || pinch || !props.autoPan || !svg.value || !point) return
   if (moving) {
-    const rect = svg.value.getBoundingClientRect()
-    const speed = (distance: number) => distance < autoPanEdge
-      ? Math.ceil(Math.min(1, (autoPanEdge - distance) / autoPanEdge) * autoPanSpeed) : 0
     const { x, y, scale } = camera.value
-    const content = contentBounds.value
-    // Towards the start, panning stops a margin beyond the chart origin or the content, whichever is further out.
-    const limitX = autoPanEdge - Math.min(0, content.left) * scale, limitY = autoPanEdge - Math.min(0, content.top) * scale
-    let stepX = speed(point.x - rect.left) - speed(rect.right - point.x)
-    let stepY = speed(point.y - rect.top) - speed(rect.bottom - point.y)
-    if (stepX > 0) stepX = Math.max(0, Math.min(stepX, limitX - x))
-    if (stepY > 0) stepY = Math.max(0, Math.min(stepY, limitY - y))
-    if (stepX || stepY) {
-      placeCamera({ x: x + stepX, y: y + stepY, scale })
+    const step = autoPanStep(svg.value.getBoundingClientRect(), point, camera.value, contentBounds.value)
+    if (step.x || step.y) {
+      placeCamera({ x: x + step.x, y: y + step.y, scale })
       if (nodeDrag) updateNodePreview(point.x, point.y)
       else if (connectionDrag) connectionPoint.value = worldPoint(point.x, point.y)
       else updateSelectionArea(point.x, point.y)
     }
   }
-  autoPanFrame = requestAnimationFrame(autoPanStep)
+  autoPanFrame = requestAnimationFrame(autoPanFrameStep)
 }
 
 // Group collapse toggles, waypoint handles and resize handles share the overlay drawn above the nodes.
@@ -1740,44 +1682,27 @@ function edgeAnchor(id: string): GraphPoint | undefined {
 const labelEditorView = computed(() => {
   const editor = labelEditor.value
   if (!editor) return undefined
-  const { x, y, scale } = camera.value
   if (editor.kind === 'node') {
     const box = layout.value.boxes.get(editor.id)
     if (!box) return undefined
-    // At least 120 pixels wide so the text stays editable when zoomed out; it grows from the text start.
-    const width = Math.max(120, box.width * scale)
-    const left = rtl.value ? x + (box.x + box.width) * scale - width : x + box.x * scale
-    return { name: editor.name, edge: false, style: { left: left + 'px', top: y + (box.y + box.height / 2) * scale + 'px', width: width + 'px' } }
+    return { name: editor.name, edge: false, style: nodeLabelEditorStyle(box, camera.value, rtl.value) }
   }
   const point = edgeAnchor(editor.id)
   if (!point) return undefined
-  return { name: editor.name, edge: true, style: { left: x + point.x * scale + 'px', top: y + point.y * scale + 'px' } }
+  return { name: editor.name, edge: true, style: edgeLabelEditorStyle(point, camera.value) }
 })
 
 // The centre of a chart rectangle.
 function rectCenter(rect: GraphRect): GraphPoint {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
 }
-// The edges of a chart rectangle in stage pixels, under the current camera.
-function stageEdges(rect: GraphRect) {
-  const { x, y, scale } = camera.value
-  return { left: x + rect.x * scale, right: x + (rect.x + rect.width) * scale, top: y + rect.y * scale, bottom: y + (rect.y + rect.height) * scale }
-}
 // Toolbar slots: HTML anchored above the only selected node and the selected edge, hidden while the item is outside
-// the stage. They are placed in screen pixels, so their content keeps its size at every zoom level.
-function toolbarPlace(left: number, right: number, top: number, bottom: number) {
-  const { width, height } = viewport.value
-  if (right < 0 || left > width || bottom < 0 || top > height) return undefined
-  // Below the item when there is too little room above it.
-  const below = top < 44
-  return { below, style: { left: Math.min(width, Math.max(0, (left + right) / 2)) + 'px', top: (below ? bottom : top) + 'px' } }
-}
+// the stage (see toolbarPlacement).
 const nodeToolbarView = computed(() => {
   const node = soleSelectedNode()
   const box = node && layout.value.boxes.get(node.id)
   if (!node || !box) return undefined
-  const { left, right, top, bottom } = stageEdges(box)
-  const place = toolbarPlace(left, right, top, bottom)
+  const place = toolbarPlacement(stageEdges(box, camera.value), viewport.value)
   return place && { ...place, name: messages.value.nodeToolbar + ' ' + node.label, slot: { node, box, scale: camera.value.scale } }
 })
 const edgeToolbarView = computed(() => {
@@ -1789,9 +1714,9 @@ const edgeToolbarView = computed(() => {
   const edge = id === undefined ? undefined : edgesById.value.get(id)
   const point = edge && edgeAnchor(edge.id)
   if (!edge || !point) return undefined
-  const { x, y, scale } = camera.value
-  const left = x + point.x * scale, top = y + point.y * scale
-  const place = toolbarPlace(left, left, top - 6, top + 6)
+  const { scale } = camera.value
+  const { x: left, y: top } = stagePoint(point, camera.value)
+  const place = toolbarPlacement({ left, right: left, top: top - 6, bottom: top + 6 }, viewport.value)
   return place && { ...place, name: messages.value.edgeToolbar + ' ' + (edge.label ?? edge.id), slot: { edge, point: { x: point.x, y: point.y }, scale } }
 })
 
@@ -1951,17 +1876,9 @@ function moveTouch(event: PointerEvent) {
   const [a, b] = pinch.ids.map(id => touches.get(id)!) as [GraphPoint, GraphPoint]
   const distance = Math.hypot(a.x - b.x, a.y - b.y)
   if (!(distance > 0) || !(pinch.distance > 0)) return
-  const rect = svg.value.getBoundingClientRect()
   const start = pinch.camera
-  const scale = clampScale(start.scale * distance / pinch.distance)
   // The world point under the initial midpoint follows the current midpoint.
-  const worldX = (pinch.midpoint.x - rect.left - start.x) / start.scale
-  const worldY = (pinch.midpoint.y - rect.top - start.y) / start.scale
-  placeCamera({
-    x: (a.x + b.x) / 2 - rect.left - worldX * scale,
-    y: (a.y + b.y) / 2 - rect.top - worldY * scale,
-    scale,
-  })
+  placeCamera(pinchCamera(start, pinch.midpoint, a, b, svg.value.getBoundingClientRect(), clampScale(start.scale * distance / pinch.distance)))
 }
 function endTouch(event: PointerEvent) {
   if (!touches.delete(event.pointerId)) return
@@ -2102,8 +2019,7 @@ function toGraphPoint(clientX: number, clientY: number): GraphPoint {
   return { x: (clientX - rect.left - x) / scale, y: (clientY - rect.top - y) / scale }
 }
 function getViewportCenter(): GraphPoint {
-  const { x, y, scale } = camera.value
-  return { x: (viewport.value.width / 2 - x) / scale, y: (viewport.value.height / 2 - y) / scale }
+  return cameraCenter(camera.value, viewport.value)
 }
 function snapPoint(point: GraphPoint) {
   return props.snapGrid === undefined ? point : snapGraphPoint(point, props.snapGrid)
@@ -2420,36 +2336,24 @@ watch([nodesById, edgesById], () => {
 const tooltipView = computed(() => {
   const current = tooltip.value
   if (!current || !mounted.value || tooltipBlocked.value) return undefined
-  const { x, y, scale } = camera.value
-  let target: NetworkTooltipSlot<ShownNode, ShownEdge>['target'], left: number, right: number, top: number, bottom: number
+  let target: NetworkTooltipSlot<ShownNode, ShownEdge>['target'], item: StageEdges
   if (current.kind === 'node') {
     const node = nodesById.value.get(current.id), box = layout.value.boxes.get(current.id)
     if (!node || !box || (visible.value && !visible.value.nodes.has(node.id))) return undefined
     target = { kind: 'node', node }
-    ;({ left, right, top, bottom } = stageEdges(box))
+    item = stageEdges(box, camera.value)
   } else {
     const edge = edgesById.value.get(current.id), path = layout.value.paths.get(current.id)
     if (!edge || path === undefined || (visible.value && !visible.value.edges.has(edge.id))) return undefined
     const point = edgeAnchor(edge.id)
     if (!point) return undefined
     target = { kind: 'edge', edge }
-    left = right = x + point.x * scale
-    top = bottom = y + point.y * scale + 6
+    const anchor = stagePoint(point, camera.value)
+    item = { left: anchor.x, right: anchor.x, top: anchor.y + 6, bottom: anchor.y + 6 }
   }
-  const { width, height } = viewport.value
-  if (right < 0 || left > width || bottom < 0 || top > height) return undefined
-  // Place the tooltip after the element (before it in right-to-left), or on the other side when that has more room.
-  const gap = 8, room = 180
-  const before = left - gap, after = width - right - gap
-  const placeBefore = rtl.value ? before >= room || before >= after : after < room && before > after
-  return {
-    target,
-    style: {
-      left: (placeBefore ? before : right + gap) + 'px',
-      top: Math.max(4, Math.min(top, height - 28)) + 'px',
-      transform: placeBefore ? 'translateX(-100%)' : undefined,
-    },
-  }
+  // After the element (before it in right-to-left), or on the other side when that has more room.
+  const style = tooltipPlacement(item, viewport.value, rtl.value)
+  return style && { target, style }
 })
 // The element the shown tooltip describes (its `aria-describedby`). Unlike tooltipView, it does not change while the
 // camera moves.
@@ -2931,8 +2835,7 @@ watch([baseLayout, () => props.layout, options, () => props.nodes], ([, layoutFn
   const current = camera.value
   const scale = clampScale(current.scale)
   if (scale === current.scale) return
-  const { width, height } = viewport.value, ratio = scale / current.scale
-  camera.value = { x: width / 2 - (width / 2 - current.x) * ratio, y: height / 2 - (height / 2 - current.y) * ratio, scale }
+  camera.value = zoomAround(current, scale, viewport.value.width / 2, viewport.value.height / 2)
 })
 watch(() => props.selectedId, () => {
   if (fitMode.value === 'auto' && viewport.value.width < 650) camera.value = fitCamera()
