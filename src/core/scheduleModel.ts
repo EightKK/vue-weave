@@ -6,6 +6,7 @@ import type { TimeRange } from './timeline.js'
 import { firstIndex, subtractPeriods } from './intervals.js'
 import { assertScheduleRange, integerPeriodMessage, normalizeWorkPeriods } from './workCalendar.js'
 import { checkId, unknownEndpointError } from './ids.js'
+import { isDependencyType } from './dependencyTypes.js'
 
 export type Limits = { startLower: number; endLower: number; startUpper: number; endUpper: number }
 export type LimitKey = keyof Limits
@@ -268,7 +269,7 @@ export function buildScheduleModel(input: ScheduleInput, explain = false): Sched
   for (const link of dependencies) {
     checkId('dependency', link?.id, linkIds)
     for (const end of [link.from, link.to]) if (!ids.has(end)) throw unknownEndpointError(link.id)
-    if (!['FS', 'SS', 'FF', 'SF'].includes(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
+    if (!isDependencyType(link.type ?? 'FS')) throw new Error('Invalid schedule dependency type: ' + link.id)
     const lag = link.lag ?? 0
     if (!Number.isSafeInteger(lag) || lag % quantum !== 0) throw new RangeError('Invalid schedule dependency lag: ' + link.id)
     if (hierarchy) checkSummaryLink(link, hierarchy)
