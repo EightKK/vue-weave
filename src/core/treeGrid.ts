@@ -738,13 +738,16 @@ function cellText(index: TreeGridIndex<any>, line: TreeGridLine<any>, column: Tr
 }
 
 /**
- * The cells of a range as tab-separated text (CRLF between lines), the way spreadsheet applications read it. Values use
+ * The cells of a range as tab-separated text (CRLF between lines), the way spreadsheet applications read it. Status lines
+ * are left out, as `buildTreeGridPaste` skips them. Values use
  * the column editor's format (so they paste back), else the label or value; states other than a value are empty.
  */
 export function treeGridRangeText(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange): string {
   const { top, bottom, left, right } = treeGridRangeBounds(range)
   const records: string[][] = []
   for (let l = top; l <= Math.min(bottom, flat.lines.length - 1); l++) {
+    // Status lines are skipped, as a paste skips them, so copying a range and pasting it back changes nothing.
+    if (flat.lines[l]!.kind !== 'row') continue
     const record: string[] = []
     for (let c = left; c <= Math.min(right, index.columns.length); c++) record.push(cellText(index, flat.lines[l]!, index.columns[c - 1]!))
     records.push(record)
@@ -840,17 +843,23 @@ export function buildTreeGridClear(index: TreeGridIndex<any>, flat: TreeGridLine
 /**
  * The edits of filling a range downwards: the lines of `source` (its rows, repeated in order) are copied into the
  * following row lines of `range` that `source` does not cover; status lines and cells that cannot be edited are
- * skipped. Without a separate `source`, the first row line of the range fills the others (Ctrl+D).
+ * skipped. Without a separate `source`, the first row line of the range fills the others (Ctrl+D). A fill of more than
+ * `maxCells` cells (default 10,000) fails with `too-large`.
  */
 export function buildTreeGridFill(
   index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange,
-  options: { source?: TreeGridRange; origin?: TreeGridCellEdit['source'] } = {},
+  options: { source?: TreeGridRange; origin?: TreeGridCellEdit['source']; maxCells?: number } = {},
 ): TreeGridSheetBuild {
   const target = treeGridRangeBounds(range)
+  const maxCells = options.maxCells ?? 10_000
   const from = options.source ? treeGridRangeBounds(options.source) : { ...target, bottom: target.top }
   const sourceLines: number[] = []
   for (let l = from.top; l <= from.bottom; l++) if (flat.lines[l]?.kind === 'row') sourceLines.push(l)
   if (!sourceLines.length) return { ok: true, edits: [] }
+  let filledLines = 0
+  for (let l = from.bottom + 1; l <= Math.min(target.bottom, flat.lines.length - 1); l++) if (flat.lines[l]!.kind === 'row') filledLines++
+  const columnCount = Math.max(0, Math.min(target.right, index.columns.length) - Math.max(1, target.left) + 1)
+  if (filledLines * columnCount > maxCells) return { ok: false, reason: 'too-large', error: `The fill holds more than ${maxCells} cells` }
   const edits: TreeGridCellEdit[] = []
   let k = 0
   for (let l = from.bottom + 1; l <= Math.min(target.bottom, flat.lines.length - 1); l++) {
@@ -965,8 +974,9 @@ export function treeGridRowCreate(
 export function insertTreeGridRow<R extends TreeGridRow>(rows: readonly R[], change: Pick<TreeGridRowCreate, 'parentId' | 'index'>, row: R): R[] {
   const children = childLists(rows)
   const ids = new Set(rows.map(item => item.id))
-  checkId('row', row.id, ids)
+  // The parent must be an existing row: checked before the new ID joins the set, so a row cannot be its own parent.
   if (change.parentId !== undefined && !ids.has(change.parentId)) throw unknownReferenceError('parent', 'tree grid row creation', change.parentId)
+  checkId('row', row.id, ids)
   const siblings = (children.get(change.parentId) ?? []).slice()
   if (!Number.isInteger(change.index) || change.index < 0 || change.index > siblings.length) {
     throw new RangeError(`The row index must be an integer from 0 to ${siblings.length}: ${change.index}`)

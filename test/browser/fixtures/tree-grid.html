@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TreeGrid fixture</title>
+    <link rel="stylesheet" href="/tree-grid-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/tree-grid-test/vue.js", "@eightkk/vue-weave": "/tree-grid-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { TreeGrid, applyTreeGridEdits } from '@eightkk/vue-weave'
+
+      // An editable spreadsheet TreeGrid. Rows: "Pending" (expanded, children still loading, so a status line follows
+      // it), "Group" (expanded, children One and Two), then Bravo and Charlie. Columns: Status, a select whose option
+      // values and labels overlap (value A is "Active", value B is "A"), and Qty, an integer. The parent applies every
+      // proposal. Query parameters: max (maxSheetCells). Events are logged as JSON lines to the "Events" status.
+      // window.grid is the component; window.collapseGroup() collapses Group from outside, as a parent would.
+      const query = new URLSearchParams(location.search)
+      const rows = shallowRef([
+        { id: 'pending', label: 'Pending', childStatus: 'loading', status: 'A', qty: 0 },
+        { id: 'group', label: 'Group', status: 'A', qty: 1 },
+        { id: 'one', parentId: 'group', label: 'One', status: 'A', qty: 2 },
+        { id: 'two', parentId: 'group', label: 'Two', status: 'B', qty: 3 },
+        { id: 'bravo', label: 'Bravo', status: 'A', qty: 4 },
+        { id: 'charlie', label: 'Charlie', status: 'B', qty: 5 },
+      ])
+      const expanded = ref(['pending', 'group'])
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      const columns = [
+        { id: 'status', label: 'Status', width: 120, editable: true, value: row => row.status,
+          editor: { kind: 'select', required: true, choices: [{ value: 'A', label: 'Active' }, { value: 'B', label: 'A' }] },
+          update: (row, value) => ({ ...row, status: value }) },
+        { id: 'qty', label: 'Qty', width: 90, editable: true, value: row => row.qty,
+          editor: { kind: 'number', integer: true }, update: (row, value) => ({ ...row, qty: value }) },
+      ]
+      const grid = ref()
+      window.collapseGroup = () => { expanded.value = expanded.value.filter(id => id !== 'group') }
+      const apply = edits => { rows.value = applyTreeGridEdits({ rows: rows.value, columns }, edits).rows }
+      createApp({
+        setup: () => {
+          window.grid = undefined
+          return () => h('div', [
+            h('label', ['Notes ', h('input', { type: 'text' })]),
+            h(TreeGrid, {
+              ref: el => { grid.value = el; window.grid = el },
+              rows: rows.value, columns, expandedIds: expanded.value, editable: true, spreadsheet: true, height: 320,
+              ...(query.has('max') ? { maxSheetCells: Number(query.get('max')) } : {}),
+              'onUpdate:expandedIds': ids => { expanded.value = ids },
+              'onCell-edit': change => { record('cell-edit', change.rowId, change.columnId, change.before, change.after); apply([change]) },
+              'onSheet-edit': change => { record('sheet-edit', change.action, change.edits.map(edit => [edit.rowId, edit.columnId, edit.after])); apply(change.edits) },
+              'onSheet-edit-rejected': (change, reason) => record('sheet-edit-rejected', change.action, reason),
+              'onEdit-cancel': event => record('edit-cancel', event.kind, event.reason),
+            }),
+            h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

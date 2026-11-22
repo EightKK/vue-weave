@@ -1,6 +1,6 @@
 // TreeGrid: treegrid keyboard navigation inside and outside the rendered window, expansion and lazy children,
 // activation payloads and linked highlights, cell and spreadsheet editing, row structure proposals, undo and RTL.
-import { expect, test, openExample, pageErrors, type Page } from './support'
+import { expect, test, openExample, pageErrors, serveFixture, type Page } from './support'
 
 async function openTreeGrid(page: Page) {
   const errors = pageErrors(page)
@@ -449,5 +449,105 @@ test('the tree grid example shows its grid and controls in Japanese', async ({ p
   await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
   await expect(demo.getByRole('checkbox', { name: '次の読み込みを失敗させる', exact: true })).toBeVisible()
   await expect(demo.getByRole('status', { name: 'ツリーグリッドの選択' })).toHaveText('連動しているものはありません。')
+  expect(errors).toEqual([])
+})
+
+/** The fixture in fixtures/tree-grid.html: Pending (children loading), Group (One, Two), Bravo and Charlie. */
+async function openTreeGridFixture(page: Page, search = '') {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'tree-grid-test', 'tree-grid.html')
+  await page.goto('/tree-grid-test/' + search)
+  const grid = page.getByRole('treegrid')
+  await expect(grid).toBeVisible()
+  const row = (name: string) => grid.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) })
+  const events = page.getByRole('status', { name: 'Events', exact: true })
+  const logged = async () => (await events.textContent() ?? '').split('\n').filter(Boolean).map(line => JSON.parse(line))
+  return { errors, grid, row, events, logged, header: (name: string) => grid.getByRole('rowheader', { name, exact: true }) }
+}
+
+test('fixture: copying a range with a status line and pasting it back in place changes nothing', async ({ page }) => {
+  const { errors, row, header, logged } = await openTreeGridFixture(page)
+  await cellOf(row('Pending'), 3).click()
+  // Pending, its status line, Group: the copy leaves the status line out, as the paste skips it.
+  await page.keyboard.press('Shift+ArrowDown')
+  await page.keyboard.press('Shift+ArrowDown')
+  const text = await clipboard(page, 'copy')
+  expect(text).toBe('0\r\n1')
+  await clipboard(page, 'paste', text)
+  await expect(cellOf(row('Bravo'), 3)).toHaveText('4')
+  await expect(cellOf(row('Group'), 3)).toHaveText('1')
+  expect(await logged()).toEqual([])
+  await header('Pending').click()
+  expect(errors).toEqual([])
+})
+
+test('fixture: committing a select without changing it proposes nothing, also when a label equals another value', async ({ page }) => {
+  const { errors, row, logged } = await openTreeGridFixture(page)
+  await cellOf(row('Bravo'), 2).click()
+  await page.keyboard.press('Enter')
+  const select = page.getByRole('combobox', { name: 'Edit Status for Bravo', exact: true })
+  await expect(select).toBeFocused()
+  await select.press('Enter')
+  await expect(select).toHaveCount(0)
+  await expect(cellOf(row('Bravo'), 2)).toHaveText('Active')
+  expect(await logged()).toEqual([])
+  // Enter moved down to Charlie; back up, choosing the option labelled "A" proposes its value B.
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Enter')
+  await page.getByRole('combobox', { name: 'Edit Status for Bravo', exact: true }).selectOption('B')
+  await page.keyboard.press('Enter')
+  expect(await logged()).toEqual([['cell-edit', 'bravo', 'status', 'A', 'B']])
+  expect(errors).toEqual([])
+})
+
+test('fixture: rows shown or hidden during a fill handle drag cancel it instead of filling from another row', async ({ page }) => {
+  const { errors, grid, row, logged } = await openTreeGridFixture(page)
+  await cellOf(row('One'), 3).click()
+  const box = (await grid.locator('.vw-tree-grid-fill-handle').boundingBox())!
+  await page.mouse.move(box.x + 3, box.y + 3)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 3, box.y + 3 + 32 * 3, { steps: 4 })
+  await page.evaluate(() => (window as unknown as { collapseGroup(): void }).collapseGroup())
+  await expect(row('One')).toHaveCount(0)
+  await page.mouse.up()
+  expect(await logged()).toEqual([['edit-cancel', 'fill', 'source-changed']])
+  await expect(cellOf(row('Bravo'), 3)).toHaveText('4')
+  expect(errors).toEqual([])
+})
+
+test('fixture: fills respect maxSheetCells', async ({ page }) => {
+  const { errors, row, logged } = await openTreeGridFixture(page, '?max=1')
+  await cellOf(row('Group'), 3).click()
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowDown')
+  await page.keyboard.press('Control+d')
+  expect(await logged()).toEqual([['sheet-edit-rejected', 'fill', 'The fill holds more than 1 cells']])
+  await expect(cellOf(row('Two'), 3)).toHaveText('3')
+  expect(errors).toEqual([])
+})
+
+test('fixture: an edit committed by moving the focus out of the grid leaves the focus there', async ({ page }) => {
+  const { errors, row, logged } = await openTreeGridFixture(page)
+  await cellOf(row('Bravo'), 3).click()
+  await page.keyboard.press('7')
+  const notes = page.getByRole('textbox', { name: 'Notes', exact: true })
+  await notes.click()
+  await expect.poll(logged).toEqual([['cell-edit', 'bravo', 'qty', 4, 7]])
+  await expect(cellOf(row('Bravo'), 3)).toHaveText('7')
+  await expect(notes).toBeFocused()
+  await page.keyboard.type('ok')
+  await expect(notes).toHaveValue('ok')
+  expect(errors).toEqual([])
+})
+
+test('fixture: focusCell and startEdit refuse an unknown column', async ({ page }) => {
+  const { errors } = await openTreeGridFixture(page)
+  const result = await page.evaluate(() => {
+    const grid = (window as unknown as { grid: { focusCell(p: object): boolean; startEdit(p: object): boolean } }).grid
+    return [
+      grid.focusCell({ rowId: 'bravo', columnId: 'retired' }), grid.startEdit({ rowId: 'bravo', columnId: 'retired' }),
+      grid.focusCell({ rowId: 'bravo', columnId: 'qty' }), grid.focusCell({ rowId: 'bravo' }),
+    ]
+  })
+  expect(result).toEqual([false, false, true, true])
   expect(errors).toEqual([])
 })

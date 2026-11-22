@@ -247,3 +247,23 @@ test('drop places: before, after and inside, never into the dragged subtree', ()
   // A drop that leaves the row where it is proposes nothing.
   assert.equal(treeGridDropAt(index, flat, 'a2', 1, 0.9), undefined)
 })
+
+test('review regressions: copy skips status lines, fills respect maxCells, a new row cannot be its own parent', () => {
+  const statusRows = [
+    { id: 'p', label: 'P', childStatus: 'loading' },
+    { id: 'b', label: 'B' },
+    { id: 'c', label: 'C' },
+  ]
+  const qty = { id: 'qty', label: 'Qty', width: 60, editable: true, value: row => row.qty ?? null, editor: { kind: 'number' }, update: (row, value) => ({ ...row, qty: value }) }
+  const model = createTreeGridIndex({ rows: statusRows.map((row, i) => ({ ...row, qty: i + 1 })), columns: [qty] })
+  const lines = flattenTreeGrid(model, ['p'])
+  assert.deepEqual(lines.lines.map(line => line.kind), ['row', 'status', 'row', 'row'])
+  const span = { anchor: { line: 0, column: 1 }, focus: { line: 2, column: 1 } }
+  const text = treeGridRangeText(model, lines, span)
+  assert.equal(text, '1\r\n2')
+  assert.deepEqual(buildTreeGridPaste(model, lines, span, text).edits, [])
+  const fill = { anchor: { line: 0, column: 1 }, focus: { line: 3, column: 1 } }
+  assert.equal(buildTreeGridFill(model, lines, fill, { maxCells: 1 }).reason, 'too-large')
+  assert.equal(buildTreeGridFill(model, lines, fill, { maxCells: 2 }).edits.length, 2)
+  assert.throws(() => insertTreeGridRow(statusRows, { parentId: 'n', index: 0 }, { id: 'n', label: 'N' }), /Unknown parent/)
+})

@@ -367,12 +367,16 @@ function proposeCell(change: TreeGridCellEdit): string | undefined {
   emit('cell-edit', change)
   return undefined
 }
-function commitEdit(source: TreeGridCellEdit['source'], move?: 'down' | 'up' | 'next' | 'previous'): boolean {
+function commitEdit(source: TreeGridCellEdit['source'], move?: 'down' | 'up' | 'next' | 'previous', refocus = true): boolean {
   const now = editing.value, model = index.value
   if (!now || !model) return false
   const column = model.columns[model.columnIndex.get(now.columnId)!]!
   const spec = treeGridFieldSpec(column)!
-  const parsed = spec.kind === 'select' && now.text === '' && !spec.required ? { ok: true as const, value: null } : parseFieldValue(spec, now.text)
+  // A select commits the typed value of the chosen option: its text is the option value, which the text parser would
+  // match against labels first.
+  const choice = spec.kind === 'select' ? spec.choices?.find(option => String(option.value) === now.text) : undefined
+  const parsed = spec.kind === 'select' && now.text === '' && !spec.required ? { ok: true as const, value: null }
+    : choice ? { ok: true as const, value: choice.value as FieldValue } : parseFieldValue(spec, now.text)
   if (!parsed.ok) {
     editing.value = { ...now, error: parsed.error }
     notice.value = parsed.error
@@ -390,7 +394,7 @@ function commitEdit(source: TreeGridCellEdit['source'], move?: 'down' | 'up' | '
   if (at && move) {
     const delta = move === 'down' ? [1, 0] : move === 'up' ? [-1, 0] : move === 'next' ? [0, 1] : [0, -1]
     moveTo({ line: Math.max(0, Math.min(lines.value.length - 1, at.line + delta[0]!)), column: Math.max(0, Math.min(columnCount.value - 1, at.column + delta[1]!)) })
-  } else void nextTick(focusActive)
+  } else if (refocus) void nextTick(focusActive)
   return true
 }
 function editorKeydown(event: KeyboardEvent) {
@@ -422,7 +426,8 @@ function editorBlur() {
     const still = editing.value
     if (!still || still.rowId !== now.rowId || still.columnId !== now.columnId) return
     if (scroller.value?.querySelector('.vw-tree-grid-editor') === document.activeElement) return
-    if (!commitEdit('pointer')) cancelCellEdit('blur', false)
+    // The focus went elsewhere (inside or outside the grid): commit without taking it back.
+    if (!commitEdit('pointer', undefined, false)) cancelCellEdit('blur', false)
   })
 }
 function renderEditor(column: TreeGridColumn<R>): VNode {
@@ -474,7 +479,7 @@ function proposeSheet(action: TreeGridSheetEdit['action'], build: TreeGridSheetB
   if (!build.ok) {
     const model = index.value
     const where = build.cell && model ? `${model.columns[model.columnIndex.get(build.cell.columnId)!]?.label} · ${model.rowById.get(build.cell.rowId)?.label}: ` : ''
-    const reason = build.reason === 'too-large' ? messages.value.pasteTooLarge : where + build.error
+    const reason = build.reason === 'too-large' ? (action === 'paste' ? messages.value.pasteTooLarge : build.error) : where + build.error
     emit('sheet-edit-rejected', sheetChange(action, [], source), reason)
     notice.value = reason
     return
@@ -601,6 +606,8 @@ watch(() => [props.rows, props.columns, props.cells, props.editable, props.sprea
 watch(lines, () => {
   const now = editing.value
   if (now && !flat.value.rowLine.has(now.rowId)) cancelCellEdit('hidden', false)
+  // A fill drag holds line numbers; once rows are shown or hidden they name other rows.
+  cancelFill('source-changed')
 })
 
 /** Cancels the open editor, fill drag or row drag (reason `api`). Returns whether one was in flight. */
@@ -654,7 +661,7 @@ function onKeydown(event: KeyboardEvent) {
   }
   if (props.spreadsheet && props.editable && ctrl && !event.altKey && event.key.toLowerCase() === 'd') {
     event.preventDefault()
-    return proposeSheet('fill', buildTreeGridFill(index.value, flat.value, range.value!), 'keyboard')
+    return proposeSheet('fill', buildTreeGridFill(index.value, flat.value, range.value!, { maxCells: props.maxSheetCells }), 'keyboard')
   }
   if (props.editable && at.column > 0 && line.kind === 'row') {
     const column = columns.value[at.column - 1]!
@@ -800,7 +807,7 @@ function onWindowUp(event: PointerEvent) {
     const bounds = treeGridRangeBounds(now.source)
     if (now.to > bounds.bottom && index.value) {
       const target: TreeGridRange = { anchor: { line: bounds.top, column: bounds.left }, focus: { line: now.to, column: bounds.right } }
-      proposeSheet('fill', buildTreeGridFill(index.value, flat.value, target, { source: now.source, origin: 'pointer' }), 'pointer')
+      proposeSheet('fill', buildTreeGridFill(index.value, flat.value, target, { source: now.source, origin: 'pointer', maxCells: props.maxSheetCells }), 'pointer')
     } else emit('edit-cancel', { kind: 'fill', reason: 'pointer-cancel' })
     return
   }
@@ -847,8 +854,9 @@ function focusCell(position: TreeGridPosition): boolean {
   if (!model) return false
   const found = findTreeGridLine(model, flat.value, position)
   if (!found?.exact) return false
-  const column = position.columnId === undefined ? 0 : (model.columnIndex.get(position.columnId) ?? -1) + 1
-  if (column < 0) return false
+  const columnIndex = position.columnId === undefined ? -1 : model.columnIndex.get(position.columnId)
+  if (columnIndex === undefined) return false
+  const column = columnIndex + 1
   moveTo({ line: found.line, column })
   return true
 }
@@ -895,7 +903,9 @@ defineExpose({
     const model = index.value
     const found = position && model ? findTreeGridLine(model, flat.value, position) : undefined
     if (position && !found?.exact) return false
-    const at = position && model ? { line: found!.line, column: (model.columnIndex.get(position.columnId ?? '') ?? -1) + 1 } : cursor.value
+    const columnIndex = position?.columnId === undefined ? undefined : model?.columnIndex.get(position.columnId)
+    if (position?.columnId !== undefined && columnIndex === undefined) return false
+    const at = position && model ? { line: found!.line, column: columnIndex === undefined ? 0 : columnIndex + 1 } : cursor.value
     return at ? startEdit(at) : false
   },
   /** Cancels the open editor, fill handle drag or row drag with reason `api`. */

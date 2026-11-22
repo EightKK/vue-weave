@@ -39,7 +39,7 @@ Adds `TreeGrid`, an editable tree grid and matrix, and core helpers for relation
 
 ### Development
 
-- `npm run build:demo` builds the site (with the generated type reference) into `preview/` and checks every internal link and anchor; `npm run dev` starts the site's dev server and `npm run dev:demo` the standalone demo. `scripts/serve.mjs`, `npm start`, `Start.cmd`, the Playwright tests and the offline demo archive serve the site under `/vue-weave/`. New development dependencies: `vitepress` (2.0 prerelease, which uses Vite 8), `typedoc`, `typedoc-plugin-markdown` and `typedoc-vitepress-theme`, with an npm `overrides` entry for TypeDoc's `minimatch`. The package contents and runtime dependencies are unchanged.
+- `npm run build:demo` builds the site (with the generated type reference) into `preview/` and checks every internal link and anchor; `npm run dev` starts the site's dev server and `npm run dev:demo` the standalone demo. The site build (about 2,000 pages with the type reference in both languages) needs more than Node's default heap on machines with little memory, so `build:demo` and `dev` run VitePress with a 6 GiB heap limit. `scripts/serve.mjs`, `npm start`, `Start.cmd`, the Playwright tests and the offline demo archive serve the site under `/vue-weave/`. New development dependencies: `vitepress` (2.0 prerelease, which uses Vite 8), `typedoc`, `typedoc-plugin-markdown` and `typedoc-vitepress-theme`, with an npm `overrides` entry for TypeDoc's `minimatch`. The package contents and runtime dependencies are unchanged.
 
 ## 1.3.0 - 2026-11-22
 
