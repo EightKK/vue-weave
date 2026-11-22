@@ -107,6 +107,10 @@ const loadView = computed(() => calculateResourceLoad(range, plan.value.tasks.ma
   ...task, work: task.work.length ? splitWork(task) ?? [{ start: task.start, end: task.end }] : [],
 })), crews.map(({ id, capacity }) => ({ id, capacity })), assignments))
 const overCrewDays = computed(() => load.value.reduce((sum, segment) => sum + segment.overload * workIn(segment.start, segment.end) / day, 0))
+/** The next unfinished critical tasks, in date order: what the site team must protect. */
+const criticalAhead = computed(() => plan.value.tasks
+  .filter(task => task.critical && !task.summary && task.end > task.start && (reportedProgress.get(task.id) ?? 0) < 1)
+  .sort((a, b) => a.start - b.start).slice(0, 5))
 const criticalLinks = computed(() => new Set(plan.value.criticalDependencyIds))
 
 // ---- earned value: baseline dates, reported progress, cost rates, and weekly history from the work done ----
@@ -197,7 +201,7 @@ const bars = computed<TimelineBar[]>(() => program.map(task => {
     ...(done || critical || !task.days ? {} : { latestEnd }),
     ...(task.id === 'handover' ? { deadline: contractCompletion } : {}),
     ...(started(task.id) || requested === undefined ? {} : { constraints: timelineConstraints({ startNoEarlierThan: requested }) }),
-    editable: !started(task.id) && task.days > 0,
+    editable: !done && task.days > 0,
     description: crewLabel(task.id) ?? (task.days ? 'Subcontract package' : 'Milestone'),
   }
 }))
@@ -470,6 +474,12 @@ function exportSvg() {
             </tr>
           </tbody>
         </table>
+        <h3>Next on the critical path</h3>
+        <ol class="sc-build-ahead">
+          <li v-for="task in criticalAhead" :key="task.id">
+            <span>{{ labelOf(task.id) }}</span><small>{{ formatTime(task.start) }} – {{ formatTime(lastWorkDay(task)) }}</small>
+          </li>
+        </ol>
         <div class="sc-build-exports" role="group" aria-label="Export">
           <span>Export</span>
           <button type="button" @click="exportMsProject">MS Project XML</button>
@@ -514,15 +524,15 @@ function exportSvg() {
 .sc-build button:disabled { opacity: .55; cursor: default; }
 .sc-build .sc-build-primary { border-color: #2f7fd0; background: linear-gradient(#3a8ee0, #2b72bd); color: #fff; }
 .sc-build .sc-build-primary:hover:not(:disabled) { border-color: #5aa6f0; background: linear-gradient(#4a9cec, #327dcb); }
-.sc-build-switch { display: inline-flex; align-items: center; gap: 9px; padding: 0 12px; height: 32px; border: 1px solid #3b2e1c; border-radius: 8px; background: #1d1810; color: #f6d9a8; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.sc-build-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sc-build-switch { position: relative; display: inline-flex; align-items: center; gap: 9px; padding: 0 12px; height: 32px; border: 1px solid #3b2e1c; border-radius: 8px; background: #1d1810; color: #f6d9a8; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.sc-build-switch input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .sc-build-switch span { position: relative; width: 28px; height: 16px; border-radius: 8px; background: #4a3d29; transition: background .2s; }
 .sc-build-switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #f6d9a8; transition: transform .2s; }
 .sc-build-switch input:checked + span { background: #e8642c; }
 .sc-build-switch input:checked + span::after { transform: translateX(12px); background: #fff; }
 
 /* KPI tiles */
-.sc-build-kpis { display: grid; grid-template-columns: 1.6fr repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+.sc-build-kpis { display: grid; grid-template-columns: 1.35fr repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
 .sc-build-kpi { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 12px 14px; border: 1px solid #222e3b; border-radius: 10px; background: linear-gradient(#151e28, #121922); }
 .sc-build-kpi-label { color: #8b9aab; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .sc-build-kpi strong { color: #f3f7fb; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
@@ -651,6 +661,11 @@ function exportSvg() {
 .sc-build-milestones tbody th { color: #dfe7ef; font-weight: 600; }
 .sc-build-milestones td { color: #9fb0c2; }
 .sc-build-milestones td:last-child, .sc-build-milestones th:last-child { text-align: right; }
+.sc-build-ahead { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: ahead; }
+.sc-build-ahead li { display: flex; align-items: center; gap: 8px; font-size: 12px; counter-increment: ahead; }
+.sc-build-ahead li::before { content: counter(ahead); display: grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: rgb(255 122 61 / 16%); color: #ff9a66; font-size: 10.5px; font-weight: 700; }
+.sc-build-ahead span { overflow: hidden; color: #dfe7ef; text-overflow: ellipsis; white-space: nowrap; }
+.sc-build-ahead small { margin-left: auto; color: #8b9aab; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sc-build-exports { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; }
 .sc-build-exports > span { margin-right: 4px; color: #6f8195; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .sc-build-exports button { height: 28px; padding: 0 11px; font-size: 12px; }
