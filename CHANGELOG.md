@@ -49,6 +49,7 @@
 - GraphPalette and PropertyInspector use the default colours of the other components when `--vw-muted` and `--vw-surface-hover` are unset: secondary text is `#4c6371` (was `#4f6574`) and hovered palette items and inspector buttons are `#edf5fa` (was `#e4ecf2` and `#e3edf5`). The stylesheet now defines these shared defaults once on the component roots; themes set through `--vw-*` variables are unaffected.
 - `toGraphMl` and `toMermaid` indent nested groups at most 32 levels deep, so their output grows linearly with the nesting depth instead of quadratically: `toGraphMl` threw "Invalid string length" for 20,000 nested groups. Output for 32 or fewer levels is unchanged.
 - `fromMermaid` skips an `accDescr { … }` block up to the first `}` after it. A `}` earlier on the same line (such as `}; accDescr {` or a quoted label) sent the reader back before the block, so it looped without end, adding warnings until memory ran out, or failed with a misleading syntax error.
+- NetworkGraph: a pointer capture that the browser refuses (for example for a synthetic or already released pointer) no longer throws after the drag state was set, which left a half-started drag without `gesture-start`.
 
 These fix the unreleased recurring events:
 
