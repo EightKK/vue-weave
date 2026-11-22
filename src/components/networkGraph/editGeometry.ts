@@ -2,6 +2,7 @@
 // positions nonnegative, as saved positions must be.
 import type { GraphBox, GraphNodeSize, GraphPoint } from '../../core/graph.js'
 import type { GraphRect } from '../../core/graphView.js'
+import { graphAlignmentGuides, type GraphAlignmentGuide } from '../../core/graphSnapping.js'
 
 /** Unit steps of the arrow keys. */
 export const arrowOffsets: Readonly<Record<string, readonly [number, number]>> = {
@@ -91,4 +92,83 @@ export function resizeBox(box: GraphRect, corner: Corner, left: number, top: num
   const y0 = north ? Math.max(0, Math.min(top, box.y + box.height - min.height)) : box.y
   const y1 = north ? box.y + box.height : Math.max(box.y + min.height, bottom)
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+
+/** A value on the grid, or the value itself without one. */
+export function snapTo(value: number, grid: number | undefined) {
+  return grid === undefined ? value : snapValue(value, grid)
+}
+
+/** Plain copies of an edge's waypoints. */
+export function copyPoints(points: readonly GraphPoint[] | undefined): GraphPoint[] {
+  return (points ?? []).map(point => ({ x: point.x, y: point.y }))
+}
+
+/**
+ * The positions of a pointer drag by `dx`, `dy` with a grid or alignment guides: the reference point of the move (see
+ * referencePoint) snaps and the other moved nodes keep their offsets from it. With `guides`, the moved bounds snap to
+ * the edges and centres of `guides.others` within `guides.threshold` chart units, guides win over the grid on the
+ * axis they align, and the result carries the guide lines of the final position.
+ */
+export function snappedMove(
+  before: ReadonlyMap<string, GraphPoint>, node: string | undefined, boxes: ReadonlyMap<string, GraphBox>, dx: number, dy: number,
+  grid: number | undefined, guides?: { others: readonly GraphRect[]; threshold: number },
+): { positions: Map<string, GraphPoint>; guides?: GraphAlignmentGuide[] } {
+  const reference = referencePoint(before, node, boxes)
+  const bounds = movedBounds(before, boxes)
+  let gridX = grid, gridY = grid
+  if (guides) {
+    const match = graphAlignmentGuides({ ...bounds, x: bounds.x + dx, y: bounds.y + dy }, guides.others, guides.threshold)
+    if (match.guides.some(guide => guide.axis === 'x')) {
+      dx += match.dx
+      gridX = undefined
+    }
+    if (match.guides.some(guide => guide.axis === 'y')) {
+      dy += match.dy
+      gridY = undefined
+    }
+  }
+  const target = {
+    x: gridX === undefined ? reference.x + dx : snapValue(reference.x + dx, gridX),
+    y: gridY === undefined ? reference.y + dy : snapValue(reference.y + dy, gridY),
+  }
+  const positions = placeMoved(before, reference, target, node, gridX, gridY)
+  // Guides for the final position, which may also be aligned by the grid or the nonnegative clamp.
+  return { positions, guides: guides && graphAlignmentGuides(movedBounds(positions, boxes), guides.others, 1e-6).guides }
+}
+
+/**
+ * The positions of an arrow key move by `offset` (unit steps): 10 (40 with Shift) without a grid; with one, the
+ * reference point steps to the next grid line (four with Shift) and `node`, the focused node, lands on it.
+ */
+export function keyMove(
+  before: ReadonlyMap<string, GraphPoint>, node: string | undefined, boxes: ReadonlyMap<string, GraphBox>,
+  offset: readonly [number, number], shift: boolean, grid: number | undefined,
+) {
+  if (grid === undefined) {
+    const step = shift ? 40 : 10
+    return movePositions(before, offset[0] * step, offset[1] * step)
+  }
+  const anchor = node !== undefined && before.has(node) ? node : undefined
+  const reference = referencePoint(before, anchor, boxes)
+  const target = { x: stepValue(reference.x, offset[0], shift, grid), y: stepValue(reference.y, offset[1], shift, grid) }
+  return placeMoved(before, reference, target, anchor, grid, grid)
+}
+
+/** The box after an arrow key step (see stepValue) of the edges that a resize handle's corner controls. */
+export function keyResize(
+  before: GraphRect, corner: Corner, offset: readonly [number, number], shift: boolean, grid: number | undefined, min: GraphNodeSize,
+) {
+  const step = (value: number, direction: number) => stepValue(value, direction, shift, grid)
+  const { west, north } = cornerSides(corner)
+  const right = before.x + before.width, bottom = before.y + before.height
+  return resizeBox(before, corner,
+    west ? step(before.x, offset[0]) : before.x, north ? step(before.y, offset[1]) : before.y,
+    west ? right : step(right, offset[0]), north ? bottom : step(bottom, offset[1]), min)
+}
+
+/** The box after a pointer drag of a resize handle by `dx`, `dy` chart units, with the moved edges on the grid. */
+export function dragResize(box: GraphRect, corner: Corner, dx: number, dy: number, grid: number | undefined, min: GraphNodeSize) {
+  return resizeBox(box, corner, snapTo(box.x + dx, grid), snapTo(box.y + dy, grid),
+    snapTo(box.x + box.width + dx, grid), snapTo(box.y + box.height + dy, grid), min)
 }

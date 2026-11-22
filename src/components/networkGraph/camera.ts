@@ -2,7 +2,7 @@
 // auto-pan steps. A camera `{ x, y, scale }` draws a chart point `p` at stage pixel `x + p.x * scale` (and likewise for
 // y); the stage is `viewport` pixels large.
 import type { GraphPoint } from '../../core/graph.js'
-import type { GraphRect } from '../../core/graphView.js'
+import { graphViewportRect, type GraphRect } from '../../core/graphView.js'
 import type { GraphViewport } from '../../core/types.js'
 
 export type StageSize = { width: number; height: number }
@@ -156,4 +156,17 @@ export function autoPanStep(
   if (stepX > 0) stepX = Math.max(0, Math.min(stepX, limitX - x))
   if (stepY > 0) stepY = Math.max(0, Math.min(stepY, limitY - y))
   return { x: stepX, y: stepY }
+}
+
+/**
+ * The cell of the background pattern (`gap` chart units, doubled until cells are at least 8 screen pixels apart), the
+ * dot radius and the chart area it fills: the viewport plus one cell on every side.
+ */
+export function backgroundPattern(camera: GraphViewport, gap: number, viewport: StageSize) {
+  const { scale } = camera
+  let cell = gap
+  while (cell * scale < 8) cell *= 2
+  const view = graphViewportRect(camera, viewport)
+  const area = { x: view.x - cell, y: view.y - cell, width: view.width + 2 * cell, height: view.height + 2 * cell }
+  return { cell, dot: 1 / scale, area }
 }

@@ -25,7 +25,7 @@ import {
 } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
 import { createGraphConnectionChecker, type GraphPortRules } from '../core/graphPortRules.js'
-import { graphAlignmentGuides, snapGraphPoint, type GraphAlignmentGuide } from '../core/graphSnapping.js'
+import { snapGraphPoint, type GraphAlignmentGuide } from '../core/graphSnapping.js'
 import type { GraphDrop } from './types.js'
 import type { ChartDirection, GraphExportOptions, GraphPngExportOptions } from '../core/types.js'
 import { renderGraphSvg } from '../core/exportSvg.js'
@@ -42,15 +42,15 @@ import {
 } from './networkGraph/groupFrames.js'
 import { connectHandle, connectionBetween, parsePortKey, portKey, type PortHandle, type PortRef } from './networkGraph/ports.js'
 import {
-  arrowOffsets, clampPoint, cornerSides, corners, movePositions, placeMoved, referencePoint, resizeBox, snapValue, stepValue,
-  movedBounds, type Corner,
+  arrowOffsets, clampPoint, copyPoints, cornerSides, corners, dragResize, keyMove, keyResize, movePositions, snappedMove, snapTo, stepValue,
+  type Corner,
 } from './networkGraph/editGeometry.js'
 import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
 import { useNodeTooltip } from './networkGraph/useNodeTooltip.js'
 import {
-  autoPanStep, cameraCenter, clampScale as clampToScale, contentBounds as boundsOf, contentCameraAt, fitCamera as fittedCamera, paddedScale,
-  panKeySteps, pinchCamera, rectsBounds, scaleError as scaleRangeError, validScale as inScaleRange, wholeScale as scaleToFit, zoomAround,
-  type ContentBounds,
+  autoPanStep, backgroundPattern, cameraCenter, clampScale as clampToScale, contentBounds as boundsOf, contentCameraAt, fitCamera as fittedCamera,
+  paddedScale, panKeySteps, pinchCamera, rectsBounds, scaleError as scaleRangeError, validScale as inScaleRange, wholeScale as scaleToFit,
+  zoomAround, type ContentBounds,
 } from './networkGraph/camera.js'
 import {
   edgeLabelEditorStyle, nodeLabelEditorStyle, stageEdges, stagePoint, toolbarPlacement, tooltipPlacement, type StageEdges,
@@ -932,40 +932,17 @@ const GuideLines: FunctionalComponent = () => h('g', { class: 'vw-guides', 'aria
   x1: guide.axis === 'x' ? guide.position : guide.from, x2: guide.axis === 'x' ? guide.position : guide.to,
   y1: guide.axis === 'y' ? guide.position : guide.from, y2: guide.axis === 'y' ? guide.position : guide.to,
 })))
-// The positions of a pointer drag. With a grid or guides, the reference point of the move (see referencePoint) snaps
-// and the other moved nodes keep their offsets from it.
+// The positions of a pointer drag. With a grid or guides, the reference point of the move snaps (see snappedMove) and
+// the other moved nodes keep their offsets from it; the guide threshold is in screen pixels.
 function dragPositions(drag: NonNullable<typeof nodeDrag>, dx: number, dy: number) {
   const grid = props.snapGrid
   if (grid === undefined && !props.alignmentGuides) return movePositions(drag.before, dx, dy)
   const node = drag.node !== undefined && drag.before.has(drag.node) ? drag.node : undefined
-  const boxes = savedLayout.value.boxes
-  const reference = referencePoint(drag.before, node, boxes)
-  const bounds = movedBounds(drag.before, boxes)
-  let gridX = grid, gridY = grid, others: GraphRect[] = []
-  if (props.alignmentGuides) {
-    others = drag.guides ??= guideCandidates(drag.before)
-    // Guides win over the grid on the axis they align.
-    const match = graphAlignmentGuides({ ...bounds, x: bounds.x + dx, y: bounds.y + dy }, others, props.guideThreshold / camera.value.scale)
-    if (match.guides.some(guide => guide.axis === 'x')) {
-      dx += match.dx
-      gridX = undefined
-    }
-    if (match.guides.some(guide => guide.axis === 'y')) {
-      dy += match.dy
-      gridY = undefined
-    }
-  }
-  const target = {
-    x: gridX === undefined ? reference.x + dx : snapValue(reference.x + dx, gridX),
-    y: gridY === undefined ? reference.y + dy : snapValue(reference.y + dy, gridY),
-  }
-  const positions = placeMoved(drag.before, reference, target, node, gridX, gridY)
-  if (props.alignmentGuides) {
-    // Guides for the final position, which may also be aligned by the grid or the nonnegative clamp.
-    const moved = movedBounds(positions, boxes)
-    guideLines.value = graphAlignmentGuides(moved, others, 1e-6).guides
-  }
-  return positions
+  const guides = props.alignmentGuides
+    ? { others: drag.guides ??= guideCandidates(drag.before), threshold: props.guideThreshold / camera.value.scale } : undefined
+  const moved = snappedMove(drag.before, node, savedLayout.value.boxes, dx, dy, grid, guides)
+  if (guides) guideLines.value = moved.guides
+  return moved.positions
 }
 
 function startNodeDrag(event: PointerEvent, ids: Iterable<string>, node?: string, group?: string) {
@@ -1047,17 +1024,8 @@ function moveWithKeys(event: KeyboardEvent, ids: Iterable<string>, node?: string
   const before = movablePositions(ids)
   if (!before.size) return
   event.preventDefault()
-  const grid = props.snapGrid
-  if (grid === undefined) {
-    const step = event.shiftKey ? 40 : 10
-    emitMoves(before, movePositions(before, offset[0] * step, offset[1] * step))
-    return
-  }
   // With a grid, the reference point steps to the next grid line (four with Shift) in the arrow direction.
-  const anchor = node !== undefined && before.has(node) ? node : undefined
-  const reference = referencePoint(before, anchor, savedLayout.value.boxes)
-  const target = { x: stepValue(reference.x, offset[0], event.shiftKey, grid), y: stepValue(reference.y, offset[1], event.shiftKey, grid) }
-  emitMoves(before, placeMoved(before, reference, target, anchor, grid, grid))
+  emitMoves(before, keyMove(before, node, savedLayout.value.boxes, offset, event.shiftKey, props.snapGrid))
 }
 
 type ConnectionDraft = { fixed: PortRef; end: 'from' | 'to'; edge?: GraphEdge }
@@ -1442,7 +1410,7 @@ const waypointHandles = computed(() => {
   return handles
 })
 function proposeReshape(edge: GraphEdge, after: GraphPoint[]) {
-  const change: GraphEdgeReshape = { id: edge.id, before: (edge.points ?? []).map(point => ({ x: point.x, y: point.y })), after }
+  const change: GraphEdgeReshape = { id: edge.id, before: copyPoints(edge.points), after }
   const reason = checkProposal(props.validateEdgeReshape?.(change), messages.value.reshapeRejected!)
   if (reason !== undefined) {
     emit('edge-reshape-rejected', change, reason)
@@ -1465,7 +1433,7 @@ function focusEdge(id: string) {
 function waypointKeys(event: KeyboardEvent, handle: WaypointHandle) {
   const edge = reshapeEdge.value
   if (!edge || gestureInFlight()) return
-  const points = (edge.points ?? []).map(point => ({ x: point.x, y: point.y }))
+  const points = copyPoints(edge.points)
   if (handle.kind === 'add') {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
@@ -1534,11 +1502,7 @@ function resizeKeys(event: KeyboardEvent, id: string, corner: Corner) {
   if (!offset || !before || gestureInFlight()) return
   event.preventDefault()
   event.stopPropagation()
-  const { west, north } = cornerSides(corner)
-  const right = before.x + before.width, bottom = before.y + before.height, shift = event.shiftKey
-  proposeResize(id, before, resizeBox(before, corner,
-    west ? keyStep(before.x, offset[0], shift) : before.x, north ? keyStep(before.y, offset[1], shift) : before.y,
-    west ? right : keyStep(right, offset[0], shift), north ? bottom : keyStep(bottom, offset[1], shift), minimumSize.value))
+  proposeResize(id, before, keyResize(before, corner, offset, event.shiftKey, props.snapGrid, minimumSize.value))
 }
 
 // Pointer drags of waypoint, insert and resize handles.
@@ -1560,7 +1524,7 @@ function startResizeDrag(event: PointerEvent, id: string, corner: Corner) {
   if (box) startHandleDrag(event, { kind: 'resize', id, index: 0, corner, box, origin: { x: box.x, y: box.y } })
 }
 function snapOrKeep(value: number) {
-  return props.snapGrid === undefined ? value : snapValue(value, props.snapGrid)
+  return snapTo(value, props.snapGrid)
 }
 function moveHandle(event: PointerEvent) {
   const drag = handleDrag
@@ -1570,14 +1534,13 @@ function moveHandle(event: PointerEvent) {
   const { x: dx, y: dy } = chartDelta(drag, event.clientX, event.clientY, camera.value)
   if (drag.kind === 'resize') {
     const box = drag.box!
-    resizePreview.value = { id: drag.id, box: resizeBox(box, drag.corner!, snapOrKeep(box.x + dx), snapOrKeep(box.y + dy),
-      snapOrKeep(box.x + box.width + dx), snapOrKeep(box.y + box.height + dy), minimumSize.value) }
+    resizePreview.value = { id: drag.id, box: dragResize(box, drag.corner!, dx, dy, props.snapGrid, minimumSize.value) }
     return
   }
   const edge = edgesById.value.get(drag.id)
   if (!edge) return
   const point = clampPoint({ x: snapOrKeep(drag.origin.x + dx), y: snapOrKeep(drag.origin.y + dy) })
-  const points = (edge.points ?? []).map(item => ({ x: item.x, y: item.y }))
+  const points = copyPoints(edge.points)
   if (drag.kind === 'add') points.splice(drag.index, 0, point)
   else points[drag.index] = point
   reshapePreview.value = { id: drag.id, points }
@@ -1613,7 +1576,7 @@ function commitHandle(drag: HandleDrag, resized: typeof resizePreview.value, res
   if (reshaped) proposeReshape(edge, reshaped.points)
   else if (drag.kind === 'add') {
     // A press without movement inserts the waypoint at the handle.
-    const points = (edge.points ?? []).map(item => ({ x: item.x, y: item.y }))
+    const points = copyPoints(edge.points)
     points.splice(drag.index, 0, clampPoint({ x: snapOrKeep(drag.origin.x), y: snapOrKeep(drag.origin.y) }))
     proposeReshape(edge, points)
   }
@@ -2103,13 +2066,7 @@ const editingOptions = computed(() => {
 const patternId = marker + '-background'
 const pattern = computed(() => {
   if (props.background === 'none') return undefined
-  const { scale } = camera.value
-  let cell = editingOptions.value.gap
-  while (cell * scale < 8) cell *= 2
-  // The rectangle covers the viewport plus one cell on every side.
-  const view = graphViewportRect(camera.value, viewport.value)
-  const area = { x: view.x - cell, y: view.y - cell, width: view.width + 2 * cell, height: view.height + 2 * cell }
-  return { cell, dot: 1 / scale, area }
+  return backgroundPattern(camera.value, editingOptions.value.gap, viewport.value)
 })
 // The background and the group frames, one layer each below the edges. The optional background is the first layer, so
 // the markup without a background is unchanged. Each group layer reads the frame of its group from a shallow ref of
