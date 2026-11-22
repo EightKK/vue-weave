@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (230)
+## Entry `.`: runtime exports (233)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -70,6 +70,7 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
+- `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
@@ -140,6 +141,7 @@ in public signatures, so changes to them can break consumers too.
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
+- `nextTimelineSort: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
 - `packCalendarEventLanes: function`
@@ -232,13 +234,14 @@ in public signatures, so changes to them can break consumers too.
 - `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
+- `validateInspectorList: function`
 - `validateTimelineData: function`
 - `visibleRows: function`
 - `windowedCellStatus: function`
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (546)
+## Entry `.`: type-only exports (556)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -482,11 +485,20 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorAssignment`
+- `InspectorAssignmentsField`
 - `InspectorChange`
 - `InspectorChangeValidator`
+- `InspectorDependenciesField`
+- `InspectorDependency`
 - `InspectorField`
 - `InspectorFieldKind`
 - `InspectorItem`
+- `InspectorListChange`
+- `InspectorListChangeValidator`
+- `InspectorListField`
+- `InspectorListFieldKind`
+- `InspectorOption`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -740,6 +752,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineViewColumn`
 - `TimelineViewDiagnostic`
 - `TimelineViewDiagnosticCode`
+- `TimelineViewFilter`
 - `TimelineViewInput`
 - `TimelineViewProjection`
 - `TimelineViewSearch`
@@ -787,7 +800,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (215)
+## Entry `./core`: runtime exports (218)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -846,6 +859,7 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
+- `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
@@ -915,6 +929,7 @@ in public signatures, so changes to them can break consumers too.
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
+- `nextTimelineSort: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
 - `packCalendarEventLanes: function`
@@ -999,13 +1014,14 @@ in public signatures, so changes to them can break consumers too.
 - `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
+- `validateInspectorList: function`
 - `validateTimelineData: function`
 - `visibleRows: function`
 - `windowedCellStatus: function`
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (508)
+## Entry `./core`: type-only exports (518)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1233,11 +1249,20 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorAssignment`
+- `InspectorAssignmentsField`
 - `InspectorChange`
 - `InspectorChangeValidator`
+- `InspectorDependenciesField`
+- `InspectorDependency`
 - `InspectorField`
 - `InspectorFieldKind`
 - `InspectorItem`
+- `InspectorListChange`
+- `InspectorListChangeValidator`
+- `InspectorListField`
+- `InspectorListFieldKind`
+- `InspectorOption`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -1476,6 +1501,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineViewColumn`
 - `TimelineViewDiagnostic`
 - `TimelineViewDiagnosticCode`
+- `TimelineViewFilter`
 - `TimelineViewInput`
 - `TimelineViewProjection`
 - `TimelineViewSearch`
@@ -1685,6 +1711,8 @@ dependencyStyle?: DependencyPathStyle;
 dir?: ChartDirection;
 droppable?: boolean;
 editBounds?: TimeRange;
+filterableColumns?: boolean | readonly string[];
+filters?: readonly TimelineViewFilter[];
 formatLag?: (lag: number) => string;
 formatTime?: (time: number) => string;
 formatVariance?: (delta: number) => string;
@@ -1728,6 +1756,8 @@ showNow?: boolean;
 showProgressLine?: boolean;
 showSummaries?: boolean;
 snap?: number;
+sort?: readonly TimelineViewSort[];
+sortableColumns?: boolean | readonly string[];
 spreadsheet?: boolean;
 statusDate?: number;
 stickyBandLabels?: boolean;
@@ -1790,8 +1820,10 @@ zoomPresets?: readonly TimelineZoomPreset[];
 (evt: "target-enter", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-leave", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "update:collapsedIds", ids: Set<string>) => void
+(evt: "update:filters", filters: TimelineViewFilter[]) => void
 (evt: "update:selectedDependencyId", id: string) => void
 (evt: "update:selectedIds", ids: Set<string>) => void
+(evt: "update:sort", sort: TimelineViewSort[]) => void
 (evt: "update:zoomPreset", id: string) => void
 (evt: "validation-error", error: Error) => void
 (evt: "visible-window-change", window: TimelineVisibleWindow) => void
@@ -1901,10 +1933,11 @@ focusItem: (id?: string) => Promise<boolean>;
 
 ```ts
 dir?: ChartDirection;
-fields: readonly InspectorField<T>[];
+fields: readonly (InspectorField<T> | InspectorListField<T>)[];
 item?: T | null;
 labels?: Partial<PropertyInspectorLabels>;
 validateChange?: InspectorChangeValidator<T>;
+validateListChange?: InspectorListChangeValidator<T>;
 ```
 
 ## Component `PropertyInspector`: emits
@@ -1912,6 +1945,8 @@ validateChange?: InspectorChangeValidator<T>;
 ```ts
 (evt: "change", change: InspectorChange) => void
 (evt: "change-rejected", change: InspectorChange, reason: string) => void
+(evt: "list-change", change: InspectorListChange) => void
+(evt: "list-change-rejected", change: InspectorListChange, reason: string) => void
 ```
 
 ## Component `PropertyInspector`: slots
@@ -3033,6 +3068,12 @@ interface GanttLabels {
     statusDate?: string;
     resizeColumn?: string;
     columnResizeRejected?: string;
+    sortBy?: string;
+    filterBy?: string;
+    filtered?: string;
+    filterContains?: string;
+    filterValues?: string;
+    clearFilter?: string;
     lag?: string;
     startNoEarlierThan?: string;
     startNoLaterThan?: string;
@@ -4806,6 +4847,26 @@ interface IdentifiedNode {
 }
 ```
 
+### `InspectorAssignment`
+
+```ts
+interface InspectorAssignment {
+    resourceId: string;
+    units: number;
+}
+```
+
+### `InspectorAssignmentsField`
+
+```ts
+interface InspectorAssignmentsField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
+    kind: 'assignments';
+    get: (item: T) => readonly InspectorAssignment[];
+    defaultUnits?: number;
+    maxUnits?: number;
+}
+```
+
 ### `InspectorChange`
 
 ```ts
@@ -4821,6 +4882,27 @@ interface InspectorChange {
 
 ```ts
 type InspectorChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorChange, item: T) => boolean | string | void;
+```
+
+### `InspectorDependenciesField`
+
+```ts
+interface InspectorDependenciesField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
+    kind: 'dependencies';
+    get: (item: T) => readonly InspectorDependency[];
+    lagUnitSize?: number;
+    lagUnitLabel?: string;
+}
+```
+
+### `InspectorDependency`
+
+```ts
+interface InspectorDependency {
+    predecessorId: string;
+    type: TimelineDependencyType;
+    lag: number;
+}
 ```
 
 ### `InspectorField`
@@ -4847,6 +4929,51 @@ type InspectorFieldKind = TimelineFieldKind | 'color';
 ```ts
 interface InspectorItem {
     id: string;
+}
+```
+
+### `InspectorListChange`
+
+```ts
+type InspectorListChange = {
+    id: string;
+    field: string;
+    kind: 'assignments';
+    before: InspectorAssignment[];
+    after: InspectorAssignment[];
+} | {
+    id: string;
+    field: string;
+    kind: 'dependencies';
+    before: InspectorDependency[];
+    after: InspectorDependency[];
+};
+```
+
+### `InspectorListChangeValidator`
+
+```ts
+type InspectorListChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorListChange, item: T) => boolean | string | void;
+```
+
+### `InspectorListField`
+
+```ts
+type InspectorListField<T extends InspectorItem = InspectorItem> = InspectorAssignmentsField<T> | InspectorDependenciesField<T>;
+```
+
+### `InspectorListFieldKind`
+
+```ts
+type InspectorListFieldKind = 'assignments' | 'dependencies';
+```
+
+### `InspectorOption`
+
+```ts
+interface InspectorOption {
+    value: string;
+    label?: string;
 }
 ```
 
@@ -5818,7 +5945,7 @@ const PropertyInspector: PropertyInspectorComponent;
 ```ts
 type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(props: {
     item?: T | null;
-    fields: readonly InspectorField<T>[];
+    fields: readonly (InspectorField<T> | InspectorListField<T>)[];
 } & Record<string, unknown>) => SfcInstance<PropertyInspectorSfc<T>>) & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>;
 ```
 
@@ -5854,6 +5981,16 @@ interface PropertyInspectorLabels {
     empty: string;
     rejected: string;
     none: string;
+    resource?: string;
+    units?: string;
+    predecessor?: string;
+    type?: string;
+    lag?: string;
+    for?: string;
+    remove?: string;
+    addAssignment?: string;
+    addDependency?: string;
+    noRows?: string;
 }
 ```
 
@@ -7701,6 +7838,16 @@ interface TimelineViewDiagnostic {
 type TimelineViewDiagnosticCode = 'unknown-column' | 'new-column' | 'duplicate-column' | 'invalid-width' | 'unknown-sort-rule' | 'unknown-row';
 ```
 
+### `TimelineViewFilter`
+
+```ts
+interface TimelineViewFilter {
+    columnId: string;
+    text?: string;
+    values?: (string | number)[];
+}
+```
+
 ### `TimelineViewInput`
 
 ```ts
@@ -7759,6 +7906,7 @@ interface TimelineViewState {
     columns: TimelineViewColumn[];
     search: TimelineViewSearch;
     sort: TimelineViewSort[];
+    filters?: TimelineViewFilter[];
     collapsedIds: string[];
     window?: TimeRange;
     zoom?: string;
@@ -8589,6 +8737,12 @@ function filterGraph<N extends IdentifiedNode, E extends GraphEdge>(nodes: reado
 };
 ```
 
+### `filterTimelineRows`
+
+```ts
+function filterTimelineRows<R extends TimelineRow>(rows: readonly R[], predicate: (row: R) => boolean): R[];
+```
+
 ### `findGraphCycles`
 
 ```ts
@@ -9041,6 +9195,12 @@ function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step: numbe
 
 ```ts
 function moveTimelineRow<R extends TimelineRow>(rows: readonly R[], id: string, target: TimelineRowPosition): R[];
+```
+
+### `nextTimelineSort`
+
+```ts
+function nextTimelineSort(sort: readonly TimelineViewSort[], columnId: string): TimelineViewSort[];
 ```
 
 ### `normalizeWorkPeriods`
@@ -9664,6 +9824,7 @@ function useTimelineView<R extends TimelineRow = TimelineRow, B extends Timeline
     diagnostics: import("vue").ComputedRef<import("../index.js").TimelineViewDiagnostic[]>;
     setSearch: (text: string, columnIds?: string[]) => void;
     setSort: (sort: readonly TimelineViewSort[]) => void;
+    setFilters: (filters: readonly TimelineViewFilter[]) => void;
     setColumnVisible: (id: string, visible: boolean) => void;
     setColumnWidth: (id: string, width: number) => void;
     moveColumn: (id: string, index: number) => void;
@@ -9697,6 +9858,12 @@ function validateFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): Fi
 
 ```ts
 function validateGraphLayoutResponse(request: GraphLayoutRequest, response: GraphLayoutResponse): GraphLayout;
+```
+
+### `validateInspectorList`
+
+```ts
+function validateInspectorList(field: InspectorListField<any>, rows: readonly InspectorAssignment[] | readonly InspectorDependency[]): FieldCheck;
 ```
 
 ### `validateTimelineData`
@@ -9750,6 +9917,18 @@ type GanttChartSfc<R extends TimelineRow, B extends TimelineBar> = typeof GanttC
 
 ```ts
 type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>;
+```
+
+### Internal `InspectorListFieldBase (dist/types/core/diagramEditor.d.ts)`
+
+```ts
+interface InspectorListFieldBase {
+    id: string;
+    label: string;
+    options: readonly InspectorOption[];
+    readonly?: boolean;
+    description?: string;
+}
 ```
 
 ### Internal `NetworkGraphSfc (dist/types/index.d.ts)`
