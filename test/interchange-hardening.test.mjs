@@ -88,6 +88,17 @@ test('the graph writers check group hierarchies listed children first in linear 
   }
 })
 
+test('fromMermaid skips an accDescr block up to the first } after it', () => {
+  // A } earlier on the line sent the reader back before the block, which it then skipped again without end.
+  const repeated = fromMermaid('flowchart LR\naccDescr {\none\n}; accDescr {\ntwo\n}\na --> b')
+  assert.deepEqual(repeated.edges.map(edge => [edge.from, edge.to]), [['a', 'b']])
+  assert.deepEqual(repeated.warnings.map(warning => [warning.code, warning.line]), [['unsupported-statement', 2], ['unsupported-statement', 4]])
+  const quoted = fromMermaid('flowchart LR\na["x}y"]; accDescr { about } ; a --> b')
+  assert.equal(quoted.nodes[0].label, 'x}y')
+  assert.equal(quoted.edges.length, 1)
+  assert.throws(() => fromMermaid('flowchart LR\na["}"]; accDescr {\nno end'), { message: 'Invalid Mermaid flowchart at line 2, column 9: unterminated accDescr { … }' })
+})
+
 test('the graph writers indent the first 32 nesting levels and no deeper', () => {
   const graph = nestedGroups(40)
   const indents = (text, pattern) => text.split('\n').filter(line => pattern.test(line)).map(line => line.length - line.trimStart().length)

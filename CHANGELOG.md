@@ -45,6 +45,7 @@
 - PropertyInspector list fields: `validateInspectorList` requires positive safe integer units (and `defaultUnits` and `maxUnits` must be positive integers), as `ResourceAssignment` does, and safe integer lags, as schedule links do; a lag typed in display units (`lagUnitSize`) is rounded to whole model units. Messages and `aria-invalid` now belong to the box or select that caused them (the type select included), so Escape or typing in one box no longer clears another box's rejection.
 - `useEditTransaction`: `submit`, `undo` and `redo` no longer throw when the adapter's `validate` or `apply` or `createOperationId` throws; they resolve to `invalid` with the error message and save nothing.
 - `toGraphMl` and `toMermaid` indent nested groups at most 32 levels deep, so their output grows linearly with the nesting depth instead of quadratically: `toGraphMl` threw "Invalid string length" for 20,000 nested groups. Output for 32 or fewer levels is unchanged.
+- `fromMermaid` skips an `accDescr { … }` block up to the first `}` after it. A `}` earlier on the same line (such as `}; accDescr {` or a quoted label) sent the reader back before the block, so it looped without end, adding warnings until memory ran out, or failed with a misleading syntax error.
 
 These fix the unreleased recurring events:
 

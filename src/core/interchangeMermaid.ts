@@ -419,15 +419,15 @@ class FlowchartReader {
     this.open.push(id)
   }
 
-  /** Skip an `accDescr { … }` block, which may span lines. */
+  /** Skip an `accDescr { … }` block, which may span lines, up to the first `}` after the cursor. */
   private skipDescriptionBlock() {
     const start = this.lineIndex
-    let index = start
-    while (index < this.lines.length && !this.lines[index]!.includes('}')) index++
-    if (index >= this.lines.length) this.fail('unterminated accDescr { … }')
+    let index = start, close = this.source.indexOf('}', this.pos)
+    while (close < 0 && ++index < this.lines.length) close = this.lines[index]!.indexOf('}')
+    if (close < 0) this.fail('unterminated accDescr { … }')
     this.warn('unsupported-statement', 'The accessible description was ignored', undefined, start + 1)
     this.startLine(index)
-    this.pos = this.source.indexOf('}') + 1
+    this.pos = close + 1
   }
 
   /** The text up to the next `;` outside double quotes, or to the end of the line; the cursor stops at that `;`. */
