@@ -34,7 +34,7 @@ const expanded = ref(['bike'])
 </template>
 ```
 
-**例:** [ツリーグリッド](/ja/examples/tree-grid/)、[部品表](/ja/showcase/bom/)。**ガイド:** [ツリーグリッド、マトリクス、部品表](../guides/data.md#tree-grids-matrices-and-bills-of-materials)。**型:** [`TreeGridRow`](/api/reference/core/interfaces/TreeGridRow.md)、[`TreeGridColumn`](/api/reference/core/interfaces/TreeGridColumn.md)、[`TreeGridExposed`](/api/reference/vue-weave/type-aliases/TreeGridExposed.md)。
+**例:** [ツリーグリッド](/ja/examples/tree-grid/)、[部品表](/ja/showcase/bom/)。**ガイド:** [ツリーグリッド、マトリクス、部品表](../guides/data.md#tree-grids-matrices-and-bills-of-materials)。**型:** [`TreeGridRow`](/ja/api/reference/core/interfaces/TreeGridRow.md)、[`TreeGridColumn`](/ja/api/reference/core/interfaces/TreeGridColumn.md)、[`TreeGridExposed`](/ja/api/reference/vue-weave/type-aliases/TreeGridExposed.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

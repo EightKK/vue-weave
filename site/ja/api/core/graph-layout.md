@@ -23,7 +23,7 @@ const radial: GraphLayoutFunction = (shownNodes, shownEdges) => layoutRadialGrap
 // <NetworkGraph :nodes="nodes" :edges="edges" :layout="radial" />
 ```
 
-**例:** [連動ビュー](/ja/examples/linked-views/)、[例の一覧](/ja/examples/)。**ガイド:** [グラフの組み込み](../guides/graph.md)([ELK.js](../guides/graph.md#use-elk-js-for-layout) を含む)。**型:** [`GraphLayout`](/api/reference/core/interfaces/GraphLayout.md)、[`layoutLayeredGraph`](/api/reference/core/functions/layoutLayeredGraph.md)、[`routeGraphEdges`](/api/reference/core/functions/routeGraphEdges.md)。コアのすべてのエクスポートの一覧表は[コアのエントリーポイント](./index.md#core-entry-point)にあります。
+**例:** [連動ビュー](/ja/examples/linked-views/)、[例の一覧](/ja/examples/)。**ガイド:** [グラフの組み込み](../guides/graph.md)([ELK.js](../guides/graph.md#use-elk-js-for-layout) を含む)。**型:** [`GraphLayout`](/ja/api/reference/core/interfaces/GraphLayout.md)、[`layoutLayeredGraph`](/ja/api/reference/core/functions/layoutLayeredGraph.md)、[`routeGraphEdges`](/ja/api/reference/core/functions/routeGraphEdges.md)。コアのすべてのエクスポートの一覧表は[コアのエントリーポイント](./index.md#core-entry-point)にあります。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

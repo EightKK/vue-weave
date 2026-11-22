@@ -26,7 +26,7 @@ const order = topologicalOrder(nodes, edges)
 // <NetworkGraph :highlighted-node-ids="new Set(downstream.nodeIds)" ... />
 ```
 
-**例:** [部品表](/ja/showcase/bom/)、[連動ビュー](/ja/examples/linked-views/)。**型:** [`traverseGraph`](/api/reference/core/functions/traverseGraph.md)、[`GraphTraversalResult`](/api/reference/core/interfaces/GraphTraversalResult.md)、[`topologicalOrder`](/api/reference/core/functions/topologicalOrder.md)。
+**例:** [部品表](/ja/showcase/bom/)、[連動ビュー](/ja/examples/linked-views/)。**型:** [`traverseGraph`](/ja/api/reference/core/functions/traverseGraph.md)、[`GraphTraversalResult`](/ja/api/reference/core/interfaces/GraphTraversalResult.md)、[`topologicalOrder`](/ja/api/reference/core/functions/topologicalOrder.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

@@ -16,7 +16,7 @@ import '@eightkk/vue-weave/style.css'
 import { scheduleTasks, layoutLayeredGraph, toMsProjectXml } from '@eightkk/vue-weave/core'
 ```
 
-各ページには、リポジトリの `docs/` フォルダーにある手書きのリファレンス(npm パッケージにも含まれます)を表示しています。[型リファレンス](/api/reference/)は TypeScript の宣言から生成したもので、エクスポートされたすべての関数、インターフェース、型を載せています(英語)。
+各ページには、リポジトリの `docs/` フォルダーにある手書きのリファレンス(npm パッケージにも含まれます)を表示しています。[型リファレンス](/ja/api/reference/)は TypeScript の宣言から生成したもので、エクスポートされたすべての関数、インターフェース、型を載せています(英語)。
 
 ## API の全体像
 

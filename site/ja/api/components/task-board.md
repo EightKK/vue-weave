@@ -37,7 +37,7 @@ function move(change: TaskBoardCardMove) {
 </template>
 ```
 
-**例:** [タスクボード](/ja/examples/task-board/)、[例の一覧](/ja/examples/)。**型:** [`TaskBoardCard`](/api/reference/core/interfaces/TaskBoardCard.md)、[`TaskBoardColumn`](/api/reference/core/interfaces/TaskBoardColumn.md)、[`TaskBoardCardMove`](/api/reference/core/interfaces/TaskBoardCardMove.md)、[`TaskBoardExposed`](/api/reference/vue-weave/type-aliases/TaskBoardExposed.md)。
+**例:** [タスクボード](/ja/examples/task-board/)、[例の一覧](/ja/examples/)。**型:** [`TaskBoardCard`](/ja/api/reference/core/interfaces/TaskBoardCard.md)、[`TaskBoardColumn`](/ja/api/reference/core/interfaces/TaskBoardColumn.md)、[`TaskBoardCardMove`](/ja/api/reference/core/interfaces/TaskBoardCardMove.md)、[`TaskBoardExposed`](/ja/api/reference/vue-weave/type-aliases/TaskBoardExposed.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

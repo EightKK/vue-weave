@@ -34,7 +34,7 @@ const bars: TimelineBar[] = plan.ok
   : []
 ```
 
-**例:** [スケジューリング](/ja/examples/scheduling/)、[建設工程](/ja/showcase/construction/)。**ガイド:** [スケジューリング](../guides/scheduling.md)、[リソースと計画の分析](../guides/resources.md)。**型:** [`scheduleTasks`](/api/reference/core/functions/scheduleTasks.md)、[`ScheduleInput`](/api/reference/core/interfaces/ScheduleInput.md)、[`levelResources`](/api/reference/core/functions/levelResources.md)、[`computeEarnedValue`](/api/reference/core/functions/computeEarnedValue.md)。
+**例:** [スケジューリング](/ja/examples/scheduling/)、[建設工程](/ja/showcase/construction/)。**ガイド:** [スケジューリング](../guides/scheduling.md)、[リソースと計画の分析](../guides/resources.md)。**型:** [`scheduleTasks`](/ja/api/reference/core/functions/scheduleTasks.md)、[`ScheduleInput`](/ja/api/reference/core/interfaces/ScheduleInput.md)、[`levelResources`](/ja/api/reference/core/functions/levelResources.md)、[`computeEarnedValue`](/ja/api/reference/core/functions/computeEarnedValue.md)。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

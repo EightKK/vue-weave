@@ -48,10 +48,10 @@ test('the Japanese API page shows the Japanese overview and then the English det
   await expect(page.locator('.vp-doc .info')).toContainText('詳細なリファレンスは英語です')
   await expect(page.getByRole('columnheader', { name: 'Prop' }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'expandedIds', exact: true })).toBeVisible()
-  // The Japanese sidebar has Japanese group names and links to the generated (English) type reference.
+  // The Japanese sidebar has Japanese group names and links to the Japanese copy of the generated (English) type reference.
   const sidebar = page.locator('.VPSidebar')
   await expect(sidebar.getByText('コンポーネント', { exact: true })).toBeVisible()
-  await expect(sidebar.getByRole('link', { name: '@eightkk/vue-weave/core', exact: true })).toHaveAttribute('href', '/vue-weave/api/reference/core/')
+  await expect(sidebar.getByRole('link', { name: '@eightkk/vue-weave/core', exact: true })).toHaveAttribute('href', '/vue-weave/ja/api/reference/core/')
   expect(errors).toEqual([])
 })
 
@@ -90,6 +90,26 @@ test('the generated type reference has a page for traverseGraph', async ({ page 
   await page.locator('.vp-doc').getByRole('link', { name: 'GraphTraversalResult' }).first().click()
   await expect(page).toHaveURL(/\/api\/reference\/core\/interfaces\/GraphTraversalResult\.html$/)
   await expect(page.getByRole('heading', { level: 1, name: /GraphTraversalResult/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the language switch of a type reference page shows the English reference with the Japanese navigation', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('api/reference/core/functions/traverseGraph.html')
+  await page.getByRole('button', { name: 'Change language' }).click()
+  await page.getByRole('link', { name: '日本語', exact: true }).click()
+  await expect(page).toHaveURL(/\/vue-weave\/ja\/api\/reference\/core\/functions\/traverseGraph\.html$/)
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
+  await expect(page.getByRole('heading', { level: 1, name: /traverseGraph/ })).toBeVisible()
+  await expect(page.locator('.vp-doc')).toContainText('Finds the nodes and edges reached from')
+  await expect(page.locator('.VPSidebar').getByText('型リファレンス(英語)', { exact: true })).toBeVisible()
+  // Links between reference pages stay in the Japanese copy, and the switch leads back to the English page.
+  await page.locator('.vp-doc').getByRole('link', { name: 'GraphTraversalResult' }).first().click()
+  await expect(page).toHaveURL(/\/vue-weave\/ja\/api\/reference\/core\/interfaces\/GraphTraversalResult\.html$/)
+  await page.getByRole('button', { name: '言語を切り替え' }).click()
+  await page.getByRole('link', { name: 'English', exact: true }).click()
+  await expect(page).toHaveURL(/\/vue-weave\/api\/reference\/core\/interfaces\/GraphTraversalResult\.html$/)
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   expect(errors).toEqual([])
 })
 

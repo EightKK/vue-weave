@@ -35,7 +35,7 @@ function commit(change: TimelineEdit) {
 </template>
 ```
 
-**例:** [スケジューリング](/ja/examples/scheduling/)、[連動ビュー](/ja/examples/linked-views/)、[建設工程](/ja/showcase/construction/)、[例の一覧](/ja/examples/)。**ガイド:** [スケジューリング](../guides/scheduling.md)、[データ、保存、連動ビュー](../guides/data.md)。**型:** [`TimelineRow`](/api/reference/core/interfaces/TimelineRow.md)、[`TimelineBar`](/api/reference/core/interfaces/TimelineBar.md)、[`TimelineEdit`](/api/reference/core/interfaces/TimelineEdit.md)、[`GanttChartExposed`](/api/reference/vue-weave/type-aliases/GanttChartExposed.md)。時間軸と編集の補助関数は[タイムラインと時間軸](../core/timeline.md)にあります。
+**例:** [スケジューリング](/ja/examples/scheduling/)、[連動ビュー](/ja/examples/linked-views/)、[建設工程](/ja/showcase/construction/)、[例の一覧](/ja/examples/)。**ガイド:** [スケジューリング](../guides/scheduling.md)、[データ、保存、連動ビュー](../guides/data.md)。**型:** [`TimelineRow`](/ja/api/reference/core/interfaces/TimelineRow.md)、[`TimelineBar`](/ja/api/reference/core/interfaces/TimelineBar.md)、[`TimelineEdit`](/ja/api/reference/core/interfaces/TimelineEdit.md)、[`GanttChartExposed`](/ja/api/reference/vue-weave/type-aliases/GanttChartExposed.md)。時間軸と編集の補助関数は[タイムラインと時間軸](../core/timeline.md)にあります。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。
