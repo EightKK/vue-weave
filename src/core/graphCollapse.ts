@@ -1,6 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import type { NetworkGroup, NetworkNode } from './types.js'
-import { checkGraphGroups, emptyGroupError, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
+import { checkGraphGroups, checkGroupHierarchy, emptyGroupError } from './graphGroupChecks.js'
 import { unknownReferenceError } from './ids.js'
 
 /** A collapsed group as `collapseGraphGroups` reports it. */
@@ -80,30 +80,7 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
 ): GraphCollapseResult<N, E> {
   const nodeIds = new Set(nodes.map(node => node.id))
   const { byId, memberOf } = checkGraphGroups(groups, id => nodeIds.has(id))
-  // Check every parent chain once: a chain stops at a root or at a group already known to reach one, so the whole
-  // hierarchy is checked in linear time. The first group in input order whose chain fails is reported.
-  const reachesRoot = new Set<string>()
-  const children = new Map<string, NetworkGroup[]>()
-  for (const group of groups) {
-    const chain: NetworkGroup[] = []
-    const onChain = new Set<string>()
-    let current: NetworkGroup = group
-    while (!reachesRoot.has(current.id)) {
-      if (onChain.has(current.id)) throw groupCycleError(group.id)
-      onChain.add(current.id)
-      chain.push(current)
-      if (current.parentId === undefined) break
-      const parent = byId.get(current.parentId)
-      if (!parent) throw unknownParentGroupError(current)
-      current = parent
-    }
-    for (const item of chain) reachesRoot.add(item.id)
-    if (group.parentId !== undefined) {
-      const siblings = children.get(group.parentId)
-      if (siblings) siblings.push(group)
-      else children.set(group.parentId, [group])
-    }
-  }
+  const children = checkGroupHierarchy(groups, byId)
   const collapsed = new Set<string>()
   for (const id of collapsedIds) {
     if (!byId.has(id)) throw unknownReferenceError('group', 'collapsedIds', id)

@@ -25,6 +25,38 @@ export function checkGraphGroups(groups: readonly NetworkGroup[], hasNode: (id: 
   return { byId, memberOf }
 }
 
+/**
+ * Checks the parent chain of every group, `byId` being the groups by ID from `checkGraphGroups`: `Unknown parent group
+ * in graph group <group>: <parentId>` and `Graph group hierarchy contains a cycle at group: <group>`, for the first group
+ * in input order whose chain fails. A chain stops at a root or at a group already known to reach one, so the whole
+ * hierarchy is checked in linear time, without recursion. Returns the child groups of each parent, in input order.
+ */
+export function checkGroupHierarchy(groups: readonly NetworkGroup[], byId: ReadonlyMap<string, NetworkGroup>) {
+  const reachesRoot = new Set<string>()
+  const children = new Map<string, NetworkGroup[]>()
+  for (const group of groups) {
+    const chain: NetworkGroup[] = []
+    const onChain = new Set<string>()
+    let current: NetworkGroup = group
+    while (!reachesRoot.has(current.id)) {
+      if (onChain.has(current.id)) throw groupCycleError(group.id)
+      onChain.add(current.id)
+      chain.push(current)
+      if (current.parentId === undefined) break
+      const parent = byId.get(current.parentId)
+      if (!parent) throw unknownParentGroupError(current)
+      current = parent
+    }
+    for (const item of chain) reachesRoot.add(item.id)
+    if (group.parentId !== undefined) {
+      const siblings = children.get(group.parentId)
+      if (siblings) siblings.push(group)
+      else children.set(group.parentId, [group])
+    }
+  }
+  return children
+}
+
 /** `Unknown parent group in graph group <group>: <parentId>`. */
 export function unknownParentGroupError(group: NetworkGroup): Error {
   return unknownReferenceError('parent group', 'graph group ' + group.id, group.parentId)
