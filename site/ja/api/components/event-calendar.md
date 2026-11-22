@@ -32,7 +32,7 @@ function apply(change: EventCalendarEdit) {
 </template>
 ```
 
-**例:** カレンダーのデモは[例の一覧](/ja/examples/)にあります。**型:** [`CalendarEvent`](/api/reference/core/interfaces/CalendarEvent.md)、[`EventCalendarEdit`](/api/reference/core/interfaces/EventCalendarEdit.md)、[`EventCalendarExposed`](/api/reference/vue-weave/type-aliases/EventCalendarExposed.md)。iCalendar の読み込みと書き出しは[インターチェンジとエクスポート](../core/interchange.md)にあります。
+**例:** [イベントカレンダー](/ja/examples/event-calendar/)、[例の一覧](/ja/examples/)。**型:** [`CalendarEvent`](/api/reference/core/interfaces/CalendarEvent.md)、[`EventCalendarEdit`](/api/reference/core/interfaces/EventCalendarEdit.md)、[`EventCalendarExposed`](/api/reference/vue-weave/type-aliases/EventCalendarExposed.md)。iCalendar の読み込みと書き出しは[インターチェンジとエクスポート](../core/interchange.md)にあります。
 
 ::: info 英語の詳細
 ここから下の詳細なリファレンスは英語です。

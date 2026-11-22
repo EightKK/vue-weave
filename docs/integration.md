@@ -1166,7 +1166,7 @@ The parent derives the bars from its rows, so the chart follows every applied ch
 
 ## Diagram editor parts
 
-`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change` (or a `list-change` for its `assignments` and `dependencies` tables, see [Inspector list fields](api.md#inspector-list-fields)), and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
+`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change` (or a `list-change` for its `assignments` and `dependencies` tables, see [Inspector list fields](api.md#inspector-list-fields)), and the application commits each as one history entry. The "Diagram editor" example of the documentation site puts them together.
 
 ```vue
 <script setup lang="ts">

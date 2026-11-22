@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The showcase index: a featured row of the registry's showcases marked `featured`, then a gallery of the others, and
-// links to the standalone production planning app and the legacy example gallery, which are separate applications
-// built from examples/ (see vite.demo.config.ts).
+// a link to the standalone production planning app, a separate application built from examples/ (see
+// vite.demo.config.ts).
 import { withBase } from 'vitepress'
 import { examplesOfKind } from '../../../examples/registry'
 import { useSiteLocale } from '../i18n'
@@ -31,7 +31,6 @@ const more = showcases.filter(entry => !entry.featured)
     </section>
     <div class="vw-site-showcase-notes">
       <p>{{ t.productionDemoText }} <a :href="withBase('/demo/')" target="_self">{{ t.productionDemo }} →</a></p>
-      <p>{{ t.legacyGalleryText }} <a :href="withBase('/gallery.html')" target="_self">{{ t.legacyGallery }} →</a></p>
     </div>
   </div>
 </template>

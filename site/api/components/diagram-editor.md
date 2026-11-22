@@ -49,6 +49,6 @@ function rename(change: InspectorChange) {
 </template>
 ```
 
-**Examples:** the legacy gallery's "Diagram editor" demo (see the [example index](/examples/)). **Guide:** [Diagram editor parts](../guides/graph.md#diagram-editor-parts). **Types:** [`GraphPaletteItem`](../reference/core/interfaces/GraphPaletteItem.md), [`InspectorField`](../reference/core/interfaces/InspectorField.md), [`GraphPaletteExposed`](../reference/vue-weave/type-aliases/GraphPaletteExposed.md), [`PropertyInspectorExposed`](../reference/vue-weave/type-aliases/PropertyInspectorExposed.md).
+**Examples:** [Diagram editor](/examples/diagram-editor/). **Guide:** [Diagram editor parts](../guides/graph.md#diagram-editor-parts). **Types:** [`GraphPaletteItem`](../reference/core/interfaces/GraphPaletteItem.md), [`InspectorField`](../reference/core/interfaces/InspectorField.md), [`GraphPaletteExposed`](../reference/vue-weave/type-aliases/GraphPaletteExposed.md), [`PropertyInspectorExposed`](../reference/vue-weave/type-aliases/PropertyInspectorExposed.md).
 
 <!--@include: ../../../docs/api.md#diagram-editor-->

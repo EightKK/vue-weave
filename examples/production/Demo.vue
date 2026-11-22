@@ -29,7 +29,7 @@ function toggleTheme() {
             :aria-current="view === item ? 'page' : undefined" @click="view = item">{{ text[item] }}</button>
         </nav>
         <div class="production-header-actions">
-          <a href="../gallery.html">{{ text.gallery }}</a>
+          <a :href="language === 'ja' ? '../ja/examples/' : '../examples/'">{{ text.gallery }}</a>
           <a href="https://github.com/EightKK/vue-weave">GitHub ↗</a>
           <div class="production-switch" role="group" :aria-label="text.language">
             <button type="button" lang="ja" :aria-pressed="language === 'ja'" @click="language = 'ja'">日本語</button>

@@ -53,7 +53,10 @@ export interface ExampleEntry {
   sources: string[]
   /** Related API reference entries. */
   api: ApiLink[]
-  /** The ID of the same demo in the legacy example gallery (gallery.html), while that gallery still exists. */
+  /**
+   * The ID of the same demo in the retired example gallery. gallery.html forwards `?demo=<legacyId>` and `#<legacyId>`
+   * to this entry's page, so old links keep working.
+   */
   legacyId?: string
   /** Showcases: one line for the card in the showcase index. The card shows the description when it is missing. */
   summary?: Localized

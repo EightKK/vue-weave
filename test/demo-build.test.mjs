@@ -17,7 +17,7 @@ const lockfile = packages => JSON.stringify({ lockfileVersion: 3, packages: { ''
 
 async function sources() {
   await put('src/index.ts', 'export const a = 1\n')
-  await put('examples/main.ts', "import '../src'\n")
+  await put('examples/demo/main.ts', "import '../../src'\n")
   await put('package.json', '{"name":"demo","version":"1.0.0"}\n')
   await put('package-lock.json', lockfile({ 'node_modules/vite': { version: '8.0.0' } }))
 }
@@ -77,7 +77,7 @@ describe('demo build stamp', () => {
     assert.equal(await demoBuildState(root), 'stale', 'a build without a stamp is treated as stale')
     await writeDemoStamp(root, await hashDemoInputs(root))
     assert.equal(await demoBuildState(root), 'current')
-    await put('examples/main.ts', "import '../src/index.ts'\n")
+    await put('examples/demo/main.ts', "import '../../src/index.ts'\n")
     assert.equal(await demoBuildState(root), 'stale')
     await put('preview/demo-build.json', '{ not json')
     assert.equal(await demoBuildState(root), 'stale')

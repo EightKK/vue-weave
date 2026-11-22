@@ -1,10 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { hashDemoInputs, writeDemoStamp } from './scripts/demo-build.mjs'
 
-const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 const projectRoot = fileURLToPath(new URL('./', import.meta.url))
 
 // Records the sources a successful build came from, so Start.cmd rebuilds only when preview/ is stale.
@@ -26,11 +24,10 @@ export default defineConfig({
   root: 'examples',
   base: './',
   plugins: [vue(), demoBuildStamp()],
-  // The demo header shows the package's major.minor version without hard-coding it.
-  define: { __VUE_WEAVE_VERSION__: JSON.stringify(version) },
   build: {
     // `npm run build:demo` builds the documentation site (site/, VitePress) into preview/ first; these pages are added
-    // next to it: the production planning demo at demo/ and the legacy example gallery at gallery.html.
+    // next to it: the production planning demo at demo/ and gallery.html, the old address of the example gallery, which
+    // forwards to the site's example and showcase pages.
     outDir: '../preview',
     emptyOutDir: false,
     rolldownOptions: {

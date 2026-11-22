@@ -52,12 +52,6 @@ export async function openExample(page: Page, id: string, { kind = 'example', lo
   return page.locator('.vw-site-demo')
 }
 
-/** Opens the legacy example gallery (gallery.html) and switches to one of its examples by its navigation button. */
-export async function openDemo(page: Page, name: string) {
-  await page.goto('gallery.html')
-  await page.getByRole('button', { name, exact: true }).click()
-}
-
 /**
  * Serves a regression fixture page from ./fixtures under /<prefix>/, with the built public entries from dist/ and Vue,
  * without adding diagnostic pages to the distributed demo.

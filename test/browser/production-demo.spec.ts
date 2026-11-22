@@ -63,8 +63,8 @@ test('lot flow keeps the same network as the displayed unit and language change'
   await page.getByRole('button', { name: 'View code' }).click()
   await expect(page.locator('pre')).toContainText('layoutFlowGraph')
   await page.getByRole('link', { name: 'Examples' }).click()
-  await expect(page).toHaveURL(/gallery\.html$/)
-  await expect(page.getByRole('button', { name: 'Quantity flow', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/vue-weave\/examples\/$/)
+  await expect(page.getByRole('link', { name: /Quantity flow/ }).first()).toBeVisible()
   expect(errors).toEqual([])
 })
 

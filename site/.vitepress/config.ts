@@ -167,7 +167,8 @@ export default defineConfig({
     },
   },
   cleanUrls: false,
-  // The production demo and the legacy gallery are separate pages built by vite.demo.config.ts.
+  // The production demo and gallery.html (the old gallery address, which forwards to the example pages) are separate
+  // pages built by vite.demo.config.ts.
   ignoreDeadLinks: [/^\/(?:ja\/)?(?:demo\/|gallery\.html)/],
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: base + 'favicon.svg' }],
@@ -235,8 +236,6 @@ export default defineConfig({
   },
   vite: {
     plugins: [siteFavicon(), apiLinksPlugin(apiLinks)],
-    // Demos read the package version, as in vite.demo.config.ts.
-    define: { __VUE_WEAVE_VERSION__: JSON.stringify(version) },
     server: { host: '127.0.0.1', port: 5173, fs: { allow: [fileURLToPath(new URL('../../', import.meta.url))] } },
   },
 })
