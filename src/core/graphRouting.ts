@@ -3,6 +3,7 @@ import {
   type IdentifiedNode,
 } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
+import { readPathSegments } from './graphPathData.js'
 import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 import { checkLayoutNumber } from './graphOptions.js'
 import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
@@ -515,25 +516,10 @@ function validateRouteOptions(options: GraphEdgeRouteOptions) {
   return { style, direction, cornerRadius, policy, spacing: parallelSpacing, avoid: resolveObstacleAvoidance(avoidNodes) }
 }
 
-// The points of an absolute path of M, H and V commands, such as a long-edge bypass lane.
+// The points of an absolute path of M, H and V commands, such as a long-edge bypass lane. The path must be valid.
 function axisPathPoints(path: string): GraphPoint[] {
-  const tokens = path.match(/[MHV]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) ?? []
   const points: GraphPoint[] = []
-  let command = '', x = 0, y = 0
-  for (let i = 0; i < tokens.length;) {
-    const token = tokens[i]!
-    if (token === 'M' || token === 'H' || token === 'V') {
-      command = token
-      i++
-      continue
-    }
-    if (command === 'M') {
-      x = Number(tokens[i++])
-      y = Number(tokens[i++])
-    } else if (command === 'H') x = Number(tokens[i++])
-    else y = Number(tokens[i++])
-    points.push({ x, y })
-  }
+  readPathSegments(path, 'strict', ({ x, y }) => points.push({ x, y }))
   return points
 }
 
