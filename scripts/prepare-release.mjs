@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { demoBuildState } from './demo-build.mjs'
+import { demoBuildState, generatedPaths } from './demo-build.mjs'
 import { runReleaseTransaction } from './release-candidate.mjs'
 
 // Prepare verified local candidates only. Publishing and repository administration remain separate actions.
@@ -20,7 +20,7 @@ const failAt = process.env.VW_RELEASE_FAIL_AT || undefined
 const sourcePaths = [
   '.editorconfig', '.github', '.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
   'LICENSE', 'README.md', 'README.ja.md', 'Start.cmd', 'THIRD_PARTY_NOTICES.md',
-  'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
+  'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', 'tsconfig.typedoc.json', 'typedoc.json',
   'vite.config.ts', 'vite.demo.config.ts', 'playwright.config.ts',
   'api', 'docs', 'examples', 'scripts', 'site', 'src', 'test',
 ]
@@ -36,6 +36,8 @@ function npm(args, capture = false, env = process.env) {
 async function inventory(directory, paths) {
   const files = []
   async function visit(path) {
+    // The generated type reference is rebuilt by the demo build, like preview/; it is not a source.
+    if (generatedPaths.has(path)) return
     // Keep tar's line-based file list unambiguous and reject links outside the reviewed source.
     assert.ok(!/[\r\n\\]/.test(path) && !path.startsWith('-'), 'Invalid archive path: ' + path)
     assert.ok(!/(^|\/)(?:\.env(?:\..*)?|\.npmrc|\.aws|\.codex|\.agents|node_modules)(\/|$)|\.(?:pem|key|p12|pfx|tgz|log)$/i.test(path), 'Private or generated archive entry: ' + path)
