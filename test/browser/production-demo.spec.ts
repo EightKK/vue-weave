@@ -1,4 +1,4 @@
-import { expect, test, dragBy, pageErrors } from './support'
+import { expect, test, dragBy, openExample, pageErrors } from './support'
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
@@ -163,4 +163,22 @@ test.describe('with a Japanese browser locale', () => {
     await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
     expect(errors).toEqual([])
   })
+})
+
+test('the production showcase page embeds the demo and follows the page language', async ({ page }) => {
+  const errors = pageErrors(page)
+  const english = await openExample(page, 'production', { kind: 'showcase' })
+  await expect(english.getByRole('heading', { name: 'Production planning', exact: true })).toBeVisible()
+  await expect(english.getByRole('region', { name: 'Gantt chart' }).getByRole('button', { name: 'Cut B 10:00–12:00' })).toBeVisible()
+
+  const demo = await openExample(page, 'production', { kind: 'showcase', locale: 'ja' })
+  await expect(demo.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: /切断Aを予備機へ/ }).click()
+  await expect(demo.getByRole('row', { name: /出荷できる時刻/ })).toContainText('19:00')
+  // The plan's chart takes the Japanese copy and the built-in Japanese labels of the components.
+  await expect(demo.getByRole('region', { name: 'ガントチャート' }).getByRole('button', { name: '切断B 13:00–15:00' })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '全体表示', exact: true }).first()).toBeVisible()
+  await demo.getByRole('navigation', { name: 'デモ' }).getByRole('button', { name: 'ロットの流れ', exact: true }).click()
+  await expect(demo.getByRole('heading', { name: 'ロットの流れ', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
 })

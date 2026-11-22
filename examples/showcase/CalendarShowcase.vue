@@ -5,6 +5,9 @@ import {
   type TimelineMarkerRange, type TimelineRow,
 } from '../../src'
 import { day } from '../data'
+import { useDemoLocale } from '../i18n'
+
+const { t, labels, isJapanese } = useDemoLocale()
 
 // Ready-made calendar zoom levels (`calendarZoomPresets`) in an IANA time zone and a chosen locale, with highlighted
 // time ranges (`markerRanges`): a company-wide code freeze and holidays that close one office only.
@@ -24,25 +27,26 @@ const levelLabels: Record<string, Partial<Record<CalendarZoomLevel, string>>> = 
 }
 
 const rows: TimelineRow[] = [
-  { id: 'berlin', label: 'Platform', detail: 'Berlin' },
-  { id: 'tokyo', label: 'Mobile', detail: 'Tokyo' },
-  { id: 'lisbon', label: 'Web', detail: 'Lisbon' },
+  { id: 'berlin', label: t({ en: 'Platform', ja: 'プラットフォーム' }), detail: t({ en: 'Berlin', ja: 'ベルリン' }) },
+  { id: 'tokyo', label: t({ en: 'Mobile', ja: 'モバイル' }), detail: t({ en: 'Tokyo', ja: '東京' }) },
+  { id: 'lisbon', label: t({ en: 'Web', ja: 'Web' }), detail: t({ en: 'Lisbon', ja: 'リスボン' }) },
 ]
 const bars = ref<TimelineBar[]>([
   { id: 'api', rowId: 'berlin', label: 'API v2', start: on(4, 13), end: on(5, 15), tone: 'blue', editable: true },
-  { id: 'release', rowId: 'berlin', label: 'Release 2.0', start: on(6, 1), end: on(6, 1), tone: 'blue' },
-  { id: 'offline', rowId: 'tokyo', label: 'Offline mode', start: on(4, 20), end: on(6, 12), tone: 'teal', editable: true },
-  { id: 'redesign', rowId: 'lisbon', label: 'Redesign', start: on(5, 4), end: on(6, 26), tone: 'violet', editable: true },
-  { id: 'launch', rowId: 'lisbon', label: 'Summer launch', start: on(7, 6), end: on(7, 31), tone: 'violet', editable: true },
+  { id: 'release', rowId: 'berlin', label: t({ en: 'Release 2.0', ja: 'リリース 2.0' }), start: on(6, 1), end: on(6, 1), tone: 'blue' },
+  { id: 'offline', rowId: 'tokyo', label: t({ en: 'Offline mode', ja: 'オフラインモード' }), start: on(4, 20), end: on(6, 12), tone: 'teal', editable: true },
+  { id: 'redesign', rowId: 'lisbon', label: t({ en: 'Redesign', ja: 'リデザイン' }), start: on(5, 4), end: on(6, 26), tone: 'violet', editable: true },
+  { id: 'launch', rowId: 'lisbon', label: t({ en: 'Summer launch', ja: '夏のローンチ' }), start: on(7, 6), end: on(7, 31), tone: 'violet', editable: true },
 ])
 const markerRanges: TimelineMarkerRange[] = [
-  { id: 'golden-week', start: on(4, 29), end: on(5, 7), label: 'Golden Week', tone: 'teal', rowIds: ['tokyo'] },
-  { id: 'labour-day', start: on(5, 1), end: on(5, 2), label: 'Office closed', tone: 'violet', rowIds: ['berlin', 'lisbon'] },
-  { id: 'freeze', start: on(5, 18), end: on(6, 1), label: 'Code freeze' },
-  { id: 'shutdown', start: on(8, 10), end: on(8, 24), label: 'Summer shutdown', tone: 'blue' },
+  { id: 'golden-week', start: on(4, 29), end: on(5, 7), label: t({ en: 'Golden Week', ja: 'ゴールデンウィーク' }), tone: 'teal', rowIds: ['tokyo'] },
+  { id: 'labour-day', start: on(5, 1), end: on(5, 2), label: t({ en: 'Office closed', ja: '拠点休業' }), tone: 'violet', rowIds: ['berlin', 'lisbon'] },
+  { id: 'freeze', start: on(5, 18), end: on(6, 1), label: t({ en: 'Code freeze', ja: 'コードフリーズ' }) },
+  { id: 'shutdown', start: on(8, 10), end: on(8, 24), label: t({ en: 'Summer shutdown', ja: '夏季休業' }), tone: 'blue' },
 ]
 
-const locale = ref<string>('en-GB')
+// A Japanese page starts in Japanese; the select still offers every locale.
+const locale = ref<string>(isJapanese.value ? 'ja-JP' : 'en-GB')
 const level = ref<string>('weeks')
 const presets = computed(() => calendarZoomPresets(range, {
   locale: locale.value, timeZone, levels: ['days', 'weeks', 'months', 'quarters'], labels: levelLabels[locale.value],
@@ -50,7 +54,10 @@ const presets = computed(() => calendarZoomPresets(range, {
 const active = computed(() => presets.value.find(preset => preset.id === level.value) ?? presets.value[1]!)
 // A long date for the status line, from the same cached Intl formatters.
 const longDate = computed(() => intlTimeFormatter({ locale: locale.value, timeZone, format: { dateStyle: 'full' } }))
-const status = ref('Pick a zoom level or a language. Arrow keys move a focused bar by one snap step.')
+const status = ref(t({
+  en: 'Pick a zoom level or a language. Arrow keys move a focused bar by one snap step.',
+  ja: '表示単位か言語を選んでください。矢印キーでフォーカス中のバーを1スナップ分動かせます。',
+}))
 
 function describe(bar: TimelineBar) {
   return `${bar.label}: ${longDate.value(bar.start)} – ${longDate.value(bar.end)}`
@@ -58,7 +65,7 @@ function describe(bar: TimelineBar) {
 function onEdit(change: TimelineEdit) {
   bars.value = bars.value.map(bar => bar.id === change.id ? { ...bar, ...change.after } : bar)
   const bar = bars.value.find(entry => entry.id === change.id)
-  if (bar) status.value = 'Moved ' + describe(bar)
+  if (bar) status.value = t({ en: 'Moved ' + describe(bar), ja: describe(bar) + ' に移動しました' })
 }
 function onSelect(id: string) {
   const bar = bars.value.find(entry => entry.id === id)
@@ -68,19 +75,23 @@ function onSelect(id: string) {
 
 <template>
   <section class="showcase sc-calendar" aria-labelledby="sc-calendar-title">
-    <h2 id="sc-calendar-title">Calendar views</h2>
-    <p class="sc-calendar-intro">
+    <h2 id="sc-calendar-title">{{ t({ en: 'Calendar views', ja: 'カレンダー表示' }) }}</h2>
+    <p v-if="isJapanese" class="sc-calendar-intro">
+      <code>calendarZoomPresets</code> による日・週・月・四半期の表示を {{ timeZone }} で切り替え、選んだ言語で表示します。
+      <code>markerRanges</code> で全社のコードフリーズと、一部の拠点だけが休みになる祝日を強調表示します。
+    </p>
+    <p v-else class="sc-calendar-intro">
       Day, week, month and quarter levels from <code>calendarZoomPresets</code> in {{ timeZone }}, labelled in the chosen
       language, with highlighted ranges from <code>markerRanges</code>: a company-wide code freeze and holidays that close
       single offices.
     </p>
     <GanttChart
       :rows="rows" :bars="bars" :range="range" :zoom-presets="presets" :zoom-preset="active.id" :format-time="active.formatTime"
-      :marker-ranges="markerRanges" :row-height="48" :height="260" :labels="{ region: 'Calendar views timeline', rows: 'Teams' }"
+      :marker-ranges="markerRanges" :row-height="48" :height="260" :labels="{ ...labels.gantt, region: t({ en: 'Calendar views timeline', ja: 'カレンダー表示のタイムライン' }), rows: t({ en: 'Teams', ja: 'チーム' }) }"
       sticky-band-labels @update:zoom-preset="level = $event" @edit="onEdit" @select="onSelect"
     >
       <template #legend>
-        <label class="sc-calendar-locale">Language
+        <label class="sc-calendar-locale">{{ t({ en: 'Language', ja: '言語' }) }}
           <select v-model="locale"><option v-for="item in locales" :key="item.id" :value="item.id">{{ item.label }}</option></select>
         </label>
       </template>

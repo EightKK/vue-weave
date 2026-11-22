@@ -1,17 +1,15 @@
 <script setup lang="ts">
 // The live demo of an example page in a framed panel: a toolbar with the full-width switch and the GitHub link, and the
 // demo below in a panel whose height the reader can drag. The demo is scoped with `vw-site-demo`, which applies the demo
-// app's stylesheet (examples/demo.css) inside the panel only, and follows the site's dark mode after hydration. The page
-// language is provided to the demo as `vw-site-locale` ('en' or 'ja'), for demos that have copy in both languages.
-import { computed, provide, ref } from 'vue'
+// app's stylesheet (examples/demo.css) inside the panel only, and follows the site's dark mode after hydration.
+import { computed, ref } from 'vue'
 import type { ExampleEntry } from '../../../examples/registry'
 import { demoComponent } from '../demos'
 import { sourceHref, useMountedDark, useSiteLocale } from '../i18n'
 
 const props = defineProps<{ entry: ExampleEntry }>()
 const full = defineModel<boolean>('full', { default: false })
-const { t, locale } = useSiteLocale()
-provide('vw-site-locale', locale)
+const { t } = useSiteLocale()
 const dark = useMountedDark()
 const demo = computed(() => demoComponent(props.entry.component))
 // Set once the demo has loaded and hydrated (or mounted after a client-side navigation); the browser tests wait for it.

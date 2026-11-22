@@ -65,3 +65,17 @@ test('knowledge graph showcase searches, explains a topic, finds a shortest path
   await expect(nodes).toHaveCount(164)
   expect(errors).toEqual([])
 })
+
+test('on the Japanese page the knowledge graph explains itself and reports searches in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'knowledge', { kind: 'showcase', locale: 'ja' })
+  const showcase = demo.getByRole('region', { name: 'ナレッジグラフ', exact: true })
+  const status = showcase.getByRole('status').last()
+  await expect(status).toHaveText('164 件の話題、302 本のリンク、9 個のコミュニティ(モジュラリティ 0.60)。話題を選んで探索してください。')
+  const details = showcase.getByRole('complementary', { name: '話題の詳細' })
+  await expect(details.getByRole('heading', { name: '中心性の高い話題' })).toBeVisible()
+  await showcase.getByRole('searchbox', { name: '話題を検索' }).fill('graph')
+  await expect(status).toHaveText(/^「graph」に一致する話題は \d+ 件です。$/)
+  await expect(showcase.getByRole('group', { name: '経路を探す' }).getByRole('button', { name: '経路を探す', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

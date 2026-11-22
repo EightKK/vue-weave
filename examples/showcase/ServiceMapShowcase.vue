@@ -5,6 +5,7 @@ import {
   type GraphBox, type GraphEdge, type GraphLayout, type GraphShownEdge, type GraphShownNode, type NetworkGroup, type NetworkNode,
   type TimelineBar, type TimelineMarker, type TimelineRow,
 } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 // A live service map in the style of an APM tool: services in nested region and namespace groups, edges as traffic
 // bands whose width follows requests per second, particles whose speed follows it too and colours that follow the
@@ -23,7 +24,12 @@ const rowY = (row: number) => 58 + row * 88
 const mapWidth = 1302, mapHeight = 772
 const tickMs = 15_000
 const T0 = Date.UTC(2026, 10, 22, 14, 30, 0)
-const healthText: Record<Health, string> = { ok: 'Healthy', degraded: 'Degraded', critical: 'Critical', idle: 'Drained' }
+// Service, group and technology names are proper names of the data and stay in English.
+const { t, labels, isJapanese } = useDemoLocale()
+const healthText: Record<Health, string> = t({
+  en: { ok: 'Healthy', degraded: 'Degraded', critical: 'Critical', idle: 'Drained' },
+  ja: { ok: '正常', degraded: '低下', critical: '重大', idle: '退避済み' },
+})
 
 const icons: Record<Kind, readonly string[]> = {
   web: ['M3 5h18v14H3z', 'M3 9h18', 'M6 7h1'],
@@ -167,7 +173,10 @@ const live = ref(false)
 const selectedId = ref<string>()
 const collapsed = ref<ReadonlySet<string>>(new Set())
 const graph = shallowRef<InstanceType<typeof NetworkGraph>>()
-const status = ref('Paused at 14:30:00 UTC · 22 services in 2 regions; Recommender is degraded since its 14:19 deploy. Press Live to stream metrics.')
+const status = ref(t({
+  en: 'Paused at 14:30:00 UTC · 22 services in 2 regions; Recommender is degraded since its 14:19 deploy. Press Live to stream metrics.',
+  ja: '14:30:00 UTC で一時停止中 · 2 リージョンに 22 サービス。Recommender は 14:19 のデプロイ以降低下しています。「ライブ」でメトリクスを流します。',
+}))
 const uid = useId()
 const ids = { ok: uid + '-ok', degraded: uid + '-degraded', critical: uid + '-critical', idle: uid + '-idle', glow: uid + '-glow' }
 
@@ -268,7 +277,9 @@ function formatRps(value: number) {
 }
 const formatMs = (value: number) => value < 10 ? value.toFixed(1) : String(Math.round(value))
 const formatPct = (value: number) => value < 1 ? value.toFixed(2) + '%' : value.toFixed(1) + '%'
-const plural = (count: number, one: string, many = one + 's') => `${count} ${count === 1 ? one : many}`
+const counters: Record<string, string> = { caller: '件', dependency: '件', event: '件' }
+const unhealthyIn = (id: string) => membersOf(id).filter(member => metricOf(member).health === 'critical' || metricOf(member).health === 'degraded').length
+const plural = (count: number, one: string, many = one + 's') => isJapanese.value ? `${count} ${counters[one]}` : `${count} ${count === 1 ? one : many}`
 const pad = (value: number) => String(value).padStart(2, '0')
 function clock(time: number, seconds = true) {
   const date = new Date(time)
@@ -286,10 +297,10 @@ const ringLength = 2 * Math.PI * 15
 interface Alert { id: string; service: string; label: string; severity: 'info' | 'warn' | 'crit'; start: number; end?: number }
 const minute = 60_000
 const staticAlerts: Alert[] = [
-  { id: 'a-search', service: 'search', label: 'p95 over SLO', severity: 'warn', start: T0 - 26 * minute, end: T0 - 19 * minute },
-  { id: 'a-gateway', service: 'gateway', label: '5xx burst', severity: 'crit', start: T0 - 16.5 * minute, end: T0 - 14.5 * minute },
-  { id: 'a-cache', service: 'cache', label: 'Evictions', severity: 'warn', start: T0 - 15 * minute, end: T0 - 12 * minute },
-  { id: 'a-recommend', service: 'recommend', label: 'Error rate 1.6%', severity: 'warn', start: T0 - 8.5 * minute },
+  { id: 'a-search', service: 'search', label: t({ en: 'p95 over SLO', ja: 'p95 が SLO 超過' }), severity: 'warn', start: T0 - 26 * minute, end: T0 - 19 * minute },
+  { id: 'a-gateway', service: 'gateway', label: t({ en: '5xx burst', ja: '5xx の急増' }), severity: 'crit', start: T0 - 16.5 * minute, end: T0 - 14.5 * minute },
+  { id: 'a-cache', service: 'cache', label: t({ en: 'Evictions', ja: '追い出し' }), severity: 'warn', start: T0 - 15 * minute, end: T0 - 12 * minute },
+  { id: 'a-recommend', service: 'recommend', label: t({ en: 'Error rate 1.6%', ja: 'エラー率 1.6%' }), severity: 'warn', start: T0 - 8.5 * minute },
 ]
 const deploys: TimelineMarker[] = [
   { id: 'd-checkout', time: T0 - 22 * minute, label: 'checkout v412' },
@@ -300,13 +311,14 @@ const alerts = computed<Alert[]>(() => {
   const { incidentAt, failoverAt } = scenario.value
   const close = failoverAt !== undefined ? T0 + failoverAt * tickMs : undefined
   const list = [...staticAlerts]
-  if (close !== undefined) list.push({ id: 'a-failover', service: 'payments', label: 'Failover', severity: 'info', start: close, end: close + 2 * minute })
+  if (close !== undefined) list.push({ id: 'a-failover', service: 'payments', label: t({ en: 'Failover', ja: 'フェイルオーバー' }), severity: 'info', start: close, end: close + 2 * minute })
   if (incidentAt === undefined) return list
   const at = (offset: number) => T0 + (incidentAt + offset) * tickMs
   list.push({ id: 'a-pdb', service: 'payments-db', label: 'p95 490 ms', severity: 'crit', start: at(0) })
   if (failoverAt !== undefined && failoverAt <= incidentAt) return list
   const upstream: [string, string, 'warn' | 'crit', number][] = [
-    ['payments', 'Errors 7%', 'crit', 2], ['checkout', 'Error budget burn', 'warn', 3], ['gateway', '5xx ratio', 'warn', 4], ['web', 'Apdex < 0.85', 'warn', 6],
+    ['payments', t({ en: 'Errors 7%', ja: 'エラー 7%' }), 'crit', 2], ['checkout', t({ en: 'Error budget burn', ja: 'エラーバジェット消費' }), 'warn', 3],
+    ['gateway', t({ en: '5xx ratio', ja: '5xx 比率' }), 'warn', 4], ['web', 'Apdex < 0.85', 'warn', 6],
   ]
   for (const [service, label, severity, offset] of upstream) list.push({ id: 'a-' + service + '-incident', service, label, severity, start: at(offset), end: close })
   return list
@@ -337,19 +349,31 @@ function selectService(id: string | undefined) {
   selectedId.value = id && svcById.has(id) ? id : undefined
   const info = selected.value
   if (!info) return
-  status.value = `${info.item.label}: ${healthText[info.metric.health]} · ${formatRps(info.metric.rps)} rps · p95 ${formatMs(info.metric.p95)} ms · ${formatPct(info.metric.err)} errors · ${plural(info.callers.length, 'caller')}, ${plural(info.callees.length, 'dependency', 'dependencies')}.`
+  status.value = t({
+    en: `${info.item.label}: ${healthText[info.metric.health]} · ${formatRps(info.metric.rps)} rps · p95 ${formatMs(info.metric.p95)} ms · ${formatPct(info.metric.err)} errors · ${plural(info.callers.length, 'caller')}, ${plural(info.callees.length, 'dependency', 'dependencies')}.`,
+    ja: `${info.item.label}: ${healthText[info.metric.health]} · ${formatRps(info.metric.rps)} rps · p95 ${formatMs(info.metric.p95)} ms · エラー ${formatPct(info.metric.err)} · 呼び出し元 ${plural(info.callers.length, 'caller')}、依存先 ${plural(info.callees.length, 'dependency')}。`,
+  })
 }
 function startIncident() {
   scenario.value = { ...scenario.value, incidentAt: tick.value - 12 }
   const affected = blast.value.nodeIds.size - 1
   const names = [...blast.value.nodeIds].filter(id => id !== 'payments-db').map(id => svcById.get(id)!.label)
   status.value = affected
-    ? `Incident: Payments DB p95 at ${formatMs(metricOf('payments-db').p95)} ms. Blast radius: ${affected} upstream services degraded (${names.join(', ')}).`
-    : 'Incident: Payments DB p95 is up, but traffic already runs on the eu-west-1 replica; nothing upstream is affected.'
+    ? t({
+      en: `Incident: Payments DB p95 at ${formatMs(metricOf('payments-db').p95)} ms. Blast radius: ${affected} upstream services degraded (${names.join(', ')}).`,
+      ja: `インシデント: Payments DB の p95 が ${formatMs(metricOf('payments-db').p95)} ms。影響範囲: 上流の ${affected} サービスが低下(${names.join(', ')})。`,
+    })
+    : t({
+      en: 'Incident: Payments DB p95 is up, but traffic already runs on the eu-west-1 replica; nothing upstream is affected.',
+      ja: 'インシデント: Payments DB の p95 が上昇していますが、トラフィックはすでに eu-west-1 のレプリカで処理しているため、上流への影響はありません。',
+    })
 }
 function failover() {
   scenario.value = { ...scenario.value, failoverAt: tick.value }
-  status.value = 'Failed over Payments to the promoted eu-west-1 replica: Payments DB is drained and its upstream recovers (+35 ms cross-region).'
+  status.value = t({
+    en: 'Failed over Payments to the promoted eu-west-1 replica: Payments DB is drained and its upstream recovers (+35 ms cross-region).',
+    ja: 'Payments を昇格した eu-west-1 のレプリカへフェイルオーバーしました。Payments DB は退避され、上流は回復します(リージョン間で +35 ms)。',
+  })
 }
 function reset() {
   live.value = false
@@ -357,7 +381,7 @@ function reset() {
   scenario.value = {}
   selectedId.value = undefined
   collapsed.value = new Set()
-  status.value = 'Reset to 14:30:00 UTC: steady state, paused.'
+  status.value = t({ en: 'Reset to 14:30:00 UTC: steady state, paused.', ja: '14:30:00 UTC の定常状態に戻し、一時停止しました。' })
   void nextTick(() => graph.value?.fit())
 }
 function step() {
@@ -367,7 +391,12 @@ function commitCollapse(next: ReadonlySet<string>) {
   const added = [...next].find(id => !collapsed.value.has(id)), removed = [...collapsed.value].find(id => !next.has(id))
   collapsed.value = next
   const id = added ?? removed
-  if (id) status.value = `${added ? 'Collapsed' : 'Expanded'} ${groupById.get(id)!.label}: ${membersOf(id).length} services ${added ? 'behind one node' : 'shown'}.`
+  if (id) {
+    status.value = t({
+      en: `${added ? 'Collapsed' : 'Expanded'} ${groupById.get(id)!.label}: ${membersOf(id).length} services ${added ? 'behind one node' : 'shown'}.`,
+      ja: `${groupById.get(id)!.label} を${added ? '折りたたみました' : '展開しました'}: ${membersOf(id).length} サービスを${added ? '1つのノードにまとめています' : '表示しています'}。`,
+    })
+  }
   // Frame the changed map once it has rendered.
   void nextTick(() => graph.value?.fit())
 }
@@ -397,7 +426,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="showcase sc-svc vw-theme-dark" aria-label="Service map">
+  <section class="showcase sc-svc vw-theme-dark" :aria-label="t({ en: 'Service map', ja: 'サービスマップ' })">
     <svg class="sc-svc-defs" aria-hidden="true" focusable="false" width="0" height="0">
       <defs>
         <linearGradient v-for="tone in (['ok', 'degraded', 'critical', 'idle'] as const)" :id="ids[tone]" :key="tone" x1="0" y1="0" x2="0" y2="1">
@@ -411,40 +440,41 @@ onBeforeUnmount(() => {
     </svg>
     <div class="sc-svc-head">
       <div class="sc-svc-intro">
-        <h2>Service map</h2>
-        <p>A simulated production topology: nested region and namespace groups that collapse, cards from the node slot, traffic bands from the edge slot, the blast radius from <code>traverseGraph</code> and an incident timeline in a linked <code>GanttChart</code>.</p>
+        <h2>{{ t({ en: 'Service map', ja: 'サービスマップ' }) }}</h2>
+        <p v-if="isJapanese">模擬した本番環境の構成図です。リージョンと名前空間の入れ子グループは折りたためます。カードはノードのスロット、トラフィックの帯は辺のスロットで描き、影響範囲は <code>traverseGraph</code> で求め、インシデントのタイムラインを連動する <code>GanttChart</code> に表示します。</p>
+        <p v-else>A simulated production topology: nested region and namespace groups that collapse, cards from the node slot, traffic bands from the edge slot, the blast radius from <code>traverseGraph</code> and an incident timeline in a linked <code>GanttChart</code>.</p>
       </div>
       <dl class="sc-svc-kpis">
-        <div><dt>Ingress</dt><dd>{{ formatRps(kpis.ingress) }}<small> rps</small></dd></div>
-        <div><dt>Gateway errors</dt><dd :class="{ 'sc-svc-bad': kpis.err >= 1 }">{{ formatPct(kpis.err) }}</dd></div>
-        <div><dt>Client p95</dt><dd>{{ formatMs(kpis.p95) }}<small> ms</small></dd></div>
-        <div><dt>Open alerts</dt><dd :class="{ 'sc-svc-bad': kpis.alerts > 1 }">{{ kpis.alerts }}</dd></div>
+        <div><dt>{{ t({ en: 'Ingress', ja: '流入' }) }}</dt><dd>{{ formatRps(kpis.ingress) }}<small> rps</small></dd></div>
+        <div><dt>{{ t({ en: 'Gateway errors', ja: 'ゲートウェイのエラー' }) }}</dt><dd :class="{ 'sc-svc-bad': kpis.err >= 1 }">{{ formatPct(kpis.err) }}</dd></div>
+        <div><dt>{{ t({ en: 'Client p95', ja: 'クライアント p95' }) }}</dt><dd>{{ formatMs(kpis.p95) }}<small> ms</small></dd></div>
+        <div><dt>{{ t({ en: 'Open alerts', ja: '未解決のアラート' }) }}</dt><dd :class="{ 'sc-svc-bad': kpis.alerts > 1 }">{{ kpis.alerts }}</dd></div>
       </dl>
     </div>
-    <div class="sc-svc-toolbar" role="toolbar" aria-label="Simulation">
-      <button type="button" class="sc-svc-live" :aria-pressed="live" @click="live = !live"><span aria-hidden="true" />Live</button>
-      <button type="button" :disabled="live" @click="step">Step +15 s</button>
-      <span class="sc-svc-clock" aria-label="Simulated time">{{ clock(now) }} <small>UTC</small></span>
+    <div class="sc-svc-toolbar" role="toolbar" :aria-label="t({ en: 'Simulation', ja: 'シミュレーション' })">
+      <button type="button" class="sc-svc-live" :aria-pressed="live" @click="live = !live"><span aria-hidden="true" />{{ t({ en: 'Live', ja: 'ライブ' }) }}</button>
+      <button type="button" :disabled="live" @click="step">{{ t({ en: 'Step +15 s', ja: '15 秒進める' }) }}</button>
+      <span class="sc-svc-clock" :aria-label="t({ en: 'Simulated time', ja: '模擬時刻' })">{{ clock(now) }} <small>UTC</small></span>
       <span class="sc-svc-spacer" />
-      <button type="button" class="sc-svc-danger" :disabled="scenario.incidentAt !== undefined" @click="startIncident">Incident: payments DB latency</button>
-      <button type="button" :disabled="scenario.failoverAt !== undefined" @click="failover">Failover to eu-west</button>
-      <button type="button" @click="reset">Reset</button>
+      <button type="button" class="sc-svc-danger" :disabled="scenario.incidentAt !== undefined" @click="startIncident">{{ t({ en: 'Incident: payments DB latency', ja: 'インシデント: Payments DB の遅延' }) }}</button>
+      <button type="button" :disabled="scenario.failoverAt !== undefined" @click="failover">{{ t({ en: 'Failover to eu-west', ja: 'eu-west へフェイルオーバー' }) }}</button>
+      <button type="button" @click="reset">{{ t({ en: 'Reset', ja: 'リセット' }) }}</button>
     </div>
     <div class="sc-svc-stage">
       <NetworkGraph
         ref="graph" :selected-id="selectedId" unstyled-node-slots class="sc-svc-graph" :nodes="nodes" :edges="calls" :groups="groups" :layout="layoutMap"
         height="clamp(380px, 50vw, 660px)" background="dots" collapsible-groups :collapsed-group-ids="collapsed"
         :highlighted-node-ids="blast.nodeIds" :highlighted-edge-ids="blast.edgeIds" :dimmed-ids="dimmedIds"
-        :labels="{ region: 'Service topology' }" @update:collapsed-group-ids="commitCollapse" @update:selected-id="selectService"
+        :labels="{ ...labels.graph, region: t({ en: 'Service topology', ja: 'サービス構成' }) }" @update:collapsed-group-ids="commitCollapse" @update:selected-id="selectService"
       >
         <template #group="{ group, box, depth }">
           <g :class="['sc-svc-group', regionIds.has(group.id) ? 'sc-svc-region' : 'sc-svc-ns']">
             <rect :x="box.x" :y="box.y" :width="box.width" :height="box.height" :rx="depth === 0 ? 16 : 12" />
             <text :x="box.x + 12" :y="box.y + 15">
-              <tspan class="sc-svc-group-kind">{{ regionIds.has(group.id) ? 'region' : 'ns' }}</tspan>
+              <tspan class="sc-svc-group-kind">{{ regionIds.has(group.id) ? t({ en: 'region', ja: 'リージョン' }) : 'ns' }}</tspan>
               <tspan dx="6">{{ group.label }}</tspan>
-              <tspan v-if="group.id === 'us-east'" class="sc-svc-group-role" dx="8">primary</tspan>
-              <tspan v-else-if="group.id === 'eu-west'" class="sc-svc-group-role" dx="8">warm standby</tspan>
+              <tspan v-if="group.id === 'us-east'" class="sc-svc-group-role" dx="8">{{ t({ en: 'primary', ja: 'プライマリ' }) }}</tspan>
+              <tspan v-else-if="group.id === 'eu-west'" class="sc-svc-group-role" dx="8">{{ t({ en: 'warm standby', ja: 'ウォームスタンバイ' }) }}</tspan>
             </text>
           </g>
         </template>
@@ -472,8 +502,8 @@ onBeforeUnmount(() => {
             <rect class="sc-svc-face sc-svc-stack" x="6" y="-5" :width="box.width - 12" height="8" rx="4" />
             <g class="sc-svc-icon" transform="translate(16 24) scale(1)"><path v-for="d in stackIcon" :key="d" :d="d" /></g>
             <text class="sc-svc-name" x="54" y="30">{{ node.label }}</text>
-            <text class="sc-svc-proxy-note" x="54" y="45">{{ membersOf(node.id).length }} services, {{ membersOf(node.id).filter(id => metricOf(id).health === 'critical' || metricOf(id).health === 'degraded').length }} unhealthy</text>
-            <text class="sc-svc-metric" x="54" y="61">{{ formatRps(membersOf(node.id).reduce((sum, id) => sum + metricOf(id).rps, 0)) }}<tspan> rps total</tspan></text>
+            <text class="sc-svc-proxy-note" x="54" y="45">{{ t({ en: `${membersOf(node.id).length} services, ${unhealthyIn(node.id)} unhealthy`, ja: `${membersOf(node.id).length} サービス、異常 ${unhealthyIn(node.id)}` }) }}</text>
+            <text class="sc-svc-metric" x="54" y="61">{{ formatRps(membersOf(node.id).reduce((sum, id) => sum + metricOf(id).rps, 0)) }}<tspan>{{ t({ en: ' rps total', ja: ' rps 合計' }) }}</tspan></text>
           </g>
         </template>
         <template #edge="{ edge, path, highlighted }">
@@ -489,57 +519,64 @@ onBeforeUnmount(() => {
           </g>
         </template>
       </NetworkGraph>
-      <ul class="sc-svc-legend" aria-label="Legend">
-        <li><span class="sc-svc-swatch sc-svc-ok" />Healthy</li>
-        <li><span class="sc-svc-swatch sc-svc-degraded" />Degraded</li>
-        <li><span class="sc-svc-swatch sc-svc-critical" />Critical</li>
-        <li><span class="sc-svc-swatch sc-svc-idle" />Drained</li>
-        <li class="sc-svc-legend-note">Band width and particle speed follow requests per second; colour follows the callee's error rate.</li>
+      <ul class="sc-svc-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
+        <li><span class="sc-svc-swatch sc-svc-ok" />{{ healthText.ok }}</li>
+        <li><span class="sc-svc-swatch sc-svc-degraded" />{{ healthText.degraded }}</li>
+        <li><span class="sc-svc-swatch sc-svc-critical" />{{ healthText.critical }}</li>
+        <li><span class="sc-svc-swatch sc-svc-idle" />{{ healthText.idle }}</li>
+        <li class="sc-svc-legend-note">{{ t({
+          en: 'Band width and particle speed follow requests per second; colour follows the callee\'s error rate.',
+          ja: '帯の太さと粒子の速さは毎秒リクエスト数、色は呼び出し先のエラー率に従います。',
+        }) }}</li>
       </ul>
     </div>
     <div class="sc-svc-bottom">
       <div ref="timelineBox" class="sc-svc-timeline">
-        <h3>Incident timeline <span>{{ selected ? selected.item.label + ' and its dependency chain' : 'all services' }} · last 30 min</span></h3>
+        <h3 v-if="isJapanese">インシデントのタイムライン <span>{{ selected ? selected.item.label + ' とその依存関係' : 'すべてのサービス' }} · 直近 30 分</span></h3>
+        <h3 v-else>Incident timeline <span>{{ selected ? selected.item.label + ' and its dependency chain' : 'all services' }} · last 30 min</span></h3>
         <GanttChart
           :rows="timelineRows" :bars="shownBars" :range="range" :pixels-per-unit="pixelsPerMinute / minute" :tick-steps="[5 * minute]" :format-time="time => clock(time, false)"
           :markers="deploys" show-now :now="now" readonly :row-height="34" :height="timelineHeight" :show-controls="false"
-          :selected-ids="selectedBars" :labels="{ region: 'Incident timeline', rows: 'Service', now: 'Now', empty: 'No alerts in this window' }"
+          :selected-ids="selectedBars" :labels="{
+            ...labels.gantt, region: t({ en: 'Incident timeline', ja: 'インシデントのタイムライン' }), rows: t({ en: 'Service', ja: 'サービス' }),
+            now: t({ en: 'Now', ja: '現在' }), empty: t({ en: 'No alerts in this window', ja: 'この期間のアラートはありません' }),
+          }"
           @select="id => selectService(alerts.find(item => item.id === id)?.service)"
         />
       </div>
-      <aside class="sc-svc-panel" aria-label="Service details">
+      <aside class="sc-svc-panel" :aria-label="t({ en: 'Service details', ja: 'サービスの詳細' })">
         <template v-if="selected">
           <div class="sc-svc-panel-head">
             <span :class="['sc-svc-pill', 'sc-svc-' + selected.metric.health]">{{ healthText[selected.metric.health] }}</span>
             <h3>{{ selected.item.label }}</h3>
-            <p>{{ selected.item.data.tech }} · {{ groupById.get(groupOfNode.get(selected.item.id)!)!.label }} · {{ selected.item.data.col === 4 ? 'external' : selected.item.data.row > 6 ? 'eu-west-1' : 'us-east-1' }}</p>
-            <button type="button" class="sc-svc-close" aria-label="Clear selection" @click="selectedId = undefined">×</button>
+            <p>{{ selected.item.data.tech }} · {{ groupById.get(groupOfNode.get(selected.item.id)!)!.label }} · {{ selected.item.data.col === 4 ? t({ en: 'external', ja: '外部' }) : selected.item.data.row > 6 ? 'eu-west-1' : 'us-east-1' }}</p>
+            <button type="button" class="sc-svc-close" :aria-label="t({ en: 'Clear selection', ja: '選択を解除' })" @click="selectedId = undefined">×</button>
           </div>
           <dl class="sc-svc-stats">
-            <div><dt>Throughput</dt><dd>{{ formatRps(selected.metric.rps) }}<small> rps</small></dd></div>
-            <div><dt>Latency p95</dt><dd :class="{ 'sc-svc-bad': selected.metric.p95 >= selected.item.data.slo }">{{ formatMs(selected.metric.p95) }}<small> ms</small></dd><span>SLO {{ selected.item.data.slo }} ms</span></div>
-            <div><dt>Errors</dt><dd :class="{ 'sc-svc-bad': selected.metric.err >= 1 }">{{ formatPct(selected.metric.err) }}</dd></div>
+            <div><dt>{{ t({ en: 'Throughput', ja: 'スループット' }) }}</dt><dd>{{ formatRps(selected.metric.rps) }}<small> rps</small></dd></div>
+            <div><dt>{{ t({ en: 'Latency p95', ja: 'レイテンシ p95' }) }}</dt><dd :class="{ 'sc-svc-bad': selected.metric.p95 >= selected.item.data.slo }">{{ formatMs(selected.metric.p95) }}<small> ms</small></dd><span>SLO {{ selected.item.data.slo }} ms</span></div>
+            <div><dt>{{ t({ en: 'Errors', ja: 'エラー' }) }}</dt><dd :class="{ 'sc-svc-bad': selected.metric.err >= 1 }">{{ formatPct(selected.metric.err) }}</dd></div>
           </dl>
           <svg class="sc-svc-panel-spark" viewBox="0 0 280 44" preserveAspectRatio="none" aria-hidden="true">
             <path class="sc-svc-spark-area" :d="sparkline(history.get(selected.item.id)!, 280, 40).area" :fill="`url(#${ids[selected.metric.health]})`" transform="translate(0 2)" />
             <path class="sc-svc-spark" :class="'sc-svc-' + selected.metric.health" :d="sparkline(history.get(selected.item.id)!, 280, 40).line" transform="translate(0 2)" />
           </svg>
-          <p v-if="blast.nodeIds.has(selected.item.id)" class="sc-svc-radius">In the blast radius of Payments DB.</p>
+          <p v-if="blast.nodeIds.has(selected.item.id)" class="sc-svc-radius">{{ t({ en: 'In the blast radius of Payments DB.', ja: 'Payments DB の影響範囲にあります。' }) }}</p>
           <div class="sc-svc-lists">
-            <div v-for="list in [{ title: 'Called by', items: selected.callers }, { title: 'Calls', items: selected.callees }]" :key="list.title">
+            <div v-for="list in [{ id: 'callers', title: t({ en: 'Called by', ja: '呼び出し元' }), items: selected.callers }, { id: 'callees', title: t({ en: 'Calls', ja: '呼び出し先' }), items: selected.callees }]" :key="list.id">
               <h4>{{ list.title }}</h4>
               <ul :aria-label="list.title">
                 <li v-for="item in list.items" :key="item.id">
                   <button type="button" @click="selectService(item.id)"><span :class="['sc-svc-dot', 'sc-svc-' + item.health]" />{{ item.label }}<small>{{ formatRps(item.rps) }}/s</small></button>
                 </li>
-                <li v-if="!list.items.length" class="sc-svc-none">None</li>
+                <li v-if="!list.items.length" class="sc-svc-none">{{ t({ en: 'None', ja: 'なし' }) }}</li>
               </ul>
             </div>
           </div>
         </template>
         <template v-else>
-          <h3>Needs attention</h3>
-          <ul class="sc-svc-attention" aria-label="Needs attention">
+          <h3>{{ t({ en: 'Needs attention', ja: '要対応' }) }}</h3>
+          <ul class="sc-svc-attention" :aria-label="t({ en: 'Needs attention', ja: '要対応' })">
             <li v-for="entry in worst" :key="entry.item.id">
               <button type="button" @click="selectService(entry.item.id)">
                 <span :class="['sc-svc-dot', 'sc-svc-' + entry.metric.health]" />{{ entry.item.label }}
@@ -547,7 +584,10 @@ onBeforeUnmount(() => {
               </button>
             </li>
           </ul>
-          <p class="sc-svc-hint">Select a service on the map, in this list or in the timeline to trace its callers and dependencies.</p>
+          <p class="sc-svc-hint">{{ t({
+            en: 'Select a service on the map, in this list or in the timeline to trace its callers and dependencies.',
+            ja: 'マップ、この一覧、タイムラインのいずれかでサービスを選ぶと、呼び出し元と依存先をたどれます。',
+          }) }}</p>
         </template>
       </aside>
     </div>

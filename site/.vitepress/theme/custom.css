@@ -145,7 +145,8 @@
 .vw-site-frame-title { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--vp-c-text-2); }
 .vw-site-frame-actions { display: flex; gap: 6px; }
 .vw-site-frame-hint { margin: 0; padding: 6px 12px; border-top: 1px solid var(--vp-c-divider); background: var(--vp-c-bg-alt); color: var(--vp-c-text-2); font-size: 12px; }
-.vw-site-example-details { display: grid; gap: 32px; margin-top: 32px; }
+/* One column below 1100px; minmax(0, …) keeps long source lines scrolling inside their block instead of widening the page. */
+.vw-site-example-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; margin-top: 32px; }
 @media (min-width: 1100px) { .vw-site-example-details { grid-template-columns: minmax(0, 1fr) 260px; } }
 .vw-site-code.vp-doc h2 { margin: 0 0 12px; padding: 0; border: 0; font-size: 20px; }
 .vw-site-code.vp-doc div[class*='language-'] pre { max-height: 640px; overflow: auto; }

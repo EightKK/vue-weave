@@ -138,7 +138,7 @@ test('the showcase index lists the showcases and opens one in Japanese', async (
   await page.getByRole('link', { name: /BOMエディター/ }).click()
   await expect(page).toHaveURL(/\/vue-weave\/ja\/showcase\/bom\/$/)
   await expect(page.locator('.vw-site-frame[data-ready]')).toBeVisible()
-  await expect(page.getByRole('region', { name: 'BOM editor', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'BOMエディター', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: '← ショーケース' })).toBeVisible()
   expect(errors).toEqual([])
 })

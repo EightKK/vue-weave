@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // The production planning demo (Demo.vue) on a page of the documentation site: the same four views and their tabs,
 // without the standalone app's header, language switch and theme switch, which the site provides. The language follows
-// the site page, which provides its locale as `vw-site-locale` (see site/.vitepress/theme/components/ExampleFrame.vue);
-// the colour scheme follows the `.dark` class that the site puts on the demo panel.
-import { computed, inject, ref, type Ref } from 'vue'
+// the site page (useDemoLocale); the colour scheme follows the `.dark` class that the site puts on the demo panel.
+import { computed, ref } from 'vue'
+import { useDemoLocale } from '../i18n'
 import { copy, type Language } from './copy'
 import ApprovalFlow from './ApprovalFlow.vue'
 import WorkSheet from './WorkSheet.vue'
@@ -11,8 +11,8 @@ import LotFlow from './LotFlow.vue'
 import ProductionPlan from './ProductionPlan.vue'
 import './production.css'
 
-const locale = inject<Readonly<Ref<string>> | undefined>('vw-site-locale', undefined)
-const language = computed<Language>(() => locale?.value === 'ja' ? 'ja' : 'en')
+const { locale } = useDemoLocale()
+const language = computed<Language>(() => locale.value)
 const ja = computed(() => language.value === 'ja')
 const text = computed(() => copy[language.value])
 const view = ref<'planning' | 'lot' | 'approval' | 'sheet'>('planning')

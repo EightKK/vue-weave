@@ -1,5 +1,7 @@
 export type Language = 'ja' | 'en'
 
+import { componentLabels } from '../i18n'
+
 export const copy = {
   ja: {
     language: '表示言語', themeLight: 'ライト', themeDark: 'ダーク', gallery: 'サンプル集',
@@ -26,6 +28,8 @@ export const copy = {
     resources: { cnc: 'CNC設備', saw: '予備機', workbench: '準備台', bench: '検査台', dispatch: '梱包台' },
     steps: { lot: 'ロット L-100', overhead: '間接費', 'line-a': 'ラインA', 'line-b': 'ラインB', inspect: '検査', pack: '梱包', rework: '再加工' },
     codeLink: '選択の連動', codeReplan: '後工程を再計算', codeAdopt: '変更案を採用', codeFlow: '個数と原価を切り替え',
+    /** The components' built-in labels in this language. */
+    labels: componentLabels('ja'),
   },
   en: {
     language: 'Language', themeLight: 'Light', themeDark: 'Dark', gallery: 'Examples',
@@ -52,6 +56,7 @@ export const copy = {
     resources: { cnc: 'CNC machine', saw: 'Backup saw', workbench: 'Prep bench', bench: 'Inspection', dispatch: 'Packing' },
     steps: { lot: 'Lot L-100', overhead: 'Overhead', 'line-a': 'Line A', 'line-b': 'Line B', inspect: 'Inspect', pack: 'Pack', rework: 'Rework' },
     codeLink: 'Link selections', codeReplan: 'Reschedule downstream tasks', codeAdopt: 'Adopt the proposal', codeFlow: 'Switch between units and cost',
+    labels: componentLabels('en'),
   },
 }
 

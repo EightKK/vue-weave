@@ -5,6 +5,7 @@ import {
   type TimelineProgressEdit, type TimelineRow, type TimelineSelectDetail, type TimeRange,
 } from '../../src'
 import { day } from '../data'
+import { useDemoLocale } from '../i18n'
 
 // A classic task Gantt for a four-week sprint: a task list with Start, Days and % columns, day columns with weekday
 // headers, shaded weekends, epics rolled up as summary rows, finish-to-start arrows and editable progress.
@@ -12,13 +13,23 @@ type Tone = 'violet' | 'blue' | 'teal'
 interface RowData { kind: 'epic' | 'task' | 'milestone'; tone: Tone }
 interface SprintRow extends TimelineRow<RowData> { data: RowData }
 
+const { t, labels, isJapanese } = useDemoLocale()
+/** A task name in the page language. */
+const n = (en: string) => t({ en, ja: japaneseNames[en] ?? en })
+const japaneseNames: Record<string, string> = {
+  'Checkout redesign': '購入フローの刷新', 'Payment form UI': '支払いフォームのUI', 'Design sign-off': 'デザイン承認',
+  'Address autocomplete': '住所の自動補完', 'Order summary': '注文内容の確認', 'Search relevance': '検索の関連性',
+  'Ranking signals': 'ランキング指標', 'Query rewriting': 'クエリの書き換え', 'A/B experiment': 'A/Bテスト', 'Release 4.2': 'リリース 4.2',
+  'Regression tests': '回帰テスト', 'Docs and changelog': 'ドキュメントと変更履歴', 'Release 4.2 ships': 'リリース 4.2 公開',
+}
+
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const weekdays = t({ en: ['S', 'M', 'T', 'W', 'T', 'F', 'S'], ja: ['日', '月', '火', '水', '木', '金', '土'] })
 /** Midnight UTC of a day in late 2026; fixed so that renders and tests never depend on the clock or time zone. */
 const on = (month: number, date: number) => Date.UTC(2026, month - 1, date)
 function formatTime(time: number) {
   const date = new Date(time)
-  return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`
+  return isJapanese.value ? `${date.getUTCMonth() + 1}月${date.getUTCDate()}日` : `${months[date.getUTCMonth()]} ${date.getUTCDate()}`
 }
 /** ISO 8601 week number: the week that holds the Thursday of the given UTC day. */
 function isoWeek(time: number) {
@@ -36,7 +47,10 @@ const range = { start: on(11, 16), end: on(12, 14) }
 const today = on(11, 25) + day / 2
 const rowHeight = 38
 const headerBands = [calendarBands(range, 'week', {
-  label: (start, end) => `Week ${isoWeek(start)} · ${formatTime(start)} – ${new Date(end - day).getUTCDate()}`,
+  label: (start, end) => t({
+    en: `Week ${isoWeek(start)} · ${formatTime(start)} – ${new Date(end - day).getUTCDate()}`,
+    ja: `第${isoWeek(start)}週 · ${formatTime(start)}–${new Date(end - day).getUTCDate()}日`,
+  }),
 })]
 // Saturdays and Sundays, shaded behind the grid.
 const weekends = Array.from({ length: 4 }, (_, week) => ({ start: on(11, 21) + week * 7 * day, end: on(11, 23) + week * 7 * day }))
@@ -45,35 +59,35 @@ const epic = (id: string, label: string, tone: Tone): SprintRow => ({ id, label,
 const task = (id: string, parentId: string, label: string, tone: Tone, kind: RowData['kind'] = 'task'): SprintRow =>
   ({ id, parentId, label, data: { kind, tone } })
 const rows: SprintRow[] = [
-  epic('checkout', 'Checkout redesign', 'violet'),
-  task('payment', 'checkout', 'Payment form UI', 'violet'),
-  task('signoff', 'checkout', 'Design sign-off', 'violet', 'milestone'),
-  task('address', 'checkout', 'Address autocomplete', 'violet'),
-  task('summary', 'checkout', 'Order summary', 'violet'),
-  epic('search', 'Search relevance', 'blue'),
-  task('ranking', 'search', 'Ranking signals', 'blue'),
-  task('rewrite', 'search', 'Query rewriting', 'blue'),
-  task('experiment', 'search', 'A/B experiment', 'blue'),
-  epic('release', 'Release 4.2', 'teal'),
-  task('regression', 'release', 'Regression tests', 'teal'),
-  task('docs', 'release', 'Docs and changelog', 'teal'),
-  task('ship', 'release', 'Release 4.2 ships', 'teal', 'milestone'),
+  epic('checkout', n('Checkout redesign'), 'violet'),
+  task('payment', 'checkout', n('Payment form UI'), 'violet'),
+  task('signoff', 'checkout', n('Design sign-off'), 'violet', 'milestone'),
+  task('address', 'checkout', n('Address autocomplete'), 'violet'),
+  task('summary', 'checkout', n('Order summary'), 'violet'),
+  epic('search', n('Search relevance'), 'blue'),
+  task('ranking', 'search', n('Ranking signals'), 'blue'),
+  task('rewrite', 'search', n('Query rewriting'), 'blue'),
+  task('experiment', 'search', n('A/B experiment'), 'blue'),
+  epic('release', n('Release 4.2'), 'teal'),
+  task('regression', 'release', n('Regression tests'), 'teal'),
+  task('docs', 'release', n('Docs and changelog'), 'teal'),
+  task('ship', 'release', n('Release 4.2 ships'), 'teal', 'milestone'),
 ]
 const toneOf = new Map(rows.map(row => [row.id, row.data.tone]))
 const bar = (id: string, label: string, start: number, end: number, progress?: number): TimelineBar => ({
   id, rowId: id, label, start, end, progress, tone: toneOf.get(id), appearance: 'solid', editable: true,
 })
 const initialBars: TimelineBar[] = [
-  bar('payment', 'Payment form UI', on(11, 16), on(11, 21), 1),
-  bar('signoff', 'Design sign-off', on(11, 23), on(11, 23)),
-  bar('address', 'Address autocomplete', on(11, 18), on(11, 26), 0.6),
-  bar('summary', 'Order summary', on(11, 23), on(11, 28), 0.3),
-  bar('ranking', 'Ranking signals', on(11, 16), on(11, 24), 0.8),
-  bar('rewrite', 'Query rewriting', on(11, 24), on(12, 2), 0.25),
-  bar('experiment', 'A/B experiment', on(12, 2), on(12, 10), 0),
-  bar('regression', 'Regression tests', on(11, 30), on(12, 5), 0),
-  bar('docs', 'Docs and changelog', on(12, 3), on(12, 9), 0),
-  bar('ship', 'Release 4.2', on(12, 11), on(12, 11)),
+  bar('payment', n('Payment form UI'), on(11, 16), on(11, 21), 1),
+  bar('signoff', n('Design sign-off'), on(11, 23), on(11, 23)),
+  bar('address', n('Address autocomplete'), on(11, 18), on(11, 26), 0.6),
+  bar('summary', n('Order summary'), on(11, 23), on(11, 28), 0.3),
+  bar('ranking', n('Ranking signals'), on(11, 16), on(11, 24), 0.8),
+  bar('rewrite', n('Query rewriting'), on(11, 24), on(12, 2), 0.25),
+  bar('experiment', n('A/B experiment'), on(12, 2), on(12, 10), 0),
+  bar('regression', n('Regression tests'), on(11, 30), on(12, 5), 0),
+  bar('docs', n('Docs and changelog'), on(12, 3), on(12, 9), 0),
+  bar('ship', n('Release 4.2'), on(12, 11), on(12, 11)),
 ]
 // Finish-to-start links; validateEdit keeps every successor from starting before its predecessor ends.
 const dependencies: TimelineDependency[] = [
@@ -90,7 +104,10 @@ const dependencies: TimelineDependency[] = [
 const bars = ref<TimelineBar[]>(initialBars)
 const selected = ref<ReadonlySet<string>>(new Set())
 const collapsed = ref<ReadonlySet<string>>(new Set())
-const status = ref('Drag bars to reschedule, drag the round handle under a bar to update progress. Links are finish-to-start.')
+const status = ref(t({
+  en: 'Drag bars to reschedule, drag the round handle under a bar to update progress. Links are finish-to-start.',
+  ja: 'バーをドラッグして日程を変え、バーの下の丸いハンドルをドラッグして進捗を更新します。依存関係は終了-開始です。',
+}))
 const barOf = computed(() => new Map(bars.value.map(item => [item.id, item])))
 const shownRows = computed(() => rows.filter(row => row.parentId === undefined || !collapsed.value.has(row.parentId)).length)
 const chartHeight = computed(() => 40 + 26 + shownRows.value * rowHeight + 14)
@@ -105,8 +122,8 @@ const columns = computed<TimelineColumn<SprintRow>[]>(() => {
   const start = (item?: TimeRange) => item ? formatTime(item.start) : ''
   const days = (item?: TimeRange) => item && item.end > item.start ? workingDays(item.start, item.end) : '–'
   const all: TimelineColumn<SprintRow>[] = [
-    { id: 'start', label: 'Start', width: 64, value: (row, summary) => start(span(row, summary)) },
-    { id: 'days', label: 'Days', width: 46, value: (row, summary) => days(span(row, summary)) },
+    { id: 'start', label: t({ en: 'Start', ja: '開始' }), width: 64, value: (row, summary) => start(span(row, summary)) },
+    { id: 'days', label: t({ en: 'Days', ja: '日数' }), width: 46, value: (row, summary) => days(span(row, summary)) },
     { id: 'done', label: '%', width: 56, value: (row, summary) => percent(barOf.value.get(row.id)?.progress ?? (barOf.value.has(row.id) ? undefined : summary?.progress)) },
   ]
   return compact.value ? all.filter(column => column.id === 'done') : all
@@ -128,33 +145,49 @@ function validateEdit(change: TimelineEdit) {
   for (const link of dependencies) {
     const before = barOf.value.get(link.from), after = barOf.value.get(link.to)
     if (link.to === change.id && before && change.after.start < before.end) {
-      return `${name} cannot start before ${formatTime(before.end)}: it waits for ${before.label}.`
+      return t({
+        en: `${name} cannot start before ${formatTime(before.end)}: it waits for ${before.label}.`,
+        ja: `${name} は ${before.label} を待つため、${formatTime(before.end)} より前には開始できません。`,
+      })
     }
     if (link.from === change.id && after && change.after.end > after.start) {
-      return `${name} must end by ${formatTime(after.start)}, when ${after.label} starts.`
+      return t({
+        en: `${name} must end by ${formatTime(after.start)}, when ${after.label} starts.`,
+        ja: `${name} は ${after.label} が始まる ${formatTime(after.start)} までに終える必要があります。`,
+      })
     }
   }
 }
 function onEdit(change: TimelineEdit) {
   bars.value = bars.value.map(item => item.id === change.id ? { ...item, ...change.after } : item)
   const when = change.after.start === change.after.end ? formatTime(change.after.start)
-    : `${formatTime(change.after.start)} – ${formatTime(change.after.end)} (${workingDays(change.after.start, change.after.end)} days)`
-  status.value = `${change.mode === 'move' ? 'Moved' : 'Resized'} ${label(change.id)} to ${when}.`
+    : t({
+      en: `${formatTime(change.after.start)} – ${formatTime(change.after.end)} (${workingDays(change.after.start, change.after.end)} days)`,
+      ja: `${formatTime(change.after.start)}–${formatTime(change.after.end)}(${workingDays(change.after.start, change.after.end)} 日間)`,
+    })
+  status.value = t({
+    en: `${change.mode === 'move' ? 'Moved' : 'Resized'} ${label(change.id)} to ${when}.`,
+    ja: `${label(change.id)} を ${when} に${change.mode === 'move' ? '移動' : '変更'}しました。`,
+  })
 }
 function onRejected(_change: TimelineEdit, reason: string) {
-  status.value = 'Not moved: ' + reason
+  status.value = t({ en: 'Not moved: ', ja: '移動できません: ' }) + reason
 }
 function onProgress(change: TimelineProgressEdit) {
   bars.value = bars.value.map(item => item.id === change.id ? { ...item, progress: change.after } : item)
-  status.value = `${label(change.id)} is ${percent(change.after)} done.`
+  status.value = t({ en: `${label(change.id)} is ${percent(change.after)} done.`, ja: `${label(change.id)} は ${percent(change.after)} 完了しています。` })
 }
 // The click that ends a drag also emits select (detail.dragged); it keeps the message about that move or rejection.
 function onSelect(id: string, detail: TimelineSelectDetail) {
   selected.value = new Set([id])
   const item = barOf.value.get(id)
   if (!item || detail.dragged) return
-  status.value = item.start === item.end ? `${item.label} · milestone on ${formatTime(item.start)}.`
-    : `${item.label} · ${formatTime(item.start)} – ${formatTime(item.end)} · ${percent(item.progress ?? 0)} done.`
+  status.value = item.start === item.end
+    ? t({ en: `${item.label} · milestone on ${formatTime(item.start)}.`, ja: `${item.label} · ${formatTime(item.start)} のマイルストーン。` })
+    : t({
+      en: `${item.label} · ${formatTime(item.start)} – ${formatTime(item.end)} · ${percent(item.progress ?? 0)} done.`,
+      ja: `${item.label} · ${formatTime(item.start)}–${formatTime(item.end)} · ${percent(item.progress ?? 0)} 完了。`,
+    })
 }
 /** Task state glyph in the task list: to do, in progress or done. */
 function taskState(row: SprintRow) {
@@ -165,28 +198,28 @@ function taskState(row: SprintRow) {
 
 <template>
   <section class="showcase sc-sprint" aria-labelledby="sc-sprint-title">
-    <h2 id="sc-sprint-title">Sprint plan</h2>
-    <p class="sc-sprint-intro">
-      A task list with Start, Days and % columns (only % on narrow screens), weekday headers from the tick slot, shaded
-      weekends, epic rollups, restyled finish-to-start arrows and draggable progress; moves that break a link are rejected.
-    </p>
+    <h2 id="sc-sprint-title">{{ t({ en: 'Sprint plan', ja: 'スプリント計画' }) }}</h2>
+    <p class="sc-sprint-intro">{{ t({
+      en: 'A task list with Start, Days and % columns (only % on narrow screens), weekday headers from the tick slot, shaded weekends, epic rollups, restyled finish-to-start arrows and draggable progress; moves that break a link are rejected.',
+      ja: '開始・日数・% の列を持つタスク一覧(狭い画面では % のみ)、目盛りスロットで描く曜日の見出し、週末の網掛け、エピックの集約、装飾し直した終了-開始の矢印、ドラッグできる進捗を備えています。依存関係を崩す移動は拒否されます。',
+    }) }}</p>
     <GanttChart
       :rows="rows" :bars="bars" :dependencies="dependencies" :range="range" :pixels-per-unit="31 / day" :tick-steps="[day]"
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :non-working-periods="weekends" :row-height="rowHeight"
       :height="chartHeight" :columns="columns" show-summaries :selected-ids="selected" :collapsed-ids="collapsed"
       show-now :now="today" progress-editable :progress-step="0.05" :validate-edit="validateEdit"
-      :labels="{ region: 'Sprint plan timeline', rows: 'Task name', now: 'Today' }"
+      :labels="{ ...labels.gantt, region: t({ en: 'Sprint plan timeline', ja: 'スプリント計画のタイムライン' }), rows: t({ en: 'Task name', ja: 'タスク名' }), now: t({ en: 'Today', ja: '今日' }) }"
       @update:collapsed-ids="collapsed = $event" @edit="onEdit" @edit-rejected="onRejected" @progress-edit="onProgress"
       dependency-style="rounded" sticky-band-labels @select="onSelect"
     >
       <template #legend>
-        <ul class="sc-sprint-legend" aria-label="Legend">
-          <li><span class="sc-sprint-swatch sc-sprint-tone-violet"></span>Checkout</li>
-          <li><span class="sc-sprint-swatch sc-sprint-tone-blue"></span>Search</li>
-          <li><span class="sc-sprint-swatch sc-sprint-tone-teal"></span>Release</li>
-          <li><span class="sc-sprint-diamond"></span>Milestone</li>
-          <li><svg class="sc-sprint-link-icon" viewBox="0 0 22 10" aria-hidden="true"><path d="M1 5h17" /><path d="M16 1.5 20 5l-4 3.5" /></svg>Finish to start</li>
-          <li><span class="sc-sprint-weekend"></span>Weekend</li>
+        <ul class="sc-sprint-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
+          <li><span class="sc-sprint-swatch sc-sprint-tone-violet"></span>{{ t({ en: 'Checkout', ja: '購入フロー' }) }}</li>
+          <li><span class="sc-sprint-swatch sc-sprint-tone-blue"></span>{{ t({ en: 'Search', ja: '検索' }) }}</li>
+          <li><span class="sc-sprint-swatch sc-sprint-tone-teal"></span>{{ t({ en: 'Release', ja: 'リリース' }) }}</li>
+          <li><span class="sc-sprint-diamond"></span>{{ t({ en: 'Milestone', ja: 'マイルストーン' }) }}</li>
+          <li><svg class="sc-sprint-link-icon" viewBox="0 0 22 10" aria-hidden="true"><path d="M1 5h17" /><path d="M16 1.5 20 5l-4 3.5" /></svg>{{ t({ en: 'Finish to start', ja: '終了-開始' }) }}</li>
+          <li><span class="sc-sprint-weekend"></span>{{ t({ en: 'Weekend', ja: '週末' }) }}</li>
         </ul>
       </template>
       <template #row="{ row }">
