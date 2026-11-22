@@ -1,5 +1,5 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openDemo, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
@@ -501,9 +501,7 @@ test('async layout: a result that arrives during a drag waits for the drag to en
   await demo.getByRole('checkbox', { name: 'Shortcut link Receive to Pack' }).check()
   await expect(demo.getByLabel('Frame source')).toHaveText('provisional')
   const box = (await demo.getByRole('button', { name: /^Ship/ }).boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 10, box.y + box.height / 2 + 10, { steps: 3 })
+  await pressAndMove(page, box, 10, 10)
   // The graph reported the drag through `gesture-start`; the demo binds no pointer listeners of its own, only the
   // composable's `gestureListeners`.
   await expect(demo.getByLabel('Graph gesture')).toHaveText('node-drag (pointer) in progress')

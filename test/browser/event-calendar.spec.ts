@@ -1,6 +1,6 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
+import { expect, test, animationFrames, dragBy, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
@@ -11,15 +11,6 @@ async function openCalendar(page: Page) {
   const event = (name: string | RegExp) => calendar.getByRole('button', { name: typeof name === 'string' ? new RegExp('^' + name + ',') : name })
   const button = (name: string) => calendar.getByRole('button', { name, exact: true })
   return { errors, calendar, status, event, button }
-}
-
-/** Press at the middle of a box (plus an offset), move by (dx, dy) in steps and release. */
-async function drag(page: Page, box: { x: number; y: number; width: number; height: number }, dx: number, dy: number, offsetY?: number) {
-  const x = box.x + box.width / 2, y = box.y + (offsetY ?? box.height / 2)
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.move(x + dx, y + dy, { steps: 8 })
-  await page.mouse.up()
 }
 
 test('the toolbar switches views and navigates, and month days open the day view', async ({ page }) => {
@@ -58,17 +49,16 @@ test('pointer drags move and resize events, and Escape cancels a drag', async ({
   const sprint = (await event('Sprint demo').boundingBox())!
   const columnWidth = sprint.x - safety.x
   // One column to the right and one hour down: Wednesday 10:00 becomes Thursday 11:00.
-  await drag(page, review, columnWidth, 48)
+  await dragBy(page, review, columnWidth, 48, { steps: 8 })
   await expect(status).toHaveText('Design review → Thu, Nov 12 11:00–12:00.')
   await expect(calendar.getByRole('button', { name: 'Design review, Thu, Nov 12 11:00–12:00, Atlas', exact: true })).toBeVisible()
 
   // The bottom edge resizes the end by whole 15-minute steps.
   const call = event('Customer call')
   const handle = (await call.locator('.vw-calendar-handle.vw-is-end').boundingBox())!
-  await drag(page, handle, 0, 24)
+  await dragBy(page, handle, 0, 24, { steps: 8 })
   await expect(status).toHaveText('Customer call → Wed, Nov 11 10:30–12:30.')
-  const top = (await call.locator('.vw-calendar-handle.vw-is-start').boundingBox())!
-  await drag(page, top, 0, -24)
+  await dragBy(page, call.locator('.vw-calendar-handle.vw-is-start'), 0, -24, { steps: 8 })
   await expect(status).toHaveText('Customer call → Wed, Nov 11 10:00–12:30.')
 
   // Escape during a drag discards the preview without a proposal.
@@ -124,11 +114,11 @@ test('validateEdit and validateCreate reject double bookings of a room', async (
   // The lab safety course moves by pointer to the Atlas room at 10:30, over the design review.
   const safety = (await event('Lab safety').boundingBox())!
   const review = (await event('Design review').boundingBox())!
-  await drag(page, safety, review.x - safety.x, -120)
+  await dragBy(page, safety, review.x - safety.x, -120, { steps: 8 })
   await expect(status).toHaveText('Rejected: Atlas is already booked for Design review.')
   await expect(calendar.getByRole('button', { name: 'Lab safety, Wed, Nov 11 13:00–14:00, Hardware lab', exact: true })).toBeVisible()
   // Moving it into Atlas after the review is accepted as a room change.
-  await drag(page, safety, review.x - safety.x, 0)
+  await dragBy(page, safety, review.x - safety.x, 0, { steps: 8 })
   await expect(status).toHaveText('Lab safety → Wed, Nov 11 13:00–14:00 in Atlas.')
   expect(errors).toEqual([])
 })
@@ -258,7 +248,7 @@ test('a rejected keyboard edit does not take the focus back after a later change
   await expect(status).toHaveText('Rejected: Borealis is already booked for Customer call.')
   // A pointer move of another event changes the events; the focus stays with that event.
   const safety = (await event('Lab safety').boundingBox())!
-  await drag(page, safety, 0, 48)
+  await dragBy(page, safety, 0, 48, { steps: 8 })
   await expect(status).toHaveText('Lab safety → Wed, Nov 11 14:00–15:00.')
   await expect(calendar.getByRole('button', { name: 'Lab safety, Wed, Nov 11 14:00–15:00, Hardware lab', exact: true })).toBeFocused()
   expect(errors).toEqual([])
@@ -356,7 +346,8 @@ test('a drag held near the bottom of the time grid scrolls it and moves the even
   expect(hour).toBeGreaterThanOrEqual(6)
   // After the release, scrolling stops.
   const top = await scrollTop()
-  await page.waitForTimeout(150)
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
   expect(await scrollTop()).toBe(top)
   expect(errors).toEqual([])
 })
@@ -369,7 +360,8 @@ test('Escape during an edge auto-scroll cancels the drag and stops scrolling', a
   await page.keyboard.press('Escape')
   await expect(log).toHaveText('cancel standup escape')
   const top = await scrollTop()
-  await page.waitForTimeout(150)
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
   expect(await scrollTop()).toBe(top)
   await page.mouse.up()
   await expect(log).toHaveText('cancel standup escape')

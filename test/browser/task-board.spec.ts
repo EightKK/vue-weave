@@ -1,5 +1,5 @@
 // TaskBoard: pointer and keyboard card moves, validation, cancellation and the selection shared with GanttChart.
-import { expect, test, openDemo, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
+import { expect, test, boxCenter, dragTo, openDemo, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
 
 async function openTaskBoard(page: Page) {
   const errors = pageErrors(page)
@@ -38,13 +38,8 @@ async function openBoardFixture(page: Page) {
 
 /** Presses the mouse on a card and moves it, in steps, to the lower part of a target; `hold` runs before the release. */
 async function drag(page: Page, card: Locator, target: Locator, hold?: () => Promise<void>) {
-  const from = (await card.boundingBox())!
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-  await page.mouse.down()
   const to = (await target.boundingBox())!
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height - 6, { steps: 8 })
-  await hold?.()
-  await page.mouse.up()
+  await dragTo(page, card, { x: boxCenter(to).x, y: to.y + to.height - 6 }, { steps: 8, hold })
 }
 
 test('a pointer drag proposes a move, the parent applies it and the WIP limit warns without blocking', async ({ page }) => {
@@ -166,7 +161,7 @@ test('a touch drag moves a card like a mouse drag', async ({ page }) => {
   const cdp = await page.context().newCDPSession(page)
   const from = (await card('Dashboard').boundingBox())!
   const to = (await cell('Review · Web team').boundingBox())!
-  const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 }
+  const start = boxCenter(from)
   const end = { x: to.x + to.width / 2, y: to.y + to.height - 6 }
   await touch(cdp, 'touchStart', [{ ...start, id: 1 }])
   for (let step = 1; step <= 8; step++) {

@@ -1,7 +1,7 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
 import {
-  expect, test, centerOf, chainNode, dragBy, fixtureStatus, openComponentFixture, openDemo, openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors,
-  pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo,
+  openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
 } from './support'
 
 async function openStylesFixture(page: Page, search = '') {
@@ -241,10 +241,7 @@ test('node shapes, edge markers, animated and parallel edges render, follow drag
   expect(new Set([initial.sc1, initial.sc2, initial.cs]).size).toBe(3)
   expect(initial.pp1).not.toBe(initial.pp2)
   const node = button('Check stock')
-  const box = (await node.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 5 })
+  await pressAndMove(page, node, 120, 40, 5)
   const dragged = await paths()
   for (const id of ['sc1', 'sc2', 'cs', 'cp']) expect(dragged[id], id).not.toBe(initial[id])
   expect(new Set([dragged.sc1, dragged.sc2, dragged.cs]).size).toBe(3)
@@ -485,12 +482,12 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
     await page.getByLabel('Direction').selectOption(direction)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
   for (const layout of ['tree', 'radial', 'circular', 'grid', 'concentric', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   expect(errors).toEqual([])
 })
@@ -942,10 +939,7 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
 
   // Dragging a step onto another lane is a proposal that the demo turns into a lane change.
   const from = await box(step('Deburr')), target = await box(lane('Inspection'))
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(from.x + from.width / 2, target.y + target.height / 2, { steps: 8 })
-  await page.mouse.up()
+  await dragTo(page, from, { x: boxCenter(from).x, y: boxCenter(target).y }, { steps: 8 })
   await expect(status).toHaveText('Deburr moved to Inspection.')
   await expect.poll(() => within('Deburr', 'Inspection')).toBe(true)
 

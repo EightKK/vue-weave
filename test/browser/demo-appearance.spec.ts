@@ -1,5 +1,5 @@
 // The demo shell, themes, forced colours, reduced motion, print, image export and the design gallery showcases.
-import { expect, test, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import { expect, test, ganttRegion, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors } from './support'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
   const errors = pageErrors(page)
@@ -19,12 +19,14 @@ test('demo built-in theme switch applies the stylesheet theme classes', async ({
 })
 
 test('mobile layout and horizontal scrolling', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/gallery.html')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
-  const viewport = page.locator('.vw-gantt-scroll')
+  const viewport = ganttRegion(page)
   expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true })
+  expect(errors).toEqual([])
 })
 
 test('opt-in dark theme classes apply built-in variables; auto follows the colour scheme', async ({ page }) => {
@@ -114,10 +116,10 @@ test('print media hides interactive chrome and expands the Gantt scroller', asyn
   const zoomTools = await display('.vw-zoom-tools')
   expect(zoomTools.length).toBeGreaterThan(0)
   expect(zoomTools.every(value => value !== 'none')).toBe(true)
-  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
+  await expect(ganttRegion(page)).toHaveCSS('overflow-y', 'auto')
   await page.emulateMedia({ media: 'print' })
   expect((await display('.vw-zoom-tools, .vw-minimap, .vw-bar-handle, .vw-gantt-toolbar')).every(value => value === 'none')).toBe(true)
-  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
+  await expect(ganttRegion(page)).toHaveCSS('overflow-y', 'visible')
   await expect(page.locator('.vw-network').first()).toHaveCSS('print-color-adjust', 'exact')
   expect(errors).toEqual([])
 })
@@ -174,6 +176,7 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
 })
 
 test('the graph Undo and Redo buttons are hidden in the scheduling and timeline editing demos', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   const undo = page.getByRole('button', { name: 'Undo', exact: true }), redo = page.getByRole('button', { name: 'Redo', exact: true })
   await expect(undo).toBeVisible()
@@ -184,6 +187,7 @@ test('the graph Undo and Redo buttons are hidden in the scheduling and timeline 
   }
   await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
   await expect(undo).toBeVisible()
+  expect(errors).toEqual([])
 })
 
 test('the workflow builder showcase applies step moves and connections through the controlled API', async ({ page }) => {

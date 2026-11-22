@@ -1,5 +1,5 @@
 // GanttChart spreadsheet mode (`spreadsheet`): selection, clipboard, clear, fill, typing to edit and atomic rejection.
-import { expect, test, openGanttSheetFixture, pageErrors, touch, type Page } from './support'
+import { expect, test, centerOf, openGanttSheetFixture, pageErrors, touch, type Page } from './support'
 
 async function writeClipboard(page: Page, text: string) {
   await page.evaluate(value => navigator.clipboard.writeText(value), text)
@@ -10,10 +10,6 @@ async function readClipboard(page: Page) {
 /** Events of one kind from the fixture log. */
 function only(events: unknown[][], kind: string) {
   return events.filter(entry => entry[0] === kind)
-}
-async function center(locator: ReturnType<Page['locator']>) {
-  const box = (await locator.boundingBox())!
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
 test.beforeEach(async ({ context }) => {
@@ -189,8 +185,8 @@ test('the fill handle fills down by pointer without a bar drop; Escape and new r
   await cell('Alpha · Owner Ann').click()
   await cell('Alpha · Hours 1').click({ modifiers: ['Shift'] })
   const handle = chart.locator('.vw-sheet-fill')
-  const start = await center(handle)
-  const target = await center(chart.getByRole('button', { name: /^Bar Delta/ }))
+  const start = await centerOf(handle)
+  const target = await centerOf(chart.getByRole('button', { name: /^Bar Delta/ }))
   await page.mouse.move(start.x, start.y)
   await page.mouse.down()
   await page.mouse.move(target.x + 60, target.y, { steps: 6 })
@@ -209,7 +205,7 @@ test('the fill handle fills down by pointer without a bar drop; Escape and new r
   // Escape during the drag cancels it.
   await clearEvents()
   await cell('Phase · Owner Pam').click()
-  const from = await center(handle)
+  const from = await centerOf(handle)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x, target.y, { steps: 4 })
@@ -241,11 +237,11 @@ test('a fill handle drag reports Escape, cancelEdit() and new rows through edit-
   const errors = pageErrors(page)
   const { chart, cell, events, clearEvents } = await openGanttSheetFixture(page, '?cancels')
   const handle = chart.locator('.vw-sheet-fill')
-  const target = await center(cell('Delta · Owner Di'))
+  const target = await centerOf(cell('Delta · Owner Di'))
   /** Select Alpha's owner and drag its fill handle down to Delta, keeping the button pressed. */
   async function startFill() {
     await cell('Alpha · Owner Ann').click()
-    const from = await center(handle)
+    const from = await centerOf(handle)
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
     await page.mouse.move(from.x, target.y, { steps: 4 })
@@ -286,10 +282,10 @@ test('touch taps select cells and the fill handle fills by touch', async ({ page
     await touch(cdp, 'touchStart', [point])
     await touch(cdp, 'touchEnd', [])
   }
-  await tap(await center(cell('Alpha · Hours 1')))
+  await tap(await centerOf(cell('Alpha · Hours 1')))
   await expect(cell('Alpha · Hours 1')).toHaveAttribute('aria-pressed', 'true')
-  const from = await center(chart.locator('.vw-sheet-fill'))
-  const to = await center(cell('Gamma · Hours 3'))
+  const from = await centerOf(chart.locator('.vw-sheet-fill'))
+  const to = await centerOf(cell('Gamma · Hours 3'))
   await touch(cdp, 'touchStart', [from])
   for (let i = 1; i <= 5; i++) await touch(cdp, 'touchMove', [{ x: from.x, y: from.y + (to.y - from.y) * i / 5 }])
   await touch(cdp, 'touchEnd', [])

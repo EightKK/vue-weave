@@ -1,4 +1,4 @@
-import { dragBy, expect, pageErrors, test } from './support'
+import { expect, test, dragBy, pageErrors } from './support'
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
