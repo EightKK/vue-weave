@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.4.0 - 2026-11-22
+
+Adds `TreeGrid`, an editable tree grid and matrix, and core helpers for relation-aware graph walks, keyed graph expansion, structure diffs, row-tree projections and time bucket tables, plus entity-initiated linked selection for views of your own. The examples, showcases and API reference move to a new bilingual documentation site (English and Japanese) at https://eightkk.github.io/vue-weave/. Every change is backward compatible.
+
 ### Added
 
 - `TreeGrid`, an opt-in controlled tree grid and matrix: a row tree against columns, with cells from column accessors (`value(row)`) or a sparse `cells` list. Cells keep a value (including 0), known none, unknown, not applicable and not loaded apart (`missingCell`, cell `status`). Rows and columns are virtualized together, the focused cell stays rendered and focused outside the window, and the ARIA treegrid keys reach every cell. Children can load on demand (`childStatus`, `expand-request`, a status line). Expansion and the active cell are controlled (`v-model:expanded-ids`, `v-model:active-cell`). `row-activate` and `cell-activate` report entities, for linking through `useLinkedSelection().selectEntities` and `matchTreeGridEntities`. Opt-in editing proposes `cell-edit` with typed editors (text, number, select, checkbox, date and time; IME-safe), `spreadsheet` proposes one `sheet-edit` per paste, fill (Ctrl+D or the fill handle), clear or cut, and `rowsEditable` proposes `row-create`, `row-delete` and `row-move` (keyboard and pointer). Each proposal has a synchronous validator, `-rejected` events and `edit-cancel`. Core helpers `createTreeGridIndex`, `flattenTreeGrid`, `applyTreeGridEdits`, `insertTreeGridRow`, `deleteTreeGridRows` and the window and key functions, the `--vw-tree-grid-*` theme variables, right-to-left, forced-colors and print support, server rendering, and a "Tree grid" demo.
@@ -27,6 +31,15 @@
 - The example gallery (`gallery.html`) is retired: every example and showcase is on the documentation site, and `gallery.html` forwards old links (`?demo=<id>`, `#<id>`) to the matching page, or to the example index. The production demo links to the example index.
 - The **Calendar views** showcase marks Ascension Day (Berlin) and Corpus Christi (Lisbon) instead of a Labour Day closure, whose header label was drawn over the Golden Week label.
 - A new design gallery showcase, **BOM editor**: a multi-level bill of materials with shared subassemblies, edited in `TreeGrid` and linked to an item graph, with where-used walks (`traverseGraph` with `edgeFilter`, `maxNodes` and `graphTracePath`), a revision comparison with `diffStructure`, search with `projectTimelineRows` and a quantity rollup.
+
+### Documentation
+
+- A documentation website built with VitePress, in English with a Japanese version under `/ja/`: getting started, an examples index by category with a page per example (live demo, source code tabs, related API), a showcase gallery, and an API reference whose pages are built from `docs/*.md` (overviews in both languages, detail tables in English) plus a type reference generated with TypeDoc for both entry points. Every example and showcase shows its own text and the components' labels in Japanese on Japanese pages. The site replaces the demo homepage and the example gallery; the production planning app stays at `/vue-weave/demo/`.
+- README.md and README.ja.md are shorter and point to the website.
+
+### Development
+
+- `npm run build:demo` builds the site (with the generated type reference) into `preview/` and checks every internal link and anchor; `npm run dev` starts the site's dev server and `npm run dev:demo` the standalone demo. `scripts/serve.mjs`, `npm start`, `Start.cmd`, the Playwright tests and the offline demo archive serve the site under `/vue-weave/`. New development dependencies: `vitepress` (2.0 prerelease, which uses Vite 8), `typedoc`, `typedoc-plugin-markdown` and `typedoc-vitepress-theme`, with an npm `overrides` entry for TypeDoc's `minimatch`. The package contents and runtime dependencies are unchanged.
 
 ## 1.3.0 - 2026-11-22
 
