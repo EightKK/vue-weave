@@ -82,7 +82,7 @@ No linter or formatter is configured. Match the surrounding code.
 
 - Add or update tests for every change to public behavior. Cover these cases first: cycles, input validation, coordinate inversion (`toX`/`toTime` round trips), cancelled edits and stale source data.
 - Core and SSR tests use `node:test` with `node:assert/strict`. They import only from the public entry points, never from `src/`.
-- Give each interaction change a Playwright scenario in the spec file of its area under `test/browser/` (for example `graph-editing.spec.ts` or `gantt-view.spec.ts`). Import `test` and `expect` from `./support`, whose fixture fails a test on any `pageerror` or console error; keep the explicit `expect(errors).toEqual([])` with `pageErrors(page)`. Query elements by role and accessible name.
+- Give each interaction change a Playwright scenario in the spec file of its area under `test/browser/` (for example `graph-connect.spec.ts` or `gantt-view.spec.ts`). Import `test` and `expect` from `./support`, whose fixture fails a test on any `pageerror` or console error; keep the explicit `expect(errors).toEqual([])` with `pageErrors(page)`. Query elements by role and accessible name.
 
 ## Changing the public API
 

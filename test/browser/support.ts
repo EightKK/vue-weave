@@ -171,10 +171,16 @@ export async function openGraphEditor(page: Page) {
 
 export const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })
 
+/** The JSON a fixture writes into one of its status elements, or null while it is empty. */
+export const readJson = async (page: Page, name: string) => JSON.parse(await fixtureStatus(page, name).textContent() || 'null')
+
 export type Point = { x: number; y: number }
 export type Box = Point & { width: number; height: number }
 /** Where a pointer helper presses or moves to: the centre of an element or a box, or a point in viewport pixels. */
 export type PointerTarget = Locator | Box | Point
+
+/** A chart point rounded to a `grid`, as a snapping graph proposes it. JSON turns -0 into 0, so this adds 0 as well. */
+export const snapped = (point: Point, grid: number) => ({ x: Math.round(point.x / grid) * grid + 0, y: Math.round(point.y / grid) * grid + 0 })
 
 /** The centre of a bounding box. */
 export const boxCenter = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
