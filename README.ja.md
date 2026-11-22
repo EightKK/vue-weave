@@ -6,11 +6,11 @@
 
 [デモを試す](https://eightkk.github.io/vue-weave/) · [ソースコード](https://github.com/EightKK/vue-weave) · [課題・問い合わせ](https://github.com/EightKK/vue-weave/issues) · [リリース](https://github.com/EightKK/vue-weave/releases)
 
-Vue 3でネットワークグラフとガントチャートを実装するためのライブラリです。関係の探索、工程フロー、製造のロット系譜、プロジェクト工程、設備・担当者別の予定などを、型付きの2つのコンポーネントで作れます。グラフ・日程計算・設備負荷の計算は、Node.js、Worker、サーバーでも動くヘッドレスのコアで行えます。
+Vue 3でネットワークグラフとガントチャートを実装するためのライブラリです。関係の探索、工程フロー、BPMN図、製造のロット系譜、プロジェクト工程、設備・担当者別の予定などを、型付きの2つのコンポーネントで作れます。必要に応じてカンバンボード、イベントカレンダー、ダイアグラムエディタ部品も追加できます。グラフ・日程計算・設備負荷・アーンドバリューの計算は、Node.js、Worker、サーバーでも動くヘッドレスのコアで行えます。
 
-- **制御されたコンポーネント。** `NetworkGraph` と `GanttChart` は渡されたデータを書き換えません。利用者の編集は変更案のイベントになり、反映するかどうかはアプリ側で決めます。
-- **計画機能を内蔵。** 稼働カレンダー、依存関係、クリティカルパス、設備負荷と平準化、実績からの再計画、計画シナリオの比較に対応し、各日程が決まった理由も説明できます。
-- **必要な機能だけを有効化。** 既定の動作はシンプルなまま、ほかの機能はpropsで有効にします。Vue以外の実行時依存はなく、サーバーサイドレンダリング、SVG・PNGの書き出し、ダークテーマ、右から左のレイアウトに対応します。
+- **制御されたコンポーネント。** `NetworkGraph`、`GanttChart` と、オプトインの `TaskBoard`、`EventCalendar`、`GraphPalette`、`PropertyInspector` は渡されたデータを書き換えません。利用者の編集は変更案のイベントになり、反映するかどうかはアプリ側で決めます。
+- **計画機能を内蔵。** 稼働カレンダー、依存関係、クリティカルパス、設備負荷と平準化、実績からの再計画、アーンドバリュー、計画シナリオの比較に対応し、各日程が決まった理由も説明できます。
+- **必要な機能だけを有効化。** 既定の動作はシンプルなまま、ほかの機能はpropsで有効にします。Vue以外の実行時依存はなく、サーバーサイドレンダリング、SVG・PNGの書き出し、Microsoft Project・iCalendar・CSV・Mermaid・GraphML・draw.ioとのデータ交換、ダークテーマ、右から左のレイアウトに対応します。
 
 ## インストール
 
@@ -179,7 +179,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
       <b>ダイアグラム表現とダークテーマ。</b>ノード形状、辺の端の記号、アニメーションする辺と平行な辺、組み込みのダークテーマ。
     </td>
     <td width="50%" valign="top">
-      <b>デモにはほかにも：</b>プロジェクト工程、1,000行のタイムライン、大規模グラフ、タイムライン編集、非同期レイアウト、グラフ分析、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集、表示範囲ごとに読み込む大規模な計画があります。デザインギャラリーでは、両コンポーネントをワークフロービルダー、データベーススキーマ図、組織図、ロードマップ、スプリント計画、客室予約、カレンダー表示の見た目に作り替えています。
+      <b>デモにはほかにも：</b>プロジェクト工程、1,000行のタイムライン、大規模グラフ、タイムライン編集、非同期レイアウト、グラフ分析、未計画タスクを含むリソース計画、模擬サーバーへの保存を伴う編集、表示範囲ごとに読み込む大規模な計画、ダイアグラムの読み込みと書き出し、イベントカレンダー、ダイアグラムエディタ、タスクボード、アーンドバリュー、BPMNプロセスがあります。デザインギャラリーでは、コンポーネントをワークフロービルダー、データベーススキーマ図、組織図、ロードマップ、スプリント計画、客室予約、カレンダー表示、CI/CDパイプライン、ナレッジグラフ、建設工事の工程、サービスマップの見た目に作り替えています。
     </td>
   </tr>
 </table>
@@ -206,13 +206,15 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **スプレッドシート編集（`spreadsheet`）：** セル範囲の選択、Excel や Google スプレッドシートとのコピー・切り取り・貼り付け、Delete による消去、Ctrl/⌘+D や右下のハンドルによる下方向のコピー、文字入力による編集。操作ごとに一つの `sheet-edit` 変更案として届き、`validateSheetEdit` で一括で却下でき、`applyTimelineSheetEdit` で反映できます。デモには、表からスケジューラーがバー・矢印・クリティカルパスを計算する工程表と、購買申請の承認フローの編集画面があります。
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
-### EventCalendar
-- **表示：** IANA タイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
-- **提案としての編集：** ドラッグとキーボードによる移動とリサイズ、リソース間の移動、ドラッグでの新規作成。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。
 
 ### TaskBoard
 
-- **カンバンボード：** オプトインの3つ目の制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えると警告します。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChart と同じタスクと選択を共有できます。[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard) を参照してください。
+- **カンバンボード：** オプトインの制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えると警告します。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChartと同じタスクと選択を共有できます。詳しくは[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard)を参照してください。
+
+### EventCalendar
+
+- **表示：** オプトインの制御コンポーネントで、IANAタイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
+- **変更案としての編集：** ドラッグとキーボードによる移動・伸縮、リソース間の移動、ドラッグによる新規作成（`creatable`）。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。詳しくは[EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar)を参照してください。
 
 ### ヘッドレスコア（`@eightkk/vue-weave/core`）
 
@@ -222,7 +224,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#compare-plan-scenarios)を参照してください。
 - **アーンドバリュー：** `computeEarnedValue` はステータス日時点のPV・EV・ACと、SV・CV・SPI・CPI・EAC・ETC・VAC・TCPIをタスク別と合計で計算します。計画価値は稼働カレンダー上で積み上げ、Sカーブ用の累積系列も返します。`rollupEarnedValue` はサマリー行を集計します。詳しくは[Earned value management](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#earned-value-management)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
-- **ダイアグラムファイル：** NetworkGraphの図を、Mermaidフローチャート、GraphML（yEdを含む）、draw.ioで読み込み・書き出し。入れ子のグループ、形状、位置、サイズに対応（`fromMermaid`、`toMermaid`、`fromGraphMl`、`toGraphMl`、`fromDrawio`、圧縮ファイル用の `fromDrawioAsync`、`toDrawio`）。
+- **ダイアグラムファイル：** NetworkGraphの図を、Mermaidフローチャート、GraphML（yEdを含む）、draw.ioで読み込み・書き出し。入れ子のグループ、形状、位置、サイズに対応（`fromMermaid`、`toMermaid`、`fromGraphMl`、`toGraphMl`、`fromDrawio`、圧縮ファイル用の `fromDrawioAsync`、`toDrawio`）。詳しくは[Diagram files](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-files-mermaid-graphml-and-drawio)を参照してください。
 
 ### ビューの連動・大規模データ・保存
 
@@ -232,7 +234,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 ### 書き出し・テーマ・アクセシビリティ
 
-- どちらのコンポーネントも `exportSvg(options)` と `exportPng(options)` を提供し、サーバーでは `renderGraphSvg` と `renderTimelineSvg` がSVGを生成します。
+- `NetworkGraph` と `GanttChart` は `exportSvg(options)` と `exportPng(options)` を提供し、サーバーでは `renderGraphSvg` と `renderTimelineSvg` がSVGを生成します。
 - 組み込みのダークテーマ（`vw-theme-dark`）と、`prefers-color-scheme` に従う `vw-theme-auto`。`--vw-*` のCSS変数で見た目を調整できます。強制カラー、モーション低減、印刷にも対応します。
 - `dir="rtl"`（または `auto`）による右から左のレイアウト。
 - キーボード操作とARIA名を備えています。検証の範囲は[対応状況](#対応状況)を参照してください。
@@ -244,7 +246,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## 対応状況
 
-- **バージョン1.0です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#compatibility-and-versioning)に記載しています。
+- **1.0以降は安定版です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#compatibility-and-versioning)に記載しています。
 - **Vue：** 3.x の3.5以降（peer dependency `^3.5.0`）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `@eightkk/vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
@@ -261,9 +263,9 @@ npm run build:demo
 npm start
 ```
 
-トップページでは「製造計画」と「ロットの流れ」を試せます。ほかの作例は「サンプル集」から開けます。
+トップページでは製造計画（Production planning）、ロットの流れ（Lot flow）、工程表（Schedule sheet）、承認フロー（Approval workflow）を試せます。トップページは英語で開きます。日本語で表示するには、URLに `?lang=ja` を付けるか言語ボタンで切り替えます。ほかの作例は、**Examples**（日本語表示では「サンプル集」）のリンクから開けます。
 
-サンプル集には例ごとのページ（[ギャラリー](#ギャラリー)を参照）、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** があります。**Edit graph** や **Planning overlays** などの切り替えで、上記のオプトイン機能を試せます。**Design gallery** の行では、同じ2つのコンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけで作り替えています。編集結果はデモ画面内の状態として保持します。デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
+サンプル集には例ごとのページ（[ギャラリー](#ギャラリー)を参照）、書き出しボタン、テーマ切り替え、採用済みの変更を戻す **Undo**／**Redo** があります。**Edit graph** や **Planning overlays** などの切り替えで、上記のオプトイン機能を試せます。**Design gallery** の行では、コンポーネントをスロット、`--vw-*` 変数、`vw-` クラスだけで作り替えています。編集結果はデモ画面内の状態として保持します。デモの未計画一覧、インスペクター、診断一覧、ツールバーは `examples/components/` の参考実装で、パッケージには含まれません。
 
 Windowsでは代わりに `Start.cmd` をダブルクリックしても起動できます。`preview/` が現在のソースからビルドされたものであればそのまま表示し、そうでなければ先にビルドします。インストール済みの依存関係が `package-lock.json` と一致しない場合は、ビルドの前に `npm ci` も実行します。`npm start` は `preview/` をそのまま表示します。
 
