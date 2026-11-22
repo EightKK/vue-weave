@@ -158,7 +158,8 @@ test('EventCalendar renders the week, the per-resource day and the month view on
   assert.match(week, /vw-calendar-view-week/)
   assert.match(week, /aria-label="Standup, Wed, Nov 11 09:00–09:30"/)
   assert.match(week, /aria-label="Offsite, Thu, Nov 12 – Fri, Nov 13, All day"/)
-  assert.match(week, /Nov 9\s–\s15, 2026/)
+  // Plain spaces around the dash, whatever the ICU version (Node.js writes thin spaces), so the title hydrates in a browser.
+  assert.match(week, /<span class="vw-calendar-title">Nov 9 – 15, 2026<\/span>/)
   assert.match(week, /aria-label="Now 10:00"/)
   assert.match(week, /aria-live="polite"/)
   // Two overlapping events share the day column.
@@ -184,6 +185,9 @@ test('EventCalendar uses the time zone and locale for labels and supports right-
   assert.match(html, /Mittwoch, 11\. November 2026/)
   assert.match(html, /Meeting, Mi\., 11\. Nov\. 09:00–10:00/)
   assert.match(html, /<em>Meeting slot<\/em>/)
+  // The week title in the locale and with plain spaces, like the time labels from 12-hour formats.
+  const week = await renderComponent(EventCalendar, { events: [], date: wednesday, locale: 'en-US', formatTime: undefined })
+  assert.doesNotMatch(week, /[\u00a0\u2009\u202f]/)
   // Hours 8 to 17 are drawn; 09:00 is one hour below the top.
   assert.match(html, />08:00</)
   assert.doesNotMatch(html, />18:00</)

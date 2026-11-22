@@ -26,17 +26,37 @@ export function zoneFormat(timeZone: string) {
   return format
 }
 
-const dateFormats = new Map<string, Intl.DateTimeFormat>()
+/**
+ * A date formatter whose output uses plain spaces. ICU versions differ in the spaces they put into formatted dates:
+ * Node.js writes a thin space (U+2009) around the en dash of a range and some versions a narrow no-break space (U+202F)
+ * before `AM`/`PM`, where browsers write plain spaces. Labels rendered on the server and hydrated in a browser must match, so
+ * these spaces and the no-break space (U+00A0) become plain spaces.
+ */
+export interface CachedDateFormat {
+  format(time: number): string
+  formatRange(start: number, end: number): string
+}
+
+const icuSpaces = /[\u00a0\u2009\u202f]/g
+/** `text` with the thin, narrow no-break and no-break spaces that ICU versions disagree on replaced by plain spaces. */
+const plainSpaces = (text: string) => text.replace(icuSpaces, ' ')
+
+const dateFormats = new Map<string, CachedDateFormat>()
 
 /**
- * A cached `Intl.DateTimeFormat` for a locale and options, so label formatting does not build a formatter per call.
- * Invalid locales or options throw the RangeError (or TypeError) of `Intl.DateTimeFormat`.
+ * A cached `Intl.DateTimeFormat` for a locale and options, so label formatting does not build a formatter per call,
+ * with plain spaces in its output (see `CachedDateFormat`). Invalid locales or options throw the RangeError (or
+ * TypeError) of `Intl.DateTimeFormat`.
  */
-export function cachedDateFormat(locale: string | readonly string[], options: Intl.DateTimeFormatOptions) {
+export function cachedDateFormat(locale: string | readonly string[], options: Intl.DateTimeFormatOptions): CachedDateFormat {
   const key = JSON.stringify([locale, options])
   let format = dateFormats.get(key)
   if (!format) {
-    format = new Intl.DateTimeFormat(locale as string | string[], options)
+    const intl = new Intl.DateTimeFormat(locale as string | string[], options)
+    format = {
+      format: time => plainSpaces(intl.format(time)),
+      formatRange: (start, end) => plainSpaces(intl.formatRange(start, end)),
+    }
     // A bounded cache: label formats come from a few presets, but callers can pass arbitrary options.
     if (dateFormats.size >= 256) dateFormats.clear()
     dateFormats.set(key, format)

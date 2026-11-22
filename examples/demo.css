@@ -83,4 +83,3 @@ footer { padding-block: 6px; }
 .demo-minimap-node { fill: var(--vw-edge, #76929f); }
 .demo-minimap-node.is-selected { fill: var(--vw-accent, #245e96); }
 .vw-node-toolbar button, .vw-edge-toolbar button { padding: 3px 8px; font-size: 11px; }
-.event-calendar-placeholder { height: 495px; }

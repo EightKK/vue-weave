@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   EventCalendar, applyRecurringEdit, eventCalendarRange, expandRecurringEvents, intlTimeFormatter, useEditHistory, type CalendarEvent,
   type CalendarResource, type EventCalendarCreate, type EventCalendarEdit, type EventCalendarView, type RecurringEditScope, type TimeRange,
@@ -10,12 +10,6 @@ import { unusedNumber } from './ids'
 import { useDemoLocale } from './i18n'
 
 const { t, labels, intlLocale } = useDemoLocale()
-
-// The calendar's title comes from Intl.DateTimeFormat#formatRange, whose spacing differs between ICU versions (Node.js
-// when the documentation site renders this page on the server, the browser when it hydrates), so the calendar is
-// rendered once the demo has mounted. An application that renders only in the browser does not need this.
-const mounted = ref(false)
-onMounted(() => { mounted.value = true })
 
 // Room bookings in an event calendar: the parent owns the events and applies the proposals of the calendar (moves,
 // resizes, room changes and new bookings) as undoable steps. A room can hold one booking at a time, so `validateEdit`
@@ -158,13 +152,12 @@ function redo() {
       <button type="button" :disabled="!history.canRedo.value" @click="redo">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
     </template>
     <EventCalendar
-      v-if="mounted" v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
+      v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
       :events="shown" :resources="showRooms ? rooms : undefined" :now="now" :day-start="7" :day-end="20" :height="440"
       :readonly="readonly" creatable :labels="{ ...labels.eventCalendar, region: t({ en: 'Room bookings', ja: '会議室の予約' }) }" :locale="intlLocale" :dir="rtl ? 'rtl' : 'ltr'" :validate-edit="validateEdit" :validate-create="validateCreate"
       @edit="applyEdit" @edit-rejected="rejected" @create="create" @create-rejected="rejected" @select="select"
       @event-activate="activate" @range-change="rangeChange" @edit-cancel="status = 'Drag cancelled.'"
     />
-    <div v-else class="event-calendar-placeholder" />
     <StatusLine :label="t({ en: 'Calendar status', ja: 'カレンダーの状態' })">{{ status }}</StatusLine>
     <p class="hint">{{ t({
       en: `Loaded range: ${loadedText}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes.`,

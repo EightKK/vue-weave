@@ -18,14 +18,14 @@ async function openCalendar(page: Page) {
 test('the toolbar switches views and navigates, and month days open the day view', async ({ page }) => {
   const { errors, calendar, button } = await openCalendar(page)
   const title = calendar.locator('.vw-calendar-title')
-  await expect(title).toHaveText(/^Nov 9\s–\s15, 2026$/)
+  await expect(title).toHaveText(/^Nov 9 – 15, 2026$/)
   await expect(button('Week')).toHaveAttribute('aria-pressed', 'true')
   await button('Next').click()
-  await expect(title).toHaveText(/^Nov 16\s–\s22, 2026$/)
+  await expect(title).toHaveText(/^Nov 16 – 22, 2026$/)
   await expect(page.getByText(/^Loaded range: Mon, Nov 16 – Sun, Nov 22\./)).toBeVisible()
   await expect(calendar.getByRole('button', { name: /^Team offsite, Tue, Nov 17 – Wed, Nov 18, All day$/ })).toBeVisible()
   await button('Today').click()
-  await expect(title).toHaveText(/^Nov 9\s–\s15, 2026$/)
+  await expect(title).toHaveText(/^Nov 9 – 15, 2026$/)
 
   await button('Month').click()
   await expect(button('Month')).toHaveAttribute('aria-pressed', 'true')
@@ -392,3 +392,29 @@ test('the event calendar demo uses Japanese labels on the Japanese page', async 
   await expect(calendar.getByRole('button', { name: '月', exact: true })).toHaveAttribute('aria-pressed', 'true')
   expect(errors).toEqual([])
 })
+
+// The calendar title and the event names come from Intl formatters, whose spacing differs between Node.js (which renders
+// the page on the server) and the browser. The library writes plain spaces, so the server-rendered calendar hydrates
+// without a mismatch. Vue reports one with console.error in production builds and console.warn in development builds.
+const hydrationPages = [
+  { kind: 'example', id: 'event-calendar', locale: 'en', calendar: true },
+  { kind: 'example', id: 'event-calendar', locale: 'ja', calendar: true },
+  { kind: 'showcase', id: 'calendar', locale: 'en', calendar: false },
+] as const
+for (const { kind, id, locale, calendar } of hydrationPages) {
+  test(`the ${locale} ${kind} page ${id} hydrates its server-rendered markup without a mismatch`, async ({ page }) => {
+    const errors = pageErrors(page)
+    const hydration: string[] = []
+    page.on('console', message => { if (/hydrat/i.test(message.text())) hydration.push(`${message.type()}: ${message.text()}`) })
+    const demo = await openExample(page, id, { kind, locale })
+    if (calendar) {
+      // The server-rendered page holds the calendar title, with plain spaces, and the browser renders the same text.
+      const html = await (await page.request.get(page.url())).text()
+      const title = /<span class="vw-calendar-title">([^<]+)<\/span>/.exec(html)?.[1]
+      expect(title).toMatch(/^[^\u00a0\u2009\u202f]+$/)
+      await expect(demo.locator('.vw-calendar-title')).toHaveText(title!)
+    }
+    expect(hydration).toEqual([])
+    expect(errors).toEqual([])
+  })
+}
