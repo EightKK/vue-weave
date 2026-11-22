@@ -236,7 +236,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 ### TaskBoard
 
-- **カンバンボード：** オプトインの制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えると警告します。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChartと同じタスクと選択を共有できます。詳しくは[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard)を参照してください。
+- **カンバンボード：** オプトインの制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えるか WIP下限を下回ると警告します。列とレーンは折りたためて、`filter` でカードを絞り込めます。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChartと同じタスクと選択を共有できます。詳しくは[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard)を参照してください。
 
 ### EventCalendar
 

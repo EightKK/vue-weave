@@ -1924,8 +1924,12 @@ focusField(id: string): boolean;
 ```ts
 autoScroll?: boolean;
 cards: readonly C[];
+collapsedColumnIds?: readonly string[];
+collapsedLaneIds?: readonly string[];
+collapsible?: boolean;
 columns: readonly TaskBoardColumn[];
 dir?: ChartDirection;
+filter?: (card: C) => boolean;
 height?: number | string;
 labels?: Partial<TaskBoardLabels>;
 lanes?: readonly TaskBoardLane[];
@@ -1941,6 +1945,8 @@ validateCardMove?: TaskBoardCardMoveValidator;
 (evt: "card-move", change: TaskBoardCardMove) => void
 (evt: "card-move-cancel", event: TaskBoardMoveCancel) => void
 (evt: "card-move-rejected", change: TaskBoardCardMove, reason: string) => void
+(evt: "update:collapsedColumnIds", ids: string[]) => void
+(evt: "update:collapsedLaneIds", ids: string[]) => void
 (evt: "update:selectedId", id: string) => void
 (evt: "validation-error", error: Error) => void
 ```
@@ -2062,8 +2068,10 @@ scrollToTime: (time: number) => void;
 - `--vw-blue-line`
 - `--vw-blue-pale`
 - `--vw-blue-solid`
+- `--vw-board-collapsed-width`
 - `--vw-board-column-width`
 - `--vw-board-drop`
+- `--vw-board-wip-under`
 - `--vw-board-wip-warning`
 - `--vw-border`
 - `--vw-calendar-gutter`
@@ -2118,6 +2126,7 @@ scrollToTime: (time: number) => void;
 - `--vw-band-dash`
 - `--vw-bar-highlight`
 - `--vw-board-cell-min-height`
+- `--vw-board-collapsed-fill`
 - `--vw-board-column-count`
 - `--vw-calendar-event-accent`
 - `--vw-calendar-hour-height`
@@ -6817,6 +6826,8 @@ interface TaskBoardCell<C extends TaskBoardCard = TaskBoardCard> {
     columnId: string;
     laneId?: string;
     cards: C[];
+    indices: number[];
+    total: number;
 }
 ```
 
@@ -6828,6 +6839,7 @@ interface TaskBoardColumn {
     label: string;
     detail?: string;
     wipLimit?: number;
+    wipMin?: number;
 }
 ```
 
@@ -6837,9 +6849,12 @@ interface TaskBoardColumn {
 interface TaskBoardColumnStatus {
     id: string;
     count: number;
+    total: number;
     wipLimit?: number;
+    wipMin?: number;
     atLimit: boolean;
     overLimit: boolean;
+    underMinimum: boolean;
 }
 ```
 
@@ -6882,6 +6897,10 @@ interface TaskBoardLabels {
     cards: string;
     wipLimit: string;
     overLimit: string;
+    wipMin: string;
+    underMinimum: string;
+    collapse: string;
+    expand: string;
     moveHint: string;
     moveRejected: string;
     pickedUp: string;
@@ -8821,7 +8840,9 @@ function graphViewportRect(camera: GraphViewport, size: {
 ### `groupBoardCards`
 
 ```ts
-function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[]): TaskBoardGroups<C>;
+function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[], options?: {
+    filter?: (card: C) => boolean;
+}): TaskBoardGroups<C>;
 ```
 
 ### `indentTimelineRow`

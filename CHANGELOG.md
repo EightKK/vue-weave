@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `TaskBoard` (opt-in, controlled): collapsible columns and lanes (`collapsible`, `v-model:collapsed-column-ids`, `v-model:collapsed-lane-ids`; collapsed areas render a narrow strip or only a header, are skipped by the keyboard and are not drop targets), a `filter` prop with "3 of 7" column counts (moves keep indices that count hidden cards, so `applyBoardCardMove` on the full array is right), and `TaskBoardColumn.wipMin` marking columns under a minimum (`vw-is-under-minimum`). `groupBoardCards` takes `{ filter }`; `TaskBoardCell` gains `indices` and `total`, `TaskBoardColumnStatus` gains `total`, `wipMin` and `underMinimum`, and `TaskBoardLabels` gains `wipMin`, `underMinimum`, `collapse` and `expand`. New CSS variables `--vw-board-wip-under`, `--vw-board-collapsed-width` and `--vw-board-collapsed-fill`. The "Task board" demo shows them. Without the new props nothing changes.
+
 ### Demo
 
 - Four new design gallery showcases: **CI/CD pipeline** (a live job DAG linked to a run timeline, with failure injection and retry), **Knowledge graph** (a force-directed graph with clusters, search, neighbourhoods and shortest paths), **Construction program** (a scheduled master programme with critical path, baseline, resource leveling, earned value and a what-if delay) and **Service map** (a live service topology with grouped namespaces, traffic-weighted edges, an incident blast radius and an alert timeline).

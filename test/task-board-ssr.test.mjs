@@ -63,3 +63,24 @@ test('TaskBoard shows its empty state without columns and rejects invalid data',
     message: 'Unknown lane in card x: undefined',
   })
 })
+
+test('TaskBoard renders collapsed columns and lanes, the filter counts and the WIP minimum on the server', async () => {
+  const html = await renderComponent(TaskBoard, {
+    columns: [{ id: 'todo', label: 'To do', wipMin: 2 }, { id: 'doing', label: 'Doing' }, { id: 'done', label: 'Done' }], lanes, cards, collapsible: true,
+    collapsedColumnIds: ['doing'], collapsedLaneIds: ['api'], filter: card => card.id !== 'a',
+  })
+  assert.match(html, /aria-label="Collapse To do" aria-expanded="true"|aria-expanded="true"[^>]*aria-label="Collapse To do"/)
+  assert.match(html, /aria-expanded="false"[^>]*aria-label="Expand Doing"/)
+  assert.match(html, /aria-expanded="false"[^>]*aria-label="Expand API"/)
+  assert.match(html, /vw-board-column-head[^"]*vw-is-collapsed/)
+  assert.match(html, /vw-is-under-minimum/)
+  assert.match(html, /Under WIP minimum/)
+  assert.match(html, />0 of 1</)
+  assert.match(html, /grid-template-columns:[^"]*var\(--vw-board-collapsed-width\)/)
+  // Cards of collapsed columns and lanes are not rendered; collapsed areas have no cells to drop on.
+  assert.doesNotMatch(html, /aria-label="Login form"/)
+  assert.doesNotMatch(html, /aria-label="Auth API"/)
+  assert.doesNotMatch(html, /aria-label="Doing · /)
+  assert.doesNotMatch(html, /aria-label="[^"]* · API"/)
+  assert.doesNotMatch(html, /undefined|NaN/)
+})

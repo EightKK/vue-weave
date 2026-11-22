@@ -6,7 +6,7 @@ import {
   type TaskBoardMoveCancelReason, type TaskBoardPosition,
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
-import { cellSize, neighbourCard, stepBoardTarget, type BoardTarget } from './taskBoard/navigation.js'
+import { cellSize, fullCellIndex, neighbourCard, stepBoardTarget, type BoardTarget } from './taskBoard/navigation.js'
 
 const props = withDefaults(defineProps<{
   /** Status columns, in display order. Each has a unique ID, a label, an optional detail and an optional `wipLimit`. Required. */
@@ -19,6 +19,18 @@ const props = withDefaults(defineProps<{
   selectedId?: string
   /** Disables moving cards; cards can still be selected and activated. Default: false. */
   readonly?: boolean
+  /**
+   * Shows only the cards for which it returns true. Column counts show "shown of all" while it hides cards; WIP limits and
+   * minimums still count every card. Move proposals count hidden cards in their indices, so `applyBoardCardMove` works on
+   * the full `cards` array. Pass a new function when the criteria change.
+   */
+  filter?: (card: C) => boolean
+  /** Shows a collapse/expand button in every column header and lane header. Default: false. */
+  collapsible?: boolean
+  /** Controlled IDs of the collapsed columns; supports `v-model:collapsed-column-ids`. A collapsed column is a narrow strip and not a drop target. */
+  collapsedColumnIds?: readonly string[]
+  /** Controlled IDs of the collapsed lanes; supports `v-model:collapsed-lane-ids`. A collapsed lane shows only its header and is not a drop target. */
+  collapsedLaneIds?: readonly string[]
   /** Synchronous check of a card move proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
   validateCardMove?: TaskBoardCardMoveValidator
   /** Overrides for the English UI strings and accessible names; fields you omit keep their defaults. */
@@ -30,7 +42,8 @@ const props = withDefaults(defineProps<{
   /** Scrolls the board while a pointer drag is held near an edge of the viewport. Default: true. */
   autoScroll?: boolean
 }>(), {
-  lanes: undefined, selectedId: undefined, readonly: false, validateCardMove: undefined, labels: undefined,
+  lanes: undefined, selectedId: undefined, filter: undefined, collapsible: false, collapsedColumnIds: undefined,
+  collapsedLaneIds: undefined, readonly: false, validateCardMove: undefined, labels: undefined,
   dir: 'ltr', height: undefined, autoScroll: true,
 })
 
@@ -45,6 +58,10 @@ const emit = defineEmits<{
   'card-activate': [id: string]
   /** The selected card ID changed; supports `v-model:selected-id`. */
   'update:selectedId': [id: string]
+  /** The collapsed column IDs a toggle proposes; supports `v-model:collapsed-column-ids`. */
+  'update:collapsedColumnIds': [ids: string[]]
+  /** The collapsed lane IDs a toggle proposes; supports `v-model:collapsed-lane-ids`. */
+  'update:collapsedLaneIds': [ids: string[]]
   /** Invalid columns, lanes or cards were detected; carries the error. The board then renders its empty state. */
   'validation-error': [error: Error]
 }>()
@@ -60,7 +77,7 @@ defineSlots<{
 
 const messages = computed<TaskBoardLabels>(() => ({
   region: 'Task board', empty: 'No columns to display', emptyCell: 'No cards', card: 'card', cards: 'cards', wipLimit: 'WIP limit',
-  overLimit: 'Over WIP limit',
+  overLimit: 'Over WIP limit', wipMin: 'WIP minimum', underMinimum: 'Under WIP minimum', collapse: 'Collapse', expand: 'Expand',
   moveHint: 'Space picks the card up. Arrow keys move it, Space or Enter drops it and Escape cancels.',
   moveRejected: 'This card move was rejected.', pickedUp: 'Picked up', moved: 'Moved', moveCancelled: 'Move cancelled.',
   position: 'position', of: 'of', lane: 'lane',
@@ -77,9 +94,9 @@ const notice = ref('')
 const validationError = ref<Error>()
 const emptyGroups: TaskBoardGroups<C> = { rows: [], columns: [], positions: new Map() }
 const groups = shallowRef<TaskBoardGroups<C>>(emptyGroups)
-watch([() => props.cards, () => props.columns, () => props.lanes], () => {
+watch([() => props.cards, () => props.columns, () => props.lanes, () => props.filter], () => {
   try {
-    groups.value = groupBoardCards(props.cards, props.columns, props.lanes)
+    groups.value = groupBoardCards(props.cards, props.columns, props.lanes, { filter: props.filter })
     validationError.value = undefined
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error))
@@ -95,6 +112,37 @@ const rtl = computed(() => props.dir === 'rtl')
 const cardById = computed(() => new Map(props.cards.map(card => [card.id, card])))
 const laneOf = (index: number) => laned.value ? props.lanes![index] : undefined
 const movable = (card: C) => !props.readonly && card.draggable !== false && !validationError.value
+const collapsedColumns = computed(() => new Set(props.collapsedColumnIds))
+const collapsedLanes = computed(() => new Set(props.collapsedLaneIds))
+const columnCollapsed = (index: number) => collapsedColumns.value.has(props.columns[index]?.id as string)
+const laneCollapsed = (index: number) => laned.value && collapsedLanes.value.has(props.lanes![index]?.id as string)
+// The groups as the keyboard sees them: the cards of collapsed columns and lanes are not rendered, so they are skipped.
+const navGroups = computed<TaskBoardGroups<C>>(() => {
+  if (!collapsedColumns.value.size && !collapsedLanes.value.size) return groups.value
+  return {
+    ...groups.value,
+    rows: groups.value.rows.map((row, r) => ({
+      ...row, cells: row.cells.map((cell, c) => laneCollapsed(r) || columnCollapsed(c) ? { ...cell, cards: [], indices: [] } : cell),
+    })),
+  }
+})
+const gridColumns = computed(() => collapsedColumns.value.size && props.columns.some(column => collapsedColumns.value.has(column.id))
+  ? props.columns.map(column => collapsedColumns.value.has(column.id) ? 'var(--vw-board-collapsed-width)' : 'minmax(var(--vw-board-column-width), 1fr)').join(' ')
+  : undefined)
+function toggleColumn(id: string) {
+  const ids = props.collapsedColumnIds ?? []
+  emit('update:collapsedColumnIds', ids.includes(id) ? ids.filter(item => item !== id) : [...ids, id])
+}
+function toggleLane(id: string) {
+  const ids = props.collapsedLaneIds ?? []
+  emit('update:collapsedLaneIds', ids.includes(id) ? ids.filter(item => item !== id) : [...ids, id])
+}
+const toggleName = (collapsed: boolean, label: string) => `${collapsed ? messages.value.expand : messages.value.collapse} ${label}`
+function countText(status: TaskBoardColumnStatus | { count: number; total: number }) {
+  return status.count === status.total ? String(status.count) : `${status.count} ${messages.value.of} ${status.total}`
+}
+const laneCount = (r: number) => groups.value.rows[r]!.cells.reduce((sum, cell) => sum + cell.cards.length, 0)
+const laneTotal = (r: number) => groups.value.rows[r]!.cells.reduce((sum, cell) => sum + cell.total, 0)
 const boardStyle = computed(() => ({
   '--vw-board-column-count': String(Math.max(1, props.columns.length)),
   ...props.height === undefined ? {} : { height: typeof props.height === 'number' ? props.height + 'px' : props.height },
@@ -104,8 +152,10 @@ function cellName(column: TaskBoardColumn, lane?: TaskBoardLane) {
   return lane ? `${column.label} · ${lane.label}` : column.label
 }
 function columnDescription(status: TaskBoardColumnStatus) {
-  const parts = [`${status.count} ${status.count === 1 ? messages.value.card : messages.value.cards}`]
+  const parts = [`${countText(status)} ${status.total === 1 ? messages.value.card : messages.value.cards}`]
+  if (status.wipMin !== undefined) parts.push(`${messages.value.wipMin} ${status.wipMin}`)
   if (status.wipLimit !== undefined) parts.push(`${messages.value.wipLimit} ${status.wipLimit}`)
+  if (status.underMinimum) parts.push(messages.value.underMinimum)
   if (status.overLimit) parts.push(messages.value.overLimit)
   return parts.join(', ')
 }
@@ -126,14 +176,18 @@ let skipClick = false
 let pendingFocus: string | undefined
 let scrollFrame = 0
 
-function targetOf(position: TaskBoardPosition): BoardTarget {
+/** The grid cell of a card with its index among the shown cards of that cell (its full index without a filter). */
+function targetOf(id: string): BoardTarget {
+  const position = groups.value.positions.get(id)!
   const column = props.columns.findIndex(item => item.id === position.columnId)
   const lane = laned.value ? props.lanes!.findIndex(item => item.id === position.laneId) : 0
-  return { column, lane, index: position.index }
+  const index = groups.value.rows[lane]!.cells[column]!.cards.findIndex(card => card.id === id)
+  return { column, lane, index }
 }
-function positionOf(target: BoardTarget): TaskBoardPosition {
+/** The proposed position of a drop: the target index is translated into an index among all cards of the cell. */
+function positionOf(target: BoardTarget, id: string): TaskBoardPosition {
   const lane = laneOf(target.lane)
-  return { columnId: props.columns[target.column]!.id, ...lane ? { laneId: lane.id } : {}, index: target.index }
+  return { columnId: props.columns[target.column]!.id, ...lane ? { laneId: lane.id } : {}, index: fullCellIndex(groups.value, target, id) }
 }
 function samePosition(a: TaskBoardPosition, b: TaskBoardPosition) {
   return a.columnId === b.columnId && a.laneId === b.laneId && a.index === b.index
@@ -143,7 +197,7 @@ function exceedsLimit(target: BoardTarget, id: string) {
   const status = groups.value.columns[target.column]
   const card = cardById.value.get(id)
   if (!status || status.wipLimit === undefined || !card) return false
-  return card.columnId !== status.id && status.count + 1 > status.wipLimit
+  return card.columnId !== status.id && status.total + 1 > status.wipLimit
 }
 function describeTarget(target: BoardTarget, id: string) {
   const column = props.columns[target.column]!, lane = laneOf(target.lane)
@@ -200,7 +254,10 @@ function drop() {
   const active = activeMove.value, target = dropTarget.value
   if (!active) return
   if (!target) return cancelMove('no-target')
-  const after = positionOf(target)
+  const from = targetOf(active.id)
+  // A drop on the card's own place, among the shown cards, is no move even if hidden cards sit next to it.
+  const unchanged = from.column === target.column && from.lane === target.lane && from.index === target.index
+  const after = unchanged ? active.before : positionOf(target, active.id)
   const description = describeTarget(target, active.id)
   endMove()
   if (samePosition(active.before, after)) {
@@ -221,7 +278,8 @@ function drop() {
   emit('card-move', change)
 }
 
-watch([() => props.cards, () => props.columns, () => props.lanes, () => props.readonly], () => cancelMove('data-change'))
+watch([() => props.cards, () => props.columns, () => props.lanes, () => props.readonly, () => props.filter, collapsedColumns, collapsedLanes],
+  () => cancelMove('data-change'))
 // After the parent applies a move, the card is rendered in its new cell; give it the focus back.
 watch(() => props.cards, async () => {
   const id = pendingFocus
@@ -263,7 +321,7 @@ function cardKeys(event: KeyboardEvent, card: C) {
       drop()
       return
     }
-    const next = dropTarget.value && stepBoardTarget(groups.value, dropTarget.value, event.key, card.id, isRtl())
+    const next = dropTarget.value && stepBoardTarget(groups.value, dropTarget.value, event.key, card.id, isRtl(), { column: columnCollapsed, lane: laneCollapsed })
     if (!next) return
     event.preventDefault()
     dropTarget.value = next
@@ -275,7 +333,7 @@ function cardKeys(event: KeyboardEvent, card: C) {
     if (event.key === ' ' && movable(card)) return pickUp(card)
     return select(card)
   }
-  const next = neighbourCard(groups.value, card.id, event.key, isRtl())
+  const next = neighbourCard(navGroups.value, card.id, event.key, isRtl())
   if (!next) return
   event.preventDefault()
   if (next.id !== card.id) focusCard(next.id)
@@ -284,7 +342,7 @@ function pickUp(card: C) {
   const before = groups.value.positions.get(card.id)
   if (!before) return
   activeMove.value = { id: card.id, source: 'keyboard', before }
-  dropTarget.value = targetOf(before)
+  dropTarget.value = targetOf(card.id)
   notice.value = `${messages.value.pickedUp} ${card.label}. ${describeTarget(dropTarget.value, card.id)}`
 }
 function cardBlur(card: C) {
@@ -412,26 +470,43 @@ defineExpose({
   <div ref="root" class="vw-board" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
     <div ref="scroller" class="vw-board-scroll" role="region" :aria-label="messages.region" tabindex="0" :style="boardStyle">
       <div v-if="validationError || !columns.length" class="vw-board-empty"><slot name="empty">{{ messages.empty }}</slot></div>
-      <div v-else class="vw-board-grid" :class="{ 'vw-has-lanes': laned, 'vw-is-moving': activeMove }">
+      <div v-else class="vw-board-grid" :class="{ 'vw-has-lanes': laned, 'vw-is-moving': activeMove }"
+        :style="gridColumns === undefined ? undefined : { gridTemplateColumns: gridColumns }">
         <div v-for="(column, c) in columns" :key="column.id" class="vw-board-column-head"
-          :class="{ 'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-at-limit': groups.columns[c]!.atLimit }">
+          :class="{
+            'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-at-limit': groups.columns[c]!.atLimit,
+            'vw-is-under-minimum': groups.columns[c]!.underMinimum, 'vw-is-collapsed': columnCollapsed(c),
+          }">
           <slot name="column-header" :column="column" :status="groups.columns[c]!">
+            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!columnCollapsed(c)"
+              :aria-label="toggleName(columnCollapsed(c), column.label)" @click="toggleColumn(column.id)">
+              <span class="vw-board-toggle-icon" aria-hidden="true"></span>
+            </button>
             <span class="vw-board-column-title">
               <strong>{{ column.label }}</strong>
-              <small v-if="column.detail">{{ column.detail }}</small>
+              <small v-if="column.detail && !columnCollapsed(c)">{{ column.detail }}</small>
             </span>
-            <span class="vw-board-count" aria-hidden="true">{{ groups.columns[c]!.count }}{{ column.wipLimit === undefined ? '' : ' / ' + column.wipLimit }}</span>
-            <span v-if="groups.columns[c]!.overLimit" class="vw-board-wip-warning">{{ messages.overLimit }}</span>
+            <span class="vw-board-count" aria-hidden="true">{{ countText(groups.columns[c]!) }}{{ column.wipLimit === undefined ? '' : ' / ' + column.wipLimit }}</span>
+            <span v-if="groups.columns[c]!.overLimit && !columnCollapsed(c)" class="vw-board-wip-warning">{{ messages.overLimit }}</span>
+            <span v-if="groups.columns[c]!.underMinimum && !columnCollapsed(c)" class="vw-board-wip-warning vw-is-under">{{ messages.underMinimum }}</span>
           </slot>
           <span :id="`${uid}-column-${c}`" hidden>{{ columnDescription(groups.columns[c]!) }}</span>
         </div>
         <template v-for="(row, r) in groups.rows" :key="row.laneId ?? ''">
-          <div v-if="laneOf(r)" class="vw-board-lane-head">
+          <div v-if="laneOf(r)" class="vw-board-lane-head" :class="{ 'vw-is-collapsed': laneCollapsed(r) }">
+            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!laneCollapsed(r)"
+              :aria-label="toggleName(laneCollapsed(r), laneOf(r)!.label)" @click="toggleLane(laneOf(r)!.id)">
+              <span class="vw-board-toggle-icon" aria-hidden="true"></span>
+            </button>
             <span class="vw-board-lane-title"><strong>{{ laneOf(r)!.label }}</strong><small v-if="laneOf(r)!.detail">{{ laneOf(r)!.detail }}</small></span>
+            <span v-if="collapsible || laneCollapsed(r)" class="vw-board-count" aria-hidden="true">{{ countText({ count: laneCount(r), total: laneTotal(r) }) }}</span>
           </div>
-          <ul v-for="(cell, c) in row.cells" :key="cell.columnId" class="vw-board-cell" role="list"
-            :class="{ 'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-target': dropTarget?.lane === r && dropTarget?.column === c }"
-            :aria-label="cellName(columns[c]!, laneOf(r))" :aria-describedby="`${uid}-column-${c}`" :data-vw-cell="`${r}:${c}`">
+          <template v-if="!laneCollapsed(r)">
+            <template v-for="(cell, c) in row.cells" :key="cell.columnId">
+              <div v-if="columnCollapsed(c)" class="vw-board-cell vw-is-collapsed" aria-hidden="true"></div>
+              <ul v-else class="vw-board-cell" role="list"
+                :class="{ 'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-target': dropTarget?.lane === r && dropTarget?.column === c }"
+                :aria-label="cellName(columns[c]!, laneOf(r))" :aria-describedby="`${uid}-column-${c}`" :data-vw-cell="`${r}:${c}`">
             <template v-for="item in cellItems(r, c)" :key="item.kind === 'card' ? item.card.id : '$drop'">
               <li v-if="item.kind === 'drop'" class="vw-board-drop" :class="{ 'vw-is-over-limit': item.over }" aria-hidden="true"></li>
               <li v-else class="vw-board-card-item">
@@ -455,7 +530,9 @@ defineExpose({
             <li v-if="!cell.cards.length && !(dropTarget?.lane === r && dropTarget?.column === c)" class="vw-board-cell-empty">
               <slot name="empty" :column="columns[c]" :lane="laneOf(r)">{{ messages.emptyCell }}</slot>
             </li>
-          </ul>
+              </ul>
+            </template>
+          </template>
         </template>
       </div>
     </div>

@@ -4,7 +4,11 @@
 import type { ChartTone } from './types.js'
 import { checkId, formatId, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
-/** A status column of a task board. `wipLimit` is a work-in-progress limit: the column is over it with more cards. */
+/**
+ * A status column of a task board. `wipLimit` is a work-in-progress limit: the column is over it with more cards.
+ * `wipMin` is the opposite, a minimum: the column is under it with fewer cards. Both count every card of the column,
+ * whether or not a filter hides it.
+ */
 export interface TaskBoardColumn {
   id: string
   label: string
@@ -12,6 +16,8 @@ export interface TaskBoardColumn {
   detail?: string
   /** A non-negative integer. Exceeding it only marks the column; moves are blocked by `validateCardMove` alone. */
   wipLimit?: number
+  /** A non-negative integer, at most `wipLimit` when that is set. Falling below it only marks the column. */
+  wipMin?: number
 }
 
 /** A horizontal swimlane of a task board, for example a team or a priority. */
@@ -40,7 +46,8 @@ export interface TaskBoardCard<D = unknown> {
 
 /**
  * The place of a card: its column, its lane (only on boards with lanes) and its index among the cards of that cell. In
- * a proposal's `after`, `index` counts the cards of the target cell without the moved card.
+ * a proposal's `after`, `index` counts the cards of the target cell without the moved card, including the cards that a
+ * `filter` hides, so `applyBoardCardMove` places the card where the board showed it. `before.index` counts all cards too.
  */
 export interface TaskBoardPosition {
   columnId: string
@@ -73,20 +80,34 @@ export interface TaskBoardMoveCancel {
   source: 'pointer' | 'keyboard'
 }
 
-/** The cards of one column in one lane (`laneId` is undefined on a board without lanes), in `cards` order. */
+/**
+ * The cards of one column in one lane (`laneId` is undefined on a board without lanes), in `cards` order. With a
+ * `filter`, `cards` holds only the cards that pass it.
+ */
 export interface TaskBoardCell<C extends TaskBoardCard = TaskBoardCard> {
   columnId: string
   laneId?: string
   cards: C[]
+  /** For each entry of `cards`, its index among all cards of the cell, hidden ones included (`TaskBoardPosition.index`). */
+  indices: number[]
+  /** The number of cards in the cell, hidden ones included. */
+  total: number
 }
 
-/** The card count of a column over all lanes, with its WIP limit. `overLimit` is `count > wipLimit`, `atLimit` `count >= wipLimit`. */
+/**
+ * The card counts of a column over all lanes, with its WIP limit and minimum. `count` is the number of cards shown (those
+ * that pass the filter) and `total` the number of all cards. The WIP state looks at `total`: `overLimit` is
+ * `total > wipLimit`, `atLimit` `total >= wipLimit` and `underMinimum` `total < wipMin`.
+ */
 export interface TaskBoardColumnStatus {
   id: string
   count: number
+  total: number
   wipLimit?: number
+  wipMin?: number
   atLimit: boolean
   overLimit: boolean
+  underMinimum: boolean
 }
 
 /**
@@ -116,6 +137,14 @@ export interface TaskBoardLabels {
   wipLimit: string
   /** Warning of a column over its WIP limit. Default "Over WIP limit". */
   overLimit: string
+  /** Words before the WIP minimum in the column description. Default "WIP minimum". */
+  wipMin: string
+  /** Warning of a column under its WIP minimum. Default "Under WIP minimum". */
+  underMinimum: string
+  /** Name of the button that collapses a column or lane, followed by its label. Default "Collapse". */
+  collapse: string
+  /** Name of the button that expands a collapsed column or lane, followed by its label. Default "Expand". */
+  expand: string
   /** Description of every movable card. */
   moveHint: string
   /** Announced when `validateCardMove` returns false. Default "This card move was rejected." */
@@ -137,21 +166,32 @@ export interface TaskBoardLabels {
 const usesLanes = (lanes: readonly TaskBoardLane[] | undefined) => lanes !== undefined && lanes.length > 0
 
 function checkWipLimit(column: TaskBoardColumn) {
-  const limit = column.wipLimit
+  const limit = column.wipLimit, min = column.wipMin
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
     throw new RangeError(`The WIP limit of column ${column.id} must be a non-negative integer: ${String(limit)}`)
+  }
+  if (min !== undefined && (!Number.isInteger(min) || min < 0)) {
+    throw new RangeError(`The WIP minimum of column ${column.id} must be a non-negative integer: ${String(min)}`)
+  }
+  if (min !== undefined && limit !== undefined && min > limit) {
+    throw new RangeError(`The WIP minimum of column ${column.id} must not exceed its WIP limit: ${min} > ${limit}`)
   }
 }
 
 /**
  * Group cards into cells of columns × lanes. Cards keep their `cards` order inside each cell. Throws an Error for an
  * invalid or duplicate column, lane or card ID and for a card whose column or lane is unknown (or, on a board with
- * lanes, missing), and a RangeError for a WIP limit that is not a non-negative integer. Without `lanes` (or with an
- * empty array) the board has a single row of cells and card `laneId`s are ignored.
+ * lanes, missing), and a RangeError for a WIP limit or minimum that is not a non-negative integer or a minimum above the
+ * limit. Without `lanes` (or with an empty array) the board has a single row of cells and card `laneId`s are ignored.
+ *
+ * `options.filter` keeps the cards it rejects out of `cells[].cards`. Positions, indices and WIP states still look at
+ * all cards, so a proposal built from the filtered view stays valid for the full `cards` array.
  */
 export function groupBoardCards<C extends TaskBoardCard>(
   cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[],
+  options: { filter?: (card: C) => boolean } = {},
 ): TaskBoardGroups<C> {
+  const filter = options.filter
   const columnIds = new Set<string>()
   for (const column of columns) {
     checkId('column', column?.id, columnIds)
@@ -161,13 +201,15 @@ export function groupBoardCards<C extends TaskBoardCard>(
   for (const lane of lanes ?? []) checkId('lane', lane?.id, laneIds)
   const laned = usesLanes(lanes)
   const rows = (laned ? lanes!.map(lane => lane.id as string | undefined) : [undefined]).map(laneId => ({
-    laneId, cells: columns.map(column => ({ columnId: column.id, ...laneId === undefined ? {} : { laneId }, cards: [] as C[] })),
+    laneId, cells: columns.map(column => ({
+      columnId: column.id, ...laneId === undefined ? {} : { laneId }, cards: [] as C[], indices: [] as number[], total: 0,
+    })),
   }))
   const rowIndex = new Map(rows.map((row, index) => [row.laneId, index]))
   const columnIndex = new Map(columns.map((column, index) => [column.id, index]))
   const cardIds = new Set<string>()
   const positions = new Map<string, TaskBoardPosition>()
-  const counts = columns.map(() => 0)
+  const counts = columns.map(() => 0), totals = columns.map(() => 0)
   for (const card of cards) {
     checkId('card', card?.id, cardIds)
     const column = columnIndex.get(card.columnId)
@@ -175,17 +217,24 @@ export function groupBoardCards<C extends TaskBoardCard>(
     const laneId = laned ? card.laneId : undefined
     if (laned && (!isId(laneId) || !laneIds.has(laneId))) throw unknownReferenceError('lane', 'card ' + card.id, card.laneId)
     const cell = rows[rowIndex.get(laneId)!]!.cells[column]!
-    positions.set(card.id, { columnId: card.columnId, ...laneId === undefined ? {} : { laneId }, index: cell.cards.length })
+    positions.set(card.id, { columnId: card.columnId, ...laneId === undefined ? {} : { laneId }, index: cell.total })
+    totals[column]!++
+    if (filter && !filter(card)) {
+      cell.total++
+      continue
+    }
     cell.cards.push(card)
+    cell.indices.push(cell.total++)
     counts[column]!++
   }
   return {
     rows,
     columns: columns.map((column, index) => {
-      const count = counts[index]!, limit = column.wipLimit
+      const count = counts[index]!, total = totals[index]!, limit = column.wipLimit, min = column.wipMin
       return {
-        id: column.id, count, ...limit === undefined ? {} : { wipLimit: limit },
-        atLimit: limit !== undefined && count >= limit, overLimit: limit !== undefined && count > limit,
+        id: column.id, count, total, ...limit === undefined ? {} : { wipLimit: limit }, ...min === undefined ? {} : { wipMin: min },
+        atLimit: limit !== undefined && total >= limit, overLimit: limit !== undefined && total > limit,
+        underMinimum: min !== undefined && total < min,
       }
     }),
     positions,

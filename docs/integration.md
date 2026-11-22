@@ -316,13 +316,16 @@ The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge 
 | `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
 | `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width. NetworkGraph writes the width-scaled default to an internal inline `--vw-band-dash` on each reference band; do not set that one yourself |
 
-The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-border`, `--vw-text`, `--vw-muted`, `--vw-accent` and the tone families through `vw-tone-*` on each card), so the built-in dark theme and your own theme apply to it. It adds four variables; the built-in dark themes set `--vw-board-wip-warning` to `#ff8a80` and `--vw-board-drop` to `#82badf`. The board lays its columns out in a CSS grid with logical properties, so `dir="rtl"` (or an inherited right-to-left direction) places the first column on the right without extra rules. In forced-colors mode cards are outlined in `CanvasText`, the selection and focus in `Highlight`, and the drop indicator is `Highlight` (dashed `CanvasText` when the drop would exceed a WIP limit).
+The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-border`, `--vw-text`, `--vw-muted`, `--vw-accent` and the tone families through `vw-tone-*` on each card), so the built-in dark theme and your own theme apply to it. It adds these variables; the built-in dark themes set `--vw-board-wip-warning` to `#ff8a80` and `--vw-board-drop` to `#82badf`. The board lays its columns out in a CSS grid with logical properties, so `dir="rtl"` (or an inherited right-to-left direction) places the first column on the right without extra rules. In forced-colors mode cards are outlined in `CanvasText`, the selection and focus in `Highlight`, and the drop indicator is `Highlight` (dashed `CanvasText` when the drop would exceed a WIP limit).
 
 | Variable | Default | Used for |
 | --- | --- | --- |
 | `--vw-board-column-width` | `232px` (`196px` below 700 px) | Minimum width of a column; columns share any extra width |
 | `--vw-board-cell-min-height` | `64px` | Minimum height of a cell, so an empty cell stays a drop target |
 | `--vw-board-wip-warning` | `#a8361f` (dark `#ff8a80`) | Over-limit warning text, the count badge of a column at or over its limit and the tint of its cells |
+| `--vw-board-wip-under` | `#8a5a00` (dark `#f0c060`) | Under-minimum warning text, the count badge and the header rule of a column below its `wipMin` |
+| `--vw-board-collapsed-width` | `44px` | Width of a collapsed column strip |
+| `--vw-board-collapsed-fill` | border colour at 35% | Fill of the cells below a collapsed column |
 | `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
