@@ -6,7 +6,8 @@ import {
   checkGraphInterchangeInput, createGraphCollector, graphShapeFormat, nestedIndent, readGraphShape,
   type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
-import { dropInvalidXmlChars, isXmlCodePoint } from './interchangeXml.js'
+import { dropInvalidXmlChars, predefinedEntities, referencedCharacter } from './interchangeXml.js'
+import { stripBom } from './interchangeShared.js'
 
 /** The direction written after `flowchart`. `TD` and `TB` both mean top to bottom. */
 export type MermaidDirection = 'TD' | 'TB' | 'LR' | 'RL' | 'BT'
@@ -67,14 +68,13 @@ function mermaidText(text: string) {
   return dropInvalidXmlChars(text).replace(/[#"<>&|`\r\n]/g, char => '#' + char.codePointAt(0) + ';')
 }
 
-const namedEntities: Record<string, string> = { quot: '"', amp: '&', lt: '<', gt: '>', apos: '\'', nbsp: ' ', num: '#' }
+const namedEntities: Record<string, string> = { ...predefinedEntities, nbsp: ' ', num: '#' }
 
 function decodeMermaidText(text: string) {
   return text.replace(/#(?:(\d{1,7})|([A-Za-z]+));/g, (match, code: string | undefined, name: string | undefined) => {
     if (code !== undefined) {
-      const value = Number(code)
       // The code points XML allows, as in the XML reader; any other reference stays as written.
-      return isXmlCodePoint(value) ? String.fromCodePoint(value) : match
+      return referencedCharacter(Number(code)) ?? match
     }
     return Object.hasOwn(namedEntities, name!) ? namedEntities[name!]! : match
   })
@@ -235,7 +235,7 @@ export function fromMermaid(text: string, options: GraphInterchangeImportOptions
   const collector = createGraphCollector('Mermaid', options)
   const maxItems = options.maxItems ?? 100_000
   const { warn } = collector
-  const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split(/\r\n|\n|\r/)
+  const lines = stripBom(text).split(/\r\n|\n|\r/)
   // Only text that toMermaid wrote with encoded IDs has the marker; other files keep their `vw_` IDs as written.
   const decodeIds = lines.some(line => line.trim() === encodedIdsMarker)
   const decodeId = (id: string) => decodeIds ? decodeMermaidId(id) : id

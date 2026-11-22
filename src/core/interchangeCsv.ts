@@ -1,5 +1,6 @@
 // CSV (RFC 4180): `toCsv`, `parseCsv` and the GanttChart tables `timelineCsvTable` and `timelineFromCsvTable`.
 // Re-exported by `interchange.ts`.
+import { stripBom } from './interchangeShared.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import { createTimelineRowTree } from './timeline.js'
 import type { TimelineBar, TimelineRow } from './types.js'
@@ -106,7 +107,7 @@ export function parseCsv(text: string, options: CsvParseOptions = {}): string[][
     throw new Error('The CSV delimiter must be one character other than a double quote, CR or LF')
   }
   const source = String(text)
-  const input = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source
+  const input = stripBom(source)
   const records: string[][] = []
   if (!input) return records
   let record: string[] = []

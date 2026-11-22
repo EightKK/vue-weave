@@ -1,7 +1,9 @@
 // Microsoft Project XML (MSPDI): `toMsProjectXml`, `fromMsProjectXml` and the conversions of a plan to work calendars,
 // resource load and GanttChart data. Pure string builders and readers without a DOM. Re-exported by `interchange.ts`.
 import { xmlText } from './interchangeXml.js'
-import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, pushWarning, secondMs, toSecond, wallTime } from './interchangeShared.js'
+import {
+  checkOffset, checkText, checkTime, dayMs, durationMs, isoText, minuteMs, pad2, pushWarning, secondMs, toSecond, wallTime,
+} from './interchangeShared.js'
 import { childMap, parseXml, type XmlElement } from './interchangeXml.js'
 import type { ResourceAssignment, ResourceCapacity } from './resourceLoad.js'
 import type { ResourceTimelineResource } from './resourceTimeline.js'
@@ -305,14 +307,10 @@ function checkMsProjectExtras(project: MsProjectInput, taskUids: ReadonlyMap<str
 /** The epoch milliseconds of the UTC midnight of a `YYYY-MM-DD` civil date, or undefined when it is not a real date. */
 function civilDay(date: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
-  if (!match) return undefined
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const value = new Date(0)
-  value.setUTCFullYear(year, month - 1, day)
-  return month >= 1 && month <= 12 && value.getUTCDate() === day ? value.getTime() : undefined
+  return match ? wallTime(Number(match[1]), Number(match[2]), Number(match[3]), 0, 0, 0) : undefined
 }
 
-const clockText = (minute: number) => `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}:00`
+const clockText = (minute: number) => `${pad2(Math.floor(minute / 60) % 24)}:${pad2(minute % 60)}:00`
 
 function workingTimesXml(shifts: readonly WorkShift[]) {
   const sorted = [...shifts].sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
@@ -614,7 +612,6 @@ function msWorkingTimes(element: XmlElement, working: boolean, warn: MsWarn, cal
   return shifts.sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
 }
 
-const dayMs = 86_400_000
 /** The day number (days since 1970-01-01) of a civil date; `month` from 0 and `day` from 1 may overflow into the next month. */
 function dayNumber(year: number, month: number, day: number) {
   const value = new Date(0)

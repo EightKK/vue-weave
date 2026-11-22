@@ -1,7 +1,8 @@
 // iCalendar (RFC 5545): `toICalendar`, `fromICalendar` and `timelineFromICalendar`. Pure string builders and readers
 // without a DOM. Re-exported by `interchange.ts`.
 import {
-  basicWall, checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, monthLength, pushWarning, toSecond, wallTime, weekdayCodes,
+  basicWall, checkOffset, checkText, checkTime, dayMs, durationMs, minuteMs, monthLength, pad2, pushWarning, stripBom, toSecond, wallTime,
+  weekdayCodes,
 } from './interchangeShared.js'
 import { rfc5545ZonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import type { TimelineBar, TimelineRow } from './types.js'
@@ -50,7 +51,7 @@ const encoder = new TextEncoder()
 /** UTC date-time in iCalendar basic format, such as 20261109T080000Z, rounded to the nearest whole second. */
 function icalTime(time: number) {
   checkTime(time, 'An event time')
-  return isoText(toSecond(time)).slice(0, 19).replace(/[-:]/g, '') + 'Z'
+  return basicWall(toSecond(time)) + 'Z'
 }
 
 /** Escape an iCalendar TEXT value and drop control characters other than tab and line breaks. */
@@ -82,9 +83,8 @@ function fold(line: string) {
 /** A UTC offset in milliseconds as `+hhmm` (or `+hhmmss`). */
 function offsetText(offset: number) {
   const total = Math.round(Math.abs(offset) / 1000)
-  const pad = (value: number) => String(value).padStart(2, '0')
   const seconds = total % 60
-  return (offset < 0 ? '-' : '+') + pad(Math.floor(total / 3600)) + pad(Math.floor((total % 3600) / 60)) + (seconds ? pad(seconds) : '')
+  return (offset < 0 ? '-' : '+') + pad2(Math.floor(total / 3600)) + pad2(Math.floor((total % 3600) / 60)) + (seconds ? pad2(seconds) : '')
 }
 
 /** The UTC offset changes of a zone in one year, found with `Intl`. */
@@ -92,10 +92,10 @@ function zoneChanges(format: Intl.DateTimeFormat, year: number) {
   const yearStart = wallTime(year, 1, 1, 0, 0, 0)!, yearEnd = wallTime(year + 1, 1, 1, 0, 0, 0)!
   let previous = zoneOffset(format, yearStart)
   const changes: { at: number; from: number; to: number }[] = []
-  for (let time = yearStart + 86_400_000; time <= yearEnd; time += 86_400_000) {
+  for (let time = yearStart + dayMs; time <= yearEnd; time += dayMs) {
     const offset = zoneOffset(format, time)
     if (offset === previous) continue
-    changes.push({ at: zoneTransition(format, time - 86_400_000, time, previous), from: previous, to: offset })
+    changes.push({ at: zoneTransition(format, time - dayMs, time, previous), from: previous, to: offset })
     previous = offset
   }
   return { initial: zoneOffset(format, yearStart), changes }
@@ -129,7 +129,7 @@ function timeZoneLines(timeZone: string, firstYear: number) {
     const ordinal = day + 7 > monthLength(changeYear, month) ? -1 : Math.ceil(day / 7)
     // The same rule in the next year: the nth (or last) such weekday of the month at the same local time.
     const nextDay = nthWeekday(changeYear + 1, month, weekday, ordinal)
-    const next = nextDay + (wall - Math.floor(wall / 86_400_000) * 86_400_000) - change.from
+    const next = nextDay + (wall - Math.floor(wall / dayMs) * dayMs) - change.from
     if (zoneOffset(format, next - 1000) === change.from && zoneOffset(format, next) === change.to) {
       lines.push(`RRULE:FREQ=YEARLY;BYMONTH=${month + 1};BYDAY=${ordinal}${weekdayCodes[weekday]}`)
       repeated.add(next)
@@ -146,8 +146,7 @@ function timeZoneLines(timeZone: string, firstYear: number) {
 
 /** A fixed UTC offset in minutes as a TZID such as `UTC+0900` or `UTC-0330`, which `Intl` does not know. */
 function fixedZoneId(minutes: number) {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `UTC${minutes < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(minutes) / 60))}${pad(Math.abs(minutes) % 60)}`
+  return `UTC${minutes < 0 ? '-' : '+'}${pad2(Math.floor(Math.abs(minutes) / 60))}${pad2(Math.abs(minutes) % 60)}`
 }
 
 /** How the times of a series are written: UTC, or local times with a TZID (an IANA zone or a fixed offset). */
@@ -185,9 +184,9 @@ function writeZoneOf(recurrence: CalendarRecurrence): WriteZone | undefined {
 /** The wall midnight of the nth (or, for -1, the last) weekday of a month. */
 function nthWeekday(year: number, month: number, weekday: number, ordinal: number) {
   const first = wallTime(year, month + 1, 1, 0, 0, 0)!
-  if (ordinal > 0) return first + (((weekday - new Date(first).getUTCDay() + 7) % 7) + (ordinal - 1) * 7) * 86_400_000
-  const last = first + (monthLength(year, month) - 1) * 86_400_000
-  return last - ((new Date(last).getUTCDay() - weekday + 7) % 7) * 86_400_000
+  if (ordinal > 0) return first + (((weekday - new Date(first).getUTCDay() + 7) % 7) + (ordinal - 1) * 7) * dayMs
+  const last = first + (monthLength(year, month) - 1) * dayMs
+  return last - ((new Date(last).getUTCDay() - weekday + 7) % 7) * dayMs
 }
 
 /**
@@ -354,7 +353,7 @@ interface ICalendarProperty {
 const icalDateTime = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/
 const icalDuration = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 // `Intl` formats instants up to ±8.64e15 ms; a zoned wall time is resolved with a day of margin on each side.
-const maxZonedWall = 8.64e15 - 2 * 86_400_000
+const maxZonedWall = 8.64e15 - 2 * dayMs
 const maxTime = 8.64e15
 
 /** Split unfolded content lines into name, parameters and value. Returns undefined for a line without a colon. */
@@ -491,7 +490,7 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
     checkMax(mode.maxOccurrences)
   }
   if (typeof text !== 'string') throw new Error('iCalendar text must be a string')
-  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+  const source = stripBom(text)
   // Unfold: a line that starts with a space or tab continues the one before it.
   const lines: { text: string; line: number }[] = []
   const physical = source.split(/\r\n|\n|\r/)
@@ -623,7 +622,7 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
       if (!(Math.abs(sum) <= maxTime)) {
         warn('invalid-value', `The DURATION of event ${label} cannot be read or is negative; the event is an instant`, durationProperty.line, label)
       } else end = sum
-    } else if (start.date) end = start.time + 86_400_000
+    } else if (start.date) end = start.time + dayMs
     const event: ICalendarImportEvent = { id, summary: '', start: start.time, end, allDay: start.date }
     const summary = find('SUMMARY'), description = find('DESCRIPTION'), rule = find('RRULE')
     if (summary) event.summary = icalUnescape(summary.value)

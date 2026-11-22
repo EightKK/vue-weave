@@ -3,8 +3,19 @@
 // milliseconds. Not exported from index.ts.
 import { maxUtcOffsetMinutes } from './workCalendar.js'
 
+export const dayMs = 86_400_000
 export const minuteMs = 60_000
 export const secondMs = 1000
+
+/** Text without a leading byte order mark. */
+export function stripBom(text: string) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
+/** A number of at most two digits with a leading zero, such as `09`. */
+export function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
 
 export function checkTime(value: number, what: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 8.64e15) throw new RangeError(what + ' must be a finite time')
