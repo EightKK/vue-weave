@@ -863,6 +863,255 @@ function readMsCalendars(section: XmlElement | undefined, offset: number, warn: 
 
 const decimalText = /^\d+(\.\d+)?$/
 
+type CalendarRef = (text: string | undefined, subject: { taskId?: string; resourceId?: string } | undefined, what: string) => string | undefined
+
+/**
+ * The reader of `CalendarUID` values: a calendar UID of -1 or 0 means "none"; anything else must be one of the imported
+ * calendars, or it is reported and left out.
+ */
+function calendarReference(calendars: readonly MsProjectCalendar[], warn: MsWarn): CalendarRef {
+  const calendarIds = new Set(calendars.map(calendar => calendar.id))
+  return (text, subject, what) => {
+    if (text === undefined || text === '' || text === '-1') return undefined
+    const id = uidPattern.test(text) ? normalizeUid(text) : undefined
+    if (id === undefined) warn('invalid-value', `${what} has a calendar UID that cannot be read: ${text}`, subject)
+    else if (id !== '0') {
+      if (calendarIds.has(id)) return id
+      warn('unknown-calendar', `${what} uses calendar ${id}, which was not imported, and it was left out`, subject)
+    }
+    return undefined
+  }
+}
+
+/** The fields of an element by name, and the trimmed text of a field. */
+function msFields(element: XmlElement) {
+  const fields = childMap(element)
+  return { fields, value: (name: string) => fields.get(name)?.text.trim() }
+}
+
+/** The constraint of a task: `mode: 'alap'` for type 1, `constraints` for the types with a date, or a warning. */
+function readMsConstraint(task: MsProjectImportTask, value: (name: string) => string | undefined, offset: number, warn: MsWarn) {
+  const id = task.id
+  const constraintType = value('ConstraintType')
+  if (constraintType === '1') task.mode = 'alap'
+  else if (constraintType !== undefined && constraintType !== '0') {
+    const kind = Object.hasOwn(constraintKinds, constraintType) ? constraintKinds[constraintType] : undefined
+    const date = msDate(value('ConstraintDate'), offset)
+    if (kind === undefined && constraintType !== '3') {
+      warn('unsupported-constraint', `The constraint type ${constraintType} of task ${id} is not supported and was left out`, id)
+    } else if (date === undefined) {
+      warn('unsupported-constraint', `The constraint of task ${id} has no valid date and was left out`, id)
+    } else task.constraints = kind === undefined ? { finishNoEarlierThan: date, finishNoLaterThan: date } : { [kind]: date }
+  }
+}
+
+/** The `Baseline` dates of a task; baselines of work or cost only, without dates, are passed over. */
+function readMsBaselines(element: XmlElement, id: string, offset: number, warn: MsWarn) {
+  const baselines: MsProjectBaseline[] = []
+  for (const child of element.children) {
+    if (child.name !== 'Baseline') continue
+    const { value } = msFields(child)
+    const startText = value('Start'), finishText = value('Finish')
+    if (startText === undefined && finishText === undefined) continue
+    const numberText = value('Number') ?? ''
+    const number = uidPattern.test(numberText) ? Number(numberText) : NaN
+    const baselineStart = msDate(startText, offset), baselineEnd = msDate(finishText, offset)
+    if (!(number <= 10) || baselines.some(item => item.number === number)) {
+      warn('skipped-baseline', `A baseline of task ${id} has an invalid or repeated number and was skipped`, id)
+    } else if (baselineStart === undefined || baselineEnd === undefined || baselineEnd < baselineStart) {
+      warn('skipped-baseline', `Baseline ${number} of task ${id} has no valid Start and Finish and was skipped`, id)
+    } else baselines.push({ number, start: baselineStart, end: baselineEnd })
+  }
+  return baselines
+}
+
+/**
+ * The `Tasks` of a project, with the `PredecessorLink` elements of each task for `readMsDependencies` and the IDs of
+ * the imported tasks.
+ */
+function readMsTasks(section: XmlElement | undefined, offset: number, warn: MsWarn, calendarRef: CalendarRef) {
+  const tasks: MsProjectImportTask[] = []
+  const links: { id: string; elements: XmlElement[] }[] = []
+  const ids = new Set<string>()
+  let previousLevel = 0
+  for (const element of section?.children ?? []) {
+    if (element.name !== 'Task') continue
+    const { fields, value } = msFields(element)
+    if (isTrue(value('IsNull'))) continue
+    const uid = value('UID')
+    if (uid === undefined || !uidPattern.test(uid)) {
+      warn('skipped-task', 'A task without a valid UID was skipped')
+      continue
+    }
+    const id = normalizeUid(uid)
+    if (id === '0') continue
+    if (ids.has(id)) {
+      warn('skipped-task', `Task ${id} repeats a UID and was skipped`, id)
+      continue
+    }
+    const start = msDate(value('Start'), offset), end = msDate(value('Finish'), offset)
+    if (start === undefined || end === undefined || end < start) {
+      warn('skipped-task', `Task ${id} has no valid Start and Finish and was skipped`, id)
+      continue
+    }
+    ids.add(id)
+    let level = 1
+    const levelText = value('OutlineLevel')
+    if (levelText !== undefined) {
+      if (uidPattern.test(levelText) && Number(levelText) >= 1) level = Number(levelText)
+      else warn('invalid-value', `Task ${id} has an invalid outline level and was put at level 1`, id)
+    }
+    if (level > previousLevel + 1) {
+      warn('outline-level', `Task ${id} was moved from outline level ${level} to ${previousLevel + 1}, below the task before it`, id)
+      level = previousLevel + 1
+    }
+    previousLevel = level
+    let percentComplete = 0
+    const percentText = value('PercentComplete')
+    if (percentText !== undefined) {
+      const percent = decimalText.test(percentText) ? Number(percentText) : NaN
+      if (percent <= 100) percentComplete = percent
+      else warn('invalid-value', `Task ${id} has an invalid percent complete, read as 0`, id)
+    }
+    const task: MsProjectImportTask = {
+      id, name: fields.get('Name')?.text ?? '', start, end, outlineLevel: level, percentComplete,
+      milestone: isTrue(value('Milestone')), summary: isTrue(value('Summary')), manual: isTrue(value('Manual')),
+      inactive: value('Active') === '0' || value('Active') === 'false',
+    }
+    const taskCalendar = calendarRef(value('CalendarUID'), { taskId: id }, `Task ${id}`)
+    if (taskCalendar !== undefined) task.calendarId = taskCalendar
+    const durationText = value('Duration')
+    if (durationText !== undefined) {
+      const duration = msDurationValue(durationText)
+      if (duration === undefined) warn('invalid-value', `Task ${id} has a duration that cannot be read: ${durationText}`, id)
+      else task.duration = duration
+    }
+    readMsConstraint(task, value, offset, warn)
+    const baselines = readMsBaselines(element, id, offset, warn)
+    if (baselines.length) task.baselines = baselines
+    tasks.push(task)
+    links.push({ id, elements: element.children.filter(child => child.name === 'PredecessorLink') })
+  }
+  return { tasks, links, ids }
+}
+
+/** One `PredecessorLink` of task `id` as a dependency, or undefined with a warning. */
+function readMsDependency(element: XmlElement, id: string, ids: ReadonlySet<string>, warn: MsWarn): MsProjectDependency | undefined {
+  const { value } = msFields(element)
+  const predecessor = value('PredecessorUID')
+  const from = predecessor === undefined ? undefined : normalizeUid(predecessor)
+  if (isTrue(value('CrossProject'))) {
+    warn('skipped-link', `A link to task ${id} from another project was skipped`, id)
+    return undefined
+  }
+  if (from === undefined || !ids.has(from)) {
+    warn('unknown-predecessor', `A link to task ${id} from task ${from ?? '(none)'}, which was not imported, was skipped`, id)
+    return undefined
+  }
+  if (from === id) {
+    warn('skipped-link', `A link from task ${id} to itself was skipped`, id)
+    return undefined
+  }
+  const typeText = value('Type') ?? '1'
+  const type = /^[0-3]$/.test(typeText) ? linkNames[Number(typeText)]! : undefined
+  if (!type) {
+    warn('skipped-link', `A link from task ${from} to task ${id} has an unknown type and was skipped`, id)
+    return undefined
+  }
+  const dependency: MsProjectDependency = { from, to: id, type }
+  const lagText = value('LinkLag')
+  if (lagText !== undefined && lagText !== '0') {
+    const format = value('LagFormat')
+    if (!/^[+-]?\d+$/.test(lagText) || !Number.isFinite(Number(lagText) * 6000)) {
+      warn('invalid-value', `The lag of the link from task ${from} to task ${id} cannot be read and was left out`, id)
+    } else if (format !== undefined && percentLagFormats.has(format)) {
+      warn('percent-lag', `The lag of the link from task ${from} to task ${id} is in percent and was left out`, id)
+    } else {
+      const lag = Number(lagText) * 6000
+      if (lag !== 0) dependency.lag = lag
+      if (lag !== 0 && (format === undefined || !elapsedLagFormats.has(format))) {
+        warn('working-time-lag', `The working-time lag of the link from task ${from} to task ${id} was read as elapsed time`, id)
+      }
+    }
+  }
+  return dependency
+}
+
+/** The `Resources` of a project, except the placeholder for unassigned work (UID 0). */
+function readMsResources(section: XmlElement | undefined, warn: MsWarn, calendarRef: CalendarRef) {
+  const resources: MsProjectResource[] = []
+  const resourceIds = new Set<string>()
+  for (const element of section?.children ?? []) {
+    if (element.name !== 'Resource') continue
+    const { fields, value } = msFields(element)
+    if (isTrue(value('IsNull'))) continue
+    const uid = value('UID')
+    if (uid === undefined || !uidPattern.test(uid)) {
+      warn('skipped-resource', 'A resource without a valid UID was skipped')
+      continue
+    }
+    const id = normalizeUid(uid)
+    // Resource 0 is Microsoft Project's placeholder for unassigned work.
+    if (id === '0') continue
+    if (resourceIds.has(id)) {
+      warn('skipped-resource', `Resource ${id} repeats a UID and was skipped`, { resourceId: id })
+      continue
+    }
+    resourceIds.add(id)
+    const resource: MsProjectResource = { id, name: fields.get('Name')?.text ?? '' }
+    const typeText = value('Type')
+    if (typeText !== undefined) {
+      const type = /^[0-2]$/.test(typeText) ? (['material', 'work', 'cost'] as const)[Number(typeText)] : undefined
+      if (type) resource.type = type
+      else warn('invalid-value', `Resource ${id} has a type that cannot be read: ${typeText}`, { resourceId: id })
+    }
+    // A cost resource is flagged by IsCostResource, whatever its Type says.
+    if (isTrue(value('IsCostResource'))) resource.type = 'cost'
+    const unitsText = value('MaxUnits')
+    if (unitsText !== undefined) {
+      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) resource.maxUnits = Number(unitsText)
+      else warn('invalid-value', `Resource ${id} has a maximum of units that cannot be read: ${unitsText}`, { resourceId: id })
+    }
+    const calendarId = calendarRef(value('CalendarUID'), { resourceId: id }, `Resource ${id}`)
+    if (calendarId !== undefined) resource.calendarId = calendarId
+    resources.push(resource)
+  }
+  return { resources, resourceIds }
+}
+
+/** The `Assignments` of imported resources to imported tasks, each task and resource pair once. */
+function readMsAssignments(section: XmlElement | undefined, taskIds: ReadonlySet<string>, resourceIds: ReadonlySet<string>, warn: MsWarn) {
+  const assignments: MsProjectAssignment[] = []
+  const assigned = new Set<string>()
+  for (const element of section?.children ?? []) {
+    if (element.name !== 'Assignment') continue
+    const { value } = msFields(element)
+    const taskUid = value('TaskUID'), resourceUid = value('ResourceUID')
+    const taskId = taskUid !== undefined && uidPattern.test(taskUid) ? normalizeUid(taskUid) : undefined
+    const resourceId = resourceUid !== undefined && uidPattern.test(resourceUid) ? normalizeUid(resourceUid) : undefined
+    // Unassigned work (resource -65535 or 0) and the project summary task (0) are not assignments.
+    if (taskId === '0' || resourceId === '0' || resourceUid === '-65535') continue
+    if (taskId === undefined || resourceId === undefined || !taskIds.has(taskId) || !resourceIds.has(resourceId)) {
+      warn('skipped-assignment', `An assignment of resource ${resourceUid ?? '(none)'} to task ${taskUid ?? '(none)'}, which was not imported, was skipped`, taskId)
+      continue
+    }
+    const key = JSON.stringify([taskId, resourceId])
+    if (assigned.has(key)) {
+      warn('skipped-assignment', `A repeated assignment of resource ${resourceId} to task ${taskId} was skipped`, { taskId, resourceId })
+      continue
+    }
+    assigned.add(key)
+    const assignment: MsProjectAssignment = { taskId, resourceId }
+    const unitsText = value('Units')
+    if (unitsText !== undefined) {
+      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) assignment.units = Number(unitsText)
+      else warn('invalid-value', `The units of resource ${resourceId} on task ${taskId} cannot be read and were left out`, { taskId, resourceId })
+    }
+    assignments.push(assignment)
+  }
+  return assignments
+}
+
 /**
  * Read a Microsoft Project XML (MSPDI) document, such as one written by Microsoft Project's "Save as XML" or by
  * `toMsProjectXml`. Pure string parsing: no DOM, no network and no file access; a DOCTYPE is skipped and only the five
@@ -911,219 +1160,18 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
     pushWarning(warnings, code, message, typeof subject === 'string' ? { taskId: subject } : subject)
   }
   const calendars = readMsCalendars(project.get('Calendars'), offset, warn)
-  const calendarIds = new Set(calendars.map(calendar => calendar.id))
-  // A calendar UID of -1 or 0 means "none"; anything else must be an imported calendar.
-  const calendarRef = (text: string | undefined, subject: { taskId?: string; resourceId?: string } | undefined, what: string) => {
-    if (text === undefined || text === '' || text === '-1') return undefined
-    const id = uidPattern.test(text) ? normalizeUid(text) : undefined
-    if (id === undefined) warn('invalid-value', `${what} has a calendar UID that cannot be read: ${text}`, subject)
-    else if (id !== '0') {
-      if (calendarIds.has(id)) return id
-      warn('unknown-calendar', `${what} uses calendar ${id}, which was not imported, and it was left out`, subject)
-    }
-    return undefined
-  }
+  const calendarRef = calendarReference(calendars, warn)
   const defaultCalendarId = calendarRef(project.get('CalendarUID')?.text.trim(), undefined, 'The project')
-  const tasks: MsProjectImportTask[] = []
-  const links: { id: string; elements: XmlElement[] }[] = []
-  const ids = new Set<string>()
-  let previousLevel = 0
-  for (const element of project.get('Tasks')?.children ?? []) {
-    if (element.name !== 'Task') continue
-    const fields = childMap(element)
-    const value = (name: string) => fields.get(name)?.text.trim()
-    if (isTrue(value('IsNull'))) continue
-    const uid = value('UID')
-    if (uid === undefined || !uidPattern.test(uid)) {
-      warn('skipped-task', 'A task without a valid UID was skipped')
-      continue
-    }
-    const id = normalizeUid(uid)
-    if (id === '0') continue
-    if (ids.has(id)) {
-      warn('skipped-task', `Task ${id} repeats a UID and was skipped`, id)
-      continue
-    }
-    const start = msDate(value('Start'), offset), end = msDate(value('Finish'), offset)
-    if (start === undefined || end === undefined || end < start) {
-      warn('skipped-task', `Task ${id} has no valid Start and Finish and was skipped`, id)
-      continue
-    }
-    ids.add(id)
-    let level = 1
-    const levelText = value('OutlineLevel')
-    if (levelText !== undefined) {
-      if (uidPattern.test(levelText) && Number(levelText) >= 1) level = Number(levelText)
-      else warn('invalid-value', `Task ${id} has an invalid outline level and was put at level 1`, id)
-    }
-    if (level > previousLevel + 1) {
-      warn('outline-level', `Task ${id} was moved from outline level ${level} to ${previousLevel + 1}, below the task before it`, id)
-      level = previousLevel + 1
-    }
-    previousLevel = level
-    let percentComplete = 0
-    const percentText = value('PercentComplete')
-    if (percentText !== undefined) {
-      const percent = /^\d+(\.\d+)?$/.test(percentText) ? Number(percentText) : NaN
-      if (percent <= 100) percentComplete = percent
-      else warn('invalid-value', `Task ${id} has an invalid percent complete, read as 0`, id)
-    }
-    const task: MsProjectImportTask = {
-      id, name: fields.get('Name')?.text ?? '', start, end, outlineLevel: level, percentComplete,
-      milestone: isTrue(value('Milestone')), summary: isTrue(value('Summary')), manual: isTrue(value('Manual')),
-      inactive: value('Active') === '0' || value('Active') === 'false',
-    }
-    const taskCalendar = calendarRef(value('CalendarUID'), { taskId: id }, `Task ${id}`)
-    if (taskCalendar !== undefined) task.calendarId = taskCalendar
-    const durationText = value('Duration')
-    if (durationText !== undefined) {
-      const duration = msDurationValue(durationText)
-      if (duration === undefined) warn('invalid-value', `Task ${id} has a duration that cannot be read: ${durationText}`, id)
-      else task.duration = duration
-    }
-    const constraintType = value('ConstraintType')
-    if (constraintType === '1') task.mode = 'alap'
-    else if (constraintType !== undefined && constraintType !== '0') {
-      const kind = Object.hasOwn(constraintKinds, constraintType) ? constraintKinds[constraintType] : undefined
-      const date = msDate(value('ConstraintDate'), offset)
-      if (kind === undefined && constraintType !== '3') {
-        warn('unsupported-constraint', `The constraint type ${constraintType} of task ${id} is not supported and was left out`, id)
-      } else if (date === undefined) {
-        warn('unsupported-constraint', `The constraint of task ${id} has no valid date and was left out`, id)
-      } else task.constraints = kind === undefined ? { finishNoEarlierThan: date, finishNoLaterThan: date } : { [kind]: date }
-    }
-    const baselines: MsProjectBaseline[] = []
-    for (const child of element.children) {
-      if (child.name !== 'Baseline') continue
-      const baseline = childMap(child)
-      const startText = baseline.get('Start')?.text.trim(), finishText = baseline.get('Finish')?.text.trim()
-      // Baselines of work or cost only have no dates.
-      if (startText === undefined && finishText === undefined) continue
-      const numberText = baseline.get('Number')?.text.trim() ?? ''
-      const number = uidPattern.test(numberText) ? Number(numberText) : NaN
-      const baselineStart = msDate(startText, offset), baselineEnd = msDate(finishText, offset)
-      if (!(number <= 10) || baselines.some(item => item.number === number)) {
-        warn('skipped-baseline', `A baseline of task ${id} has an invalid or repeated number and was skipped`, id)
-      } else if (baselineStart === undefined || baselineEnd === undefined || baselineEnd < baselineStart) {
-        warn('skipped-baseline', `Baseline ${number} of task ${id} has no valid Start and Finish and was skipped`, id)
-      } else baselines.push({ number, start: baselineStart, end: baselineEnd })
-    }
-    if (baselines.length) task.baselines = baselines
-    tasks.push(task)
-    links.push({ id, elements: element.children.filter(child => child.name === 'PredecessorLink') })
-  }
-
+  const { tasks, links, ids } = readMsTasks(project.get('Tasks'), offset, warn, calendarRef)
   const dependencies: MsProjectDependency[] = []
   for (const { id, elements } of links) {
     for (const element of elements) {
-      const fields = childMap(element)
-      const value = (name: string) => fields.get(name)?.text.trim()
-      const predecessor = value('PredecessorUID')
-      const from = predecessor === undefined ? undefined : normalizeUid(predecessor)
-      if (isTrue(value('CrossProject'))) {
-        warn('skipped-link', `A link to task ${id} from another project was skipped`, id)
-        continue
-      }
-      if (from === undefined || !ids.has(from)) {
-        warn('unknown-predecessor', `A link to task ${id} from task ${from ?? '(none)'}, which was not imported, was skipped`, id)
-        continue
-      }
-      if (from === id) {
-        warn('skipped-link', `A link from task ${id} to itself was skipped`, id)
-        continue
-      }
-      const typeText = value('Type') ?? '1'
-      const type = /^[0-3]$/.test(typeText) ? linkNames[Number(typeText)]! : undefined
-      if (!type) {
-        warn('skipped-link', `A link from task ${from} to task ${id} has an unknown type and was skipped`, id)
-        continue
-      }
-      const dependency: MsProjectDependency = { from, to: id, type }
-      const lagText = value('LinkLag')
-      if (lagText !== undefined && lagText !== '0') {
-        const format = value('LagFormat')
-        if (!/^[+-]?\d+$/.test(lagText) || !Number.isFinite(Number(lagText) * 6000)) {
-          warn('invalid-value', `The lag of the link from task ${from} to task ${id} cannot be read and was left out`, id)
-        } else if (format !== undefined && percentLagFormats.has(format)) {
-          warn('percent-lag', `The lag of the link from task ${from} to task ${id} is in percent and was left out`, id)
-        } else {
-          const lag = Number(lagText) * 6000
-          if (lag !== 0) dependency.lag = lag
-          if (lag !== 0 && (format === undefined || !elapsedLagFormats.has(format))) {
-            warn('working-time-lag', `The working-time lag of the link from task ${from} to task ${id} was read as elapsed time`, id)
-          }
-        }
-      }
-      dependencies.push(dependency)
+      const dependency = readMsDependency(element, id, ids, warn)
+      if (dependency) dependencies.push(dependency)
     }
   }
-  const resources: MsProjectResource[] = []
-  const resourceIds = new Set<string>()
-  for (const element of project.get('Resources')?.children ?? []) {
-    if (element.name !== 'Resource') continue
-    const fields = childMap(element)
-    const value = (field: string) => fields.get(field)?.text.trim()
-    if (isTrue(value('IsNull'))) continue
-    const uid = value('UID')
-    if (uid === undefined || !uidPattern.test(uid)) {
-      warn('skipped-resource', 'A resource without a valid UID was skipped')
-      continue
-    }
-    const id = normalizeUid(uid)
-    // Resource 0 is Microsoft Project's placeholder for unassigned work.
-    if (id === '0') continue
-    if (resourceIds.has(id)) {
-      warn('skipped-resource', `Resource ${id} repeats a UID and was skipped`, { resourceId: id })
-      continue
-    }
-    resourceIds.add(id)
-    const resource: MsProjectResource = { id, name: fields.get('Name')?.text ?? '' }
-    const typeText = value('Type')
-    if (typeText !== undefined) {
-      const type = /^[0-2]$/.test(typeText) ? (['material', 'work', 'cost'] as const)[Number(typeText)] : undefined
-      if (type) resource.type = type
-      else warn('invalid-value', `Resource ${id} has a type that cannot be read: ${typeText}`, { resourceId: id })
-    }
-    // A cost resource is flagged by IsCostResource, whatever its Type says.
-    if (isTrue(value('IsCostResource'))) resource.type = 'cost'
-    const unitsText = value('MaxUnits')
-    if (unitsText !== undefined) {
-      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) resource.maxUnits = Number(unitsText)
-      else warn('invalid-value', `Resource ${id} has a maximum of units that cannot be read: ${unitsText}`, { resourceId: id })
-    }
-    const calendarId = calendarRef(value('CalendarUID'), { resourceId: id }, `Resource ${id}`)
-    if (calendarId !== undefined) resource.calendarId = calendarId
-    resources.push(resource)
-  }
-  const assignments: MsProjectAssignment[] = []
-  const assigned = new Set<string>()
-  for (const element of project.get('Assignments')?.children ?? []) {
-    if (element.name !== 'Assignment') continue
-    const fields = childMap(element)
-    const value = (field: string) => fields.get(field)?.text.trim()
-    const taskUid = value('TaskUID'), resourceUid = value('ResourceUID')
-    const taskId = taskUid !== undefined && uidPattern.test(taskUid) ? normalizeUid(taskUid) : undefined
-    const resourceId = resourceUid !== undefined && uidPattern.test(resourceUid) ? normalizeUid(resourceUid) : undefined
-    // Unassigned work (resource -65535 or 0) and the project summary task (0) are not assignments.
-    if (taskId === '0' || resourceId === '0' || resourceUid === '-65535') continue
-    if (taskId === undefined || resourceId === undefined || !ids.has(taskId) || !resourceIds.has(resourceId)) {
-      warn('skipped-assignment', `An assignment of resource ${resourceUid ?? '(none)'} to task ${taskUid ?? '(none)'}, which was not imported, was skipped`, taskId)
-      continue
-    }
-    const key = JSON.stringify([taskId, resourceId])
-    if (assigned.has(key)) {
-      warn('skipped-assignment', `A repeated assignment of resource ${resourceId} to task ${taskId} was skipped`, { taskId, resourceId })
-      continue
-    }
-    assigned.add(key)
-    const assignment: MsProjectAssignment = { taskId, resourceId }
-    const unitsText = value('Units')
-    if (unitsText !== undefined) {
-      if (decimalText.test(unitsText) && Number.isFinite(Number(unitsText))) assignment.units = Number(unitsText)
-      else warn('invalid-value', `The units of resource ${resourceId} on task ${taskId} cannot be read and were left out`, { taskId, resourceId })
-    }
-    assignments.push(assignment)
-  }
+  const { resources, resourceIds } = readMsResources(project.get('Resources'), warn, calendarRef)
+  const assignments = readMsAssignments(project.get('Assignments'), ids, resourceIds, warn)
   const projectName = project.get('Name')?.text
   const name = projectName?.trim() ? projectName : project.get('Title')?.text ?? projectName ?? ''
   const result: MsProjectImport = { name, tasks, dependencies, warnings }
