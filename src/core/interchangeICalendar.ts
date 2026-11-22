@@ -1,6 +1,8 @@
 // iCalendar (RFC 5545): `toICalendar`, `fromICalendar` and `timelineFromICalendar`. Pure string builders and readers
 // without a DOM. Re-exported by `interchange.ts`.
-import { basicWall, checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, monthLength, toSecond, wallTime, weekdayCodes } from './interchangeShared.js'
+import {
+  basicWall, checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, monthLength, pushWarning, toSecond, wallTime, weekdayCodes,
+} from './interchangeShared.js'
 import { rfc5545ZonedInstant, zoneFormat, zoneOffset, zoneTransition } from './timeZone.js'
 import type { TimelineBar, TimelineRow } from './types.js'
 import { checkId } from './ids.js'
@@ -499,7 +501,7 @@ export function fromICalendar(text: string, options: ICalendarImportOptions = {}
   })
   const warnings: ICalendarImportWarning[] = []
   const warn = (code: ICalendarImportWarningCode, message: string, line?: number, eventId?: string) => {
-    warnings.push({ code, ...(eventId === undefined ? {} : { eventId }), ...(line === undefined ? {} : { line }), message })
+    pushWarning(warnings, code, message, { eventId, line })
   }
   if (!lines.some(({ text: line }) => /^BEGIN:VCALENDAR\s*$/i.test(line))) throw new Error('Not an iCalendar document: there is no BEGIN:VCALENDAR')
   const fixedZones = fixedOffsetZones(lines)

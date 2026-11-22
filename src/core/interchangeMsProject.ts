@@ -1,7 +1,7 @@
 // Microsoft Project XML (MSPDI): `toMsProjectXml`, `fromMsProjectXml` and the conversions of a plan to work calendars,
 // resource load and GanttChart data. Pure string builders and readers without a DOM. Re-exported by `interchange.ts`.
 import { xmlText } from './interchangeXml.js'
-import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, secondMs, toSecond, wallTime } from './interchangeShared.js'
+import { checkOffset, checkText, checkTime, durationMs, isoText, minuteMs, pushWarning, secondMs, toSecond, wallTime } from './interchangeShared.js'
 import { childMap, parseXml, type XmlElement } from './interchangeXml.js'
 import type { ResourceAssignment, ResourceCapacity } from './resourceLoad.js'
 import type { ResourceTimelineResource } from './resourceTimeline.js'
@@ -911,8 +911,7 @@ export function fromMsProjectXml(xml: string, options: MsProjectXmlOptions = {})
   const project = childMap(root)
   const warnings: MsProjectImportWarning[] = []
   const warn: MsWarn = (code, message, subject) => {
-    const who = typeof subject === 'string' ? { taskId: subject } : subject
-    warnings.push({ code, ...who, message })
+    pushWarning(warnings, code, message, typeof subject === 'string' ? { taskId: subject } : subject)
   }
   const calendars = readMsCalendars(project.get('Calendars'), offset, warn)
   const calendarIds = new Set(calendars.map(calendar => calendar.id))
@@ -1206,10 +1205,9 @@ export function resourceLoadFromMsProject(project: MsProjectInput, options: MsPr
     if (!work.has(assignment.resourceId) || summaries.has(assignment.taskId)) continue
     const units = Math.round((assignment.units ?? 1) * scale)
     if (!Number.isSafeInteger(units) || units < 1) {
-      warnings.push({
-        code: 'skipped-assignment', taskId: assignment.taskId, resourceId: assignment.resourceId,
-        message: `The assignment of resource ${assignment.resourceId} to task ${assignment.taskId} has less than one unit at this unit scale and was left out`,
-      })
+      pushWarning(warnings, 'skipped-assignment',
+        `The assignment of resource ${assignment.resourceId} to task ${assignment.taskId} has less than one unit at this unit scale and was left out`,
+        { taskId: assignment.taskId, resourceId: assignment.resourceId })
       continue
     }
     assignments.push({ resourceId: assignment.resourceId, taskId: assignment.taskId, units })

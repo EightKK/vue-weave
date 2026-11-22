@@ -7,6 +7,7 @@ import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkGroup, NetworkNode, NetworkNodeShape } from './types.js'
 import { checkGraphGroups, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
 import { isId } from './ids.js'
+import { pushWarning } from './interchangeShared.js'
 
 /**
  * A NetworkGraph diagram for the graph writers (`toMermaid`, `toGraphMl`, `toDrawio`): the `nodes`, `edges` and
@@ -331,7 +332,7 @@ export function createGraphCollector(format: string, options: GraphInterchangeIm
     if (++items > maxItems) throw new RangeError(`The ${format} file has more than ${maxItems} nodes, edges and groups (maxItems)`)
   }
   const warn: GraphWarn = (code, message, id, line) => {
-    warnings.push({ code, ...(id === undefined ? {} : { id }), ...(line === undefined ? {} : { line }), message })
+    pushWarning(warnings, code, message, { id, line })
   }
   /** Add a node and return whether it was added; an invalid or repeated ID is skipped with a warning. */
   const addNode = (node: NetworkNode, line?: number) => {
