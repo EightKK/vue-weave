@@ -363,8 +363,15 @@ test('the calendar views showcase switches calendar zoom presets and locales and
   await expect(freeze).toBeVisible()
   await expect(freeze).toHaveText('Code freeze')
   await expect(showcase.getByRole('img', { name: 'Golden Week 29 Apr–7 May', exact: true })).toBeVisible()
-  // Golden Week shades the Tokyo row; the Labour Day closure shades Berlin and Lisbon.
+  // Golden Week shades the Tokyo row, Ascension Day the Berlin row and Corpus Christi the Lisbon row.
   await expect(showcase.locator('.vw-gantt-range.vw-is-row')).toHaveCount(3)
+  // The range labels share the header strip; none of them is drawn over another one.
+  const labels = await showcase.locator('.vw-gantt-range-label').evaluateAll(elements => elements.map(element => {
+    const rect = element.getBoundingClientRect()
+    return { text: element.textContent, start: rect.left, end: rect.right }
+  }))
+  expect(labels.map(entry => entry.text)).toEqual(['Golden Week', 'Ascension Day', 'Code freeze', 'Corpus Christi'])
+  for (let index = 1; index < labels.length; index++) expect(labels[index]!.start).toBeGreaterThanOrEqual(labels[index - 1]!.end - 0.5)
   const band = (await showcase.locator('.vw-gantt-range:not(.vw-is-row)').first().boundingBox())!
   const label = (await freeze.boundingBox())!
   expect(Math.abs(band.x - label.x)).toBeLessThan(1)
