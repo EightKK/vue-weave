@@ -511,7 +511,7 @@ A band is a stroke along the edge path, not a filled outline, so every edge feat
 | laneCount | integer / 1 | Lanes per row |
 | height | number or CSS string / 316px | Scroll viewport height |
 | readonly | boolean / false | Disables editing |
-| validateEdit | EditValidator / undefined | Synchronous hook accepting or rejecting a proposal |
+| validateEdit | EditValidator / undefined | Synchronous hook accepting or rejecting a proposal: true or undefined accepts, false (default `labels.rejected`) or a reason string rejects; a blank or whitespace-only string rejects with the default message. Every GanttChart validator follows this convention with its own default message |
 | labels | Partial<GanttLabels> / English | region, rows, empty, zoom, zoomIn, zoomOut, editHint, rejected, plus the optional fields described in the sections below (for example progressOf and deleteHint) |
 | showControls | boolean / true | Zoom buttons |
 | autoScroll | boolean / true | Scrolls the timeline horizontally while a pointer drag is held near the left or right edge of the viewport. Set false to disable |

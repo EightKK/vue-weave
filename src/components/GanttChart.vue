@@ -49,6 +49,9 @@ import {
 } from './ganttChart/rowMoves.js'
 
 import { sheetKey, useSheet } from './ganttChart/sheet.js'
+import { elementWithData } from './shared/focus.js'
+import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
+import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 import { nextTimelineSort, type TimelineViewFilter, type TimelineViewSort } from '../core/timelineView.js'
 import { filterActive, headerColumnIds, sameOption, withColumnFilter } from './ganttChart/headerControls.js'
 import type { TimelineSheetEdit } from '../core/types.js'
@@ -686,16 +689,9 @@ function editingCell(row: TimelineRow, column: TimelineColumn<R>) {
 function fieldText(row: R, column: TimelineColumn<R>) {
   return formatFieldValue(column.field!, column.field!.get(row))
 }
-const dataSelectors = {
-  vwBar: '[data-vw-bar]', vwRowHandle: '[data-vw-row-handle]', vwCell: '[data-vw-cell]', vwCellEditor: '[data-vw-cell-editor]',
-  vwRowHeading: '[data-vw-row-heading]',
-}
 /** The rendered element whose data attribute holds `value`. Values are compared directly, so IDs need no CSS escaping. */
-function dataElement(attribute: keyof typeof dataSelectors, value: string) {
-  for (const element of scroller.value?.querySelectorAll<HTMLElement>(dataSelectors[attribute]) ?? []) {
-    if (element.dataset[attribute] === value) return element
-  }
-  return undefined
+function dataElement(attribute: 'vwBar' | 'vwRowHandle' | 'vwCell' | 'vwCellEditor' | 'vwRowHeading', value: string) {
+  return elementWithData(scroller.value, attribute, value)
 }
 /** Return focus to the cell of a closed editor, or to the chart region when the cell is gone. */
 async function focusCell(key: string) {
@@ -1249,7 +1245,6 @@ let pendingFocus: string | undefined
 let suppressSelection: string | undefined
 let lastClientX = 0
 let lastClientY = 0
-let scrollFrame = 0
 /**
  * The pointer gesture in flight. At most one exists, because every gesture start checks `pointerGestureActive`. Each
  * kind records the pointer and the element that captured it; what the gesture draws lives in its own reactive preview
@@ -1280,7 +1275,7 @@ function endGesture(type: GestureType) {
   const active = gestureOf(type)
   if (!active) return undefined
   gesture = undefined
-  if (active.type !== 'pinch' && active.target.hasPointerCapture(active.pointerId)) active.target.releasePointerCapture(active.pointerId)
+  if (active.type !== 'pinch') releasePointer(active.target, active.pointerId)
   return active
 }
 /** Whether a bar move or resize, or a drag to create, is in flight: the gestures that scroll at the viewport edges. */
@@ -1810,7 +1805,7 @@ function movePointer(event: PointerEvent) {
   moveRowDrag(event)
 }
 /** `pointerup` and `pointercancel`: end a touch of a pinch, then finish (or cancel) the gesture of the pointer. */
-function releasePointer(event: PointerEvent) {
+function pointerReleased(event: PointerEvent) {
   endTouch(event)
   finishGesture(event)
 }
@@ -1828,15 +1823,15 @@ function gestureActive(): boolean {
   return pointerGestureActive() || Boolean(linkDraft.value)
 }
 
-/** The rejection reason of a validator result: `fallback` for `false`, the returned string, or undefined to accept. */
-function rejection(result: boolean | string | void, fallback = messages.value.rejected) {
-  return result === false ? fallback : typeof result === 'string' ? result : undefined
+/** The rejection reason of a validator result (`rejectionReason`), with `labels.rejected` as the default text. */
+function rejection(result: ValidatorResult, fallback = messages.value.rejected) {
+  return rejectionReason(result, fallback)
 }
 /**
  * Announce the outcome of a proposal in the live region before it is emitted: the rejection reason of the validator
  * result, or nothing when it is accepted. Returns the reason.
  */
-function settle(result: boolean | string | void, fallback?: string) {
+function settle(result: ValidatorResult, fallback?: string) {
   const reason = rejection(result, fallback)
   notice.value = reason ?? ''
   return reason
@@ -1958,7 +1953,7 @@ function startEdit(event: PointerEvent, bar: TimelineBar) {
     initial: { start: bar.start, end: bar.end }, mode, target: control,
     group: mode === 'move' ? movingGroup(bar) : [bar],
   }
-  control.setPointerCapture(event.pointerId)
+  capturePointer(control, event.pointerId)
   lastClientX = event.clientX
   lastClientY = event.clientY
   startAutoScroll()
@@ -1988,38 +1983,37 @@ function updatePreview() {
   if (props.cascade) updateCascade(buildChanges(drag.group, ranges, mode, 'pointer', shift))
 }
 
-const scrollEdge = 40
-const scrollSpeed = 24
-function autoScrollStep() {
-  scrollFrame = 0
+/**
+ * Edge auto-scroll of a bar move or resize, or a drag to create, once its preview is shown: one step per frame while
+ * the gesture lasts, faster towards the edge of the time area (40 px bands, up to 24 px per frame).
+ */
+const autoScroller = frameLoop(() => {
   const el = scroller.value
   const bar = gesture?.type === 'bar'
-  if (!scrollingGesture() || !el) return
+  if (!scrollingGesture() || !el) return false
   if (bar ? previews.value : createPreview.value) {
-    const rect = el.getBoundingClientRect()
     // The time area excludes the sticky label column, which sits on the inline-start side.
-    const left = rect.left + (rtl.value ? 0 : viewport.value.labels) + scrollEdge
-    const right = rect.right - (rtl.value ? viewport.value.labels : 0) - scrollEdge
-    const depth = lastClientX < left ? (left - lastClientX) / scrollEdge : lastClientX > right ? (lastClientX - right) / scrollEdge : 0
-    if (depth > 0) {
+    const labels = viewport.value.labels
+    const delta = edgeScrollDelta(el.getBoundingClientRect(), lastClientX, lastClientY, {
+      zone: 40, maxSpeed: 24, axis: 'x', insets: rtl.value ? { right: labels } : { left: labels },
+    })
+    if (delta.x) {
       const before = el.scrollLeft
-      // Moving towards the visual left scrolls to earlier times in LTR and to later times in RTL.
-      const towardsStart = (lastClientX < left) !== rtl.value
-      setScrollStart(el, scrollStart(el) + (towardsStart ? -1 : 1) * Math.ceil(Math.min(1, depth) * scrollSpeed))
+      // `delta.x` is physical: towards the visual left is towards earlier times in LTR and later times in RTL.
+      setScrollStart(el, scrollStart(el) + (rtl.value ? -delta.x : delta.x))
       if (el.scrollLeft !== before) {
         if (bar) updatePreview()
         else updateCreatePreview()
       }
     }
   }
-  scrollFrame = requestAnimationFrame(autoScrollStep)
-}
+  return true
+})
 function startAutoScroll() {
-  if (props.autoScroll && !scrollFrame && typeof requestAnimationFrame === 'function') scrollFrame = requestAnimationFrame(autoScrollStep)
+  if (props.autoScroll) autoScroller.start()
 }
 function stopAutoScroll() {
-  if (scrollFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(scrollFrame)
-  scrollFrame = 0
+  autoScroller.stop()
 }
 
 function finishEdit(event: PointerEvent) {
@@ -2220,7 +2214,7 @@ function startRowDrag(event: PointerEvent, row: TimelineRow) {
   target.focus({ preventScroll: true })
   hideTooltip()
   gesture = { type: 'row', id: row.id, pointerId: event.pointerId, target, y: event.clientY, moved: false }
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
 }
 /** The drop position under a client y coordinate (`rowDropAt` of the row move helpers). */
 function rowDropUnder(id: string, clientY: number): RowDrop | undefined {
@@ -2232,7 +2226,7 @@ function rowDropUnder(id: string, clientY: number): RowDrop | undefined {
 function moveRowDrag(event: PointerEvent) {
   const active = gestureOf('row', event)
   if (!active) return
-  if (!active.moved && Math.abs(event.clientY - active.y) < 4) return
+  if (!active.moved && Math.abs(event.clientY - active.y) < DRAG_THRESHOLD) return
   active.moved = true
   rowDrop.value = rowDropUnder(active.id, event.clientY)
 }
@@ -2329,7 +2323,7 @@ function captureLink(event: PointerEvent) {
   const target = event.currentTarget as HTMLElement
   gesture = { type: 'link', pointerId: event.pointerId, target, x: event.clientX, y: event.clientY }
   target.focus({ preventScroll: true })
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
 }
 function startLink(event: PointerEvent, id: string, end: TimelineBarEnd) {
   skipLinkClick = false
@@ -2340,7 +2334,7 @@ function startLink(event: PointerEvent, id: string, end: TimelineBarEnd) {
 function moveLink(event: PointerEvent) {
   const linkDrag = gestureOf('link', event)
   if (!linkDrag || !canvas.value) return
-  if (!linkPoint.value && Math.hypot(event.clientX - linkDrag.x, event.clientY - linkDrag.y) < 4) return
+  if (!linkPoint.value && !pastThreshold(linkDrag, event)) return
   const rect = canvas.value.getBoundingClientRect()
   linkPoint.value = { x: timeAreaOffset(event.clientX, rect), y: event.clientY - rect.top - headerHeight.value }
 }
@@ -2811,7 +2805,7 @@ function toggleChoice(controls: HeaderControls, value: string | number, event: E
 // The filter dialog of one column. It never renders on the server; Escape or a press outside closes it.
 const openFilter = ref<string>()
 function headerCellOf(id: string) {
-  return [...(root.value?.querySelectorAll<HTMLElement>('[data-vw-header]') ?? [])].find(element => element.dataset.vwHeader === id)
+  return elementWithData(root.value, 'vwHeader', id)
 }
 function onOutsidePress(event: PointerEvent) {
   const id = openFilter.value
@@ -2870,7 +2864,7 @@ function startColumnResize(event: PointerEvent, handle: ResizeHandle) {
   target.focus({ preventScroll: true })
   hideTooltip()
   gesture = { type: 'column', id: handle.id, pointerId: event.pointerId, target, x: inlineClientX(event.clientX), before: handle.width }
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
 }
 function moveColumnResize(event: PointerEvent) {
   const active = gestureOf('column', event)
@@ -2992,7 +2986,7 @@ function startProgress(event: PointerEvent, bar: TimelineBar) {
   hideTooltip()
   target.focus({ preventScroll: true })
   gesture = { type: 'progress', id: bar.id, pointerId: event.pointerId, target, x: event.clientX }
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
 }
 /** Map the pointer to progress over the bar, or over its working time when it has segments, as the fill is drawn. */
 function moveProgress(event: PointerEvent) {
@@ -3127,7 +3121,7 @@ function startConstraint(event: PointerEvent, bar: TimelineBar, kind: TimelineCo
   target.focus({ preventScroll: true })
   const origin = timeUnder(event.clientX, canvas.value)
   gesture = { type: 'constraint', id: bar.id, kind, pointerId: event.pointerId, target, x: event.clientX, origin, before }
-  target.setPointerCapture(event.pointerId)
+  capturePointer(target, event.pointerId)
 }
 /** Move the constraint by the snapped time between the press and the pointer. */
 function moveConstraint(event: PointerEvent) {
@@ -3207,7 +3201,7 @@ function pressRow(event: PointerEvent, row: R) {
   el.focus({ preventScroll: true })
   hideTooltip()
   gesture = { type: 'create', pointerId: event.pointerId, target: el, rowId: row.id, time: axis.value.toTime(x), x: event.clientX, moved: false }
-  el.setPointerCapture(event.pointerId)
+  capturePointer(el, event.pointerId)
   lastClientX = event.clientX
   lastClientY = event.clientY
   startAutoScroll()
@@ -3738,7 +3732,7 @@ onUnmounted(() => {
       ref="scroller" class="vw-gantt-scroll" :class="{ 'vw-pinch-zoom': pinchZoom }" :style="{ height: typeof height === 'number' ? height + 'px' : height }" role="region" :aria-label="messages.region" tabindex="0"
       @keydown.esc="cancelEdit('escape')" @scroll.passive="syncScroll" @pointerdown="pressScroller" @contextmenu="onContextMenu"
       @dragenter="acceptDrag" @dragover="acceptDrag" @drop="dropOnChart"
-      @pointermove="movePointer" @pointerup="releasePointer" @pointercancel="releasePointer" @lostpointercapture="finishGesture"
+      @pointermove="movePointer" @pointerup="pointerReleased" @pointercancel="pointerReleased" @lostpointercapture="finishGesture"
     >
       <div v-if="!validationError" ref="canvas" class="vw-gantt-canvas" :style="{
         width: canvasInset(axis.width),
