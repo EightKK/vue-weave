@@ -18,6 +18,7 @@
 
 ### Development
 
+- Browser tests on CI: the browser job retries a failed test once, keeps traces and uploads the Playwright report as an artifact on failure. The test server starts with the new `--strict-port` flag of `scripts/serve.mjs` and fails with a clear message when the port is taken instead of moving to another one; `VW_PORT=0` is rejected by the Playwright config and means "any free port" for `npm start`. The gantt tooltip test no longer waits on the wall clock.
 - The npm release workflow now waits up to about 10 minutes, instead of 90 seconds, for the registry to list a new version before it compares the integrity, and logs each wait. npm took longer than 90 seconds for 1.1.0 and 1.2.0, so the job failed after a successful publish and needed a rerun.
 
 ## 1.2.0 - 2026-11-22

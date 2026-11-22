@@ -307,6 +307,8 @@ test('gantt real two-finger touch pinch survives a drifting midpoint without nat
 })
 
 test('gantt tooltip appears after the hover delay or at once on keyboard focus, stays hoverable and hides on Escape', async ({ page }) => {
+  // Fake timers (still ticking in real time) let the grace and hover delays be advanced explicitly instead of slept through.
+  await page.clock.install()
   const { errors, chart } = await openTimelineEditing(page)
   const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
   const tooltip = page.getByRole('tooltip')
@@ -325,7 +327,7 @@ test('gantt tooltip appears after the hover delay or at once on keyboard focus, 
 
   // The pointer can move onto the tooltip without hiding it; Escape dismisses it.
   await page.mouse.move(tip.x + tip.width / 2, tip.y + tip.height / 2, { steps: 4 })
-  await page.waitForTimeout(300)
+  await page.clock.runFor(300)
   await expect(tooltip).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(tooltip).toHaveCount(0)
@@ -339,7 +341,7 @@ test('gantt tooltip appears after the hover delay or at once on keyboard focus, 
   await page.mouse.down()
   await expect(tooltip).toHaveCount(0)
   await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
-  await page.waitForTimeout(500)
+  await page.clock.runFor(500)
   await expect(tooltip).toHaveCount(0)
   await page.keyboard.press('Escape')
   await page.mouse.up()

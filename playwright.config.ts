@@ -1,6 +1,12 @@
 import { defineConfig } from '@playwright/test'
 
-const port = Number(process.env.VW_PORT) || 4173
+const requestedPort = process.env.VW_PORT?.trim() || '4173'
+const port = Number(requestedPort)
+// Port 0 would make serve.mjs pick a port the config cannot know, so the tests need a fixed one.
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new RangeError(`VW_PORT must be a port number from 1 to 65535 for the browser tests, not "${requestedPort}".`)
+}
+const ci = Boolean(process.env.CI)
 
 export default defineConfig({
   testDir: './test/browser',
@@ -8,8 +14,13 @@ export default defineConfig({
   // The specs share one static server on port 4173 (VW_PORT overrides it) and must not depend on each other or on server state.
   // Two workers run whole files side by side (fullyParallel stays off); fixed, so CI and local runs behave the same.
   workers: 2,
+  // One retry on CI absorbs a rare timing flake; a retry that passes is reported as flaky, not hidden.
+  retries: ci ? 1 : 0,
+  reporter: ci ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
+    // Traces (kept for failed tests only) go to test-results/ and are uploaded by the CI browser job.
+    trace: ci ? 'retain-on-failure' : 'off',
     viewport: { width: 1440, height: 1000 },
     launchOptions: process.env.CHROMIUM_PATH ? {
       executablePath: process.env.CHROMIUM_PATH,
@@ -17,7 +28,7 @@ export default defineConfig({
     } : {},
   },
   webServer: {
-    command: 'node scripts/serve.mjs',
+    command: 'node scripts/serve.mjs --strict-port',
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
   },
