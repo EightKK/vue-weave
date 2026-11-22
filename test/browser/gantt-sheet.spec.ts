@@ -237,6 +237,47 @@ test('the fill handle fills down by pointer without a bar drop; Escape and new r
   expect(errors).toEqual([])
 })
 
+test('a fill handle drag reports Escape, cancelEdit() and new rows through edit-cancel, and survives unrelated prop changes', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, cell, events, clearEvents } = await openGanttSheetFixture(page, '?cancels')
+  const handle = chart.locator('.vw-sheet-fill')
+  const target = await center(cell('Delta · Owner Di'))
+  /** Select Alpha's owner and drag its fill handle down to Delta, keeping the button pressed. */
+  async function startFill() {
+    await cell('Alpha · Owner Ann').click()
+    const from = await center(handle)
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(from.x, target.y, { steps: 4 })
+    await expect(cell('Gamma · Owner Cy')).toHaveClass(/vw-is-filling/)
+  }
+  const press = (name: string) => page.getByRole('button', { name, exact: true }).evaluate(button => (button as HTMLButtonElement).click())
+  for (const [cancel, reason] of [
+    [() => page.keyboard.press('Escape'), 'escape'],
+    [() => press('Cancel edit'), 'api'],
+    [() => press('Replace rows'), 'source-changed'],
+  ] as const) {
+    await clearEvents()
+    await startFill()
+    await cancel()
+    await expect(cell('Gamma · Owner Cy')).not.toHaveClass(/vw-is-filling/)
+    await page.mouse.up()
+    expect(await events(), reason).toEqual([['edit-cancel', { reason, barIds: [] }]])
+  }
+  // A prop that does not change the rows, such as `now`, neither rebuilds the rows nor cancels the drag.
+  await clearEvents()
+  await startFill()
+  await press('Next now')
+  await press('Next now')
+  await expect(cell('Gamma · Owner Cy')).toHaveClass(/vw-is-filling/)
+  await page.mouse.up()
+  const log = await events()
+  expect(only(log, 'edit-cancel')).toEqual([])
+  expect(only(log, 'sheet-edit')).toHaveLength(1)
+  await expect(cell('Delta · Owner Ann')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('touch taps select cells and the fill handle fills by touch', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, cell, events } = await openGanttSheetFixture(page)

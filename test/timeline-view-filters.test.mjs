@@ -89,9 +89,21 @@ test('nextTimelineSort cycles ascending, descending and none for one column', ()
   assert.deepEqual(nextTimelineSort([], 'owner'), [{ ruleId: 'owner', direction: 'asc' }])
   assert.deepEqual(nextTimelineSort([{ ruleId: 'owner', direction: 'asc' }], 'owner'), [{ ruleId: 'owner', direction: 'desc' }])
   assert.deepEqual(nextTimelineSort([{ ruleId: 'owner', direction: 'desc' }], 'owner'), [])
-  const several = [{ ruleId: 'status', direction: 'desc' }, { ruleId: 'owner', direction: 'asc' }]
-  assert.deepEqual(nextTimelineSort(several, 'owner'), [{ ruleId: 'owner', direction: 'asc' }])
-  assert.equal(several.length, 2)
+})
+
+test('nextTimelineSort keeps the other rules and rotates only the activated column', () => {
+  const several = Object.freeze([Object.freeze({ ruleId: 'status', direction: 'asc' }), Object.freeze({ ruleId: 'owner', direction: 'desc' })])
+  // The primary rule turns descending in place; the secondary rule stays.
+  assert.deepEqual(nextTimelineSort(several, 'status'), [{ ruleId: 'status', direction: 'desc' }, { ruleId: 'owner', direction: 'desc' }])
+  // A descending secondary rule is removed; the primary rule stays.
+  assert.deepEqual(nextTimelineSort(several, 'owner'), [{ ruleId: 'status', direction: 'asc' }])
+  // A column without a rule becomes the primary rule, ascending, before the existing rules.
+  assert.deepEqual(nextTimelineSort(several, 'start'), [
+    { ruleId: 'start', direction: 'asc' }, { ruleId: 'status', direction: 'asc' }, { ruleId: 'owner', direction: 'desc' },
+  ])
+  const result = nextTimelineSort(several, 'start')
+  assert.notEqual(result[1], several[0])
+  assert.deepEqual(several, [{ ruleId: 'status', direction: 'asc' }, { ruleId: 'owner', direction: 'desc' }])
 })
 
 test('parseTimelineViewState keeps states saved without filters and round-trips filters', () => {
