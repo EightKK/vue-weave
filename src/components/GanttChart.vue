@@ -49,6 +49,9 @@ import {
 } from './ganttChart/rowMoves.js'
 
 import { sheetKey, useSheet } from './ganttChart/sheet.js'
+import { constraintView, type ConstraintPreview } from './ganttChart/constraints.js'
+import { shownBaselines, type BaselineContext } from './ganttChart/baselines.js'
+import { linkEnds, linkHandles, linkKey, type CanvasHandle, type LinkDraft, type LinkEnd } from './ganttChart/linkHandles.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource, type ValidatorResult } from './shared/validation.js'
@@ -1304,6 +1307,7 @@ function laneOffset(lane: number) {
 
 const shownRows = computed(() => {
   const { first, afterLast } = rowWindow.value
+  const baselines = baselineContext()
   return displayedRows.value.slice(first, afterLast).map((item, i) => {
     const bars = barsByRow.value.get(item.row.id) ?? []
     const shown = bars.filter(bar => previews.value?.has(bar.id) || focusedBarId.value === bar.id || intersectsWindow(rangeOf(bar), timeWindow.value))
@@ -1321,7 +1325,7 @@ const shownRows = computed(() => {
       reorderable: rowHandlesVisible.value,
       progress: progressSegment(item.row.id),
       summary: item.hasChildren && props.showSummaries && !bars.length ? drawnSummaries.value?.get(item.row.id) : undefined,
-      baselines: shownBaselines(bars),
+      baselines: shownBaselines(bars, baselines),
       floats: bars.flatMap(bar => {
         const end = rangeOf(bar).end
         return bar.latestEnd !== undefined && bar.latestEnd > end && intersectsWindow({ start: end, end: bar.latestEnd }, timeWindow.value)
@@ -1617,44 +1621,18 @@ function summaryStyle(summary: TimelineSummary) {
   }
 }
 
-function baselineStyle(bar: TimelineBar, baseline: TimeRange, slot: number) {
-  const left = axis.value.toX(baseline.start)
-  const width = axis.value.toX(baseline.end) - left
-  return {
-    [inlineSide.value]: canvasInset(left - (width === 0 ? 1.5 : 0)),
-    width: `${Math.max(3, width)}px`,
-    top: `${laneTop(bar) + barHeight.value + baselineGeometry.value.offset(slot)}px`,
-  }
-}
+
 const baselineText = computed<BaselineTextOptions>(() => ({
   label: props.baselineLabel ?? (id => id === timelineBaselineId ? messages.value.baseline! : id),
   formatTime: props.formatTime, formatVariance: props.formatVariance,
   start: messages.value.baselineStart!, finish: messages.value.baselineFinish!, duration: messages.value.baselineDuration!,
 }))
-type ShownBaseline = { key: string; className: string; style: Record<string, string>; title: string; set?: string }
-/**
- * The baseline strips of a row inside the visible time window. With only `TimelineBar.baseline` (no named sets and no
- * `baselineIds`) each is drawn as a single baseline strip; otherwise one strip per selected set, with its slot class, set ID and
- * variance title.
- */
-function shownBaselines(bars: readonly TimelineBar[]): ShownBaseline[] {
-  const choice = baselineChoice.value
-  if (!choice.described) {
-    return bars.filter(bar => choice.ids.length && bar.baseline && intersectsWindow(bar.baseline, timeWindow.value)).map(bar => ({
-      key: bar.id, className: 'vw-gantt-baseline', style: baselineStyle(bar, bar.baseline!, 0),
-      title: `${baselineText.value.label(timelineBaselineId)} · ${bar.label} ${props.formatTime(bar.baseline!.start)}–${props.formatTime(bar.baseline!.end)}`,
-    }))
+/** What `shownBaselines` reads from the chart. */
+function baselineContext(): BaselineContext {
+  return {
+    choice: baselineChoice.value, text: baselineText.value, window: timeWindow.value, range: rangeOf, toX: axis.value.toX,
+    side: inlineSide.value, laneTop, barHeight: barHeight.value, offset: baselineGeometry.value.offset, formatTime: props.formatTime,
   }
-  const multiple = choice.ids.length > 1
-  return bars.flatMap(bar => baselineStrips(bar, rangeOf(bar), choice, baselineText.value)
-    .filter(strip => intersectsWindow(strip.range, timeWindow.value))
-    .map(strip => ({
-      key: bar.id + ':' + strip.id,
-      className: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline',
-      style: baselineStyle(bar, strip.range, strip.slot),
-      title: `${strip.label} · ${bar.label} ${strip.dates} · ${strip.variance}`,
-      set: strip.id,
-    })))
 }
 
 /** Measure the viewport, the label column and the scroll position. A viewport that did not change keeps its object. */
@@ -2283,8 +2261,6 @@ watch(() => props.rows, async () => {
 })
 
 // Dependency creation and reconnection. A draft keeps one fixed bar end while the user picks the other one.
-type LinkEnd = { bar: string; end: TimelineBarEnd }
-type LinkDraft = { fixed: LinkEnd; role: 'from' | 'to'; dependency?: TimelineDependency }
 const linkDraft = ref<LinkDraft>()
 const linkPoint = ref<{ x: number; y: number }>()
 let skipLinkClick = false
@@ -2293,39 +2269,13 @@ const activeDependencyId = computed(() => props.selectedDependencyId ?? localDep
 const linkHandlesVisible = computed(() => !props.readonly && !validationError.value && (props.connectable || Boolean(linkDraft.value?.dependency)))
 const dependencyTargets = computed(() => (props.connectable || props.reconnectable) && !validationError.value)
 
-function linkKey(end: LinkEnd) {
-  return JSON.stringify([end.bar, end.end])
-}
-function linkPressed(id: string, end: TimelineBarEnd) {
-  const fixed = linkDraft.value?.fixed
-  return Boolean(fixed && fixed.bar === id && fixed.end === end)
-}
-function linkHandleName(id: string, label: string, end: TimelineBarEnd) {
-  const action = linkDraft.value && !linkPressed(id, end) ? messages.value.connectTo : messages.value.connectFrom
-  return `${action} ${end === 'start' ? messages.value.startOf : messages.value.finishOf} ${label}`
-}
-function linkHandleStyle(bar: TimelineBar, end: TimelineBarEnd) {
-  const box = barBox(bar)
-  const x = linkHandleOffset(box.left, box.width, end, axis.value.width)
-  return {
-    [inlineSide.value]: canvasInset(x),
-    top: `${laneTop(bar) + barHeight.value / 2 - 6}px`,
-  }
-}
-/** Body coordinates of a bar end, relative to the time axis origin and the first row. */
-function linkOrigin(end: LinkEnd) {
-  const bar = barById.value.get(end.bar)
-  const index = bar && rowOrder.value.get(bar.rowId)
-  if (!bar || index === undefined) {
-    // A summary row end (`summaryDependencies`): the edge of its rollup bar.
-    const anchor = summaryAnchors.value.get(end.bar)
-    if (!anchor) return undefined
-    const time = end.end === 'start' ? anchor.range.start : anchor.range.end
-    return { x: axis.value.toX(time), y: anchor.index * props.rowHeight + props.rowHeight / 2 }
-  }
-  const range = rangeOf(bar)
-  return { x: axis.value.toX(end.end === 'start' ? range.start : range.end), y: index * props.rowHeight + laneTop(bar) + barHeight.value / 2 }
-}
+const { linkPressed, linkHandleName, linkHandleStyle, linkOrigin, reconnectHandles: reconnectHandlesOf, summaryLinkHandles: rollupLinkHandles } = linkHandles({
+  draft: () => linkDraft.value, labels: () => messages.value, bar: id => barById.value.get(id), rowIndex: id => rowOrder.value.get(id),
+  rowLabel: id => rowById.value.get(id)?.label, anchors: () => summaryAnchors.value, range: rangeOf, box: barBox,
+  toX: time => axis.value.toX(time), axisWidth: () => axis.value.width, side: () => inlineSide.value, rowHeight: () => props.rowHeight,
+  headerHeight: () => headerHeight.value, laneTop, barHeight: () => barHeight.value, rowWindow: () => rowWindow.value,
+  timeWindow: () => timeWindow.value,
+})
 const linkPreviewPath = computed(() => {
   const draft = linkDraft.value, point = linkPoint.value
   if (!draft || !point) return undefined
@@ -2428,60 +2378,14 @@ function dependencyKeys(event: KeyboardEvent, id: string) {
     if (!props.readonly) emit('dependency-delete', id)
   }
 }
-/**
- * Buttons placed on the canvas: the two reconnect handles of the selected dependency and, with `summaryDependencies`
- * and link handles shown, the link handles of the displayed rollup bars. They share one template loop, so a chart
- * without `summaryDependencies` renders exactly the markup it did before. The template reads `dependency` and `link`
- * of either kind for the data attributes.
- */
-type CanvasHandle = {
-  key: string; className: string | (string | Record<string, boolean>)[]; style: Record<string, string>; label: string; pressed: boolean
-} & (
-  | { kind: 'reconnect'; dependency: TimelineDependency; end: 'from' | 'to'; link?: undefined }
-  | { kind: 'link'; link: LinkEnd; dependency?: undefined }
-)
+/** The reconnect handles of the selected dependency (`reconnectable`) while its line is drawn. */
 const reconnectHandles = computed<CanvasHandle[]>(() => {
   const id = activeDependencyId.value
   if (!props.reconnectable || props.readonly || id === undefined) return []
   const line = shownLines.value.find(item => item.id === id)
-  if (!line) return []
-  const name = dependencyName(line.dependency)
-  const place = (x: number, y: number) => ({ [inlineSide.value]: canvasInset(x - 6), top: `${headerHeight.value + y - 6}px` })
-  const pressed = (end: 'from' | 'to') => Boolean(linkDraft.value?.dependency && linkDraft.value.role === end)
-  return [
-    {
-      kind: 'reconnect', key: 'from', className: 'vw-gantt-reconnect-handle', style: place(line.x1, line.y1),
-      label: `${messages.value.reconnectSource} ${name}`, pressed: pressed('from'), dependency: line.dependency, end: 'from',
-    },
-    {
-      kind: 'reconnect', key: 'to', className: 'vw-gantt-reconnect-handle', style: place(line.x2, line.y2),
-      label: `${messages.value.reconnectTarget} ${name}`, pressed: pressed('to'), dependency: line.dependency, end: 'to',
-    },
-  ]
+  return line ? reconnectHandlesOf(line, dependencyName(line.dependency)) : []
 })
-const summaryLinkHandles = computed<CanvasHandle[]>(() => {
-  if (!props.summaryDependencies || !linkHandlesVisible.value) return []
-  const handles: CanvasHandle[] = []
-  for (const [id, anchor] of summaryAnchors.value) {
-    if (!inRowWindow(anchor.index, rowWindow.value) || !intersectsWindow(anchor.range, timeWindow.value)) continue
-    const left = axis.value.toX(anchor.range.start)
-    const width = Math.max(3, axis.value.toX(anchor.range.end) - left)
-    const label = rowById.value.get(id)?.label ?? id
-    for (const end of linkEnds) {
-      const x = linkHandleOffset(left, width, end, axis.value.width)
-      handles.push({
-        kind: 'link', key: linkKey({ bar: id, end }),
-        className: ['vw-gantt-link-handle', `vw-is-${end}`, { 'vw-is-active': linkPressed(id, end) }],
-        style: {
-          [inlineSide.value]: canvasInset(x),
-          top: `${headerHeight.value + anchor.index * props.rowHeight + props.rowHeight / 2 - 6}px`,
-        },
-        label: linkHandleName(id, label, end), pressed: linkPressed(id, end), link: { bar: id, end },
-      })
-    }
-  }
-  return handles
-})
+const summaryLinkHandles = computed(() => props.summaryDependencies && linkHandlesVisible.value ? rollupLinkHandles() : [])
 const canvasHandles = computed(() => summaryLinkHandles.value.length ? [...reconnectHandles.value, ...summaryLinkHandles.value] : reconnectHandles.value)
 function pressCanvasHandle(item: CanvasHandle, event: PointerEvent) {
   if (item.kind === 'reconnect') reconnectDependency(item.dependency, item.end, event)
@@ -2905,7 +2809,7 @@ function canEditProgress(bar: TimelineBar) {
   return Boolean(props.progressEditable) && !props.readonly && Boolean(bar.editable) && bar.start !== bar.end
 }
 const progressHandlesVisible = computed(() => Boolean(props.progressEditable) && !props.readonly && !validationError.value)
-const linkEnds = ['start', 'finish'] as const
+
 type BarHandle = TimelineBarEnd | 'progress' | TimelineConstraintKind
 function isConstraintHandle(handle: BarHandle): handle is TimelineConstraintKind {
   return handle !== 'start' && handle !== 'finish' && handle !== 'progress'
@@ -3017,83 +2921,17 @@ function progressKeys(event: KeyboardEvent, bar: TimelineBar) {
 // Constraint editing (`constraintsEditable`). Each constraint of an editable bar is a slider at its time: a pointer drag
 // previews the snapped time, keys propose steps, and the parent accepts `constraint-edit` by updating `constraints`.
 // The constraints of other bars, and of every bar without the prop, are decorative markers with the same glyph.
-type ShownConstraint = { kind: TimelineConstraintKind; time: number; violated: boolean }
-const constraintPreview = shallowRef<{ id: string; kind: TimelineConstraintKind; time: number }>()
+const constraintPreview = shallowRef<ConstraintPreview>()
 let pendingConstraintFocus: string | undefined
 const constraintHandlesVisible = computed(() => Boolean(props.constraintsEditable) && !props.readonly && !validationError.value)
 function canEditConstraints(bar: TimelineBar) {
   return Boolean(props.constraintsEditable) && !props.readonly && Boolean(bar.editable)
 }
-/** A constraint's time as drawn: the pointer preview of a constraint drag, otherwise the bar's own value. */
-function shownConstraint(bar: TimelineBar, kind: TimelineConstraintKind) {
-  const preview = constraintPreview.value
-  return preview?.id === bar.id && preview.kind === kind ? preview.time : bar.constraints?.[kind]
-}
-/** The constraints of a bar in `timelineConstraintKinds` order, checked against its interval as drawn. */
-function barConstraints(bar: TimelineBar): ShownConstraint[] {
-  if (!bar.constraints) return []
-  const range = rangeOf(bar)
-  return timelineConstraintKinds.flatMap(kind => {
-    const time = shownConstraint(bar, kind)
-    return time === undefined ? [] : [{ kind, time, violated: timelineConstraintViolated(range, kind, time) }]
-  })
-}
-function constraintText(item: ShownConstraint) {
-  const text = `${messages.value[item.kind]} ${props.formatTime(item.time)}`
-  return item.violated ? `${text}, ${messages.value.constraintViolated}` : text
-}
-function constraintVisible(time: number) {
-  return inTimeWindow(time, timeWindow.value)
-}
-function boundsStart(kind: TimelineConstraintKind) {
-  return kind === 'fixedStart' || kind.startsWith('start')
-}
-/** Classes of the glyph: the bar end it bounds (a flag at the top or bottom), its direction and its state. */
-function constraintClasses(bar: TimelineBar, item: ShownConstraint) {
-  const side = item.kind === 'fixedStart' ? 'vw-is-fixed' : item.kind.endsWith('NoEarlierThan') ? 'vw-is-lower' : 'vw-is-upper'
-  const preview = constraintPreview.value
-  const dragging = preview?.id === bar.id && preview.kind === item.kind
-  return ['vw-gantt-constraint', boundsStart(item.kind) ? 'vw-is-start' : 'vw-is-finish', side, item.violated ? 'vw-is-violated' : '',
-    dragging ? 'vw-is-dragging' : ''].filter(Boolean).join(' ')
-}
-/** A 26 px wide box centred on the time that holds the flag; the stem reaches across the lane (`--vw-constraint-reach`). */
-function constraintStyle(bar: TimelineBar, item: ShownConstraint) {
-  return {
-    [inlineSide.value]: canvasInset(axis.value.toX(item.time) - 13),
-    top: `${boundsStart(item.kind) ? laneTop(bar) - 5 : laneTop(bar) + barHeight.value - 9}px`,
-    '--vw-constraint-reach': `${barHeight.value + 10}px`,
-    ...rowShiftStyle(bar),
-  }
-}
-/** Decorative markers of the constraints of a bar inside the visible time window. */
-function constraintMarks(bar: TimelineBar) {
-  return barConstraints(bar).filter(item => constraintVisible(item.time)).map(item => ({
-    key: bar.id + ':' + item.kind, className: constraintClasses(bar, item), style: constraintStyle(bar, item),
-  }))
-}
-/** Kinds with a handle: the constraints inside the visible time window, and the one being dragged. */
-function constraintHandleKinds(bar: TimelineBar) {
-  const preview = constraintPreview.value
-  return barConstraints(bar)
-    .filter(item => constraintVisible(item.time) || (preview?.id === bar.id && preview.kind === item.kind))
-    .map(item => item.kind)
-}
-function constraintHandleAttrs(bar: TimelineBar, kind: TimelineConstraintKind) {
-  const item = barConstraints(bar).find(entry => entry.kind === kind)!
-  return {
-    class: constraintClasses(bar, item),
-    style: constraintStyle(bar, item),
-    'data-vw-constraint': bar.id,
-    'data-vw-constraint-kind': kind,
-    role: 'slider',
-    'aria-label': `${messages.value[kind]} · ${bar.label}`,
-    'aria-describedby': marker + '-constraint-hint',
-    'aria-valuemin': bounds.value.start,
-    'aria-valuemax': bounds.value.end,
-    'aria-valuenow': item.time,
-    'aria-valuetext': item.violated ? `${props.formatTime(item.time)}, ${messages.value.constraintViolated}` : props.formatTime(item.time),
-  }
-}
+const { barConstraints, constraintText, constraintMarks, constraintHandleKinds, constraintHandleAttrs } = constraintView({
+  preview: () => constraintPreview.value, range: rangeOf, labels: () => messages.value, formatTime: time => props.formatTime(time),
+  toX: time => axis.value.toX(time), side: () => inlineSide.value, laneTop, barHeight: () => barHeight.value, rowShift: rowShiftStyle,
+  window: () => timeWindow.value, bounds: () => bounds.value, hintId: () => marker + '-constraint-hint',
+})
 /** `before` moved by a whole number of snap steps and kept inside `editBounds`. */
 function constraintTime(before: number, delta: number) {
   return stepConstraintTime(before, delta, activeSnap.value, bounds.value)
