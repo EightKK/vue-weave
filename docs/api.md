@@ -1420,7 +1420,7 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | matchTreeGridEntities(input or index, entities) | `{ rowIds, cells }`: every row and cell that lists one of the entities |
 | treeGridCellsFromTimeBuckets(cells) / treeGridCellContentFromTimeBucket(cell, extra?) | TreeGrid cells from `aggregateTimeBuckets` cells: a loaded value stays a value (a `sum` of nothing is 0), a loaded bucket without a value is `none`, and `unloaded`, `loading` and `failed` keep their status. `extra` (label, tone, entities, editable) is added to cells with a value |
 | treeGridRangeBounds(range), treeGridRangeText(index, lines, range) | The bounds of a range and its tab-separated text |
-| buildTreeGridPaste(index, lines, range, text, { maxCells?, source? }), buildTreeGridClear(...), buildTreeGridFill(index, lines, range, { source?, origin? }) | The edits of a paste, clear or fill, or `{ ok: false, reason: 'too-large' or 'invalid', error, cell? }` |
+| buildTreeGridPaste(index, lines, range, text, { maxCells?, source? }), buildTreeGridClear(...), buildTreeGridFill(index, lines, range, { source?, origin?, maxCells? }) | The edits of a paste, clear or fill, or `{ ok: false, reason: 'too-large' or 'invalid', error, cell? }` |
 | applyTreeGridEdits({ rows, columns, cells? }, edits) | New `{ rows, cells }`; unchanged rows and cells keep their identity |
 | treeGridRowCreate(rows, id, placement), insertTreeGridRow(rows, change, row) | A create proposal, and the rows (in tree preorder) with the new row in place |
 | deleteTreeGridRows({ rows, cells? }, { ids, includeDescendants }) | New `{ rows, cells }` without the deleted rows |

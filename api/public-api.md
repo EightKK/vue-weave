@@ -9613,6 +9613,7 @@ function buildTreeGridClear(index: TreeGridIndex<any>, flat: TreeGridLines<any>,
 function buildTreeGridFill(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange, options?: {
     source?: TreeGridRange;
     origin?: TreeGridCellEdit['source'];
+    maxCells?: number;
 }): TreeGridSheetBuild;
 ```
 
