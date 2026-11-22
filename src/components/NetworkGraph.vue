@@ -46,6 +46,7 @@ import {
   movedBounds, type Corner,
 } from './networkGraph/editGeometry.js'
 import { belowLabel, defaultNode, markerNode, markerUrl, usedMarkers } from './networkGraph/itemDrawing.js'
+import { useNodeTooltip } from './networkGraph/useNodeTooltip.js'
 import {
   autoPanStep, cameraCenter, clampScale as clampToScale, contentBounds as boundsOf, contentCameraAt, fitCamera as fittedCamera, paddedScale,
   panKeySteps, pinchCamera, rectsBounds, scaleError as scaleRangeError, validScale as inScaleRange, wholeScale as scaleToFit, zoomAround,
@@ -2240,11 +2241,7 @@ function poolLanes(pools: readonly GraphSwimlanePoolBand[], lanes: readonly Grap
 
 // Tooltips. Only rendered after mounting and only when the tooltip slot is provided. Like a native tooltip, a press
 // in the stage dismisses it until the pointer enters another element, so it never covers a node being clicked.
-type TooltipState = { kind: 'node' | 'edge'; id: string; source: 'pointer' | 'focus' }
-const tooltip = shallowRef<TooltipState>()
 const mounted = ref(false)
-let showTimer: ReturnType<typeof setTimeout> | undefined
-let hideTimer: ReturnType<typeof setTimeout> | undefined
 const tooltipDelayValid = computed(() => {
   const delay = props.tooltipDelay
   if (!Number.isFinite(delay) || delay < 0) throw new RangeError('tooltipDelay must be a nonnegative finite number of milliseconds')
@@ -2254,44 +2251,6 @@ const tooltipBlocked = computed(() => Boolean(
   dragPreview.value || connectionPoint.value || boxPreview.value || lassoPreview.value || isPanning.value || pinching.value || draft.value
     || resizePreview.value || reshapePreview.value,
 ))
-function clearTooltipTimers() {
-  clearTimeout(showTimer)
-  clearTimeout(hideTimer)
-  showTimer = hideTimer = undefined
-}
-function hideTooltip() {
-  clearTooltipTimers()
-  tooltip.value = undefined
-}
-function hoverTooltip(kind: TooltipState['kind'], id: string) {
-  if (!slots.tooltip || tooltipBlocked.value || pointerGestureActive()) return
-  clearTimeout(hideTimer)
-  hideTimer = undefined
-  if (tooltip.value?.kind === kind && tooltip.value.id === id) return
-  clearTimeout(showTimer)
-  const show = () => {
-    showTimer = undefined
-    tooltip.value = { kind, id, source: 'pointer' }
-  }
-  // Moving from one element to the next switches a visible tooltip at once.
-  if (tooltip.value || props.tooltipDelay === 0) show()
-  else showTimer = setTimeout(show, props.tooltipDelay)
-}
-function leaveTooltip() {
-  clearTimeout(showTimer)
-  showTimer = undefined
-  if (tooltip.value?.source !== 'pointer') return
-  clearTimeout(hideTimer)
-  // A short grace period lets the pointer move onto the tooltip itself.
-  hideTimer = setTimeout(() => {
-    hideTimer = undefined
-    tooltip.value = undefined
-  }, 150)
-}
-function keepTooltip() {
-  clearTimeout(hideTimer)
-  hideTimer = undefined
-}
 function focusVisible(element: Element) {
   try {
     return element.matches(':focus-visible')
@@ -2308,30 +2267,13 @@ function pressStage(event: PointerEvent) {
   pressing = true
   setTimeout(() => { pressing = false })
 }
-function focusTooltip(event: FocusEvent) {
-  if (!slots.tooltip || !(event.target instanceof Element) || tooltipBlocked.value || pressing) return
-  const node = elementNode(event.target), edge = event.target.getAttribute('data-vw-edge')
-  // Keyboard focus shows the tooltip at once; a pointer press is covered by hover.
-  if ((node === null && edge === null) || !focusVisible(event.target)) return
-  clearTooltipTimers()
-  tooltip.value = node !== null ? { kind: 'node', id: node, source: 'focus' } : { kind: 'edge', id: edge!, source: 'focus' }
-}
-function blurTooltip() {
-  if (tooltip.value?.source === 'focus') hideTooltip()
-}
-function dismissTooltip(event: KeyboardEvent) {
-  if (event.key === 'Escape') hideTooltip()
-}
-watch(tooltipBlocked, blocked => {
-  if (blocked) hideTooltip()
-})
-watch(tooltip, (value, previous) => {
-  if (value && !previous) document.addEventListener('keydown', dismissTooltip)
-  else if (!value && previous) document.removeEventListener('keydown', dismissTooltip)
-})
-watch([nodesById, edgesById], () => {
-  const current = tooltip.value
-  if (current && !(current.kind === 'node' ? nodesById.value : edgesById.value).has(current.id)) hideTooltip()
+const {
+  tooltip, hide: hideTooltip, hover: hoverTooltip, leave: leaveTooltip, keep: keepTooltip, focus: focusTooltip, blur: blurTooltip,
+  dispose: disposeTooltip,
+} = useNodeTooltip({
+  hasSlot: () => Boolean(slots.tooltip), blocked: tooltipBlocked, gestureActive: pointerGestureActive, delay: () => props.tooltipDelay,
+  pressing: () => pressing, elementNode, focusVisible,
+  items: [nodesById, edgesById], exists: (kind, id) => (kind === 'node' ? nodesById.value : edgesById.value).has(id),
 })
 const tooltipView = computed(() => {
   const current = tooltip.value
@@ -2870,8 +2812,7 @@ onUnmounted(() => {
   observer?.disconnect()
   directionObserver?.disconnect()
   directionObserver = undefined
-  hideTooltip()
-  document.removeEventListener('keydown', dismissTooltip)
+  disposeTooltip()
 })
 </script>
 
