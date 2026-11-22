@@ -80,11 +80,14 @@ export function neighbourCard<C extends TaskBoardCard>(groups: TaskBoardGroups<C
   const column = groups.columns.findIndex(item => item.id === position.columnId)
   const lane = Math.max(0, groups.rows.findIndex(row => row.laneId === position.laneId))
   const cards = (laneIndex: number, columnIndex: number) => groups.rows[laneIndex]?.cells[columnIndex]?.cards ?? []
-  const self = cards(lane, column)[position.index]
+  const here = cards(lane, column)
+  // The index among the shown cards: `position.index` also counts the cards a filter hides.
+  const index = here.findIndex(card => card.id === id)
+  if (index < 0) return undefined
+  const self = here[index]
   if (key === 'ArrowUp' || key === 'ArrowDown') {
     const down = key === 'ArrowDown'
-    const here = cards(lane, column)
-    const next = here[position.index + (down ? 1 : -1)]
+    const next = here[index + (down ? 1 : -1)]
     if (next) return next
     for (let other = lane + (down ? 1 : -1); other >= 0 && other < groups.rows.length; other += down ? 1 : -1) {
       const list = cards(other, column)
@@ -96,7 +99,7 @@ export function neighbourCard<C extends TaskBoardCard>(groups: TaskBoardGroups<C
     const step = (key === 'ArrowRight') !== rtl ? 1 : -1
     for (let other = column + step; other >= 0 && other < groups.columns.length; other += step) {
       const list = cards(lane, other)
-      if (list.length) return list[Math.min(position.index, list.length - 1)]
+      if (list.length) return list[Math.min(index, list.length - 1)]
     }
     return self
   }

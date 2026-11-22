@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import {
-  eventCalendarDays, eventCalendarMonthGrid, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents,
+  intlTimeFormatter, eventCalendarDays, eventCalendarMonthGrid, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents,
   packCalendarEventLanes, shiftEventCalendarDate, validateCalendarEvents,
 } from '@eightkk/vue-weave/core'
 import { EventCalendar } from '@eightkk/vue-weave'
@@ -199,6 +199,17 @@ test('EventCalendar reports invalid input through validation-error and renders i
     [{ events: [], dayStart: 10, dayEnd: 9 }, RangeError, 'dayStart and dayEnd must be integers with 0 <= dayStart < dayEnd <= 24'],
     [{ events: [], snap: 0 }, RangeError, 'snap must be finite and positive'],
     [{ events: [], timeZone: 'Nowhere' }, RangeError, 'Invalid time zone: Nowhere'],
+    [{ events: [], weekStartsOn: 7 }, RangeError, 'weekStartsOn must be 0 to 6'],
+    [{ events: [], weekStartsOn: 1.5 }, RangeError, 'weekStartsOn must be 0 to 6'],
+    [{ events: [], hourHeight: 0 }, RangeError, 'hourHeight must be finite and positive'],
+    [{ events: [], maxMonthLanes: 0 }, RangeError, 'maxMonthLanes must be an integer >= 1'],
+    [{ events: [], createDuration: -15 }, RangeError, 'createDuration must be finite and positive'],
+    [{ events: [], now: Number.NaN }, RangeError, 'now must be finite'],
+    [{ events: [], view: 'year' }, RangeError, 'Unknown event calendar view: year'],
+    [{ events: [], locale: 'en_US' }, RangeError, 'Invalid locale: en_US'],
+    [{ events: [], locale: ['de-DE', 'not a locale'] }, RangeError, 'Invalid locale: de-DE,not a locale'],
+    [{ events: [], height: -1 }, RangeError, 'height must be a finite non-negative number of pixels or a CSS length'],
+    [{ events: [], dir: 'up' }, RangeError, 'dir must be ltr, rtl or auto: up'],
   ]) {
     const reported = [], handled = []
     const app = createSSRApp({ render: () => h(EventCalendar, { date: wednesday, ...props, onValidationError: error => reported.push(error) }) })
@@ -210,4 +221,39 @@ test('EventCalendar reports invalid input through validation-error and renders i
     assert.deepEqual(handled, reported)
     assert.match(html, /No events to display/)
   }
+})
+
+test('EventCalendar labels the hour gutter with formatTime and keeps HH:mm by default', async () => {
+  const twelveHour = intlTimeFormatter({ timeZone: 'Europe/Berlin', format: { hour: 'numeric', minute: '2-digit', hour12: true } })
+  const html = await renderComponent(EventCalendar, {
+    events: [], date: wednesday, view: 'day', timeZone: 'Europe/Berlin', dayStart: 8, dayEnd: 14, formatTime: twelveHour,
+  })
+  assert.match(html, />8:00\sAM</)
+  assert.match(html, />12:00\sPM</)
+  assert.doesNotMatch(html, />08:00</)
+  const plain = await renderComponent(EventCalendar, { events: [], date: wednesday, view: 'day', timeZone: 'Europe/Berlin', dayStart: 8, dayEnd: 14 })
+  assert.match(plain, />08:00</)
+  assert.match(plain, />13:00</)
+  // On the day clocks go forward, the skipped hour keeps its HH:mm label.
+  const spring = await renderComponent(EventCalendar, {
+    events: [], date: Date.parse('2026-03-29T12:00:00Z'), view: 'day', timeZone: 'Europe/Berlin', dayEnd: 4, formatTime: twelveHour,
+  })
+  assert.match(spring, />1:00\sAM</)
+  assert.match(spring, />02:00</)
+  assert.match(spring, />3:00\sAM</)
+})
+
+test('EventCalendar describes month view events with a hint that names Up and Down', async () => {
+  const month = await renderComponent(EventCalendar, { events, date: wednesday, view: 'month' })
+  const hint = month.match(/id="([^"]+-month-hint)" class="vw-sr-only">([^<]+)</)
+  assert.ok(hint, 'the month hint is rendered')
+  assert.match(hint[2], /Up and Down by a week/)
+  assert.match(month, new RegExp(`aria-describedby="${hint[1]}"`))
+  assert.doesNotMatch(month, /aria-describedby="[^"]+-days-hint"/)
+  const week = await renderComponent(EventCalendar, { events, date: wednesday })
+  assert.doesNotMatch(week, /-month-hint/)
+  assert.match(week, /aria-describedby="[^"]+-days-hint"/)
+  // A localized dayEditHint without monthEditHint is used in the month view too; monthEditHint overrides it.
+  assert.match(await renderComponent(EventCalendar, { events, date: wednesday, view: 'month', labels: { dayEditHint: 'Pfeiltasten' } }), /-month-hint" class="vw-sr-only">Pfeiltasten</)
+  assert.match(await renderComponent(EventCalendar, { events, date: wednesday, view: 'month', labels: { dayEditHint: 'A', monthEditHint: 'B' } }), /-month-hint" class="vw-sr-only">B</)
 })

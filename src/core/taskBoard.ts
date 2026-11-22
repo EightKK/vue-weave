@@ -69,8 +69,11 @@ export interface TaskBoardCardMove {
 /** Synchronous check of a `card-move` proposal. Accept with true or undefined; reject with false or a reason. */
 export type TaskBoardCardMoveValidator = (change: TaskBoardCardMove) => boolean | string | void
 
-/** Why TaskBoard ended a pick-up or drag without a proposal (`card-move-cancel`). */
-export type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change'
+/**
+ * Why TaskBoard ended a pick-up or drag without a proposal (`card-move-cancel`). `no-target` also covers a drop on the
+ * card's own place; `api` is the exposed `cancelMove()`.
+ */
+export type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change' | 'api'
 
 /** A cancelled card move: the card, its position when the move started and the reason. */
 export interface TaskBoardMoveCancel {
@@ -185,13 +188,17 @@ function checkWipLimit(column: TaskBoardColumn) {
  * limit. Without `lanes` (or with an empty array) the board has a single row of cells and card `laneId`s are ignored.
  *
  * `options.filter` keeps the cards it rejects out of `cells[].cards`. Positions, indices and WIP states still look at
- * all cards, so a proposal built from the filtered view stays valid for the full `cards` array.
+ * all cards, so a proposal built from the filtered view stays valid for the full `cards` array. A filter that is not a
+ * function throws a TypeError.
  */
 export function groupBoardCards<C extends TaskBoardCard>(
   cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[],
   options: { filter?: (card: C) => boolean } = {},
 ): TaskBoardGroups<C> {
   const filter = options.filter
+  if (filter !== undefined && typeof filter !== 'function') {
+    throw new TypeError(`The board filter must be a function: ${filter === null ? 'null' : typeof filter}`)
+  }
   const columnIds = new Set<string>()
   for (const column of columns) {
     checkId('column', column?.id, columnIds)
