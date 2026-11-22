@@ -9,17 +9,21 @@ import { assertGraphSwimlaneBands, assertGraphSwimlanePools, type GraphSwimlaneB
 import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
-  summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type TimeRange, type TimeScale,
+  summarizeTimelineRows, timeTicks, timelineBaselineId, validateTimelineData, type DependencyPathStyle, type ResourceLoadHistogram,
+  type TimeRange, type TimeScale,
 } from './timeline.js'
 import { timelineConstraintKinds, timelineConstraintViolated } from './timeline.js'
 import { tickLabelsWithRoom } from './workingTimeScale.js'
 import type {
   ChartTone, NetworkNode, TimelineBand, TimelineBar, TimelineColumn, TimelineDependency, TimelineLoadRow, TimelineLoadSegment,
-  TimelineMarker, TimelineMarkerRange, TimelineRow,
+  TimelineMarker, TimelineMarkerRange, TimelineRow, TimelineSummary,
 } from './types.js'
 import type { TimelineConstraintKind } from './types.js'
 import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
-import { baselineLayout, baselineSelection, baselineStrips, checkBandsAndMarkers, checkLoadRows, checkTimelineColumns } from './barSegments.js'
+import {
+  baselineLayout, baselineSelection, baselineStrips, checkBandsAndMarkers, checkLoadRows, checkTimelineColumns, type BaselineSelection,
+  type BaselineTextOptions,
+} from './barSegments.js'
 import { checkId } from './ids.js'
 import { escapeXml } from './interchangeXml.js'
 
@@ -753,6 +757,558 @@ const defaultConstraintLabels: Readonly<Record<TimelineConstraintKind, string>> 
 const defaultFormat = (time: number) => new Date(time).toISOString().slice(11, 16)
 const bandHeight = 26
 
+type RowTreeItem<R extends TimelineRow> = ReturnType<typeof createTimelineRowTree<R>>[number]
+
+/** The geometry and text callbacks of a timeline export that its layers share. */
+interface TimelineFrame<R extends TimelineRow, B extends TimelineBar> {
+  theme: Theme
+  rtl: boolean
+  /** The exported time window. */
+  window: TimeRange
+  /** The scale measured from the window start. */
+  local: TimeScale
+  /** The x of a time in the document. */
+  X: (time: number) => number
+  /** The box between two times in the document. */
+  span: (start: number, end: number) => { x: number; width: number }
+  axisWidth: number
+  /** Width of the row heading and column area, and its left edge. */
+  labelArea: number
+  labelLeft: number
+  width: number
+  headerHeight: number
+  bodyHeight: number
+  /** The top of the load rows, below the task rows. */
+  loadTop: number
+  totalHeight: number
+  rowHeight: number
+  barHeight: number
+  /** The top of a bar's lane in its row. */
+  laneTop: (bar: TimelineBar) => number
+  format: (time: number) => string
+  // Methods, so that a frame of narrower row and bar types can be passed where any frame is expected.
+  barLabel(bar: B): string
+  rowLabel(row: R): string
+}
+
+/** The rows of a tree that are displayed: every row except the descendants of collapsed rows. */
+function displayedRows<R extends TimelineRow>(tree: readonly RowTreeItem<R>[], collapsed: ReadonlySet<string>) {
+  const displayed: RowTreeItem<R>[] = []
+  for (let index = 0; index < tree.length;) {
+    const item = tree[index]!
+    displayed.push(item)
+    index = collapsed.has(item.row.id) ? item.afterSubtree : index + 1
+  }
+  return displayed
+}
+
+/**
+ * The whole range of a scale and the exported window of it (`timeRange`, default the whole range), with the x of the
+ * window start and the width of the window. Throws for a missing scale and an empty or invalid window.
+ */
+function timelineWindow(scale: TimeScale, timeRange: TimeRange | undefined) {
+  if (!scale || typeof scale.toX !== 'function' || typeof scale.toTime !== 'function') throw new Error('A time scale is required')
+  if (!Number.isFinite(scale.width) || scale.width <= 0) throw new RangeError('Invalid time scale width')
+  const full = { start: scale.toTime(0), end: scale.toTime(scale.width) }
+  const window = timeRange ?? full
+  if (!Number.isFinite(window.start) || !Number.isFinite(window.end) || window.end <= window.start) {
+    throw new RangeError('timeRange must have finite endpoints with start < end')
+  }
+  const offset = scale.toX(window.start)
+  const axisWidth = scale.toX(window.end) - offset
+  if (!Number.isFinite(offset) || !Number.isFinite(axisWidth) || axisWidth <= 0) throw new RangeError('The exported time window has no width')
+  return { full, window, offset, axisWidth }
+}
+
+/** `tickStep`, or the first of `tickSteps` whose ticks are at least 76 px apart (else the last). */
+function timelineTickStep(options: Pick<TimelineSvgOptions, 'tickStep' | 'tickSteps'>, scale: TimeScale, anchor: number) {
+  const step = options.tickStep
+  if (step !== undefined) {
+    if (!Number.isFinite(step) || step <= 0) throw new RangeError('tickStep must be finite and positive')
+    return step
+  }
+  const steps = options.tickSteps ?? defaultTickSteps
+  if (!steps.length || steps.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value < steps[i - 1]!))) {
+    throw new RangeError('tickSteps must be positive and ascending')
+  }
+  return steps.find(value => scale.toX(anchor + value) - scale.toX(anchor) >= 76) ?? steps.at(-1)!
+}
+
+/** The part of a range inside the window, or undefined when they do not overlap. */
+function clampToWindow(range: TimeRange, window: TimeRange) {
+  const start = Math.max(range.start, window.start), end = Math.min(range.end, window.end)
+  return end <= start ? undefined : { start, end }
+}
+
+/** Non-working time shading across the task and load rows. */
+function timelineNonWorking(periods: readonly TimeRange[], frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  let out = ''
+  for (const period of periods) {
+    const range = clampToWindow(period, frame.window)
+    if (!range) continue
+    out += tag('rect', { ...frame.span(range.start, range.end), y: frame.headerHeight, height: frame.totalHeight - frame.headerHeight, fill: frame.theme.nonWorking })
+  }
+  return out
+}
+
+/**
+ * Marker ranges: the `bands` across the body (or their rows) go behind the grid and bars; the `labels` at the bottom
+ * of the header are drawn after the ticks.
+ */
+function timelineMarkerRanges(markerRanges: readonly TimelineMarkerRange[], rowIndex: ReadonlyMap<string, number>, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { theme, rtl, headerHeight, rowHeight, totalHeight, format } = frame
+  let bands = '', labels = ''
+  for (const item of markerRanges) {
+    const range = clampToWindow(item, frame.window)
+    if (!range) continue
+    const box = frame.span(range.start, range.end)
+    const colors = item.tone === undefined ? { pale: theme.range, line: theme.rangeLine, ink: theme.rangeInk } : toneColors(theme, item.tone)
+    const fills = item.rowIds
+      ? [...new Set(item.rowIds)].flatMap(rowId => {
+        const index = rowIndex.get(rowId)
+        return index === undefined ? [] : [{ y: headerHeight + index * rowHeight, height: rowHeight }]
+      })
+      : [{ y: headerHeight, height: totalHeight - headerHeight }]
+    const title = titleTag(`${item.label} ${format(item.start)}–${format(item.end)}`)
+    if (fills.length) {
+      bands += tag('g', { class: 'vw-gantt-range' }, title
+        + fills.map(fill => tag('rect', { ...box, ...fill, fill: colors.pale, 'fill-opacity': 0.7 })).join(''))
+    }
+    const strip = { ...box, y: headerHeight - 13, height: 13 }
+    labels += tag('g', { class: 'vw-gantt-range-label' }, title + tag('rect', { ...strip, fill: colors.pale })
+      + tag('line', { x1: box.x, y1: strip.y + 1, x2: box.x + box.width, y2: strip.y + 1, stroke: colors.line, 'stroke-width': 2 })
+      + clippedText(strip, rtl, [{ text: item.label, y: 10, size: 10, weight: 650, fill: colors.ink, inset: 4 }]))
+  }
+  return { bands, labels }
+}
+
+/** The header bands, one level per row of the header. */
+function timelineHeaderBands(levels: readonly (readonly TimelineBand[])[], frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  let out = ''
+  levels.forEach((level, index) => {
+    for (const band of level) {
+      const range = clampToWindow(band, frame.window)
+      if (!range) continue
+      const box = { ...frame.span(range.start, range.end), y: index * bandHeight, height: bandHeight }
+      out += tag('rect', { ...box, fill: 'none', stroke: frame.theme.grid })
+      out += clippedText(box, frame.rtl, [{ text: band.label, y: 17, size: 11, weight: 700, fill: frame.theme.text, inset: 7 }])
+    }
+  })
+  return out
+}
+
+/** Tick lines across the chart with their labels in the header. */
+function timelineTicks(ticks: readonly number[], step: number, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { theme, rtl, headerHeight, window } = frame
+  const labelled = tickLabelsWithRoom(ticks, frame.local.toX, step, window.end)
+  let out = ''
+  ticks.forEach((tick, index) => {
+    const x = frame.X(tick)
+    out += tag('line', { x1: x, y1: headerHeight - 40, x2: x, y2: frame.totalHeight, stroke: theme.grid, 'stroke-width': 1 })
+    // Labels that a non-linear scale squeezes together are left out; the grid line stays.
+    if (!labelled[index]) return
+    const atEnd = tick === window.end
+    // The label sits after the tick line in reading order, or before it for the closing tick.
+    const after = atEnd ? rtl : !rtl
+    out += tag('text', {
+      x: after ? x + 7 : x - 7, y: headerHeight - 40 + 24, 'font-size': 11, 'font-weight': 700, fill: theme.text,
+      'text-anchor': after ? 'start' : 'end',
+    }, escapeXml(frame.format(tick)))
+  })
+  return out
+}
+
+/** The rollup bar of a summary row. */
+function timelineSummaryBar<R extends TimelineRow>(row: R, summary: TimelineSummary, top: number, frame: TimelineFrame<R, TimelineBar>) {
+  const { theme, rtl, format } = frame
+  const box = frame.span(summary.start, summary.end)
+  const w = Math.max(3, box.width)
+  const y = top + frame.rowHeight / 2 - 7
+  let shape = tag('rect', { x: box.x, y, width: w, height: 14, rx: 3, fill: theme.grid })
+  if (summary.progress !== undefined) {
+    const filled = w * summary.progress
+    shape += tag('rect', { x: rtl ? box.x + w - filled : box.x, y, width: filled, height: 14, fill: theme.accent, 'fill-opacity': 0.75 })
+  }
+  shape += tag('line', { x1: box.x, y1: y + 13, x2: box.x + w, y2: y + 13, stroke: theme.edge, 'stroke-width': 2 })
+  return tag('g', {}, titleTag(`${frame.rowLabel(row)} · ${summary.count} · ${format(summary.start)}–${format(summary.end)}`) + shape)
+}
+
+/** How the baselines are drawn: the selected sets, their strip layout, title texts and fills. */
+interface BaselineStyle {
+  selection: BaselineSelection
+  layout: ReturnType<typeof baselineLayout>
+  text: BaselineTextOptions
+  fills: readonly string[]
+}
+
+/** The baseline strips below the bars of a row. */
+function timelineBaselines<B extends TimelineBar>(own: readonly B[], top: number, baselines: BaselineStyle, frame: TimelineFrame<TimelineRow, B>) {
+  const { window, barHeight } = frame
+  let out = ''
+  for (const bar of own) {
+    if (!baselines.selection.described) {
+      // Only `TimelineBar.baseline`: one strip below the bar, without variance in the title.
+      if (!baselines.selection.ids.length || !bar.baseline || !intersectsWindow(bar.baseline, window)) continue
+      const box = frame.span(bar.baseline.start, bar.baseline.end)
+      out += tag('rect', {
+        x: box.x - (box.width === 0 ? 1.5 : 0), y: top + frame.laneTop(bar) + barHeight + 1, width: Math.max(3, box.width), height: 4, rx: 2,
+        fill: frame.theme.baseline,
+      })
+      continue
+    }
+    const multiple = baselines.selection.ids.length > 1
+    const { layout } = baselines
+    for (const strip of baselineStrips(bar, bar, baselines.selection, baselines.text)) {
+      if (!intersectsWindow(strip.range, window)) continue
+      const box = frame.span(strip.range.start, strip.range.end)
+      const title = `${strip.label} · ${frame.barLabel(bar)} ${strip.dates} · ${strip.variance}`
+      out += tag('g', { class: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline' },
+        titleTag(title) + tag('rect', {
+          x: box.x - (box.width === 0 ? 1.5 : 0), y: top + frame.laneTop(bar) + barHeight + layout.offset(strip.slot),
+          width: Math.max(3, box.width), height: layout.height, rx: layout.height / 2, fill: baselines.fills[strip.slot],
+        }))
+    }
+  }
+  return out
+}
+
+/** Float lines from the end of each bar to its latest end, with a tick at the latest end. */
+function timelineFloats(own: readonly TimelineBar[], top: number, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { theme, rtl } = frame
+  let out = ''
+  for (const bar of own) {
+    if (bar.latestEnd === undefined || bar.latestEnd <= bar.end || !intersectsWindow({ start: bar.end, end: bar.latestEnd }, frame.window)) continue
+    const box = frame.span(bar.end, bar.latestEnd)
+    const y = top + frame.laneTop(bar) + frame.barHeight / 2
+    const tickX = rtl ? box.x + 1 : box.x + box.width - 1
+    out += tag('g', { class: 'vw-gantt-float' },
+      tag('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, stroke: theme.float, 'stroke-width': 2 })
+      + tag('line', { x1: tickX, y1: y - 4, x2: tickX, y2: y + 4, stroke: theme.float, 'stroke-width': 2 }))
+  }
+  return out
+}
+
+/** One bar: a milestone diamond, or a box (or its work pieces) with progress, the late outline and the label. */
+function timelineBar<B extends TimelineBar>(bar: B, top: number, strong: boolean, frame: TimelineFrame<TimelineRow, B>) {
+  const { theme, rtl, barHeight } = frame
+  const colors = toneColors(theme, bar.tone)
+  const solid = bar.appearance !== 'outline'
+  const fill = solid ? colors.solid : colors.pale
+  const stroke = bar.critical ? theme.critical : solid ? colors.solid : colors.line
+  const strokeWidth = bar.critical ? 2 : undefined
+  const ink = solid ? theme.onSolid : colors.ink
+  const y = top + frame.laneTop(bar)
+  const label = frame.barLabel(bar)
+  const note = bar.description?.trim()
+  const title = titleTag(`${label} ${frame.format(bar.start)}–${frame.format(bar.end)}${note ? ' · ' + note : ''}`)
+  const late = bar.deadline !== undefined && bar.end > bar.deadline
+  const marks = {
+    class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : '', strong ? 'vw-is-highlighted' : ''].filter(Boolean).join(' ') || undefined,
+  }
+  // A highlighted bar gets an outline 3 px outside its box (or around the milestone diamond).
+  const outline = (box: { x: number; width: number }) => strong
+    ? tag('rect', {
+      class: 'vw-highlight', x: box.x - 3, y: y - 3, width: box.width + 6, height: barHeight + 6, rx: 7, fill: 'none',
+      stroke: theme.dependencyHighlight, 'stroke-width': 2,
+    })
+    : ''
+  if (bar.start === bar.end) {
+    const x = frame.X(bar.start)
+    return tag('g', marks, title + outline({ x: x - 5, width: 10 }) + tag('polygon', {
+      points: pointList([[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]),
+      fill, stroke, 'stroke-width': strokeWidth,
+    }))
+  }
+  const box = { ...frame.span(bar.start, bar.end), y, height: barHeight }
+  let shape = outline(box)
+  // The part of a box that progress fills, from the inline start.
+  const progressFill = (part: { x: number; width: number }, filled: number, rx: number) => tag('rect', {
+    x: rtl ? part.x + part.width - filled : part.x, y, width: filled, height: barHeight, rx, fill: ink, 'fill-opacity': 0.18,
+  })
+  if (bar.segments) {
+    // Work pieces with a connector across the gaps; progress fills the first part of the working time.
+    const { pieces, gaps } = segmentPieces(bar, bar.segments, bar.progress)
+    for (const gap of gaps) {
+      const part = frame.span(gap.start, gap.end)
+      shape += tag('line', {
+        class: 'vw-gantt-segment-gap', x1: part.x, y1: y + barHeight / 2, x2: part.x + part.width, y2: y + barHeight / 2,
+        stroke: solid ? colors.solid : colors.line, 'stroke-width': 2,
+      })
+    }
+    for (const piece of pieces) {
+      const part = { ...frame.span(piece.start, piece.end), y, height: barHeight }
+      shape += tag('rect', { ...part, class: 'vw-gantt-segment', rx: 4, fill, stroke, 'stroke-width': strokeWidth })
+      if (piece.filled > 0) shape += progressFill(part, part.width * piece.filled, 4)
+    }
+  } else {
+    shape += tag('rect', { ...box, rx: 5, fill, stroke, 'stroke-width': strokeWidth })
+    if (bar.progress !== undefined && bar.progress > 0) shape += progressFill(box, box.width * bar.progress, 5)
+  }
+  if (late) {
+    shape += tag('rect', {
+      x: box.x - 2, y: y - 2, width: box.width + 4, height: barHeight + 4, rx: 6, fill: 'none',
+      stroke: theme.deadline, 'stroke-width': 2, 'stroke-dasharray': '4 3',
+    })
+  }
+  // Segmented solid bars keep a halo so their text stays readable over the gaps.
+  const halo = bar.segments && solid ? colors.solid : undefined
+  shape += clippedText(box, rtl, [{ text: label, y: barHeight / 2 + 4, size: 11, weight: 650, fill: ink, inset: 7, halo }])
+  return tag('g', marks, title + shape)
+}
+
+/** Deadline indicators: a line across the lane with a triangle on top. */
+function timelineDeadlines<B extends TimelineBar>(own: readonly B[], top: number, frame: TimelineFrame<TimelineRow, B>) {
+  const { theme, window } = frame
+  let out = ''
+  for (const bar of own) {
+    if (bar.deadline === undefined || bar.deadline < window.start || bar.deadline >= window.end) continue
+    const x = frame.X(bar.deadline)
+    const y = top + frame.laneTop(bar)
+    const late = bar.end > bar.deadline
+    out += tag('g', { class: late ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline' },
+      titleTag(`${frame.barLabel(bar)} ${frame.format(bar.deadline)}`)
+      + tag('line', { x1: x, y1: y - 3, x2: x, y2: y + frame.barHeight + 3, stroke: theme.deadline, 'stroke-width': 2 })
+      + tag('polygon', { points: pointList([[x - 5, y - 3], [x + 5, y - 3], [x, y + 3]]), fill: theme.deadline }))
+  }
+  return out
+}
+
+/** The labels of constraint markers: the text of each kind and the word added to violated ones. */
+interface ConstraintText {
+  labels: Partial<Record<TimelineConstraintKind, string>>
+  violated: string
+}
+
+/**
+ * Constraint markers: a stem across the lane with a flag at the top (start) or bottom (finish) that points towards
+ * the allowed times, or an I-beam for a fixed start. GanttChart draws the same glyph with CSS.
+ */
+function timelineConstraints<B extends TimelineBar>(own: readonly B[], top: number, text: ConstraintText, frame: TimelineFrame<TimelineRow, B>) {
+  const { theme, rtl, window } = frame
+  let out = ''
+  for (const bar of own) {
+    if (!bar.constraints) continue
+    const y = top + frame.laneTop(bar)
+    const upper = y - 5, lower = y + frame.barHeight + 5
+    for (const kind of timelineConstraintKinds) {
+      const time = bar.constraints[kind]
+      if (time === undefined || time < window.start || time >= window.end) continue
+      const x = frame.X(time)
+      const violated = timelineConstraintViolated(bar, kind, time)
+      const color = violated ? theme.constraintViolated : theme.constraint
+      const start = kind.startsWith('start') || kind === 'fixedStart'
+      const later = kind.endsWith('NoEarlierThan')
+      const label = text.labels[kind] ?? defaultConstraintLabels[kind]
+      let shape = tag('line', {
+        x1: x, y1: upper, x2: x, y2: lower, stroke: color, 'stroke-width': 2, 'stroke-dasharray': violated ? '3 2' : undefined,
+      })
+      if (kind === 'fixedStart') {
+        shape += tag('line', { x1: x - 8, y1: upper + 1.5, x2: x + 8, y2: upper + 1.5, stroke: color, 'stroke-width': 3 })
+          + tag('line', { x1: x - 8, y1: lower - 1.5, x2: x + 8, y2: lower - 1.5, stroke: color, 'stroke-width': 3 })
+      } else {
+        // Towards later times is right in left-to-right output and left in right-to-left output.
+        const side = later !== rtl ? 1 : -1
+        const flag = start ? upper + 1 : lower - 1
+        shape += tag('line', { x1: x, y1: flag, x2: x + side * 8, y2: flag, stroke: color, 'stroke-width': 2 })
+          + tag('polygon', { points: pointList([[x + side * 6, flag - 4.5], [x + side * 13, flag], [x + side * 6, flag + 4.5]]), fill: color })
+      }
+      const classes = ['vw-gantt-constraint', start ? 'vw-is-start' : 'vw-is-finish',
+        kind === 'fixedStart' ? 'vw-is-fixed' : later ? 'vw-is-lower' : 'vw-is-upper', violated ? 'vw-is-violated' : '']
+      const title = `${label} · ${frame.barLabel(bar)} ${frame.format(time)}` + (violated ? ` · ${text.violated}` : '')
+      out += tag('g', { class: classes.filter(Boolean).join(' ') }, titleTag(title) + shape)
+    }
+  }
+  return out
+}
+
+/** A dependency end: the time range it attaches to, its displayed row and its height in that row. */
+type LinkEnd = { range: TimeRange; index: number; offset: number }
+
+/**
+ * Dependency connectors and their lag labels. The paths are computed from the window start and mirrored as a whole
+ * for right-to-left output; the labels are placed as in GanttChart and mirrored point by point, so the text itself is
+ * never mirrored.
+ */
+function timelineDependencies(
+  dependencies: readonly TimelineDependency[], linkEnd: (id: string) => LinkEnd | undefined, highlighted: ReadonlySet<string>,
+  options: { arrow: string; arrowHighlight: string; style?: DependencyPathStyle; formatLag: (lag: number) => string },
+  frame: TimelineFrame<TimelineRow, TimelineBar>,
+) {
+  const { theme, rtl, local, headerHeight, rowHeight, axisWidth, labelArea } = frame
+  let paths = '', lagLabels = ''
+  for (const dep of dependencies) {
+    const source = linkEnd(dep.from), target = linkEnd(dep.to)
+    if (!source || !target) continue
+    const ends = dependencyTimes(source.range, target.range, dep.type)
+    const y1 = headerHeight + source.index * rowHeight + source.offset
+    const y2 = headerHeight + target.index * rowHeight + target.offset
+    const strong = highlighted.has(dep.id)
+    paths += tag('path', {
+      d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2), options.style), fill: 'none',
+      stroke: strong ? theme.dependencyHighlight : theme.edge, 'stroke-width': strong ? 2 : 1.3,
+      'marker-end': `url(#${strong ? options.arrowHighlight : options.arrow})`,
+    })
+    if (dep.lag) {
+      const point = lagLabelPoint(local.toX(ends.from), y1, local.toX(ends.to), y2, headerHeight + source.index * rowHeight, rowHeight)
+      lagLabels += tag('text', {
+        class: 'vw-gantt-lag', x: rtl ? axisWidth - point.x : labelArea + point.x, y: point.y,
+        'text-anchor': point.anchor === 'middle' ? 'middle' : rtl ? 'end' : 'start', 'dominant-baseline': 'central',
+        'font-size': 10, 'font-weight': 650, fill: strong ? theme.dependencyHighlight : theme.text, ...textHalo(theme.surface, 3),
+      }, escapeXml(options.formatLag(dep.lag)))
+    }
+  }
+  if (paths) paths = tag('g', { transform: rtl ? `matrix(-1 0 0 1 ${num(axisWidth)} 0)` : `translate(${num(labelArea)} 0)` }, paths)
+  return { paths, lagLabels }
+}
+
+/** A vertical line across the body with a flag label at the top, for markers, the now line and the status date. */
+function timelineFlag(x: number, text: string, color: string, strokeWidth: number, dashed: boolean, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { rtl, headerHeight } = frame
+  const flagWidth = 10 + 6 * Array.from(text).length
+  return tag('line', {
+    x1: x, y1: headerHeight, x2: x, y2: frame.totalHeight, stroke: color, 'stroke-width': strokeWidth,
+    'stroke-dasharray': dashed ? '4 3' : undefined,
+  }) + tag('rect', { x: rtl ? x - flagWidth : x, y: headerHeight, width: flagWidth, height: 16, fill: color })
+    + tag('text', {
+      x: rtl ? x - 5 : x + 5, y: headerHeight + 11.5, 'font-size': 10, fill: frame.theme.markerInk, ...textDirection(rtl),
+    }, escapeXml(text))
+}
+
+/**
+ * The marker lines, the now line and the status-date line with its progress line, which kinks to the progress point of
+ * each bar (in `rowBars`, by displayed row) that is behind or ahead.
+ */
+function timelineLines(
+  options: Pick<TimelineSvgOptions, 'markers' | 'now' | 'nowLabel' | 'statusDate' | 'statusDateLabel' | 'showProgressLine'>,
+  rowBars: readonly (readonly TimelineBar[])[], frame: TimelineFrame<TimelineRow, TimelineBar>,
+) {
+  const { theme, window, X, format, headerHeight } = frame
+  let out = ''
+  for (const item of options.markers ?? []) {
+    if (item.time < window.start || item.time >= window.end) continue
+    out += tag('g', {}, titleTag(`${item.label} ${format(item.time)}`) + timelineFlag(X(item.time), item.label, theme.marker, 1, true, frame))
+  }
+  if (options.now !== undefined && options.now >= window.start && options.now <= window.end) {
+    const label = options.nowLabel ?? 'Now'
+    out += tag('g', {}, titleTag(`${label} ${format(options.now)}`) + timelineFlag(X(options.now), label, theme.now, 2, false, frame))
+  }
+  const status = options.statusDate
+  if (status !== undefined && status >= window.start && status <= window.end) {
+    const x = X(status)
+    if (options.showProgressLine) {
+      const kinks = rowBars.flatMap((own, index) => own.flatMap(bar => {
+        const time = progressLineTime(bar, status)
+        return time === undefined ? []
+          : [{ x: X(time), y: headerHeight + index * frame.rowHeight + frame.laneTop(bar) + frame.barHeight / 2, reach: frame.barHeight / 2 }]
+      }))
+      out += tag('polyline', {
+        class: 'vw-gantt-progress-line', fill: 'none', stroke: theme.status, 'stroke-width': 2, 'stroke-linejoin': 'round',
+        points: pointList(progressLinePoints(x, headerHeight, headerHeight + frame.bodyHeight, kinks)),
+      })
+    }
+    const label = options.statusDateLabel ?? 'Status date'
+    out += tag('g', { class: 'vw-gantt-status-date' }, titleTag(`${label} ${format(status)}`) + timelineFlag(x, label, theme.status, 2, false, frame))
+  }
+  return out
+}
+
+/** The load histogram of each load row: load up to capacity, overload above it and a dashed capacity line. */
+function timelineLoad(loadRows: readonly TimelineLoadRow[], histogram: Map<string, ResourceLoadHistogram>, loadRowHeight: number, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { theme } = frame
+  let out = ''
+  loadRows.forEach((row, index) => {
+    const { segments, peak } = histogram.get(row.id)!
+    const peakScale = Math.max(1e-9, peak)
+    const top = frame.loadTop + index * loadRowHeight + 4
+    const height = loadRowHeight - 8
+    for (const segment of segments) {
+      if (!intersectsWindow(segment, frame.window)) continue
+      const box = frame.span(segment.start, segment.end)
+      const overload = segment.overload ?? Math.max(0, segment.load - segment.capacity)
+      const fillHeight = Math.min(segment.load, segment.capacity) / peakScale * height
+      const capacityHeight = segment.capacity / peakScale * height
+      const overHeight = overload / peakScale * height
+      let shape = tag('rect', { x: box.x, y: top + height - fillHeight, width: box.width, height: fillHeight, fill: theme.load })
+      if (overload > 0) {
+        shape += tag('rect', { x: box.x, y: top + height - capacityHeight - overHeight, width: box.width, height: overHeight, fill: theme.loadOverload })
+      }
+      shape += tag('line', {
+        x1: box.x, y1: top + height - capacityHeight, x2: box.x + box.width, y2: top + height - capacityHeight,
+        stroke: theme.loadCapacity, 'stroke-width': 2, 'stroke-dasharray': '4 3', 'stroke-opacity': segment.load === 0 ? 0.55 : undefined,
+      })
+      out += tag('g', {}, titleTag(`${row.label} ${frame.format(segment.start)}–${frame.format(segment.end)}: ${segment.load} / ${segment.capacity}`) + shape)
+    }
+  })
+  return out
+}
+
+/** Horizontal separators below every task row and load row, across both areas, and below the header. */
+function timelineSeparators(rowCount: number, loadRowCount: number, loadRowHeight: number, frame: TimelineFrame<TimelineRow, TimelineBar>) {
+  const { theme, width, headerHeight } = frame
+  const line = (y: number) => tag('line', { x1: 0, y1: y, x2: width, y2: y, stroke: theme.border })
+  let out = ''
+  for (let index = 1; index <= rowCount; index++) out += line(headerHeight + index * frame.rowHeight - 0.5)
+  for (let index = 1; index <= loadRowCount; index++) out += line(frame.loadTop + index * loadRowHeight - 0.5)
+  return out + line(headerHeight - 0.5)
+}
+
+/** The label area: the corner, the row headings, the column cells and the load row headings. */
+function timelineLabelArea<R extends TimelineRow>(
+  shown: readonly RowTreeItem<R>[], columns: readonly TimelineColumn<R>[], summaries: Map<string, TimelineSummary> | undefined,
+  options: { labelWidth: number; rowHeading: string; collapsed: ReadonlySet<string>; loadRows: readonly TimelineLoadRow[]; loadRowHeight: number },
+  frame: TimelineFrame<R, TimelineBar>,
+) {
+  const { theme, rtl, labelArea, labelLeft, headerHeight, rowHeight, totalHeight } = frame
+  const { labelWidth, loadRowHeight } = options
+  /** A box measured from the inline start of the label area. */
+  const labelBox = (inset: number, width: number) => ({ x: rtl ? labelLeft + labelArea - inset - width : labelLeft + inset, width })
+  let out = tag('rect', { x: labelLeft, y: 0, width: labelArea, height: totalHeight, fill: theme.surfaceMuted })
+  const edgeX = rtl ? labelLeft + 0.5 : labelArea - 0.5
+  out += tag('line', { x1: edgeX, y1: 0, x2: edgeX, y2: totalHeight, stroke: theme.border })
+  const name = labelBox(0, labelWidth)
+  out += clippedText({ x: name.x, y: 0, width: name.width, height: headerHeight }, rtl, [
+    { text: options.rowHeading, y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 11 },
+  ])
+  let inset = labelWidth
+  const columnBoxes = columns.map(column => {
+    const box = labelBox(inset, column.width)
+    inset += column.width
+    const lineX = rtl ? box.x + box.width - 0.5 : box.x + 0.5
+    out += tag('line', { x1: lineX, y1: 0, x2: lineX, y2: headerHeight + frame.bodyHeight, stroke: theme.border })
+    out += clippedText({ x: box.x, y: 0, width: box.width, height: headerHeight }, rtl, [
+      { text: column.label, y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 6 },
+    ])
+    return { column, box }
+  })
+  shown.forEach((item, index) => {
+    const top = headerHeight + index * rowHeight
+    const nested = item.hasChildren || item.depth > 0
+    let indent = nested ? 9 + Math.min(item.depth, 5) * 11 : 11
+    const lines: Parameters<typeof clippedText>[2][number][] = []
+    if (item.hasChildren) {
+      lines.push({ text: options.collapsed.has(item.row.id) ? (rtl ? '◂' : '▸') : '▾', y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: indent })
+      indent += 16
+    }
+    const detail = item.row.detail
+    lines.push({ text: frame.rowLabel(item.row), y: detail ? rowHeight / 2 - 2 : rowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: indent })
+    if (detail) lines.push({ text: detail, y: rowHeight / 2 + 11, size: 10, fill: theme.muted, inset: indent })
+    out += clippedText({ x: name.x, y: top, width: name.width, height: rowHeight }, rtl, lines)
+    for (const { column, box } of columnBoxes) {
+      out += clippedText({ x: box.x, y: top, width: box.width, height: rowHeight }, rtl, [{
+        text: String(column.value(item.row, summaries?.get(item.row.id))), y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: 6,
+      }])
+    }
+  })
+  options.loadRows.forEach((row, index) => {
+    const top = frame.loadTop + index * loadRowHeight
+    out += clippedText({ x: labelLeft, y: top, width: labelArea, height: loadRowHeight }, rtl, [
+      { text: row.label, y: row.detail ? loadRowHeight / 2 - 2 : loadRowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: 11 },
+      { text: row.detail ?? '', y: loadRowHeight / 2 + 11, size: 10, fill: theme.muted, inset: 11 },
+    ])
+  })
+  return out
+}
+
 /**
  * Build a standalone SVG document of a timeline with the default rendering: row headings and columns, header bands
  * and ticks, bars with progress, milestones, baselines, summaries, dependencies, markers, marker ranges, the now line and
@@ -770,28 +1326,14 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
   if (!Number.isFinite(rowHeight) || rowHeight < 8 + laneCount * 14) throw new RangeError('rowHeight is too small for laneCount')
   const labelWidth = options.labelWidth ?? 154
   if (!Number.isFinite(labelWidth) || labelWidth < 0) throw new RangeError('labelWidth must be finite and nonnegative')
-  if (!scale || typeof scale.toX !== 'function' || typeof scale.toTime !== 'function') throw new Error('A time scale is required')
-  if (!Number.isFinite(scale.width) || scale.width <= 0) throw new RangeError('Invalid time scale width')
-  const full = { start: scale.toTime(0), end: scale.toTime(scale.width) }
-  const window = options.timeRange ?? full
-  if (!Number.isFinite(window.start) || !Number.isFinite(window.end) || window.end <= window.start) {
-    throw new RangeError('timeRange must have finite endpoints with start < end')
-  }
-  const offset = scale.toX(window.start)
-  const axisWidth = scale.toX(window.end) - offset
-  if (!Number.isFinite(offset) || !Number.isFinite(axisWidth) || axisWidth <= 0) throw new RangeError('The exported time window has no width')
+  const { full, window, offset, axisWidth } = timelineWindow(scale, options.timeRange)
 
   const columns = options.columns ?? []
   const columnsWidth = checkTimelineColumns(columns)
 
   const tree = createTimelineRowTree(rows)
   const collapsed = new Set(options.collapsedIds ?? [])
-  const displayed: typeof tree = []
-  for (let index = 0; index < tree.length;) {
-    const item = tree[index]!
-    displayed.push(item)
-    index = collapsed.has(item.row.id) ? item.afterSubtree : index + 1
-  }
+  const displayed = displayedRows(tree, collapsed)
   const rowRange = options.rowRange ?? { start: 0, end: displayed.length }
   if (!Number.isInteger(rowRange.start) || !Number.isInteger(rowRange.end) || rowRange.start < 0
     || rowRange.end < rowRange.start || rowRange.end > displayed.length) {
@@ -816,123 +1358,58 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
 
   const anchor = options.tickAnchor ?? full.start
   if (!Number.isFinite(anchor)) throw new RangeError('tickAnchor must be finite')
-  let step = options.tickStep
-  if (step !== undefined) {
-    if (!Number.isFinite(step) || step <= 0) throw new RangeError('tickStep must be finite and positive')
-  } else {
-    const steps = options.tickSteps ?? defaultTickSteps
-    if (!steps.length || steps.some((value, i) => !Number.isFinite(value) || value <= 0 || (i > 0 && value < steps[i - 1]!))) {
-      throw new RangeError('tickSteps must be positive and ascending')
-    }
-    step = steps.find(value => scale.toX(anchor + value) - scale.toX(anchor) >= 76) ?? steps.at(-1)!
-  }
+  const step = timelineTickStep(options, scale, anchor)
   const ticks = timeTicks(window, step, anchor)
   const format = options.formatTime ?? defaultFormat
-  const barLabel = options.barLabel ?? ((bar: B) => bar.label)
-  const rowLabel = options.rowLabel ?? ((row: R) => row.label)
   const highlighted = new Set(options.highlightedDependencyIds ?? [])
   const highlightedBars = new Set(options.highlightedBarIds ?? [])
-  const baselines = baselineSelection(bars, options.baselineIds)
-  const stripLayout = baselineLayout(baselines.ids.length)
-  const baselineText = {
-    label: options.baselineLabel ?? ((id: string) => id === timelineBaselineId ? 'Baseline' : id),
-    formatTime: format, formatVariance: options.formatVariance ?? formatDependencyLag,
-    start: options.varianceLabels?.start ?? 'start', finish: options.varianceLabels?.finish ?? 'finish',
-    duration: options.varianceLabels?.duration ?? 'duration',
+  const selection = baselineSelection(bars, options.baselineIds)
+  const baselines: BaselineStyle = {
+    selection,
+    layout: baselineLayout(selection.ids.length),
+    text: {
+      label: options.baselineLabel ?? ((id: string) => id === timelineBaselineId ? 'Baseline' : id),
+      formatTime: format, formatVariance: options.formatVariance ?? formatDependencyLag,
+      start: options.varianceLabels?.start ?? 'start', finish: options.varianceLabels?.finish ?? 'finish',
+      duration: options.varianceLabels?.duration ?? 'duration',
+    },
+    fills: [theme.baseline, theme.baseline2, theme.baseline3],
   }
-  const stripFills = [theme.baseline, theme.baseline2, theme.baseline3]
-  const constraintLabels = options.constraintLabels ?? {}
-  const constraintViolatedLabel = options.constraintViolatedLabel ?? 'violated'
+  const constraintText: ConstraintText = { labels: options.constraintLabels ?? {}, violated: options.constraintViolatedLabel ?? 'violated' }
 
   // Geometry. `local` measures from the window start; `view` mirrors it for right-to-left output.
   const local: TimeScale = { width: axisWidth, toX: time => scale.toX(time) - offset, toTime: x => scale.toTime(x + offset) }
   const view = rtl ? mirrorTimeScale(local) : local
   const labelArea = labelWidth + columnsWidth
   const axisLeft = rtl ? 0 : labelArea
-  const labelLeft = rtl ? axisWidth : 0
   const X = (time: number) => axisLeft + view.toX(time)
-  const span = (start: number, end: number) => {
-    const a = X(start), b = X(end)
-    return { x: Math.min(a, b), width: Math.abs(b - a) }
-  }
-  /** A box measured from the inline start of the label area. */
-  const labelBox = (inset: number, width: number) => ({ x: rtl ? labelLeft + labelArea - inset - width : labelLeft + inset, width })
   const headerHeight = 40 + bandHeight * bands.length
   const bodyHeight = shown.length * rowHeight
   const loadTop = headerHeight + bodyHeight
   const totalHeight = loadTop + (histogram ? loadRows.length * loadRowHeight : 0)
   const width = labelArea + axisWidth
   const laneHeight = (rowHeight - 8) / laneCount
-  // Two or three baseline sets take `reserve` pixels from the bar so their strips fit in the lane.
-  const barHeight = Math.max(1, laneHeight - 6 - stripLayout.reserve)
-  const laneTop = (bar: TimelineBar) => 7 + (bar.lane ?? 0) * laneHeight
+  const frame: TimelineFrame<R, B> = {
+    theme, rtl, window, local, X,
+    span: (start, end) => {
+      const a = X(start), b = X(end)
+      return { x: Math.min(a, b), width: Math.abs(b - a) }
+    },
+    axisWidth, labelArea, labelLeft: rtl ? axisWidth : 0, width, headerHeight, bodyHeight, loadTop, totalHeight, rowHeight,
+    // Two or three baseline sets take `reserve` pixels from the bar so their strips fit in the lane.
+    barHeight: Math.max(1, laneHeight - 6 - baselines.layout.reserve),
+    laneTop: bar => 7 + (bar.lane ?? 0) * laneHeight,
+    format, barLabel: options.barLabel ?? (bar => bar.label), rowLabel: options.rowLabel ?? (row => row.label),
+  }
 
   const clip = prefix + '-axis', arrow = prefix + '-arrow', arrowHighlight = prefix + '-arrow-highlight'
   const defs = tag('clipPath', { id: clip }, tag('rect', { x: axisLeft, y: 0, width: axisWidth, height: totalHeight }))
-    + tag('marker', { id: arrow, markerWidth: 6, markerHeight: 6, refX: 5, refY: 3, orient: 'auto' },
-      tag('path', { d: 'M 0 0 L 6 3 L 0 6 z', fill: theme.edge }))
-    + tag('marker', { id: arrowHighlight, markerWidth: 6, markerHeight: 6, refX: 5, refY: 3, orient: 'auto' },
-      tag('path', { d: 'M 0 0 L 6 3 L 0 6 z', fill: theme.dependencyHighlight }))
+    + arrowMarker(arrow, 6, theme.edge) + arrowMarker(arrowHighlight, 6, theme.dependencyHighlight)
 
-  const out: string[] = []
-  if (background) out.push(tag('rect', { width, height: totalHeight, fill: theme.surface }))
-  out.push(tag('rect', { x: 0, y: 0, width, height: headerHeight, fill: theme.surfaceMuted }))
-  if (histogram) out.push(tag('rect', { x: 0, y: loadTop, width, height: totalHeight - loadTop, fill: theme.surfaceMuted }))
-
-  // Time area: everything here is clipped to the exported window.
-  const area: string[] = []
-  for (const period of options.nonWorkingPeriods ?? []) {
-    const start = Math.max(period.start, window.start), end = Math.min(period.end, window.end)
-    if (end <= start) continue
-    area.push(tag('rect', { ...span(start, end), y: headerHeight, height: totalHeight - headerHeight, fill: theme.nonWorking }))
-  }
-  // Marker ranges: the body band goes behind the grid and bars; its header label is drawn after the ticks below.
-  const rangeLabels: string[] = []
-  for (const item of markerRanges) {
-    const start = Math.max(item.start, window.start), end = Math.min(item.end, window.end)
-    if (end <= start) continue
-    const box = span(start, end)
-    const colors = item.tone === undefined ? { pale: theme.range, line: theme.rangeLine, ink: theme.rangeInk } : toneColors(theme, item.tone)
-    const fills = item.rowIds
-      ? [...new Set(item.rowIds)].flatMap(rowId => {
-        const index = rowIndex.get(rowId)
-        return index === undefined ? [] : [{ y: headerHeight + index * rowHeight, height: rowHeight }]
-      })
-      : [{ y: headerHeight, height: totalHeight - headerHeight }]
-    const title = tag('title', {}, escapeXml(`${item.label} ${format(item.start)}–${format(item.end)}`))
-    if (fills.length) {
-      area.push(tag('g', { class: 'vw-gantt-range' }, title
-        + fills.map(fill => tag('rect', { ...box, ...fill, fill: colors.pale, 'fill-opacity': 0.7 })).join('')))
-    }
-    const strip = { ...box, y: headerHeight - 13, height: 13 }
-    rangeLabels.push(tag('g', { class: 'vw-gantt-range-label' }, title + tag('rect', { ...strip, fill: colors.pale })
-      + tag('line', { x1: box.x, y1: strip.y + 1, x2: box.x + box.width, y2: strip.y + 1, stroke: colors.line, 'stroke-width': 2 })
-      + clippedText(strip, rtl, [{ text: item.label, y: 10, size: 10, weight: 650, fill: colors.ink, inset: 4 }])))
-  }
-  bands.forEach((level, index) => {
-    for (const band of level) {
-      const start = Math.max(band.start, window.start), end = Math.min(band.end, window.end)
-      if (end <= start) continue
-      const box = { ...span(start, end), y: index * bandHeight, height: bandHeight }
-      area.push(tag('rect', { ...box, fill: 'none', stroke: theme.grid }))
-      area.push(clippedText(box, rtl, [{ text: band.label, y: 17, size: 11, weight: 700, fill: theme.text, inset: 7 }]))
-    }
-  })
-  const labelled = tickLabelsWithRoom(ticks, local.toX, step, window.end)
-  ticks.forEach((tick, index) => {
-    const x = X(tick)
-    area.push(tag('line', { x1: x, y1: headerHeight - 40, x2: x, y2: totalHeight, stroke: theme.grid, 'stroke-width': 1 }))
-    // Labels that a non-linear scale squeezes together are left out; the grid line stays.
-    if (!labelled[index]) return
-    const atEnd = tick === window.end
-    // The label sits after the tick line in reading order, or before it for the closing tick.
-    const after = atEnd ? rtl : !rtl
-    area.push(tag('text', {
-      x: after ? x + 7 : x - 7, y: headerHeight - 40 + 24, 'font-size': 11, 'font-weight': 700, fill: theme.text,
-      'text-anchor': after ? 'start' : 'end',
-    }, escapeXml(format(tick))))
-  })
-  for (const label of rangeLabels) area.push(label)
+  // Time area, back to front; everything here is clipped to the exported window.
+  const ranges = timelineMarkerRanges(markerRanges, rowIndex, frame)
+  let area = timelineNonWorking(options.nonWorkingPeriods ?? [], frame) + ranges.bands + timelineHeaderBands(bands, frame)
+    + timelineTicks(ticks, step, frame) + ranges.labels
   const barsByRow = new Map<string, B[]>()
   for (const bar of bars) {
     if (!rowIndex.has(bar.rowId)) continue
@@ -947,346 +1424,41 @@ export function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(
     const own = barsByRow.get(item.row.id) ?? []
     const summary = item.hasChildren && options.showSummaries && !own.length ? summaries?.get(item.row.id) : undefined
     if (summary && options.summaryDependencies) rollups.set(item.row.id, summary)
-    if (summary && intersectsWindow(summary, window)) {
-      const box = span(summary.start, summary.end)
-      const w = Math.max(3, box.width)
-      const y = top + rowHeight / 2 - 7
-      let shape = tag('rect', { x: box.x, y, width: w, height: 14, rx: 3, fill: theme.grid })
-      if (summary.progress !== undefined) {
-        const filled = w * summary.progress
-        shape += tag('rect', { x: rtl ? box.x + w - filled : box.x, y, width: filled, height: 14, fill: theme.accent, 'fill-opacity': 0.75 })
-      }
-      shape += tag('line', { x1: box.x, y1: y + 13, x2: box.x + w, y2: y + 13, stroke: theme.edge, 'stroke-width': 2 })
-      area.push(tag('g', {}, tag('title', {}, escapeXml(`${rowLabel(item.row)} · ${summary.count} · ${format(summary.start)}–${format(summary.end)}`)) + shape))
-    }
-    for (const bar of own) {
-      if (!baselines.described) {
-        // Only `TimelineBar.baseline`: one strip below the bar, without variance in the title.
-        if (!baselines.ids.length || !bar.baseline || !intersectsWindow(bar.baseline, window)) continue
-        const box = span(bar.baseline.start, bar.baseline.end)
-        area.push(tag('rect', {
-          x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + 1, width: Math.max(3, box.width), height: 4, rx: 2,
-          fill: theme.baseline,
-        }))
-        continue
-      }
-      const multiple = baselines.ids.length > 1
-      for (const strip of baselineStrips(bar, bar, baselines, baselineText)) {
-        if (!intersectsWindow(strip.range, window)) continue
-        const box = span(strip.range.start, strip.range.end)
-        const title = `${strip.label} · ${barLabel(bar)} ${strip.dates} · ${strip.variance}`
-        area.push(tag('g', { class: multiple ? `vw-gantt-baseline vw-gantt-baseline-${strip.slot + 1}` : 'vw-gantt-baseline' },
-          tag('title', {}, escapeXml(title)) + tag('rect', {
-            x: box.x - (box.width === 0 ? 1.5 : 0), y: top + laneTop(bar) + barHeight + stripLayout.offset(strip.slot),
-            width: Math.max(3, box.width), height: stripLayout.height, rx: stripLayout.height / 2, fill: stripFills[strip.slot],
-          })))
-      }
-    }
-    for (const bar of own) {
-      if (bar.latestEnd === undefined || bar.latestEnd <= bar.end || !intersectsWindow({ start: bar.end, end: bar.latestEnd }, window)) continue
-      const box = span(bar.end, bar.latestEnd)
-      const y = top + laneTop(bar) + barHeight / 2
-      const tickX = rtl ? box.x + 1 : box.x + box.width - 1
-      area.push(tag('g', { class: 'vw-gantt-float' },
-        tag('line', { x1: box.x, y1: y, x2: box.x + box.width, y2: y, stroke: theme.float, 'stroke-width': 2 })
-        + tag('line', { x1: tickX, y1: y - 4, x2: tickX, y2: y + 4, stroke: theme.float, 'stroke-width': 2 })))
-    }
-    for (const bar of own) {
-      if (!intersectsWindow(bar, window)) continue
-      const colors = toneColors(theme, bar.tone)
-      const solid = bar.appearance !== 'outline'
-      const fill = solid ? colors.solid : colors.pale
-      const stroke = bar.critical ? theme.critical : solid ? colors.solid : colors.line
-      const strokeWidth = bar.critical ? 2 : undefined
-      const ink = solid ? theme.onSolid : colors.ink
-      const y = top + laneTop(bar)
-      const label = barLabel(bar)
-      const note = bar.description?.trim()
-      const title = tag('title', {}, escapeXml(`${label} ${format(bar.start)}–${format(bar.end)}${note ? ' · ' + note : ''}`))
-      const late = bar.deadline !== undefined && bar.end > bar.deadline
-      const strong = highlightedBars.has(bar.id)
-      const marks = {
-        class: [bar.critical ? 'vw-critical' : '', late ? 'vw-late' : '', strong ? 'vw-is-highlighted' : ''].filter(Boolean).join(' ') || undefined,
-      }
-      // A highlighted bar gets an outline 3 px outside its box (or around the milestone diamond).
-      const outline = (box: { x: number; width: number }) => strong
-        ? tag('rect', {
-          class: 'vw-highlight', x: box.x - 3, y: y - 3, width: box.width + 6, height: barHeight + 6, rx: 7, fill: 'none',
-          stroke: theme.dependencyHighlight, 'stroke-width': 2,
-        })
-        : ''
-      if (bar.start === bar.end) {
-        const x = X(bar.start)
-        area.push(tag('g', marks, title + outline({ x: x - 5, width: 10 }) + tag('polygon', {
-          points: [[x, y + barHeight * 0.1], [x + 5, y + barHeight / 2], [x, y + barHeight * 0.9], [x - 5, y + barHeight / 2]]
-            .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
-          fill, stroke, 'stroke-width': strokeWidth,
-        })))
-        continue
-      }
-      const box = { ...span(bar.start, bar.end), y, height: barHeight }
-      let shape = outline(box)
-      if (bar.segments) {
-        // Work pieces with a connector across the gaps; progress fills the first part of the working time.
-        const { pieces, gaps } = segmentPieces(bar, bar.segments, bar.progress)
-        for (const gap of gaps) {
-          const part = span(gap.start, gap.end)
-          shape += tag('line', {
-            class: 'vw-gantt-segment-gap', x1: part.x, y1: y + barHeight / 2, x2: part.x + part.width, y2: y + barHeight / 2,
-            stroke: solid ? colors.solid : colors.line, 'stroke-width': 2,
-          })
-        }
-        for (const piece of pieces) {
-          const part = { ...span(piece.start, piece.end), y, height: barHeight }
-          shape += tag('rect', { ...part, class: 'vw-gantt-segment', rx: 4, fill, stroke, 'stroke-width': strokeWidth })
-          if (piece.filled > 0) {
-            const filled = part.width * piece.filled
-            shape += tag('rect', {
-              x: rtl ? part.x + part.width - filled : part.x, y, width: filled, height: barHeight, rx: 4, fill: ink, 'fill-opacity': 0.18,
-            })
-          }
-        }
-      } else {
-        shape += tag('rect', { ...box, rx: 5, fill, stroke, 'stroke-width': strokeWidth })
-        if (bar.progress !== undefined && bar.progress > 0) {
-          const filled = box.width * bar.progress
-          shape += tag('rect', {
-            x: rtl ? box.x + box.width - filled : box.x, y, width: filled, height: barHeight, rx: 5, fill: ink, 'fill-opacity': 0.18,
-          })
-        }
-      }
-      if (late) {
-        shape += tag('rect', {
-          x: box.x - 2, y: y - 2, width: box.width + 4, height: barHeight + 4, rx: 6, fill: 'none',
-          stroke: theme.deadline, 'stroke-width': 2, 'stroke-dasharray': '4 3',
-        })
-      }
-      // Segmented solid bars keep a halo so their text stays readable over the gaps.
-      const halo = bar.segments && solid ? colors.solid : undefined
-      shape += clippedText(box, rtl, [{ text: label, y: barHeight / 2 + 4, size: 11, weight: 650, fill: ink, inset: 7, halo }])
-      area.push(tag('g', marks, title + shape))
-    }
-    for (const bar of own) {
-      if (bar.deadline === undefined || bar.deadline < window.start || bar.deadline >= window.end) continue
-      const x = X(bar.deadline)
-      const y = top + laneTop(bar)
-      const late = bar.end > bar.deadline
-      area.push(tag('g', { class: late ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline' },
-        tag('title', {}, escapeXml(`${barLabel(bar)} ${format(bar.deadline)}`))
-        + tag('line', { x1: x, y1: y - 3, x2: x, y2: y + barHeight + 3, stroke: theme.deadline, 'stroke-width': 2 })
-        + tag('polygon', {
-          points: [[x - 5, y - 3], [x + 5, y - 3], [x, y + 3]].map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
-          fill: theme.deadline,
-        })))
-    }
-    // Constraint markers: a stem across the lane with a flag at the top (start) or bottom (finish) that points towards
-    // the allowed times, or an I-beam for a fixed start. GanttChart draws the same glyph with CSS.
-    for (const bar of own) {
-      if (!bar.constraints) continue
-      const y = top + laneTop(bar)
-      const upper = y - 5, lower = y + barHeight + 5
-      for (const kind of timelineConstraintKinds) {
-        const time = bar.constraints[kind]
-        if (time === undefined || time < window.start || time >= window.end) continue
-        const x = X(time)
-        const violated = timelineConstraintViolated(bar, kind, time)
-        const color = violated ? theme.constraintViolated : theme.constraint
-        const start = kind.startsWith('start') || kind === 'fixedStart'
-        const later = kind.endsWith('NoEarlierThan')
-        const label = constraintLabels[kind] ?? defaultConstraintLabels[kind]
-        let shape = tag('line', {
-          x1: x, y1: upper, x2: x, y2: lower, stroke: color, 'stroke-width': 2, 'stroke-dasharray': violated ? '3 2' : undefined,
-        })
-        if (kind === 'fixedStart') {
-          shape += tag('line', { x1: x - 8, y1: upper + 1.5, x2: x + 8, y2: upper + 1.5, stroke: color, 'stroke-width': 3 })
-            + tag('line', { x1: x - 8, y1: lower - 1.5, x2: x + 8, y2: lower - 1.5, stroke: color, 'stroke-width': 3 })
-        } else {
-          // Towards later times is right in left-to-right output and left in right-to-left output.
-          const side = later !== rtl ? 1 : -1
-          const flag = start ? upper + 1 : lower - 1
-          shape += tag('line', { x1: x, y1: flag, x2: x + side * 8, y2: flag, stroke: color, 'stroke-width': 2 })
-            + tag('polygon', {
-              points: [[x + side * 6, flag - 4.5], [x + side * 13, flag], [x + side * 6, flag + 4.5]]
-                .map(([px, py]) => num(px!) + ',' + num(py!)).join(' '),
-              fill: color,
-            })
-        }
-        const classes = ['vw-gantt-constraint', start ? 'vw-is-start' : 'vw-is-finish',
-          kind === 'fixedStart' ? 'vw-is-fixed' : later ? 'vw-is-lower' : 'vw-is-upper', violated ? 'vw-is-violated' : '']
-        const title = `${label} · ${barLabel(bar)} ${format(time)}` + (violated ? ` · ${constraintViolatedLabel}` : '')
-        area.push(tag('g', { class: classes.filter(Boolean).join(' ') }, tag('title', {}, escapeXml(title)) + shape))
-      }
-    }
+    if (summary && intersectsWindow(summary, window)) area += timelineSummaryBar(item.row, summary, top, frame)
+    area += timelineBaselines(own, top, baselines, frame) + timelineFloats(own, top, frame)
+      + own.map(bar => intersectsWindow(bar, window) ? timelineBar(bar, top, highlightedBars.has(bar.id), frame) : '').join('')
+      + timelineDeadlines(own, top, frame) + timelineConstraints(own, top, constraintText, frame)
   })
-  // Dependency paths are computed from the window start and mirrored as a whole for right-to-left output.
-  const paths: string[] = []
-  const lagLabels: string[] = []
-  const formatLag = options.formatLag ?? formatDependencyLag
   const barById = new Map(bars.map(bar => [bar.id, bar]))
   // A dependency end: a bar, or with `summaryDependencies` the rollup bar of a summary row, centred in its row.
-  const linkEnd = (id: string) => {
+  const linkEnd = (id: string): LinkEnd | undefined => {
     const bar = barById.get(id)
     if (bar) {
       const index = rowIndex.get(bar.rowId)
-      return index === undefined ? undefined : { range: bar as TimeRange, index, offset: laneTop(bar) + barHeight / 2 }
+      return index === undefined ? undefined : { range: bar, index, offset: frame.laneTop(bar) + frame.barHeight / 2 }
     }
     const rollup = rollups.get(id)
     return rollup && { range: rollup, index: rowIndex.get(id)!, offset: rowHeight / 2 }
   }
-  for (const dep of dependencies) {
-    const source = linkEnd(dep.from), target = linkEnd(dep.to)
-    if (!source || !target) continue
-    const sourceIndex = source.index, targetIndex = target.index
-    const ends = dependencyTimes(source.range, target.range, dep.type)
-    const y1 = headerHeight + sourceIndex * rowHeight + source.offset
-    const y2 = headerHeight + targetIndex * rowHeight + target.offset
-    const strong = highlighted.has(dep.id)
-    paths.push(tag('path', {
-      d: dependencyPath(round(local.toX(ends.from)), round(y1), round(local.toX(ends.to)), round(y2), options.dependencyStyle), fill: 'none',
-      stroke: strong ? theme.dependencyHighlight : theme.edge, 'stroke-width': strong ? 2 : 1.3,
-      'marker-end': `url(#${strong ? arrowHighlight : arrow})`,
-    }))
-    if (dep.lag) {
-      // Placed as in GanttChart and mirrored point by point, so the text itself is never mirrored.
-      const point = lagLabelPoint(local.toX(ends.from), y1, local.toX(ends.to), y2, headerHeight + sourceIndex * rowHeight, rowHeight)
-      lagLabels.push(tag('text', {
-        class: 'vw-gantt-lag', x: rtl ? axisWidth - point.x : labelArea + point.x, y: point.y,
-        'text-anchor': point.anchor === 'middle' ? 'middle' : rtl ? 'end' : 'start', 'dominant-baseline': 'central',
-        'font-size': 10, 'font-weight': 650, fill: strong ? theme.dependencyHighlight : theme.text,
-        stroke: theme.surface, 'stroke-width': 3, 'stroke-linejoin': 'round', 'paint-order': 'stroke',
-      }, escapeXml(formatLag(dep.lag))))
-    }
-  }
-  if (paths.length) {
-    area.push(tag('g', { transform: rtl ? `matrix(-1 0 0 1 ${num(axisWidth)} 0)` : `translate(${num(labelArea)} 0)` }, paths.join('')))
-  }
-  const flag =(x: number, text: string, color: string, strokeWidth: number, dashed: boolean) => {
-    const flagWidth = 10 + 6 * Array.from(text).length
-    return tag('line', {
-      x1: x, y1: headerHeight, x2: x, y2: totalHeight, stroke: color, 'stroke-width': strokeWidth,
-      'stroke-dasharray': dashed ? '4 3' : undefined,
-    }) + tag('rect', { x: rtl ? x - flagWidth : x, y: headerHeight, width: flagWidth, height: 16, fill: color })
-      + tag('text', {
-        x: rtl ? x - 5 : x + 5, y: headerHeight + 11.5, 'font-size': 10, fill: theme.markerInk,
-        direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
-      }, escapeXml(text))
-  }
-  for (const item of options.markers ?? []) {
-    if (item.time < window.start || item.time >= window.end) continue
-    area.push(tag('g', {}, tag('title', {}, escapeXml(`${item.label} ${format(item.time)}`)) + flag(X(item.time), item.label, theme.marker, 1, true)))
-  }
-  if (options.now !== undefined && options.now >= window.start && options.now <= window.end) {
-    const label = options.nowLabel ?? 'Now'
-    area.push(tag('g', {}, tag('title', {}, escapeXml(`${label} ${format(options.now)}`)) + flag(X(options.now), label, theme.now, 2, false)))
-  }
-  const status = options.statusDate
-  if (status !== undefined && status >= window.start && status <= window.end) {
-    const x = X(status)
-    if (options.showProgressLine) {
-      const kinks = shown.flatMap((item, index) => (barsByRow.get(item.row.id) ?? []).flatMap(bar => {
-        const time = progressLineTime(bar, status)
-        return time === undefined ? []
-          : [{ x: X(time), y: headerHeight + index * rowHeight + laneTop(bar) + barHeight / 2, reach: barHeight / 2 }]
-      }))
-      area.push(tag('polyline', {
-        class: 'vw-gantt-progress-line', fill: 'none', stroke: theme.status, 'stroke-width': 2, 'stroke-linejoin': 'round',
-        points: progressLinePoints(x, headerHeight, headerHeight + bodyHeight, kinks).map(([px, py]) => num(px) + ',' + num(py)).join(' '),
-      }))
-    }
-    const label = options.statusDateLabel ?? 'Status date'
-    area.push(tag('g', { class: 'vw-gantt-status-date' },
-      tag('title', {}, escapeXml(`${label} ${format(status)}`)) + flag(x, label, theme.status, 2, false)))
-  }
+  const links = timelineDependencies(dependencies, linkEnd, highlighted, {
+    arrow, arrowHighlight, style: options.dependencyStyle, formatLag: options.formatLag ?? formatDependencyLag,
+  }, frame)
+  area += links.paths + timelineLines(options, shown.map(item => barsByRow.get(item.row.id) ?? []), frame)
   // Lag labels go above the marker, now and status-date lines so a line passing through a label does not cover its text.
-  for (const label of lagLabels) area.push(label)
-  if (histogram) {
-    loadRows.forEach((row, index) => {
-      const { segments, peak } = histogram.get(row.id)!
-      const peakScale = Math.max(1e-9, peak)
-      const top = loadTop + index * loadRowHeight + 4
-      const height = loadRowHeight - 8
-      for (const segment of segments) {
-        if (!intersectsWindow(segment, window)) continue
-        const box = span(segment.start, segment.end)
-        const overload = segment.overload ?? Math.max(0, segment.load - segment.capacity)
-        const fillHeight = Math.min(segment.load, segment.capacity) / peakScale * height
-        const capacityHeight = segment.capacity / peakScale * height
-        const overHeight = overload / peakScale * height
-        let shape = tag('rect', { x: box.x, y: top + height - fillHeight, width: box.width, height: fillHeight, fill: theme.load })
-        if (overload > 0) {
-          shape += tag('rect', { x: box.x, y: top + height - capacityHeight - overHeight, width: box.width, height: overHeight, fill: theme.loadOverload })
-        }
-        shape += tag('line', {
-          x1: box.x, y1: top + height - capacityHeight, x2: box.x + box.width, y2: top + height - capacityHeight,
-          stroke: theme.loadCapacity, 'stroke-width': 2, 'stroke-dasharray': '4 3', 'stroke-opacity': segment.load === 0 ? 0.55 : undefined,
-        })
-        area.push(tag('g', {}, tag('title', {}, escapeXml(`${row.label} ${format(segment.start)}–${format(segment.end)}: ${segment.load} / ${segment.capacity}`)) + shape))
-      }
-    })
-  }
-  out.push(tag('g', { 'clip-path': `url(#${clip})` }, area.join('')))
+  area += links.lagLabels
+  if (histogram) area += timelineLoad(loadRows, histogram, loadRowHeight, frame)
 
+  let out = ''
+  if (background) out += tag('rect', { width, height: totalHeight, fill: theme.surface })
+  out += tag('rect', { x: 0, y: 0, width, height: headerHeight, fill: theme.surfaceMuted })
+  if (histogram) out += tag('rect', { x: 0, y: loadTop, width, height: totalHeight - loadTop, fill: theme.surfaceMuted })
+  out += tag('g', { 'clip-path': `url(#${clip})` }, area)
   // Row separators span both areas.
-  for (let index = 1; index <= shown.length; index++) {
-    const y = headerHeight + index * rowHeight - 0.5
-    out.push(tag('line', { x1: 0, y1: y, x2: width, y2: y, stroke: theme.border }))
-  }
-  if (histogram) {
-    for (let index = 1; index <= loadRows.length; index++) {
-      const y = loadTop + index * loadRowHeight - 0.5
-      out.push(tag('line', { x1: 0, y1: y, x2: width, y2: y, stroke: theme.border }))
-    }
-  }
-  out.push(tag('line', { x1: 0, y1: headerHeight - 0.5, x2: width, y2: headerHeight - 0.5, stroke: theme.border }))
-
-  // Label area: the corner, row headings, column cells and load row headings.
+  out += timelineSeparators(shown.length, histogram ? loadRows.length : 0, loadRowHeight, frame)
   if (labelArea > 0) {
-    out.push(tag('rect', { x: labelLeft, y: 0, width: labelArea, height: totalHeight, fill: theme.surfaceMuted }))
-    const edgeX = rtl ? labelLeft + 0.5 : labelArea - 0.5
-    out.push(tag('line', { x1: edgeX, y1: 0, x2: edgeX, y2: totalHeight, stroke: theme.border }))
-    const name = labelBox(0, labelWidth)
-    out.push(clippedText({ x: name.x, y: 0, width: name.width, height: headerHeight }, rtl, [
-      { text: options.rowHeading ?? 'Rows', y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 11 },
-    ]))
-    let inset = labelWidth
-    const columnBoxes = columns.map(column => {
-      const box = labelBox(inset, column.width)
-      inset += column.width
-      const lineX = rtl ? box.x + box.width - 0.5 : box.x + 0.5
-      out.push(tag('line', { x1: lineX, y1: 0, x2: lineX, y2: headerHeight + bodyHeight, stroke: theme.border }))
-      out.push(clippedText({ x: box.x, y: 0, width: box.width, height: headerHeight }, rtl, [
-        { text: column.label, y: headerHeight / 2 + 4, size: 11, weight: 700, fill: theme.text, inset: 6 },
-      ]))
-      return { column, box }
-    })
-    shown.forEach((item, index) => {
-      const top = headerHeight + index * rowHeight
-      const nested = item.hasChildren || item.depth > 0
-      let indent = nested ? 9 + Math.min(item.depth, 5) * 11 : 11
-      const lines: Parameters<typeof clippedText>[2][number][] = []
-      if (item.hasChildren) {
-        lines.push({ text: collapsed.has(item.row.id) ? (rtl ? '◂' : '▸') : '▾', y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: indent })
-        indent += 16
-      }
-      const detail = item.row.detail
-      lines.push({ text: rowLabel(item.row), y: detail ? rowHeight / 2 - 2 : rowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: indent })
-      if (detail) lines.push({ text: detail, y: rowHeight / 2 + 11, size: 10, fill: theme.muted, inset: indent })
-      out.push(clippedText({ x: name.x, y: top, width: name.width, height: rowHeight }, rtl, lines))
-      for (const { column, box } of columnBoxes) {
-        out.push(clippedText({ x: box.x, y: top, width: box.width, height: rowHeight }, rtl, [{
-          text: String(column.value(item.row, summaries?.get(item.row.id))), y: rowHeight / 2 + 4, size: 12, fill: theme.text, inset: 6,
-        }]))
-      }
-    })
-    if (histogram) {
-      loadRows.forEach((row, index) => {
-        const top = loadTop + index * loadRowHeight
-        out.push(clippedText({ x: labelLeft, y: top, width: labelArea, height: loadRowHeight }, rtl, [
-          { text: row.label, y: row.detail ? loadRowHeight / 2 - 2 : loadRowHeight / 2 + 4, size: 12, weight: 700, fill: theme.text, inset: 11 },
-          { text: row.detail ?? '', y: loadRowHeight / 2 + 11, size: 10, fill: theme.muted, inset: 11 },
-        ]))
-      })
-    }
+    out += timelineLabelArea(shown, columns, summaries, {
+      labelWidth, rowHeading: options.rowHeading ?? 'Rows', collapsed, loadRows: histogram ? loadRows : [], loadRowHeight,
+    }, frame)
   }
-  return svgDocument(width, totalHeight, options, font, defs, out.join(''))
+  return svgDocument(width, totalHeight, options, font, defs, out)
 }
