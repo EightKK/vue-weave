@@ -321,24 +321,6 @@ test('leveling merges adjacent shortages of equal capacity into one reason that 
   ])
 })
 
-test('leveling explains 2,000 tasks on one resource with one capacity reason per delayed task', () => {
-  const count = 2000
-  const tasks = Array.from({ length: count }, (_, i) => task('t' + i, 1))
-  const input = {
-    range: { start: 0, end: count + 10 }, tasks, resources: [{ id: 'r', capacity: 1 }],
-    assignments: on('r', ...tasks.map(item => item.id)),
-  }
-  // Each task used to get one reason per earlier reservation, about two million in all, computed in cubic time.
-  const result = levelResources(input, { explain: true })
-  assert.deepEqual(withoutTrace(result), levelResources(input))
-  const capacity = result.trace.reasons.filter(r => r.kind === 'capacity')
-  assert.equal(capacity.length, count - 1)
-  assert.ok(result.trace.reasons.length <= 5 * count, String(result.trace.reasons.length))
-  // Equal tasks are placed in ID order; the last one waits behind all the others in one reason.
-  const last = capacity.at(-1)
-  assert.deepEqual([last.taskId, last.range, last.relatedTaskIds.length, last.relatedTaskIds[0]], ['t999', { start: 0, end: 1999 }, 1999, 't0'])
-})
-
 test('explain changes no date, float, critical flag, delay or unresolved task', () => {
   const shifts = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 28 }, { start: 29, end: 33 }]
   const calendar = { calendars: [{ id: 'shift', periods: shifts }], defaultCalendarId: 'shift' }

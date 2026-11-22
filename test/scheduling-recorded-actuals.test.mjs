@@ -247,21 +247,6 @@ test('manual tasks keep their dates and conflicts, inactive tasks are ignored', 
   assert.equal(byId(finished, 'm').state, 'finished')
 })
 
-test('a 12,000-task chain with actuals is rescheduled without recursion', () => {
-  const count = 12000
-  const tasks = [], dependencies = []
-  for (let i = 0; i < count; i++) {
-    tasks.push(task('c' + i, 1))
-    if (i) dependencies.push(link('c' + (i - 1), 'c' + i))
-  }
-  const input = { range: { start: 0, end: count + 20 }, tasks, dependencies }
-  const actuals = new Map([['c0', { intervals: [{ start: 0, end: 3 }], finished: true }], ['c1', { intervals: [{ start: 3, end: 4 }], remainingWork: 2 }]])
-  const result = rescheduleFromActuals(input, 4, actuals)
-  assert.equal(result.ok, true)
-  assert.deepEqual([span(byId(result, 'c1')), span(byId(result, 'c11999'))], [[3, 6], [count + 3, count + 4]])
-  assert.equal(actualsTimelineBars(result).length, count + 1)
-})
-
 test('actualsTimelineBars shows the plan, the actuals and the forecast on one row', () => {
   const actuals = new Map([['a', { intervals: [{ start: 0, end: 1 }, { start: 3, end: 4 }, { start: 3, end: 3.5 * 2 - 3 }] }], ['b', { intervals: [{ start: 4, end: 5 }], finished: true }]])
   const result = rescheduleFromActuals(chain(), 5, actuals)

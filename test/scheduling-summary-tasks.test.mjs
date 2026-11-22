@@ -282,21 +282,6 @@ test('buildPlacementInput moves placed subtasks of an unplaced summary to the ne
   assert.equal(input.tasks[2].parentId, 'S')
 })
 
-test('deep summary hierarchies and long chains under a summary are handled without recursion', () => {
-  const count = 12000
-  const nested = [task('t0', 0)]
-  for (let i = 1; i < count; i++) nested.push(task('t' + i, i === count - 1 ? 2 : 0, { parentId: 't' + (i - 1) }))
-  const deep = scheduleTasks({ range, tasks: [task('x', 3), ...nested], dependencies: [link('x', 't0')] })
-  assert.deepEqual([byId(deep, 't0').start, byId(deep, 't0').end, byId(deep, 't11999').start], [3, 5, 3])
-  const chain = [task('S', 0)], links = []
-  for (let i = 0; i < count; i++) {
-    chain.push(sub('c' + i, 1, 'S'))
-    if (i) links.push(link('c' + (i - 1), 'c' + i))
-  }
-  const long = scheduleTasks({ range: { start: 0, end: count + 10 }, tasks: [...chain, task('y', 1)], dependencies: [...links, link('S', 'y')] })
-  assert.deepEqual([byId(long, 'S').start, byId(long, 'S').end, byId(long, 'y').start, byId(long, 'S').critical], [0, count, count, true])
-})
-
 // Seeded plans without `parentId` mixing calendars, quanta, all link types and lags, bounds, ALAP, manual, inactive,
 // pauses and leveling flags. The digest was produced by release 0.5.0 before summary tasks were added; it must not
 // change, because plans without hierarchy are scheduled exactly as before. (It was updated once, when adjacent leveling

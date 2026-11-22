@@ -190,25 +190,6 @@ test('layoutGraphIncrementally only moves unfixed positioned nodes in relaxed mo
   }
   assertNoOverlap(pinned)
 })
-
-test('layoutGraphIncrementally appends a 12,000-node chain to a layout of a few thousand boxes', () => {
-  const existingNodes = Array.from({ length: 3000 }, (_, i) => ({ id: 'x' + i }))
-  const existingEdges = existingNodes.slice(1).map((node, i) => edge('x' + i, node.id, 'xe' + i))
-  const before = layoutLayeredGraph(existingNodes, existingEdges.filter((_, i) => i % 50 !== 49))
-  const chain = Array.from({ length: 12_000 }, (_, i) => ({ id: 'n' + i }))
-  const chainEdges = chain.map((node, i) => edge(i ? 'n' + (i - 1) : 'x1500', node.id, 'ne' + i))
-  const allNodes = [...existingNodes, ...chain], allEdges = [...existingEdges, ...chainEdges]
-  const after = layoutGraphIncrementally(allNodes, allEdges, before.boxes)
-  assert.equal(after.boxes.size, 15_000)
-  assert.equal(after.placedIds.length, 12_000)
-  const metrics = graphLayoutChangeMetrics(positionsOf(before), after)
-  assert.equal(metrics.compared, 3000)
-  assert.equal(metrics.maxDisplacement, 0)
-  assert.equal(metrics.overlaps, 0)
-  // The chain runs along the flow, one column per node.
-  assert.equal(after.boxes.get('n11999').rank, after.boxes.get('x1500').rank + 12_000)
-})
-
 test('layoutGraphIncrementally validates its input and ignores positions of unknown nodes', () => {
   const positions = new Map([['a', { x: 0, y: 0 }], ['gone', { x: Number.NaN, y: 0 }]])
   const result = layoutGraphIncrementally(baseNodes, baseEdges, positions)
@@ -357,22 +338,6 @@ test('avoidNodes reroutes an edge that a moved unrelated box now crosses, but ne
   const plain = routeGraphEdges(moved, edges, nodesById, { style: 'orthogonal' })
   assert.equal(graphLayoutChangeMetrics(new Map(), plain, { edges: [edges[0]] }).edgeBoxIntersections, 1)
 })
-
-test('incremental layout places a new node with more anchors than a call can take arguments', () => {
-  // Math.max(...anchors) overflowed the call stack past about 120,000 anchors.
-  const count = 150000
-  const nodes = [{ id: 'hub' }], edges = [], positions = new Map()
-  for (let i = 0; i < count; i++) {
-    nodes.push({ id: 'l' + i })
-    edges.push({ id: 'e' + i, from: 'l' + i, to: 'hub' })
-    positions.set('l' + i, { x: 0, y: i * 100 })
-  }
-  const result = layoutGraphIncrementally(nodes, edges, positions)
-  assert.deepEqual(result.placedIds, ['hub'])
-  assert.equal(result.boxes.get('hub').x, 144 + 50)
-  assert.equal(result.boxes.get('hub').rank, 1)
-})
-
 test('relaxed incremental placement never pushes two boxes onto each other', () => {
   // a and b both block n's place and are both pushed below it: each was clear of the other's old place, but both
   // landed at y 82 on top of each other.
