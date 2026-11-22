@@ -148,6 +148,11 @@ export type {
   WindowedDataNormalizedOptions, WindowedInFlightRequest, WindowedDataState, WindowedDataTransition, WindowedDataSettlement, WindowedCoverage,
   DanglingLink, SplitDanglingLinksOptions, SplitDanglingLinks,
 } from './windowedData.js'
+export { createTimeBucketColumns, timeBucketIndex, timeBucketIndexRange, aggregateTimeBuckets } from './timeBuckets.js'
+export type {
+  TimeBucketPeriod, TimeBucket, TimeBucketColumn, TimeBucketColumnOptions, TimeBucketRuleName, TimeBucketReducerContext,
+  TimeBucketReducer, TimeBucketRule, TimeBucketPlacement, TimeBucketLoaded, TimeBucketItem, TimeBucketAggregateOptions, TimeBucketCell,
+} from './timeBuckets.js'
 export {
   createGraphExpansion, beginGraphExpansion, cancelGraphExpansion, mergeGraphExpansionPage, graphExpansionView,
 } from './graphExpansion.js'

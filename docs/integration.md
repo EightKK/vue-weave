@@ -1036,6 +1036,31 @@ const canExpandBackward = (id: string) => graphExpansionView(graph.value, { key:
 
 A page merged without a key still marks its nodes expanded for every key, and a node expanded for some keys only stays in the unkeyed `frontierIds`. See [Partial data loading](api.md#partial-data-loading) for every rule.
 
+### Period tables from time buckets
+
+A period table shows rows (items or metrics) by time columns (days, weeks, shifts). `createTimeBucketColumns` turns half-open periods into column descriptors with stable IDs, and `aggregateTimeBuckets` turns time-stamped quantities into one sparse cell `{ rowId, columnId, value, status }` per row and column. The periods are yours: `calendarBands` gives local days or weeks in an IANA zone (23- and 25-hour days included), and gaps such as nights or weekends are allowed.
+
+```ts
+import { aggregateTimeBuckets, calendarBands, createTimeBucketColumns, timeBucketIndexRange, windowedCoverage } from '@eightkk/vue-weave/core'
+
+const columns = createTimeBucketColumns(calendarBands(range, 'day', { timeZone: 'Europe/Berlin' }), { width: 72 })
+const cells = aggregateTimeBuckets(records, columns, {
+  rowIds: ['output', 'yield', 'stock'],
+  rules: { output: 'sum', yield: 'ratio', stock: 'last' }, // yield: value = good units, denominator = all units
+  carryForward: rowId => rowId === 'stock',                // a stock level stays until the next reading
+  loaded: (rowId, bucket) => windowedCoverage(state, { start: bucket.start, end: bucket.end, rowIds: [rowId] }).status,
+})
+// Follow the chart: show only the columns of its visible window.
+const { start, end } = timeBucketIndexRange(columns, visibleWindow)
+const shownColumns = columns.slice(start, end)
+```
+
+- **Not loaded is not zero.** A column outside `loaded` has status `unloaded` (or `loading`, `failed`) and value null. A loaded column without items is `loaded-empty`: 0 for `sum` and `count`, null for the other rules. Show the three differently.
+- **Ratios from their parts.** Aggregate a rate from numerator and denominator with the `ratio` rule; never average the percentages of the columns. Totals and parent rows sum the cells' `numerator` and `denominator`.
+- **Precomputed values.** When the server already aggregates per period, use `precomputed`: one value per row and column, passed through unchanged.
+
+See [Time bucket tables](api.md#time-bucket-tables) for every rule and error.
+
 ## Spreadsheet editing in a schedule
 
 Turn on `spreadsheet` on a Gantt chart with editable `columns`, and the cells work like a spreadsheet: select a rectangle with Shift+click, a mouse drag or Shift+arrows, copy, cut and paste tab-separated text with other spreadsheet applications, clear with Delete, fill down with Ctrl/Cmd+D or the corner handle, and type to edit a cell. Each operation arrives as one `sheet-edit` proposal (see [Spreadsheet editing](api.md#spreadsheet-editing) for every key and rule).
