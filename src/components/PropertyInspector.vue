@@ -16,6 +16,7 @@ import {
 import { fieldValuesEqual, formatFieldValue, type FieldValue } from '../core/fieldEditing.js'
 import type { ChartDirection } from '../core/types.js'
 import { dependencyTypes } from '../core/dependencyTypes.js'
+import { rejectionReason } from './shared/validation.js'
 
 const props = withDefaults(defineProps<{
   /** The inspected item; null or undefined shows the empty state. */
@@ -137,9 +138,8 @@ function commit(field: InspectorField<T>, value: FieldValue, text?: string): boo
     return true
   }
   const change: InspectorChange = { id: item.id, field: field.id, before, after: value }
-  const verdict = props.validateChange?.(change, item)
-  if (verdict === false || typeof verdict === 'string') {
-    const reason = typeof verdict === 'string' && verdict.trim() ? verdict : messages.value.rejected
+  const reason = rejectionReason(props.validateChange?.(change, item), messages.value.rejected)
+  if (reason !== undefined) {
     if (text === undefined) drafts.delete(field.id)
     fail(field, reason, text)
     emit('change-rejected', change, reason)
@@ -263,9 +263,8 @@ function commitList(field: InspectorListField<T>, after: ListRow[], keepDraft?: 
     return true
   }
   const change = { id: item.id, field: field.id, kind: field.kind, before, after } as InspectorListChange
-  const verdict = props.validateListChange?.(change, item as T)
-  if (verdict === false || typeof verdict === 'string') {
-    const reason = typeof verdict === 'string' && verdict.trim() ? verdict : messages.value.rejected
+  const reason = rejectionReason(props.validateListChange?.(change, item as T), messages.value.rejected)
+  if (reason !== undefined) {
     if (keepDraft === undefined) drafts.delete(key)
     fail(field, reason, keepDraft, key)
     emit('list-change-rejected', change, reason)

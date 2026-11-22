@@ -96,6 +96,7 @@ The components keep rendering, measurement and gesture handling in their single-
 
 - `src/components/networkGraph/`: the drag-preview layout (`previewLayout(context, change)` layers the changed boxes, paths and labels over the saved layout and records which nodes and edges changed, so only those items update), the `avoidNodes` preview rerouting index, the preview placement of edge labels (`edgeLabelPlacement`), group frame geometry, port keys, the move, snap and resize arithmetic, and the default node and marker drawings.
 - `src/components/ganttChart/`: geometry and windowing, prop validation, the edit arithmetic for keys, drag to create and `cascade`, row hierarchy moves and the tooltip composable. One `Gesture` record holds the pointer gesture in flight; previews stay in their own reactive refs.
+- `src/components/shared/`: helpers shared by the components. `validation.ts` holds the one rule for validator results (`rejectionReason`: false or a blank string rejects with the default text) and `useValidatedSource`, which validates props, reports `validation-error` and falls back to the empty state; `pointer.ts` the 4 px drag threshold, safe pointer capture and release, and edge auto-scroll during drags; `focus.ts` the focus that follows an item after the parent applies a keyboard edit.
 
 ## Supported scope
 

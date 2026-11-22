@@ -1,11 +1,14 @@
 <script setup lang="ts" generic="C extends TaskBoardCard = TaskBoardCard">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useId, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, useId, watch } from 'vue'
 import {
   groupBoardCards, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardCardMoveValidator, type TaskBoardColumn,
   type TaskBoardColumnStatus, type TaskBoardGroups, type TaskBoardLabels, type TaskBoardLane, type TaskBoardMoveCancel,
   type TaskBoardMoveCancelReason, type TaskBoardPosition,
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
+import { usePendingFocus } from './shared/focus.js'
+import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
+import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { cellSize, fullCellIndex, neighbourCard, stepBoardTarget, type BoardTarget } from './taskBoard/navigation.js'
 
 const props = withDefaults(defineProps<{
@@ -92,21 +95,12 @@ const notice = ref('')
 
 // Invalid input is reported through `validation-error` and never rendered. The error is rethrown, as in GanttChart, so
 // development builds still surface it.
-const validationError = ref<Error>()
 const emptyGroups: TaskBoardGroups<C> = { rows: [], columns: [], positions: new Map() }
-const groups = shallowRef<TaskBoardGroups<C>>(emptyGroups)
-watch([() => props.cards, () => props.columns, () => props.lanes, () => props.filter], () => {
-  try {
-    groups.value = groupBoardCards(props.cards, props.columns, props.lanes, { filter: props.filter })
-    validationError.value = undefined
-  } catch (error) {
-    const failure = error instanceof Error ? error : new Error(String(error))
-    groups.value = emptyGroups
-    validationError.value = failure
-    emit('validation-error', failure)
-    throw error
-  }
-}, { immediate: true })
+const { value: groups, error: validationError } = useValidatedSource(
+  [() => props.cards, () => props.columns, () => props.lanes, () => props.filter],
+  () => groupBoardCards(props.cards, props.columns, props.lanes, { filter: props.filter }),
+  { report: error => emit('validation-error', error), fallback: emptyGroups },
+)
 
 const laned = computed(() => Boolean(props.lanes?.length))
 const rtl = computed(() => props.dir === 'rtl')
@@ -199,8 +193,6 @@ const dropTarget = shallowRef<BoardTarget>()
 const dragOffset = ref<{ x: number; y: number }>()
 let pointer: PointerGesture | undefined
 let skipClick = false
-let pendingFocus: string | undefined
-let scrollFrame = 0
 
 /** The grid cell of a card with its index among the shown cards of that cell (its full index without a filter). */
 function targetOf(id: string): BoardTarget {
@@ -265,9 +257,8 @@ function endMove() {
   activeMove.value = undefined
   dropTarget.value = undefined
   dragOffset.value = undefined
-  if (scrollFrame) cancelAnimationFrame(scrollFrame)
-  scrollFrame = 0
-  if (gesture?.element.hasPointerCapture?.(gesture.pointerId)) gesture.element.releasePointerCapture(gesture.pointerId)
+  edgeScroll.stop()
+  if (gesture) releasePointer(gesture.element, gesture.pointerId)
 }
 function cancelMove(reason: TaskBoardMoveCancelReason = 'escape') {
   const active = activeMove.value
@@ -289,8 +280,7 @@ function drop() {
   const description = describeTarget(target, active.id)
   endMove()
   const change: TaskBoardCardMove = { id: active.id, before: active.before, after, source: active.source }
-  const result = props.validateCardMove?.(change)
-  const reason = result === false ? messages.value.moveRejected : typeof result === 'string' ? result : undefined
+  const reason = rejectionReason(props.validateCardMove?.(change), messages.value.moveRejected)
   if (reason !== undefined) {
     notice.value = reason
     emit('card-move-rejected', change, reason)
@@ -298,7 +288,7 @@ function drop() {
   }
   const card = cardById.value.get(active.id)
   notice.value = `${messages.value.moved} ${card?.label ?? active.id}: ${description}`
-  pendingFocus = active.id
+  pendingFocus.request(active.id)
   emit('card-move', change)
 }
 
@@ -308,13 +298,7 @@ const shownKey = computed(() => JSON.stringify(groups.value.rows.map(row => row.
 watch([() => props.cards, () => props.columns, () => props.lanes, () => props.readonly, shownKey, collapsedColumnKey, collapsedLaneKey],
   () => cancelMove('data-change'))
 // After the parent applies a move, the card is rendered in its new cell; give it the focus back.
-watch(() => props.cards, async () => {
-  const id = pendingFocus
-  pendingFocus = undefined
-  if (id === undefined) return
-  await nextTick()
-  focusCard(id)
-})
+const pendingFocus = usePendingFocus(() => props.cards, focusCard)
 
 function cardElement(id: string) {
   for (const element of root.value?.querySelectorAll<HTMLElement>('[data-vw-card]') ?? []) {
@@ -399,7 +383,7 @@ function pressCard(event: PointerEvent, card: C) {
     id: card.id, pointerId: event.pointerId, element, x: event.clientX, y: event.clientY, clientX: event.clientX, clientY: event.clientY,
     scrollLeft: scroller.value?.scrollLeft ?? 0, scrollTop: scroller.value?.scrollTop ?? 0, moved: false,
   }
-  element.setPointerCapture?.(event.pointerId)
+  capturePointer(element, event.pointerId)
 }
 function targetAt(clientX: number, clientY: number, id: string): BoardTarget | undefined {
   for (const cell of root.value?.querySelectorAll<HTMLElement>('[data-vw-cell]') ?? []) {
@@ -432,31 +416,20 @@ function moveCard(event: PointerEvent) {
   gesture.clientX = event.clientX
   gesture.clientY = event.clientY
   if (!gesture.moved) {
-    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) < 4) return
+    if (!pastThreshold(gesture, event)) return
     const before = groups.value.positions.get(gesture.id)
     if (!before) return
     gesture.moved = true
     activeMove.value = { id: gesture.id, source: 'pointer', before }
   }
   followPointer()
-  if (props.autoScroll && !scrollFrame) scrollFrame = requestAnimationFrame(scrollNearEdge)
+  if (props.autoScroll) edgeScroll.start()
 }
 /** Scrolls the viewport while the pointer is held within 36 px of one of its edges, faster nearer the edge. */
-function scrollNearEdge() {
-  scrollFrame = 0
+const edgeScroll = edgeScroller(() => {
   const gesture = pointer, view = scroller.value
-  if (!gesture?.moved || !view) return
-  const box = view.getBoundingClientRect(), zone = 36
-  const speed = (distance: number) => distance < zone ? Math.ceil((zone - Math.max(0, distance)) / 3) : 0
-  const dx = speed(box.right - gesture.clientX) - speed(gesture.clientX - box.left)
-  const dy = speed(box.bottom - gesture.clientY) - speed(gesture.clientY - box.top)
-  if (!dx && !dy) return
-  const left = view.scrollLeft, top = view.scrollTop
-  view.scrollBy(dx, dy)
-  if (view.scrollLeft === left && view.scrollTop === top) return
-  followPointer()
-  scrollFrame = requestAnimationFrame(scrollNearEdge)
-}
+  return gesture?.moved && view ? { scroller: view, clientX: gesture.clientX, clientY: gesture.clientY } : undefined
+}, followPointer)
 function releaseCard(event: PointerEvent) {
   const gesture = pointer
   if (!gesture || event.pointerId !== gesture.pointerId) return
