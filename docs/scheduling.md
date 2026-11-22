@@ -617,3 +617,5 @@ The library leaves the decision to the application. The contract the demo follow
 5. When a plan is only partly loaded (for example a windowed load of a large plan), set `partial: true` on that side. `comparison.complete` is then false; show the comparison as incomplete and do not adopt from it.
 
 Try it in the demo: open **Linked views** and check **Compare plan scenarios**.
+
+To compare other revisions that are not scheduler input, such as two versions of a bill of materials, a WBS or a product hierarchy, use `diffStructure(before, after, { key, parentKey?, fields?, equals? })`. It reports added and removed keys, the changed fields with their values in both versions and, with `parentKey`, the items that moved to another parent. Resolve effective dates first and diff the two resolved snapshots. See [Structure comparison](api.md#structure-comparison).
