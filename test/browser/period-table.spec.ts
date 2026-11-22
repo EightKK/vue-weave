@@ -21,7 +21,11 @@ async function openPeriodTable(page: Page) {
   const firstColumn = () => grid.locator('[role="columnheader"][aria-colindex="2"]')
   const period = demo.getByRole('status', { name: 'Visible period', exact: true })
   const feed = demo.getByRole('status', { name: 'Data feed', exact: true })
-  // The first two weeks are loaded once the chart has reported its window.
+  // The table starts with twelve days and follows the chart's window (16 days) once the chart has measured itself; the
+  // feed then loads the remaining days. Every load replaces the table's cells, and a source change cancels an edit in
+  // progress, so the tests wait until the window is reported and its days have all arrived with nothing pending.
+  await expect(period).toHaveText('Showing 16 days: Mon, Jun 1 to Tue, Jun 16.')
+  await expect(feed).toHaveText('Loaded 16 of 35 days.')
   await expect(await cell('Bracket demand', 'Wed, Jun 10')).toHaveText('160')
   return {
     errors, demo, grid, chart, row, cell, firstColumn, period, feed,
