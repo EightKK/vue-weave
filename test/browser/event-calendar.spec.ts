@@ -1,6 +1,6 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, animationFrames, dragBy, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
@@ -11,15 +11,6 @@ async function openCalendar(page: Page) {
   const event = (name: string | RegExp) => calendar.getByRole('button', { name: typeof name === 'string' ? new RegExp('^' + name + ',') : name })
   const button = (name: string) => calendar.getByRole('button', { name, exact: true })
   return { errors, calendar, status, event, button }
-}
-
-/** Press at the middle of a box (plus an offset), move by (dx, dy) in steps and release. */
-async function drag(page: Page, box: { x: number; y: number; width: number; height: number }, dx: number, dy: number, offsetY?: number) {
-  const x = box.x + box.width / 2, y = box.y + (offsetY ?? box.height / 2)
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.move(x + dx, y + dy, { steps: 8 })
-  await page.mouse.up()
 }
 
 test('the toolbar switches views and navigates, and month days open the day view', async ({ page }) => {
@@ -58,17 +49,16 @@ test('pointer drags move and resize events, and Escape cancels a drag', async ({
   const sprint = (await event('Sprint demo').boundingBox())!
   const columnWidth = sprint.x - safety.x
   // One column to the right and one hour down: Wednesday 10:00 becomes Thursday 11:00.
-  await drag(page, review, columnWidth, 48)
+  await dragBy(page, review, columnWidth, 48, { steps: 8 })
   await expect(status).toHaveText('Design review → Thu, Nov 12 11:00–12:00.')
   await expect(calendar.getByRole('button', { name: 'Design review, Thu, Nov 12 11:00–12:00, Atlas', exact: true })).toBeVisible()
 
   // The bottom edge resizes the end by whole 15-minute steps.
   const call = event('Customer call')
   const handle = (await call.locator('.vw-calendar-handle.vw-is-end').boundingBox())!
-  await drag(page, handle, 0, 24)
+  await dragBy(page, handle, 0, 24, { steps: 8 })
   await expect(status).toHaveText('Customer call → Wed, Nov 11 10:30–12:30.')
-  const top = (await call.locator('.vw-calendar-handle.vw-is-start').boundingBox())!
-  await drag(page, top, 0, -24)
+  await dragBy(page, call.locator('.vw-calendar-handle.vw-is-start'), 0, -24, { steps: 8 })
   await expect(status).toHaveText('Customer call → Wed, Nov 11 10:00–12:30.')
 
   // Escape during a drag discards the preview without a proposal.
@@ -98,8 +88,9 @@ test('arrow keys move and resize the focused event, which keeps the focus', asyn
   await expect(status).toHaveText('Lab safety → Thu, Nov 12 13:15–14:30.')
   await expect(calendar.getByRole('button', { name: 'Lab safety, Thu, Nov 12 13:15–14:30, Hardware lab', exact: true })).toBeFocused()
 
-  // All-day events move by whole days in the month view.
+  // All-day events move by whole days in the month view, whose hint names both directions.
   await button('Month').click()
+  await expect(event('Release day')).toHaveAccessibleDescription(/Left and Right arrows move the event by a day, Up and Down by a week/)
   await event('Release day').focus()
   await page.keyboard.press('ArrowRight')
   await expect(status).toHaveText('Release day → Sat, Nov 14.')
@@ -123,11 +114,11 @@ test('validateEdit and validateCreate reject double bookings of a room', async (
   // The lab safety course moves by pointer to the Atlas room at 10:30, over the design review.
   const safety = (await event('Lab safety').boundingBox())!
   const review = (await event('Design review').boundingBox())!
-  await drag(page, safety, review.x - safety.x, -120)
+  await dragBy(page, safety, review.x - safety.x, -120, { steps: 8 })
   await expect(status).toHaveText('Rejected: Atlas is already booked for Design review.')
   await expect(calendar.getByRole('button', { name: 'Lab safety, Wed, Nov 11 13:00–14:00, Hardware lab', exact: true })).toBeVisible()
   // Moving it into Atlas after the review is accepted as a room change.
-  await drag(page, safety, review.x - safety.x, 0)
+  await dragBy(page, safety, review.x - safety.x, 0, { steps: 8 })
   await expect(status).toHaveText('Lab safety → Wed, Nov 11 13:00–14:00 in Atlas.')
   expect(errors).toEqual([])
 })
@@ -180,8 +171,10 @@ test('the month view does not resize a timed event by whole days, and events con
   await event('Design review').focus()
   await page.keyboard.press('Shift+ArrowLeft')
   await page.keyboard.press('Shift+ArrowRight')
-  await expect(status).not.toHaveText(/^Design review →/)
-  await expect(calendar.getByRole('button', { name: /^Design review, Wed, Nov 11 10:00–11:00/ })).toBeVisible()
+  // A plain move afterwards still starts from the original times, so neither resize was proposed.
+  await page.keyboard.press('ArrowRight')
+  await expect(status).toHaveText('Design review → Thu, Nov 12 10:00–11:00.')
+  await expect(calendar.getByRole('button', { name: 'Design review, Thu, Nov 12 10:00–11:00, Atlas', exact: true })).toBeFocused()
 
   // Saturday's day view shows the overnight migration that started on Friday; Wednesday, Nov 18 shows the offsite that
   // started on Tuesday. Each is the only element of its event and takes the Tab stop.
@@ -196,5 +189,191 @@ test('the month view does not resize a timed event by whole days, and events con
   await page.keyboard.press('Shift+Tab')
   await page.keyboard.press('Tab')
   await expect(event('Team offsite')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('occurrences of a recurring series render, and an edit carries the occurrence to the chosen scope', async ({ page }) => {
+  const { errors, calendar, status, button } = await openCalendar(page)
+  const sync = (date: string, time: string) => calendar.getByRole('button', { name: `Weekly sync, Tue, Nov ${date} ${time}, Borealis, Recurring`, exact: true })
+  // The weekly sync repeats every Tuesday; other events keep their names.
+  await expect(sync('10', '16:00–16:30')).toBeVisible()
+  await expect(calendar.getByRole('button', { name: 'Customer call, Wed, Nov 11 10:30–12:00, Borealis', exact: true })).toBeVisible()
+
+  // "This event" moves one occurrence; the parent turns the proposal into an override, which keeps the focus.
+  await sync('10', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:15–16:45 (this event).')
+  await expect(sync('10', '16:15–16:45')).toBeFocused()
+  await button('Next').click()
+  await expect(sync('17', '16:00–16:30')).toBeVisible()
+
+  // "All events" moves the whole series, including the earlier override's original time.
+  await page.getByRole('combobox', { name: 'Recurring edits' }).selectOption('series')
+  await sync('17', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 17 16:15–16:45 (all events).')
+  await expect(sync('17', '16:15–16:45')).toBeVisible()
+  await button('Next').click()
+  await expect(sync('24', '16:15–16:45')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('"this and following" splits the series, also at an occurrence that was changed on its own before', async ({ page }) => {
+  const { errors, calendar, status, button } = await openCalendar(page)
+  const sync = (date: string, time: string) => calendar.getByRole('button', { name: `Weekly sync, Tue, Nov ${date} ${time}, Borealis, Recurring`, exact: true })
+  // First "this event", which adds an override of the November 10 occurrence.
+  await sync('10', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:15–16:45 (this event).')
+  // Then "this and following" on the same occurrence: the override gives way to a new series from November 10.
+  await page.getByRole('combobox', { name: 'Recurring edits' }).selectOption('following')
+  await sync('10', '16:15–16:45').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:30–17:00 (this and following events).')
+  await expect(sync('10', '16:30–17:00')).toBeVisible()
+  await button('Next').click()
+  await expect(sync('17', '16:30–17:00')).toBeVisible()
+  // Earlier occurrences keep their time.
+  await button('Previous').click()
+  await button('Previous').click()
+  await expect(sync('3', '16:00–16:30')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a rejected keyboard edit does not take the focus back after a later change', async ({ page }) => {
+  const { errors, calendar, status, event, button } = await openCalendar(page)
+  await button('Day').click()
+  await event('Design review').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(status).toHaveText('Rejected: Borealis is already booked for Customer call.')
+  // A pointer move of another event changes the events; the focus stays with that event.
+  const safety = (await event('Lab safety').boundingBox())!
+  await dragBy(page, safety, 0, 48, { steps: 8 })
+  await expect(status).toHaveText('Lab safety → Wed, Nov 11 14:00–15:00.')
+  await expect(calendar.getByRole('button', { name: 'Lab safety, Wed, Nov 11 14:00–15:00, Hardware lab', exact: true })).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+/** The regression fixture: a day view of one event with buttons that cancel through the API and replace the events. */
+async function openCalendarFixture(page: Page) {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
+  await page.goto('/board-calendar-test/')
+  const section = page.getByRole('region', { name: 'Calendar fixture', exact: true })
+  const calendar = section.getByRole('region', { name: 'Fixture calendar', exact: true })
+  await expect(calendar).toBeVisible()
+  return {
+    errors,
+    review: calendar.getByRole('button', { name: /^Review, Wed, Nov 11 10:00–11:00$/ }),
+    control: (name: string) => section.getByRole('button', { name, exact: true }),
+    log: section.getByRole('status', { name: 'Calendar log', exact: true }),
+  }
+}
+
+test('cancelEdit(), new events and pointer cancellation end a drag with their reasons and no proposal', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page)
+  const box = (await review.boundingBox())!
+  const press = async () => {
+    await page.mouse.move(box.x + box.width / 2, box.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2, box.y + 30, { steps: 4 })
+  }
+  // The exposed method; the release afterwards neither proposes nor selects.
+  await press()
+  await control('Cancel edit').dispatchEvent('click')
+  await expect(log).toHaveText('cancel review api')
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel review api')
+  // New events while the button is held.
+  await press()
+  await control('Replace events').dispatchEvent('click')
+  await expect(log).toHaveText('cancel review source-changed')
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel review source-changed')
+  // A cancelled pointer (as when a touch turns into a scroll) has no release; the next Space still selects.
+  await review.evaluate((element: HTMLElement) => {
+    const rect = element.getBoundingClientRect()
+    const init = { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, clientX: rect.x + 10, clientY: rect.y + 10 }
+    element.dispatchEvent(new PointerEvent('pointerdown', init))
+    element.dispatchEvent(new PointerEvent('pointermove', { ...init, clientY: rect.y + 40 }))
+    element.dispatchEvent(new PointerEvent('pointercancel', { ...init, clientY: rect.y + 40 }))
+  })
+  await expect(log).toHaveText('cancel review pointer-cancel')
+  await review.focus()
+  await page.keyboard.press('Space')
+  await expect(log).toHaveText('select review')
+  expect(errors).toEqual([])
+})
+
+/** The scrolling fixture: a whole day at 48 px per hour in a 240 px scroller, with one event at 02:00–03:00. */
+async function openScrollingCalendar(page: Page) {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
+  await page.goto('/board-calendar-test/')
+  const section = page.getByRole('region', { name: 'Scrolling calendar fixture', exact: true })
+  const calendar = section.getByRole('region', { name: 'Scrolling calendar', exact: true })
+  await expect(calendar).toBeVisible()
+  return {
+    errors,
+    standup: calendar.getByRole('button', { name: /^Standup, / }),
+    scroller: calendar.locator('.vw-calendar-scroll'),
+    control: (name: string) => section.getByRole('button', { name, exact: true }),
+    log: section.getByRole('status', { name: 'Scrolling calendar log', exact: true }),
+    announcement: calendar.locator('[aria-live="polite"]'),
+  }
+}
+
+/** Press the middle of an event and move, in steps, to 4 px above the bottom edge of the scroller, holding the button. */
+async function holdNearBottom(page: Page, event: Locator, scroller: Locator) {
+  const box = (await event.boundingBox())!, view = (await scroller.boundingBox())!
+  const x = box.x + box.width / 2
+  await page.mouse.move(x, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, view.y + view.height - 4, { steps: 8 })
+}
+
+test('a drag held near the bottom of the time grid scrolls it and moves the event into hours that were out of view', async ({ page }) => {
+  const { errors, standup, scroller, log } = await openScrollingCalendar(page)
+  const scrollTop = () => scroller.evaluate(element => element.scrollTop)
+  expect(await scrollTop()).toBe(0)
+  await holdNearBottom(page, standup, scroller)
+  // Held still near the bottom edge, the grid keeps scrolling.
+  await expect.poll(scrollTop).toBeGreaterThan(200)
+  await page.mouse.up()
+  // The first 240 px show hours 0 to 5; the event lands past them.
+  await expect(log).toHaveText(/^edit standup \d\d:\d\d–\d\d:\d\d$/)
+  const hour = Number((await log.textContent())!.slice('edit standup '.length).slice(0, 2))
+  expect(hour).toBeGreaterThanOrEqual(6)
+  // After the release, scrolling stops.
+  const top = await scrollTop()
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
+  expect(await scrollTop()).toBe(top)
+  expect(errors).toEqual([])
+})
+
+test('Escape during an edge auto-scroll cancels the drag and stops scrolling', async ({ page }) => {
+  const { errors, standup, scroller, log } = await openScrollingCalendar(page)
+  const scrollTop = () => scroller.evaluate(element => element.scrollTop)
+  await holdNearBottom(page, standup, scroller)
+  await expect.poll(scrollTop).toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
+  await expect(log).toHaveText('cancel standup escape')
+  const top = await scrollTop()
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
+  expect(await scrollTop()).toBe(top)
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel standup escape')
+  expect(errors).toEqual([])
+})
+
+test('a blank rejection reason from validateEdit rejects with the default text', async ({ page }) => {
+  const { errors, standup, control, log, announcement } = await openScrollingCalendar(page)
+  await control('Reject edits with a blank reason').click()
+  await standup.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(log).toHaveText('rejected standup: This change was rejected.')
+  await expect(announcement).toHaveText('This change was rejected.')
   expect(errors).toEqual([])
 })

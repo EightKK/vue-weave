@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { propagateEdit, scheduleTasks } from '@eightkk/vue-weave/core'
+import { dates as planDates } from './helpers/builders.mjs'
 
 // The plan of the scheduling guide: cut 0–4, inspection 5–7 after the break at 4, other 2–4.
 const plan = {
@@ -11,7 +12,7 @@ const plan = {
   dependencies: [{ id: 'cut-inspect', from: 'cut', to: 'inspect', type: 'FS' }],
 }
 
-const dates = result => result.schedule.tasks.map(task => [task.id, task.start, task.end])
+const dates = result => planDates(result.schedule)
 
 test('propagateEdit pins the edited task and reports the downstream changes in input order', () => {
   const moved = propagateEdit(plan, { id: 'cut', start: 1 })

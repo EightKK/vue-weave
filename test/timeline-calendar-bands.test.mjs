@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { calendarBands } from '@eightkk/vue-weave/core'
+import { hour, day } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
 
 // Band boundaries strictly inside `within`; clipped band edges at the range ends are not boundaries.
 function boundaries(range, unit, options, within) {

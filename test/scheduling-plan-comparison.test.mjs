@@ -3,9 +3,9 @@ import { test } from 'node:test'
 import {
   buildViewBindingIndex, calculateResourceLoad, comparePlans, levelResources, planBaselines, planComparisonTargets, scheduleTasks,
 } from '@eightkk/vue-weave/core'
+import { deepFreeze, typedLink as link } from './helpers/builders.mjs'
 
 const range = { start: 0, end: 100 }
-const link = (from, to, type = 'FS') => ({ id: from + '-' + to, from, to, type })
 const chain = () => ({
   range,
   tasks: [{ id: 'a', duration: 2 }, { id: 'b', duration: 3 }, { id: 'c', duration: 1 }, { id: 'd', duration: 1 }],
@@ -19,18 +19,6 @@ const emptyInput = {
   calendars: { added: [], removed: [], changed: [] },
   resources: { added: [], removed: [], changed: [] },
   assignments: { added: [], removed: [], changed: [], taskIds: [] },
-}
-
-function deepFreeze(value) {
-  const stack = [value]
-  while (stack.length) {
-    const item = stack.pop()
-    if (item && typeof item === 'object' && !Object.isFrozen(item)) {
-      Object.freeze(item)
-      for (const child of Object.values(item)) stack.push(child)
-    }
-  }
-  return value
 }
 
 test('identical inputs give an empty comparison', () => {

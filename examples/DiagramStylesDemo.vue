@@ -38,6 +38,8 @@ const animate = ref(true)
 const edgeStyle = ref<GraphEdgeStyle>('curve')
 // Orthogonal routes (the loop-back, or every edge in the orthogonal style) go around the node boxes.
 const avoidNodes = ref(false)
+// Edge labels move along and beside their routes, away from nodes, other labels and other edges.
+const placeLabels = ref(false)
 const graph = ref<InstanceType<typeof NetworkGraph>>()
 const status = ref('Ready. Export the diagram as SVG or PNG.')
 
@@ -100,10 +102,12 @@ async function exportPng() {
         </select>
       </label>
       <label><input v-model="avoidNodes" type="checkbox"> Avoid nodes</label>
+      <label><input v-model="placeLabels" type="checkbox"> Place labels clear</label>
       <button type="button" @click="exportSvg">Export SVG</button>
       <button type="button" @click="exportPng">Export PNG</button>
     </div>
     <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :edge-style="edgeStyle" :avoid-nodes="avoidNodes"
+      :edge-label-placement="placeLabels ? 'avoid' : 'midpoint'"
       :parallel-edge-spacing="spread ? spacing : undefined" :positions="positions" :sizes="sizes"
       :options="{ direction: 'LR', nodeWidth: 160, nodeHeight: 60 }" :height="500" :labels="{ region: 'Order fulfilment diagram' }" />
     <StatusLine label="Diagram status">{{ status }}</StatusLine>

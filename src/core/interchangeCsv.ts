@@ -1,5 +1,6 @@
 // CSV (RFC 4180): `toCsv`, `parseCsv` and the GanttChart tables `timelineCsvTable` and `timelineFromCsvTable`.
 // Re-exported by `interchange.ts`.
+import { stripBom } from './interchangeShared.js'
 import { timelineWbsCodes } from './rowHierarchy.js'
 import { createTimelineRowTree } from './timeline.js'
 import type { TimelineBar, TimelineRow } from './types.js'
@@ -7,20 +8,34 @@ import type { TimelineBar, TimelineRow } from './types.js'
 /** A CSV cell: text, a finite number or an empty cell. */
 export type CsvCell = string | number | undefined
 
+export interface CsvOptions {
+  /**
+   * Neutralize spreadsheet formulas: a text cell (a string, not a number) that starts with `=`, `+`, `-`, `@`, a tab or
+   * a carriage return is written with a leading apostrophe (`'=1+1`), so a spreadsheet shows it as text instead of
+   * evaluating it. Number cells, such as `-2`, are written unchanged. `parseCsv` does not remove the apostrophe.
+   * Default false: text is written as given.
+   */
+  escapeFormulas?: boolean
+}
+
+const formulaStart = /^[=+\-@\t\r]/
+
 /**
  * Build RFC 4180 CSV text: fields separated by commas, records ended by CRLF, and fields that contain a comma, a
  * double quote, CR or LF enclosed in double quotes with inner quotes doubled. `undefined` is an empty field. Throws a
- * RangeError for a non-finite number. Spreadsheet formulas are not neutralized; prefix cells that start with `=`,
- * `+`, `-` or `@` yourself when the file is opened in a spreadsheet and the text is untrusted.
+ * RangeError for a non-finite number. Spreadsheet formulas are kept unless `options.escapeFormulas` is true; set it
+ * when the file may be opened in a spreadsheet and the text is untrusted.
  */
-export function toCsv(table: readonly (readonly CsvCell[])[]): string {
+export function toCsv(table: readonly (readonly CsvCell[])[], options: CsvOptions = {}): string {
+  const escapeFormulas = options.escapeFormulas === true
   return table.map(record => record.map(cell => {
     if (cell === undefined) return ''
     if (typeof cell === 'number') {
       if (!Number.isFinite(cell)) throw new RangeError('CSV numbers must be finite')
       return String(cell)
     }
-    const text = String(cell)
+    let text = String(cell)
+    if (escapeFormulas && formulaStart.test(text)) text = '\'' + text
     return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text
   }).join(',') + '\r\n').join('')
 }
@@ -92,7 +107,7 @@ export function parseCsv(text: string, options: CsvParseOptions = {}): string[][
     throw new Error('The CSV delimiter must be one character other than a double quote, CR or LF')
   }
   const source = String(text)
-  const input = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source
+  const input = stripBom(source)
   const records: string[][] = []
   if (!input) return records
   let record: string[] = []
@@ -183,6 +198,8 @@ export interface TimelineCsvImport {
 }
 
 const wbsPattern = /^[1-9]\d*(\.[1-9]\d*)*$/
+/** The deepest WBS code `timelineFromCsvTable` reads, in levels, so a short file cannot make it build huge prefixes. */
+const maxWbsDepth = 1000
 const decimalPattern = /^\+?(\d+\.?\d*|\.\d+)$/
 
 /**
@@ -199,7 +216,7 @@ const decimalPattern = /^\+?(\d+\.?\d*|\.\d+)$/
  *
  * A custom header takes precedence over another column's default header. Throws an Error for missing or repeated
  * columns, for two custom headers that are equal (ignoring case and surrounding white space) and an Error naming the line (the one-based record number, with the
- * header on line 1) for an invalid WBS code, a time that `parseTime` cannot read, an end before the start and a
+ * header on line 1) for an invalid WBS code, a RangeError for a WBS code of more than 1,000 levels, a time that `parseTime` cannot read, an end before the start and a
  * progress that is not a plain decimal number from 0 to 1 (such as `0.5`; not `0x1` or `1e0`).
  */
 export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], options: TimelineCsvImportOptions): TimelineCsvImport {
@@ -260,12 +277,18 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
     if (position.has('wbs')) {
       const code = text(record, 'wbs').trim()
       if (!wbsPattern.test(code)) throw new Error(`Invalid WBS code on CSV line ${line}: ${code || '(empty)'}`)
-      // Ancestors first, so a parent without records of its own still exists.
-      const parts = code.split('.')
-      for (let depth = 1; depth <= parts.length; depth++) {
-        const prefix = parts.slice(0, depth).join('.')
-        if (!found.has(prefix)) found.set(prefix, { id: 'row-' + prefix, code: prefix })
+      // Ancestors first, so a parent without records of its own still exists. The prefixes end at each dot, and the
+      // climb stops at the first one already found, since its own ancestors were added with it.
+      const missing: string[] = []
+      let levels = 1
+      for (let dot = code.indexOf('.'); dot >= 0; dot = code.indexOf('.', dot + 1)) levels++
+      if (levels > maxWbsDepth) {
+        throw new RangeError(`The WBS code on CSV line ${line} has ${levels} levels; at most ${maxWbsDepth} are supported`)
       }
+      for (let end = code.length; end > 0 && !found.has(code.slice(0, end)); end = code.lastIndexOf('.', end - 1)) {
+        missing.push(code.slice(0, end))
+      }
+      for (let i = missing.length - 1; i >= 0; i--) found.set(missing[i]!, { id: 'row-' + missing[i]!, code: missing[i]! })
       key = code
       const row = found.get(code)!
       // A blank row cell is no label, so a later record of the same code can still name the row.
@@ -291,19 +314,30 @@ export function timelineFromCsvTable(table: readonly (readonly CsvCell[])[], opt
     }
     bars.push(bar)
   })
-  const entries = [...found.values()]
+  let entries = [...found.values()]
   if (position.has('wbs')) {
-    // Tree preorder: compare codes part by part as numbers. Parts have no leading zeros, so comparing their digit
-    // strings by length and then lexically is exact at any size.
+    // Tree preorder: the children of each code ordered by their last part as a number, then visited depth first with a
+    // stack. Parts have no leading zeros, so comparing their digit strings by length and then lexically is exact at
+    // any size. Every code's parent is in `found`, because the ancestors were added with it.
     const compareParts = (x: string, y: string) => x.length - y.length || (x < y ? -1 : x > y ? 1 : 0)
-    entries.sort((a, b) => {
-      const x = a.code!.split('.'), y = b.code!.split('.')
-      for (let index = 0; index < Math.min(x.length, y.length); index++) {
-        const order = compareParts(x[index]!, y[index]!)
-        if (order) return order
-      }
-      return x.length - y.length
-    })
+    const children = new Map<string, { entry: typeof entries[number]; last: string }[]>()
+    for (const entry of entries) {
+      const cut = entry.code!.lastIndexOf('.')
+      const parent = cut < 0 ? '' : entry.code!.slice(0, cut)
+      let list = children.get(parent)
+      if (!list) children.set(parent, list = [])
+      list.push({ entry, last: entry.code!.slice(cut + 1) })
+    }
+    for (const list of children.values()) list.sort((x, y) => compareParts(x.last, y.last))
+    const ordered: typeof entries = []
+    const stack = [...(children.get('') ?? [])].reverse()
+    while (stack.length) {
+      const { entry } = stack.pop()!
+      ordered.push(entry)
+      const list = children.get(entry.code!)
+      if (list) for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!)
+    }
+    entries = ordered
   }
   const rows = entries.map(entry => {
     const row: TimelineRow = { id: entry.id, label: entry.label ?? entry.code ?? '' }

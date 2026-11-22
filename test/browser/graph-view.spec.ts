@@ -1,5 +1,8 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
-import { expect, test, chainNode, dragBy, openComponentFixture, openDemo, openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, readCamera, serveFixture, touch, type Camera, type Page } from './support'
+import {
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo,
+  openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
+} from './support'
 
 async function openStylesFixture(page: Page, search = '') {
   await serveFixture(page, 'graph-styles-test', 'graph-styles.html')
@@ -238,10 +241,7 @@ test('node shapes, edge markers, animated and parallel edges render, follow drag
   expect(new Set([initial.sc1, initial.sc2, initial.cs]).size).toBe(3)
   expect(initial.pp1).not.toBe(initial.pp2)
   const node = button('Check stock')
-  const box = (await node.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 5 })
+  await pressAndMove(page, node, 120, 40, 5)
   const dragged = await paths()
   for (const id of ['sc1', 'sc2', 'cs', 'cp']) expect(dragged[id], id).not.toBe(initial[id])
   expect(new Set([dragged.sc1, dragged.sc2, dragged.cs]).size).toBe(3)
@@ -482,12 +482,12 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
     await page.getByLabel('Direction').selectOption(direction)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
   for (const layout of ['tree', 'radial', 'circular', 'grid', 'concentric', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   expect(errors).toEqual([])
 })
@@ -750,6 +750,112 @@ test('the diagram demo routes orthogonal edges around the nodes with Avoid nodes
   expect(errors).toEqual([])
 })
 
+type ScreenBox = { name: string; x: number; y: number; width: number; height: number }
+// The on-screen boxes of the edge labels and nodes, and the pairs that overlap by more than half a pixel.
+async function labelOverlaps(page: Page) {
+  const { labels, nodes } = await page.evaluate(() => {
+    const box = (element: Element) => {
+      const rect = element.getBoundingClientRect()
+      return { name: element.textContent ?? '', x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    }
+    return {
+      labels: [...document.querySelectorAll('.vw-edge-label')].map(box),
+      nodes: [...document.querySelectorAll('.vw-network-node')].map(box),
+    }
+  })
+  const meet = (a: ScreenBox, b: ScreenBox) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.5
+    && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.5
+  return {
+    labels,
+    onNodes: labels.flatMap(label => nodes.filter(node => meet(label, node)).map(node => label.name + ' / ' + node.name)),
+    onLabels: labels.flatMap((label, i) => labels.slice(i + 1).filter(other => meet(label, other)).map(other => label.name + ' / ' + other.name)),
+  }
+}
+
+test('the diagram demo places edge labels clear of nodes and each other, on screen and in the SVG export', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openDemo(page, 'Diagram styles')
+  const place = page.getByLabel('Place labels clear')
+  await expect(place).not.toBeChecked()
+  await page.getByLabel('Edge style').selectOption('orthogonal')
+  const anchors = () => page.locator('.vw-edge-label').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('x'), item.getAttribute('y')]))
+  const midpoint = await anchors()
+  // At the midpoints, the labels of the request to Inventory and of the reservation share one channel.
+  expect((await labelOverlaps(page)).onLabels).toEqual(['ask / reserve'])
+
+  await place.check()
+  // The placed labels are drawn after the next render.
+  await expect.poll(anchors).not.toEqual(midpoint)
+  const placed = await labelOverlaps(page)
+  expect(placed.labels).toHaveLength(8)
+  expect(placed.onLabels).toEqual([])
+  expect(placed.onNodes).toEqual([])
+  const moved = await anchors()
+
+  // The export draws each label at its placed anchor.
+  const { readFile } = await import('node:fs/promises')
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+  const text = (await readFile((await (await pending).path())!)).toString('utf8')
+  const round = (value: string | null) => String(Math.round(Number(value) * 1000) / 1000)
+  for (const [, x, y] of moved) expect(text).toContain(`<text x="${round(x)}" y="${round(y)}"`)
+  expect(text).toContain('>ask<')
+
+  await place.uncheck()
+  await expect.poll(anchors).toEqual(midpoint)
+  await page.getByLabel('Edge style').selectOption('curve')
+  expect(errors).toEqual([])
+})
+
+// Three nodes in a row with labelled orthogonal edges. After N0002 moves right and down, the route of link 1 has a
+// vertical run; the scenario then drags N0000 onto the label of link 1, whose own route does not change.
+async function openLabelDrag(page: Page, placement: string) {
+  await openNetworkFixture(page, `?nodes=3&draggable=1&edgelabels=1&labelplacement=${placement}&style=orthogonal`)
+  await dragBy(page, chainNode(page, 'N0002'), 200, 110)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  const label = await centerOf(page.locator('.vw-edge-label', { hasText: 'link 1' }))
+  const node = await centerOf(chainNode(page, 'N0000'))
+  return { dx: label.x - node.x, dy: label.y - node.y }
+}
+const labelAnchors = (page: Page) => page.locator('.vw-edge-label')
+  .evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('x'), item.getAttribute('y')].join(' ')))
+
+test('placed edge labels move off a node dragged onto them, in the preview and once saved', async ({ page }) => {
+  const errors = pageErrors(page)
+  // The control: with midpoint labels, the dragged node ends up covering the label of link 1.
+  const midpoint = await openLabelDrag(page, 'midpoint')
+  await dragBy(page, chainNode(page, 'N0000'), midpoint.dx, midpoint.dy)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('2')
+  expect((await labelOverlaps(page)).onNodes.filter(pair => pair.startsWith('link 1 / N0000'))).toHaveLength(1)
+
+  const { dx, dy } = await openLabelDrag(page, 'avoid')
+  expect((await labelOverlaps(page)).onNodes).toEqual([])
+  let preview: Awaited<ReturnType<typeof labelOverlaps>> | undefined
+  await dragBy(page, chainNode(page, 'N0000'), dx, dy, async () => {
+    await expect.poll(async () => (await labelOverlaps(page)).onNodes).toEqual([])
+    preview = await labelOverlaps(page)
+  })
+  expect(preview!.onLabels).toEqual([])
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('2')
+  await expect.poll(async () => (await labelOverlaps(page)).onNodes).toEqual([])
+  expect((await labelOverlaps(page)).onLabels).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('a drag cancelled with Escape puts placed edge labels back at their saved anchors', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { dx, dy } = await openLabelDrag(page, 'avoid')
+  const saved = await labelAnchors(page)
+  await pressAndMove(page, chainNode(page, 'N0000'), dx, dy)
+  await expect.poll(() => labelAnchors(page)).not.toEqual(saved)
+  await page.keyboard.press('Escape')
+  await expect.poll(() => labelAnchors(page)).toEqual(saved)
+  await page.mouse.up()
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  expect(await labelAnchors(page)).toEqual(saved)
+  expect(errors).toEqual([])
+})
+
 test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
   const errors = pageErrors(page)
   await openDemo(page, 'Graph analysis')
@@ -833,10 +939,7 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
 
   // Dragging a step onto another lane is a proposal that the demo turns into a lane change.
   const from = await box(step('Deburr')), target = await box(lane('Inspection'))
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(from.x + from.width / 2, target.y + target.height / 2, { steps: 8 })
-  await page.mouse.up()
+  await dragTo(page, from, { x: boxCenter(from).x, y: boxCenter(target).y }, { steps: 8 })
   await expect(status).toHaveText('Deburr moved to Inspection.')
   await expect.poll(() => within('Deburr', 'Inspection')).toBe(true)
 

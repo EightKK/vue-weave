@@ -286,6 +286,41 @@ test('leveling traces a dependency and capacity together and names the holders o
   assert.deepEqual(split.trace.reasons.find(r => r.kind === 'capacity').range, { start: 2, end: 4 })
 })
 
+test('leveling merges adjacent shortages of equal capacity into one reason that names every holder', () => {
+  const input = {
+    range: { start: 0, end: 40 },
+    tasks: [task('a', 2, { priority: 3 }), task('b', 3, { priority: 2 }), task('c', 2, { priority: 1 }), task('d', 2)],
+    resources: [{ id: 'm', capacity: 1, capacityPeriods: [{ start: 5, end: 6, capacity: 2 }] }],
+    assignments: on('m', 'a', 'b', 'c', 'd'),
+  }
+  const result = levelResources(input, { explain: true })
+  assert.deepEqual(dates(result), [['a', 0, 2], ['b', 2, 5], ['c', 5, 7], ['d', 7, 9]])
+  const reasons = result.trace.reasons.filter(r => r.kind === 'capacity')
+  assert.deepEqual(reasons.map(r => [r.taskId, r.range, r.relatedTaskIds, r.capacity]), [
+    ['b', { start: 0, end: 2 }, ['a'], 1],
+    // c waits behind a and b, in one reason because both hold the whole capacity of 1 back to back.
+    ['c', { start: 0, end: 5 }, ['a', 'b'], 1],
+    // d also fits nowhere before 7. At [5, 6) the capacity of 2 leaves room beside c, so that gap splits its reasons.
+    ['d', { start: 0, end: 5 }, ['a', 'b'], 1],
+    ['d', { start: 6, end: 7 }, ['c'], 1],
+  ])
+  // The parents are the leveling reasons of every holder.
+  const leveling = id => result.trace.taskReasonIds.get(id).filter(reason => reasonOf(result.trace, reason).phase === 'leveling')
+  assert.deepEqual(reasons[1].parentReasonIds, [...leveling('a'), ...leveling('b')])
+  // A change of capacity starts a new reason: b holds both units where the capacity is 2.
+  const changed = levelResources({
+    range: { start: 0, end: 40 },
+    tasks: [task('a', 2, { priority: 3 }), task('b', 2, { priority: 2 }), task('c', 1)],
+    resources: [{ id: 'm', capacity: 1, capacityPeriods: [{ start: 2, end: 4, capacity: 2 }] }],
+    assignments: [...on('m', 'a', 'c'), { resourceId: 'm', taskId: 'b', units: 2 }],
+  }, { explain: true })
+  assert.deepEqual(dates(changed), [['a', 0, 2], ['b', 2, 4], ['c', 4, 5]])
+  assert.deepEqual(changed.trace.reasons.filter(r => r.kind === 'capacity' && r.taskId === 'c').map(r => [r.range, r.relatedTaskIds, r.capacity]), [
+    [{ start: 0, end: 2 }, ['a'], 1],
+    [{ start: 2, end: 4 }, ['b'], 2],
+  ])
+})
+
 test('explain changes no date, float, critical flag, delay or unresolved task', () => {
   const shifts = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 24, end: 28 }, { start: 29, end: 33 }]
   const calendar = { calendars: [{ id: 'shift', periods: shifts }], defaultCalendarId: 'shift' }

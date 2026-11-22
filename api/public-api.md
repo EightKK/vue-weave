@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (229)
+## Entry `.`: runtime exports (238)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -18,6 +18,7 @@ in public signatures, so changes to them can break consumers too.
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
+- `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
 - `assignLanes: function`
@@ -68,12 +69,16 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarRange: function`
 - `eventCalendarTimeAt: function`
 - `eventCalendarTimeOfDay: function`
+- `expandRecurrence: function`
+- `expandRecurringEvents: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
+- `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatRecurrenceRule: function`
 - `formatSheetText: function`
 - `fromDrawio: function`
 - `fromDrawioAsync: function`
@@ -140,15 +145,18 @@ in public signatures, so changes to them can break consumers too.
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
+- `nextTimelineSort: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
 - `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseRecurrenceRule: function`
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
+- `placeGraphEdgeLabels: function`
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
@@ -231,13 +239,14 @@ in public signatures, so changes to them can break consumers too.
 - `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
+- `validateInspectorList: function`
 - `validateTimelineData: function`
 - `visibleRows: function`
 - `windowedCellStatus: function`
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (543)
+## Entry `.`: type-only exports (570)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -261,6 +270,7 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarEventColumn`
 - `CalendarEventLane`
 - `CalendarEventLaneLayout`
+- `CalendarRecurrence`
 - `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
@@ -273,6 +283,7 @@ in public signatures, so changes to them can break consumers too.
 - `ConstraintEditValidator`
 - `CreateValidator`
 - `CsvCell`
+- `CsvOptions`
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
@@ -357,6 +368,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphDrop`
 - `GraphEdge`
 - `GraphEdgeBand`
+- `GraphEdgeLabelPlacement`
+- `GraphEdgeLabelPlacementOptions`
+- `GraphEdgeLabelSize`
 - `GraphEdgeMarker`
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
@@ -470,6 +484,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphVisibleIds`
 - `HistoryReset`
 - `ICalendarEvent`
+- `ICalendarExpandOptions`
 - `ICalendarImport`
 - `ICalendarImportEvent`
 - `ICalendarImportOptions`
@@ -478,11 +493,20 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorAssignment`
+- `InspectorAssignmentsField`
 - `InspectorChange`
 - `InspectorChangeValidator`
+- `InspectorDependenciesField`
+- `InspectorDependency`
 - `InspectorField`
 - `InspectorFieldKind`
 - `InspectorItem`
+- `InspectorListChange`
+- `InspectorListChangeValidator`
+- `InspectorListField`
+- `InspectorListFieldKind`
+- `InspectorOption`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -574,6 +598,17 @@ in public signatures, so changes to them can break consumers too.
 - `PropertyInspectorExposed`
 - `PropertyInspectorFieldSlot`
 - `PropertyInspectorLabels`
+- `RecurrenceExpandOptions`
+- `RecurrenceFrequency`
+- `RecurrenceOccurrence`
+- `RecurrenceRule`
+- `RecurrenceSeries`
+- `RecurrenceWeekday`
+- `RecurrenceZoneOptions`
+- `RecurringEditChange`
+- `RecurringEditOptions`
+- `RecurringEditScope`
+- `RecurringEditTarget`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -736,6 +771,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineViewColumn`
 - `TimelineViewDiagnostic`
 - `TimelineViewDiagnosticCode`
+- `TimelineViewFilter`
 - `TimelineViewInput`
 - `TimelineViewProjection`
 - `TimelineViewSearch`
@@ -783,13 +819,14 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (214)
+## Entry `./core`: runtime exports (223)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
+- `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
 - `assignLanes: function`
@@ -840,12 +877,16 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarRange: function`
 - `eventCalendarTimeAt: function`
 - `eventCalendarTimeOfDay: function`
+- `expandRecurrence: function`
+- `expandRecurringEvents: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
+- `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatRecurrenceRule: function`
 - `formatSheetText: function`
 - `fromDrawio: function`
 - `fromDrawioAsync: function`
@@ -911,15 +952,18 @@ in public signatures, so changes to them can break consumers too.
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
+- `nextTimelineSort: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
 - `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseRecurrenceRule: function`
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
+- `placeGraphEdgeLabels: function`
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
@@ -994,13 +1038,14 @@ in public signatures, so changes to them can break consumers too.
 - `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
+- `validateInspectorList: function`
 - `validateTimelineData: function`
 - `visibleRows: function`
 - `windowedCellStatus: function`
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (505)
+## Entry `./core`: type-only exports (532)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1018,6 +1063,7 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarEventColumn`
 - `CalendarEventLane`
 - `CalendarEventLaneLayout`
+- `CalendarRecurrence`
 - `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
@@ -1030,6 +1076,7 @@ in public signatures, so changes to them can break consumers too.
 - `ConstraintEditValidator`
 - `CreateValidator`
 - `CsvCell`
+- `CsvOptions`
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
@@ -1109,6 +1156,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphDeletion`
 - `GraphEdge`
 - `GraphEdgeBand`
+- `GraphEdgeLabelPlacement`
+- `GraphEdgeLabelPlacementOptions`
+- `GraphEdgeLabelSize`
 - `GraphEdgeMarker`
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
@@ -1217,6 +1267,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphViewport`
 - `GraphVisibleIds`
 - `ICalendarEvent`
+- `ICalendarExpandOptions`
 - `ICalendarImport`
 - `ICalendarImportEvent`
 - `ICalendarImportOptions`
@@ -1225,11 +1276,20 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorAssignment`
+- `InspectorAssignmentsField`
 - `InspectorChange`
 - `InspectorChangeValidator`
+- `InspectorDependenciesField`
+- `InspectorDependency`
 - `InspectorField`
 - `InspectorFieldKind`
 - `InspectorItem`
+- `InspectorListChange`
+- `InspectorListChangeValidator`
+- `InspectorListField`
+- `InspectorListFieldKind`
+- `InspectorOption`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -1310,6 +1370,17 @@ in public signatures, so changes to them can break consumers too.
 - `PropagateEditSuccess`
 - `PropertyInspectorFieldSlot`
 - `PropertyInspectorLabels`
+- `RecurrenceExpandOptions`
+- `RecurrenceFrequency`
+- `RecurrenceOccurrence`
+- `RecurrenceRule`
+- `RecurrenceSeries`
+- `RecurrenceWeekday`
+- `RecurrenceZoneOptions`
+- `RecurringEditChange`
+- `RecurringEditOptions`
+- `RecurringEditScope`
+- `RecurringEditTarget`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -1468,6 +1539,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimelineViewColumn`
 - `TimelineViewDiagnostic`
 - `TimelineViewDiagnosticCode`
+- `TimelineViewFilter`
 - `TimelineViewInput`
 - `TimelineViewProjection`
 - `TimelineViewSearch`
@@ -1531,6 +1603,7 @@ dir?: ChartDirection;
 draggable?: boolean;
 droppable?: boolean;
 edgeBands?: ReadonlyMap<string, GraphEdgeBand>;
+edgeLabelPlacement?: GraphEdgeLabelPlacement<GraphShownEdge<E, G>>;
 edgeStyle?: GraphEdgeStyle;
 edges: readonly E[];
 edgesSelectable?: boolean;
@@ -1676,6 +1749,8 @@ dependencyStyle?: DependencyPathStyle;
 dir?: ChartDirection;
 droppable?: boolean;
 editBounds?: TimeRange;
+filterableColumns?: boolean | readonly string[];
+filters?: readonly TimelineViewFilter[];
 formatLag?: (lag: number) => string;
 formatTime?: (time: number) => string;
 formatVariance?: (delta: number) => string;
@@ -1719,6 +1794,8 @@ showNow?: boolean;
 showProgressLine?: boolean;
 showSummaries?: boolean;
 snap?: number;
+sort?: readonly TimelineViewSort[];
+sortableColumns?: boolean | readonly string[];
 spreadsheet?: boolean;
 statusDate?: number;
 stickyBandLabels?: boolean;
@@ -1781,8 +1858,10 @@ zoomPresets?: readonly TimelineZoomPreset[];
 (evt: "target-enter", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "target-leave", event: ViewTargetEvent<ViewTarget>) => void
 (evt: "update:collapsedIds", ids: Set<string>) => void
+(evt: "update:filters", filters: TimelineViewFilter[]) => void
 (evt: "update:selectedDependencyId", id: string) => void
 (evt: "update:selectedIds", ids: Set<string>) => void
+(evt: "update:sort", sort: TimelineViewSort[]) => void
 (evt: "update:zoomPreset", id: string) => void
 (evt: "validation-error", error: Error) => void
 (evt: "visible-window-change", window: TimelineVisibleWindow) => void
@@ -1892,10 +1971,11 @@ focusItem: (id?: string) => Promise<boolean>;
 
 ```ts
 dir?: ChartDirection;
-fields: readonly InspectorField<T>[];
+fields: readonly (InspectorField<T> | InspectorListField<T>)[];
 item?: T | null;
 labels?: Partial<PropertyInspectorLabels>;
 validateChange?: InspectorChangeValidator<T>;
+validateListChange?: InspectorListChangeValidator<T>;
 ```
 
 ## Component `PropertyInspector`: emits
@@ -1903,6 +1983,8 @@ validateChange?: InspectorChangeValidator<T>;
 ```ts
 (evt: "change", change: InspectorChange) => void
 (evt: "change-rejected", change: InspectorChange, reason: string) => void
+(evt: "list-change", change: InspectorListChange) => void
+(evt: "list-change-rejected", change: InspectorListChange, reason: string) => void
 ```
 
 ## Component `PropertyInspector`: slots
@@ -1924,8 +2006,12 @@ focusField(id: string): boolean;
 ```ts
 autoScroll?: boolean;
 cards: readonly C[];
+collapsedColumnIds?: readonly string[];
+collapsedLaneIds?: readonly string[];
+collapsible?: boolean;
 columns: readonly TaskBoardColumn[];
 dir?: ChartDirection;
+filter?: (card: C) => boolean;
 height?: number | string;
 labels?: Partial<TaskBoardLabels>;
 lanes?: readonly TaskBoardLane[];
@@ -1941,6 +2027,8 @@ validateCardMove?: TaskBoardCardMoveValidator;
 (evt: "card-move", change: TaskBoardCardMove) => void
 (evt: "card-move-cancel", event: TaskBoardMoveCancel) => void
 (evt: "card-move-rejected", change: TaskBoardCardMove, reason: string) => void
+(evt: "update:collapsedColumnIds", ids: string[]) => void
+(evt: "update:collapsedLaneIds", ids: string[]) => void
 (evt: "update:selectedId", id: string) => void
 (evt: "validation-error", error: Error) => void
 ```
@@ -2062,8 +2150,10 @@ scrollToTime: (time: number) => void;
 - `--vw-blue-line`
 - `--vw-blue-pale`
 - `--vw-blue-solid`
+- `--vw-board-collapsed-width`
 - `--vw-board-column-width`
 - `--vw-board-drop`
+- `--vw-board-wip-under`
 - `--vw-board-wip-warning`
 - `--vw-border`
 - `--vw-calendar-gutter`
@@ -2118,6 +2208,7 @@ scrollToTime: (time: number) => void;
 - `--vw-band-dash`
 - `--vw-bar-highlight`
 - `--vw-board-cell-min-height`
+- `--vw-board-collapsed-fill`
 - `--vw-board-column-count`
 - `--vw-calendar-event-accent`
 - `--vw-calendar-hour-height`
@@ -2379,6 +2470,9 @@ interface CalendarEvent<D = unknown> {
     tone?: ChartTone;
     editable?: boolean;
     data?: D;
+    recurrence?: CalendarRecurrence;
+    seriesId?: string;
+    recurrenceId?: number;
 }
 ```
 
@@ -2413,6 +2507,16 @@ interface CalendarEventLane {
 interface CalendarEventLaneLayout {
     segments: CalendarEventLane[];
     lanes: number;
+}
+```
+
+### `CalendarRecurrence`
+
+```ts
+interface CalendarRecurrence extends RecurrenceZoneOptions {
+    rule?: RecurrenceRule | string;
+    exdates?: readonly number[];
+    rdates?: readonly number[];
 }
 ```
 
@@ -2510,6 +2614,14 @@ type CreateValidator = (proposal: TimelineCreate) => boolean | string | void;
 
 ```ts
 type CsvCell = string | number | undefined;
+```
+
+### `CsvOptions`
+
+```ts
+interface CsvOptions {
+    escapeFormulas?: boolean;
+}
 ```
 
 ### `CsvParseOptions`
@@ -2765,6 +2877,10 @@ interface EventCalendarEdit {
         before: string;
         after: string;
     };
+    occurrence?: {
+        seriesId: string;
+        recurrenceId: number;
+    };
 }
 ```
 
@@ -2812,11 +2928,13 @@ interface EventCalendarLabels {
     showDay: string;
     editHint: string;
     dayEditHint: string;
+    monthEditHint?: string;
     rejected: string;
     createRejected: string;
     resources: string;
     now: string;
     empty: string;
+    recurring?: string;
 }
 ```
 
@@ -3015,6 +3133,14 @@ interface GanttLabels {
     statusDate?: string;
     resizeColumn?: string;
     columnResizeRejected?: string;
+    sortBy?: string;
+    sortedAscending?: string;
+    sortedDescending?: string;
+    filterBy?: string;
+    filtered?: string;
+    filterContains?: string;
+    filterValues?: string;
+    clearFilter?: string;
     lag?: string;
     startNoEarlierThan?: string;
     startNoLaterThan?: string;
@@ -3408,6 +3534,38 @@ interface GraphEdgeBand {
     width: number;
     reference?: boolean;
     label?: string;
+}
+```
+
+### `GraphEdgeLabelPlacement`
+
+```ts
+type GraphEdgeLabelPlacement<E extends GraphEdge = GraphEdge> = 'midpoint' | 'avoid' | Omit<GraphEdgeLabelPlacementOptions<E>, 'edgeIds' | 'labelText'>;
+```
+
+### `GraphEdgeLabelPlacementOptions`
+
+```ts
+interface GraphEdgeLabelPlacementOptions<E extends GraphEdge = GraphEdge> {
+    fontSize?: number;
+    glyphWidth?: number;
+    labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | null | undefined;
+    labelText?: (edge: E) => string | undefined;
+    gap?: number;
+    edgeWidth?: (edge: E) => number | null | undefined;
+    margin?: number;
+    samples?: number;
+    edgeIds?: Iterable<string>;
+    obstacles?: readonly GraphRect[];
+}
+```
+
+### `GraphEdgeLabelSize`
+
+```ts
+interface GraphEdgeLabelSize {
+    width: number;
+    height: number;
 }
 ```
 
@@ -4682,6 +4840,18 @@ interface ICalendarEvent {
     start: number;
     end: number;
     description?: string;
+    recurrence?: CalendarRecurrence;
+    seriesId?: string;
+    recurrenceId?: number;
+}
+```
+
+### `ICalendarExpandOptions`
+
+```ts
+interface ICalendarExpandOptions {
+    range: TimeRange;
+    maxOccurrences?: number;
 }
 ```
 
@@ -4701,6 +4871,11 @@ interface ICalendarImport {
 interface ICalendarImportEvent extends ICalendarEvent {
     allDay: boolean;
     recurrenceRule?: string;
+    recurrence?: CalendarRecurrence & {
+        rule?: RecurrenceRule;
+    };
+    seriesId?: string;
+    recurrenceId?: number;
 }
 ```
 
@@ -4709,6 +4884,7 @@ interface ICalendarImportEvent extends ICalendarEvent {
 ```ts
 interface ICalendarImportOptions {
     utcOffsetMinutes?: number;
+    recurrence?: 'first' | 'series' | ICalendarExpandOptions;
 }
 ```
 
@@ -4757,6 +4933,26 @@ interface IdentifiedNode {
 }
 ```
 
+### `InspectorAssignment`
+
+```ts
+interface InspectorAssignment {
+    resourceId: string;
+    units: number;
+}
+```
+
+### `InspectorAssignmentsField`
+
+```ts
+interface InspectorAssignmentsField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
+    kind: 'assignments';
+    get: (item: T) => readonly InspectorAssignment[];
+    defaultUnits?: number;
+    maxUnits?: number;
+}
+```
+
 ### `InspectorChange`
 
 ```ts
@@ -4772,6 +4968,27 @@ interface InspectorChange {
 
 ```ts
 type InspectorChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorChange, item: T) => boolean | string | void;
+```
+
+### `InspectorDependenciesField`
+
+```ts
+interface InspectorDependenciesField<T extends InspectorItem = InspectorItem> extends InspectorListFieldBase {
+    kind: 'dependencies';
+    get: (item: T) => readonly InspectorDependency[];
+    lagUnitSize?: number;
+    lagUnitLabel?: string;
+}
+```
+
+### `InspectorDependency`
+
+```ts
+interface InspectorDependency {
+    predecessorId: string;
+    type: TimelineDependencyType;
+    lag: number;
+}
 ```
 
 ### `InspectorField`
@@ -4798,6 +5015,51 @@ type InspectorFieldKind = TimelineFieldKind | 'color';
 ```ts
 interface InspectorItem {
     id: string;
+}
+```
+
+### `InspectorListChange`
+
+```ts
+type InspectorListChange = {
+    id: string;
+    field: string;
+    kind: 'assignments';
+    before: InspectorAssignment[];
+    after: InspectorAssignment[];
+} | {
+    id: string;
+    field: string;
+    kind: 'dependencies';
+    before: InspectorDependency[];
+    after: InspectorDependency[];
+};
+```
+
+### `InspectorListChangeValidator`
+
+```ts
+type InspectorListChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorListChange, item: T) => boolean | string | void;
+```
+
+### `InspectorListField`
+
+```ts
+type InspectorListField<T extends InspectorItem = InspectorItem> = InspectorAssignmentsField<T> | InspectorDependenciesField<T>;
+```
+
+### `InspectorListFieldKind`
+
+```ts
+type InspectorListFieldKind = 'assignments' | 'dependencies';
+```
+
+### `InspectorOption`
+
+```ts
+interface InspectorOption {
+    value: string;
+    label?: string;
 }
 ```
 
@@ -5769,7 +6031,7 @@ const PropertyInspector: PropertyInspectorComponent;
 ```ts
 type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(props: {
     item?: T | null;
-    fields: readonly InspectorField<T>[];
+    fields: readonly (InspectorField<T> | InspectorListField<T>)[];
 } & Record<string, unknown>) => SfcInstance<PropertyInspectorSfc<T>>) & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>;
 ```
 
@@ -5805,6 +6067,115 @@ interface PropertyInspectorLabels {
     empty: string;
     rejected: string;
     none: string;
+    resource?: string;
+    units?: string;
+    predecessor?: string;
+    type?: string;
+    lag?: string;
+    for?: string;
+    remove?: string;
+    addAssignment?: string;
+    addDependency?: string;
+    noRows?: string;
+}
+```
+
+### `RecurrenceExpandOptions`
+
+```ts
+interface RecurrenceExpandOptions {
+    timeZone?: string;
+    maxOccurrences?: number;
+}
+```
+
+### `RecurrenceFrequency`
+
+```ts
+type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+```
+
+### `RecurrenceOccurrence`
+
+```ts
+interface RecurrenceOccurrence extends TimeRange {
+    id: string;
+    seriesId: string;
+    recurrenceId: number;
+}
+```
+
+### `RecurrenceRule`
+
+```ts
+interface RecurrenceRule {
+    frequency: RecurrenceFrequency;
+    interval?: number;
+    count?: number;
+    until?: number;
+    byWeekday?: readonly RecurrenceWeekday[];
+    byMonthDay?: readonly number[];
+    byMonth?: readonly number[];
+    bySetPosition?: readonly number[];
+    weekStart?: number;
+}
+```
+
+### `RecurrenceSeries`
+
+```ts
+interface RecurrenceSeries extends CalendarRecurrence, TimeRange {
+    id: string;
+}
+```
+
+### `RecurrenceWeekday`
+
+```ts
+interface RecurrenceWeekday {
+    weekday: number;
+    ordinal?: number;
+}
+```
+
+### `RecurrenceZoneOptions`
+
+```ts
+interface RecurrenceZoneOptions {
+    timeZone?: string;
+    utcOffsetMinutes?: number;
+}
+```
+
+### `RecurringEditChange`
+
+```ts
+interface RecurringEditChange extends TimeRange {
+    resourceId?: string;
+}
+```
+
+### `RecurringEditOptions`
+
+```ts
+interface RecurringEditOptions {
+    timeZone?: string;
+    newSeriesId?: string;
+}
+```
+
+### `RecurringEditScope`
+
+```ts
+type RecurringEditScope = 'occurrence' | 'following' | 'series';
+```
+
+### `RecurringEditTarget`
+
+```ts
+interface RecurringEditTarget {
+    seriesId: string;
+    recurrenceId: number;
 }
 ```
 
@@ -6817,6 +7188,8 @@ interface TaskBoardCell<C extends TaskBoardCard = TaskBoardCard> {
     columnId: string;
     laneId?: string;
     cards: C[];
+    indices: number[];
+    total: number;
 }
 ```
 
@@ -6828,6 +7201,7 @@ interface TaskBoardColumn {
     label: string;
     detail?: string;
     wipLimit?: number;
+    wipMin?: number;
 }
 ```
 
@@ -6837,9 +7211,12 @@ interface TaskBoardColumn {
 interface TaskBoardColumnStatus {
     id: string;
     count: number;
+    total: number;
     wipLimit?: number;
+    wipMin?: number;
     atLimit: boolean;
     overLimit: boolean;
+    underMinimum: boolean;
 }
 ```
 
@@ -6882,6 +7259,10 @@ interface TaskBoardLabels {
     cards: string;
     wipLimit: string;
     overLimit: string;
+    wipMin: string;
+    underMinimum: string;
+    collapse: string;
+    expand: string;
     moveHint: string;
     moveRejected: string;
     pickedUp: string;
@@ -6917,7 +7298,7 @@ interface TaskBoardMoveCancel {
 ### `TaskBoardMoveCancelReason`
 
 ```ts
-type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change';
+type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change' | 'api';
 ```
 
 ### `TaskBoardPosition`
@@ -7642,6 +8023,16 @@ interface TimelineViewDiagnostic {
 type TimelineViewDiagnosticCode = 'unknown-column' | 'new-column' | 'duplicate-column' | 'invalid-width' | 'unknown-sort-rule' | 'unknown-row';
 ```
 
+### `TimelineViewFilter`
+
+```ts
+interface TimelineViewFilter {
+    columnId: string;
+    text?: string;
+    values?: (string | number)[];
+}
+```
+
 ### `TimelineViewInput`
 
 ```ts
@@ -7700,6 +8091,7 @@ interface TimelineViewState {
     columns: TimelineViewColumn[];
     search: TimelineViewSearch;
     sort: TimelineViewSort[];
+    filters?: TimelineViewFilter[];
     collapsedIds: string[];
     window?: TimeRange;
     zoom?: string;
@@ -8196,6 +8588,12 @@ function applyGraphPositions(layout: GraphLayout, edges: readonly GraphEdge[], p
 function applyGraphSizes(layout: GraphLayout, edges: readonly GraphEdge[], sizes: ReadonlyMap<string, GraphNodeSize>, direction?: GraphLayoutDirection): GraphLayout;
 ```
 
+### `applyRecurringEdit`
+
+```ts
+function applyRecurringEdit<E extends CalendarEvent>(events: readonly E[], target: RecurringEditTarget, change: RecurringEditChange | 'delete', scope: RecurringEditScope, options?: RecurringEditOptions): E[];
+```
+
 ### `applyTimelineConstraintEdit`
 
 ```ts
@@ -8515,6 +8913,18 @@ function eventCalendarTimeAt(day: number, timeOfDay: number, options?: Pick<Even
 function eventCalendarTimeOfDay(day: number, time: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
 ```
 
+### `expandRecurrence`
+
+```ts
+function expandRecurrence(series: RecurrenceSeries, range: TimeRange, options?: RecurrenceExpandOptions): RecurrenceOccurrence[];
+```
+
+### `expandRecurringEvents`
+
+```ts
+function expandRecurringEvents<E extends CalendarEvent>(events: readonly E[], range: TimeRange, options?: RecurrenceExpandOptions): E[];
+```
+
 ### `fieldValuesEqual`
 
 ```ts
@@ -8528,6 +8938,12 @@ function filterGraph<N extends IdentifiedNode, E extends GraphEdge>(nodes: reado
     nodes: N[];
     edges: E[];
 };
+```
+
+### `filterTimelineRows`
+
+```ts
+function filterTimelineRows<R extends TimelineRow>(rows: readonly R[], predicate: (row: R) => boolean): R[];
 ```
 
 ### `findGraphCycles`
@@ -8552,6 +8968,14 @@ function formatDependencyLag(lag: number): string;
 
 ```ts
 function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): string;
+```
+
+### `formatRecurrenceRule`
+
+```ts
+function formatRecurrenceRule(rule: RecurrenceRule, options?: RecurrenceZoneOptions & {
+    allDay?: boolean;
+}): string;
 ```
 
 ### `formatSheetText`
@@ -8821,7 +9245,9 @@ function graphViewportRect(camera: GraphViewport, size: {
 ### `groupBoardCards`
 
 ```ts
-function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[]): TaskBoardGroups<C>;
+function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[], options?: {
+    filter?: (card: C) => boolean;
+}): TaskBoardGroups<C>;
 ```
 
 ### `indentTimelineRow`
@@ -8982,6 +9408,12 @@ function moveTimeRanges(ranges: readonly TimeRange[], delta: number, step: numbe
 function moveTimelineRow<R extends TimelineRow>(rows: readonly R[], id: string, target: TimelineRowPosition): R[];
 ```
 
+### `nextTimelineSort`
+
+```ts
+function nextTimelineSort(sort: readonly TimelineViewSort[], columnId: string): TimelineViewSort[];
+```
+
 ### `normalizeWorkPeriods`
 
 ```ts
@@ -9022,6 +9454,12 @@ function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): FieldParse
 function parseGraphLayoutMessage(value: unknown): GraphLayoutWorkerMessage;
 ```
 
+### `parseRecurrenceRule`
+
+```ts
+function parseRecurrenceRule(text: string, options?: RecurrenceZoneOptions): RecurrenceRule;
+```
+
 ### `parseSheetText`
 
 ```ts
@@ -9038,6 +9476,12 @@ function parseTimelineViewState(value: unknown): TimelineViewState;
 
 ```ts
 function parseWeaveSnapshot(text: string, options?: ParseWeaveSnapshotOptions): ParseWeaveSnapshotResult;
+```
+
+### `placeGraphEdgeLabels`
+
+```ts
+function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge = GraphEdge>(layout: L, edges: readonly E[], options?: GraphEdgeLabelPlacementOptions<E>): L;
 ```
 
 ### `planBaselines`
@@ -9458,7 +9902,7 @@ function timelineWbsCodes(rows: readonly TimelineRow[]): Map<string, string>;
 ### `toCsv`
 
 ```ts
-function toCsv(table: readonly (readonly CsvCell[])[]): string;
+function toCsv(table: readonly (readonly CsvCell[])[], options?: CsvOptions): string;
 ```
 
 ### `toDrawio`
@@ -9597,6 +10041,7 @@ function useTimelineView<R extends TimelineRow = TimelineRow, B extends Timeline
     diagnostics: import("vue").ComputedRef<import("../index.js").TimelineViewDiagnostic[]>;
     setSearch: (text: string, columnIds?: string[]) => void;
     setSort: (sort: readonly TimelineViewSort[]) => void;
+    setFilters: (filters: readonly TimelineViewFilter[]) => void;
     setColumnVisible: (id: string, visible: boolean) => void;
     setColumnWidth: (id: string, width: number) => void;
     moveColumn: (id: string, index: number) => void;
@@ -9630,6 +10075,12 @@ function validateFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): Fi
 
 ```ts
 function validateGraphLayoutResponse(request: GraphLayoutRequest, response: GraphLayoutResponse): GraphLayout;
+```
+
+### `validateInspectorList`
+
+```ts
+function validateInspectorList(field: InspectorListField<any>, rows: readonly InspectorAssignment[] | readonly InspectorDependency[]): FieldCheck;
 ```
 
 ### `validateTimelineData`
@@ -9683,6 +10134,18 @@ type GanttChartSfc<R extends TimelineRow, B extends TimelineBar> = typeof GanttC
 
 ```ts
 type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>;
+```
+
+### Internal `InspectorListFieldBase (dist/types/core/diagramEditor.d.ts)`
+
+```ts
+interface InspectorListFieldBase {
+    id: string;
+    label: string;
+    options: readonly InspectorOption[];
+    readonly?: boolean;
+    description?: string;
+}
 ```
 
 ### Internal `NetworkGraphSfc (dist/types/index.d.ts)`

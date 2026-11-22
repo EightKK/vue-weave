@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { layoutLayeredGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'A', ports: [{ id: 'out', side: 'right', offset: 0.25 }] },
@@ -34,7 +34,7 @@ function external(list = edges) {
     height: 200,
   }
 }
-const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph server markup is unchanged when the highlight and routing policy props are unset or empty', async () => {
   const plain = await render({ edgesSelectable: true })

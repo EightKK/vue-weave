@@ -5,7 +5,7 @@ import { renderToString } from 'vue/server-renderer'
 import { layoutLayeredGraph, routeGraphEdges } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
 import { byId } from './helpers/builders.mjs'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }, { id: 'd', label: 'D' }, { id: 'e', label: 'E' },
@@ -17,7 +17,7 @@ const edges = [
 ]
 
 const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]
-const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph draws the marker and animated class kept on a merged edge of a collapsed group', async () => {
   const groups = [{ id: 'g', label: 'Group', nodeIds: ['b', 'c'] }]

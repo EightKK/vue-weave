@@ -1,8 +1,8 @@
 # Vue Weave
 
-[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.2.0/LICENSE)
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.3.0/LICENSE)
 
-[日本語](https://github.com/EightKK/vue-weave/blob/v1.2.0/README.ja.md)
+[日本語](https://github.com/EightKK/vue-weave/blob/v1.3.0/README.ja.md)
 
 [Interactive demo](https://eightkk.github.io/vue-weave/) · [Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
 
@@ -26,17 +26,17 @@ Import the stylesheet once, for example in your application's entry file:
 import '@eightkk/vue-weave/style.css'
 ```
 
-Vite handles this import as it is. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, or your build has no CSS loader, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#the-stylesheet-and-typescript).
+Vite handles this import as it is. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, or your build has no CSS loader, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#the-stylesheet-and-typescript).
 
-**Core only (servers and Workers).** `@eightkk/vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install @eightkk/vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#core-only-servers-and-workers).
+**Core only (servers and Workers).** `@eightkk/vue-weave/core` runs without Vue at runtime, in Node.js 22.18+, Workers and on servers. Vue is still a required peer dependency (an optional peer is not configured), so `npm install @eightkk/vue-weave` installs Vue as well. To leave it out of a core-only deployment, install with `--omit=peer`. See [Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#core-only-servers-and-workers).
 
-**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `eightkk-vue-weave-1.2.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
+**Offline install.** Each [GitHub Release](https://github.com/EightKK/vue-weave/releases) also has the package tarball, the same file that is published to npm. Download `eightkk-vue-weave-1.3.0.tgz` and install it from your application's directory, replacing the example path with the actual one:
 
 ```sh
-npm install ./eightkk-vue-weave-1.2.0.tgz
+npm install ./eightkk-vue-weave-1.3.0.tgz
 ```
 
-You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v1.2.0/CONTRIBUTING.md#build-a-local-package) from a checkout.
+You can also [build a local package](https://github.com/EightKK/vue-weave/blob/v1.3.0/CONTRIBUTING.md#build-a-local-package) from a checkout.
 
 ## Quick start
 
@@ -142,7 +142,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 </template>
 ```
 
-See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#linking-views) for hover, load rows and moving to collapsed items, and [Saving through a server](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#saving-through-a-server) for `useEditTransaction`.
+See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#linking-views) for hover, load rows and moving to collapsed items, and [Saving through a server](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#saving-through-a-server) for `useEditTransaction`.
 
 ## Gallery
 
@@ -175,34 +175,34 @@ Showcases that combine several features and restyle the components with slots, `
   </tr>
 </table>
 
-![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/network-graph.png)
+![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/network-graph.png)
 
-![GanttChart in the scheduling demo: a calendar-aware schedule with a status date and progress line, critical-path outlines, float lines, split bars, a lead label, a deadline flag, Finish and Float columns, and a shaded plant closure day](https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/gantt-chart.png)
+![GanttChart in the scheduling demo: a calendar-aware schedule with a status date and progress line, critical-path outlines, float lines, split bars, a lead label, a deadline flag, Finish and Float columns, and a shaded plant closure day](https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/gantt-chart.png)
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/process-lanes.png" alt="Process lanes demo: a machining process in four department lanes (Purchasing, Machining, Inspection and an empty Shipping lane), with orthogonal hand-over edges crossing the lane boundaries and the lanes repeated in the minimap" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/process-lanes.png" alt="Process lanes demo: a machining process in four department lanes (Purchasing, Machining, Inspection and an empty Shipping lane), with orthogonal hand-over edges crossing the lane boundaries and the lanes repeated in the minimap" width="100%"><br>
       <b>Swimlanes.</b> One lane per department or work centre, in your order (<code>layoutSwimlaneGraph</code>, <code>lanes</code>).
     </td>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/quantity-flow.png" alt="Quantity flow demo: a Sankey diagram of a lot of 100 pieces that splits 60/40 between two lines, merges at inspection, loses 4 pieces on line B and loops 10 pieces through rework as a dashed band, with a table of inflow, outflow and difference per step" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/quantity-flow.png" alt="Quantity flow demo: a Sankey diagram of a lot of 100 pieces that splits 60/40 between two lines, merges at inspection, loses 4 pieces on line B and loops 10 pieces through rework as a dashed band, with a table of inflow, outflow and difference per step" width="100%"><br>
       <b>Quantity flows.</b> Edges drawn as bands as wide as their quantity, on one scale (<code>layoutFlowGraph</code>, <code>edgeBands</code>).
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/linked-views.png" alt="Linked views demo: Cut order A is selected in the Gantt chart, and the same task is highlighted in the network graph above and in the CNC cell load row below, where a red segment marks an overload" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/linked-views.png" alt="Linked views demo: Cut order A is selected in the Gantt chart, and the same task is highlighted in the network graph above and in the CNC cell load row below, where a red segment marks an overload" width="100%"><br>
       <b>Linked views.</b> Select in one view and the graph, Gantt chart and load rows highlight the same task (<code>useLinkedSelection</code>).
     </td>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/plan-comparison.png" alt="Plan scenarios demo: a candidate plan that pushes the cutting work after a maintenance window, compared with the current plan in a table of final completion, deadline misses, changed assignments and CNC cell overload, and a Gantt chart that shows the current plan as a strip below each candidate bar" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/plan-comparison.png" alt="Plan scenarios demo: a candidate plan that pushes the cutting work after a maintenance window, compared with the current plan in a table of final completion, deadline misses, changed assignments and CNC cell overload, and a Gantt chart that shows the current plan as a strip below each candidate bar" width="100%"><br>
       <b>Plan scenarios.</b> Compare a candidate plan with the current one before adopting it (<code>comparePlans</code>).
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.2.0/.github/images/diagram-styles-dark.png" alt="Diagram styles demo in the dark theme: an order fulfilment flow with ellipse, diamond and hexagon nodes, dashed animated main-path edges, open-arrow and circle edge markers, and a pair of parallel edges spread apart" width="100%"><br>
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/diagram-styles-dark.png" alt="Diagram styles demo in the dark theme: an order fulfilment flow with ellipse, diamond and hexagon nodes, dashed animated main-path edges, open-arrow and circle edge markers, and a pair of parallel edges spread apart" width="100%"><br>
       <b>Diagram styles and dark theme.</b> Node shapes, edge markers, animated and parallel edges, and the built-in dark theme.
     </td>
     <td width="50%" valign="top">
@@ -213,18 +213,18 @@ Showcases that combine several features and restyle the components with slots, `
 
 ## Features
 
-Everything beyond the basics is opt-in. This is an overview; the full list of props, events, slots and functions is in [docs/api.md](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md), with guides in [docs/integration.md](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md) and [docs/scheduling.md](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md).
+Everything beyond the basics is opt-in. This is an overview; the full list of props, events, slots and functions is in [docs/api.md](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md), with guides in [docs/integration.md](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md) and [docs/scheduling.md](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/scheduling.md).
 
 ### NetworkGraph
 
-- **Layouts:** a built-in layered layout (`LR`, `TB`, `RL` or `BT`, with `crossingReduction: 'barycenter'`) that handles branches, merges, cycles and self-loops. Through the `layout` prop: tree, radial, circular, grid, concentric and deterministic force layouts (`layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, `layoutForceGraph`), or [ELK.js](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#use-elkjs-for-layout) installed by your application.
-- **Process lanes:** `layoutSwimlaneGraph` gives each department or work centre a lane in your order; the `lanes` prop draws the bands, also in the minimap and exports, and `graphSwimlaneAt` finds the lane a node was dragged to. See [Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#swimlanes-for-process-flows).
-- **BPMN processes and flowcharts:** circle, stadium, parallelogram, document, cylinder and data-object nodes, BPMN event borders, gateway, event and task-type markers, labels below small shapes, dashed message flows, and pools around swimlanes (`pools`), also in exports. See [BPMN processes and flowcharts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#bpmn-processes-and-flowcharts).
-- **Quantity flows (Sankey diagrams):** `layoutFlowGraph` sizes each edge by its quantity on one scale, reports inflow, outflow and their difference per node as given, never adds different units, and draws rework loops as dashed reference bands; the `edgeBands` prop renders them with names such as "Cut → Inspect: 60 pcs". See [Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#quantity-flows-sankey-diagrams).
-- **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), waypoints, end markers, animated edges and spread parallel edges.
+- **Layouts:** a built-in layered layout (`LR`, `TB`, `RL` or `BT`, with `crossingReduction: 'barycenter'`) that handles branches, merges, cycles and self-loops. Through the `layout` prop: tree, radial, circular, grid, concentric and deterministic force layouts (`layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, `layoutForceGraph`), or [ELK.js](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#use-elkjs-for-layout) installed by your application.
+- **Process lanes:** `layoutSwimlaneGraph` gives each department or work centre a lane in your order; the `lanes` prop draws the bands, also in the minimap and exports, and `graphSwimlaneAt` finds the lane a node was dragged to. See [Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#swimlanes-for-process-flows).
+- **BPMN processes and flowcharts:** circle, stadium, parallelogram, document, cylinder and data-object nodes, BPMN event borders, gateway, event and task-type markers, labels below small shapes, dashed message flows, and pools around swimlanes (`pools`), also in exports. See [BPMN processes and flowcharts](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#bpmn-processes-and-flowcharts).
+- **Quantity flows (Sankey diagrams):** `layoutFlowGraph` sizes each edge by its quantity on one scale, reports inflow, outflow and their difference per node as given, never adds different units, and draws rework loops as dashed reference bands; the `edgeBands` prop renders them with names such as "Cut → Inspect: 60 pcs". See [Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#quantity-flows-sankey-diagrams).
+- **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), edge labels placed clear of nodes and each other (`edgeLabelPlacement`), waypoints, end markers, animated edges and spread parallel edges.
 - **Editing as proposals:** node moves, connections checked against typed port rules (`connectionRules`) with valid-target hints, inline label editing, box or lasso selection, nested and collapsible groups, node resizing, snap to grid with alignment guides, palette drops, clipboard, and keyboard deletion.
 - **Navigation:** minimap, viewport culling and level of detail for large graphs, pinch zoom, search highlighting (`matchIds`), `focusNode(id)` and `fit({ ids })`.
-- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-editor-parts).
+- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields, plus resource assignment and dependency tables; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#diagram-editor-parts).
 
 ### GanttChart
 
@@ -236,28 +236,29 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 
 ### TaskBoard
 
-- **Kanban board:** an opt-in controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard).
+- **Kanban board:** an opt-in controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit or under a WIP minimum; columns and lanes can collapse and a `filter` hides cards. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#taskboard).
 
 ### EventCalendar
 
 - **Views:** an opt-in controlled component with day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
-- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create (`creatable`), checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too. See [EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar).
+- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create (`creatable`), checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too.
+- **Recurring events:** opt-in RFC 5545 rules (`expandRecurringEvents`, with RRULE, EXDATE, RDATE and overrides, in an IANA time zone across daylight-saving changes), edits of one occurrence, the following ones or the whole series (`applyRecurringEdit`), and iCalendar import and export of recurring series. See [EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#eventcalendar).
 
 ### Headless core (`@eightkk/vue-weave/core`)
 
 - **Graph algorithms and metrics:** `topologicalOrder`, `findGraphCycles`, `shortestGraphPath`, `searchGraphNodes`, `filterGraph`, connected components, degree, betweenness and PageRank centrality, and Louvain communities (`detectGraphCommunities`) that `graphCommunityGroups` turns into groups.
 - **Scheduling:** `scheduleTasks` on calendars from `buildWorkPeriods`, including IANA time zones, as-late-as-possible, manual, inactive and summary tasks, constraints, pauses and cycle and infeasibility diagnostics. `scheduleTasks(input, { explain: true })` traces why each task starts when it does, and `toPlanningDiagnostics` lists the problems.
 - **Resources:** `calculateResourceLoad` and `levelResources`, with capacity that changes over time (`capacityPeriods`) and assignments that cover only part of a task (`workOffset`, `workDuration`); `projectResourceTimeline` shows a plan by resource, and `buildPlacementInput` keeps unplanned tasks out of the calculation.
-- **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#compare-plan-scenarios).
-- **Earned value:** `computeEarnedValue` calculates PV, EV and AC at a status date with SV, CV, SPI, CPI, EAC, ETC, VAC and TCPI per task and in total, accrues planned value on a work calendar, and returns a cumulative series for an S-curve; `rollupEarnedValue` sums summary rows. See [Earned value management](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#earned-value-management).
+- **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/scheduling.md#compare-plan-scenarios).
+- **Earned value:** `computeEarnedValue` calculates PV, EV and AC at a status date with SV, CV, SPI, CPI, EAC, ETC, VAC and TCPI per task and in total, accrues planned value on a work calendar, and returns a cumulative series for an S-curve; `rollupEarnedValue` sums summary rows. See [Earned value management](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/scheduling.md#earned-value-management).
 - **Interchange:** Microsoft Project XML (including calendars, resources and assignments), iCalendar and CSV import and export (`fromMsProjectXml`, `toMsProjectXml`, `fromICalendar`, `toICalendar`, `parseCsv`, `toCsv`), and `scheduleToGraph` for a PERT network diagram.
-- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`). See [Diagram files](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-files-mermaid-graphml-and-drawio).
+- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`). See [Diagram files](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#diagram-files-mermaid-graphml-and-drawio).
 
 ### Linked views, large data and saving
 
-- **Linked views:** `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings; `revealNode`, `revealBar` and `revealLinkedTarget` move to an item, also inside collapsed groups and rows; `timelineBarsInRange` and `resolveTimeRangeTargets` highlight what was worked on in a time range. See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#linking-views).
-- **Large data:** `useWindowedData` fetches only the visible window through your `load` function, with aborts, deduplication and retry; graph expansion helpers and `layoutGraphIncrementally` load a graph one hop at a time without moving the nodes on display; `useAsyncGraphLayout` runs a layout in a Worker, and `routingPolicy="preserve"` keeps the engine's routes. See [Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#loading-only-what-is-visible).
-- **Views and saving:** `useTimelineView` for searched and sorted rows, `useEditHistory` for undo and redo, `useEditTransaction` to save through your server adapter with conflict handling, and `serializeWeaveSnapshot` and `restoreWeaveSnapshot` for versioned, validated JSON.
+- **Linked views:** `useLinkedSelection` links a graph, a Gantt chart and load rows through entity bindings; `revealNode`, `revealBar` and `revealLinkedTarget` move to an item, also inside collapsed groups and rows; `timelineBarsInRange` and `resolveTimeRangeTargets` highlight what was worked on in a time range. See [Linking views](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#linking-views).
+- **Large data:** `useWindowedData` fetches only the visible window through your `load` function, with aborts, deduplication and retry; graph expansion helpers and `layoutGraphIncrementally` load a graph one hop at a time without moving the nodes on display; `useAsyncGraphLayout` runs a layout in a Worker, and `routingPolicy="preserve"` keeps the engine's routes. See [Loading only what is visible](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md#loading-only-what-is-visible).
+- **Views and saving:** `useTimelineView` for searched, sorted and filtered rows (opt-in GanttChart header sort buttons and column filters propose the changes), `useEditHistory` for undo and redo, `useEditTransaction` to save through your server adapter with conflict handling, and `serializeWeaveSnapshot` and `restoreWeaveSnapshot` for versioned, validated JSON.
 
 ### Export, themes and accessibility
 
@@ -273,12 +274,12 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## Status and support
 
-- **Stable since 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
+- **Stable since 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.3.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
 - **Vue:** 3.5 or later in 3.x (peer dependency `^3.5.0`).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `@eightkk/vue-weave/core` entry, server-side rendering and development.
 - **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
-- **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/architecture.md)), so do not assume full conformance.
+- **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/architecture.md)), so do not assume full conformance.
 
 ## Run the demo
 
@@ -298,19 +299,19 @@ On Windows you can double-click `Start.cmd` instead. It serves `preview/` when i
 
 If you have a prebuilt demo archive containing `preview/` (it may be attached to a release), extract it completely and run `npm start`, or double-click `Start.cmd` on Windows. The prebuilt demo needs Node.js but does not require dependency installation. If you change its sources, `Start.cmd` rebuilds it, which needs npm and an internet connection the first time.
 
-For development and verification commands, see [Contributing](https://github.com/EightKK/vue-weave/blob/v1.2.0/CONTRIBUTING.md).
+For development and verification commands, see [Contributing](https://github.com/EightKK/vue-weave/blob/v1.3.0/CONTRIBUTING.md).
 
 ## Documentation
 
-- [Public API and input contracts](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md)
-- [Vue, Nuxt, custom rendering, time scales and persistence](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md)
-- [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/architecture.md)
-- [Scheduling and resource load](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md)
-- [Contributing and release process](https://github.com/EightKK/vue-weave/blob/v1.2.0/CONTRIBUTING.md)
-- [Security and private vulnerability reporting](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/security.md)
-- [Code of conduct](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/code-of-conduct.md)
-- [Changelog](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md)
+- [Public API and input contracts](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md)
+- [Vue, Nuxt, custom rendering, time scales and persistence](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/integration.md)
+- [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/architecture.md)
+- [Scheduling and resource load](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/scheduling.md)
+- [Contributing and release process](https://github.com/EightKK/vue-weave/blob/v1.3.0/CONTRIBUTING.md)
+- [Security and private vulnerability reporting](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/security.md)
+- [Code of conduct](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/code-of-conduct.md)
+- [Changelog](https://github.com/EightKK/vue-weave/blob/v1.3.0/CHANGELOG.md)
 
 ## License
 
-MIT. See [LICENSE](https://github.com/EightKK/vue-weave/blob/v1.2.0/LICENSE). Third-party notices for the prebuilt demo are in [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.2.0/THIRD_PARTY_NOTICES.md) and [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/third-party-licenses.md).
+MIT. See [LICENSE](https://github.com/EightKK/vue-weave/blob/v1.3.0/LICENSE). Third-party notices for the prebuilt demo are in [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.3.0/THIRD_PARTY_NOTICES.md) and [Third-party licenses](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/third-party-licenses.md).

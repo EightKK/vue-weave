@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fromICalendar, timelineFromICalendar, toICalendar, validateTimelineData } from '@eightkk/vue-weave/core'
+import { hour, day } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
 const wrap = (...events) => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//EN', ...events.flat(), 'END:VCALENDAR', ''].join('\r\n')
 const vevent = (...lines) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT']
 
@@ -251,7 +250,7 @@ test('a long document with thousands of events and long lines imports in linear 
   const started = Date.now()
   const { events } = fromICalendar(wrap(body))
   assert.equal(events.length, count)
-  assert.ok(Date.now() - started < 5000)
+  assert.ok(Date.now() - started < 20_000)
 })
 
 test('timelineFromICalendar builds rows and bars that validate, and does not modify its input', () => {

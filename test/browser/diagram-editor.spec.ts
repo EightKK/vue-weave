@@ -1,6 +1,6 @@
 // Diagram editor parts: GraphPalette drags and keyboard inserts onto NetworkGraph, and PropertyInspector edits of the
-// selected node (accepted, refused by the field checks, rejected by validateChange and cancelled by stale data).
-import { expect, openDemo, pageErrors, test, type Page } from './support'
+// selected node (accepted, refused by the field checks, rejected by validateChange and cancelled by stale data), and its list fields.
+import { expect, test, fixtureStatus, openDemo, pageErrors, serveFixture, type Page } from './support'
 
 async function openEditor(page: Page) {
   const errors = pageErrors(page)
@@ -199,5 +199,152 @@ test('the palette and inspector follow a right-to-left direction', async ({ page
   // The preview sits at the inline start, which is the right edge.
   expect(preview.x).toBeGreaterThan(label.x)
   expect(preview.x + preview.width).toBeLessThanOrEqual(option.x + option.width)
+  expect(errors).toEqual([])
+})
+
+async function openInspectorFixture(page: Page, search = '') {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'inspector-test', 'inspector.html')
+  await page.goto('/inspector-test/' + search)
+  const form = page.getByRole('form', { name: 'Task properties', exact: true })
+  await expect(form).toBeVisible()
+  return {
+    errors, form, events: fixtureStatus(page, 'Events'),
+    resources: form.getByRole('group', { name: 'Resources', exact: true }),
+    links: form.getByRole('group', { name: 'Predecessors', exact: true }),
+  }
+}
+
+test('inspector assignments: adding, editing and removing rows each propose the whole list', async ({ page }) => {
+  const { errors, resources, events } = await openInspectorFixture(page)
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).toHaveValue('crane')
+  await expect(resources.getByRole('textbox', { name: 'Units for Crane', exact: true })).toHaveValue('1')
+  await resources.getByRole('button', { name: 'Add assignment', exact: true }).click()
+  await expect(events).toHaveText('["list-change",{"id":"build","field":"assignments","kind":"assignments","before":[{"resourceId":"crane","units":1}],"after":[{"resourceId":"crane","units":1},{"resourceId":"crew","units":1}]}]')
+  // The new row's resource select takes focus; a resource another row uses cannot be picked again.
+  const crew = resources.getByRole('combobox', { name: 'Resource for Crew', exact: true })
+  await expect(crew).toBeFocused()
+  await expect(crew.locator('option[value="crane"]')).toBeDisabled()
+  const units = resources.getByRole('textbox', { name: 'Units for Crew', exact: true })
+  // Units are whole numbers, as resource assignments require.
+  await units.fill('1.5')
+  await units.press('Enter')
+  await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crew must be a positive integer')
+  await expect(units).toHaveAttribute('aria-invalid', 'true')
+  await units.fill('2')
+  await units.press('Enter')
+  await expect(events).toContainText('"after":[{"resourceId":"crane","units":1},{"resourceId":"crew","units":2}]')
+  await expect(units).not.toHaveAttribute('aria-invalid')
+  await crew.selectOption('truck')
+  await expect(events).toContainText('"after":[{"resourceId":"crane","units":1},{"resourceId":"truck","units":2}]')
+  await expect(resources.getByRole('textbox', { name: 'Units for Truck', exact: true })).toHaveValue('2')
+  await resources.getByRole('button', { name: 'Remove Crane', exact: true }).click()
+  await expect(events).toContainText('"after":[{"resourceId":"truck","units":2}]')
+  await expect(resources.getByRole('button', { name: 'Remove Crane' })).toHaveCount(0)
+  await expect(resources.getByRole('button', { name: 'Add assignment', exact: true })).toBeFocused()
+  // Keyboard only: Tab reaches the units box, Enter commits.
+  await page.keyboard.press('Shift+Tab')
+  await expect(resources.getByRole('button', { name: 'Remove Truck', exact: true })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(resources.getByRole('textbox', { name: 'Units for Truck', exact: true })).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('inspector list rejections show inline, keep the draft until Escape, and stale data drops a draft', async ({ page }) => {
+  const { errors, resources, links, events } = await openInspectorFixture(page)
+  const units = resources.getByRole('textbox', { name: 'Units for Crane', exact: true })
+  await units.fill('5')
+  await units.press('Enter')
+  await expect(resources).toHaveAccessibleDescription('At most 3 units in total.')
+  await expect(resources.locator('..').getByRole('alert')).toHaveText('At most 3 units in total.')
+  await expect(units).toHaveAttribute('aria-invalid', 'true')
+  await expect(units).toHaveValue('5')
+  await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
+  await units.press('Escape')
+  await expect(units).toHaveValue('1')
+  await expect(resources.locator('..').getByRole('alert')).toHaveCount(0)
+  // Text that is no number is refused by the field checks without a proposal.
+  await units.fill('lots')
+  await units.press('Enter')
+  await expect(resources.locator('..').getByRole('alert')).toHaveText('Units for Crane must be a positive integer')
+  await expect(events).toHaveText('["list-change-rejected","assignments","At most 3 units in total."]')
+  // New source data under a draft drops it and its message.
+  await page.evaluate(() => (window as any).changeRemotely())
+  await expect(units).toHaveValue('2')
+  await expect(resources.locator('..').getByRole('alert')).toHaveCount(0)
+  // Dependencies: a rejected type change is set back and reported with the default reason; lag is in hours.
+  const type = links.getByRole('combobox', { name: 'Type for Design', exact: true })
+  await type.selectOption('SF')
+  await expect(type).toHaveValue('FS')
+  await expect(links.locator('..').getByRole('alert')).toHaveText('This change was rejected.')
+  const lag = links.getByRole('textbox', { name: 'Lag for Design', exact: true })
+  await expect(lag).toHaveValue('2')
+  await lag.fill('-1 h')
+  await lag.press('Enter')
+  await expect(events).toContainText('"after":[{"predecessorId":"design","type":"FS","lag":-3600000}]')
+  await expect(links.locator('..').getByRole('alert')).toHaveCount(0)
+  await links.getByRole('button', { name: 'Add dependency', exact: true }).click()
+  await expect(events).toContainText('{"predecessorId":"permit","type":"FS","lag":0}]')
+  await expect(links.getByRole('button', { name: 'Add dependency', exact: true })).toBeDisabled()
+  expect(errors).toEqual([])
+})
+
+test('inspector list messages belong to their cells, and a lag in display units is rounded to whole model units', async ({ page }) => {
+  const { errors, resources, links, events } = await openInspectorFixture(page)
+  await resources.getByRole('button', { name: 'Add assignment', exact: true }).click()
+  const crane = resources.getByRole('textbox', { name: 'Units for Crane', exact: true })
+  const crew = resources.getByRole('textbox', { name: 'Units for Crew', exact: true })
+  await expect(crew).toHaveValue('1')
+  const alert = resources.locator('..').getByRole('alert')
+  // Two cells of one table are refused, each keeping its own draft and mark.
+  await crane.fill('5')
+  await crane.press('Enter')
+  await expect(alert).toHaveText('At most 3 units in total.')
+  await crew.fill('1.5')
+  await crew.press('Enter')
+  await expect(alert).toHaveText('Units for Crew must be a positive integer')
+  await expect(crane).toHaveAttribute('aria-invalid', 'true')
+  await expect(crew).toHaveAttribute('aria-invalid', 'true')
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).not.toHaveAttribute('aria-invalid')
+  // Escape in one cell drops only that cell's draft and message; the other cell keeps its rejection.
+  await crew.press('Escape')
+  await expect(crew).toHaveValue('1')
+  await expect(crew).not.toHaveAttribute('aria-invalid')
+  await expect(crane).toHaveValue('5')
+  await expect(crane).toHaveAttribute('aria-invalid', 'true')
+  await expect(alert).toHaveText('At most 3 units in total.')
+  // Typing in another cell does not clear it either.
+  await crew.fill('2')
+  await expect(crane).toHaveAttribute('aria-invalid', 'true')
+  await expect(alert).toHaveText('At most 3 units in total.')
+  await crane.press('Escape')
+  await expect(alert).toHaveCount(0)
+  // A rejected type change marks the type select.
+  const type = links.getByRole('combobox', { name: 'Type for Design', exact: true })
+  await type.selectOption('SF')
+  await expect(type).toHaveValue('FS')
+  await expect(type).toHaveAttribute('aria-invalid', 'true')
+  await expect(links.getByRole('textbox', { name: 'Lag for Design', exact: true })).not.toHaveAttribute('aria-invalid')
+  // A third of an hour is 1,200,000 ms, not 1,199,999.88.
+  const lag = links.getByRole('textbox', { name: 'Lag for Design', exact: true })
+  await lag.fill('0.3333333')
+  await lag.press('Enter')
+  await expect(events).toContainText('"after":[{"predecessorId":"design","type":"FS","lag":1200000}]')
+  expect(errors).toEqual([])
+})
+
+test('inspector list fields stay controlled and work right to left in the dark theme', async ({ page }) => {
+  const { errors, form, resources, events } = await openInspectorFixture(page, '?ignore&rtl&dark')
+  await expect(form).toHaveAttribute('dir', 'rtl')
+  await resources.getByRole('button', { name: 'Remove Crane', exact: true }).click()
+  await expect(events).toContainText('"after":[]')
+  // The parent ignored the proposal: the row is still shown.
+  await expect(resources.getByRole('textbox', { name: 'Units for Crane', exact: true })).toHaveValue('1')
+  const add = resources.getByRole('button', { name: 'Add assignment', exact: true })
+  await expect(add).toHaveCSS('background-color', 'rgb(30, 51, 67)')
+  // In right-to-left layout the units box is left of the resource select.
+  const select = (await resources.getByRole('combobox', { name: 'Resource for Crane' }).boundingBox())!
+  const box = (await resources.getByRole('textbox', { name: 'Units for Crane' }).boundingBox())!
+  expect(box.x).toBeLessThan(select.x)
   expect(errors).toEqual([])
 })

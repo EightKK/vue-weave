@@ -25,16 +25,19 @@ export function sameRankTurnDistance(columnGap: number): number {
  * - `nonnegative`: a finite number ≥ 0 (gaps and padding),
  * - `finite`: any finite number (angles),
  * - `positiveInteger`: an integer ≥ 1 (counts),
+ * - `nonnegativeInteger`: an integer ≥ 0 (hop counts),
  * - `unitInterval`: a finite number in [0, 1],
  * - `safeInteger`: an integer in the safe range of numbers (seeds).
  */
-export type LayoutNumberRule = 'positive' | 'nonnegative' | 'finite' | 'positiveInteger' | 'unitInterval' | 'safeInteger'
+export type LayoutNumberRule =
+  | 'positive' | 'nonnegative' | 'finite' | 'positiveInteger' | 'nonnegativeInteger' | 'unitInterval' | 'safeInteger'
 
 const ruleTexts: Record<LayoutNumberRule, string> = {
   positive: 'a finite number > 0',
   nonnegative: 'a finite number ≥ 0',
   finite: 'a finite number',
   positiveInteger: 'an integer ≥ 1',
+  nonnegativeInteger: 'an integer ≥ 0',
   unitInterval: 'a finite number in [0, 1]',
   safeInteger: 'a safe integer',
 }
@@ -46,12 +49,14 @@ function meetsRule(value: unknown, rule: LayoutNumberRule): boolean {
     case 'nonnegative': return Number.isFinite(value) && value >= 0
     case 'finite': return Number.isFinite(value)
     case 'positiveInteger': return Number.isInteger(value) && value >= 1
+    case 'nonnegativeInteger': return Number.isInteger(value) && value >= 0
     case 'unitInterval': return Number.isFinite(value) && value >= 0 && value <= 1
     case 'safeInteger': return Number.isSafeInteger(value)
   }
 }
 
-function describeValue(value: unknown): string {
+/** How an invalid option value appears in a check message: strings quoted, other primitives as text, objects by type. */
+export function describeValue(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value)
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint' || value === null || value === undefined) return String(value)
   return typeof value

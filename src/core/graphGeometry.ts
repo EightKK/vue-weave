@@ -1,7 +1,7 @@
 // Route metadata checks for the `preserve` routing policy. This module imports only types from graph.ts, which imports
 // it, so the two modules do not depend on each other at load time.
 import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, GraphPort, IdentifiedNode } from './graph.js'
-import { graphPathEndpoints } from './graphView.js'
+import { graphPathEndpoints, type GraphRect } from './graphView.js'
 import { graphSideAnchor, isGraphPortSide } from './graphPortSide.js'
 
 /**
@@ -19,7 +19,7 @@ const tolerance = 0.5
 const builtinRoutes = new WeakMap<GraphLayout, ReadonlySet<string>>()
 
 /** Internal: the edges of a layout whose paths the core drew, as recorded by the functions that produced it. */
-export function builtinRoutedEdges(layout: GraphLayout): ReadonlySet<string> {
+function builtinRoutedEdges(layout: GraphLayout): ReadonlySet<string> {
   return builtinRoutes.get(layout) ?? new Set()
 }
 
@@ -37,6 +37,19 @@ export function markBuiltinRoutes<L extends GraphLayout>(result: L, source: Grap
 
 function near(a: number, b: number) {
   return Math.abs(a - b) <= tolerance
+}
+
+/**
+ * Internal: whether a value is a rectangle with finite `x`, `y`, `width` and `height`. `size` also requires a
+ * nonnegative (the default) or positive width and height; `any` accepts any finite size. Null and undefined are not
+ * rectangles, so callers can throw their own RangeError instead of a TypeError.
+ */
+export function isFiniteRect(rect: unknown, size: 'any' | 'nonnegative' | 'positive' = 'nonnegative'): rect is GraphRect {
+  if (!rect || typeof rect !== 'object') return false
+  const { x, y, width, height } = rect as Partial<GraphRect>
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) return false
+  if (size === 'any') return true
+  return size === 'positive' ? width! > 0 && height! > 0 : width! >= 0 && height! >= 0
 }
 
 /** Internal: whether a value is a point with finite coordinates. */

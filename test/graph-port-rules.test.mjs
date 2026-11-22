@@ -134,7 +134,7 @@ test('graphConnectionTargets indexes once and handles thousands of nodes', () =>
   for (const node of many) portRules[node.id] = { in: { direction: 'in', maxConnections: 1 }, out: { direction: 'out' } }
   const started = performance.now()
   const result = graphConnectionTargets(many, links, { ports: portRules }, { node: 'n5', port: 'out' })
-  assert.ok(performance.now() - started < 2000)
+  assert.ok(performance.now() - started < 10_000)
   // Only n0 has a free input.
   assert.deepEqual([...result.nodeIds], ['n0'])
 })

@@ -1,4 +1,5 @@
 // Helpers for seeded, reproducible test corpora. `npm test` runs test/*.test.mjs only, so this directory holds no tests.
+import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
 /**
@@ -27,4 +28,28 @@ export function attempt(fn, describe = error => error.message) {
 export function withPlainTrace(result) {
   if (!result || !result.trace) return result
   return { ...result, trace: { reasons: result.trace.reasons, taskReasonIds: [...result.trace.taskReasonIds] } }
+}
+
+/**
+ * Checks what every successful schedule of a corpus plan must satisfy, whatever its digest is: tasks are unique, every
+ * one has `start <= end` inside `range`, and `finish` is not before any task end. Failures and non-results are skipped.
+ */
+export function assertScheduleInvariants(range, result, label) {
+  if (!result || result.ok !== true) return
+  const seen = new Set()
+  for (const item of result.tasks) {
+    assert.ok(!seen.has(item.id), 'duplicate task ' + item.id + ' in plan ' + label)
+    seen.add(item.id)
+    assert.ok(item.start <= item.end, 'task ' + item.id + ' ends before it starts in plan ' + label)
+    assert.ok(item.start >= range.start && item.end <= range.end, 'task ' + item.id + ' leaves the range in plan ' + label)
+    assert.ok(result.finish >= item.end, 'finish is before the end of ' + item.id + ' in plan ' + label)
+  }
+}
+
+/** Checks a leveling result like a schedule, and that it reports an overload only when some task is unresolved. */
+export function assertLevelingInvariants(range, result, label) {
+  assertScheduleInvariants(range, result, label)
+  if (!result || result.ok !== true) return
+  if (result.unresolvedTaskIds.length === 0) assert.deepEqual(result.overloads, [], 'overload without an unresolved task in plan ' + label)
+  for (const delay of result.delays) assert.ok(delay.after.start >= delay.before.start, 'task ' + delay.taskId + ' moved earlier in plan ' + label)
 }

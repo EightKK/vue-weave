@@ -1,5 +1,6 @@
 import type { GraphLayout, GraphPoint } from './graph.js'
-import { svgPathArgumentCounts } from './graphSpatial.js'
+import { readPathSegments } from './graphPathData.js'
+import { defaultLabelReach, rectsMeet } from './graphSpatial.js'
 import type { GraphViewport } from './types.js'
 
 /** An axis-aligned rectangle in graph (world) coordinates. */
@@ -55,22 +56,6 @@ export function graphRectsIntersect(a: GraphRect, b: GraphRect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
-// Closed-interval variant for culling: true also when the rectangles only touch.
-function rectsMeet(a: GraphRect, b: GraphRect): boolean {
-  return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
-}
-
-const pathNumber = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y
-
-/** SVG path whitespace (space, tab, line feed, form feed, carriage return) or a comma. */
-function isPathSeparator(char: string): boolean {
-  return char === ' ' || char === ',' || char === '\t' || char === '\n' || char === '\r' || char === '\f'
-}
-
-function isAsciiLetter(char: string): boolean {
-  return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
-}
-
 /**
  * Bounding rectangle of an SVG path string. The result can be larger than the drawn stroke but never smaller:
  * Bézier curves (C, S, Q and T, including the implicit reflected control point of S and T) are bounded by their
@@ -95,32 +80,6 @@ export function graphPathEndpoints(path: string): { start: GraphPoint; end: Grap
 }
 
 function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?: GraphPoint } {
-  const invalid = () => new Error('Invalid SVG path data: ' + path)
-  let cursor = 0
-  const skipSeparators = () => {
-    while (cursor < path.length && isPathSeparator(path[cursor]!)) cursor++
-  }
-  const readNumber = () => {
-    skipSeparators()
-    pathNumber.lastIndex = cursor
-    const match = pathNumber.exec(path)
-    if (!match) throw invalid()
-    cursor = pathNumber.lastIndex
-    // An exponent marker without digits, as in `1e`, is malformed rather than an `e` command.
-    if (path[cursor] === 'e' || path[cursor] === 'E') throw invalid()
-    const value = Number(match[0])
-    if (!Number.isFinite(value)) throw invalid()
-    return value
-  }
-  // Arc flags are a single 0 or 1 and need no separator before the next number, as in `A 5 5 0 1010 10`.
-  const readFlag = () => {
-    skipSeparators()
-    const char = path[cursor]
-    if (char !== '0' && char !== '1') throw invalid()
-    cursor++
-    return char === '1'
-  }
-
   let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
   const include = (px: number, py: number) => {
     left = Math.min(left, px)
@@ -128,86 +87,42 @@ function scanPath(path: string): { bounds?: GraphRect; start?: GraphPoint; end?:
     right = Math.max(right, px)
     bottom = Math.max(bottom, py)
   }
-  let x = 0, y = 0, startX = 0, startY = 0
+  let x = 0, y = 0
   let firstPoint: GraphPoint | undefined
   // Last control point of the previous segment, used to reflect the implicit control point of S and T.
   let controlKind: 'C' | 'Q' | undefined
   let controlX = 0, controlY = 0
-  let started = false
 
-  while (true) {
-    skipSeparators()
-    if (cursor >= path.length) break
-    const token = path[cursor]!
-    if (!isAsciiLetter(token)) throw invalid()
-    cursor++
-    const command = token.toUpperCase()
-    const relative = token !== command
-    const count = svgPathArgumentCounts[command]
-    if (count === undefined) throw new Error('Unsupported SVG path command: ' + token)
-    // Path data must begin with a moveto.
-    if (!started && command !== 'M') throw invalid()
-    started = true
-    if (count === 0) {
-      x = startX
-      y = startY
+  readPathSegments(path, 'strict', ({ command, x0, y0, args, x: nx, y: ny }) => {
+    x = nx
+    y = ny
+    let nextKind: 'C' | 'Q' | undefined
+    if (command === 'Z') {
       controlKind = undefined
-      continue
+      return
     }
-    let first = true
-    // A command can be followed by repeated argument groups; a repeated M continues as L.
-    while (true) {
-      skipSeparators()
-      if (cursor >= path.length || isAsciiLetter(path[cursor]!)) {
-        if (first) throw invalid()
-        break
+    if (command === 'A') {
+      includeArc(x0, y0, args[0]!, args[1]!, args[2]!, args[3] === 1, args[4] === 1, nx, ny, include)
+    } else if (command === 'T') {
+      // The control point is the reflection of the previous Q/T control point, else the current point.
+      controlX = controlKind === 'Q' ? 2 * x0 - controlX : x0
+      controlY = controlKind === 'Q' ? 2 * y0 - controlY : y0
+      include(controlX, controlY)
+      nextKind = 'Q'
+    } else if (command === 'C' || command === 'S' || command === 'Q') {
+      const count = args.length
+      if (command === 'S') {
+        // The first control point is the reflection of the previous C/S second control point, else the current point.
+        include(controlKind === 'C' ? 2 * x0 - controlX : x0, controlKind === 'C' ? 2 * y0 - controlY : y0)
       }
-      const ox = relative ? x : 0, oy = relative ? y : 0
-      let nextKind: 'C' | 'Q' | undefined
-      if (command === 'H') x = readNumber() + ox
-      else if (command === 'V') y = readNumber() + oy
-      else if (command === 'A') {
-        const rx = readNumber(), ry = readNumber(), angle = readNumber()
-        const largeArc = readFlag(), sweep = readFlag()
-        const nx = readNumber() + ox, ny = readNumber() + oy
-        includeArc(x, y, rx, ry, angle, largeArc, sweep, nx, ny, include)
-        x = nx
-        y = ny
-      } else if (command === 'M' || command === 'L' || command === 'T') {
-        const nx = readNumber() + ox, ny = readNumber() + oy
-        if (command === 'T') {
-          // The control point is the reflection of the previous Q/T control point, else the current point.
-          controlX = controlKind === 'Q' ? 2 * x - controlX : x
-          controlY = controlKind === 'Q' ? 2 * y - controlY : y
-          include(controlX, controlY)
-          nextKind = 'Q'
-        }
-        x = nx
-        y = ny
-      } else {
-        const values: number[] = []
-        for (let i = 0; i < count; i++) values.push(readNumber() + (i % 2 === 0 ? ox : oy))
-        if (command === 'S') {
-          // The first control point is the reflection of the previous C/S second control point, else the current point.
-          include(controlKind === 'C' ? 2 * x - controlX : x, controlKind === 'C' ? 2 * y - controlY : y)
-        }
-        for (let i = 0; i < count - 2; i += 2) include(values[i]!, values[i + 1]!)
-        controlX = values[count - 4]!
-        controlY = values[count - 3]!
-        nextKind = command === 'Q' ? 'Q' : 'C'
-        x = values[count - 2]!
-        y = values[count - 1]!
-      }
-      controlKind = nextKind
-      if (command === 'M' && first) {
-        startX = x
-        startY = y
-        firstPoint ??= { x, y }
-      }
-      first = false
-      include(x, y)
-    }
-  }
+      for (let i = 0; i < count - 2; i += 2) include(args[i]!, args[i + 1]!)
+      controlX = args[count - 4]!
+      controlY = args[count - 3]!
+      nextKind = command === 'Q' ? 'Q' : 'C'
+    } else if (command === 'M') firstPoint ??= { x: nx, y: ny }
+    controlKind = nextKind
+    include(nx, ny)
+  })
   if (left === Infinity) return {}
   return { bounds: { x: left, y: top, width: right - left, height: bottom - top }, start: firstPoint, end: { x, y } }
 }
@@ -262,7 +177,7 @@ function includeArc(
 }
 
 /** Computes the bounding rectangle of every node and edge path in a layout. Edge labels are included. */
-export function graphLayoutBounds(layout: Pick<GraphLayout, 'boxes' | 'paths' | 'edgeLabels'>, labelReach = 80): GraphBounds {
+export function graphLayoutBounds(layout: Pick<GraphLayout, 'boxes' | 'paths' | 'edgeLabels'>, labelReach = defaultLabelReach): GraphBounds {
   const nodes = new Map<string, GraphRect>()
   for (const [id, box] of layout.boxes) nodes.set(id, { x: box.x, y: box.y, width: box.width, height: box.height })
   const edges = new Map<string, GraphRect>()

@@ -18,7 +18,8 @@
       // Spreadsheet mode over three columns: Owner (plain, editable), Hours (typed number 0–24, optional) and Code
       // (read-only). The parent applies every proposal with applyTimelineSheetEdit. Query parameters: readonly, slot
       // (a `cell` slot owns the cells), droppable (bar-drop is logged), rtl, limit (validateSheetEdit rejects a batch
-      // whose total hours exceed 30). Events are logged in order to the "Events" status as JSON lines.
+      // whose total hours exceed 30), cancels (edit-cancel is logged). Events are logged in order to the "Events" status
+      // as JSON lines. "Next now" changes only the `now` prop; "Cancel edit" calls the exposed cancelEdit().
       const query = new URLSearchParams(location.search)
       const initial = () => [
         { id: 'p', label: 'Phase', owner: 'Pam', hours: 8 },
@@ -28,6 +29,8 @@
         { id: 'd', label: 'Delta', owner: 'Di', hours: 4 },
       ]
       const rows = shallowRef(initial())
+      const now = ref(1)
+      const chart = ref()
       const log = ref([])
       const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
       const columns = [
@@ -46,7 +49,11 @@
         setup: () => () => h('div', [
           h('button', { type: 'button', onClick: () => { rows.value = rows.value.map(row => ({ ...row })) } }, 'Replace rows'),
           h('button', { type: 'button', onClick: () => { log.value = [] } }, 'Clear log'),
+          h('button', { type: 'button', onClick: () => { now.value = now.value % 9 + 1 } }, 'Next now'),
+          h('button', { type: 'button', onClick: () => chart.value.cancelEdit() }, 'Cancel edit'),
           h(GanttChart, {
+            ref: chart, now: now.value,
+            ...(query.has('cancels') ? { 'onEdit-cancel': event => record('edit-cancel', event) } : {}),
             spreadsheet: true, readonly: query.has('readonly'), droppable: query.has('droppable'),
             dir: query.has('rtl') ? 'rtl' : 'ltr', height: 320, rowHeight: 40,
             rows: rows.value, columns, range: { start: 0, end: 10 },

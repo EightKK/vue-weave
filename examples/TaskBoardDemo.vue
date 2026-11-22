@@ -19,7 +19,7 @@ type Task = TaskBoardCard<Work>
 const columns: TaskBoardColumn[] = [
   { id: 'todo', label: 'To do' },
   { id: 'doing', label: 'Doing', wipLimit: 3 },
-  { id: 'review', label: 'Review', wipLimit: 2 },
+  { id: 'review', label: 'Review', wipMin: 2, wipLimit: 2 },
   { id: 'done', label: 'Done' },
 ]
 const lanes: TaskBoardLane[] = [{ id: 'web', label: 'Web team', detail: 'Front end' }, { id: 'api', label: 'API team', detail: 'Services' }]
@@ -44,6 +44,14 @@ const rowOrder = initialCards.map(card => card.id)
 const cards = ref<Task[]>(initialCards)
 const selectedId = ref<string>()
 const useLanes = ref(true)
+// Collapsed columns and lanes and the card filter are controlled here too; the board only proposes new collapsed IDs.
+const collapsedColumnIds = ref<string[]>([])
+const collapsedLaneIds = ref<string[]>([])
+const query = ref('')
+const filter = computed(() => {
+  const text = query.value.trim().toLowerCase()
+  return text ? (card: Task) => card.label.toLowerCase().includes(text) : undefined
+})
 const status = ref('Drag a card, or focus it and press Space, to move it. Raise progress in the chart to finish a task.')
 
 const byId = computed(() => new Map(cards.value.map(card => [card.id, card])))
@@ -99,17 +107,22 @@ function editBar(change: TimelineEdit) {
 function reset() {
   cards.value = initialCards
   selectedId.value = undefined
+  collapsedColumnIds.value = []
+  collapsedLaneIds.value = []
+  query.value = ''
   status.value = 'Board reset.'
 }
 </script>
 
 <template>
-  <DemoPanel title-id="task-board-title" title="Task board" subtitle="A kanban board and a Gantt chart on the same tasks, with one shared selection.">
+  <DemoPanel title-id="task-board-title" title="Task board" subtitle="A kanban board and a Gantt chart on the same tasks, with one shared selection, collapsible columns and lanes, a card filter and WIP limits and minimums.">
     <template #options>
       <label><input v-model="useLanes" type="checkbox"> Team lanes</label>
+      <label>Filter cards <input v-model="query" type="search" placeholder="Label contains"></label>
       <button type="button" @click="reset">Reset board</button>
     </template>
-    <TaskBoard v-model:selected-id="selectedId" :columns="columns" :lanes="useLanes ? lanes : undefined" :cards="boardCards"
+    <TaskBoard v-model:selected-id="selectedId" v-model:collapsed-column-ids="collapsedColumnIds"
+      v-model:collapsed-lane-ids="collapsedLaneIds" collapsible :filter="filter" :columns="columns" :lanes="useLanes ? lanes : undefined" :cards="boardCards"
       :validate-card-move="validateCardMove" :labels="{ region: 'Sprint board' }"
       @card-move="moveCard" @card-move-rejected="rejectMove" @card-move-cancel="cancelMove" />
     <StatusLine label="Task board status">{{ status }}</StatusLine>

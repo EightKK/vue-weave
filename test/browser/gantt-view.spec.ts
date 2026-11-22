@@ -1,5 +1,8 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
-import { expect, test, fixtureStatus, openComponentFixture, openDemo, openGanttFixture, openGestureFixture, openLinkedGanttFixture, openTimelineEditing, pageErrors, touch, type LinkedFixture, type Page } from './support'
+import {
+  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openDemo, openGanttFixture, openGestureFixture,
+  openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
+} from './support'
 
 async function recordWheelDefaults(page: Page) {
   await page.evaluate(() => {
@@ -14,9 +17,10 @@ async function recordWheelDefaults(page: Page) {
 }
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Direction').selectOption('TB')
-  await expect(page.locator('.vw-network-stage')).toHaveCSS('height', '470px')
+  await expect(graphStage(page)).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
   await expect(page.locator('.vw-network-node > rect')).toHaveCount(6)
   await page.getByLabel('Dark theme').check()
@@ -31,9 +35,11 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
   await expect(page.getByText('Resource 1000', { exact: true })).toBeVisible()
   expect(await page.locator('.vw-gantt-row').count()).toBeLessThan(15)
   await page.screenshot({ path: 'test-results/large-dark.png', fullPage: true })
+  expect(errors).toEqual([])
 })
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   await expect(page.getByText('Operating window · UTC')).toBeVisible()
@@ -51,6 +57,7 @@ test('hierarchy, header bands, baselines and markers compose with controlled edi
   await expect(page.locator('.vw-gantt-links')).toHaveCount(0)
   await page.getByRole('button', { name: 'Expand Production schedule' }).click()
   await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
 })
 
 test('gantt baseline sets follow baselineIds, mirror in right-to-left charts and feed a tooltip variance', async ({ page }) => {
@@ -86,9 +93,7 @@ test('gantt baseline sets follow baselineIds, mirror in right-to-left charts and
   const { chart, out } = await openGanttFixture(page, '?baselines=1&sets=plan,rev1')
   const task = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
   const box = (await task.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
+  await pressAndMove(page, box, 100, 0, 5)
   await page.getByRole('button', { name: 'Show only the plan baseline', exact: true }).dispatchEvent('click')
   await page.mouse.up()
   await expect(chart.locator('[data-vw-baseline="rev1"]')).toHaveCount(0)
@@ -135,7 +140,7 @@ test('gantt zoom presets, now marker and resource load histogram share the time 
   expect(Math.abs(segment.x - bar.x)).toBeLessThanOrEqual(1)
 
   // Moving work updates the histogram.
-  const checkout = chart.locator('.vw-gantt-bar[aria-label^="Checkout UI"]')
+  const checkout = ganttBar(chart, 'Checkout UI')
   await checkout.click()
   for (let i = 0; i < 12; i++) await checkout.press('ArrowRight')
   await expect(checkout).toHaveAttribute('aria-label', 'Checkout UI 13:00–17:00')
@@ -307,6 +312,8 @@ test('gantt real two-finger touch pinch survives a drifting midpoint without nat
 })
 
 test('gantt tooltip appears after the hover delay or at once on keyboard focus, stays hoverable and hides on Escape', async ({ page }) => {
+  // Fake timers (still ticking in real time) let the grace and hover delays be advanced explicitly instead of slept through.
+  await page.clock.install()
   const { errors, chart } = await openTimelineEditing(page)
   const api = chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true })
   const tooltip = page.getByRole('tooltip')
@@ -325,7 +332,7 @@ test('gantt tooltip appears after the hover delay or at once on keyboard focus, 
 
   // The pointer can move onto the tooltip without hiding it; Escape dismisses it.
   await page.mouse.move(tip.x + tip.width / 2, tip.y + tip.height / 2, { steps: 4 })
-  await page.waitForTimeout(300)
+  await page.clock.runFor(300)
   await expect(tooltip).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(tooltip).toHaveCount(0)
@@ -339,7 +346,7 @@ test('gantt tooltip appears after the hover delay or at once on keyboard focus, 
   await page.mouse.down()
   await expect(tooltip).toHaveCount(0)
   await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
-  await page.waitForTimeout(500)
+  await page.clock.runFor(500)
   await expect(tooltip).toHaveCount(0)
   await page.keyboard.press('Escape')
   await page.mouse.up()
@@ -396,7 +403,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   const { errors, chart, status } = await openTimelineEditing(page)
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
   await expect(chart.locator('xpath=ancestor::div[contains(@class, "vw-gantt")][1]')).toHaveAttribute('dir', 'rtl')
-  const api = chart.locator('.vw-gantt-bar[aria-label^="Billing API"]')
+  const api = ganttBar(chart, 'Billing API')
   const corner = chart.locator('.vw-gantt-corner')
   const box = async (locator: typeof api) => (await locator.boundingBox())!
   // The heading column is on the right and time runs from right to left: 08:00 touches the headings,
@@ -410,10 +417,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   expect(await chart.evaluate(element => element.scrollLeft)).toBeLessThanOrEqual(0)
 
   // Dragging to the left proposes a later interval: 58 px at 115 px per hour snaps to 30 minutes.
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bar.x + bar.width / 2 - 58, bar.y + bar.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, bar, -58, 0)
   await expect(status('Billing API → 10:30–13:30.')).toBeVisible()
   await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
 
@@ -421,10 +425,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   const startHandle = await box(api.locator('.vw-bar-handle.vw-is-first'))
   bar = await box(api)
   expect(startHandle.x + startHandle.width).toBeGreaterThan(bar.x + bar.width - 2)
-  await page.mouse.move(startHandle.x + startHandle.width / 2, startHandle.y + startHandle.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(startHandle.x + startHandle.width / 2 - 29, startHandle.y + startHandle.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, startHandle, -29, 0, { steps: 5 })
   await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
 
   // Arrow keys follow the visual direction: Left is later, Right is earlier; Shift still resizes the end.
@@ -550,10 +551,7 @@ test('gantt Ctrl+wheel zooms around the pointer in both directions while a plain
     // Like a pinch, a wheel zoom during a drag cancels the drag without a proposal.
     const taskA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
     await chart.evaluate(element => { element.scrollLeft = 0 })
-    const a = (await taskA.boundingBox())!
-    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(a.x + a.width / 2 + (rtl ? -60 : 60), a.y + a.height / 2, { steps: 4 })
+    await pressAndMove(page, taskA, (rtl ? -60 : 60), 0, 4)
     await expect(taskA).toHaveClass(/\bvw-is-dragging\b/)
     await wheel('Control', 100)
     await expect(zoom).toHaveText('222%')
@@ -593,10 +591,7 @@ test('gantt highlighted bars are display-only: not deleted with the selection an
   await expect.poll(() => json('Last delete')).toEqual(['a'])
 
   // Changing the highlight during a drag neither cancels it nor moves the highlighted bar.
-  const box = (await taskA.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, taskA, 40, 0, 4)
   await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.highlight(['a', 'b']))
   // The accessible name follows the drag preview, so the dragged bar is found by its ID here.
   const dragged = chart.locator('[data-vw-bar="a"]')
@@ -739,11 +734,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
   // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
   const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
-  const box = (await setup.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 28, box.y + box.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, setup, 28, 0, { steps: 5 })
   await expect(page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true })).toBeVisible()
   await expect(showcase.getByRole('status').filter({ hasText: 'Moved Guided setup to Jan 13 – Feb 24' })).toBeVisible()
   // A plain click still reports the project.
@@ -751,7 +742,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   await expect(showcase.getByRole('status').filter({ hasText: /^Guided setup · / })).toBeVisible()
 
   // The quarter band starts before the visible part of the axis after scrolling; its label is indented into view.
-  const scroller = showcase.locator('.vw-gantt-scroll')
+  const scroller = ganttRegion(showcase, 'Product roadmap timeline')
   const quarter = showcase.locator('.vw-gantt-band', { hasText: 'Q1 2027' })
   const indent = async () => parseFloat(await quarter.evaluate(el => getComputedStyle(el).textIndent))
   expect(await indent()).toBe(0)
@@ -783,12 +774,7 @@ test('compressing non-working time widens working bars and keeps edits snapped t
   expect(compressedWidth).toBeGreaterThan(linearWidth * 1.5)
 
   // Dragging one hour of working time (36 px) proposes a whole-hour move that snaps to the same grid as before.
-  const box = (await cutting.boundingBox())!
-  const y = box.y + box.height / 2
-  await page.mouse.move(box.x + box.width / 2, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, cutting, 36, 0)
   const moved = plan.getByRole('button', { name: 'Cut order A 09 Nov 09:00–09 Nov 12:00', exact: true })
   await expect(moved).toBeVisible()
 
@@ -822,5 +808,185 @@ test('tick labels of a compressed working-time axis never overlap; squeezed tick
     expect(boxes[i]!.left, `${boxes[i - 1]!.text} overlaps ${boxes[i]!.text}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
   }
   expect(await plan.locator('.vw-gantt-grid-line').count()).toBeGreaterThan(boxes.length)
+  expect(errors).toEqual([])
+})
+
+async function openHeaderFixture(page: Page, search = '') {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'gantt-header-test', 'gantt-header.html')
+  await page.goto('/gantt-header-test/' + search)
+  const chart = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect(chart).toBeVisible()
+  return {
+    errors, chart, events: fixtureStatus(page, 'Events'),
+    sortButton: (name: string) => chart.getByRole('button', { name: new RegExp(`^Sort by ${name}( \\((ascending|descending)\\))?$`) }),
+    filterButton: (name: string) => chart.getByRole('button', { name: new RegExp('^Filter ' + name) }),
+    shownRows: () => chart.locator('[data-vw-row-heading]').evaluateAll(list => list.map(item => item.getAttribute('data-vw-row-heading'))),
+  }
+}
+
+test('gantt header sort buttons cycle ascending, descending and none, name their state and sort siblings only', async ({ page }) => {
+  const { errors, chart, sortButton, shownRows, events } = await openHeaderFixture(page)
+  // The header is not a table row: the sort state is in the button names, not in aria-sort on a columnheader.
+  await expect(chart.locator('[role="columnheader"], [aria-sort]')).toHaveCount(0)
+  await expect(chart.getByRole('button', { name: /^Sort by / })).toHaveCount(3)
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
+  expect(await shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  await sortButton('Owner').click()
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner (ascending)')
+  // Children stay under their parents: Ann before Ben, Ann before Cy; the parents (no owner) keep their order.
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'd', 'c'])
+  await sortButton('Owner').press('Enter')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner (descending)')
+  await expect.poll(shownRows).toEqual(['p1', 'b', 'a', 'p2', 'c', 'd'])
+  await sortButton('Owner').press('Space')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  // Another column becomes the primary rule and the earlier rules stay; the label column sorts by row label.
+  await sortButton('Status').click()
+  await sortButton('Rows').click()
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status (ascending)')
+  await expect(sortButton('Rows')).toHaveAccessibleName('Sort by Rows (ascending)')
+  await sortButton('Rows').click()
+  await expect.poll(shownRows).toEqual(['p2', 'c', 'd', 'p1', 'b', 'a'])
+  await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"},{"ruleId":"status","direction":"asc"}]]')
+  // A secondary rule turns descending in place, then goes; the primary rule stays.
+  await sortButton('Status').click()
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status (descending)')
+  await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"},{"ruleId":"status","direction":"desc"}]]')
+  await sortButton('Status').click()
+  await expect(sortButton('Status')).toHaveAccessibleName('Sort by Status')
+  await expect(sortButton('Rows')).toHaveAccessibleName('Sort by Rows (descending)')
+  await expect(events).toContainText('["sort",[{"ruleId":"$label","direction":"desc"}]]')
+  expect(errors).toEqual([])
+})
+
+test('gantt header sort stays controlled: an ignored proposal leaves the button name and the rows as they are', async ({ page }) => {
+  const { errors, sortButton, shownRows, events } = await openHeaderFixture(page, '?ignore')
+  await sortButton('Owner').click()
+  await expect(events).toHaveText('["sort",[{"ruleId":"owner","direction":"asc"}]]')
+  await expect(sortButton('Owner')).toHaveAccessibleName('Sort by Owner')
+  expect(await shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  expect(errors).toEqual([])
+})
+
+test('gantt header filter text is controlled, drops blank text and waits for an input method to finish', async ({ page }) => {
+  const ignored = await openHeaderFixture(page, '?ignore')
+  await ignored.filterButton('Owner').click()
+  const box = ignored.chart.getByRole('dialog', { name: 'Filter Owner', exact: true }).getByLabel('Contains', { exact: true })
+  // The parent ignores the proposals, so the box shows the applied (empty) filter again, like the checkboxes do.
+  await box.pressSequentially('an')
+  await expect(ignored.events).toHaveText('["filters",[{"columnId":"owner","text":"a"}]]\n["filters",[{"columnId":"owner","text":"n"}]]')
+  await expect(box).toHaveValue('')
+  expect(await ignored.shownRows()).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  expect(ignored.errors).toEqual([])
+
+  const { errors, chart, filterButton, shownRows, events } = await openHeaderFixture(page)
+  await filterButton('Owner').click()
+  const text = chart.getByRole('dialog', { name: 'Filter Owner', exact: true }).getByLabel('Contains', { exact: true })
+  // A parent that applies each proposal keeps typing intact.
+  await text.pressSequentially('ann')
+  await expect(text).toHaveValue('ann')
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'p2', 'd'])
+  // Whitespace-only text is no condition: the filter goes, and the box shows the applied (empty) filter.
+  await text.fill('  ')
+  await expect(events).toContainText('["filters",[]]')
+  await expect(text).toHaveValue('')
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  await expect(filterButton('Owner')).toHaveAccessibleName('Filter Owner')
+  // While an input method composes, nothing is proposed; the composed text is proposed once it ends.
+  await page.getByRole('button', { name: 'Clear log', exact: true }).evaluate(button => (button as HTMLButtonElement).click())
+  await text.evaluate((input: HTMLInputElement) => {
+    input.value = ''
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    for (const value of ['b', 'be']) {
+      input.value = value
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true, data: value }))
+    }
+  })
+  await expect(text).toHaveValue('be')
+  await expect(events).toHaveText('')
+  await text.evaluate((input: HTMLInputElement) => {
+    input.value = 'ben'
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'ben' }))
+  })
+  await expect(events).toHaveText('["filters",[{"columnId":"owner","text":"ben"}]]')
+  await expect.poll(shownRows).toEqual(['p1', 'b'])
+  await expect(text).toHaveValue('ben')
+  expect(errors).toEqual([])
+})
+
+test('gantt header filters narrow the rows but keep their parents, and Escape closes the dialog and returns focus', async ({ page }) => {
+  const { errors, chart, filterButton, shownRows, events } = await openHeaderFixture(page)
+  const owner = filterButton('Owner')
+  await expect(owner).toHaveAttribute('aria-expanded', 'false')
+  await owner.click()
+  const dialog = chart.getByRole('dialog', { name: 'Filter Owner', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(owner).toHaveAttribute('aria-expanded', 'true')
+  const text = dialog.getByLabel('Contains', { exact: true })
+  await expect(text).toBeFocused()
+  await text.fill('ann')
+  // Ann owns Alpha and Delta: both phases stay as context, Beta and Gamma go.
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'p2', 'd'])
+  await expect(filterButton('Owner')).toHaveAccessibleName('Filter Owner (filtered)')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(filterButton('Owner')).toBeFocused()
+  // The filter stays after the dialog closes; the select field filters by its choices.
+  await filterButton('Status').click()
+  const status = chart.getByRole('dialog', { name: 'Filter Status', exact: true })
+  await expect(status.getByRole('group', { name: 'Show values' })).toBeVisible()
+  await status.getByRole('checkbox', { name: 'Open' }).uncheck()
+  await expect.poll(shownRows).toEqual(['p2', 'd'])
+  await expect(events).toContainText('["filters",[{"columnId":"owner","text":"ann"},{"columnId":"status","values":["done","late"]}]]')
+  await status.getByRole('button', { name: 'Clear filter', exact: true }).click()
+  await expect(status.getByRole('checkbox', { name: 'Open' })).toBeChecked()
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'p2', 'd'])
+  // A press outside closes the dialog without moving focus back.
+  await page.getByRole('button', { name: 'Clear log', exact: true }).click()
+  await expect(status).toHaveCount(0)
+  await filterButton('Owner').click()
+  await chart.getByRole('dialog', { name: 'Filter Owner' }).getByRole('button', { name: 'Clear filter' }).click()
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'b', 'p2', 'c', 'd'])
+  await expect(chart.getByRole('dialog', { name: 'Filter Owner' }).getByLabel('Contains')).toHaveValue('')
+  await expect(filterButton('Owner')).toHaveAccessibleName('Filter Owner')
+  expect(errors).toEqual([])
+})
+
+test('gantt header filters work in right-to-left and dark charts and keep the dialog under its column', async ({ page }) => {
+  const { errors, chart, filterButton, shownRows } = await openHeaderFixture(page, '?rtl&dark')
+  await filterButton('Status').click()
+  const dialog = chart.getByRole('dialog', { name: 'Filter Status', exact: true })
+  await expect(dialog).toBeVisible()
+  const cell = (await chart.locator('.vw-header-controls').filter({ hasText: 'Status' }).boundingBox())!
+  const box = (await dialog.boundingBox())!
+  // In a right-to-left chart the dialog opens from the column's right edge.
+  expect(Math.abs(box.x + box.width - (cell.x + cell.width))).toBeLessThan(2)
+  expect(box.y).toBeGreaterThan(cell.y)
+  await expect(dialog).toHaveCSS('background-color', 'rgb(24, 42, 55)')
+  await dialog.getByRole('checkbox', { name: 'Done' }).uncheck()
+  await dialog.getByRole('checkbox', { name: 'Late' }).uncheck()
+  await expect.poll(shownRows).toEqual(['p1', 'a', 'p2'])
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(filterButton('Status')).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('gantt sorting or filtering during a drag cancels the gesture as a source change, also when the filter removes the bar', async ({ page }) => {
+  const { errors, chart, events } = await openHeaderFixture(page)
+  const bar = chart.getByRole('button', { name: /^Bar Gamma/ })
+  await pressAndMove(page, bar, 40, 0, 4)
+  await page.evaluate(() => (window as any).applyView({ sort: [{ ruleId: 'owner', direction: 'desc' }] }))
+  await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')
+  await page.mouse.up()
+  await page.getByRole('button', { name: 'Clear log', exact: true }).click()
+  await pressAndMove(page, bar, 40, 0, 4)
+  // The projection drops the bar together with its row, so the bar is gone from the source rather than hidden.
+  await page.evaluate(() => (window as any).applyView({ filters: [{ columnId: 'owner', text: 'ann' }] }))
+  await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')
+  await page.mouse.up()
+  await expect(chart.getByRole('button', { name: /^Bar Gamma/ })).toHaveCount(0)
   expect(errors).toEqual([])
 })

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { h } from 'vue'
 import { NetworkGraph } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'Alpha', detail: 'first' },
@@ -16,7 +16,7 @@ const edges = [
 ]
 
 const groups = [{ id: 'g', label: 'Pair', nodeIds: ['a', 'b'] }]
-const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph markup is unchanged when the label, lasso and toolbar inputs are absent or off', async () => {
   const plain = await render({ groups, showMinimap: true, boxSelect: true, selectedId: 'a' })

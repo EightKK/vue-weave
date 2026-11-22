@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { GanttChart } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
+import { ganttScale } from './helpers/builders.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const chartRows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]
 const chartBars = [
   { id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour, editable: true, progress: 0.5 },
   { id: 'b', rowId: 'r2', label: 'B', start: 4 * hour, end: 6 * hour },
 ]
 
-const chartProps = { rows: chartRows, bars: chartBars, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
+const chartProps = { rows: chartRows, bars: chartBars, ...ganttScale() }
+const render = renderWith(GanttChart, chartProps)
 
 test('GanttChart server markup is unchanged without rowsReorderable and statusDate', async () => {
   for (const extra of [{}, { markers: [{ id: 'x', time: 2 * hour, label: 'X' }], showNow: true, now: hour }, { dir: 'rtl', rowDraggable: true, creatable: true }]) {

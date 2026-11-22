@@ -4,9 +4,8 @@ import {
   buildWorkPeriods, calculateResourceLoad, fromMsProjectXml, projectResourceTimeline, resourceLoadFromMsProject,
   scheduleTasks, timelineFromMsProject, toMsProjectXml, workCalendarsFromMsProject,
 } from '@eightkk/vue-weave/core'
+import { hour, day } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
 // Monday 2026-11-09 00:00 UTC.
 const monday = Date.parse('2026-11-09T00:00:00Z')
 

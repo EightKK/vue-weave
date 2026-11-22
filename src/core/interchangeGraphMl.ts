@@ -2,10 +2,10 @@
 // along with the graphics of yEd files. Uses the DOM-free XML reader of the interchange formats.
 import type { GraphEdge, GraphEdgeMarker, GraphPoint } from './graph.js'
 import type { NetworkGroup, NetworkNode } from './types.js'
-import { parseXml, type XmlElement } from './interchangeXml.js'
+import { parseXml, xmlAttribute, xmlText, type XmlElement } from './interchangeXml.js'
 import {
-  checkGraphInterchangeInput, createGraphCollector, formatNumber, isChartTone, isGraphEdgeStyle, isGraphMarker,
-  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName, xmlAttribute, xmlText,
+  checkGraphInterchangeInput, createGraphCollector, formatNumber, isChartTone, isGraphEdgeStyle, isGraphMarker, nestedIndent,
+  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName,
   type GraphCollector, type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
 
@@ -45,7 +45,7 @@ const data = (key: string, value: string) => `<data key="${key}">${xmlText(value
  * of NetworkGraph's input checks.
  */
 export function toGraphMl(graph: GraphInterchangeInput, options: GraphMlOptions = {}): string {
-  const { nodes, edges, groups, childGroups, positions, sizes } = checkGraphInterchangeInput(graph, 'GraphML')
+  const { nodes, edges, groups, childGroups, depth, positions, sizes } = checkGraphInterchangeInput(graph, 'GraphML')
   const directed = options.directed ?? true
   const taken = new Set(nodes.map(node => node.id))
   const groupIds = new Map(groups.map(group => [group.id, uniqueName(group.id, taken)]))
@@ -72,11 +72,12 @@ export function toGraphMl(graph: GraphInterchangeInput, options: GraphMlOptions 
   for (const group of groups) for (const id of group.nodeIds) grouped.add(id)
   for (const node of nodes) if (!grouped.has(node.id)) lines.push(nodeXml(node, '    '))
   // Groups as nested graphs, written with an explicit stack (open tag, members, children, close tag).
-  const stack: { group: NetworkGroup; indent: string; close: boolean }[] = []
+  const stack: { group: NetworkGroup; close: boolean }[] = []
   const roots = groups.filter(group => group.parentId === undefined)
-  for (let i = roots.length - 1; i >= 0; i--) stack.push({ group: roots[i]!, indent: '    ', close: false })
+  for (let i = roots.length - 1; i >= 0; i--) stack.push({ group: roots[i]!, close: false })
   while (stack.length) {
-    const { group, indent, close } = stack.pop()!
+    const { group, close } = stack.pop()!
+    const indent = nestedIndent('    ', depth.get(group.id)! + 1)
     if (close) {
       lines.push(`${indent}  </graph>`, `${indent}</node>`)
       continue
@@ -85,9 +86,9 @@ export function toGraphMl(graph: GraphInterchangeInput, options: GraphMlOptions 
     lines.push(`${indent}<node id="${xmlAttribute(id)}">${data('label', group.label)}`,
       `${indent}  <graph id="${xmlAttribute(id + ':')}" edgedefault="${directed ? 'directed' : 'undirected'}">`)
     for (const member of group.nodeIds) lines.push(nodeXml(byId.get(member)!, indent + '    '))
-    stack.push({ group, indent, close: true })
+    stack.push({ group, close: true })
     const children = childGroups.get(group.id) ?? []
-    for (let i = children.length - 1; i >= 0; i--) stack.push({ group: children[i]!, indent: indent + '    ', close: false })
+    for (let i = children.length - 1; i >= 0; i--) stack.push({ group: children[i]!, close: false })
   }
   for (const edge of edges) {
     let out = `    <edge id="${xmlAttribute(edge.id)}" source="${xmlAttribute(edge.from)}" target="${xmlAttribute(edge.to)}">`

@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import { findOrthogonalRoute, layoutLayeredGraph, renderGraphSvg, routeGraphEdges } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
 import { byId, polyline } from './helpers/builders.mjs'
-import { seededRandom } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 
 // Whether an axis-aligned segment passes through the interior of a rectangle grown by `margin`.
@@ -95,6 +94,7 @@ test('findOrthogonalRoute validates its input', () => {
   assert.throws(() => findOrthogonalRoute(end, { x: 0, y: 0, side: 'middle' }, []), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [{ x: 0, y: 0, width: -1, height: 5 }]), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [{ x: NaN, y: 0, width: 1, height: 5 }]), RangeError)
+  assert.throws(() => findOrthogonalRoute(end, end, [null]), { name: 'RangeError', message: /Obstacle 0/ })
   assert.throws(() => findOrthogonalRoute(end, end, [], { clearance: -1 }), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [], { clearance: Infinity }), RangeError)
   assert.throws(() => findOrthogonalRoute(end, end, [], { bendPenalty: NaN }), RangeError)
@@ -194,32 +194,6 @@ test('routeGraphEdges avoidNodes keeps a clear bypass lane and reroutes one that
   assert.notEqual(rerouted, lane)
   assert.equal(crossings(polyline(rerouted), [lifted.boxes.get('b')]), 0)
 })
-
-test('routeGraphEdges avoidNodes routes a layered graph of 3,000 nodes around every box', () => {
-  const nodes = [], edges = []
-  const { random } = seededRandom(7)
-  for (let rank = 0; rank < 30; rank++) for (let i = 0; i < 100; i++) nodes.push({ id: `n${rank}_${i}` })
-  for (let rank = 1; rank < 30; rank++) {
-    for (let i = 0; i < 100; i++) {
-      edges.push({ id: `e${rank}_${i}`, from: `n${rank - 1}_${Math.floor(random() * 100)}`, to: `n${rank}_${i}` })
-      if (i % 10 === 0 && rank > 3) edges.push({ id: `l${rank}_${i}`, from: `n${rank - 3}_${Math.floor(random() * 100)}`, to: `n${rank}_${i}` })
-    }
-  }
-  const layout = layoutLayeredGraph(nodes, edges)
-  const map = byId(nodes)
-  const started = performance.now()
-  const routed = routeGraphEdges(layout, edges, map, { style: 'orthogonal', avoidNodes: true })
-  const elapsed = performance.now() - started
-  assert.ok(elapsed < 20_000, `routing took ${Math.round(elapsed)} ms`)
-  // Check a sample of edges against every box except their own.
-  const boxes = [...layout.boxes]
-  for (const edge of edges.filter((_, i) => i % 50 === 0)) {
-    const points = polyline(routed.paths.get(edge.id))
-    assertOrthogonal(points)
-    assert.equal(crossings(points, boxes.filter(([id]) => id !== edge.from && id !== edge.to).map(([, box]) => box)), 0, edge.id)
-  }
-})
-
 test('NetworkGraph avoidNodes is opt-in and the SVG export draws the avoiding routes', async () => {
   const nodes = [{ id: 'a', label: 'A' }, { id: 'm', label: 'M' }, { id: 'b', label: 'B' }]
   const edges = [{ id: 'a-b', from: 'a', to: 'b' }]

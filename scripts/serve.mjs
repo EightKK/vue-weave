@@ -75,9 +75,21 @@ const server = createServer(async (request, response) => {
 
 const host = '127.0.0.1'
 // VW_PORT lets parallel browser-test runs (for example in separate worktrees) use their own port.
-let port = Number(process.env.VW_PORT) || 4173
+// VW_PORT=0 asks the system for any free port (the chosen address is printed); an unset or empty value means 4173.
+const requested = process.env.VW_PORT?.trim() || '4173'
+let port = Number(requested)
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  console.error(`VW_PORT must be a port number from 0 to 65535, not "${requested}".`)
+  process.exit(1)
+}
+// --strict-port (used by the Playwright config) exits instead of moving to another port when the requested one is taken.
+// A silent fallback would leave the tests talking to a server on a port they do not know.
+const strictPort = process.argv.includes('--strict-port')
 server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE' && port !== 0) {
+  if (error.code === 'EADDRINUSE' && strictPort) {
+    console.error(`Port ${port} on ${host} is already in use. Free it or set VW_PORT to another port.`)
+    process.exitCode = 1
+  } else if (error.code === 'EADDRINUSE' && port !== 0) {
     port = 0
     server.listen({ host, port })
   } else {

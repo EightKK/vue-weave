@@ -6,9 +6,9 @@ import {
   createTimeScale, defaultSvgExportTheme, formatDependencyLag, propagateEdit, renderTimelineSvg, scheduleTasks, validateTimelineData,
 } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'p', label: 'Parent' }, { id: 'r1', label: 'Row 1', parentId: 'p' }, { id: 'r2', label: 'Row 2' }]
 const bars = [
   { id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour, editable: true },
@@ -17,7 +17,7 @@ const bars = [
 const range = { start: 0, end: 10 * hour }
 const link = (extra = {}) => [{ id: 'ab', from: 'a', to: 'b', ...extra }]
 const chartProps = { rows, bars, range, pixelsPerUnit: 10 / hour }
-const render = (props = {}) => renderComponent(GanttChart, { ...chartProps, ...props })
+const render = renderWith(GanttChart, chartProps)
 
 test('validateTimelineData accepts finite lags and leads and rejects any other lag with a RangeError', () => {
   for (const lag of [undefined, 0, hour, -hour, 0.5]) assert.doesNotThrow(() => validateTimelineData(rows, bars, link({ lag })))

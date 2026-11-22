@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Property inspector list fields fixture</title>
+    <link rel="stylesheet" href="/inspector-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/inspector-test/vue.js", "@eightkk/vue-weave": "/inspector-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { PropertyInspector } from '@eightkk/vue-weave'
+
+      // PropertyInspector with an assignments and a dependencies list field for one task. The parent applies every
+      // `list-change`; validateListChange rejects more than 3 units in total and a start-to-finish link. Query
+      // parameters: rtl, dark, ignore (the parent ignores every proposal). Events are logged in order to the "Events"
+      // status as JSON lines; window.changeRemotely sets the crane to 2 units, as another user might, without moving focus.
+      const query = new URLSearchParams(location.search)
+      const hour = 3_600_000
+      const task = shallowRef({
+        id: 'build', label: 'Build',
+        assignments: [{ resourceId: 'crane', units: 1 }],
+        links: [{ predecessorId: 'design', type: 'FS', lag: 2 * hour }],
+      })
+      const fields = [
+        { id: 'label', kind: 'text', label: 'Label', get: item => item.label },
+        { id: 'assignments', kind: 'assignments', label: 'Resources', get: item => item.assignments,
+          options: [{ value: 'crane', label: 'Crane' }, { value: 'crew', label: 'Crew' }, { value: 'truck', label: 'Truck' }] },
+        { id: 'links', kind: 'dependencies', label: 'Predecessors', get: item => item.links, lagUnitSize: hour, lagUnitLabel: 'h',
+          options: [{ value: 'design', label: 'Design' }, { value: 'permit', label: 'Permit' }] },
+      ]
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      function validateListChange(change) {
+        if (change.kind === 'assignments' && change.after.reduce((sum, row) => sum + row.units, 0) > 3) return 'At most 3 units in total.'
+        if (change.kind === 'dependencies' && change.after.some(row => row.type === 'SF')) return false
+      }
+      window.changeRemotely = () => {
+        task.value = { ...task.value, assignments: task.value.assignments.map(row => row.resourceId === 'crane' ? { ...row, units: 2 } : row) }
+      }
+      createApp({
+        setup: () => () => h('div', { class: query.has('dark') ? 'vw-theme-dark' : undefined, style: 'width: 360px; padding: 12px' }, [
+          h(PropertyInspector, {
+            item: task.value, fields, validateListChange, dir: query.has('rtl') ? 'rtl' : 'ltr', labels: { region: 'Task properties' },
+            'onList-change': change => {
+              record('list-change', change)
+              if (!query.has('ignore')) task.value = { ...task.value, [change.field]: change.after }
+            },
+            'onList-change-rejected': (change, reason) => record('list-change-rejected', change.field, reason),
+            onChange: change => record('change', change),
+          }),
+          h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

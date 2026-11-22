@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { assertLevelingInvariants, assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 // Seeded plans mixing calendars, quanta, pauses, splittable, manual, inactive and summary tasks, priorities, several
 // resources with and without availability `periods`, and assignment units. The digest was produced before
 // `capacityPeriods` and partial assignments (`workOffset`, `workDuration`) were added; it must not change, because
-// input without those fields is calculated exactly as before.
+// input without those fields is calculated exactly as before. (It was updated once, when adjacent leveling `capacity`
+// reasons of equal capacity were merged into one; every date, delay, overload and diagnostic stayed the same, and only
+// the trace reasons and the reason IDs that diagnostics refer to changed.)
 test('resource load, leveling and diagnostics without capacity periods or partial assignments are unchanged', () => {
-  assert.equal(resourcePlanDigest(), 'ee5dec5eb6fae7bc71cd956b530db95a5a9465c5902f20ef225eb0a057a694a9')
+  assert.equal(resourcePlanDigest(), '636894e1ec8f48afa6acbafa4b894cf1b987f7933272e641dafc719e08ece5eb')
 })
 
 function resourcePlanDigest() {
@@ -83,6 +85,9 @@ function resourcePlanDigest() {
       : undefined
     const leveled = run(() => core.levelResources(input, { explain: true }))
     const plain = run(() => core.levelResources(input))
+    assertScheduleInvariants(range, schedule, plan)
+    assertLevelingInvariants(range, leveled, plan)
+    assertLevelingInvariants(range, plain, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(leveled))
     const withLoad = schedule.ok && Array.isArray(load) ? run(() => core.toPlanningDiagnostics(schedule, load)) : undefined
     outputs.push([load, withPlainTrace(leveled), plain, diagnostics, withLoad])

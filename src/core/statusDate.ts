@@ -1,8 +1,9 @@
 import {
   buildScheduleModel, checkStatusDate, isMapLike, limitsOf, lowerBounds, slotFor, summarySlot, targetFinish, topologicalOrder,
-  withStartedSubtasks, type WorkClock,
+  type WorkClock,
 } from './scheduleModel.js'
-import { scheduleTasks, type ScheduleInput, type ScheduleResult, type ScheduleTask } from './scheduling.js'
+import type { ScheduleInput, ScheduleResult, ScheduleTask } from './scheduling.js'
+import { scheduleWithModel } from './schedulePasses.js'
 import type { TimeRange } from './timeline.js'
 
 /**
@@ -21,8 +22,9 @@ import type { TimeRange } from './timeline.js'
  *
  * A started or finished task is pinned at its start: `startNoEarlierThan`, `startNoLaterThan`, `fixedStart` and
  * `mode` no longer apply, because its start has happened, and neither do incoming FS and SS dependencies, which bound
- * the start. Incoming FF and SF dependencies, with their lag, still bound the finish of a partly done task: when its
- * remaining work would finish too early, the remaining work resumes later, and the gap after the done work grows.
+ * the start. Incoming FF and SF dependencies, with their lag, and the task's own `finishNoEarlierThan` still bound the
+ * finish of a partly done task: when its remaining work would finish too early, the remaining work resumes later,
+ * and the gap after the done work grows.
  * A finished task ignores every incoming dependency. Finish bounds and outgoing dependencies still apply, so
  * successors follow the new finish. A kept link that cannot be met, for example because the required finish lies
  * after a `finishNoLaterThan`, the deadline or the horizon, makes the plan infeasible, and the failure names the
@@ -53,7 +55,7 @@ export function rescheduleFromStatusDate(
       throw new RangeError('Progress must be between zero and one: ' + id)
     }
   }
-  const base = scheduleTasks(input)
+  const base = scheduleWithModel(input, model, false)
   if (!base.ok) return base
   const current = new Map(base.tasks.map(task => [task.id, task]))
   const completed = new Set<string>()
@@ -90,8 +92,9 @@ export function rescheduleFromStatusDate(
   const dependencies = (input.dependencies ?? []).filter(link =>
     !completed.has(link.to) && !(resumes.has(link.to) && !targetFinish(link)))
   const started = new Set([...completed, ...resumes.keys()])
-  const adjusted = withStartedSubtasks({ ...input, tasks, dependencies }, started)
-  return scheduleTasks(withStartedSubtasks({ ...input, tasks: delayRemainingWork(adjusted, resumes), dependencies }, started))
+  const adjusted = { ...input, tasks, dependencies }
+  const final = { ...input, tasks: delayRemainingWork(adjusted, resumes, started), dependencies }
+  return scheduleWithModel(final, buildScheduleModel(final, false, started), false)
 }
 
 /** A partly done task: its own pauses, where its done work ends, its remaining work and its clock without the gap. */
@@ -111,10 +114,10 @@ interface Resume {
  * pauses. It stops at the first task without a slot and at a finish that does not fit in the horizon; scheduling the
  * returned plan then reports that failure.
  */
-function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>): ScheduleTask[] {
+function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string, Resume>, started: ReadonlySet<string>): ScheduleTask[] {
   const tasks = [...adjusted.tasks]
-  const model = buildScheduleModel(adjusted)
-  if (![...resumes.keys()].some(id => model.tasks.get(id)!.incoming.length)) return tasks
+  const model = buildScheduleModel(adjusted, false, started)
+  if (!resumes.size) return tasks
   const sorted = topologicalOrder(model)
   if ('cycles' in sorted) return tasks
   const earliest = new Map<string, TimeRange>()
@@ -130,8 +133,9 @@ function delayRemainingWork(adjusted: ScheduleInput, resumes: ReadonlyMap<string
     }
     const bounds = lowerBounds(task, earliest)
     const pinned = resumes.get(id)
-    if (pinned && task.incoming.length) {
-      const required = bounds.endLower.reduce((value, bound) => bound.dependencyId ? Math.max(value, bound.value) : value, -Infinity)
+    if (pinned) {
+      // Every lower finish bound applies: kept FF and SF links and the task's own finishNoEarlierThan.
+      const required = bounds.endLower.reduce((value, bound) => Math.max(value, bound.value), -Infinity)
       const { clock } = pinned
       const resume = Math.max(pinned.resume, clock.minFinishWork(required) - pinned.remaining)
       if (resume + pinned.remaining > clock.total) break

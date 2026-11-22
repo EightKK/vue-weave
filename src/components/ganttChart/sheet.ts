@@ -34,6 +34,8 @@ export interface SheetOptions<R extends TimelineRow> {
   autoScroll: (clientY: number) => void
   /** Right-to-left layout: Left and Right arrows follow the visual direction. */
   rtl: () => boolean
+  /** Whether another pointer gesture or an armed connection is in flight; a fill handle drag does not start then. */
+  busy: () => boolean
 }
 
 export function sheetKey(rowId: string, columnId: string) {
@@ -48,11 +50,25 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
   /** The fill handle drag: pointer, the rows it fills from and the last displayed row reached. */
   const fill = shallowRef<{ pointerId: number; top: number; bottom: number; left: number; right: number; last: number; values: string[] }>()
   let dragPointer: number | undefined
+  /** The fill handle that captured the pointer of the fill drag. */
+  let fillTarget: Element | undefined
+  /**
+   * End a fill handle drag without filling and release its pointer capture. Returns whether one was in flight; the
+   * component reports it through `edit-cancel`.
+   */
+  function cancelFill() {
+    const f = fill.value
+    const target = fillTarget
+    fill.value = undefined
+    fillTarget = undefined
+    if (f && target?.hasPointerCapture?.(f.pointerId)) target.releasePointerCapture(f.pointerId)
+    return Boolean(f)
+  }
   function reset() {
     dragPointer = undefined
     anchor.value = end.value = undefined
     editing.value = undefined
-    fill.value = undefined
+    cancelFill()
   }
   const rowIndices = computed(() => new Map(options.rows().map(({ row }, i) => [row.id, i])))
   const colIndices = computed(() => new Map(options.columns().map((col, i) => [col.id, i])))
@@ -62,10 +78,13 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
     const column = colIndices.value.get(address.column)
     if (row !== undefined && column !== undefined) return { row, column }
   }
-  /** New rows or columns: a gesture in flight is cancelled; the selection stays while its cells are still shown. */
+  /**
+   * New rows or columns: a selection drag in flight ends; the selection stays while its cells are still shown. The
+   * component cancels a fill drag first, so that it can report it.
+   */
   function refresh() {
     dragPointer = undefined
-    fill.value = undefined
+    cancelFill()
     if (!index(anchor.value) || !index(end.value)) reset()
   }
   const bounds = computed(() => {
@@ -194,10 +213,11 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
   function finishPointer() { dragPointer = undefined }
   function startFill(event: PointerEvent) {
     const b = bounds.value
-    if (!b || event.button !== 0) return
+    if (!b || event.button !== 0 || !event.isPrimary || fill.value || options.busy()) return
     event.preventDefault()
     event.stopPropagation()
-    ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
+    fillTarget = event.currentTarget as Element
+    fillTarget.setPointerCapture?.(event.pointerId)
     const first = options.rows()[b.top]!.row
     fill.value = { pointerId: event.pointerId, top: b.top, bottom: b.bottom, left: b.left, right: b.right, last: b.bottom,
       values: options.columns().slice(b.left, b.right + 1).map(col => text(first, col)) }
@@ -217,6 +237,7 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
     if (!f || f.pointerId !== event.pointerId) return
     event.stopPropagation()
     fill.value = undefined
+    fillTarget = undefined
     if (event.type !== 'pointerup' || f.last <= f.bottom) return
     selectIndex({ row: f.top, column: f.left }, { row: f.last, column: f.right })
     fillDown(f.top, f.last, f.left, f.right, 'pointer')
@@ -241,12 +262,8 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
     const rows = options.rows(), columns = options.columns()
     const command = event.ctrlKey || event.metaKey
     const key = event.key
-    if (fill.value && key === 'Escape') {
-      fill.value = undefined
-      event.preventDefault()
-      event.stopPropagation()
-      return
-    }
+    // The chart's own Escape handler cancels a fill drag (`cancelFill`) and reports it through `edit-cancel`.
+    if (fill.value && key === 'Escape') return
     if (command && !event.altKey && key.toLowerCase() === 'a') {
       event.preventDefault()
       selectIndex({ row: 0, column: 0 }, { row: rows.length - 1, column: columns.length - 1 })
@@ -319,7 +336,7 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
     }
   }
   return {
-    end, editing, bounds, active, fill, reset, refresh, select, selected, filling, copy, cut, paste, keys, moveFrom,
+    end, editing, bounds, active, fill, reset, refresh, cancelFill, select, selected, filling, copy, cut, paste, keys, moveFrom,
     startDrag, extendDrag, finishPointer, startFill, moveFill, endFill,
   }
 }

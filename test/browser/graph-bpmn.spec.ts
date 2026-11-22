@@ -1,4 +1,4 @@
-import { expect, openDemo, pageErrors, test } from './support'
+import { expect, test, openDemo, pageErrors } from './support'
 
 test('the BPMN demo draws pools, lanes, shapes and decorative markers with the labels as accessible names', async ({ page }) => {
   const errors = pageErrors(page)

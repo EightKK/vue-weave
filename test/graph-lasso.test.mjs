@@ -53,6 +53,7 @@ test('graphNodesInPolygon selects box centres in map order without mutating its 
   assert.deepEqual(graphNodesInPolygon(new Map(), triangle), [])
   assert.throws(() => graphNodesInPolygon(boxes, [...triangle, { x: 0, y: Number.NaN }]), RangeError)
   assert.throws(() => graphNodesInPolygon(new Map([['x', { x: Number.NaN, y: 0, width: 1, height: 1 }]]), triangle), RangeError)
+  assert.throws(() => graphNodesInPolygon(new Map([['x', null]]), triangle), { name: 'RangeError', message: 'Graph box geometry must be finite: x' })
   // Works on a laid-out graph, including a long chain, in loops.
   const ids = Array.from({ length: 2000 }, (_, i) => 'n' + i)
   const layout = layoutLayeredGraph(ids.map(id => ({ id, label: id })), ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id })))

@@ -56,6 +56,8 @@ export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRout
 export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
 export { findOrthogonalRoute } from './graphObstacleRouting.js'
 export type { GraphObstacleAvoidance, GraphRouteEnd } from './graphObstacleRouting.js'
+export { placeGraphEdgeLabels } from './graphLabelPlacement.js'
+export type { GraphEdgeLabelPlacement, GraphEdgeLabelPlacementOptions, GraphEdgeLabelSize } from './graphLabelPlacement.js'
 export * from './leveling.js'
 export * from './exportSvg.js'
 export {
@@ -75,8 +77,8 @@ export type {
   MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, MsProjectImport, MsProjectImportTask,
   MsProjectImportWarning, MsProjectImportWarningCode, MsProjectTimelineOptions, MsProjectTimeline, MsProjectCalendar, MsProjectResource,
   MsProjectAssignment, MsProjectResourceLoadOptions, MsProjectResourceLoad, ICalendarEvent, ICalendarOptions, ICalendarImport,
-  ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline,
-  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline, ICalendarExpandOptions,
+  CsvCell, CsvOptions, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { toMermaid, fromMermaid, toGraphMl, fromGraphMl, toDrawio, fromDrawio, fromDrawioAsync } from './interchange.js'
 export type {
@@ -159,10 +161,19 @@ export type {
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
 } from './eventCalendar.js'
-export { graphPaletteMimeType } from './diagramEditor.js'
+export {
+  parseRecurrenceRule, formatRecurrenceRule, expandRecurrence, expandRecurringEvents, applyRecurringEdit,
+} from './recurrence.js'
+export type {
+  RecurrenceFrequency, RecurrenceWeekday, RecurrenceRule, RecurrenceZoneOptions, CalendarRecurrence, RecurrenceSeries,
+  RecurrenceOccurrence, RecurrenceExpandOptions, RecurringEditScope, RecurringEditTarget, RecurringEditChange, RecurringEditOptions,
+} from './recurrence.js'
+export { graphPaletteMimeType, validateInspectorList } from './diagramEditor.js'
 export type {
   GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,
-  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot,
+  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot, InspectorListFieldKind, InspectorOption,
+  InspectorAssignment, InspectorDependency, InspectorAssignmentsField, InspectorDependenciesField, InspectorListField,
+  InspectorListChange, InspectorListChangeValidator,
 } from './diagramEditor.js'
 export { groupBoardCards, boardCardPosition, applyBoardCardMove } from './taskBoard.js'
 export type {

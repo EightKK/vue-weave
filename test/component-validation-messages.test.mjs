@@ -3,12 +3,13 @@ import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { GanttChart, NetworkGraph, editTimeRange } from '@eightkk/vue-weave'
+import { laneBox } from './helpers/builders.mjs'
+import { hour } from './helpers/time.mjs'
 
 // The prop checks of the components follow the core's rules: RangeError for invalid numbers and geometry (and unknown
 // values of a string option), Error for bad references, invalid or duplicate IDs and cycles. Component-owned ID checks
 // use the shared texts `Invalid <kind> ID: <value>` and `Duplicate <kind> ID: <id>`, where an ID is a non-empty string.
 
-const hour = 3_600_000
 const ganttBase = { rows: [{ id: 'r', label: 'Row' }], bars: [{ id: 'b', rowId: 'r', label: 'Bar', start: 0, end: hour }], range: { start: 0, end: 8 * hour } }
 const column = (id, width = 40) => ({ id, label: 'C', width, value: () => '' })
 const preset = (id, pixelsPerUnit = 1 / hour) => ({ id, label: 'P', pixelsPerUnit })
@@ -116,7 +117,6 @@ const custom = change => (n, e) => {
   return layout
 }
 const group = (id, nodeIds, parentId) => ({ id, label: 'G', nodeIds, parentId })
-const lane = id => ({ id, label: 'L', x: 0, y: 0, width: 10, height: 10, header: { x: 0, y: 0, width: 0, height: 0 } })
 
 const graphCases = [
   ['custom layout size', { layout: custom(layout => { layout.width = 0 }) }, RangeError, 'A custom layout must return positive finite dimensions'],
@@ -146,10 +146,10 @@ const graphCases = [
   ['numeric group ID when collapsed', { groups: [group('g', ['a']), group(5, ['b'])], collapsedGroupIds: ['g'] }, Error, 'Invalid graph group ID: 5'],
   ['repeated group member when collapsed', { groups: [group('g', ['a']), group('h', ['a'])], collapsedGroupIds: ['g'] }, Error, 'Duplicate group member ID: a (graph group h)'],
   ['unknown parent group when collapsed', { groups: [group('g', ['a'], 'zz')], collapsedGroupIds: ['g'] }, Error, 'Unknown parent group in graph group g: zz'],
-  ['lane ID (core)', { lanes: [lane('')] }, Error, 'Invalid swimlane ID: ""'],
-  ['numeric lane ID (core)', { lanes: [lane(2)] }, Error, 'Invalid swimlane ID: 2'],
-  ['duplicate lane ID (core)', { lanes: [lane('l'), lane('l')] }, Error, 'Duplicate swimlane ID: l'],
-  ['lane geometry (core)', { lanes: [{ ...lane('l'), width: -1 }] }, RangeError, 'NetworkGraph lane l needs finite geometry with nonnegative sizes'],
+  ['lane ID (core)', { lanes: [laneBox('')] }, Error, 'Invalid swimlane ID: ""'],
+  ['numeric lane ID (core)', { lanes: [laneBox(2)] }, Error, 'Invalid swimlane ID: 2'],
+  ['duplicate lane ID (core)', { lanes: [laneBox('l'), laneBox('l')] }, Error, 'Duplicate swimlane ID: l'],
+  ['lane geometry (core)', { lanes: [{ ...laneBox('l'), width: -1 }] }, RangeError, 'NetworkGraph lane l needs finite geometry with nonnegative sizes'],
   ['edgeBands (core)', { edgeBands: new Map([['ab', { width: -1 }]]) }, RangeError, 'NetworkGraph edgeBands: the band width of edge ab must be finite and nonnegative'],
   ['selectionMode', { selectionMode: 'circle' }, RangeError, 'Unknown selection mode: circle'],
   ['snapGrid', { snapGrid: 0 }, RangeError, 'snapGrid must be a positive finite number of chart units'],
@@ -210,7 +210,7 @@ test('NetworkGraph rejects every invalid node, edge, port, group and lane ID wit
     ['graph edge', id => ({ edges: [{ ...edges[0], id }] })],
     ['port', id => ({ nodes: [{ ...nodes[0], ports: [{ id, side: 'right' }] }, nodes[1]] }), ' (graph node a)'],
     ['graph group', id => ({ groups: [group(id, ['a'])] })],
-    ['swimlane', id => ({ lanes: [lane(id)] })],
+    ['swimlane', id => ({ lanes: [laneBox(id)] })],
   ]
   for (const [kind, props, context = ''] of sites) {
     for (const [value, shown] of [[5, '5'], [0, '0'], ['', '""'], [undefined, 'undefined'], [null, 'null'], [{}, 'object']]) {

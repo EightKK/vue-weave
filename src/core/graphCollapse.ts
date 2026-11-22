@@ -1,6 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import type { NetworkGroup, NetworkNode } from './types.js'
-import { checkGraphGroups, emptyGroupError, groupCycleError, unknownParentGroupError } from './graphGroupChecks.js'
+import { checkGraphGroups, checkGroupHierarchy, emptyGroupError } from './graphGroupChecks.js'
 import { unknownReferenceError } from './ids.js'
 
 /** A collapsed group as `collapseGraphGroups` reports it. */
@@ -80,52 +80,13 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
 ): GraphCollapseResult<N, E> {
   const nodeIds = new Set(nodes.map(node => node.id))
   const { byId, memberOf } = checkGraphGroups(groups, id => nodeIds.has(id))
-  // Check every parent chain once: a chain stops at a root or at a group already known to reach one, so the whole
-  // hierarchy is checked in linear time. The first group in input order whose chain fails is reported.
-  const reachesRoot = new Set<string>()
-  const children = new Map<string, NetworkGroup[]>()
-  for (const group of groups) {
-    const chain: NetworkGroup[] = []
-    const onChain = new Set<string>()
-    let current: NetworkGroup = group
-    while (!reachesRoot.has(current.id)) {
-      if (onChain.has(current.id)) throw groupCycleError(group.id)
-      onChain.add(current.id)
-      chain.push(current)
-      if (current.parentId === undefined) break
-      const parent = byId.get(current.parentId)
-      if (!parent) throw unknownParentGroupError(current)
-      current = parent
-    }
-    for (const item of chain) reachesRoot.add(item.id)
-    if (group.parentId !== undefined) {
-      const siblings = children.get(group.parentId)
-      if (siblings) siblings.push(group)
-      else children.set(group.parentId, [group])
-    }
-  }
+  const children = checkGroupHierarchy(groups, byId)
   const collapsed = new Set<string>()
   for (const id of collapsedIds) {
     if (!byId.has(id)) throw unknownReferenceError('group', 'collapsedIds', id)
     collapsed.add(id)
   }
-  // The outermost collapsed ancestor (or the group itself) of every group. A loop climbs to the nearest group whose
-  // answer is known (or past the root) and fills in the answers on the way back down, so each group is resolved once.
-  const outermost = new Map<string, string | undefined>()
-  for (const group of groups) {
-    const chain: NetworkGroup[] = []
-    let current: NetworkGroup | undefined = group
-    while (current && !outermost.has(current.id)) {
-      chain.push(current)
-      current = current.parentId === undefined ? undefined : byId.get(current.parentId)
-    }
-    let found = current ? outermost.get(current.id) : undefined
-    for (let i = chain.length - 1; i >= 0; i--) {
-      const item = chain[i]!
-      if (found === undefined && collapsed.has(item.id)) found = item.id
-      outermost.set(item.id, found)
-    }
-  }
+  const outermost = outermostCollapsed(groups, byId, collapsed)
   const owners = new Map<string, string>()
   const proxies = new Map<string, GraphCollapsedGroup>()
   for (const group of groups) {
@@ -159,6 +120,53 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
     visible.push({ id: proxy.id, label: proxy.label, ...(text === undefined ? {} : { detail: text }), shape: 'rounded', data })
   }
 
+  const { result, mergedEdges, hiddenEdgeIds } = reattachEdges(edges, nodeIds, owners)
+
+  // Groups inside a collapsed group disappear; a collapsed child becomes a direct member of its parent.
+  const shown: NetworkGroup[] = []
+  for (const group of groups) {
+    if (outermost.get(group.id) !== undefined) continue
+    const ids = group.nodeIds.filter(id => !owners.has(id))
+    for (const child of children.get(group.id) ?? []) {
+      if (proxies.has(child.id)) ids.push(child.id)
+    }
+    shown.push({ ...group, nodeIds: ids })
+  }
+  return { nodes: visible, edges: result, groups: shown, proxies, owners, mergedEdges, hiddenEdgeIds }
+}
+
+/**
+ * The outermost collapsed ancestor (or the group itself) of every group, or undefined. A loop climbs to the nearest
+ * group whose answer is known (or past the root) and fills in the answers on the way back down, so each group is
+ * resolved once.
+ */
+function outermostCollapsed(
+  groups: readonly NetworkGroup[], byId: ReadonlyMap<string, NetworkGroup>, collapsed: ReadonlySet<string>,
+): Map<string, string | undefined> {
+  const outermost = new Map<string, string | undefined>()
+  for (const group of groups) {
+    const chain: NetworkGroup[] = []
+    let current: NetworkGroup | undefined = group
+    while (current && !outermost.has(current.id)) {
+      chain.push(current)
+      current = current.parentId === undefined ? undefined : byId.get(current.parentId)
+    }
+    let found = current ? outermost.get(current.id) : undefined
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const item = chain[i]!
+      if (found === undefined && collapsed.has(item.id)) found = item.id
+      outermost.set(item.id, found)
+    }
+  }
+  return outermost
+}
+
+/**
+ * The edges with their ends moved to the proxies in `owners`: an edge between two visible nodes stays, an edge inside
+ * one collapsed group is hidden, and re-attached edges with the same ends and ports merge into the first of them, at
+ * its place.
+ */
+function reattachEdges<E extends GraphEdge>(edges: readonly E[], nodeIds: ReadonlySet<string>, owners: ReadonlyMap<string, string>) {
   const result: (E | GraphEdge)[] = []
   const mergedEdges = new Map<string, string[]>()
   const merged = new Map<string, { index: number; edges: E[] }>()
@@ -186,47 +194,41 @@ export function collapseGraphGroups<N extends NetworkNode, E extends GraphEdge>(
     result.push(edge)
   }
   for (const { index, edges: group } of merged.values()) {
-    const first = group[0]!
-    const from = owners.get(first.from) ?? first.from, to = owners.get(first.to) ?? first.to
-    const fromPort = owners.has(first.from) ? undefined : first.fromPort, toPort = owners.has(first.to) ? undefined : first.toPort
-    let edge: GraphEdge
-    if (group.length === 1) {
-      // Waypoints were placed for the original ends, so a re-attached edge drops them.
-      edge = { ...first, from, to }
-      delete edge.fromPort
-      delete edge.toPort
-      delete edge.points
-    } else {
-      const label = group.every(item => item.label === first.label) ? first.label : undefined
-      edge = { id: first.id, from, to }
-      if (label !== undefined) edge.label = label
-      // Appearance survives only when every merged edge agrees on it.
-      const edgeStyle = group.every(item => item.edgeStyle === first.edgeStyle) ? first.edgeStyle : undefined
-      const markerStart = group.every(item => item.markerStart === first.markerStart) ? first.markerStart : undefined
-      const markerEnd = group.every(item => item.markerEnd === first.markerEnd) ? first.markerEnd : undefined
-      const animated = group.every(item => item.animated === first.animated) ? first.animated : undefined
-      const dashed = group.every(item => item.dashed === first.dashed) ? first.dashed : undefined
-      if (edgeStyle !== undefined) edge.edgeStyle = edgeStyle
-      if (markerStart !== undefined) edge.markerStart = markerStart
-      if (markerEnd !== undefined) edge.markerEnd = markerEnd
-      if (animated !== undefined) edge.animated = animated
-      if (dashed !== undefined) edge.dashed = dashed
-    }
-    if (fromPort !== undefined) edge.fromPort = fromPort
-    if (toPort !== undefined) edge.toPort = toPort
-    result[index] = edge
-    mergedEdges.set(first.id, group.map(item => item.id))
+    result[index] = mergedEdge(group, owners)
+    mergedEdges.set(group[0]!.id, group.map(item => item.id))
   }
+  return { result, mergedEdges, hiddenEdgeIds }
+}
 
-  // Groups inside a collapsed group disappear; a collapsed child becomes a direct member of its parent.
-  const shown: NetworkGroup[] = []
-  for (const group of groups) {
-    if (outermost.get(group.id) !== undefined) continue
-    const ids = group.nodeIds.filter(id => !owners.has(id))
-    for (const child of children.get(group.id) ?? []) {
-      if (proxies.has(child.id)) ids.push(child.id)
-    }
-    shown.push({ ...group, nodeIds: ids })
+/** One re-attached edge for `group`, edges with the same re-attached ends and ports, given in input order. */
+function mergedEdge(group: readonly GraphEdge[], owners: ReadonlyMap<string, string>): GraphEdge {
+  const first = group[0]!
+  const from = owners.get(first.from) ?? first.from, to = owners.get(first.to) ?? first.to
+  const fromPort = owners.has(first.from) ? undefined : first.fromPort, toPort = owners.has(first.to) ? undefined : first.toPort
+  let edge: GraphEdge
+  if (group.length === 1) {
+    // Waypoints were placed for the original ends, so a re-attached edge drops them.
+    edge = { ...first, from, to }
+    delete edge.fromPort
+    delete edge.toPort
+    delete edge.points
+  } else {
+    const label = group.every(item => item.label === first.label) ? first.label : undefined
+    edge = { id: first.id, from, to }
+    if (label !== undefined) edge.label = label
+    // Appearance survives only when every merged edge agrees on it.
+    const edgeStyle = group.every(item => item.edgeStyle === first.edgeStyle) ? first.edgeStyle : undefined
+    const markerStart = group.every(item => item.markerStart === first.markerStart) ? first.markerStart : undefined
+    const markerEnd = group.every(item => item.markerEnd === first.markerEnd) ? first.markerEnd : undefined
+    const animated = group.every(item => item.animated === first.animated) ? first.animated : undefined
+    const dashed = group.every(item => item.dashed === first.dashed) ? first.dashed : undefined
+    if (edgeStyle !== undefined) edge.edgeStyle = edgeStyle
+    if (markerStart !== undefined) edge.markerStart = markerStart
+    if (markerEnd !== undefined) edge.markerEnd = markerEnd
+    if (animated !== undefined) edge.animated = animated
+    if (dashed !== undefined) edge.dashed = dashed
   }
-  return { nodes: visible, edges: result, groups: shown, proxies, owners, mergedEdges, hiddenEdgeIds }
+  if (fromPort !== undefined) edge.fromPort = fromPort
+  if (toPort !== undefined) edge.toPort = toPort
+  return edge
 }

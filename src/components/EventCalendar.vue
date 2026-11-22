@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent">
-import { computed, nextTick, onMounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import {
   eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents, packCalendarEventLanes,
   shiftEventCalendarDate, validateCalendarEvents, type CalendarEvent, type CalendarResource, type EventCalendarCreate,
@@ -10,17 +10,22 @@ import { intlTimeFormatter } from '../core/calendarFormat.js'
 import { cachedDateFormat, zoneFormat } from '../core/timeZone.js'
 import type { TimeRange } from '../core/timeline.js'
 import type { ChartDirection } from '../core/types.js'
+import { elementWithData, usePendingFocus } from './shared/focus.js'
+import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
+import { rejectionReason, useValidatedSource } from './shared/validation.js'
 
 const minute = 60_000
 const hour = 3_600_000
 const dayMs = 86_400_000
-/** Pointer travel in pixels before a press becomes a drag. */
-const dragThreshold = 4
 /** Smallest drawn height of a timed event in pixels. */
 const minEventHeight = 18
 /** Height of an event lane in the all-day row and the month view, and of a month day's header, in pixels. */
 const laneHeight = 22
+/** Space below the last event lane of the all-day row and of a month week, in pixels. */
+const lanePadding = 6
 const monthHeader = 26
+/** Time in milliseconds a drag must rest near the top or bottom of the time grid before it scrolls. */
+const edgeScrollDelay = 250
 
 const props = withDefaults(defineProps<{
   /** Events by ID with a half-open `[start, end)` interval in epoch milliseconds. Required. */
@@ -128,8 +133,10 @@ const messages = computed<EventCalendarLabels>(() => ({
   day: 'Day', week: 'Week', month: 'Month', allDay: 'All day', more: 'more', showDay: 'Show day',
   editHint: 'Up and Down arrows move the event, Shift resizes its end. Left and Right move it to another day or resource. Escape cancels a drag.',
   dayEditHint: 'Left and Right arrows move the event by a day, Shift resizes its end. Escape cancels a drag.',
+  // A localized `dayEditHint` without `monthEditHint` keeps the month view localized.
+  monthEditHint: props.labels?.dayEditHint ?? 'Left and Right arrows move the event by a day, Up and Down by a week, and Shift with Left or Right resizes the end of an all-day event. Escape cancels a drag.',
   rejected: 'This change was rejected.', createRejected: 'This new event was rejected.',
-  resources: 'Resources', now: 'Now', empty: 'No events to display',
+  resources: 'Resources', now: 'Now', empty: 'No events to display', recurring: 'Recurring',
   ...props.labels,
 }))
 
@@ -147,8 +154,6 @@ const notice = ref('')
 const root = ref<HTMLElement>()
 const scroller = ref<HTMLElement>()
 
-// Invalid input is reported through `validation-error` and never rendered; the error is rethrown like GanttChart does.
-const validationError = ref<Error>()
 function checkProps() {
   validateCalendarEvents(props.events, props.resources)
   if (!['day', 'week', 'month'].includes(view.value)) throw new RangeError('Unknown event calendar view: ' + String(view.value))
@@ -165,21 +170,24 @@ function checkProps() {
   }
   if (!Number.isInteger(props.maxMonthLanes) || props.maxMonthLanes < 1) throw new RangeError('maxMonthLanes must be an integer >= 1')
   if (props.now !== undefined && !Number.isFinite(props.now)) throw new RangeError('now must be finite')
+  try {
+    cachedDateFormat(props.locale, { timeZone: 'UTC' })
+  } catch {
+    throw new RangeError('Invalid locale: ' + String(props.locale))
+  }
+  const height = props.height
+  if (typeof height === 'number' ? !Number.isFinite(height) || height < 0 : typeof height !== 'string') {
+    throw new RangeError('height must be a finite non-negative number of pixels or a CSS length')
+  }
+  if (!['ltr', 'rtl', 'auto'].includes(props.dir)) throw new RangeError('dir must be ltr, rtl or auto: ' + String(props.dir))
 }
-watch([
+// Invalid input is reported through `validation-error` and never rendered; the error is rethrown like GanttChart does.
+const { error: validationError } = useValidatedSource([
   () => props.events, () => props.resources, view, localDate, () => props.weekStartsOn, () => props.timeZone, () => props.dayStart,
   () => props.dayEnd, () => props.hourHeight, () => props.snap, () => props.createDuration, () => props.maxMonthLanes, () => props.now,
-], () => {
-  try {
-    checkProps()
-    validationError.value = undefined
-  } catch (error) {
-    const failure = error instanceof Error ? error : new Error(String(error))
-    validationError.value = failure
-    emit('validation-error', failure)
-    throw error
-  }
-}, { immediate: true })
+  // By value, so a locale array written inline does not validate again on every render of the parent.
+  () => JSON.stringify(props.locale), () => props.height, () => props.dir,
+], checkProps, { report: error => emit('validation-error', error), fallback: undefined })
 const valid = computed(() => validationError.value === undefined)
 
 const options = computed(() => ({ timeZone: props.timeZone, weekStartsOn: props.weekStartsOn }))
@@ -187,6 +195,7 @@ const snapMs = computed(() => props.snap * minute)
 const createMs = computed(() => (props.createDuration ?? 4 * props.snap) * minute)
 const rangeOf = (event: E): TimeRange => ({ start: event.start, end: event.end })
 const editable = (event: E) => !props.readonly && event.editable !== false
+const isOccurrence = (event: E) => event.seriesId !== undefined && event.recurrenceId !== undefined
 const inAllDayRow = (event: E) => Boolean(event.allDay) || event.end - event.start >= dayMs
 const addDays = (time: number, days: number) => shiftEventCalendarDate('day', time, days, options.value)
 const timeOfDay = (day: number, time: number) => eventCalendarTimeOfDay(day, time, options.value)
@@ -225,6 +234,7 @@ function eventName(event: E) {
   }
   const resource = event.resourceId === undefined ? undefined : resourceById.value.get(event.resourceId)
   if (resource) parts.push(resource.label)
+  if (isOccurrence(event) && messages.value.recurring) parts.push(messages.value.recurring)
   return parts.join(', ')
 }
 
@@ -243,8 +253,20 @@ const visibleStart = computed(() => props.dayStart * hour)
 const bodyHeight = computed(() => (props.dayEnd - props.dayStart) * props.hourHeight)
 const hours = computed(() => Array.from({ length: props.dayEnd - props.dayStart }, (_, index) => {
   const offset = (props.dayStart + index) * hour
-  return { key: offset, top: index * props.hourHeight, label: hourLabel.value.format(offset) }
+  return { key: offset, top: index * props.hourHeight, label: hourText(offset) }
 }))
+/**
+ * The label of an hour of the gutter. With `formatTime`, that hour on the first column's day, so the gutter reads like
+ * the event times (for example in 12-hour clocks); an hour skipped by a daylight-saving change falls back to `HH:mm`.
+ */
+function hourText(offset: number) {
+  const day = columns.value[0]?.day
+  if (props.formatTime && day) {
+    const time = timeAt(day.start, offset)
+    if (timeOfDay(day.start, time) === offset) return props.formatTime(time)
+  }
+  return hourLabel.value.format(offset)
+}
 const pxOf = (offset: number) => (offset - visibleStart.value) / hour * props.hourHeight
 const isToday = (day: TimeRange) => props.now !== undefined && props.now >= day.start && props.now < day.end
 const scrollHeight = computed(() => typeof props.height === 'number' ? props.height + 'px' : props.height)
@@ -278,7 +300,8 @@ const timedBoxes = computed<TimedBox[][]>(() => markedColumns(columns.value.map(
     const height = Math.max(minEventHeight, clippedBottom - clippedTop)
     return [{
       short: height < 34,
-      key: column.key + ':' + event.id, event, primary: event.start >= column.day.start,
+      // `primary` is assigned by markPrimary over all columns.
+      key: column.key + ':' + event.id, event, primary: false,
       continuesBefore: event.start < column.day.start, continuesAfter: event.end > column.day.end,
       style: {
         top: clippedTop + 'px', height: height + 'px',
@@ -326,7 +349,8 @@ function packRow(events: readonly E[], from: number, count: number, offset = 0, 
     segments: packed.segments.map<DaySegment>(segment => ({
       key: `${from + offset}:${segment.id}`, event: byId.get(segment.id)!, lane: segment.lane,
       startIndex: from + segment.startIndex + offset, endIndex: from + segment.endIndex + offset,
-      primary: !segment.continuesBefore, continuesBefore: segment.continuesBefore, continuesAfter: segment.continuesAfter,
+      // `primary` is assigned by markPrimary over the whole row or grid.
+      primary: false, continuesBefore: segment.continuesBefore, continuesAfter: segment.continuesAfter,
       style: {
         insetInlineStart: `calc(${(segment.startIndex + offset) / total * 100}% + 2px)`,
         width: `calc(${(segment.endIndex - segment.startIndex) / total * 100}% - 4px)`,
@@ -372,7 +396,8 @@ const monthWeeks = computed<MonthWeek[]>(() => {
   markPrimary(weeks.flatMap(week => week.segments))
   return weeks
 })
-const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHeight + 6)
+const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHeight + lanePadding)
+const allDayHeight = computed(() => Math.max(1, allDayRow.value.lanes) * laneHeight + lanePadding)
 const weekdayNames = computed(() => visibleDays.value.slice(0, 7).map(day => ({ key: day.weekday, label: weekdayName.value.format(day.start) })))
 
 // Navigation ---------------------------------------------------------------------------------------------------------
@@ -436,16 +461,21 @@ function select(event: E) {
 }
 
 // Proposals ----------------------------------------------------------------------------------------------------------
+/** Announce the rejection reason of a validator result (see `rejectionReason`), or clear the notice; returns the reason. */
 function settle(result: boolean | string | void, fallback: string) {
-  const reason = result === false ? fallback : typeof result === 'string' ? result : undefined
+  const reason = rejectionReason(result, fallback)
   notice.value = reason ?? ''
   return reason
 }
+/** Emit an edit proposal, or its rejection. Returns whether `edit` was emitted. */
 function propose(change: EventCalendarEdit) {
   if (change.before.start === change.after.start && change.before.end === change.after.end && !change.resource) return false
   const reason = settle(props.validateEdit?.(change), messages.value.rejected)
-  if (reason !== undefined) emit('edit-rejected', change, reason)
-  else emit('edit', change)
+  if (reason !== undefined) {
+    emit('edit-rejected', change, reason)
+    return false
+  }
+  emit('edit', change)
   return true
 }
 function proposeCreate(proposal: EventCalendarCreate) {
@@ -458,6 +488,7 @@ function editOf(event: E, after: TimeRange, mode: EventCalendarEdit['mode'], sou
   if (resourceId !== undefined && event.resourceId !== undefined && resourceId !== event.resourceId) {
     change.resource = { before: event.resourceId, after: resourceId }
   }
+  if (isOccurrence(event)) change.occurrence = { seriesId: event.seriesId!, recurrenceId: event.recurrenceId! }
   return change
 }
 
@@ -473,6 +504,9 @@ interface Gesture {
   target: number
   x: number
   y: number
+  /** The latest pointer position, for edge auto-scroll. */
+  clientX: number
+  clientY: number
   /** Grid: the time of day under the pointer when it was pressed, in the origin column. */
   downOffset: number
   started: boolean
@@ -512,13 +546,6 @@ function offsetAt(index: number, y: number) {
 }
 const floorSnap = (offset: number) => Math.floor(offset / snapMs.value) * snapMs.value
 
-function capture(event: PointerEvent, element: Element) {
-  try {
-    element.setPointerCapture(event.pointerId)
-  } catch {
-    // Synthetic events without an active pointer cannot be captured; the gesture still follows bubbled events.
-  }
-}
 function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, kind: Gesture['kind']) {
   if (pointer.button !== 0 || gesture || !editable(event) || !valid.value) return
   if (kind !== 'move') pointer.stopPropagation()
@@ -527,9 +554,10 @@ function startEdit(pointer: PointerEvent, event: E, area: Area, origin: number, 
   if (area === 'days') origin = indexAt(cellElements(), pointer.clientX, pointer.clientY, view.value !== 'month', origin)
   gesture = {
     pointerId: pointer.pointerId, kind, area, event, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
-    downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
+    clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
-  capture(pointer, element)
+  // Synthetic events without an active pointer cannot be captured; the gesture then follows bubbled events.
+  capturePointer(element, pointer.pointerId)
 }
 function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   if (pointer.button !== 0 || gesture || props.readonly || !props.creatable || !valid.value) return
@@ -538,9 +566,9 @@ function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   const element = pointer.currentTarget as Element
   gesture = {
     pointerId: pointer.pointerId, kind: 'create', area, origin, target: origin, x: pointer.clientX, y: pointer.clientY, started: false, element,
-    downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
+    clientX: pointer.clientX, clientY: pointer.clientY, downOffset: area === 'grid' ? offsetAt(origin, pointer.clientY) : 0,
   }
-  capture(pointer, element)
+  capturePointer(element, pointer.pointerId)
   preview.value = createPreview(gesture)
 }
 
@@ -599,18 +627,37 @@ function createPreview(active: Gesture): Preview {
 function movePointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
-  if (!active.started && Math.hypot(pointer.clientX - active.x, pointer.clientY - active.y) < dragThreshold) return
+  if (!active.started && !pastThreshold(active, pointer)) return
   active.started = true
-  const result = gestureResult(active, pointer.clientX, pointer.clientY)
+  active.clientX = pointer.clientX
+  active.clientY = pointer.clientY
+  showPreview(active)
+  if (active.area === 'grid') edgeScroll.start()
+}
+function showPreview(active: Gesture) {
+  const result = gestureResult(active, active.clientX, active.clientY)
   const label = active.event ? active.event.label : ''
   preview.value = { area: active.area, range: result.range, index: result.index, label, eventId: active.event?.id }
 }
-function releasePointer(pointer: PointerEvent) {
+/**
+ * While a drag in the time grid is held near the top or bottom of the visible part of its scroller, scroll it, so the
+ * drag reaches hours scrolled out of view; the preview follows the time now under the pointer. Scrolling starts after the
+ * pointer rests in the band for `edgeScrollDelay`, so a drag that passes through it does not scroll, and a pointer that
+ * leaves the scroller (or the window) stops it.
+ */
+const edgeScroll = edgeScroller(() => {
+  const active = gesture, element = scroller.value
+  return active?.started && active.area === 'grid' && element ? { scroller: element, clientX: active.clientX, clientY: active.clientY } : undefined
+}, () => { if (gesture) showPreview(gesture) }, { axis: 'y', insideOnly: true, clipToWindow: true, delay: edgeScrollDelay })
+onBeforeUnmount(() => edgeScroll.stop())
+/** End the gesture of a released pointer with its proposal. */
+function finishPointer(pointer: PointerEvent) {
   const active = gesture
   if (!active || pointer.pointerId !== active.pointerId) return
   gesture = undefined
   preview.value = undefined
-  releaseCapture(active)
+  edgeScroll.stop()
+  releasePointer(active.element, active.pointerId)
   if (active.kind === 'create') {
     const result = gestureResult(active, pointer.clientX, pointer.clientY)
     proposeCreate({
@@ -624,16 +671,9 @@ function releasePointer(pointer: PointerEvent) {
   suppressClick = true
   propose(editOf(active.event!, result.range, active.kind as EventCalendarEdit['mode'], 'pointer', result.resourceId))
 }
-function releaseCapture(active: Gesture) {
-  try {
-    if (active.element.hasPointerCapture(active.pointerId)) active.element.releasePointerCapture(active.pointerId)
-  } catch {
-    // The element may be gone already.
-  }
-}
 /** `pointerup` on the calendar: finish the gesture, and forget a suppressed click once the click has been dispatched. */
 function pointerUp(pointer: PointerEvent) {
-  releasePointer(pointer)
+  finishPointer(pointer)
   if (suppressClick) setTimeout(() => { suppressClick = false })
 }
 function cancelPointer(pointer: PointerEvent) {
@@ -645,8 +685,11 @@ function cancelGesture(reason: EventCalendarEditCancelReason) {
   if (!active) return false
   gesture = undefined
   preview.value = undefined
-  releaseCapture(active)
-  if (active.started || active.kind === 'create') suppressClick = true
+  edgeScroll.stop()
+  releasePointer(active.element, active.pointerId)
+  // The click that follows the release of a cancelled drag selects nothing. A cancelled pointer has no release and no
+  // click, so it leaves the next click alone.
+  if (reason !== 'pointer-cancel' && (active.started || active.kind === 'create')) suppressClick = true
   emit('edit-cancel', { reason, eventIds: active.event ? [active.event.id] : [] })
   return true
 }
@@ -692,15 +735,18 @@ const previewSpans = computed(() => {
 })
 
 // Keyboard -----------------------------------------------------------------------------------------------------------
-let pendingFocus: string | undefined
 function isRtl() {
   return props.dir === 'rtl' || (props.dir === 'auto' && root.value !== undefined && getComputedStyle(root.value).direction === 'rtl')
 }
+/** Escape anywhere in the calendar cancels the gesture in flight. */
+function escapeKey(key: KeyboardEvent) {
+  if (cancelGesture('escape')) key.preventDefault()
+}
+/** A new press starts afresh: a click suppressed for a release that never came must not swallow the next one. */
+function pressStart() {
+  if (!gesture) suppressClick = false
+}
 function eventKeys(key: KeyboardEvent, event: E, area: Area) {
-  if (key.key === 'Escape') {
-    if (cancelGesture('escape')) key.preventDefault()
-    return
-  }
   if (key.key === 'Enter') {
     // Enter opens the event; Space and clicks select it.
     key.preventDefault()
@@ -732,18 +778,20 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   }
   if (!change) return
   key.preventDefault()
-  if (propose(change)) pendingFocus = event.id
+  if (propose(change)) pendingFocus.request(event.id)
+}
+/**
+ * Focus that leaves an event for another place drops a pending focus request. A redraw that moves or removes the focused
+ * element blurs it too, while the update that restores the focus runs; the check waits until that update is done.
+ */
+function eventBlur(focus: FocusEvent) {
+  const element = focus.target as Element
+  queueMicrotask(() => {
+    if (element.isConnected && document.activeElement !== element) pendingFocus.cancel()
+  })
 }
 // After the parent applies a keyboard edit, the event may be drawn by another element: keep the focus on it.
-watch(() => props.events, () => {
-  const id = pendingFocus
-  pendingFocus = undefined
-  if (id === undefined) return
-  void nextTick(() => {
-    const element = [...(root.value?.querySelectorAll<HTMLElement>('[data-vw-event]') ?? [])].find(item => item.dataset.vwEvent === id)
-    element?.focus()
-  })
-}, { flush: 'post' })
+const pendingFocus = usePendingFocus(() => props.events, id => elementWithData(root.value, 'vwEvent', id)?.focus(), { flush: 'post' })
 
 /** Scroll the time grid so that the time of day of `time` is at the top. */
 function scrollToTime(time: number) {
@@ -758,10 +806,10 @@ defineExpose({ cancelEdit, scrollToTime })
 function eventClasses(event: E, extra: Record<string, boolean>) {
   return [`vw-tone-${event.tone ?? 'blue'}`, {
     'vw-is-selected': localSelected.value === event.id, 'vw-is-editable': editable(event),
-    'vw-is-dragging': preview.value?.eventId === event.id, ...extra,
+    'vw-is-dragging': preview.value?.eventId === event.id, 'vw-is-recurring': isOccurrence(event), ...extra,
   }]
 }
-const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint` : undefined
+const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value === 'month' ? 'month' : area}-hint` : undefined
 </script>
 
 <template>
@@ -769,7 +817,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
     ref="root" class="vw-calendar" :class="[`vw-calendar-view-${view}`, { 'vw-rtl': dir === 'rtl', 'vw-is-creatable': creatable && !readonly }]"
     :dir="dir === 'auto' ? undefined : dir" :style="scrollbarWidth ? { '--vw-calendar-scrollbar': scrollbarWidth + 'px' } : undefined" role="region" :aria-label="messages.region"
     @pointermove="movePointer" @pointerup="pointerUp" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer"
-    @keydown.esc="cancelGesture('escape')"
+    @pointerdown.capture="pressStart" @keydown.esc="escapeKey"
   >
     <div v-if="showToolbar" class="vw-calendar-toolbar">
       <slot name="toolbar" v-bind="toolbarProps">
@@ -803,7 +851,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
       </div>
       <div class="vw-calendar-all-day" :style="gridStyle">
         <div class="vw-calendar-corner">{{ messages.allDay }}</div>
-        <div class="vw-calendar-all-day-cells" :style="{ height: Math.max(1, allDayRow.lanes) * 22 + 6 + 'px', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }">
+        <div class="vw-calendar-all-day-cells" :style="{ height: allDayHeight + 'px', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }">
           <div v-for="(column, index) in columns" :key="column.key" class="vw-calendar-cell" :data-vw-cell="index" @pointerdown="startCreate($event, 'days', index)" />
           <button
             v-for="segment in allDayRow.segments" :key="segment.key" type="button" class="vw-calendar-event vw-calendar-segment"
@@ -812,7 +860,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
             @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
-            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')"
+            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="true" :view="view">
               <span class="vw-calendar-event-label">{{ segment.event.label }}</span>
@@ -841,7 +889,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
               :aria-label="eventName(box.event)" :title="eventName(box.event)" :aria-pressed="localSelected === box.event.id"
               :aria-describedby="hintIds(box.event, 'grid')"
               @pointerdown="startEdit($event, box.event, 'grid', index, 'move')" @click="select(box.event)"
-              @dblclick="emit('event-activate', box.event.id, 'pointer')" @keydown="eventKeys($event, box.event, 'grid')"
+              @dblclick="emit('event-activate', box.event.id, 'pointer')" @keydown="eventKeys($event, box.event, 'grid')" @blur="eventBlur"
             >
               <span v-if="editable(box.event) && !box.continuesBefore" class="vw-calendar-handle vw-is-start" aria-hidden="true" @pointerdown="startEdit($event, box.event, 'grid', index, 'start')" />
               <slot name="event" :event="box.event" :range="rangeOf(box.event)" :selected="localSelected === box.event.id" :all-day="false" :view="view">
@@ -888,7 +936,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
             @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
-            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')"
+            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="inAllDayRow(segment.event)" :view="view">
               <span v-if="!inAllDayRow(segment.event)" class="vw-calendar-event-time">{{ timeText(segment.event.start) }}</span>
@@ -908,6 +956,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
 
     <span :id="`${uid}-grid-hint`" class="vw-sr-only">{{ messages.editHint }}</span>
     <span :id="`${uid}-days-hint`" class="vw-sr-only">{{ messages.dayEditHint }}</span>
+    <span v-if="view === 'month'" :id="`${uid}-month-hint`" class="vw-sr-only">{{ messages.monthEditHint }}</span>
     <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
   </div>
 </template>

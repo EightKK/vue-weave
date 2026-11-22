@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { graphFlowBands, layoutFlowGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
 import { NetworkGraph, layoutFlowGraph as rootLayoutFlowGraph } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { chainEdges, nodeIds } from './helpers/builders.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const node = (id, label = id) => ({ id, label })
 const flowEdge = (id, from, to, quantity, unit = 'pcs') => ({ id, from, to, data: { quantity, unit } })
@@ -240,6 +241,34 @@ test('the flow layout lays out a 12,000-node chain without recursion', () => {
   assert.ok(flow.bands.every(band => !band.reference && band.thickness === flow.scale))
 })
 
+test('the flow layout lays out a 12,000-node single cycle without recursion', () => {
+  const ids = nodeIds(12000)
+  const links = chainEdges(ids, true).map(edge => ({ ...edge, data: { quantity: 1, unit: 'pcs' } }))
+  const flow = layoutFlowGraph(ids.map(id => node(id)), links, { quantity, unit: 'pcs' })
+  assert.equal(flow.boxes.size, 12000)
+  assert.equal(flow.bands.length, 12000)
+  // The edge that closes the cycle runs against the flow and becomes the one reference band.
+  assert.equal(flow.bands.filter(band => band.reference).length, 1)
+})
+
+test('the default scale grows for a rank too full for 360 units; an explicit fitExtent still throws', () => {
+  const leaves = Array.from({ length: 30 }, (_, i) => node('leaf' + i))
+  const fan = [node('root'), ...leaves]
+  const links = leaves.map(leaf => flowEdge('root-' + leaf.id, 'root', leaf.id, 1))
+  const flow = layoutFlowGraph(fan, links, { quantity, unit: 'pcs' })
+  assert.ok(flow.scale > 0)
+  assert.equal(flow.bands.length, 30)
+  // The leaves keep their gaps and do not overlap.
+  const boxes = leaves.map(leaf => flow.boxes.get(leaf.id)).sort((a, b) => a.y - b.y)
+  for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i].y >= boxes[i - 1].y + boxes[i - 1].height + 16 - 1e-9)
+  assert.throws(() => layoutFlowGraph(fan, links, { quantity, unit: 'pcs', scale: { fitExtent: 360 } }), RangeError)
+  // Small graphs keep the 360-unit default.
+  for (const direction of ['LR', 'TB']) {
+    assert.deepEqual(layoutFlowGraph(nodes, edges, { quantity, unit: 'pcs', direction }),
+      layoutFlowGraph(nodes, edges, { quantity, unit: 'pcs', direction, scale: { fitExtent: 360 } }))
+  }
+})
+
 test('renderGraphSvg draws bands with their widths, reference bands dashed, and nothing changes without edgeBands', () => {
   const flow = layoutFlowGraph(nodes, edges, options)
   const bands = graphFlowBands(flow)
@@ -281,7 +310,7 @@ test('renderGraphSvg draws bands with their widths, reference bands dashed, and 
   assert.throws(() => renderGraphSvg(flow, nodes, edges, { edgeBands: new Map([['lot-a', { width: -1 }]]) }), RangeError)
 })
 
-const render = props => renderComponent(NetworkGraph, { nodes, edges, ...props })
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph draws bands with real width and named hit areas on the server; the markup without edgeBands is unchanged', async () => {
   const flow = layoutFlowGraph(nodes, edges, options)

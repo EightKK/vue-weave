@@ -1,12 +1,12 @@
 import { computed, shallowRef, toValue } from 'vue'
 import type { MaybeRefOrGetter, ShallowRef } from 'vue'
 import { createTimelineViewState, parseTimelineViewState, projectTimelineView, resolveTimelineColumns } from '../core/timelineView.js'
-import type { TimelineViewInput, TimelineViewSort, TimelineViewState } from '../core/timelineView.js'
+import type { TimelineViewFilter, TimelineViewInput, TimelineViewSort, TimelineViewState } from '../core/timelineView.js'
 import type { TimeRange } from '../core/timeline.js'
 import type { TimelineBar, TimelineDependency, TimelineRow } from '../core/types.js'
 
 /**
- * Reactive search, sort and column state for a Gantt chart. The source data is never changed: `projection`
+ * Reactive search, sort, filter and column state for a Gantt chart. The source data is never changed: `projection`
  * is a display copy and `columns` the ordered visible columns. State updates are immutable and JSON-safe.
  */
 export function useTimelineView<R extends TimelineRow = TimelineRow, B extends TimelineBar = TimelineBar, D extends TimelineDependency = TimelineDependency>(
@@ -32,6 +32,13 @@ export function useTimelineView<R extends TimelineRow = TimelineRow, B extends T
   }
   function setSort(sort: readonly TimelineViewSort[]) {
     update({ sort: sort.map(rule => ({ ...rule })) })
+  }
+  /** Replace the column filters; an empty list removes them. Pass GanttChart's `update:filters` here. */
+  function setFilters(filters: readonly TimelineViewFilter[]) {
+    const { filters: _filters, ...rest } = state.value
+    state.value = filters.length
+      ? { ...rest, filters: filters.map(filter => ({ ...filter, ...(filter.values ? { values: [...filter.values] } : {}) })) }
+      : rest
   }
   function setColumnVisible(id: string, visible: boolean) {
     update({ columns: currentColumns().map(column => (column.id === id ? { ...column, visible } : column)) })
@@ -73,6 +80,6 @@ export function useTimelineView<R extends TimelineRow = TimelineRow, B extends T
   }
   return {
     state, projection, columns, diagnostics,
-    setSearch, setSort, setColumnVisible, setColumnWidth, moveColumn, toggleCollapsed, setWindow, restore, reset, snapshot,
+    setSearch, setSort, setFilters, setColumnVisible, setColumnWidth, moveColumn, toggleCollapsed, setWindow, restore, reset, snapshot,
   }
 }

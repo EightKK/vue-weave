@@ -1,5 +1,56 @@
-// Internal XML reader of the interchange formats: a DOM-free scanner that never expands declared entities. Used by
-// `fromMsProjectXml`. Not exported from index.ts.
+// Internal XML helpers of the interchange formats: a DOM-free reader that never expands declared entities (used by
+// `fromMsProjectXml`, `fromGraphMl` and `fromDrawio`) and the escaping of the writers. Only `escapeXml` is public,
+// re-exported by `exportSvg.ts`.
+
+import { stripBom } from './interchangeShared.js'
+
+// Characters that XML 1.0 forbids, and unpaired surrogates.
+const invalidXml = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&apos;' }
+
+/**
+ * Text without the characters that XML 1.0 does not allow (C0 controls other than tab and line breaks, U+FFFE and
+ * U+FFFF) and without unpaired surrogates.
+ */
+export function dropInvalidXmlChars(value: string): string {
+  return String(value).replace(invalidXml, '')
+}
+
+/** Escape text for XML content and attribute values and drop characters that XML 1.0 does not allow. */
+export function escapeXml(value: string): string {
+  return dropInvalidXmlChars(value).replace(/[&<>"']/g, char => entities[char]!)
+}
+
+/** XML text for an attribute value: escaped, with tabs and line breaks as character references so they survive. */
+export function xmlAttribute(value: string) {
+  return escapeXml(value).replace(/[\t\n\r]/g, char => '&#' + char.charCodeAt(0) + ';')
+}
+
+/** XML text for element content: escaped, with carriage returns as character references so they survive. */
+export function xmlText(value: string) {
+  return escapeXml(value).replace(/\r/g, '&#13;')
+}
+
+/**
+ * Whether a code point is a character XML 1.0 allows: tab, line feed, carriage return and the rest of Unicode except
+ * the other C0 controls, surrogates, U+FFFE and U+FFFF.
+ */
+export function isXmlCodePoint(code: number) {
+  return code === 0x9 || code === 0xa || code === 0xd || (code >= 0x20 && code <= 0xd7ff)
+    || (code >= 0xe000 && code <= 0xfffd) || (code >= 0x10000 && code <= 0x10ffff)
+}
+
+/**
+ * The character of a numeric character reference, or undefined for a code point XML 1.0 does not allow (see
+ * `isXmlCodePoint`). The character-reference decoders of every reader (XML, draw.io HTML labels, Mermaid text) use it,
+ * so they decode the same characters.
+ */
+export function referencedCharacter(code: number): string | undefined {
+  return isXmlCodePoint(code) ? String.fromCodePoint(code) : undefined
+}
+
+/** The five entities XML predefines, by name. The HTML and Mermaid label decoders extend this table. */
+export const predefinedEntities: Readonly<Record<string, string>> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: '\'' }
 
 /** An element of a parsed XML document. */
 export interface XmlElement {
@@ -13,7 +64,6 @@ export interface XmlElement {
 
 const xmlName = /[A-Za-z_:À-￿][\w.\-:·À-￿]*/y
 const xmlSpace = /[ \t\r\n]*/y
-const predefinedEntities: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" }
 
 function xmlError(source: string, index: number, reason: string) {
   let line = 1, lineStart = 0
@@ -39,9 +89,7 @@ function decodeXml(source: string, raw: string, offset: number) {
     const reference = /^#(?:x([0-9A-Fa-f]{1,6})|(\d{1,7}))$/.exec(entity)
     if (reference) {
       const code = reference[1] !== undefined ? parseInt(reference[1], 16) : Number(reference[2])
-      const allowed = code === 0x9 || code === 0xa || code === 0xd || (code >= 0x20 && code <= 0xd7ff)
-        || (code >= 0xe000 && code <= 0xfffd) || (code >= 0x10000 && code <= 0x10ffff)
-      if (allowed) value = String.fromCodePoint(code)
+      value = referencedCharacter(code)
     }
     if (value === undefined) throw xmlError(source, offset + amp, `unknown or invalid entity &${entity};`)
     result += raw.slice(cursor, amp) + value
@@ -81,7 +129,7 @@ function skipDoctype(source: string, start: number) {
  * and column for malformed XML.
  */
 export function parseXml(input: string): XmlElement {
-  const source = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input
+  const source = stripBom(input)
   const length = source.length
   const stack: { element: XmlElement; tag: string }[] = []
   let root: XmlElement | undefined

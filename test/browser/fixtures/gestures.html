@@ -16,7 +16,7 @@
       import { createApp, h, ref, shallowRef } from 'vue'
       import { GanttChart, NetworkGraph } from '@eightkk/vue-weave'
 
-      // The parent passes fresh but equal literals (groups, labels, range, editBounds, tickSteps) on every render.
+      // The parent passes fresh but equal literals (groups, labels, avoidNodes, range, editBounds, tickSteps) on every render.
       // "Re-render" only renders the parent again; the "Change …" buttons make a real change.
       // Query parameters: chart=graph|gantt, collapsed (a collapsed graph group), invalid (the chart mounts with invalid
       // rows), cascade (the chart previews follow-on changes), dark (built-in dark theme).
@@ -40,6 +40,7 @@
       const positions = shallowRef(new Map())
       const selectedId = ref('A')
       const viewportEvents = ref(0)
+      const clearance = ref(8)
       const collapsed = new Set(query.has('collapsed') ? ['second'] : [])
 
       // Gantt.
@@ -59,6 +60,7 @@
       const graph = () => [
         control('Re-render', () => { renders.value++ }),
         control('Change groups', () => { version.value++ }),
+        control('Change clearance', () => { clearance.value++ }),
         output('Viewport events', viewportEvents.value),
         h(NetworkGraph, {
           nodes, edges, height: 320, draggable: true, positions: positions.value, selectedId: selectedId.value,
@@ -69,6 +71,8 @@
             { id: 'second', label: 'Second', nodeIds: ['C', 'D'] },
           ],
           labels: { region: 'Gesture graph', collapsedNode: 'item', collapsedNodes: 'items' },
+          // Orthogonal routes around the boxes, so a new clearance is a real change of the routes.
+          edgeStyle: 'orthogonal', avoidNodes: { clearance: clearance.value },
           class: query.has('dark') ? 'vw-theme-dark' : undefined,
           'onUpdate:selectedId': id => { selectedId.value = id },
           onViewportChange: () => { viewportEvents.value++ },

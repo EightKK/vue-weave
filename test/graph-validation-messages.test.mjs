@@ -6,6 +6,7 @@ import {
   layoutTreeGraph, renderGraphSvg, resolveEntityRefs, resolveLoadTargets, resolveViewTargets, routeGraphEdges, shortestGraphPath,
   topologicalOrder, traverseGraph,
 } from '@eightkk/vue-weave/core'
+import { laneBox } from './helpers/builders.mjs'
 
 // The graph core follows the ID rule of the planning core: an ID is a non-empty string. An invalid ID throws
 // `Invalid <kind> ID: <value>` and a repeated one `Duplicate <kind> ID: <id>`, both as Error. A reference to something
@@ -14,7 +15,6 @@ import {
 const nodes = () => [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
 const edges = () => [{ id: 'ab', from: 'a', to: 'b' }, { id: 'bc', from: 'b', to: 'c' }]
 const groups = () => [{ id: 'g', label: 'G', nodeIds: ['a'] }, { id: 'h', label: 'H', nodeIds: ['b'] }]
-const lane = id => ({ id, label: 'L', x: 0, y: 0, width: 10, height: 10, header: { x: 0, y: 0, width: 0, height: 0 } })
 const frame = id => ({ id, label: 'F', x: 0, y: 0, width: 1, height: 1 })
 const layout = () => layoutLayeredGraph(nodes(), edges())
 const copy = suffix => id => id + suffix
@@ -45,12 +45,13 @@ const cases = [
     [name + ' edges', 'graph edge', 'ab', id => { const e = edges(); e[1].id = id; call(nodes(), e) }],
     [name + ' ports', 'port', 'p', id => { const n = nodes(); n[0].ports = [{ id: 'p', side: 'right' }, { id, side: 'left' }]; call(n, edges()) }, ' (graph node a)'],
   ]),
+  ['traverseGraph nodes', 'graph node', 'a', id => { const n = nodes(); n[1].id = id; traverseGraph({ nodes: n, edges: [] }, ['a']) }],
   ['traverseGraph edges', 'graph edge', 'ab', id => { const e = edges(); e[1].id = id; traverseGraph({ nodes: nodes(), edges: e }, ['a']) }],
   ['collapseGraphGroups groups', 'graph group', 'g', id => { const g = groups(); g[1].id = id; collapseGraphGroups(nodes(), edges(), g, []) }],
   ['buildGraphLayoutRequests groups', 'graph group', 'g', id => { const g = groups(); g[1].id = id; buildGraphLayoutRequests({ nodes: nodes(), edges: edges(), groups: g, collapsedGroupIds: ['g'] }, 'r') }],
   ['buildGraphLayoutRequests requestId', 'graph layout request', null, id => buildGraphLayoutRequests({ nodes: nodes(), edges: edges() }, id)],
   ['layoutSwimlaneGraph lane specs', 'swimlane', 'L', id => layoutSwimlaneGraph(nodes(), edges(), { lanes: ['L', { id, label: 'M' }], laneOf: () => 'L' })],
-  ['renderGraphSvg lanes', 'swimlane', 'l', id => renderGraphSvg(layout(), nodes(), edges(), { lanes: [lane('l'), lane(id)] })],
+  ['renderGraphSvg lanes', 'swimlane', 'l', id => renderGraphSvg(layout(), nodes(), edges(), { lanes: [laneBox('l'), laneBox(id)] })],
   ['renderGraphSvg groups', 'export group', 'g', id => renderGraphSvg(layout(), nodes(), edges(), { groups: [frame('g'), frame(id)] })],
   ['cloneGraphElements createId nodes', 'graph node', 'b', id => cloneGraphElements(nodes(), edges(), ['a'], { createId: () => id }), ' (createId for a)'],
   ['cloneGraphElements createId edges', 'graph edge', 'bc', id => cloneGraphElements(nodes(), edges(), ['a', 'b'], { createId: (from, kind) => kind === 'edge' ? id : from + "'" }), ' (createId for ab)'],
@@ -131,7 +132,7 @@ test('group and lane checks give one text per defect, also for repeated members,
   assert.throws(() => layoutSwimlaneGraph(nodes(), edges(), { lanes: ['L', 'L'], laneOf: () => 'L' }), { name: 'Error', message: 'Duplicate swimlane ID: L' })
   // A null entry is an invalid ID, not a TypeError.
   assert.throws(() => collapseGraphGroups(nodes(), edges(), [groups()[0], null], []), { name: 'Error', message: 'Invalid graph group ID: undefined' })
-  assert.throws(() => renderGraphSvg(layout(), nodes(), edges(), { lanes: [lane('l'), null] }), { name: 'Error', message: 'Invalid swimlane ID: undefined' })
+  assert.throws(() => renderGraphSvg(layout(), nodes(), edges(), { lanes: [laneBox('l'), null] }), { name: 'Error', message: 'Invalid swimlane ID: undefined' })
 })
 
 test('numeric and other non-string graph IDs are rejected where they used to pass', () => {

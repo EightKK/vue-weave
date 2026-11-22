@@ -4,9 +4,10 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { removeTimelineBars, validateTimelineData } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
+import { ganttScale } from './helpers/builders.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
 const bars = [
@@ -53,7 +54,7 @@ test('removeTimelineBars rejects unknown bar IDs with an Error', () => {
   assert.throws(() => removeTimelineBars([], [], ['a']), /Unknown bar/)
 })
 
-const chartProps = { rows, bars, dependencies, range: { start: 0, end: 10 * hour }, pixelsPerUnit: 10 / hour }
+const chartProps = { rows, bars, dependencies, ...ganttScale() }
 function render(props = {}, slots) {
   return renderComponent(GanttChart, { ...chartProps, ...props }, slots)
 }

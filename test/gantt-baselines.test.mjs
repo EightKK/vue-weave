@@ -8,8 +8,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'r', label: 'Row' }, { id: 's', label: 'Second' }]
 const legacyBars = [
   { id: 'x', rowId: 'r', label: 'X', start: 2 * hour, end: 4 * hour, baseline: { start: hour, end: 3 * hour } },

@@ -80,6 +80,40 @@ export async function openNetworkFixture(page: Page, search: string) {
   await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
 }
 
+/** Where a query starts: the whole page or one element, such as a demo section or a chart region. */
+export type Scope = Page | Locator
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const pageOf = (scope: Scope): Page => 'goto' in scope ? scope : scope.page()
+
+// Named queries for the items of the components. Each resolves by role and accessible name, so a spec reads as what a
+// user (or assistive technology) finds; only the GanttChart row, which has no role, falls back to its class.
+
+/** A NetworkGraph node: its focusable group, named by its label and detail. A RegExp matches any part of the name. */
+export const graphNode = (scope: Scope, name: string | RegExp) => scope.getByRole('button', { name, exact: true })
+
+/** A selectable NetworkGraph edge: its hit area, named "Select edge" and the edge's label (or ID). */
+export const graphEdge = (scope: Scope, label: string) => scope.getByRole('button', { name: 'Select edge ' + label, exact: true })
+
+/** The SVG stage of a NetworkGraph, named by `labels.region` ("Network graph" by default). */
+export const graphStage = (scope: Scope, name = 'Network graph') => scope.getByLabel(name, { exact: true })
+
+/** The minimap of a NetworkGraph, a button named by `labels.minimap`. */
+export const graphMinimap = (scope: Scope, name = 'Navigate graph overview') => scope.getByRole('button', { name, exact: true })
+
+/** The zoom buttons of a NetworkGraph. */
+export const graphZoom = (scope: Scope) => scope.getByRole('group', { name: 'Graph zoom', exact: true })
+
+/** The scrolling region of a GanttChart, named by `labels.region` ("Gantt chart" by default). */
+export const ganttRegion = (scope: Scope, name = 'Gantt chart') => scope.getByRole('region', { name, exact: true })
+
+/** A GanttChart bar, named by its label followed by its formatted range (such as "Split · plan 09:00–11:00"). */
+export const ganttBar = (scope: Scope, label: string) => scope.getByRole('button', { name: new RegExp('^' + escapeRegExp(label) + ' \\S') })
+
+/** A GanttChart row of a chart with reorderable rows, found by its "Move row" handle. Rows have no role of their own. */
+export const ganttRow = (scope: Scope, label: string) =>
+  scope.locator('.vw-gantt-row').filter({ has: pageOf(scope).getByRole('button', { name: 'Move row ' + label, exact: true }) })
+
 export type Camera = { x: number; y: number; scale: number }
 
 export const readCamera = (page: Page) => page.evaluate(() => (window as any).__vw.graph().getViewport() as Camera)
@@ -137,12 +171,75 @@ export async function openGraphEditor(page: Page) {
 
 export const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })
 
-export async function dragBy(page: Page, target: ReturnType<Page['locator']>, dx: number, dy: number, hold?: () => Promise<void>) {
-  const box = (await target.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+/** The JSON a fixture writes into one of its status elements, or null while it is empty. */
+export const readJson = async (page: Page, name: string) => JSON.parse(await fixtureStatus(page, name).textContent() || 'null')
+
+export type Point = { x: number; y: number }
+export type Box = Point & { width: number; height: number }
+/** Where a pointer helper presses or moves to: the centre of an element or a box, or a point in viewport pixels. */
+export type PointerTarget = Locator | Box | Point
+
+/** A chart point rounded to a `grid`, as a snapping graph proposes it. JSON turns -0 into 0, so this adds 0 as well. */
+export const snapped = (point: Point, grid: number) => ({ x: Math.round(point.x / grid) * grid + 0, y: Math.round(point.y / grid) * grid + 0 })
+
+/** The centre of a bounding box. */
+export const boxCenter = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
+
+/** The centre of an element's bounding box in viewport pixels. */
+export async function centerOf(target: Locator) {
+  const box = await target.boundingBox()
+  if (!box) throw new Error('centerOf needs a visible element')
+  return boxCenter(box)
+}
+
+/** The point a pointer target stands for: an element's centre, a box's centre or the point itself. */
+export async function pointOf(target: PointerTarget): Promise<Point> {
+  if ('boundingBox' in target) return centerOf(target)
+  return 'width' in target ? boxCenter(target) : { x: target.x, y: target.y }
+}
+
+/** Presses the mouse at a target (the centre of an element or box) and moves it by `dx`, `dy` in `steps`, keeping the button down. */
+export async function pressAndMove(page: Page, target: PointerTarget, dx: number, dy: number, steps = 3) {
+  const { x, y } = await pointOf(target)
   await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(x + dx, y + dy, { steps: 6 })
+  await page.mouse.move(x + dx, y + dy, { steps })
+}
+
+/** Presses the mouse at one target and moves it to another in `steps`, keeping the button down. Both points are read before the press. */
+export async function pressAndMoveTo(page: Page, from: PointerTarget, to: PointerTarget, steps = 6) {
+  const start = await pointOf(from), end = await pointOf(to)
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y, { steps })
+}
+
+/** Waits for `count` animation frames of the page, so work scheduled per frame (such as auto-pan) has had its turn. */
+export async function animationFrames(page: Page, count = 2) {
+  await page.evaluate(frames => new Promise<void>(resolve => {
+    let left = frames
+    const step = () => (--left <= 0 ? resolve() : requestAnimationFrame(step))
+    requestAnimationFrame(step)
+  }), count)
+}
+
+/** How a drag moves (`steps`, 6 by default) and what runs while the button is still down (`hold`), or just `hold`. */
+export type DragOptions = { steps?: number; hold?: () => Promise<unknown> } | (() => Promise<unknown>)
+
+const dragOptions = (options: DragOptions) => typeof options === 'function' ? { hold: options, steps: 6 } : { steps: 6, ...options }
+
+/** Drags from a target by `dx`, `dy`: press, move in steps, run `hold`, release. */
+export async function dragBy(page: Page, target: PointerTarget, dx: number, dy: number, options: DragOptions = {}) {
+  const { steps, hold } = dragOptions(options)
+  await pressAndMove(page, target, dx, dy, steps)
+  await hold?.()
+  await page.mouse.up()
+}
+
+/** Drags from one target to another: press, move in steps, run `hold`, release. */
+export async function dragTo(page: Page, from: PointerTarget, to: PointerTarget, options: DragOptions = {}) {
+  const { steps, hold } = dragOptions(options)
+  await pressAndMoveTo(page, from, to, steps)
   await hold?.()
   await page.mouse.up()
 }

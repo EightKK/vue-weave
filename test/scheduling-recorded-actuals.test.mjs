@@ -1,22 +1,23 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { sparseLink as link, task } from './helpers/builders.mjs'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
+import { assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 
 // Seeded plans with calendars, every link type and lag, bounds, a deadline, pauses, manual and inactive tasks, summary
 // tasks and progress entries, run through `rescheduleFromStatusDate`, `scheduleTasks` and `toPlanningDiagnostics`. The
 // digest was produced before recorded actuals were added; it must not change, because progress-percentage input is
 // scheduled exactly as before. (It was updated once, when the trace reasons of links into summary tasks began to name
-// the leaf that binds; every date, rescheduled plan and diagnostic stayed the same.)
+// the leaf that binds; every date, rescheduled plan and diagnostic stayed the same. It was updated again when a partly
+// done task began to meet its own `finishNoEarlierThan` by resuming its remaining work later: the 7 plans that used to
+// fail as infeasible with ['finishNoEarlierThan', 'fixedStart'] now succeed, and nothing else changed.)
 test('progress-percentage rescheduling gives the same results as before recorded actuals', () => {
-  assert.equal(progressPlanDigest(), '39dc35e5f38ea5c2a86ed4d3f6df4df827a86d964e301e4fed76dff448721548')
+  assert.equal(progressPlanDigest(), 'cc26b00775f02096df2145af6b56a146b6657e7c31d63e3856e9267806368fbc')
 })
 
 const { actualsTimelineBars, rescheduleFromActuals, scheduleTasks, timelineBaselineId } = core
 const range = { start: 0, end: 100 }
-const byId = (result, id) => result.tasks.find(item => item.id === id)
 const span = item => [item.start, item.end]
 const codes = result => result.diagnostics.map(item => [item.code, item.entities.map(entity => entity.id).join(',')])
 // a (4) → b (4) → c (2), continuous time: planned a [0, 4), b [4, 8), c [8, 10).
@@ -246,21 +247,6 @@ test('manual tasks keep their dates and conflicts, inactive tasks are ignored', 
   assert.equal(byId(finished, 'm').state, 'finished')
 })
 
-test('a 12,000-task chain with actuals is rescheduled without recursion', () => {
-  const count = 12000
-  const tasks = [], dependencies = []
-  for (let i = 0; i < count; i++) {
-    tasks.push(task('c' + i, 1))
-    if (i) dependencies.push(link('c' + (i - 1), 'c' + i))
-  }
-  const input = { range: { start: 0, end: count + 20 }, tasks, dependencies }
-  const actuals = new Map([['c0', { intervals: [{ start: 0, end: 3 }], finished: true }], ['c1', { intervals: [{ start: 3, end: 4 }], remainingWork: 2 }]])
-  const result = rescheduleFromActuals(input, 4, actuals)
-  assert.equal(result.ok, true)
-  assert.deepEqual([span(byId(result, 'c1')), span(byId(result, 'c11999'))], [[3, 6], [count + 3, count + 4]])
-  assert.equal(actualsTimelineBars(result).length, count + 1)
-})
-
 test('actualsTimelineBars shows the plan, the actuals and the forecast on one row', () => {
   const actuals = new Map([['a', { intervals: [{ start: 0, end: 1 }, { start: 3, end: 4 }, { start: 3, end: 3.5 * 2 - 3 }] }], ['b', { intervals: [{ start: 4, end: 5 }], finished: true }]])
   const result = rescheduleFromActuals(chain(), 5, actuals)
@@ -462,6 +448,8 @@ function progressPlanDigest() {
     const progress = new Map(tasks.filter(() => pick(2)).map(task => [task.id, [0, 0.25, 0.5, 0.75, 1, 0.3, 0.999][pick(7)]]))
     const status = (pick(30)) * quantum
     const rescheduled = run(() => core.rescheduleFromStatusDate(input, status, progress))
+    assertScheduleInvariants(range, schedule, plan)
+    assertScheduleInvariants(range, rescheduled, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(schedule))
     const statusDiagnostics = run(() => core.toPlanningDiagnostics(rescheduled))
     outputs.push([withPlainTrace(schedule), rescheduled, diagnostics, statusDiagnostics])

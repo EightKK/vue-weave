@@ -5,8 +5,8 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
 const bars = [
   { id: 'a', rowId: 'r1', label: 'Alpha', start: hour, end: 3 * hour, editable: true },
@@ -41,7 +41,8 @@ test('load histograms group calculateResourceLoad output and validate references
   assert.equal(resourceLoadHistogram(segments).size, 2)
 
   assert.throws(() => resourceLoadHistogram(segments, ['cnc']), /Unknown resource/)
-  assert.throws(() => resourceLoadHistogram([{ resourceId: 'x', start: 0, end: 2, load: 1, capacity: 1 }, { resourceId: 'x', start: 1, end: 3, load: 1, capacity: 1 }]), /Overlapping/)
+  assert.throws(() => resourceLoadHistogram([{ resourceId: 'x', start: 0, end: 2, load: 1, capacity: 1 }, { resourceId: 'x', start: 1, end: 3, load: 1, capacity: 1 }]),
+    { name: 'RangeError', message: 'Overlapping load segments for resource: x' })
   assert.throws(() => resourceLoadHistogram([{ resourceId: 'x', start: 0, end: 2, load: -1, capacity: 1 }]), RangeError)
   assert.throws(() => resourceLoadHistogram([{ resourceId: 'x', start: 2, end: 2, load: 1, capacity: 1 }]), RangeError)
 })

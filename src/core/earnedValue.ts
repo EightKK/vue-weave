@@ -1,4 +1,4 @@
-import { firstIndex, uniteRanges } from './intervals.js'
+import { firstIndex, uniteRanges, workBefore as workBeforeOn } from './intervals.js'
 import { checkId, uniqueIds, withContext } from './ids.js'
 import type { TimeRange } from './timeline.js'
 import type { WorkCalendar } from './workCalendar.js'
@@ -152,10 +152,7 @@ interface WorkAxis {
 
 /** Working time of `axis` before time `t`. */
 function workBefore(axis: WorkAxis, t: number) {
-  const index = firstIndex(axis.periods.length, i => axis.periods[i]!.end > t)
-  if (index === axis.periods.length) return axis.before[index]!
-  const period = axis.periods[index]!
-  return axis.before[index]! + Math.max(0, t - period.start)
+  return workBeforeOn(axis.periods, axis.before, t)
 }
 
 interface PreparedTask {

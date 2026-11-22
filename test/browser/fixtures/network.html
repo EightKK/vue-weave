@@ -22,7 +22,11 @@
       // highlight and highlightedges (comma-separated highlighted IDs), targets (logging target-* events), collapse
       // (comma-separated controlled collapsed group IDs), preset=ports (A to D with named ports on A and B and an
       // external route for edge ab), policy (routingPolicy), style (edgeStyle), gestures (logging gesture-* events),
-      // boxselect, editableedges, resizable and labels (editableLabels, logging label-edit proposals).
+      // boxselect, editableedges, resizable, labels (editableLabels, logging label-edit proposals), blankreject (label and
+      // delete validators that return a blank reason), edgelabels (a label on every edge), labelplacement
+      // (edgeLabelPlacement) and reconnectable. Every edit proposal is logged by event
+      // name in "Edit proposals" and passed through structuredClone; a payload that cannot be cloned is reported in
+      // "Clone errors".
       const query = new URLSearchParams(location.search)
       const preset = query.get('preset')
       const ids = preset === 'groups' || preset === 'ports'
@@ -32,7 +36,7 @@
       const nodes = ids.map(id => query.get('reads') === '1'
         ? new Proxy({ id, label: id }, { get: (target, key) => { reads.count++; return target[key] } })
         : { id, label: id })
-      const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+      const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id, ...query.get('edgelabels') === '1' && { label: 'link ' + i } }))
       if (preset === 'ports') {
         nodes[0].ports = [{ id: 'out', side: 'right', offset: 0.25 }]
         nodes[1].ports = [{ id: 'in', side: 'left' }]
@@ -102,6 +106,16 @@
       }
       const lastAfter = ref('')
       const lastLabel = ref('')
+      const proposalLog = ref([])
+      const cloneErrors = ref('')
+      const record = (name, payload) => {
+        try {
+          structuredClone(payload)
+        } catch (error) {
+          cloneErrors.value += name + ': ' + error.name + ' '
+        }
+        proposalLog.value = [...proposalLog.value, name].slice(-8)
+      }
       const lastDrop = ref('')
       const lastCopy = ref('')
       const lastPaste = ref('')
@@ -152,9 +166,12 @@
           h('output', { role: 'status', 'aria-label': 'Gesture events' }, gestureLog.value.join(' | ')),
           h('output', { role: 'status', 'aria-label': 'Open gestures' }, String(openGestures.value)),
           h('output', { role: 'status', 'aria-label': 'Last label' }, lastLabel.value),
+          h('output', { role: 'status', 'aria-label': 'Edit proposals' }, proposalLog.value.join(' ')),
+          h('output', { role: 'status', 'aria-label': 'Clone errors' }, cloneErrors.value),
           h(NetworkGraph, {
             highlightedNodeIds: list('highlight'), highlightedEdgeIds: list('highlightedges'), collapsedGroupIds: list('collapse'),
             routingPolicy: query.get('policy') ?? undefined, edgeStyle: query.get('style') ?? undefined,
+            edgeLabelPlacement: query.get('labelplacement') ?? undefined,
             layout: preset === 'ports' ? portLayout : undefined,
             ...query.get('targets') === '1' ? {
               onTargetEnter: logTarget('enter'), onTargetLeave: logTarget('leave'), onTargetActivate: logTarget('activate'),
@@ -164,13 +181,30 @@
             resizable: query.get('resizable') === '1',
             editableLabels: query.get('labels') === '1',
             onLabelEdit: change => { lastLabel.value = JSON.stringify(change) },
+            // blankreject=1: the label and delete validators reject with a blank reason, and the rejections are logged.
+            ...query.get('blankreject') === '1' ? {
+              validateLabelEdit: () => '  ', validateDelete: () => ' ',
+              onLabelEditRejected: (change, reason) => record('label-edit-rejected:' + JSON.stringify(reason), change),
+              onDeleteRejected: (deletion, reason) => record('delete-rejected:' + JSON.stringify(reason), deletion),
+            } : {},
             ref: graph, nodes, edges, groups, matchIds, height: 360, dir: query.get('dir') ?? undefined,
             cullOffscreen: query.get('cull') === '1', showMinimap: query.get('minimap') === '1',
             draggable: query.get('draggable') === '1', connectable: query.get('connectable') === '1', positions: positions.value,
             selectedId: selectedId.value,
             'onUpdate:selectedId': id => { selectedId.value = id },
-            onNodeMove: change => applyMoves([change]),
-            onNodesMove: applyMoves,
+            onNodeMove: change => {
+              record('node-move', change)
+              applyMoves([change])
+            },
+            onNodesMove: changes => {
+              record('nodes-move', changes)
+              applyMoves(changes)
+            },
+            reconnectable: query.get('reconnectable') === '1',
+            onReconnect: change => record('reconnect', change),
+            onConnect: connection => record('connect', connection),
+            onNodeResize: change => record('node-resize', change),
+            onEdgeReshape: change => record('edge-reshape', change),
             onViewportChange: () => { viewportEvents.value++ },
             edgesSelectable: query.get('edgeselect') === '1',
             selectedEdgeIds: query.get('edgeselect') === '1' ? selectedEdgeIds.value : undefined,

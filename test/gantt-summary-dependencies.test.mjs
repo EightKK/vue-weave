@@ -6,8 +6,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const pixels = 20 / hour
 const x = time => time * pixels
 // Rows are 66 px high and bars of one lane are centred in their row, like the rollup bars.

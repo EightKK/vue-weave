@@ -11,11 +11,11 @@ export type {
 export { toICalendar, fromICalendar, timelineFromICalendar } from './interchangeICalendar.js'
 export type {
   ICalendarEvent, ICalendarOptions, ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarningCode, ICalendarImportWarning,
-  ICalendarImport, ICalendarTimeline,
+  ICalendarImport, ICalendarTimeline, ICalendarExpandOptions,
 } from './interchangeICalendar.js'
 export { toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchangeCsv.js'
 export type {
-  CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+  CsvCell, CsvOptions, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchangeCsv.js'
 export { toMermaid, fromMermaid } from './interchangeMermaid.js'
 export type { MermaidDirection, MermaidOptions } from './interchangeMermaid.js'

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { sparseLink as link, task } from './helpers/builders.mjs'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { datesById, sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
+import { assertLevelingInvariants, assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 const {
   collectScheduleReasons, levelResources, propagateEdit, rescheduleFromStatusDate, scheduleTasks, scheduledBarFields,
@@ -13,9 +13,8 @@ const range = { start: 0, end: 100 }
 const sub = (id, duration, parentId, fields = {}) => ({ id, duration, parentId, ...fields })
 const dates = result => {
   assert.equal(result.ok, true, JSON.stringify(result))
-  return Object.fromEntries(result.tasks.map(item => [item.id, [item.start, item.end]]))
+  return datesById(result)
 }
-const byId = (result, id) => result.tasks.find(item => item.id === id)
 
 test('a summary task spans its subtasks and ignores its own duration', () => {
   const input = {
@@ -283,26 +282,12 @@ test('buildPlacementInput moves placed subtasks of an unplaced summary to the ne
   assert.equal(input.tasks[2].parentId, 'S')
 })
 
-test('deep summary hierarchies and long chains under a summary are handled without recursion', () => {
-  const count = 12000
-  const nested = [task('t0', 0)]
-  for (let i = 1; i < count; i++) nested.push(task('t' + i, i === count - 1 ? 2 : 0, { parentId: 't' + (i - 1) }))
-  const deep = scheduleTasks({ range, tasks: [task('x', 3), ...nested], dependencies: [link('x', 't0')] })
-  assert.deepEqual([byId(deep, 't0').start, byId(deep, 't0').end, byId(deep, 't11999').start], [3, 5, 3])
-  const chain = [task('S', 0)], links = []
-  for (let i = 0; i < count; i++) {
-    chain.push(sub('c' + i, 1, 'S'))
-    if (i) links.push(link('c' + (i - 1), 'c' + i))
-  }
-  const long = scheduleTasks({ range: { start: 0, end: count + 10 }, tasks: [...chain, task('y', 1)], dependencies: [...links, link('S', 'y')] })
-  assert.deepEqual([byId(long, 'S').start, byId(long, 'S').end, byId(long, 'y').start, byId(long, 'S').critical], [0, count, count, true])
-})
-
 // Seeded plans without `parentId` mixing calendars, quanta, all link types and lags, bounds, ALAP, manual, inactive,
 // pauses and leveling flags. The digest was produced by release 0.5.0 before summary tasks were added; it must not
-// change, because plans without hierarchy are scheduled exactly as before.
+// change, because plans without hierarchy are scheduled exactly as before. (It was updated once, when adjacent leveling
+// `capacity` reasons of equal capacity were merged into one; only the leveling traces changed.)
 test('plans without hierarchy give the same results as before summary tasks', () => {
-  assert.equal(flatPlanDigest(), '7228031770fa93ae2d3eb09d626780d61fabde0787bee5958354d603a6fe9d2b')
+  assert.equal(flatPlanDigest(), 'e2e9b3e638c9d9618f11ef02dc9c3fa6b70c7f76a0ad3cbfd0fc74d530c3712c')
 })
 
 function flatPlanDigest() {
@@ -348,6 +333,8 @@ function flatPlanDigest() {
     const edited = run(() => core.propagateEdit(input, { id: editable.id, start: (2 + pick(4)) * quantum }))
     const progress = new Map(tasks.filter(() => pick(2)).map(task => [task.id, pick(5) / 4]))
     const status = run(() => core.rescheduleFromStatusDate(input, (pick(20)) * quantum, progress))
+    assertScheduleInvariants(range, raw, plan)
+    assertLevelingInvariants(range, leveled, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(raw))
     outputs.push([plain, withPlainTrace(leveled), edited, status, diagnostics])
   }

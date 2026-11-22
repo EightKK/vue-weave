@@ -4,6 +4,7 @@
 // a point in time. Nothing here reads the runtime's clock, locale or time zone.
 import { checkId, invalidIdError, unknownReferenceError } from './ids.js'
 import { zoneFormat, zoneOffset, zonedInstant } from './timeZone.js'
+import type { CalendarRecurrence } from './recurrence.js'
 import type { TimeRange } from './timeline.js'
 import type { ChartTone } from './types.js'
 
@@ -34,6 +35,18 @@ export interface CalendarEvent<D = unknown> {
   /** Set false to keep this event fixed while the others can be edited. Default true (unless the calendar is `readonly`). */
   editable?: boolean
   data?: D
+  /**
+   * Makes the event a recurring series whose `start` and `end` are the first instance. EventCalendar draws concrete
+   * events only: expand series with `expandRecurringEvents` before passing them. Opt-in.
+   */
+  recurrence?: CalendarRecurrence
+  /**
+   * The series an occurrence (or an override of one) belongs to. With `recurrenceId`, EventCalendar adds `occurrence`
+   * to its `edit` proposals and `labels.recurring` to the accessible name. Set by `expandRecurringEvents`.
+   */
+  seriesId?: string
+  /** The original start (epoch milliseconds) of the occurrence in its series, as RFC 5545 RECURRENCE-ID. */
+  recurrenceId?: number
 }
 
 /** A column of the per-resource day view. */
@@ -106,6 +119,11 @@ export interface EventCalendarEdit {
   source: 'pointer' | 'keyboard'
   /** Present only when the proposal moves the event to another resource column of the day view. */
   resource?: { before: string; after: string }
+  /**
+   * Present only for an occurrence of a recurring series (an event with `seriesId` and `recurrenceId`): pass it to
+   * `applyRecurringEdit` with the scope the user chose.
+   */
+  occurrence?: { seriesId: string; recurrenceId: number }
 }
 
 /** Proposal of EventCalendar `create`: a new event over an empty time range, drawn by pointer. */
@@ -153,8 +171,10 @@ export interface EventCalendarLabels {
   showDay: string
   /** Description of editable timed events. */
   editHint: string
-  /** Description of editable events of the all-day row and the month view. */
+  /** Description of editable events of the all-day row. */
   dayEditHint: string
+  /** Description of editable events of the month view, where Up and Down move by a week. Default: an English hint, or `dayEditHint` when only that is given. */
+  monthEditHint?: string
   /** Announced when `validateEdit` returns false. Default "This change was rejected." */
   rejected: string
   /** Announced when `validateCreate` returns false. Default "This new event was rejected." */
@@ -165,6 +185,8 @@ export interface EventCalendarLabels {
   now: string
   /** Shown when there is nothing to draw, for example after invalid input. Default "No events to display". */
   empty: string
+  /** Last part of the accessible name of an occurrence of a recurring series (with `seriesId`). Default "Recurring". */
+  recurring?: string
 }
 
 const views: readonly EventCalendarView[] = ['day', 'week', 'month']
@@ -419,7 +441,8 @@ export function packCalendarEventLanes(
 /**
  * Check the events and resources of EventCalendar: IDs are non-empty and unique (`Invalid event ID: …`, `Duplicate
  * event ID: …`, the same for `resource`), intervals are finite with `start <= end` (RangeError), and every
- * `resourceId` names a resource when `resources` is given (`Unknown resource in event <id>: <resourceId>`).
+ * `resourceId` names a resource when `resources` is given (`Unknown resource in event <id>: <resourceId>`). A
+ * `seriesId` must be a non-empty string (`Invalid series ID: …`) and a `recurrenceId` finite (RangeError).
  */
 export function validateCalendarEvents(events: readonly CalendarEvent[], resources?: readonly CalendarResource[]): void {
   if (!Array.isArray(events as unknown)) throw new RangeError('events must be an array')
@@ -437,6 +460,10 @@ export function validateCalendarEvents(events: readonly CalendarEvent[], resourc
     if (event.resourceId !== undefined) {
       if (typeof event.resourceId !== 'string' || event.resourceId === '') throw invalidIdError('resource', event.resourceId)
       if (resourceIds && !resourceIds.has(event.resourceId)) throw unknownReferenceError('resource', 'event ' + event.id, event.resourceId)
+    }
+    if (event.seriesId !== undefined && (typeof event.seriesId !== 'string' || event.seriesId === '')) throw invalidIdError('series', event.seriesId)
+    if (event.recurrenceId !== undefined && (typeof event.recurrenceId !== 'number' || !Number.isFinite(event.recurrenceId))) {
+      throw new RangeError(`The recurrenceId of event ${event.id} must be finite`)
     }
   }
 }

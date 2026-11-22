@@ -1,11 +1,12 @@
 import {
   indexGraph, layoutLayeredGraph, type GraphBox, type GraphEdge, type GraphLayout, type GraphLayoutOptions, type GraphLayoutRoute,
-  type GraphNodeSize, type GraphPoint, type IdentifiedNode,
+  type GraphLayoutDirection, type GraphNodeSize, type GraphPoint, type IdentifiedNode,
 } from './graph.js'
 import { graphIncidentCurve } from './graphCurve.js'
 import { checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
 import { assertGraphLayoutDirection } from './graphOrient.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
+import { isFiniteRect } from './graphGeometry.js'
 import { unknownReferenceError } from './ids.js'
 
 /**
@@ -109,18 +110,7 @@ export function layoutGraphIncrementally(
     fixed.add(id)
   }
 
-  const horizontal = direction === 'LR' || direction === 'RL'
-  const reversed = direction === 'RL' || direction === 'BT'
-  const toFlow = (x: number, y: number, width: number, height: number): FlowRect => {
-    const along = horizontal ? x : y, alongSize = horizontal ? width : height
-    const cross = horizontal ? y : x, crossSize = horizontal ? height : width
-    const a1 = reversed ? -(along + alongSize) : along
-    return { a1, a2: a1 + alongSize, c1: cross, c2: cross + crossSize }
-  }
-  const fromFlow = (rect: FlowRect) => {
-    const along = reversed ? -rect.a2 : rect.a1
-    return horizontal ? { x: along, y: rect.c1 } : { x: rect.c1, y: along }
-  }
+  const { horizontal, reversed, toFlow, fromFlow } = flowTransform(direction)
   const sizeOf = (id: string, position?: GraphKnownPosition): GraphNodeSize => {
     if (position?.width !== undefined || position?.height !== undefined) {
       const width = position.width ?? sizes?.get(id)?.width ?? nodeWidth, height = position.height ?? sizes?.get(id)?.height ?? nodeHeight
@@ -292,41 +282,15 @@ export function layoutGraphIncrementally(
 
   // Components without a positioned node: one layered block after every other box across the flow.
   const loose = nodes.filter(node => !queued.has(node.id))
-  const blockBoxes = new Map<string, GraphBox>()
-  if (loose.length) {
-    const looseIds = new Set(loose.map(node => node.id))
-    let maxWidth = 0, maxHeight = 0
-    for (const { id } of loose) {
-      const size = sizeOf(id)
-      maxWidth = Math.max(maxWidth, size.width)
-      maxHeight = Math.max(maxHeight, size.height)
-    }
-    const block = layoutLayeredGraph(loose, edges.filter(edge => looseIds.has(edge.from)), {
-      direction, nodeWidth: maxWidth, nodeHeight: maxHeight, columnGap, rowGap, padding: 0,
-    })
-    let offsetX = padding, offsetY = padding
-    if (ids.length) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const id of ids) {
-        const rect = flow.get(id)!, { x, y } = fromFlow(rect), size = boxes.get(id) ?? sizeOf(id)
-        minX = Math.min(minX, x)
-        minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x + size.width)
-        maxY = Math.max(maxY, y + size.height)
-      }
-      if (horizontal) {
-        offsetX = minX
-        offsetY = maxY + rowGap
-      } else {
-        offsetX = maxX + rowGap
-        offsetY = minY
-      }
-    }
-    for (const { id } of loose) {
-      const box = block.boxes.get(id)!, size = sizeOf(id)
-      blockBoxes.set(id, { x: box.x + offsetX, y: box.y + offsetY, width: size.width, height: size.height, rank: box.rank })
-    }
+  const placedRect = (id: string) => {
+    const size = boxes.get(id) ?? sizeOf(id)
+    return { ...fromFlow(flow.get(id)!), width: size.width, height: size.height }
   }
+  const blockBoxes = loose.length
+    ? placeLooseBlock(loose, edges, ids.map(placedRect), sizeOf, {
+      direction, horizontal, columnGap, rowGap, padding,
+    })
+    : new Map<string, GraphBox>()
 
   const resultBoxes = new Map<string, GraphBox>()
   let right = 0, bottom = 0
@@ -344,13 +308,93 @@ export function layoutGraphIncrementally(
     bottom = Math.max(bottom, box.y + box.height)
   }
 
+  const { paths, edgeLabels, routes } = routeIncrementalEdges(edges, resultBoxes, direction, previousLayout)
+  return {
+    boxes: resultBoxes, paths, edgeLabels, width: Math.max(1, right + padding), height: Math.max(1, bottom + padding),
+    ...routes && { routes },
+    placedIds: [...placedIds, ...loose.map(node => node.id)],
+    movedIds: nodes.filter(node => movedIds.has(node.id)).map(node => node.id),
+    fallbackIds,
+  }
+}
+
+/** The flow frame of a layout direction: `a` runs along the flow (growing with rank) and `c` across it. */
+function flowTransform(direction: GraphLayoutDirection) {
+  const horizontal = direction === 'LR' || direction === 'RL'
+  const reversed = direction === 'RL' || direction === 'BT'
+  const toFlow = (x: number, y: number, width: number, height: number): FlowRect => {
+    const along = horizontal ? x : y, alongSize = horizontal ? width : height
+    const cross = horizontal ? y : x, crossSize = horizontal ? height : width
+    const a1 = reversed ? -(along + alongSize) : along
+    return { a1, a2: a1 + alongSize, c1: cross, c2: cross + crossSize }
+  }
+  const fromFlow = (rect: FlowRect) => {
+    const along = reversed ? -rect.a2 : rect.a1
+    return horizontal ? { x: along, y: rect.c1 } : { x: rect.c1, y: along }
+  }
+  return { horizontal, reversed, toFlow, fromFlow }
+}
+
+/**
+ * Boxes of the components without a positioned node: one layered block (with the largest node size) placed after
+ * every `placed` rectangle across the flow, or at the padding when nothing is placed. Each box keeps its own size.
+ */
+function placeLooseBlock(
+  loose: readonly IdentifiedNode[], edges: readonly GraphEdge[], placed: readonly { x: number; y: number; width: number; height: number }[],
+  sizeOf: (id: string) => GraphNodeSize,
+  settings: { direction: GraphLayoutDirection; horizontal: boolean; columnGap: number; rowGap: number; padding: number },
+): Map<string, GraphBox> {
+  const { direction, horizontal, columnGap, rowGap, padding } = settings
+  const blockBoxes = new Map<string, GraphBox>()
+  const looseIds = new Set(loose.map(node => node.id))
+  let maxWidth = 0, maxHeight = 0
+  for (const { id } of loose) {
+    const size = sizeOf(id)
+    maxWidth = Math.max(maxWidth, size.width)
+    maxHeight = Math.max(maxHeight, size.height)
+  }
+  const block = layoutLayeredGraph(loose, edges.filter(edge => looseIds.has(edge.from)), {
+    direction, nodeWidth: maxWidth, nodeHeight: maxHeight, columnGap, rowGap, padding: 0,
+  })
+  let offsetX = padding, offsetY = padding
+  if (placed.length) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const { x, y, width, height } of placed) {
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x + width)
+      maxY = Math.max(maxY, y + height)
+    }
+    if (horizontal) {
+      offsetX = minX
+      offsetY = maxY + rowGap
+    } else {
+      offsetX = maxX + rowGap
+      offsetY = minY
+    }
+  }
+  for (const { id } of loose) {
+    const box = block.boxes.get(id)!, size = sizeOf(id)
+    blockBoxes.set(id, { x: box.x + offsetX, y: box.y + offsetY, width: size.width, height: size.height, rank: box.rank })
+  }
+  return blockBoxes
+}
+
+/**
+ * Edge paths and labels for the final boxes: an edge whose two end boxes are exactly as in `previousLayout` keeps its
+ * path, label and route from it; every other edge gets the default incident curve.
+ */
+function routeIncrementalEdges(
+  edges: readonly GraphEdge[], boxes: ReadonlyMap<string, GraphBox>, direction: GraphLayoutDirection,
+  previousLayout: GraphIncrementalLayoutOptions['previousLayout'],
+) {
   const paths = new Map<string, string>()
   const edgeLabels = new Map<string, { x: number; y: number }>()
   const routes = previousLayout?.routes && new Map<string, GraphLayoutRoute>()
   const same = (a: GraphBox | undefined, b: GraphBox | undefined) => !!a && !!b
     && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
   for (const edge of edges) {
-    const source = resultBoxes.get(edge.from)!, target = resultBoxes.get(edge.to)!
+    const source = boxes.get(edge.from)!, target = boxes.get(edge.to)!
     const kept = previousLayout?.paths.get(edge.id)
     if (kept !== undefined && same(previousLayout!.boxes.get(edge.from), source) && same(previousLayout!.boxes.get(edge.to), target)) {
       paths.set(edge.id, kept)
@@ -364,13 +408,7 @@ export function layoutGraphIncrementally(
     paths.set(edge.id, curve.path)
     edgeLabels.set(edge.id, curve.label)
   }
-  return {
-    boxes: resultBoxes, paths, edgeLabels, width: Math.max(1, right + padding), height: Math.max(1, bottom + padding),
-    ...routes && { routes },
-    placedIds: [...placedIds, ...loose.map(node => node.id)],
-    movedIds: nodes.filter(node => movedIds.has(node.id)).map(node => node.id),
-    fallbackIds,
-  }
+  return { paths, edgeLabels, routes }
 }
 
 /** Options of `graphLayoutChangeMetrics`. */
@@ -421,7 +459,7 @@ export function graphLayoutChangeMetrics(
   const ids: string[] = [], rects: SpatialRect[] = []
   let size = 0
   for (const [id, box] of after.boxes) {
-    if (![box.x, box.y, box.width, box.height].every(Number.isFinite)) throw new RangeError('Graph boxes must be finite: ' + id)
+    if (!isFiniteRect(box, 'any')) throw new RangeError('Graph boxes must be finite: ' + id)
     ids.push(id)
     rects.push({ x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y + box.height })
     size += (Math.abs(box.width) + Math.abs(box.height)) / 2

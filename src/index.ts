@@ -91,7 +91,7 @@ export const TaskBoard = TaskBoardVue as unknown as TaskBoardComponent
 // Diagram editor parts: a shape palette and a property inspector. Both are generic SFCs typed like the components above.
 import GraphPaletteVue from './components/GraphPalette.vue'
 import PropertyInspectorVue from './components/PropertyInspector.vue'
-import type { GraphPaletteItem, InspectorField, InspectorItem } from './core/diagramEditor.js'
+import type { GraphPaletteItem, InspectorField, InspectorItem, InspectorListField } from './core/diagramEditor.js'
 
 type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>
 type PropertyInspectorSfc<T extends InspectorItem> = typeof PropertyInspectorVue<T>
@@ -108,7 +108,7 @@ export type GraphPaletteComponent = (new <D = unknown>(props: { items: readonly 
 
 /** The type of the `PropertyInspector` component. In a template, the item type is inferred from `item` and `fields`. */
 export type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(
-  props: { item?: T | null; fields: readonly InspectorField<T>[] } & Record<string, unknown>,
+  props: { item?: T | null; fields: readonly (InspectorField<T> | InspectorListField<T>)[] } & Record<string, unknown>,
 ) => SfcInstance<PropertyInspectorSfc<T>>)
   & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>
 

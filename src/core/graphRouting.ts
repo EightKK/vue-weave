@@ -3,7 +3,9 @@ import {
   type IdentifiedNode,
 } from './graph.js'
 import { graphPathEndpoints } from './graphView.js'
+import { readPathSegments } from './graphPathData.js'
 import { isGraphRouteValid, isOnGraphBoxSide, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
+import { checkLayoutNumber } from './graphOptions.js'
 import { assertGraphLayoutDirection, graphFlowSides } from './graphOrient.js'
 import { assertGraphPortSide, graphSideAnchor, graphSideNormals as normals } from './graphPortSide.js'
 import { clipToGraphOutline, graphOutlineAlong, graphOutlineShape, isGraphFlowchartShape } from './graphShapes.js'
@@ -223,7 +225,7 @@ function simplify(points: readonly GraphPoint[]): GraphPoint[] {
  * non-finite corner radius.
  */
 export function graphPolylinePath(points: readonly GraphPoint[], cornerRadius = 0): string {
-  if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
+  checkLayoutNumber('cornerRadius', cornerRadius, 'nonnegative')
   assertFinitePoints(points)
   if (!points.length) return ''
   const first = points[0]!
@@ -509,32 +511,15 @@ function validateRouteOptions(options: GraphEdgeRouteOptions) {
   if (!edgeStyles.includes(style)) throw new RangeError('Unknown edge style: ' + style)
   if (policy !== 'builtin' && policy !== 'preserve') throw new RangeError('Unknown routing policy: ' + String(policy))
   assertGraphLayoutDirection(direction)
-  if (!Number.isFinite(cornerRadius) || cornerRadius < 0) throw new RangeError('cornerRadius must be finite and nonnegative')
-  if (parallelSpacing !== undefined && !(Number.isFinite(parallelSpacing) && parallelSpacing > 0)) {
-    throw new RangeError('parallelSpacing must be a positive finite number of chart units')
-  }
+  checkLayoutNumber('cornerRadius', cornerRadius, 'nonnegative')
+  if (parallelSpacing !== undefined) checkLayoutNumber('parallelSpacing', parallelSpacing, 'positive')
   return { style, direction, cornerRadius, policy, spacing: parallelSpacing, avoid: resolveObstacleAvoidance(avoidNodes) }
 }
 
-// The points of an absolute path of M, H and V commands, such as a long-edge bypass lane.
+// The points of an absolute path of M, H and V commands, such as a long-edge bypass lane. The path must be valid.
 function axisPathPoints(path: string): GraphPoint[] {
-  const tokens = path.match(/[MHV]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) ?? []
   const points: GraphPoint[] = []
-  let command = '', x = 0, y = 0
-  for (let i = 0; i < tokens.length;) {
-    const token = tokens[i]!
-    if (token === 'M' || token === 'H' || token === 'V') {
-      command = token
-      i++
-      continue
-    }
-    if (command === 'M') {
-      x = Number(tokens[i++])
-      y = Number(tokens[i++])
-    } else if (command === 'H') x = Number(tokens[i++])
-    else y = Number(tokens[i++])
-    points.push({ x, y })
-  }
+  readPathSegments(path, 'strict', ({ x, y }) => points.push({ x, y }))
   return points
 }
 

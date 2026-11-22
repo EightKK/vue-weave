@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { h } from 'vue'
 import { graphDeletion, removeGraphElements } from '@eightkk/vue-weave/core'
 import { NetworkGraph, graphDeletion as rootGraphDeletion } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const nodes = [
   { id: 'a', label: 'Alpha', detail: 'first' },
@@ -66,7 +66,7 @@ test('removeGraphElements drops edges of removed nodes even when the deletion om
   assert.throws(() => removeGraphElements(nodes, edges, { nodeIds: [], edgeIds: ['zz'] }), /Unknown edge in graph deletion: zz/)
 })
 
-const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph markup is unchanged when the new props are absent or off', async () => {
   const plain = await render({})

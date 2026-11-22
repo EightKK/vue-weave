@@ -2,6 +2,7 @@
 // incremental layout, its change metrics, obstacle routing and NetworkGraph's drag preview. Not exported from the
 // package entry points.
 import type { GraphPoint } from './graph.js'
+import { readPathSegments } from './graphPathData.js'
 
 /** An axis-aligned rectangle by its corners. */
 export interface SpatialRect {
@@ -9,6 +10,22 @@ export interface SpatialRect {
   y1: number
   x2: number
   y2: number
+}
+
+/**
+ * How far an edge label can reach from its anchor, in chart units: the margin graphLayoutBounds keeps around a label
+ * anchor, and the distance NetworkGraph's drag preview looks around a changed node or route for labels to place again.
+ */
+export const defaultLabelReach = 80
+
+/**
+ * Whether two rectangles given by origin and size intersect or touch (closed intervals, unlike graphRectsIntersect):
+ * the culling and preview test, for bounds that leave out stroke widths.
+ */
+export function rectsMeet(
+  a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
 }
 
 const keyRange = 2 ** 25
@@ -145,9 +162,6 @@ export class SpatialGrid {
   }
 }
 
-/** The number of arguments of each SVG path command, by upper-case command letter. */
-export const svgPathArgumentCounts: Readonly<Record<string, number>> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 }
-const token = /([MLHVCSQTAZmlhvcsqtaz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g
 const curveSteps = 16
 
 /**
@@ -158,8 +172,7 @@ const curveSteps = 16
 export function graphPathPolylines(path: string): GraphPoint[][] {
   const result: GraphPoint[][] = []
   let current: GraphPoint[] | undefined
-  let command = '', x = 0, y = 0, startX = 0, startY = 0
-  const values: number[] = []
+  let x = 0, y = 0
   const add = (px: number, py: number) => {
     if (!current) {
       current = [{ x, y }]
@@ -169,80 +182,52 @@ export function graphPathPolylines(path: string): GraphPoint[][] {
     x = px
     y = py
   }
-  const flush = () => {
-    const count = svgPathArgumentCounts[command.toUpperCase()]
-    if (count === undefined) return
-    const relative = command !== command.toUpperCase()
-    const upper = command.toUpperCase()
-    while (values.length >= count && count > 0) {
-      const args = values.splice(0, count)
-      const ox = relative ? x : 0, oy = relative ? y : 0
-      switch (upper) {
-        case 'M':
-          x = args[0]! + ox
-          y = args[1]! + oy
-          startX = x
-          startY = y
-          current = [{ x, y }]
-          result.push(current)
-          // Further pairs after a moveto are lines.
-          command = relative ? 'l' : 'L'
-          return flush()
-        case 'L':
-        case 'T':
-          add(args[0]! + ox, args[1]! + oy)
-          break
-        case 'H':
-          add(args[0]! + ox, y)
-          break
-        case 'V':
-          add(x, args[0]! + oy)
-          break
-        case 'C': {
-          const x0 = x, y0 = y
-          const [x1, y1, x2, y2, x3, y3] = [args[0]! + ox, args[1]! + oy, args[2]! + ox, args[3]! + oy, args[4]! + ox, args[5]! + oy]
-          for (let i = 1; i <= curveSteps; i++) {
-            const t = i / curveSteps, u = 1 - t
-            add(u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
-              u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3)
-          }
-          break
-        }
-        case 'Q': {
-          const x0 = x, y0 = y
-          const [x1, y1, x2, y2] = [args[0]! + ox, args[1]! + oy, args[2]! + ox, args[3]! + oy]
-          for (let i = 1; i <= curveSteps; i++) {
-            const t = i / curveSteps, u = 1 - t
-            add(u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2)
-          }
-          break
-        }
-        case 'S':
-          add(args[0]! + ox, args[1]! + oy)
-          add(args[2]! + ox, args[3]! + oy)
-          break
-        case 'A':
-          add(args[5]! + ox, args[6]! + oy)
-          break
-      }
-    }
-  }
-  for (const match of path.matchAll(token)) {
-    if (match[1]) {
-      flush()
-      values.length = 0
-      command = match[1]
-      if (command === 'Z' || command === 'z') {
-        if (current) add(startX, startY)
+  readPathSegments(path, 'lenient', ({ command, x0, y0, args, x: nx, y: ny }) => {
+    x = x0
+    y = y0
+    switch (command) {
+      case 'M':
+        x = nx
+        y = ny
+        current = [{ x, y }]
+        result.push(current)
+        break
+      case 'Z':
+        if (current) add(nx, ny)
         current = undefined
+        x = nx
+        y = ny
+        break
+      case 'L':
+      case 'T':
+      case 'H':
+      case 'V':
+      case 'A':
+        add(nx, ny)
+        break
+      case 'C': {
+        const [x1, y1, x2, y2, x3, y3] = args as [number, number, number, number, number, number]
+        for (let i = 1; i <= curveSteps; i++) {
+          const t = i / curveSteps, u = 1 - t
+          add(u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+            u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3)
+        }
+        break
       }
-      continue
+      case 'Q': {
+        const [x1, y1, x2, y2] = args as [number, number, number, number]
+        for (let i = 1; i <= curveSteps; i++) {
+          const t = i / curveSteps, u = 1 - t
+          add(u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2)
+        }
+        break
+      }
+      case 'S':
+        add(args[0]!, args[1]!)
+        add(args[2]!, args[3]!)
+        break
     }
-    const value = Number(match[2])
-    if (!Number.isFinite(value)) return result
-    values.push(value)
-  }
-  flush()
+  })
   return result
 }
 

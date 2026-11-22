@@ -9,6 +9,9 @@ import { checkLayoutNumber, checkLayoutNumbers, defaultPadding } from './graphOp
  */
 export type GraphFlowScale = { pixelsPerUnit: number } | { fitExtent: number }
 
+/** The scale used when `options.scale` is left out; compared by identity to tell it from an explicit `fitExtent`. */
+const defaultScale: GraphFlowScale = { fitExtent: 360 }
+
 /** Options of `layoutFlowGraph`. `N` and `E` type the nodes and edges that the accessors receive. */
 export interface GraphFlowOptions<N extends IdentifiedNode = IdentifiedNode, E extends GraphEdge = GraphEdge> {
   /** The quantity that flows along an edge, in the edge's unit. Must be a finite number of at least 0. Required. */
@@ -31,7 +34,10 @@ export interface GraphFlowOptions<N extends IdentifiedNode = IdentifiedNode, E e
   rankGap?: number
   /** Margin around the picture. Default 20. */
   padding?: number
-  /** Default `{ fitExtent: 360 }`. */
+  /**
+   * Default `{ fitExtent: 360 }`, grown for a rank whose gaps and minimum node sizes do not fit into 360. An explicit
+   * `fitExtent` too small for a rank throws a RangeError instead.
+   */
   scale?: GraphFlowScale
   /** Smallest cross-flow size of a node box, so a node without flow stays visible. Positive. Default 2. */
   minNodeSize?: number
@@ -178,7 +184,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   nodes: readonly N[], edges: readonly E[], options: GraphFlowOptions<N, E>,
 ): GraphFlowLayout {
   const {
-    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = defaultPadding, scale = { fitExtent: 360 },
+    quantity, unit, direction = 'LR', nodeThickness = 24, nodeGap = 16, rankGap = 120, padding = defaultPadding, scale = defaultScale,
     minNodeSize = 2, minBandWidth = 1, referenceGap = 12, crossingSweeps = 4,
   } = options ?? ({} as GraphFlowOptions<N, E>)
   if (typeof quantity !== 'function') throw new Error('layoutFlowGraph needs a quantity accessor')
@@ -217,32 +223,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   })
 
   // Reference edges: those an iterative depth-first search in input order finds closing a cycle (including self-loops).
-  const outgoing = new Map<string, number[]>(nodes.map(node => [node.id, []]))
-  included.forEach(({ edge }, i) => outgoing.get(edge.from)!.push(i))
-  const state = new Map<string, 1 | 2>()
-  const reference = new Set<number>()
-  for (const { id } of nodes) {
-    if (state.has(id)) continue
-    state.set(id, 1)
-    const stack = [{ id, cursor: 0 }]
-    while (stack.length) {
-      const frame = stack[stack.length - 1]!
-      const list = outgoing.get(frame.id)!
-      if (frame.cursor === list.length) {
-        state.set(frame.id, 2)
-        stack.pop()
-        continue
-      }
-      const i = list[frame.cursor++]!
-      const next = included[i]!.edge.to
-      const seen = state.get(next)
-      if (seen === 1) reference.add(i)
-      else if (seen === undefined) {
-        state.set(next, 1)
-        stack.push({ id: next, cursor: 0 })
-      }
-    }
-  }
+  const reference = referenceEdges(nodes, included.map(({ edge }) => edge))
 
   // Ranks and the order within each rank from the layered layout of the forward edges, which form a DAG.
   const forward = included.filter((_, i) => !reference.has(i)).map(({ edge }) => ({ id: edge.id, from: edge.from, to: edge.to }))
@@ -252,17 +233,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
   for (const column of columns) column?.sort((a, b) => layered.boxes.get(a)!.y - layered.boxes.get(b)!.y)
 
   // Totals, by node, in the displayed unit only.
-  const totals = new Map(nodes.map(({ id }) => [id, { inflow: 0, outflow: 0, referenceInflow: 0, referenceOutflow: 0 }]))
-  included.forEach(({ edge, quantity: value }, i) => {
-    const source = totals.get(edge.from)!, target = totals.get(edge.to)!
-    if (reference.has(i)) {
-      source.referenceOutflow += value
-      target.referenceInflow += value
-    } else {
-      source.outflow += value
-      target.inflow += value
-    }
-  })
+  const totals = flowTotals(nodes, included, reference)
   const value = (id: string) => {
     const total = totals.get(id)!
     return Math.max(total.inflow, total.outflow)
@@ -273,35 +244,13 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
     return Math.max(total.inflow + total.referenceInflow, total.outflow + total.referenceOutflow)
   }
 
-  let pixels = fixed ?? 0
-  if (fit !== undefined) {
-    let best = Infinity
-    for (const column of columns) {
-      if (!column) continue
-      const sum = column.reduce((total, id) => total + extentValue(id), 0)
-      if (sum === 0) continue
-      const empty = column.filter(id => extentValue(id) === 0).length
-      const available = fit - (column.length - 1) * nodeGap - empty * minNodeSize
-      if (available <= 0) throw new RangeError('fitExtent is too small for the gaps and minimum node sizes of a rank')
-      best = Math.min(best, available / sum)
-    }
-    pixels = best === Infinity ? 0 : best
-  }
+  const pixels = fit === undefined ? fixed ?? 0 : fitScale(columns, extentValue, fit, scale === defaultScale, nodeGap, minNodeSize)
   const bands = included.map(({ edge, quantity: amount }) => ({ edge, amount, thickness: amount * pixels }))
 
   // Reference lanes beside the ranks, one per reference band in input order. A reference band leaves its source along
   // the flow, turns into its lane `reach` past the source rank, runs back, and turns into the target `reach` before
   // its rank; deeper lanes reach further, so the loops nest instead of crossing each other.
-  const lanes = new Map<number, { depth: number; reach: number; index: number }>()
-  let deepest = 0, reachMax = 0
-  bands.forEach(({ thickness }, i) => {
-    if (!reference.has(i)) return
-    const width = Math.max(thickness, minBandWidth)
-    deepest += referenceGap
-    lanes.set(i, { depth: deepest + width / 2, reach: deepest + width / 2, index: lanes.size })
-    deepest += width
-    reachMax = Math.max(reachMax, deepest)
-  })
+  const { lanes, deepest, reachMax } = referenceLanes(bands, reference, minBandWidth, referenceGap)
   // Loops of the first and last rank need room beyond the padding.
   const inset = padding + Math.max(0, reachMax - padding)
 
@@ -324,32 +273,7 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
 
   // Band stacks from the top of each node side: forward bands sorted by the position of their other end (then input
   // order), then reference bands with the deepest lane first.
-  const centre = (id: string) => place.get(id)!.v + place.get(id)!.size / 2
-  const outStacks = new Map<string, number[]>(), inStacks = new Map<string, number[]>()
-  const push = (map: Map<string, number[]>, key: string, i: number) => {
-    const list = map.get(key)
-    if (list) list.push(i)
-    else map.set(key, [i])
-  }
-  bands.forEach(({ edge }, i) => {
-    push(outStacks, edge.from, i)
-    push(inStacks, edge.to, i)
-  })
-  const sourceV = new Map<number, number>(), targetV = new Map<number, number>()
-  for (const [stacks, end, offsets] of [[outStacks, 'to', sourceV], [inStacks, 'from', targetV]] as const) {
-    for (const [id, list] of stacks) {
-      list.sort((a, b) => {
-        const la = lanes.get(a), lb = lanes.get(b)
-        if (la || lb) return !la ? -1 : !lb ? 1 : lb.index - la.index
-        return centre(bands[a]!.edge[end]) - centre(bands[b]!.edge[end]) || a - b
-      })
-      let v = place.get(id)!.v
-      for (const i of list) {
-        offsets.set(i, v)
-        v += bands[i]!.thickness
-      }
-    }
-  }
+  const { sourceV, targetV } = bandOffsets(bands, lanes, place)
 
   // From abstract to chart coordinates.
   const vertical = isVerticalDirection(direction)
@@ -407,6 +331,129 @@ export function layoutFlowGraph<N extends IdentifiedNode, E extends GraphEdge>(
     boxes, paths, edgeLabels: new Map(), width: vertical ? across : along, height: vertical ? along : across,
     unit: displayUnit, scale: pixels, direction, nodes: flowNodes, bands: result, excluded,
   }
+}
+
+/** Indexes into `edges` of the edges that an iterative depth-first search in node input order finds closing a cycle. */
+function referenceEdges(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[]): Set<number> {
+  const outgoing = new Map<string, number[]>(nodes.map(node => [node.id, []]))
+  edges.forEach((edge, i) => outgoing.get(edge.from)!.push(i))
+  const state = new Map<string, 1 | 2>()
+  const reference = new Set<number>()
+  for (const { id } of nodes) {
+    if (state.has(id)) continue
+    state.set(id, 1)
+    const stack = [{ id, cursor: 0 }]
+    while (stack.length) {
+      const frame = stack[stack.length - 1]!
+      const list = outgoing.get(frame.id)!
+      if (frame.cursor === list.length) {
+        state.set(frame.id, 2)
+        stack.pop()
+        continue
+      }
+      const i = list[frame.cursor++]!
+      const next = edges[i]!.to
+      const seen = state.get(next)
+      if (seen === 1) reference.add(i)
+      else if (seen === undefined) {
+        state.set(next, 1)
+        stack.push({ id: next, cursor: 0 })
+      }
+    }
+  }
+  return reference
+}
+
+/** Forward and reference inflow and outflow of every node, in the displayed unit. */
+function flowTotals(nodes: readonly IdentifiedNode[], included: readonly { edge: GraphEdge; quantity: number }[], reference: ReadonlySet<number>) {
+  const totals = new Map(nodes.map(({ id }) => [id, { inflow: 0, outflow: 0, referenceInflow: 0, referenceOutflow: 0 }]))
+  included.forEach(({ edge, quantity: value }, i) => {
+    const source = totals.get(edge.from)!, target = totals.get(edge.to)!
+    if (reference.has(i)) {
+      source.referenceOutflow += value
+      target.referenceInflow += value
+    } else {
+      source.outflow += value
+      target.inflow += value
+    }
+  })
+  return totals
+}
+
+/**
+ * The largest scale at which every rank fits into `fit` with its gaps and minimum node sizes, or 0 when no rank has a
+ * value. With the default scale, the extent grows for a rank too full for it.
+ */
+function fitScale(
+  columns: readonly (string[] | undefined)[], extentValue: (id: string) => number, fit: number, defaultExtent: boolean, nodeGap: number,
+  minNodeSize: number,
+): number {
+  let best = Infinity
+  for (const column of columns) {
+    if (!column) continue
+    const sum = column.reduce((total, id) => total + extentValue(id), 0)
+    if (sum === 0) continue
+    const empty = column.filter(id => extentValue(id) === 0).length
+    // The default extent grows for a rank too full for it: to the rank's gaps plus `minNodeSize` for every node.
+    const extent = defaultExtent ? Math.max(fit, (column.length - 1) * nodeGap + column.length * minNodeSize) : fit
+    const available = extent - (column.length - 1) * nodeGap - empty * minNodeSize
+    if (available <= 0) throw new RangeError('fitExtent is too small for the gaps and minimum node sizes of a rank')
+    best = Math.min(best, available / sum)
+  }
+  return best === Infinity ? 0 : best
+}
+
+/** One lane beside the ranks for each reference band, in input order; each lane lies deeper than the one before. */
+function referenceLanes(bands: readonly { thickness: number }[], reference: ReadonlySet<number>, minBandWidth: number, referenceGap: number) {
+  const lanes = new Map<number, { depth: number; reach: number; index: number }>()
+  let deepest = 0, reachMax = 0
+  bands.forEach(({ thickness }, i) => {
+    if (!reference.has(i)) return
+    const width = Math.max(thickness, minBandWidth)
+    deepest += referenceGap
+    lanes.set(i, { depth: deepest + width / 2, reach: deepest + width / 2, index: lanes.size })
+    deepest += width
+    reachMax = Math.max(reachMax, deepest)
+  })
+  return { lanes, deepest, reachMax }
+}
+
+/**
+ * Where each band starts on its source side and ends on its target side, measured across the flow: bands are stacked
+ * from the top of each node side, forward bands sorted by the position of their other end (then input order), then
+ * reference bands with the deepest lane first.
+ */
+function bandOffsets(
+  bands: readonly { edge: GraphEdge; thickness: number }[], lanes: ReadonlyMap<number, { index: number }>,
+  place: ReadonlyMap<string, { v: number; size: number }>,
+) {
+  const centre = (id: string) => place.get(id)!.v + place.get(id)!.size / 2
+  const outStacks = new Map<string, number[]>(), inStacks = new Map<string, number[]>()
+  const push = (map: Map<string, number[]>, key: string, i: number) => {
+    const list = map.get(key)
+    if (list) list.push(i)
+    else map.set(key, [i])
+  }
+  bands.forEach(({ edge }, i) => {
+    push(outStacks, edge.from, i)
+    push(inStacks, edge.to, i)
+  })
+  const sourceV = new Map<number, number>(), targetV = new Map<number, number>()
+  for (const [stacks, end, offsets] of [[outStacks, 'to', sourceV], [inStacks, 'from', targetV]] as const) {
+    for (const [id, list] of stacks) {
+      list.sort((a, b) => {
+        const la = lanes.get(a), lb = lanes.get(b)
+        if (la || lb) return !la ? -1 : !lb ? 1 : lb.index - la.index
+        return centre(bands[a]!.edge[end]) - centre(bands[b]!.edge[end]) || a - b
+      })
+      let v = place.get(id)!.v
+      for (const i of list) {
+        offsets.set(i, v)
+        v += bands[i]!.thickness
+      }
+    }
+  }
+  return { sourceV, targetV }
 }
 
 /**

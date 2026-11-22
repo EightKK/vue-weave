@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { cloneGraphElements, graphAlignmentGuides, snapGraphPoint } from '@eightkk/vue-weave/core'
 import { NetworkGraph, cloneGraphElements as rootClone, graphAlignmentGuides as rootGuides } from '@eightkk/vue-weave'
-import { renderComponent } from './helpers/ssr.mjs'
+import { renderWith } from './helpers/ssr.mjs'
 
 const rect = (x, y, width = 100, height = 40) => ({ x, y, width, height })
 
@@ -79,6 +79,11 @@ test('graphAlignmentGuides validates the threshold and rectangles and does not m
   assert.throws(() => graphAlignmentGuides(rect(Number.NaN, 0), [], 1), RangeError)
   assert.throws(() => graphAlignmentGuides(rect(0, 0, -1, 10), [], 1), RangeError)
   assert.throws(() => graphAlignmentGuides(rect(0, 0), [rect(0, 0), rect(0, Infinity)], 1), { name: 'RangeError', message: /rectangle 1/ })
+  // Missing rectangles are rejected as a RangeError, not a TypeError.
+  for (const missing of [null, undefined]) {
+    assert.throws(() => graphAlignmentGuides(missing, [], 1), RangeError)
+    assert.throws(() => graphAlignmentGuides(rect(0, 0), [rect(0, 0), missing], 1), { name: 'RangeError', message: /rectangle 1/ })
+  }
   const moving = Object.freeze(rect(3, 3)), others = Object.freeze([Object.freeze(rect(0, 0))])
   const result = graphAlignmentGuides(moving, others, 5)
   assert.deepEqual(moving, rect(3, 3))
@@ -91,6 +96,7 @@ test('snapGraphPoint rounds to the grid and validates its input', () => {
   assert.deepEqual(snapGraphPoint({ x: 0.26, y: 0.24 }, 0.5), { x: 0.5, y: 0 })
   for (const grid of [0, -5, Number.NaN, Infinity]) assert.throws(() => snapGraphPoint({ x: 0, y: 0 }, grid), RangeError)
   assert.throws(() => snapGraphPoint({ x: Number.NaN, y: 0 }, 10), RangeError)
+  assert.throws(() => snapGraphPoint(null, 10), RangeError)
 })
 
 const nodes = [
@@ -188,7 +194,7 @@ test('cloneGraphElements leaves its input untouched', () => {
   assert.notEqual(result.positions.get('node:a'), positions.get('a'))
 })
 
-const render = (props, slots) => renderComponent(NetworkGraph, { nodes, edges, ...props }, slots)
+const render = renderWith(NetworkGraph, { nodes, edges })
 
 test('NetworkGraph markup is unchanged by the editing props and the none background', async () => {
   const plain = await render({})
