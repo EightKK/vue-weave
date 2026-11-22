@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { applyRecurringEdit, expandRecurrence, expandRecurringEvents, fromICalendar, toICalendar } from '@eightkk/vue-weave/core'
+import { hour, utcText as utc } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const utc = text => Date.parse(text + 'Z')
 const iso = time => new Date(time).toISOString().slice(0, 16)
 const wrap = (...events) => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//EN', ...events.flat(), 'END:VCALENDAR', ''].join('\r\n')
 const vevent = (...lines) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT']

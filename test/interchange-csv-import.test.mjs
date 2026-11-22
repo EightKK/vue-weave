@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseCsv, timelineCsvTable, timelineFromCsvTable, toCsv } from '@eightkk/vue-weave/core'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const parseTime = text => Date.parse(text)
 
 test('parseCsv reads RFC 4180 quoting, line breaks and delimiters', () => {

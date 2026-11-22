@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { createTimeScale, mirrorTimeScale } from '@eightkk/vue-weave/core'
 import { GanttChart, NetworkGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 test('mirrorTimeScale maps the range start to the right edge and keeps exact round trips', () => {
   // A power-of-two pixel ratio keeps the underlying scale exact, so the mirror must be exact too.

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { scheduleTasks, scheduleToGraph } from '@eightkk/vue-weave/core'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 test('scheduleToGraph builds a PERT network with early dates, float and critical marking', () => {
   const dependencies = [

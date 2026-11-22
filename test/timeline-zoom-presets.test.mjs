@@ -3,10 +3,10 @@ import { test } from 'node:test'
 import { GanttChart } from '@eightkk/vue-weave'
 import { calendarBands, calendarZoomPresets, intlTimeFormatter } from '@eightkk/vue-weave/core'
 import { renderComponent } from './helpers/ssr.mjs'
+import { day } from './helpers/time.mjs'
 
 const minute = 60_000
 const hour = 60 * minute
-const day = 24 * hour
 const at = text => Date.parse(text)
 const iso = time => new Date(time).toISOString()
 

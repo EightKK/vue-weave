@@ -2,9 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { calendarBands } from '@eightkk/vue-weave/core'
 import { sha256Json } from './helpers/seeded.mjs'
+import { hour, day } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
 const at = text => Date.parse(text)
 const range = (start, end) => ({ start: at(start), end: at(end) })
 const hours = bands => bands.map(band => (band.end - band.start) / hour)

@@ -8,10 +8,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { EventCalendar } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour, day, utcText as utc } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
-const utc = text => Date.parse(text + 'Z')
 // Wednesday, November 11, 2026.
 const wednesday = utc('2026-11-11T10:30:00')
 

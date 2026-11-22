@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { timelineCsvTable, toCsv, toICalendar, toMsProjectXml } from '@eightkk/vue-weave/core'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 /** A minimal XML well-formedness check: balanced elements and no raw ampersands. */
 function assertWellFormed(xml) {

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Line A' }, { id: 'r2', label: 'Line B' }]
 const bars = [{ id: 'b', rowId: 'r1', label: 'Cut', start: 0, end: hour }]
 const columns = [

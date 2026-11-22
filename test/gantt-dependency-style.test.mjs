@@ -4,8 +4,8 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createTimeScale, dependencyPath, renderTimelineSvg } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
 const bars = [
   { id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour },

@@ -10,8 +10,8 @@ import {
 import { GanttChart, useWindowedData } from '@eightkk/vue-weave'
 import { seededRandom } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
+import { day } from './helpers/time.mjs'
 
-const day = 86_400_000
 const bar = (id, rowId, start, end) => ({ id, rowId, label: id, start, end })
 
 /** A load function whose answers the test releases by hand. */

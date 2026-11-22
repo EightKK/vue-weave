@@ -3,12 +3,12 @@ import { test } from 'node:test'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { GanttChart, NetworkGraph, editTimeRange } from '@eightkk/vue-weave'
+import { hour } from './helpers/time.mjs'
 
 // The prop checks of the components follow the core's rules: RangeError for invalid numbers and geometry (and unknown
 // values of a string option), Error for bad references, invalid or duplicate IDs and cycles. Component-owned ID checks
 // use the shared texts `Invalid <kind> ID: <value>` and `Duplicate <kind> ID: <id>`, where an ID is a non-empty string.
 
-const hour = 3_600_000
 const ganttBase = { rows: [{ id: 'r', label: 'Row' }], bars: [{ id: 'b', rowId: 'r', label: 'Bar', start: 0, end: hour }], range: { start: 0, end: 8 * hour } }
 const column = (id, width = 40) => ({ id, label: 'C', width, value: () => '' })
 const preset = (id, pixelsPerUnit = 1 / hour) => ({ id, label: 'P', pixelsPerUnit })

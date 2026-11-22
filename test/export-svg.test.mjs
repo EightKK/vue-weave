@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import {
   calculateResourceLoad, createTimeScale, defaultSvgExportTheme, escapeXml, layoutLayeredGraph, renderGraphSvg, renderTimelineSvg,
 } from '@eightkk/vue-weave/core'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 /** A small well-formedness check: balanced tags, quoted attributes and only known entities in text. */
 function assertWellFormed(xml) {

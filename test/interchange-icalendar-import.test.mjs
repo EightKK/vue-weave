@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fromICalendar, timelineFromICalendar, toICalendar, validateTimelineData } from '@eightkk/vue-weave/core'
+import { hour, day } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
 const wrap = (...events) => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//test//EN', ...events.flat(), 'END:VCALENDAR', ''].join('\r\n')
 const vevent = (...lines) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT']
 

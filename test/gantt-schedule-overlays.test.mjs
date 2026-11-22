@@ -8,8 +8,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 test('invertWorkPeriods returns the sorted gaps between work periods inside the range', () => {
   const range = { start: 0, end: 30 }

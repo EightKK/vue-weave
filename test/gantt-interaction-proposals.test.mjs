@@ -5,8 +5,8 @@ import { renderToString } from 'vue/server-renderer'
 import { removeTimelineBars, validateTimelineData } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 
 const rows = [{ id: 'r1', label: 'Row 1' }, { id: 'r2', label: 'Row 2' }]
 const bars = [

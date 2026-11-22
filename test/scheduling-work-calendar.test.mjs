@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildWorkPeriods } from '@eightkk/vue-weave/core'
+import { hour, utcText as utc } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const utc = value => Date.parse(value + 'Z')
 const range = (start, end) => ({ start: utc(start), end: utc(end) })
 const period = (start, end) => ({ start: utc(start), end: utc(end) })
 const everyDay = (startMinute, endMinute) => [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, startMinute, endMinute }))

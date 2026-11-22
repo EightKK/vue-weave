@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { createTimeScale, renderTimelineSvg } from '@eightkk/vue-weave/core'
 import { GanttChart } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour } from './helpers/time.mjs'
 
-const hour = 3_600_000
 const rows = [{ id: 'r1', label: 'Row 1', data: { effort: 3 } }, { id: 'r2', label: 'Row 2', data: { effort: null } }]
 const bars = [
   { id: 'a', rowId: 'r1', label: 'A', start: hour, end: 3 * hour, editable: true },

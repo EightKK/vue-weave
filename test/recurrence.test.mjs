@@ -5,10 +5,8 @@ import {
 } from '@eightkk/vue-weave/core'
 import { EventCalendar } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
+import { hour, day, utcText as utc } from './helpers/time.mjs'
 
-const hour = 3_600_000
-const day = 24 * hour
-const utc = text => Date.parse(text + 'Z')
 const iso = time => new Date(time).toISOString().slice(0, 16)
 const all = { start: utc('1970-01-01T00:00'), end: utc('2100-01-01T00:00') }
 const starts = (series, range = all, options) => expandRecurrence(series, range, options).map(occurrence => iso(occurrence.start))

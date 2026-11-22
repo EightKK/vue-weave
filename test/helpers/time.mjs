@@ -9,3 +9,6 @@ export const day = 24 * hour
 
 /** Epoch milliseconds of a UTC date and time; `month` counts from 1, unlike `Date.UTC`. */
 export const utc = (year, month, date = 1, hours = 0, minutes = 0) => Date.UTC(year, month - 1, date, hours, minutes)
+
+/** Epoch milliseconds of an ISO-like UTC text without its zone suffix, for example `utcText('2026-03-02T09:00')`. */
+export const utcText = text => Date.parse(text + 'Z')
