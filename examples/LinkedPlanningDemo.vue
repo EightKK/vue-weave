@@ -2,7 +2,8 @@
 // One schedule shown as a network graph, a Gantt chart and resource load rows, linked through entity bindings.
 // The view the user acts in owns the selection (`selectedIds`); the other views only get highlight props, so a linked
 // item can never be deleted or moved from another view. Hover is highlight only. "Go to counterpart" reveals an item
-// and handles collapsed groups and unknown targets with a visible message.
+// and handles collapsed groups and unknown targets with a visible message. The task list is a view of the
+// application's own: it selects through entity references (`selectEntities`), so no view owns that selection.
 import { computed, nextTick, ref, shallowRef, useTemplateRef } from 'vue'
 import {
   GanttChart, NetworkGraph, buildViewBindingIndex, revealLinkedTarget, calculateResourceLoad, removeGraphElements, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
@@ -193,7 +194,7 @@ const summary = computed(() => {
   if (!selected.length && !linked.hoveredEntities.value.length) return 'Nothing selected. Select a task in any view.'
   const text = (entities: readonly EntityRef[]) => entities.map(entity => entity.kind === 'task' ? names[entity.id] : edgeText(entity.id)).join(', ')
   const parts = []
-  if (selected.length) parts.push(`Selected in ${linked.owner.value}: ${text(selected)}`)
+  if (selected.length) parts.push(`Selected in ${linked.owner.value ?? linked.selectionSource.value}: ${text(selected)}`)
   if (linked.hoveredEntities.value.length) parts.push(`Hovering: ${text(linked.hoveredEntities.value)}`)
   if (impactTargets.value.length) parts.push(`Impact range reaches ${new Set(impactTargets.value.flatMap(t => t.view === 'timeline' && t.kind === 'bar' ? [t.id] : [])).size} tasks`)
   return parts.join('. ')
@@ -214,6 +215,15 @@ function activate(event: ViewTargetEvent) {
   // Linked items are display-only, so activation reports what the user touched in the view they act in.
   const { unknown } = linked.select(event.target.view, [event.target])
   if (unknown.length && event.target.view !== 'graph') message.value = 'That item has no counterpart in the other views.'
+}
+// The application's own task list selects by entity and shows every selection, whichever view made it. Echoing the same
+// selection back changes nothing; clicking the task the list selected again clears it with an empty input.
+const listSelectedIds = computed(() => new Set(selectedTaskIds.value))
+function selectFromList(taskId: string) {
+  message.value = ''
+  offer.value = undefined
+  const alone = linked.selectionSource.value === 'task list' && listSelectedIds.value.size === 1 && listSelectedIds.value.has(taskId)
+  linked.selectEntities(alone ? [] : [{ kind: 'task', id: taskId }], { source: 'task list' })
 }
 function clear() {
   linked.clearSelection()
@@ -339,6 +349,12 @@ async function expandAndShow() {
       <button v-if="offer" type="button" @click="expandAndShow">Expand and show</button>
     </p>
 
+    <ul class="linked-task-list" aria-label="Task list">
+      <li v-for="task in tasks" :key="task.id">
+        <button type="button" :aria-pressed="listSelectedIds.has(task.id)" @click="selectFromList(task.id)">{{ names[task.id] }}</button>
+      </li>
+    </ul>
+
     <div class="linked-graph">
       <NetworkGraph ref="graph" :nodes="graphNodes" :edges="graphEdges" :groups="graphGroups" collapsible-groups deletable
         :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="300" edges-selectable
@@ -384,4 +400,6 @@ async function expandAndShow() {
 .linked-options { flex-wrap: wrap; gap: 10px 16px; margin-bottom: 8px; }
 .linked-status { margin: 4px 0; display: flex; gap: 10px; align-items: center; }
 .linked-graph { position: relative; margin-bottom: 12px; }
+.linked-task-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; padding: 0; list-style: none; }
+.linked-task-list button[aria-pressed='true'] { font-weight: 600; outline: 2px solid currentColor; }
 </style>

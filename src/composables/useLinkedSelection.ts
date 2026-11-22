@@ -16,8 +16,9 @@ export interface UseLinkedSelectionOptions {
   /** The links between entities and what the views show. Reactive: a change re-resolves the current selection. */
   bindings: MaybeRefOrGetter<readonly ViewBinding[]>
   /**
-   * Called after a `select` or `clearSelection` that changed the selection, with the selected entities and the view
-   * that owns the selection. It is not called for hover or for a repeated identical selection.
+   * Called after a `select`, `selectEntities` or `clearSelection` that changed the selection, with the selected entities
+   * and the view that owns the selection (undefined after `selectEntities`). It is not called for hover or for a
+   * repeated identical selection.
    */
   onSelect?: (entities: readonly EntityRef[], owner: LinkedViewName | undefined) => void
   /**
@@ -79,6 +80,9 @@ interface Snapshot {
   /** The targets the owning view selected, as it reported them. */
   targets: readonly ViewTarget[]
   entities: readonly EntityRef[]
+  /** True for a selection made with `selectEntities`: it has no owner and `entities` is what was given. */
+  byEntities?: boolean
+  source?: string
 }
 
 const EMPTY: Snapshot = { owner: undefined, targets: [], entities: [] }
@@ -91,12 +95,17 @@ const sameTarget = (a: ViewTarget, b: ViewTarget): boolean =>
 const sameTargets = (a: readonly ViewTarget[], b: readonly ViewTarget[]): boolean =>
   a.length === b.length && a.every(t => b.some(u => sameTarget(t, u)))
 
+const sameEntities = (a: readonly EntityRef[], b: readonly EntityRef[]): boolean =>
+  a.length === b.length && a.every(e => b.some(f => e.kind === f.kind && e.id === f.id))
+
 /**
  * Links selection and hover across views (graph, timeline, load) through entity bindings. The view the user acted in
  * owns the selection: its sets contain what it selected, and every view, the owner included, gets display-only
  * highlight sets for the other linked targets. Selection of other views is never written into an owner's `selectedIds`,
  * so linked views cannot delete, move or cancel a drag. Reporting the same selection again changes nothing and does not
- * call `onSelect`, so wiring a view's events back to this composable cannot loop. Hover is highlight only.
+ * call `onSelect`, so wiring a view's events back to this composable cannot loop. Hover is highlight only. Views that
+ * are not graph, timeline or load (an application's own table or list) select through entity references with
+ * `selectEntities`; such a selection has no owner and every view only highlights it.
  */
 export function useLinkedSelection(options: UseLinkedSelectionOptions) {
   const index = computed(() => buildViewBindingIndex(toValue(options.bindings)))
@@ -122,9 +131,48 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     return { changed, unknown: resolved.unknown }
   }
 
+  /**
+   * Selects `entities`, for a view that has no `LinkedViewName` (an application's own table or list), replacing the
+   * previous selection of any view. The selection has no owner: no view gets `selected*` sets, and every view gets
+   * `highlighted*` sets for the targets bound to the entities. `selectedEntities` returns the given entities without
+   * repeats, in input order, unbound ones included; those that no binding reaches are returned in `unknown`. An empty
+   * input clears the selection. Selecting the same entities (in any order) with the same `source` again changes
+   * nothing and does not call `onSelect`. Throws Error for an entity whose kind or ID is not a non-empty string, or
+   * for a `source` that is not a string. Returns whether the selection changed.
+   */
+  function selectEntities(
+    entities: Iterable<EntityRef>,
+    selectOptions?: {
+      /** A name of your own for the selecting view, such as `'task-table'`. Exposed as `selectionSource`. */
+      source?: string
+    },
+  ): { changed: boolean; unknown: EntityRef[] } {
+    const source = selectOptions?.source
+    if (source !== undefined && typeof source !== 'string') throw new Error('selectEntities source must be a string')
+    const list = [...entities]
+    // Validates every reference as the binding index does, and finds the unbound ones.
+    const { unknown } = resolveViewTargets(index.value, list)
+    const seen = new Set<string>()
+    const next: EntityRef[] = []
+    for (const entity of list) {
+      const key = JSON.stringify([entity.kind, entity.id])
+      if (seen.has(key)) continue
+      seen.add(key)
+      next.push({ kind: entity.kind, id: entity.id })
+    }
+    if (next.length === 0) return { changed: clearSelection(), unknown: [] }
+    const current = selection.value
+    const changed = !current.byEntities || current.source !== source || !sameEntities(current.entities, next)
+    if (changed) {
+      selection.value = { owner: undefined, targets: [], entities: next, byEntities: true, source }
+      options.onSelect?.(next, undefined)
+    }
+    return { changed, unknown }
+  }
+
   /** Clears the selection. Returns whether there was one. */
   function clearSelection(): boolean {
-    if (selection.value.owner === undefined) return false
+    if (selection.value.owner === undefined && !selection.value.byEntities) return false
     selection.value = EMPTY
     options.onSelect?.([], undefined)
     return true
@@ -150,7 +198,9 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     hover.value = undefined
   }
 
-  const selectedEntities = computed(() => resolveEntityRefs(index.value, selection.value.targets).entities)
+  const selectedEntities = computed<readonly EntityRef[]>(() => selection.value.byEntities
+    ? selection.value.entities
+    : resolveEntityRefs(index.value, selection.value.targets).entities)
 
   const timeRange = computed<TimeRangeTargets | undefined>(() => {
     const input = toValue(options.timeRange)
@@ -231,6 +281,8 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     owner: computed(() => selection.value.owner),
     /** The selected entities. */
     selectedEntities,
+    /** The `source` given to `selectEntities` for the current selection; undefined otherwise. */
+    selectionSource: computed(() => selection.value.source),
     /** The hovered entities. */
     hoveredEntities: computed(() => hover.value?.entities ?? []),
     /** What the `timeRange` option resolves to (active and related bars, entities and targets), or undefined without one. */
@@ -239,6 +291,7 @@ export function useLinkedSelection(options: UseLinkedSelectionOptions) {
     timeline,
     load,
     select,
+    selectEntities,
     clearSelection,
     hoverEnter,
     hoverLeave,

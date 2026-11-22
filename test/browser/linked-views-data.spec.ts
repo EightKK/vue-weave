@@ -232,6 +232,48 @@ test('linked views: a graph selection highlights bars without selecting or delet
   expect(errors).toEqual([])
 })
 
+test('linked views: an external task list selects by entity and every view only highlights', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  const list = demo.getByRole('list', { name: 'Task list' })
+  const item = (label: string) => list.getByRole('button', { name: label, exact: true })
+  await item('Cut order A').click()
+  await expect(item('Cut order A')).toHaveAttribute('aria-pressed', 'true')
+  await expect(summary).toContainText('Selected in task list: Cut order A')
+  // No view owns the selection: the graph and the timeline highlight the task without selecting it.
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted')).toHaveCount(2)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-selected')).toHaveCount(0)
+
+  // A view selection replaces it, and the list shows that selection too.
+  await bar('Pack').click()
+  await expect(summary).toContainText('Selected in timeline: Pack')
+  await expect(item('Pack')).toHaveAttribute('aria-pressed', 'true')
+  await expect(item('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // Selecting from the list again takes the selection back from the timeline.
+  await item('Inspect').click()
+  await expect(summary).toContainText('Selected in task list: Inspect')
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  // Clicking the selected list item again clears the selection.
+  await item('Inspect').click()
+  await expect(summary).toContainText('Nothing selected')
+  await expect(item('Inspect')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // Clear selection works for an entity selection.
+  await item('Prepare stock').click()
+  await expect(node('Prepare stock')).toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('button', { name: 'Clear selection', exact: true }).click()
+  await expect(summary).toContainText('Nothing selected')
+  await expect(node('Prepare stock')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
 test('linked views: hover propagates to the other views and clears on leave', async ({ page }) => {
   const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
   await bar('Cut order A').hover()
