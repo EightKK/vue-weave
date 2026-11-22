@@ -1,5 +1,5 @@
 // The demo shell, themes, forced colours, reduced motion, print, image export and the design gallery showcases.
-import { expect, test, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import { expect, test, ganttRegion, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors } from './support'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
   const errors = pageErrors(page)
@@ -23,7 +23,7 @@ test('mobile layout and horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/gallery.html')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
-  const viewport = page.locator('.vw-gantt-scroll')
+  const viewport = ganttRegion(page)
   expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true })
   expect(errors).toEqual([])
@@ -116,10 +116,10 @@ test('print media hides interactive chrome and expands the Gantt scroller', asyn
   const zoomTools = await display('.vw-zoom-tools')
   expect(zoomTools.length).toBeGreaterThan(0)
   expect(zoomTools.every(value => value !== 'none')).toBe(true)
-  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'auto')
+  await expect(ganttRegion(page)).toHaveCSS('overflow-y', 'auto')
   await page.emulateMedia({ media: 'print' })
   expect((await display('.vw-zoom-tools, .vw-minimap, .vw-bar-handle, .vw-gantt-toolbar')).every(value => value === 'none')).toBe(true)
-  await expect(page.locator('.vw-gantt-scroll')).toHaveCSS('overflow-y', 'visible')
+  await expect(ganttRegion(page)).toHaveCSS('overflow-y', 'visible')
   await expect(page.locator('.vw-network').first()).toHaveCSS('print-color-adjust', 'exact')
   expect(errors).toEqual([])
 })

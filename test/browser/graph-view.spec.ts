@@ -1,7 +1,7 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
 import {
-  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, openComponentFixture, openDemo, openGestureFixture, openGraphEditor,
-  openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo,
+  openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
 } from './support'
 
 async function openStylesFixture(page: Page, search = '') {
@@ -482,12 +482,12 @@ test('network direction, crossing reduction and layout controls', async ({ page 
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
     await page.getByLabel('Direction').selectOption(direction)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   await page.getByLabel('Crossing reduction').selectOption('barycenter')
   for (const layout of ['tree', 'radial', 'circular', 'grid', 'concentric', 'layered']) {
     await page.getByLabel('Graph layout').selectOption(layout)
-    await expect(page.locator('.vw-network-node').first()).toBeVisible()
+    await expect(graphNode(graphStage(page), /^Split/)).toBeVisible()
   }
   expect(errors).toEqual([])
 })

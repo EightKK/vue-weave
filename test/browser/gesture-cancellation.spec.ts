@@ -1,7 +1,7 @@
 // Gesture cancellation in both components: context menus, fresh but equal props, a second pointer, changed source data and gesture events.
 import {
-  expect, test, boxCenter, centerOf, chainNode, dragBy, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors, pressAndMove,
-  pressAndMoveTo, type Page,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, ganttBar, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors,
+  pressAndMove, pressAndMoveTo, type Page,
 } from './support'
 
 // A second, primary pen pointer as synthetic events: isPrimary is per pointer type, so a pen is primary next to the
@@ -59,7 +59,7 @@ test('dir="auto" follows a runtime change of an ancestor dir attribute and cance
   const geometry = async () => {
     const region = (await chart.boundingBox())!
     const label = (await chart.getByText('Row 1', { exact: true }).boundingBox())!
-    const bar = (await chart.locator('.vw-gantt-bar[aria-label^="Task A"]').boundingBox())!
+    const bar = (await ganttBar(chart, 'Task A').boundingBox())!
     return { middle: region.x + region.width / 2, label: label.x + label.width / 2, bar: bar.x + bar.width / 2 }
   }
   await expect(gantt).not.toHaveClass(/vw-rtl/)

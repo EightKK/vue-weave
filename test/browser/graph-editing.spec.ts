@@ -1,7 +1,7 @@
 // NetworkGraph editing: moves, connections and ports, selection, deletion, menus and tooltips, snapping, clipboard, groups, waypoints, resizing, labels, lasso and toolbars.
 import {
-  expect, test, animationFrames, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, openDemo, openGraphEditor, openNetworkFixture,
-  pageErrors, pressAndMove, pressAndMoveTo, readCamera, type Page,
+  expect, test, animationFrames, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphMinimap, graphNode, graphStage, graphZoom,
+  openDemo, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, pressAndMoveTo, readCamera, type Page,
 } from './support'
 
 // Clicks the middle of an SVG path. A straight horizontal edge has an empty bounding box, so locator.click cannot target it.
@@ -100,7 +100,7 @@ test('range selection and group movement commit an atomic batch', async ({ page 
   const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
-  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
+  const lots = graphNode(page, /^Lot A123-/)
   const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])
   const [a, b] = boxes
   await page.keyboard.down('Shift')
@@ -238,7 +238,7 @@ test('a node drag preview re-renders only the dragged node and its edges, withou
 test('a node drag preview with the minimap, connection handles and groups changes only the items of the dragged node', async ({ page }) => {
   const errors = pageErrors(page)
   await openNetworkFixture(page, '?nodes=300&draggable=1&minimap=1&connectable=1&groups=chain&reads=1&menu=1')
-  await expect(page.locator('.vw-minimap rect:not(.vw-minimap-window)')).toHaveCount(300)
+  await expect(graphMinimap(page).locator('rect:not(.vw-minimap-window)')).toHaveCount(300)
   await expect(page.getByRole('button', { name: 'Start connection from N0001', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Move group Group 0 within Parent 0', exact: true })).toBeVisible()
   const node = chainNode(page, 'N0001')
@@ -1278,7 +1278,7 @@ test('lasso selection selects the nodes whose centre the outline encloses, keeps
   await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Lasso selection').check()
-  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
+  const lots = graphNode(page, /^Lot A123-/)
   const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
   type Box = { x: number; y: number; width: number; height: number }
   // A diamond around a set of boxes, drawn from its bottom corner.
@@ -1351,7 +1351,7 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   expect(Math.abs(place.center)).toBeLessThan(2)
   const fontSize = await toolbar.getByRole('button', { name: 'Frame', exact: true }).evaluate(element => getComputedStyle(element).fontSize)
   // Zooming moves the node; the toolbar follows it at the same text size.
-  await page.locator('.vw-zoom-tools').getByRole('button', { name: 'Zoom out', exact: true }).click()
+  await graphZoom(page).getByRole('button', { name: 'Zoom out', exact: true }).click()
   place = await placed()
   expect(place.gap).toBeGreaterThan(4)
   expect(Math.abs(place.center)).toBeLessThan(2)
@@ -1382,7 +1382,7 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   // The group slot draws the frame; the move handle keeps its name and keys.
   await expect(page.locator('.vw-network-group.vw-has-slot .demo-group-frame')).toHaveCount(1)
   await expect(page.locator('.demo-group-label')).toHaveText('Intermediate lots')
-  const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
+  const lots = graphNode(page, /^Lot A123-/)
   const before = await lots.first().getAttribute('transform')
   await page.getByRole('button', { name: 'Move group Intermediate lots', exact: true }).press('ArrowDown')
   await expect(lots.first()).not.toHaveAttribute('transform', before!)
@@ -1390,15 +1390,15 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   await expect(lots.first()).toHaveAttribute('transform', before!)
   // The minimap draws its nodes through the minimap-node slot and still navigates.
   await split.click()
-  await expect(page.locator('.vw-minimap .demo-minimap-node')).toHaveCount(6)
-  await expect(page.locator('.vw-minimap .demo-minimap-node.is-selected')).toHaveCount(1)
+  await expect(graphMinimap(page).locator('.demo-minimap-node')).toHaveCount(6)
+  await expect(graphMinimap(page).locator('.demo-minimap-node.is-selected')).toHaveCount(1)
   const camera = await page.locator('.vw-network-stage > g').first().getAttribute('transform')
   await page.getByRole('button', { name: 'Navigate graph overview' }).click({ position: { x: 20, y: 30 } })
   await expect(page.locator('.vw-network-stage > g').first()).not.toHaveAttribute('transform', camera!)
   // Without the slots the default overlay returns.
   await page.getByLabel('Item toolbars').uncheck()
   await expect(page.locator('.vw-has-slot')).toHaveCount(0)
-  await expect(page.locator('.vw-minimap .demo-minimap-node')).toHaveCount(0)
+  await expect(graphMinimap(page).locator('.demo-minimap-node')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
@@ -1416,7 +1416,7 @@ test('typed port rules hint valid targets, reject type and limit violations with
   await expect(graph.locator('.vw-is-valid-target, .vw-is-invalid-target')).toHaveCount(0)
 
   // A pointer drag from a number output marks the free number inputs valid and the rest invalid, with the reason.
-  await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
+  await graphStage(graph, 'Typed port graph').scrollIntoViewIfNeeded()
   const a = (await handle('Start connection from Sensor · Reading').boundingBox())!
   const b = (await handle('Start connection from Average · Input B').boundingBox())!
   await pressAndMoveTo(page, a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 20 })
@@ -1440,7 +1440,7 @@ test('typed port rules hint valid targets, reject type and limit violations with
   await expect(edges).toHaveCount(2)
 
   // A pointer drop on a full limit-1 input is rejected with its reason.
-  await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
+  await graphStage(graph, 'Typed port graph').scrollIntoViewIfNeeded()
   await dragTo(page, handle('Start connection from Backup sensor · Reading'), handle('Start connection from Average · Input A'), { steps: 10 })
   await expect(status).toHaveText('Rejected: Average · Input A already has its maximum of 1 connection.')
   await expect(edges).toHaveCount(2)

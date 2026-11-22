@@ -80,6 +80,40 @@ export async function openNetworkFixture(page: Page, search: string) {
   await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
 }
 
+/** Where a query starts: the whole page or one element, such as a demo section or a chart region. */
+export type Scope = Page | Locator
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const pageOf = (scope: Scope): Page => 'goto' in scope ? scope : scope.page()
+
+// Named queries for the items of the components. Each resolves by role and accessible name, so a spec reads as what a
+// user (or assistive technology) finds; only the GanttChart row, which has no role, falls back to its class.
+
+/** A NetworkGraph node: its focusable group, named by its label and detail. A RegExp matches any part of the name. */
+export const graphNode = (scope: Scope, name: string | RegExp) => scope.getByRole('button', { name, exact: true })
+
+/** A selectable NetworkGraph edge: its hit area, named "Select edge" and the edge's label (or ID). */
+export const graphEdge = (scope: Scope, label: string) => scope.getByRole('button', { name: 'Select edge ' + label, exact: true })
+
+/** The SVG stage of a NetworkGraph, named by `labels.region` ("Network graph" by default). */
+export const graphStage = (scope: Scope, name = 'Network graph') => scope.getByLabel(name, { exact: true })
+
+/** The minimap of a NetworkGraph, a button named by `labels.minimap`. */
+export const graphMinimap = (scope: Scope, name = 'Navigate graph overview') => scope.getByRole('button', { name, exact: true })
+
+/** The zoom buttons of a NetworkGraph. */
+export const graphZoom = (scope: Scope) => scope.getByRole('group', { name: 'Graph zoom', exact: true })
+
+/** The scrolling region of a GanttChart, named by `labels.region` ("Gantt chart" by default). */
+export const ganttRegion = (scope: Scope, name = 'Gantt chart') => scope.getByRole('region', { name, exact: true })
+
+/** A GanttChart bar, named by its label followed by its formatted range (such as "Split · plan 09:00–11:00"). */
+export const ganttBar = (scope: Scope, label: string) => scope.getByRole('button', { name: new RegExp('^' + escapeRegExp(label) + ' \\S') })
+
+/** A GanttChart row of a chart with reorderable rows, found by its "Move row" handle. Rows have no role of their own. */
+export const ganttRow = (scope: Scope, label: string) =>
+  scope.locator('.vw-gantt-row').filter({ has: pageOf(scope).getByRole('button', { name: 'Move row ' + label, exact: true }) })
+
 export type Camera = { x: number; y: number; scale: number }
 
 export const readCamera = (page: Page) => page.evaluate(() => (window as any).__vw.graph().getViewport() as Camera)

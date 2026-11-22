@@ -1,7 +1,7 @@
 // GanttChart editing: bar moves and resizes, dependencies, progress, constraints, deletion, menus, creation, row moves, columns, cell editing and file import.
 import {
-  expect, test, boxCenter, centerOf, dragBy, openComponentFixture, openDemo, openGanttFixture, openLinkedGanttFixture, openTimelineEditing,
-  pageErrors, pressAndMove, pressAndMoveTo, releaseLine, touch, type LinkedFixture, type Page,
+  expect, test, boxCenter, centerOf, dragBy, ganttBar, ganttRow, graphZoom, openComponentFixture, openDemo, openGanttFixture,
+  openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, pressAndMoveTo, releaseLine, touch, type LinkedFixture, type Page,
 } from './support'
 
 /** Pixel positions in the timeline editing demo, measured from Checkout UI (10:00–14:00 in the Web team row, 115 px per hour). */
@@ -48,7 +48,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
   await expect(page.getByRole('link', { name: `Vue Weave ${releaseLine}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCount(2)
-  await page.locator('.vw-zoom-tools').getByRole('button', { name: 'Zoom in', exact: true }).click()
+  await graphZoom(page).getByRole('button', { name: 'Zoom in', exact: true }).click()
   await page.getByRole('button', { name: 'Fit to view', exact: true }).click()
   const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
   await expect(plan).toBeVisible()
@@ -170,7 +170,7 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
 
   // Moving a focused bar far to the right keeps focus and scrolls it into view.
-  const moving = page.locator('.vw-gantt-bar[aria-label^="Split · plan"]')
+  const moving = ganttBar(page, 'Split · plan')
   await moving.focus()
   for (let i = 0; i < 24; i++) await moving.press('ArrowRight')
   await expect(page.locator('.vw-gantt-bar:focus')).toHaveCount(1)
@@ -197,7 +197,7 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await pressAndMoveTo(page, box, { x: area.x + area.width - 10, y: box.y + box.height / 2 }, 8)
   await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
   await page.mouse.up()
-  await expect(page.locator('.vw-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
+  await expect(ganttBar(page, 'Split · plan')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
   expect(errors).toEqual([])
 })
 
@@ -256,8 +256,8 @@ test('gantt dependencies connect by keyboard and pointer, reject duplicates, rec
 
 test('gantt multi-selection moves bars as one batch and bars move between rows with validation', async ({ page }) => {
   const { errors, chart, status } = await openTimelineEditing(page)
-  const api = chart.locator('.vw-gantt-bar[aria-label^="Billing API"]')
-  const ui = chart.locator('.vw-gantt-bar[aria-label^="Checkout UI"]')
+  const api = ganttBar(chart, 'Billing API')
+  const ui = ganttBar(chart, 'Checkout UI')
   await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
   await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Shift'] })
   await expect(api).toHaveAttribute('aria-pressed', 'true')
@@ -923,7 +923,7 @@ test('gantt rows indent, outdent and move by keyboard with validation, focus ret
   await expect(chart.locator('.vw-extra-column')).toHaveCount(0)
   await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
   const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
-  const wbs = (label: string) => chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vw-extra-column')
+  const wbs = (label: string) => ganttRow(chart, label).locator('.vw-extra-column')
   const quality = handle('Quality')
   await expect(quality).toHaveAccessibleDescription(/^Alt\+Up and Alt\+Down move the row among its siblings\. Alt\+Shift\+Right indents/)
   await expect(wbs('Web team')).toHaveText('2.1')
@@ -963,7 +963,7 @@ test('gantt rows indent, outdent and move by keyboard with validation, focus ret
   await expect(wbs('Quality')).toHaveText('3')
 
   // Bars keep following their rows.
-  await expect(chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Quality', exact: true }) }).getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })).toBeVisible()
+  await expect(ganttRow(chart, 'Quality').getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })).toBeVisible()
 
   // In a right-to-left chart, Alt+Shift+Left indents towards the row text.
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
@@ -979,10 +979,10 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
   const { errors, chart, status } = await openTimelineEditing(page)
   await page.getByRole('checkbox', { name: 'Reorder rows', exact: true }).check()
   const handle = (label: string) => chart.getByRole('button', { name: 'Move row ' + label, exact: true })
-  const wbs = (label: string) => chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row ' + label, exact: true }) }).locator('.vw-extra-column')
+  const wbs = (label: string) => ganttRow(chart, label).locator('.vw-extra-column')
   const indicator = chart.locator('.vw-gantt-row-drop')
   const product = (await handle('Product team').boundingBox())!
-  const web = (await chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  const web = (await ganttRow(chart, 'Web team').boundingBox())!
   const x = product.x + product.width / 2
 
   // Escape cancels a drag: the indicator disappears and releasing proposes nothing.
@@ -1010,7 +1010,7 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
 
   // A row cannot be dropped inside its own subtree.
   const platform = (await handle('Platform team').boundingBox())!
-  const child = (await chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
+  const child = (await ganttRow(chart, 'Web team').boundingBox())!
   await pressAndMoveTo(page, platform, { x: platform.x + platform.width / 2, y: child.y + child.height * 0.3 }, 8)
   await expect(indicator).toHaveCount(0)
   await page.mouse.up()

@@ -1,7 +1,7 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
 import {
-  expect, test, dragBy, fixtureStatus, openComponentFixture, openDemo, openGanttFixture, openGestureFixture, openLinkedGanttFixture,
-  openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
+  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openDemo, openGanttFixture, openGestureFixture,
+  openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
 } from './support'
 
 async function recordWheelDefaults(page: Page) {
@@ -20,7 +20,7 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
   const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Direction').selectOption('TB')
-  await expect(page.locator('.vw-network-stage')).toHaveCSS('height', '470px')
+  await expect(graphStage(page)).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
   await expect(page.locator('.vw-network-node > rect')).toHaveCount(6)
   await page.getByLabel('Dark theme').check()
@@ -140,7 +140,7 @@ test('gantt zoom presets, now marker and resource load histogram share the time 
   expect(Math.abs(segment.x - bar.x)).toBeLessThanOrEqual(1)
 
   // Moving work updates the histogram.
-  const checkout = chart.locator('.vw-gantt-bar[aria-label^="Checkout UI"]')
+  const checkout = ganttBar(chart, 'Checkout UI')
   await checkout.click()
   for (let i = 0; i < 12; i++) await checkout.press('ArrowRight')
   await expect(checkout).toHaveAttribute('aria-label', 'Checkout UI 13:00–17:00')
@@ -403,7 +403,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   const { errors, chart, status } = await openTimelineEditing(page)
   await page.getByRole('checkbox', { name: 'Right-to-left timeline', exact: true }).check()
   await expect(chart.locator('xpath=ancestor::div[contains(@class, "vw-gantt")][1]')).toHaveAttribute('dir', 'rtl')
-  const api = chart.locator('.vw-gantt-bar[aria-label^="Billing API"]')
+  const api = ganttBar(chart, 'Billing API')
   const corner = chart.locator('.vw-gantt-corner')
   const box = async (locator: typeof api) => (await locator.boundingBox())!
   // The heading column is on the right and time runs from right to left: 08:00 touches the headings,
@@ -742,7 +742,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   await expect(showcase.getByRole('status').filter({ hasText: /^Guided setup · / })).toBeVisible()
 
   // The quarter band starts before the visible part of the axis after scrolling; its label is indented into view.
-  const scroller = showcase.locator('.vw-gantt-scroll')
+  const scroller = ganttRegion(showcase, 'Product roadmap timeline')
   const quarter = showcase.locator('.vw-gantt-band', { hasText: 'Q1 2027' })
   const indent = async () => parseFloat(await quarter.evaluate(el => getComputedStyle(el).textIndent))
   expect(await indent()).toBe(0)
