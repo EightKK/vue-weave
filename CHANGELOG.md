@@ -46,6 +46,7 @@
 - `useEditTransaction`: `submit`, `undo` and `redo` no longer throw when the adapter's `validate` or `apply` or `createOperationId` throws; they resolve to `invalid` with the error message and save nothing.
 - EventCalendar and TaskBoard: a blank or whitespace-only rejection reason from `validateEdit`, `validateCreate` or `validateCardMove` now rejects with the default text (`labels.rejected`, `labels.createRejected`, `labels.moveRejected`), as PropertyInspector already did, instead of emitting and announcing an empty reason.
 - EventCalendar: a pointer drag in the day or week time grid that rests near the top or bottom of the visible grid now scrolls it, so an event can be moved, resized or created into hours scrolled out of view.
+- GraphPalette and PropertyInspector use the default colours of the other components when `--vw-muted` and `--vw-surface-hover` are unset: secondary text is `#4c6371` (was `#4f6574`) and hovered palette items and inspector buttons are `#edf5fa` (was `#e4ecf2` and `#e3edf5`). The stylesheet now defines these shared defaults once on the component roots; themes set through `--vw-*` variables are unaffected.
 
 These fix the unreleased recurring events:
 

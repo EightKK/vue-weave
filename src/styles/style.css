@@ -1,9 +1,15 @@
-.vw-network, .vw-gantt { color: var(--vw-text, #172c3b); font-family: inherit; }
-.vw-network button, .vw-gantt button { color: inherit; cursor: pointer; }
-.vw-network button:disabled, .vw-gantt button:disabled { cursor: default; opacity: .5; }
-.vw-network button:focus-visible, .vw-gantt button:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
-.vw-network *, .vw-gantt * { box-sizing: border-box; }
-.vw-network button, .vw-gantt button { font-family: inherit; }
+/* Component roots. The private `--_vw-*` properties hold the default colours of the shared theme variables, defined once:
+   rules read them as fallbacks, `var(--vw-muted, var(--_vw-muted))`, so a `--vw-*` variable set on an ancestor, on the root
+   or on any element inside still wins, and the built-in dark themes apply unchanged. Fallbacks that differ on purpose,
+   such as lighter grid lines or darker selection rings, stay literal in their rules. */
+.vw-network, .vw-gantt, .vw-board, .vw-calendar, .vw-palette, .vw-inspector {
+  --_vw-surface: #fff; --_vw-surface-hover: #edf5fa; --_vw-text: #172c3b; --_vw-muted: #4c6371; --_vw-accent: #245e96; --_vw-on-solid: #fff;
+  color: var(--vw-text, var(--_vw-text)); font-family: inherit;
+}
+.vw-network *, .vw-gantt *, .vw-board *, .vw-calendar *, .vw-palette *, .vw-inspector * { box-sizing: border-box; }
+.vw-network button, .vw-gantt button, .vw-board button, .vw-calendar button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-network button:disabled, .vw-gantt button:disabled, .vw-calendar button:disabled { cursor: default; opacity: .5; }
+.vw-network button:focus-visible, .vw-gantt button:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 2px; }
 .vw-network { position: relative; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: radial-gradient(circle, var(--vw-grid, #c7d6df) 1px, transparent 1.1px) 1px 1px / 17px 17px, var(--vw-surface-muted, #f6f9fb); }
 .vw-network-stage { display: block; width: 100%; height: 220px; cursor: grab; touch-action: none; overflow: hidden; }
 .vw-network-stage.vw-is-panning { cursor: grabbing; }
@@ -19,18 +25,18 @@
 .vw-network-node:hover:where(:not(.vw-is-unstyled)) rect, .vw-network-node:focus-visible:where(:not(.vw-is-unstyled)) rect, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) rect,
 .vw-network-node:hover:where(:not(.vw-is-unstyled)) .vw-node-shape, .vw-network-node:focus-visible:where(:not(.vw-is-unstyled)) .vw-node-shape, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape { stroke: var(--vw-item-ink); stroke-width: 2.8px; }
 /* Keyboard focus has its own ring outside the node, so it stays visible on selected nodes and on custom node slots. */
-.vw-network-node:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 3px; }
+.vw-network-node:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 3px; }
 .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) rect, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape { fill: var(--vw-item-solid); }
 .vw-network-node text { user-select: none; pointer-events: none; }
 .vw-network-node:where(:not(.vw-is-unstyled)) text { fill: var(--vw-item-ink); }
-.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text { fill: var(--vw-on-solid, #fff); }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text { fill: var(--vw-on-solid, var(--_vw-on-solid)); }
 .vw-node-title { font-size: 15.5px; font-weight: 700; }
 .vw-node-detail { font-size: 12px; font-weight: 550; }
-.vw-network-empty { position: absolute; inset: 30% 0 auto; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; pointer-events: none; }
-.vw-zoom-tools, .vw-gantt-zoom { flex-shrink: 0; display: flex; align-items: center; color: var(--vw-text, #234157); background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; white-space: nowrap; }
+.vw-network-empty { position: absolute; inset: 30% 0 auto; text-align: center; color: var(--vw-muted, var(--_vw-muted)); font-size: 13px; pointer-events: none; }
+.vw-zoom-tools, .vw-gantt-zoom { flex-shrink: 0; display: flex; align-items: center; color: var(--vw-text, #234157); background: var(--vw-surface, var(--_vw-surface)); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; white-space: nowrap; }
 .vw-zoom-tools { position: absolute; bottom: 8px; right: 8px; }
-.vw-zoom-tools button, .vw-gantt-zoom button { background: var(--vw-surface, #fff); border: none; min-width: 27px; height: 25px; line-height: 1; }
-.vw-zoom-tools button:hover, .vw-gantt-zoom button:not(:disabled):hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-zoom-tools button, .vw-gantt-zoom button { background: var(--vw-surface, var(--_vw-surface)); border: none; min-width: 27px; height: 25px; line-height: 1; }
+.vw-zoom-tools button:hover, .vw-gantt-zoom button:not(:disabled):hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-zoom-tools button:focus-visible, .vw-gantt-zoom button:focus-visible { outline-offset: -2px; }
 .vw-zoom-tools output, .vw-gantt-zoom output { min-width: 40px; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 700; }
 .vw-zoom-tools .vw-fit-button { font-size: 10px; padding: 0 8px; border-left: 1px solid var(--vw-border, #e0e9ef); }
@@ -38,7 +44,7 @@
 .vw-gantt-toolbar { min-height: 37px; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 16px; }
 .vw-gantt-scroll { height: 316px; overflow: auto; scrollbar-width: thin; border-block: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f9fbfc); }
 .vw-gantt-scroll:focus-visible { outline-offset: -2px; }
-.vw-gantt-canvas { position: relative; min-width: 100%; background: var(--vw-surface, #fff); }
+.vw-gantt-canvas { position: relative; min-width: 100%; background: var(--vw-surface, var(--_vw-surface)); }
 .vw-gantt-head { position: sticky; top: 0; z-index: 5; height: 40px; background: var(--vw-surface-muted, #eff4f7); border-bottom: 1px solid var(--vw-border, #d8e2e9); }
 .vw-gantt-corner, .vw-gantt-row-label { position: sticky; left: 0; width: var(--vw-label-area-width); display: flex; flex-direction: column; justify-content: center; padding: 0 11px; border-right: 1px solid var(--vw-border, #d8e2e9); }
 .vw-gantt-corner { background: var(--vw-surface-muted, #e8f0f4); height: 100%; z-index: 1; color: var(--vw-text, #365469); font-weight: 700; font-size: 11px; }
@@ -51,9 +57,9 @@
 .vw-gantt-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vw-border, #e5edf1); }
 .vw-gantt-row-label { height: 100%; gap: 2px; background: var(--vw-surface-muted, #f3f7fa); z-index: 4; font-size: 12px; }
 .vw-gantt-row-label strong, .vw-gantt-row-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vw-gantt-row-label small { color: var(--vw-muted, #4c6371); font-size: 10px; }
+.vw-gantt-row-label small { color: var(--vw-muted, var(--_vw-muted)); font-size: 10px; }
 .vw-gantt-bar { position: absolute; z-index: 3; display: flex; align-items: center; padding: 0 7px; border-radius: 5px; border: 1px solid var(--vw-item-line); text-align: left; font-size: 11px; font-weight: 650; user-select: none; }
-.vw-gantt-bar.vw-is-solid { background: var(--vw-item-solid); color: var(--vw-on-solid, #fff); border-color: var(--vw-item-solid); }
+.vw-gantt-bar.vw-is-solid { background: var(--vw-item-solid); color: var(--vw-on-solid, var(--_vw-on-solid)); border-color: var(--vw-item-solid); }
 .vw-gantt-bar.vw-is-outline { background: var(--vw-item-pale); color: var(--vw-item-ink); }
 .vw-gantt-bar.vw-is-selected { box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
 .vw-gantt-bar.vw-is-editable { cursor: grab; touch-action: none; }
@@ -76,10 +82,10 @@
 .vw-gantt-links { position: absolute; z-index: 2; pointer-events: none; }
 .vw-gantt-links path { fill: none; stroke: var(--vw-edge, #738c9e); stroke-width: 1.3px; }
 .vw-gantt-links marker path { fill: context-stroke; stroke: none; }
-.vw-gantt-links path.vw-is-related { stroke: var(--vw-accent, #245e96); stroke-width: 1.7px; }
+.vw-gantt-links path.vw-is-related { stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1.7px; }
 .vw-gantt-links path.vw-is-highlighted { stroke: var(--vw-dependency-highlight, #a74f08); stroke-width: 2px; }
 .vw-gantt-lag-layer { position: absolute; z-index: 3; pointer-events: none; }
-.vw-gantt-lag-layer .vw-gantt-lag { direction: ltr; fill: var(--vw-text, #172c3b); stroke: var(--vw-surface, #fff); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; font-size: 10px; font-weight: 650; dominant-baseline: central; }
+.vw-gantt-lag-layer .vw-gantt-lag { direction: ltr; fill: var(--vw-text, var(--_vw-text)); stroke: var(--vw-surface, var(--_vw-surface)); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; font-size: 10px; font-weight: 650; dominant-baseline: central; }
 .vw-gantt-lag-layer .vw-gantt-lag.vw-is-highlighted { fill: var(--vw-dependency-highlight, #a74f08); }
 @media (max-width: 700px) {
   .vw-network-stage { height: 185px; }
@@ -87,28 +93,28 @@
   .vw-gantt-toolbar { padding-inline: 8px; }
   .vw-gantt-row-label, .vw-gantt-corner { padding-inline: 6px; }
 }
-.vw-edge-label { font-size: 11px; text-anchor: middle; fill: var(--vw-text, #172c3b); paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; pointer-events: none; }
+.vw-edge-label { font-size: 11px; text-anchor: middle; fill: var(--vw-text, var(--_vw-text)); paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; pointer-events: none; }
 .vw-bar-progress { position: absolute; inset-block: 0; left: 0; background: currentColor; opacity: .18; pointer-events: none; border-radius: inherit; }
 .vw-bar-text { position: relative; z-index: 1; }
 .vw-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .vw-gantt-empty { padding: 16px; text-align: center; }
 .vw-network-node.vw-is-draggable { cursor: grab; }
-.vw-connect-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: crosshair; }
-.vw-connect-handle.vw-is-active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); outline: none; }
+.vw-connect-handle { fill: var(--vw-surface, var(--_vw-surface)); stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2px; cursor: crosshair; }
+.vw-connect-handle.vw-is-active, .vw-connect-handle:focus-visible { fill: var(--vw-accent, var(--_vw-accent)); stroke: var(--vw-surface, var(--_vw-surface)); outline: none; }
 /* Opt-in connection rule hints (NetworkGraph `connectionRules`) while a connection is in progress: a valid target is
    larger and filled, an invalid one hollow, dashed and faded, so the two differ without colour. */
-.vw-connect-handle.vw-is-valid-target { r: 7.5px; fill: var(--vw-connect-valid, #1d7a4f); stroke: var(--vw-surface, #fff); stroke-width: 2.5px; }
-.vw-connect-handle.vw-is-invalid-target { fill: var(--vw-surface, #fff); stroke: var(--vw-connect-invalid, #a8361f); stroke-dasharray: 2 2; opacity: .65; cursor: not-allowed; }
-.vw-connect-handle.vw-is-valid-target:focus-visible, .vw-connect-handle.vw-is-invalid-target:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; opacity: 1; }
+.vw-connect-handle.vw-is-valid-target { r: 7.5px; fill: var(--vw-connect-valid, #1d7a4f); stroke: var(--vw-surface, var(--_vw-surface)); stroke-width: 2.5px; }
+.vw-connect-handle.vw-is-invalid-target { fill: var(--vw-surface, var(--_vw-surface)); stroke: var(--vw-connect-invalid, #a8361f); stroke-dasharray: 2 2; opacity: .65; cursor: not-allowed; }
+.vw-connect-handle.vw-is-valid-target:focus-visible, .vw-connect-handle.vw-is-invalid-target:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 2px; opacity: 1; }
 @media (forced-colors: active) {
   .vw-connect-handle.vw-is-valid-target { fill: Highlight; stroke: CanvasText; }
   .vw-connect-handle.vw-is-invalid-target { fill: Canvas; stroke: GrayText; opacity: 1; }
 }
-.vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); }
+.vw-minimap { position: absolute; right: 8px; bottom: 43px; width: 128px; height: 70px; padding: 3px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); }
 .vw-minimap svg { display: block; width: 100%; height: 100%; }
 .vw-minimap rect:where(:not(.vw-minimap-custom *)) { fill: var(--vw-edge, #76929f); }
-.vw-minimap rect.vw-is-selected { fill: var(--vw-accent, #245e96); }
-.vw-minimap .vw-minimap-window { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.vw-minimap rect.vw-is-selected { fill: var(--vw-accent, var(--_vw-accent)); }
+.vw-minimap .vw-minimap-window { fill: none; stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .vw-gantt-head { height: var(--vw-header-height, 40px); }
 .vw-gantt-grid { top: var(--vw-header-height, 40px); }
 .vw-gantt-band-level { position: absolute; left: var(--vw-label-area-width); width: var(--vw-axis-width); overflow: hidden; }
@@ -116,7 +122,7 @@
 .vw-name-column.vw-tree-row { flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; padding-left: calc(9px + var(--vw-row-depth) * 11px); }
 .vw-row-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; border-radius: 3px; }
 .vw-row-content:focus { outline: none; }
-.vw-row-content:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-row-content:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-row-toggle { flex: none; border: 0; padding: 2px 4px; border-radius: 3px; background: transparent; }
 .vw-row-toggle:hover { background: var(--vw-surface-hover, #e3edf5); }
 .vw-gantt-baseline { position: absolute; z-index: 2; height: 4px; border-radius: 2px; background: var(--vw-baseline, #718497); }
@@ -130,28 +136,28 @@
 .vw-network-group:where(:not(.vw-has-slot)) text { fill: var(--vw-text, #274256); font-size: 10px; user-select: none; }
 .vw-network-group text[role="button"] { cursor: grab; }
 .vw-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
-.vw-edge-hit.vw-is-active { stroke: var(--vw-accent, #245e96); stroke-width: 5; stroke-opacity: .32; }
-.vw-reconnect-handle { fill: var(--vw-accent, #245e96); stroke: var(--vw-surface, #fff); stroke-width: 2px; cursor: crosshair; }
-.vw-connection-preview { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
-.vw-box-selection { fill: var(--vw-accent, #245e96); fill-opacity: .14; stroke: var(--vw-accent, #245e96); pointer-events: none; }
+.vw-edge-hit.vw-is-active { stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 5; stroke-opacity: .32; }
+.vw-reconnect-handle { fill: var(--vw-accent, var(--_vw-accent)); stroke: var(--vw-surface, var(--_vw-surface)); stroke-width: 2px; cursor: crosshair; }
+.vw-connection-preview { fill: none; stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2px; stroke-dasharray: 5 3; pointer-events: none; }
+.vw-box-selection { fill: var(--vw-accent, var(--_vw-accent)); fill-opacity: .14; stroke: var(--vw-accent, var(--_vw-accent)); pointer-events: none; }
 /* Opt-in lasso selection (selectionMode 'lasso'), inline label editor (editableLabels), toolbar slots and group slot of NetworkGraph. */
-.vw-lasso-selection { fill: var(--vw-accent, #245e96); fill-opacity: .1; stroke: var(--vw-accent, #245e96); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.vw-lasso-selection { fill: var(--vw-accent, var(--_vw-accent)); fill-opacity: .1; stroke: var(--vw-accent, var(--_vw-accent)); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 .vw-network.vw-labels-editable .vw-edge-label { pointer-events: auto; cursor: text; }
-.vw-label-editor { position: absolute; z-index: 3; min-width: 0; height: 28px; padding: 3px 7px; transform: translateY(-50%); border: 2px solid var(--vw-accent, #245e96); border-radius: 5px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); font: inherit; font-size: 13px; text-align: start; box-shadow: 0 3px 10px rgb(15 35 50 / 18%); }
+.vw-label-editor { position: absolute; z-index: 3; min-width: 0; height: 28px; padding: 3px 7px; transform: translateY(-50%); border: 2px solid var(--vw-accent, var(--_vw-accent)); border-radius: 5px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-text, var(--_vw-text)); font: inherit; font-size: 13px; text-align: start; box-shadow: 0 3px 10px rgb(15 35 50 / 18%); }
 .vw-label-editor.vw-is-edge { width: var(--vw-label-editor-width, 140px); transform: translate(-50%, -50%); }
 .vw-label-editor:focus { outline: none; }
-.vw-node-toolbar, .vw-edge-toolbar { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 16px); padding: 3px; transform: translate(-50%, calc(-100% - var(--vw-toolbar-offset, 8px))); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 3px 10px rgb(15 35 50 / 16%); font-size: 12px; }
+.vw-node-toolbar, .vw-edge-toolbar { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; width: max-content; max-width: calc(100% - 16px); padding: 3px; transform: translate(-50%, calc(-100% - var(--vw-toolbar-offset, 8px))); border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-text, var(--_vw-text)); box-shadow: 0 3px 10px rgb(15 35 50 / 16%); font-size: 12px; }
 .vw-node-toolbar.vw-is-below, .vw-edge-toolbar.vw-is-below { transform: translate(-50%, var(--vw-toolbar-offset, 8px)); }
 .vw-network-group .vw-group-handle { fill: transparent; stroke: none; pointer-events: all; outline: none; }
 .vw-network-group .vw-group-handle[role="button"] { cursor: grab; }
-.vw-network-group .vw-group-handle:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 2px; }
+.vw-network-group .vw-group-handle:focus-visible { stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2px; }
 /* Opt-in swimlanes of NetworkGraph (`lanes`): bands behind the graph, a header with a solid border and the title. They
    never take the pointer, so panning, box selection and drops work over them. */
 .vw-swimlane rect, .vw-swimlane text { pointer-events: none; }
-.vw-swimlane-band { fill: var(--vw-lane-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1px; }
+.vw-swimlane-band { fill: var(--vw-lane-fill, var(--vw-surface, var(--_vw-surface))); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1px; }
 .vw-swimlane.vw-is-alternate .vw-swimlane-band { fill: var(--vw-lane-fill-alternate, var(--vw-surface-muted, #f1f5f8)); }
 .vw-swimlane-header { fill: var(--vw-lane-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1.5px; }
-.vw-swimlane-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 12px; font-weight: 700; user-select: none; }
+.vw-swimlane-title text { fill: var(--vw-lane-title, var(--vw-text, var(--_vw-text))); font-size: 12px; font-weight: 700; user-select: none; }
 .vw-network.vw-rtl .vw-swimlane-title text { direction: rtl; unicode-bidi: embed; }
 .vw-minimap .vw-minimap-lane { fill: none; stroke: var(--vw-lane-border, var(--vw-border, #c9d6df)); stroke-width: 1; vector-effect: non-scaling-stroke; }
 @media (forced-colors: active) {
@@ -169,19 +175,19 @@
 .vw-column-group > .vw-tree-row { padding-left: calc(8px + var(--vw-row-depth) * 9px); }
 .vw-extra-column { min-width: 0; flex: none; padding: 0 6px; border-left: 1px solid var(--vw-border, #d8e2e9); display: flex; align-items: center; overflow: hidden; }
 .vw-extra-column > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vw-cell-input { width: 100%; min-width: 0; color: inherit; background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; padding: 4px; font: inherit; }
-.vw-cell-input:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -1px; }
+.vw-cell-input { width: 100%; min-width: 0; color: inherit; background: var(--vw-surface, var(--_vw-surface)); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; padding: 4px; font: inherit; }
+.vw-cell-input:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -1px; }
 .vw-gantt-summary { position: absolute; z-index: 2; height: 14px; top: calc(50% - 7px); background: var(--vw-grid, #d1dde6); border-bottom: 2px solid var(--vw-edge, #50677a); border-radius: 3px; overflow: hidden; }
-.vw-gantt-summary span { display: block; height: 100%; background: var(--vw-accent, #245e96); opacity: .75; }
+.vw-gantt-summary span { display: block; height: 100%; background: var(--vw-accent, var(--_vw-accent)); opacity: .75; }
 
 .vw-network .vw-dimmed { opacity: var(--vw-dimmed-opacity, .28); }
 /* Opt-in edge selection and the tooltip slot of NetworkGraph. */
-.vw-edge-hit.vw-is-selected { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 6; stroke-opacity: .3; }
-.vw-edge-selected .vw-network-edge { stroke: var(--vw-edge-selected, var(--vw-accent, #245e96)); stroke-width: 2.6; }
+.vw-edge-hit.vw-is-selected { stroke: var(--vw-edge-selected, var(--vw-accent, var(--_vw-accent))); stroke-width: 6; stroke-opacity: .3; }
+.vw-edge-selected .vw-network-edge { stroke: var(--vw-edge-selected, var(--vw-accent, var(--_vw-accent))); stroke-width: 2.6; }
 /* Keyboard focus on an edge: an opaque dashed accent stroke (at least 3:1 against the surface), unlike the translucent
    active and selected bands. Placed after them so it also shows on an active or selected edge. */
-.vw-edge-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-width: 3.5; stroke-opacity: 1; stroke-dasharray: 7 4; outline: none; }
-.vw-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.vw-edge-hit:focus-visible { stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 3.5; stroke-opacity: 1; stroke-dasharray: 7 4; outline: none; }
+.vw-network-tooltip { position: absolute; z-index: 2; max-width: min(260px, calc(100% - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-text, var(--_vw-text)); box-shadow: 0 4px 14px rgb(15 35 50 / 16%); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 /* Opt-in NetworkGraph background pattern and alignment guides. The pattern replaces the fixed dotted backdrop. */
 .vw-network.vw-network-patterned { background: var(--vw-surface-muted, #f6f9fb); }
 .vw-network-background { pointer-events: none; }
@@ -205,40 +211,40 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-guide { stroke: var(--vw-guide, #c2255c); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Opt-in NetworkGraph group collapse toggles, waypoint and resize handles, and level of detail. */
 .vw-group-toggle { cursor: pointer; }
-.vw-group-toggle rect { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 1.5px; }
-.vw-group-toggle path { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 1.6px; stroke-linecap: round; pointer-events: none; }
+.vw-group-toggle rect { fill: var(--vw-surface, var(--_vw-surface)); stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1.5px; }
+.vw-group-toggle path { fill: none; stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1.6px; stroke-linecap: round; pointer-events: none; }
 .vw-group-toggle:focus-visible { outline: none; }
-.vw-group-toggle:focus-visible rect { fill: var(--vw-accent, #245e96); }
-.vw-group-toggle:focus-visible path { stroke: var(--vw-surface, #fff); }
-.vw-waypoint-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 2px; cursor: move; touch-action: none; }
-.vw-waypoint-add { fill: var(--vw-accent, #245e96); fill-opacity: .35; stroke: var(--vw-accent, #245e96); stroke-width: 1px; cursor: copy; touch-action: none; }
-.vw-resize-handle { fill: var(--vw-surface, #fff); stroke: var(--vw-accent, #245e96); stroke-width: 1.5px; touch-action: none; }
+.vw-group-toggle:focus-visible rect { fill: var(--vw-accent, var(--_vw-accent)); }
+.vw-group-toggle:focus-visible path { stroke: var(--vw-surface, var(--_vw-surface)); }
+.vw-waypoint-handle { fill: var(--vw-surface, var(--_vw-surface)); stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2px; cursor: move; touch-action: none; }
+.vw-waypoint-add { fill: var(--vw-accent, var(--_vw-accent)); fill-opacity: .35; stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1px; cursor: copy; touch-action: none; }
+.vw-resize-handle { fill: var(--vw-surface, var(--_vw-surface)); stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 1.5px; touch-action: none; }
 .vw-resize-topLeft, .vw-resize-bottomRight { cursor: nwse-resize; }
 .vw-resize-topRight, .vw-resize-bottomLeft { cursor: nesw-resize; }
-.vw-waypoint-handle:focus-visible, .vw-waypoint-add:focus-visible, .vw-resize-handle:focus-visible { fill: var(--vw-accent, #245e96); fill-opacity: 1; stroke: var(--vw-surface, #fff); outline: none; }
+.vw-waypoint-handle:focus-visible, .vw-waypoint-add:focus-visible, .vw-resize-handle:focus-visible { fill: var(--vw-accent, var(--_vw-accent)); fill-opacity: 1; stroke: var(--vw-surface, var(--_vw-surface)); outline: none; }
 .vw-network.vw-lod-low .vw-node-detail, .vw-network.vw-lod-low .vw-edge-label { display: none; }
 /* Gantt dependency editing, zoom presets, now marker, load histogram and touch zoom. */
-.vw-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, #fff); }
-.vw-gantt-presets button { border: none; border-left: 1px solid var(--vw-border, #e0e9ef); background: var(--vw-surface, #fff); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
+.vw-gantt-presets { flex-shrink: 0; display: flex; margin-left: auto; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, var(--_vw-surface)); }
+.vw-gantt-presets button { border: none; border-left: 1px solid var(--vw-border, #e0e9ef); background: var(--vw-surface, var(--_vw-surface)); height: 25px; padding: 0 9px; font-size: 11px; font-weight: 650; }
 .vw-gantt-presets button:first-child { border-left: none; }
-.vw-gantt-presets button[aria-pressed="true"] { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
+.vw-gantt-presets button[aria-pressed="true"] { background: var(--vw-accent, var(--_vw-accent)); color: var(--vw-on-solid, var(--_vw-on-solid)); }
 .vw-gantt-presets button:focus-visible { outline-offset: -2px; }
 .vw-gantt-now { border-left: 2px solid var(--vw-now, #c23b22); z-index: 3; }
 .vw-gantt-now span { background: var(--vw-now, #c23b22); }
-.vw-gantt-link-handle, .vw-gantt-reconnect-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--vw-accent, #245e96); background: var(--vw-surface, #fff); cursor: crosshair; touch-action: none; }
-.vw-gantt-link-handle.vw-is-active, .vw-gantt-link-handle:focus-visible, .vw-gantt-reconnect-handle { background: var(--vw-accent, #245e96); border-color: var(--vw-surface, #fff); }
-.vw-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vw-accent, #245e96); }
+.vw-gantt-link-handle, .vw-gantt-reconnect-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border-radius: 50%; border: 2px solid var(--vw-accent, var(--_vw-accent)); background: var(--vw-surface, var(--_vw-surface)); cursor: crosshair; touch-action: none; }
+.vw-gantt-link-handle.vw-is-active, .vw-gantt-link-handle:focus-visible, .vw-gantt-reconnect-handle { background: var(--vw-accent, var(--_vw-accent)); border-color: var(--vw-surface, var(--_vw-surface)); }
+.vw-gantt-reconnect-handle { z-index: 5; box-shadow: 0 0 0 1px var(--vw-accent, var(--_vw-accent)); }
 .vw-gantt-link-hits { position: absolute; z-index: 2; pointer-events: none; overflow: visible; }
 .vw-dependency-hit { fill: none; stroke: transparent; stroke-width: 12px; pointer-events: stroke; cursor: pointer; outline: none; }
-.vw-dependency-hit.vw-is-active { stroke: var(--vw-accent, #245e96); stroke-opacity: .3; stroke-width: 6px; }
-.vw-dependency-hit:focus-visible { stroke: var(--vw-accent, #245e96); stroke-opacity: 1; stroke-width: 3.5px; stroke-dasharray: 7 4; }
-.vw-gantt-links path.vw-is-selected { stroke: var(--vw-accent, #245e96); stroke-width: 2.4px; }
+.vw-dependency-hit.vw-is-active { stroke: var(--vw-accent, var(--_vw-accent)); stroke-opacity: .3; stroke-width: 6px; }
+.vw-dependency-hit:focus-visible { stroke: var(--vw-accent, var(--_vw-accent)); stroke-opacity: 1; stroke-width: 3.5px; stroke-dasharray: 7 4; }
+.vw-gantt-links path.vw-is-selected { stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2.4px; }
 .vw-gantt-link-preview { position: absolute; left: var(--vw-label-area-width); z-index: 5; pointer-events: none; }
-.vw-gantt-link-preview path { fill: none; stroke: var(--vw-accent, #245e96); stroke-width: 2px; stroke-dasharray: 5 3; }
+.vw-gantt-link-preview path { fill: none; stroke: var(--vw-accent, var(--_vw-accent)); stroke-width: 2px; stroke-dasharray: 5 3; }
 .vw-gantt-bar.vw-is-dragging { z-index: 4; }
 .vw-gantt-scroll.vw-pinch-zoom { touch-action: pan-x pan-y; }
 .vw-gantt-load-row { position: absolute; inset-inline: 0; border-bottom: 1px solid var(--vw-border, #e5edf1); background: var(--vw-surface-muted, #f9fbfc); }
-.vw-gantt-load-segment { position: absolute; top: 4px; bottom: 4px; z-index: 2; border-right: 1px solid var(--vw-surface, #fff); }
+.vw-gantt-load-segment { position: absolute; top: 4px; bottom: 4px; z-index: 2; border-right: 1px solid var(--vw-surface, var(--_vw-surface)); }
 .vw-gantt-load-segment > span { position: absolute; left: 0; right: 0; }
 .vw-load-fill { bottom: 0; background: var(--vw-load, #6b96c5); }
 .vw-load-over { background: var(--vw-load-overload, #b4441c); }
@@ -267,10 +273,10 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt-bar.vw-is-solid.vw-segmented .vw-bar-text { text-shadow: 0 0 2px var(--vw-item-solid), 0 0 3px var(--vw-item-solid); }
 /* Opt-in progress slider (progressEditable) and tooltip slot. */
 .vw-gantt .vw-gantt-progress-handle { position: absolute; z-index: 4; width: 12px; height: 12px; padding: 0; border: 0; border-radius: 2px; background: transparent; cursor: ew-resize; touch-action: none; }
-.vw-gantt-progress-handle::before { content: ""; position: absolute; left: 0; top: 2px; border-inline: 6px solid transparent; border-bottom: 9px solid var(--vw-accent, #245e96); filter: drop-shadow(0 0 1px var(--vw-surface, #fff)); }
+.vw-gantt-progress-handle::before { content: ""; position: absolute; left: 0; top: 2px; border-inline: 6px solid transparent; border-bottom: 9px solid var(--vw-accent, var(--_vw-accent)); filter: drop-shadow(0 0 1px var(--vw-surface, var(--_vw-surface))); }
 .vw-gantt-progress-handle::after { content: ""; position: absolute; inset: -3px; }
 .vw-gantt .vw-gantt-progress-handle:focus-visible { outline-offset: 1px; }
-.vw-gantt-tooltip { position: absolute; z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 4px 14px rgb(0 0 0 / .16); font-size: 12px; line-height: 1.4; }
+.vw-gantt-tooltip { position: absolute; z-index: 20; width: max-content; max-width: min(320px, calc(100vw - 16px)); padding: 6px 9px; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-text, var(--_vw-text)); box-shadow: 0 4px 14px rgb(0 0 0 / .16); font-size: 12px; line-height: 1.4; }
 
 /* Right-to-left (opt-in through the dir prop). Positions come from the component as `right` offsets; these rules
    mirror the sticky label column, header, grid, handles and dependency layers. */
@@ -290,7 +296,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 /* The dependency layer is mirrored as a whole; each lag label is flipped back in place so its text reads normally. */
 .vw-gantt.vw-rtl .vw-gantt-lag { transform: scaleX(-1); transform-box: fill-box; transform-origin: center; }
 .vw-gantt.vw-rtl .vw-gantt-link-preview { left: auto; inset-inline-start: var(--vw-label-area-width); }
-.vw-gantt.vw-rtl .vw-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vw-surface, #fff); }
+.vw-gantt.vw-rtl .vw-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vw-surface, var(--_vw-surface)); }
 .vw-gantt.vw-rtl .vw-extra-column { border-left: 0; border-inline-start: 1px solid var(--vw-border, #d8e2e9); }
 .vw-gantt.vw-rtl .vw-name-column.vw-tree-row { padding-left: 0; padding-inline-start: calc(9px + var(--vw-row-depth) * 11px); }
 .vw-gantt.vw-rtl .vw-column-group > .vw-tree-row { padding-left: 9px; padding-inline-start: calc(8px + var(--vw-row-depth) * 9px); }
@@ -303,17 +309,17 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 /* Opt-in drag to create (creatable) and cascade previews (cascade). Placed after the right-to-left rules so the
    heading padding that makes room for the add button also applies there. */
 .vw-gantt .vw-gantt-row-label .vw-name-column.vw-creatable { position: relative; padding-inline-end: 26px; }
-.vw-gantt-create-button { position: absolute; inset-inline-end: 3px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; padding: 0; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 4px; background: var(--vw-surface, #fff); color: var(--vw-accent, #245e96); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
-.vw-gantt-create-button:hover { background: var(--vw-surface-hover, #edf5fa); }
-.vw-gantt-create-preview, .vw-gantt-cascade-preview { position: absolute; z-index: 3; box-sizing: border-box; border-radius: 5px; pointer-events: none; box-shadow: 0 0 0 1px var(--vw-surface, #fff), inset 0 0 0 1px var(--vw-surface, #fff); }
-.vw-gantt-create-preview { border: 2px dashed var(--vw-accent, #245e96); background: color-mix(in srgb, var(--vw-accent, #245e96) 16%, transparent); }
+.vw-gantt-create-button { position: absolute; inset-inline-end: 3px; top: 50%; translate: 0 -50%; width: 20px; height: 20px; padding: 0; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 4px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-accent, var(--_vw-accent)); font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; }
+.vw-gantt-create-button:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+.vw-gantt-create-preview, .vw-gantt-cascade-preview { position: absolute; z-index: 3; box-sizing: border-box; border-radius: 5px; pointer-events: none; box-shadow: 0 0 0 1px var(--vw-surface, var(--_vw-surface)), inset 0 0 0 1px var(--vw-surface, var(--_vw-surface)); }
+.vw-gantt-create-preview { border: 2px dashed var(--vw-accent, var(--_vw-accent)); background: color-mix(in srgb, var(--vw-accent, var(--_vw-accent)) 16%, transparent); }
 .vw-gantt-cascade-preview { border: 2px dashed var(--vw-cascade, #6d4bb3); background: color-mix(in srgb, var(--vw-cascade, #6d4bb3) 14%, transparent); }
 /* Opt-in row hierarchy moves (rowsReorderable), status date and progress line (statusDate, showProgressLine). */
 .vw-gantt .vw-gantt-row-label .vw-name-column.vw-reorderable { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 4px; }
-.vw-row-move-handle { flex: none; width: 18px; height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vw-muted, #4c6371); font-size: 11px; letter-spacing: -2px; line-height: 1; cursor: grab; touch-action: none; }
+.vw-row-move-handle { flex: none; width: 18px; height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; letter-spacing: -2px; line-height: 1; cursor: grab; touch-action: none; }
 .vw-row-move-handle:hover { background: var(--vw-surface-hover, #e3edf5); }
 .vw-row-move-handle:active { cursor: grabbing; }
-.vw-gantt-row-drop { position: absolute; z-index: 5; height: 3px; border-radius: 2px; background: var(--vw-accent, #245e96); pointer-events: none; }
+.vw-gantt-row-drop { position: absolute; z-index: 5; height: 3px; border-radius: 2px; background: var(--vw-accent, var(--_vw-accent)); pointer-events: none; }
 .vw-gantt-status-date { border-left: 2px solid var(--vw-status, #1f7a4d); z-index: 3; }
 .vw-gantt-status-date span { background: var(--vw-status, #1f7a4d); }
 .vw-gantt.vw-rtl .vw-gantt-status-date { border-left: 0; border-inline-start: 2px solid var(--vw-status, #1f7a4d); }
@@ -323,8 +329,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 /* Opt-in column resizing (columnsResizable): a separator along the inline-end edge of each header cell. */
 .vw-column-resize { position: absolute; top: 0; bottom: 0; z-index: 2; width: 8px; cursor: col-resize; touch-action: none; }
 .vw-column-resize::after { content: ''; position: absolute; top: 20%; bottom: 20%; inset-inline-end: 2px; width: 2px; border-radius: 1px; background: var(--vw-border, #c3d2dc); }
-.vw-column-resize:hover::after, .vw-column-resize.vw-is-active::after { background: var(--vw-accent, #245e96); }
-.vw-column-resize:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
+.vw-column-resize:hover::after, .vw-column-resize.vw-is-active::after { background: var(--vw-accent, var(--_vw-accent)); }
+.vw-column-resize:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
 /* Opt-in header sorting and filtering (sortableColumns, filterableColumns): a sort button with a direction glyph, a filter
    button and the filter dialog, which opens under its header cell. Logical properties keep them right in RTL charts. */
 .vw-gantt .vw-header-controls { position: relative; display: flex; flex-direction: row; align-items: center; gap: 2px; overflow: visible; }
@@ -333,24 +339,24 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-column-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-header-controls > .vw-column-title { flex: 1 1 auto; }
 .vw-sort-indicator { flex: none; font-size: 9px; opacity: .45; }
-.vw-column-sort.vw-is-sorted .vw-sort-indicator { opacity: 1; color: var(--vw-accent, #245e96); }
+.vw-column-sort.vw-is-sorted .vw-sort-indicator { opacity: 1; color: var(--vw-accent, var(--_vw-accent)); }
 .vw-column-sort:hover, .vw-column-filter:hover { background: var(--vw-surface-hover, #e3edf5); }
 .vw-column-filter { flex: none; padding: 2px 3px; border: 0; border-radius: 3px; background: transparent; font: inherit; font-size: 10px; line-height: 1; opacity: .6; }
-.vw-column-filter.vw-is-active, .vw-column-filter[aria-expanded="true"] { opacity: 1; color: var(--vw-accent, #245e96); background: var(--vw-surface-hover, #e3edf5); }
-.vw-column-filter-popover { position: absolute; top: calc(100% - 4px); inset-inline-start: 0; z-index: 6; display: flex; flex-direction: column; gap: 8px; width: max-content; min-width: 190px; max-width: 280px; padding: 10px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); color: var(--vw-text, #172c3b); box-shadow: 0 6px 18px rgb(0 0 0 / .18); font-size: 12px; font-weight: 400; white-space: normal; }
+.vw-column-filter.vw-is-active, .vw-column-filter[aria-expanded="true"] { opacity: 1; color: var(--vw-accent, var(--_vw-accent)); background: var(--vw-surface-hover, #e3edf5); }
+.vw-column-filter-popover { position: absolute; top: calc(100% - 4px); inset-inline-start: 0; z-index: 6; display: flex; flex-direction: column; gap: 8px; width: max-content; min-width: 190px; max-width: 280px; padding: 10px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); color: var(--vw-text, var(--_vw-text)); box-shadow: 0 6px 18px rgb(0 0 0 / .18); font-size: 12px; font-weight: 400; white-space: normal; }
 .vw-column-filter-text { display: flex; flex-direction: column; gap: 4px; font-weight: 650; }
-.vw-column-filter-text input { min-height: 28px; padding: 3px 7px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 5px; background: var(--vw-surface, #fff); color: inherit; font: inherit; font-weight: 400; }
+.vw-column-filter-text input { min-height: 28px; padding: 3px 7px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 5px; background: var(--vw-surface, var(--_vw-surface)); color: inherit; font: inherit; font-weight: 400; }
 .vw-column-filter-values { display: flex; flex-direction: column; gap: 3px; max-height: 180px; margin: 0; padding: 0; overflow: auto; border: 0; }
 .vw-column-filter-values legend { margin-bottom: 4px; padding: 0; font-weight: 650; }
 .vw-column-filter-values label { display: flex; align-items: center; gap: 6px; }
-.vw-column-filter-values input { margin: 0; accent-color: var(--vw-accent, #245e96); }
+.vw-column-filter-values input { margin: 0; accent-color: var(--vw-accent, var(--_vw-accent)); }
 .vw-column-filter-clear { align-self: flex-start; padding: 3px 9px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 5px; background: var(--vw-surface-muted, #f6f9fb); font: inherit; }
-.vw-column-filter-text input:focus-visible, .vw-column-filter-values input:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-column-filter-text input:focus-visible, .vw-column-filter-values input:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 /* Scheduling constraints (TimelineBar.constraints), and their handles with constraintsEditable. The 26 × 14 px box is
    centred on the time and holds the flag: at the top for a start bound, at the bottom for a finish bound, pointing
    towards the allowed times (vw-is-lower: later; vw-is-upper: earlier). A fixed start is an I-beam. The stem (::after)
    reaches across the lane. Drawn left to right and mirrored as a whole in right-to-left charts. */
-.vw-gantt .vw-gantt-constraint { position: absolute; z-index: 4; box-sizing: border-box; width: 26px; height: 14px; padding: 0; border: 0; border-radius: 2px; color: var(--vw-constraint, #a1246e); background: linear-gradient(currentColor, currentColor) no-repeat; background-size: 8px 2px; filter: drop-shadow(0 0 1px var(--vw-surface, #fff)) drop-shadow(0 0 1px var(--vw-surface, #fff)); pointer-events: none; }
+.vw-gantt .vw-gantt-constraint { position: absolute; z-index: 4; box-sizing: border-box; width: 26px; height: 14px; padding: 0; border: 0; border-radius: 2px; color: var(--vw-constraint, #a1246e); background: linear-gradient(currentColor, currentColor) no-repeat; background-size: 8px 2px; filter: drop-shadow(0 0 1px var(--vw-surface, var(--_vw-surface))) drop-shadow(0 0 1px var(--vw-surface, var(--_vw-surface))); pointer-events: none; }
 .vw-gantt-constraint.vw-is-start { background-position: 13px 0; }
 .vw-gantt-constraint.vw-is-finish { background-position: 13px 12px; }
 .vw-gantt-constraint.vw-is-upper { background-position-x: 5px; }
@@ -364,7 +370,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt .vw-gantt-constraint.vw-is-violated { color: var(--vw-constraint-violated, #c4161c); }
 .vw-gantt-constraint.vw-is-violated::after { background: repeating-linear-gradient(currentColor 0 3px, transparent 3px 5px); }
 .vw-gantt button.vw-gantt-constraint { pointer-events: auto; cursor: ew-resize; touch-action: none; }
-.vw-gantt button.vw-gantt-constraint:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-gantt button.vw-gantt-constraint:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-gantt.vw-rtl .vw-gantt-constraint { scale: -1 1; }
 
 /* Built-in dark theme. Opt in with `vw-theme-dark`, or follow the OS with `vw-theme-auto`; place the class on a component root or any ancestor. */
@@ -383,6 +389,9 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
   --vw-dimmed-opacity: .4;
   --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
+  /* Component variables: ranges (GanttChart), inspector errors and TaskBoard WIP and drop colours. */
+  --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; --vw-inspector-error: #ff8a80;
+  --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf;
 }
 .vw-theme-dark.vw-gantt { background: var(--vw-surface); }
 @media (prefers-color-scheme: dark) {
@@ -398,9 +407,12 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
     --vw-baseline: #8da0b4; --vw-baseline-2: #dc9fd6; --vw-baseline-3: #6fd0bc; --vw-marker: #f0a060; --vw-marker-ink: #0d1a24; --vw-dependency-highlight: #f0a060;
     --vw-now: #ff8f7a; --vw-load: #5d8fc0; --vw-load-overload: #e8734a; --vw-load-capacity: #c3d3df;
     --vw-non-working: #13212c; --vw-critical: #ff8a80; --vw-float: #9fb3c3; --vw-deadline: #f0a060; --vw-cascade: #c4a8f0; --vw-status: #7ad39b;
-  --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
+    --vw-constraint: #f59bd0; --vw-constraint-violated: #ff8a80; --vw-connect-valid: #6fd0a0; --vw-connect-invalid: #ff8a80;
     --vw-dimmed-opacity: .4;
     --vw-background-pattern: #3d5a6f; --vw-guide: #ff7aa8;
+    /* Component variables: ranges (GanttChart), inspector errors and TaskBoard WIP and drop colours. */
+    --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; --vw-inspector-error: #ff8a80;
+    --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf;
   }
   .vw-theme-auto.vw-gantt { background: var(--vw-surface); }
 }
@@ -525,13 +537,13 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt-bar.vw-is-highlighted.vw-is-selected { outline-offset: 4px; }
 .vw-gantt-load-segment.vw-is-selectable { cursor: pointer; }
 .vw-gantt-load-segment.vw-is-selectable:hover { filter: brightness(.94); }
-.vw-gantt-load-segment.vw-is-selectable:focus-visible { z-index: 3; outline: 2px solid var(--vw-load-focus, var(--vw-accent, #245e96)); outline-offset: 1px; }
+.vw-gantt-load-segment.vw-is-selectable:focus-visible { z-index: 3; outline: 2px solid var(--vw-load-focus, var(--vw-accent, var(--_vw-accent))); outline-offset: 1px; }
 /* `highlightedLoadTargets` and `selectedLoadTargets`: an inset ring that stays inside the segment between neighbours. */
 .vw-gantt-load-segment.vw-is-highlighted { box-shadow: inset 0 0 0 2px var(--vw-load-highlight, var(--vw-dependency-highlight, #a74f08)); }
-.vw-gantt-load-segment.vw-is-selected { box-shadow: inset 0 0 0 3px var(--vw-load-selected, var(--vw-accent, #245e96)); }
+.vw-gantt-load-segment.vw-is-selected { box-shadow: inset 0 0 0 3px var(--vw-load-selected, var(--vw-accent, var(--_vw-accent))); }
 .vw-field-cell { width: 100%; min-width: 0; padding: 4px; color: inherit; font: inherit; text-align: start; background: transparent; border: 1px solid transparent; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
 .vw-field-cell:hover { border-color: var(--vw-border, #d8e2e9); }
-.vw-field-cell:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -1px; }
+.vw-field-cell:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -1px; }
 .vw-field-editor { width: 100%; min-width: 0; }
 .vw-cell-input[aria-invalid="true"] { border-color: var(--vw-field-invalid, #c4161c); }
 @media (forced-colors: active) {
@@ -553,10 +565,6 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt-range-label { position: absolute; bottom: 0; box-sizing: border-box; height: 13px; padding: 0 4px; overflow: hidden; border-top: 2px solid var(--vw-range-line, #b58848); background: var(--vw-range, #f9efdc); color: var(--vw-range-ink, #764908); font-size: 9.5px; font-weight: 650; line-height: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .vw-gantt-range.vw-has-tone, .vw-gantt-range-label.vw-has-tone { background: var(--vw-item-pale, var(--vw-range, #f9efdc)); }
 .vw-gantt-range-label.vw-has-tone { border-top-color: var(--vw-item-line, var(--vw-range-line, #b58848)); color: var(--vw-item-ink, var(--vw-range-ink, #764908)); }
-.vw-theme-dark { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
-@media (prefers-color-scheme: dark) {
-  .vw-theme-auto { --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; }
-}
 @media (forced-colors: active) {
   .vw-gantt-range, .vw-gantt-range.vw-has-tone { forced-color-adjust: none; opacity: 1; background: repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 9px); }
   .vw-gantt-range-label, .vw-gantt-range-label.vw-has-tone { forced-color-adjust: none; background: Canvas; color: CanvasText; border-top-color: CanvasText; }
@@ -593,63 +601,58 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 @media (pointer: coarse) { .vw-sheet-fill { width: 16px; height: 16px; } }
 /* Diagram editor parts: GraphPalette (vw-palette-*) and PropertyInspector (vw-inspector-*). Both follow the shared surface,
    text, border and accent variables, so the dark themes apply to them; layout uses logical properties for RTL. */
-.vw-palette, .vw-inspector { box-sizing: border-box; color: var(--vw-text, #172c3b); font-family: inherit; font-size: 13px; }
-.vw-palette *, .vw-inspector * { box-sizing: border-box; }
+.vw-palette, .vw-inspector { box-sizing: border-box; font-size: 13px; }
 .vw-palette { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.vw-palette-search, .vw-inspector-input { width: 100%; min-height: 30px; padding: 4px 8px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); color: inherit; font: inherit; }
-.vw-palette-search:focus-visible, .vw-inspector-input:focus-visible, .vw-inspector-check:focus-visible, .vw-inspector-swatch:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-search, .vw-inspector-input { width: 100%; min-height: 30px; padding: 4px 8px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); color: inherit; font: inherit; }
+.vw-palette-search:focus-visible, .vw-inspector-input:focus-visible, .vw-inspector-check:focus-visible, .vw-inspector-swatch:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-palette-list { display: flex; flex-direction: column; gap: 10px; }
 .vw-palette-section { display: flex; flex-direction: column; gap: 4px; }
-.vw-palette-heading { padding-inline-start: 2px; color: var(--vw-muted, #4f6574); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.vw-palette-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--vw-border, #dce6ed); border-radius: 7px; background: var(--vw-surface, #fff); cursor: grab; outline: none; user-select: none; }
-.vw-palette-item:hover { background: var(--vw-surface-hover, #e4ecf2); }
+.vw-palette-heading { padding-inline-start: 2px; color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.vw-palette-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--vw-border, #dce6ed); border-radius: 7px; background: var(--vw-surface, var(--_vw-surface)); cursor: grab; outline: none; user-select: none; }
+.vw-palette-item:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-palette-item:active { cursor: grabbing; }
-.vw-palette-item:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-item:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-palette-item.vw-is-disabled { cursor: default; opacity: .5; }
 .vw-palette-preview { flex: none; width: var(--vw-palette-preview-width, 48px); height: auto; overflow: visible; }
 .vw-palette-preview rect, .vw-palette-preview ellipse, .vw-palette-preview polygon, .vw-palette-preview path { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
 .vw-palette-text { display: flex; flex-direction: column; min-width: 0; }
 .vw-palette-label { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.vw-palette-detail { overflow: hidden; color: var(--vw-muted, #4f6574); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
-.vw-palette-empty, .vw-inspector-empty { margin: 0; color: var(--vw-muted, #4f6574); }
+.vw-palette-detail { overflow: hidden; color: var(--vw-muted, var(--_vw-muted)); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.vw-palette-empty, .vw-inspector-empty { margin: 0; color: var(--vw-muted, var(--_vw-muted)); }
 .vw-inspector { display: flex; flex-direction: column; gap: 12px; margin: 0; min-width: 0; }
 .vw-inspector-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .vw-inspector-field.vw-is-checkbox { flex-flow: row wrap; align-items: center; }
 .vw-inspector-field.vw-is-checkbox .vw-inspector-label { order: 1; }
 .vw-inspector-field.vw-is-checkbox > :not(.vw-inspector-label):not(input) { flex-basis: 100%; order: 2; }
-.vw-inspector-label { color: var(--vw-muted, #4f6574); font-size: 12px; font-weight: 650; }
+.vw-inspector-label { color: var(--vw-muted, var(--_vw-muted)); font-size: 12px; font-weight: 650; }
 .vw-inspector-field.vw-is-checkbox .vw-inspector-label { color: inherit; font-size: inherit; font-weight: 400; }
-.vw-inspector-input[readonly], .vw-inspector-input:disabled { background: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, #4f6574); }
+.vw-inspector-input[readonly], .vw-inspector-input:disabled { background: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, var(--_vw-muted)); }
 .vw-inspector-input[multiple] { min-height: 72px; }
-.vw-inspector-check { margin: 0; accent-color: var(--vw-accent, #245e96); }
+.vw-inspector-check { margin: 0; accent-color: var(--vw-accent, var(--_vw-accent)); }
 .vw-inspector-color { display: flex; align-items: center; gap: 8px; }
-.vw-inspector-swatch { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); }
-.vw-inspector-color-text { color: var(--vw-muted, #4f6574); font-variant-numeric: tabular-nums; }
-.vw-inspector-description { margin: 0; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
+.vw-inspector-swatch { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); }
+.vw-inspector-color-text { color: var(--vw-muted, var(--_vw-muted)); font-variant-numeric: tabular-nums; }
+.vw-inspector-description { margin: 0; color: var(--vw-muted, var(--_vw-muted)); font-size: 11.5px; }
 .vw-inspector-error { margin: 0; color: var(--vw-inspector-error, #b3261e); font-size: 12px; font-weight: 600; }
 .vw-inspector-field.vw-is-invalid .vw-inspector-input, .vw-inspector-field.vw-is-invalid .vw-inspector-swatch { border-color: var(--vw-inspector-error, #b3261e); }
 /* List fields (assignments, dependencies): a compact table with add and remove buttons. */
 .vw-inspector-list { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .vw-inspector-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.vw-inspector-table th { padding: 0 4px 2px 0; color: var(--vw-muted, #4f6574); font-size: 11px; font-weight: 600; text-align: start; }
+.vw-inspector-table th { padding: 0 4px 2px 0; color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; font-weight: 600; text-align: start; }
 .vw-inspector-table th:last-child { width: 30px; }
 .vw-inspector-table td { padding: 2px 4px 2px 0; vertical-align: middle; }
 .vw-inspector-table td:last-child, .vw-inspector-table th:last-child { padding-inline-end: 0; }
 .vw-inspector-table .vw-inspector-input { min-height: 28px; padding: 3px 6px; }
 .vw-inspector-type { min-width: 56px; }
 .vw-inspector-number { display: flex; align-items: center; gap: 4px; }
-.vw-inspector-unit { flex: none; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
-.vw-inspector-none { margin: 0; color: var(--vw-muted, #4f6574); font-size: 12px; }
+.vw-inspector-unit { flex: none; color: var(--vw-muted, var(--_vw-muted)); font-size: 11.5px; }
+.vw-inspector-none { margin: 0; color: var(--vw-muted, var(--_vw-muted)); font-size: 12px; }
 .vw-inspector-remove, .vw-inspector-add { min-height: 28px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface-muted, #f6f9fb); color: inherit; font: inherit; cursor: pointer; }
 .vw-inspector-remove { width: 28px; padding: 0; font-size: 15px; line-height: 1; }
 .vw-inspector-add { padding: 3px 10px; }
-.vw-inspector-remove:hover, .vw-inspector-add:hover { background: var(--vw-surface-hover, #e3edf5); }
+.vw-inspector-remove:hover, .vw-inspector-add:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-inspector-add:disabled { cursor: default; opacity: .5; }
-.vw-inspector-remove:focus-visible, .vw-inspector-add:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
-.vw-theme-dark { --vw-inspector-error: #ff8a80; }
-@media (prefers-color-scheme: dark) {
-  .vw-theme-auto { --vw-inspector-error: #ff8a80; }
-}
+.vw-inspector-remove:focus-visible, .vw-inspector-add:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 @media (forced-colors: active) {
   .vw-palette-item { border-color: CanvasText; }
   .vw-palette-item:focus-visible, .vw-palette-item.vw-is-active:focus-visible { outline-color: Highlight; }
@@ -663,30 +666,28 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 
 /* TaskBoard (kanban): status columns × optional swimlanes in a CSS grid. Logical properties follow the text direction,
    so `dir="rtl"` places the first column on the right without extra rules. */
-.vw-board { --vw-board-column-width: 232px; --vw-board-collapsed-width: 44px; color: var(--vw-text, #172c3b); font-family: inherit; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: var(--vw-surface-muted, #f6f9fb); }
-.vw-board * { box-sizing: border-box; }
-.vw-board button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-board { --vw-board-column-width: 232px; --vw-board-collapsed-width: 44px; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: var(--vw-surface-muted, #f6f9fb); }
 .vw-board-scroll { overflow: auto; scrollbar-width: thin; border-radius: inherit; }
-.vw-board-scroll:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
-.vw-board-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; }
+.vw-board-scroll:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
+.vw-board-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, var(--_vw-muted)); font-size: 13px; }
 .vw-board-grid { display: grid; grid-template-columns: repeat(var(--vw-board-column-count, 1), minmax(var(--vw-board-column-width), 1fr)); gap: 0 10px; padding: 0 10px 10px; min-width: min-content; }
 .vw-board-column-head { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 4px 8px; background: var(--vw-surface-muted, #f6f9fb); border-bottom: 2px solid var(--vw-border, #d8e2e9); font-size: 12px; }
 .vw-board-column-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .vw-board-column-title strong, .vw-board-column-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vw-board-column-title small, .vw-board-lane-title small { color: var(--vw-muted, #4c6371); font-size: 10.5px; font-weight: 500; }
-.vw-board-count { padding: 1px 7px; border-radius: 999px; background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vw-board-column-title small, .vw-board-lane-title small { color: var(--vw-muted, var(--_vw-muted)); font-size: 10.5px; font-weight: 500; }
+.vw-board-count { padding: 1px 7px; border-radius: 999px; background: var(--vw-surface, var(--_vw-surface)); border: 1px solid var(--vw-border, #d8e2e9); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .vw-board-column-head.vw-is-at-limit .vw-board-count { border-color: var(--vw-board-wip-warning, #a8361f); }
 .vw-board-column-head.vw-is-over-limit { border-bottom-color: var(--vw-board-wip-warning, #a8361f); }
-.vw-board-column-head.vw-is-over-limit .vw-board-count { background: var(--vw-board-wip-warning, #a8361f); border-color: var(--vw-board-wip-warning, #a8361f); color: var(--vw-on-solid, #fff); }
+.vw-board-column-head.vw-is-over-limit .vw-board-count { background: var(--vw-board-wip-warning, #a8361f); border-color: var(--vw-board-wip-warning, #a8361f); color: var(--vw-on-solid, var(--_vw-on-solid)); }
 .vw-board-wip-warning { flex-basis: 100%; color: var(--vw-board-wip-warning, #a8361f); font-size: 10.5px; font-weight: 700; }
 .vw-board-wip-warning::before { content: "▲ "; }
 .vw-board-column-head.vw-is-under-minimum { border-bottom-color: var(--vw-board-wip-under, #8a5a00); }
 .vw-board-column-head.vw-is-under-minimum .vw-board-count { border-color: var(--vw-board-wip-under, #8a5a00); color: var(--vw-board-wip-under, #8a5a00); }
 .vw-board-wip-warning.vw-is-under { color: var(--vw-board-wip-under, #8a5a00); }
 .vw-board-wip-warning.vw-is-under::before { content: "▽ "; }
-.vw-board-toggle { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; background: var(--vw-surface, #fff); }
-.vw-board-toggle:hover { background: var(--vw-surface-hover, #edf5fa); }
-.vw-board-toggle:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-board-toggle { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; background: var(--vw-surface, var(--_vw-surface)); }
+.vw-board-toggle:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+.vw-board-toggle:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-board-toggle-icon { width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translate(-1px, -1px); }
 /* Physical borders, so the chevron points down when expanded and toward the reading direction when collapsed. */
 .vw-board-toggle[aria-expanded="false"] .vw-board-toggle-icon { transform: rotate(-45deg); }
@@ -700,24 +701,20 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-board-lane-title { position: sticky; inset-inline-start: 4px; display: inline-flex; align-items: baseline; gap: 8px; }
 .vw-board-cell { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px 4px; min-height: var(--vw-board-cell-min-height, 64px); list-style: none; border-radius: 6px; }
 .vw-board-cell.vw-is-over-limit { background: color-mix(in srgb, var(--vw-board-wip-warning, #a8361f) 7%, transparent); }
-.vw-board-cell.vw-is-target { outline: 1px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: -1px; }
+.vw-board-cell.vw-is-target { outline: 1px dashed var(--vw-board-drop, var(--vw-accent, var(--_vw-accent))); outline-offset: -1px; }
 .vw-board-card-item { display: block; }
-.vw-board-card { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: start; border: 1px solid var(--vw-item-line); border-inline-start-width: 4px; border-radius: 6px; background: var(--vw-surface, #fff); font-size: 12px; user-select: none; }
-.vw-board-card:hover { background: var(--vw-surface-hover, #edf5fa); }
-.vw-board-card:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
+.vw-board-card { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: start; border: 1px solid var(--vw-item-line); border-inline-start-width: 4px; border-radius: 6px; background: var(--vw-surface, var(--_vw-surface)); font-size: 12px; user-select: none; }
+.vw-board-card:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+.vw-board-card:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 2px; }
 .vw-board-card.vw-is-movable { cursor: grab; touch-action: none; }
 .vw-board-card.vw-is-selected { border-color: var(--vw-item-solid); box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
 .vw-board-card.vw-is-dragging { position: relative; z-index: 3; cursor: grabbing; opacity: .92; box-shadow: 0 6px 18px rgb(0 0 0 / .22); }
-.vw-board-card.vw-is-picked { outline: 2px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: 2px; }
+.vw-board-card.vw-is-picked { outline: 2px dashed var(--vw-board-drop, var(--vw-accent, var(--_vw-accent))); outline-offset: 2px; }
 .vw-board-card-label { font-weight: 650; color: var(--vw-item-ink); overflow-wrap: anywhere; }
-.vw-board-card-detail { color: var(--vw-muted, #4c6371); font-size: 11px; }
-.vw-board-drop { height: 4px; margin-block: -1px; border-radius: 2px; background: var(--vw-board-drop, var(--vw-accent, #245e96)); }
+.vw-board-card-detail { color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; }
+.vw-board-drop { height: 4px; margin-block: -1px; border-radius: 2px; background: var(--vw-board-drop, var(--vw-accent, var(--_vw-accent))); }
 .vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, var(--vw-board-wip-warning, #a8361f) 0 6px, transparent 6px 9px); }
-.vw-board-cell-empty { padding: 10px 4px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 11px; border: 1px dashed var(--vw-border, #d8e2e9); border-radius: 6px; }
-.vw-theme-dark { --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf; }
-@media (prefers-color-scheme: dark) {
-  .vw-theme-auto { --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf; }
-}
+.vw-board-cell-empty { padding: 10px 4px; text-align: center; color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; border: 1px dashed var(--vw-border, #d8e2e9); border-radius: 6px; }
 @media (max-width: 700px) {
   .vw-board { --vw-board-column-width: 196px; }
 }
@@ -748,15 +745,15 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-network-node:where(:hover, :focus-visible, .vw-is-selected, .vw-is-related):where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-item-ink); }
 .vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-shape.vw-node-event-end, .vw-network-node:where(:not(.vw-is-unstyled)) rect.vw-node-event-end { stroke-width: 3.5px; }
 .vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-marker { fill: none; stroke: var(--vw-item-ink); stroke-linecap: round; stroke-linejoin: round; }
-.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-marker, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-on-solid, #fff); }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-marker, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-on-solid, var(--_vw-on-solid)); }
 .vw-node-marker { pointer-events: none; }
 .vw-network-node .vw-node-label-below { paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; stroke-linejoin: round; }
-.vw-network-node:where(:not(.vw-is-unstyled)) text.vw-node-label-below, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text.vw-node-label-below { fill: var(--vw-text, #172c3b); }
+.vw-network-node:where(:not(.vw-is-unstyled)) text.vw-node-label-below, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text.vw-node-label-below { fill: var(--vw-text, var(--_vw-text)); }
 .vw-network-edge.vw-is-dashed { stroke-dasharray: 5 4; }
 .vw-swimlane-pool rect, .vw-swimlane-pool text { pointer-events: none; }
-.vw-swimlane-pool-band { fill: var(--vw-pool-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
-.vw-swimlane-pool-header { fill: var(--vw-pool-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
-.vw-swimlane-pool-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 13px; font-weight: 700; user-select: none; }
+.vw-swimlane-pool-band { fill: var(--vw-pool-fill, var(--vw-surface, var(--_vw-surface))); stroke: var(--vw-pool-border, var(--vw-muted, var(--_vw-muted))); stroke-width: 1.5px; }
+.vw-swimlane-pool-header { fill: var(--vw-pool-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-pool-border, var(--vw-muted, var(--_vw-muted))); stroke-width: 1.5px; }
+.vw-swimlane-pool-title text { fill: var(--vw-lane-title, var(--vw-text, var(--_vw-text))); font-size: 13px; font-weight: 700; user-select: none; }
 .vw-network.vw-rtl .vw-swimlane-pool-title text { direction: rtl; unicode-bidi: embed; }
 @media (forced-colors: active) {
   .vw-network-node .vw-node-shape-detail, .vw-network-node .vw-node-marker { forced-color-adjust: none; fill: none; stroke: CanvasText; }
@@ -768,39 +765,36 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 
 /* EventCalendar: day and week time grid, all-day row and month grid. Positions use logical properties, so right-to-left
    calendars (`dir`) mirror without extra rules; colours come from the shared theme variables and the event tones. */
-.vw-calendar { position: relative; display: flex; flex-direction: column; color: var(--vw-text, #172c3b); background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 8px; font-family: inherit; font-size: 12px; overflow: hidden; }
-.vw-calendar * { box-sizing: border-box; }
-.vw-calendar button { color: inherit; font-family: inherit; cursor: pointer; }
-.vw-calendar button:disabled { cursor: default; opacity: .5; }
-.vw-calendar button:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-calendar { position: relative; display: flex; flex-direction: column; background: var(--vw-surface, var(--_vw-surface)); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 8px; font-family: inherit; font-size: 12px; overflow: hidden; }
+.vw-calendar button:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 1px; }
 .vw-calendar-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 7px 12px; border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
-.vw-calendar-nav, .vw-calendar-views { display: flex; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, #fff); }
+.vw-calendar-nav, .vw-calendar-views { display: flex; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, var(--_vw-surface)); }
 .vw-calendar-nav button, .vw-calendar-views button { min-width: 30px; height: 27px; padding: 0 9px; border: 0; background: transparent; font-size: 12px; font-weight: 650; }
 .vw-calendar-nav button + button, .vw-calendar-views button + button { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
-.vw-calendar-nav button:not(:disabled):hover, .vw-calendar-views button:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-calendar-nav button:not(:disabled):hover, .vw-calendar-views button:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-calendar-nav-icon { display: inline-block; font-size: 16px; line-height: 1; }
 .vw-calendar:dir(rtl) .vw-calendar-nav-icon { transform: scaleX(-1); }
-.vw-calendar-views button[aria-pressed="true"] { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
+.vw-calendar-views button[aria-pressed="true"] { background: var(--vw-accent, var(--_vw-accent)); color: var(--vw-on-solid, var(--_vw-on-solid)); }
 .vw-calendar-title { flex: 1; min-width: 10em; font-size: 14px; font-weight: 700; }
-.vw-calendar-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, #4c6371); }
+.vw-calendar-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, var(--_vw-muted)); }
 .vw-calendar-head, .vw-calendar-all-day, .vw-calendar-body { display: grid; }
 .vw-calendar-head { border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
 .vw-calendar-head, .vw-calendar-all-day { padding-inline-end: var(--vw-calendar-scrollbar, 0px); }
-.vw-calendar-corner { display: flex; align-items: center; padding: 4px 6px; color: var(--vw-muted, #4c6371); font-size: 10px; font-weight: 700; }
+.vw-calendar-corner { display: flex; align-items: center; padding: 4px 6px; color: var(--vw-muted, var(--_vw-muted)); font-size: 10px; font-weight: 700; }
 .vw-calendar-column-head { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; padding: 6px 8px; border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
 .vw-calendar-column-head strong, .vw-calendar-column-head small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.vw-calendar-column-head small { color: var(--vw-muted, #4c6371); font-size: 10px; }
-.vw-calendar-column-head.vw-is-today { color: var(--vw-accent, #245e96); }
+.vw-calendar-column-head small { color: var(--vw-muted, var(--_vw-muted)); font-size: 10px; }
+.vw-calendar-column-head.vw-is-today { color: var(--vw-accent, var(--_vw-accent)); }
 .vw-calendar-all-day { border-bottom: 2px solid var(--vw-border, #d8e2e9); }
 .vw-calendar-all-day-cells { position: relative; display: grid; grid-column: 2 / -1; }
 .vw-calendar-all-day-cells > .vw-calendar-cell { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
 .vw-calendar-scroll { overflow-y: scroll; overflow-x: hidden; scrollbar-width: thin; }
 .vw-calendar-body { position: relative; }
 .vw-calendar-gutter { position: relative; }
-.vw-calendar-hour { position: absolute; inset-inline-end: 6px; transform: translateY(-50%); color: var(--vw-muted, #4c6371); font-size: 10px; font-variant-numeric: tabular-nums; }
+.vw-calendar-hour { position: absolute; inset-inline-end: 6px; transform: translateY(-50%); color: var(--vw-muted, var(--_vw-muted)); font-size: 10px; font-variant-numeric: tabular-nums; }
 .vw-calendar-hour:first-child { transform: none; }
 .vw-calendar-column { position: relative; min-width: 0; border-inline-start: 1px solid var(--vw-border, #e0e9ef); background-image: linear-gradient(var(--vw-grid, #e2e9ef) 1px, transparent 1px); background-size: 100% var(--vw-calendar-hour-height, 48px); }
-.vw-calendar-column.vw-is-today, .vw-calendar-month-day.vw-is-today { background-color: var(--vw-calendar-today, var(--vw-surface-hover, #edf5fa)); }
+.vw-calendar-column.vw-is-today, .vw-calendar-month-day.vw-is-today { background-color: var(--vw-calendar-today, var(--vw-surface-hover, var(--_vw-surface-hover))); }
 .vw-calendar.vw-is-creatable .vw-calendar-column, .vw-calendar.vw-is-creatable .vw-calendar-cell { cursor: crosshair; }
 .vw-calendar-event { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; overflow: hidden; padding: 2px 5px; border: 1px solid var(--vw-item-line); border-inline-start: 3px solid var(--vw-calendar-event-accent, var(--vw-item-solid)); border-radius: 4px; background: var(--vw-item-pale); color: var(--vw-item-ink); text-align: start; font-size: 11px; line-height: 1.25; user-select: none; }
 .vw-calendar-event.vw-is-editable { cursor: grab; touch-action: none; }
@@ -815,28 +809,28 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-calendar-segment { height: 20px; flex-direction: row; align-items: center; gap: 5px; padding-block: 0; }
 .vw-calendar-segment.vw-continues-before { border-start-start-radius: 0; border-end-start-radius: 0; }
 .vw-calendar-segment.vw-continues-after { border-start-end-radius: 0; border-end-end-radius: 0; }
-.vw-calendar-segment.vw-is-timed { border-color: transparent; border-inline-start-color: var(--vw-calendar-event-accent, var(--vw-item-solid)); background: transparent; color: var(--vw-text, #172c3b); }
+.vw-calendar-segment.vw-is-timed { border-color: transparent; border-inline-start-color: var(--vw-calendar-event-accent, var(--vw-item-solid)); background: transparent; color: var(--vw-text, var(--_vw-text)); }
 .vw-calendar-timed.vw-continues-before { border-top-style: dashed; border-start-start-radius: 0; border-start-end-radius: 0; }
 .vw-calendar-timed.vw-continues-after { border-bottom-style: dashed; border-end-start-radius: 0; border-end-end-radius: 0; }
 .vw-calendar-handle { position: absolute; inset-inline: 0; height: 6px; cursor: ns-resize; }
 .vw-calendar-handle.vw-is-start { top: 0; }
 .vw-calendar-handle.vw-is-end { bottom: 0; }
 .vw-calendar-handle.vw-is-horizontal { inset-block: 0; inset-inline: auto 0; width: 8px; height: auto; cursor: ew-resize; }
-.vw-calendar-preview { position: absolute; z-index: 4; inset-inline: 2px; overflow: hidden; padding: 2px 5px; border: 2px dashed var(--vw-accent, #245e96); border-radius: 4px; background: color-mix(in srgb, var(--vw-accent, #245e96) 14%, transparent); color: var(--vw-text, #172c3b); font-size: 11px; font-weight: 650; white-space: nowrap; pointer-events: none; }
+.vw-calendar-preview { position: absolute; z-index: 4; inset-inline: 2px; overflow: hidden; padding: 2px 5px; border: 2px dashed var(--vw-accent, var(--_vw-accent)); border-radius: 4px; background: color-mix(in srgb, var(--vw-accent, var(--_vw-accent)) 14%, transparent); color: var(--vw-text, var(--_vw-text)); font-size: 11px; font-weight: 650; white-space: nowrap; pointer-events: none; }
 .vw-calendar-all-day-cells > .vw-calendar-preview, .vw-calendar-week-events > .vw-calendar-preview { inset-block: 0; inset-inline-end: auto; }
 .vw-calendar-now { position: absolute; z-index: 5; inset-inline: 0; height: 0; border-top: 2px solid var(--vw-now, #c23b22); pointer-events: none; }
 .vw-calendar-now::before { content: ""; position: absolute; top: -5px; inset-inline-start: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--vw-now, #c23b22); }
 .vw-calendar-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
-.vw-calendar-weekdays span { padding: 6px 8px; color: var(--vw-muted, #4c6371); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.vw-calendar-weekdays span { padding: 6px 8px; color: var(--vw-muted, var(--_vw-muted)); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .vw-calendar-week { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--vw-border, #e0e9ef); }
 .vw-calendar-month-day { position: relative; min-width: 0; padding: 3px 4px; }
 .vw-calendar-month-day + .vw-calendar-month-day { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
-.vw-calendar-month-day.vw-is-outside { background-color: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, #4c6371); }
+.vw-calendar-month-day.vw-is-outside { background-color: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, var(--_vw-muted)); }
 .vw-calendar-day-number { min-width: 22px; height: 20px; padding: 0 4px; border: 0; border-radius: 10px; background: transparent; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.vw-calendar-day-number:hover { background: var(--vw-surface-hover, #edf5fa); }
-.vw-calendar-month-day.vw-is-today .vw-calendar-day-number { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
-.vw-calendar-more { position: absolute; bottom: 2px; inset-inline-start: 4px; z-index: 3; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vw-accent, #245e96); font-size: 10px; font-weight: 700; }
-.vw-calendar-more:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-calendar-day-number:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+.vw-calendar-month-day.vw-is-today .vw-calendar-day-number { background: var(--vw-accent, var(--_vw-accent)); color: var(--vw-on-solid, var(--_vw-on-solid)); }
+.vw-calendar-more { position: absolute; bottom: 2px; inset-inline-start: 4px; z-index: 3; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vw-accent, var(--_vw-accent)); font-size: 10px; font-weight: 700; }
+.vw-calendar-more:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-calendar-week-events { position: absolute; inset: 26px 0 0; pointer-events: none; }
 .vw-calendar-week-events > .vw-calendar-event { pointer-events: auto; }
 @media (max-width: 700px) {
