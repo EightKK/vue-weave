@@ -1,5 +1,5 @@
 import { indexGraph } from './graph.js'
-import type { GraphBox, GraphEdge, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
+import type { GraphBox, GraphEdge, GraphIndex, GraphLayout, GraphPoint, IdentifiedNode } from './graph.js'
 import { checkLayoutNumber, checkLayoutSizes, defaultNodeHeight, defaultNodeWidth, defaultPadding } from './graphOptions.js'
 
 export interface GraphForceLayoutOptions {
@@ -380,6 +380,78 @@ function groupBounds(members: readonly number[], xs: Float64Array, ys: Float64Ar
   return bounds
 }
 
+/** The distinct undirected neighbours of every node slot, without self-loops, in edge order. */
+function undirectedNeighbours(index: GraphIndex, slot: ReadonlyMap<string, number>, n: number): number[][] {
+  const neighbours: number[][] = Array.from({ length: n }, () => [])
+  const seen = new Set<string>()
+  for (const [from, targets] of index.outgoing) {
+    const a = slot.get(from)!
+    for (const to of targets) {
+      const b = slot.get(to)!
+      if (a === b) continue
+      const key = a < b ? a + ',' + b : b + ',' + a
+      if (seen.has(key)) continue
+      seen.add(key)
+      neighbours[a]!.push(b)
+      neighbours[b]!.push(a)
+    }
+  }
+  return neighbours
+}
+
+/**
+ * Undirected breadth-first components of the node slots, each listed in breadth-first order from its first slot, with
+ * the component of every slot and its depth from that first slot.
+ */
+function breadthFirstComponents(neighbours: readonly (readonly number[])[]) {
+  const n = neighbours.length
+  const component = new Int32Array(n).fill(-1)
+  const rank = new Int32Array(n)
+  const components: number[][] = []
+  for (let start = 0; start < n; start++) {
+    if (component[start] !== -1) continue
+    const members = [start]
+    component[start] = components.length
+    for (let k = 0; k < members.length; k++) {
+      const i = members[k]!
+      for (const j of neighbours[i]!) {
+        if (component[j] !== -1) continue
+        component[j] = components.length
+        rank[j] = rank[i]! + 1
+        members.push(j)
+      }
+    }
+    components.push(members)
+  }
+  return { component, rank, components }
+}
+
+/**
+ * Shifts that pack the free groups in rows of similar width, starting to the right of `frame` (the bounds of the pinned
+ * group) when there is one, else at the origin.
+ */
+function shelfPack<G extends { bounds: Bounds }>(free: readonly G[], frame: Bounds | undefined, gap: number): Map<G, GraphPoint> {
+  const spacing = Math.max(40, gap)
+  let area = 0, widest = 0
+  for (const { bounds } of free) {
+    const w = bounds.maxX - bounds.minX, h = bounds.maxY - bounds.minY
+    area += (w + spacing) * (h + spacing)
+    widest = Math.max(widest, w)
+  }
+  const rowWidth = Math.max(widest, Math.sqrt(area) * 1.2)
+  const originX = frame ? frame.maxX + spacing : 0, originY = frame ? frame.minY : 0
+  let cursorX = originX, cursorY = originY, rowHeight = 0
+  const shifts = new Map<G, GraphPoint>()
+  for (const group of free) {
+    const w = group.bounds.maxX - group.bounds.minX, h = group.bounds.maxY - group.bounds.minY
+    if (cursorX > originX && cursorX - originX + w > rowWidth) { cursorX = originX; cursorY += rowHeight + spacing; rowHeight = 0 }
+    shifts.set(group, { x: cursorX - group.bounds.minX, y: cursorY - group.bounds.minY })
+    cursorX += w + spacing
+    rowHeight = Math.max(rowHeight, h)
+  }
+  return shifts
+}
+
 function checkOptions(options: GraphForceLayoutOptions) {
   const {
     nodeWidth = defaultNodeWidth, nodeHeight = defaultNodeHeight, padding = defaultPadding, iterations = 300, linkDistance = 180,
@@ -419,40 +491,10 @@ export function layoutForceGraph(
 
   const n = nodes.length
   const slot = new Map(nodes.map((node, i) => [node.id, i]))
-  const neighbours: number[][] = nodes.map(() => [])
-  const seen = new Set<string>()
-  for (const [from, targets] of index.outgoing) {
-    const a = slot.get(from)!
-    for (const to of targets) {
-      const b = slot.get(to)!
-      if (a === b) continue
-      const key = a < b ? a + ',' + b : b + ',' + a
-      if (seen.has(key)) continue
-      seen.add(key)
-      neighbours[a]!.push(b)
-      neighbours[b]!.push(a)
-    }
-  }
+  const neighbours = undirectedNeighbours(index, slot, n)
 
   // Undirected breadth-first components; depth from the first node in input order is the box rank.
-  const component = new Int32Array(n).fill(-1)
-  const rank = new Int32Array(n)
-  const components: number[][] = []
-  for (let start = 0; start < n; start++) {
-    if (component[start] !== -1) continue
-    const members = [start]
-    component[start] = components.length
-    for (let k = 0; k < members.length; k++) {
-      const i = members[k]!
-      for (const j of neighbours[i]!) {
-        if (component[j] !== -1) continue
-        component[j] = components.length
-        rank[j] = rank[i]! + 1
-        members.push(j)
-      }
-    }
-    components.push(members)
-  }
+  const { component, rank, components } = breadthFirstComponents(neighbours)
 
   const halfW = settings.width / 2, halfH = settings.height / 2
   const initial = options.initialPositions
@@ -534,26 +576,8 @@ export function layoutForceGraph(
   }
 
   // Shelf-pack free components in rows, to the right of the pinned frame when there is one.
-  const spacing = Math.max(40, settings.gap)
   const frame = placed.find(group => group.framed)
-  const free = placed.filter(group => !group.framed)
-  let area = 0, widest = 0
-  for (const { bounds } of free) {
-    const w = bounds.maxX - bounds.minX, h = bounds.maxY - bounds.minY
-    area += (w + spacing) * (h + spacing)
-    widest = Math.max(widest, w)
-  }
-  const rowWidth = Math.max(widest, Math.sqrt(area) * 1.2)
-  const originX = frame ? frame.bounds.maxX + spacing : 0, originY = frame ? frame.bounds.minY : 0
-  let cursorX = originX, cursorY = originY, rowHeight = 0
-  const shifts = new Map<typeof placed[number], GraphPoint>()
-  for (const group of free) {
-    const w = group.bounds.maxX - group.bounds.minX, h = group.bounds.maxY - group.bounds.minY
-    if (cursorX > originX && cursorX - originX + w > rowWidth) { cursorX = originX; cursorY += rowHeight + spacing; rowHeight = 0 }
-    shifts.set(group, { x: cursorX - group.bounds.minX, y: cursorY - group.bounds.minY })
-    cursorX += w + spacing
-    rowHeight = Math.max(rowHeight, h)
-  }
+  const shifts = shelfPack(placed.filter(group => !group.framed), frame?.bounds, settings.gap)
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const group of placed) {

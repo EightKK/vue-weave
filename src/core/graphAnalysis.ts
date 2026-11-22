@@ -328,62 +328,11 @@ export function detectGraphCommunities(
   const original = level
   if (twoM > 0) {
     for (;;) {
-      const size = level.adjacency.length
-      const degree = level.adjacency.map((neighbors, i) => {
-        let sum = 2 * level.loops[i]!
-        for (const w of neighbors.values()) sum += w
-        return sum
-      })
-      const community = Array.from({ length: size }, (_, i) => i)
-      const total = degree.slice()
-      let moved = false
-      for (let pass = true; pass;) {
-        pass = false
-        for (let v = 0; v < size; v++) {
-          const own = community[v]!
-          const toCommunity = new Map<number, number>()
-          for (const [u, w] of level.adjacency[v]!) toCommunity.set(community[u]!, (toCommunity.get(community[u]!) ?? 0) + w)
-          total[own] -= degree[v]!
-          let best = own
-          let bestGain = (toCommunity.get(own) ?? 0) - (resolution * total[own]! * degree[v]!) / twoM
-          for (const [c, w] of toCommunity) {
-            if (c === own) continue
-            const gain = w - (resolution * total[c]! * degree[v]!) / twoM
-            if (gain > bestGain + 1e-12) {
-              best = c
-              bestGain = gain
-            }
-          }
-          total[best] += degree[v]!
-          if (best !== own) {
-            community[v] = best
-            pass = true
-            moved = true
-          }
-        }
-      }
+      const { community, moved } = localMoves(level, twoM, resolution)
       if (!moved) break
 
       // Aggregate: renumber communities by first appearance and build the next level graph.
-      const renumber = new Map<number, number>()
-      for (let v = 0; v < size; v++) if (!renumber.has(community[v]!)) renumber.set(community[v]!, renumber.size)
-      const next: LevelGraph = {
-        adjacency: Array.from({ length: renumber.size }, () => new Map<number, number>()),
-        loops: new Array<number>(renumber.size).fill(0),
-      }
-      for (let v = 0; v < size; v++) {
-        const a = renumber.get(community[v]!)!
-        next.loops[a] += level.loops[v]!
-        for (const [u, w] of level.adjacency[v]!) {
-          if (u < v) continue
-          const b = renumber.get(community[u]!)!
-          if (a === b) next.loops[a] += w
-          else {
-            next.adjacency[a]!.set(b, (next.adjacency[a]!.get(b) ?? 0) + w)
-            next.adjacency[b]!.set(a, (next.adjacency[b]!.get(a) ?? 0) + w)
-          }
-        }
-      }
+      const { renumber, next } = aggregateLevel(level, community)
       membership = membership.map(previous => renumber.get(community[previous]!)!)
       level = next
     }
@@ -402,24 +351,101 @@ export function detectGraphCommunities(
     communities[c]!.push(ids[i]!)
   }
 
-  let modularity = 0
-  if (twoM > 0) {
-    const inside = new Array<number>(communities.length).fill(0)
-    const total = new Array<number>(communities.length).fill(0)
-    for (let v = 0; v < count; v++) {
-      const c = order.get(membership[v]!)!
-      total[c] += 2 * original.loops[v]!
-      inside[c] += 2 * original.loops[v]!
-      for (const [u, w] of original.adjacency[v]!) {
-        total[c] += w
-        if (order.get(membership[u]!) === c) inside[c] += w
+  const modularity = twoM > 0 ? communityModularity(original, membership, order, communities.length, twoM, resolution) : 0
+  return { communities, modularity }
+}
+
+/**
+ * One local moving phase of the Louvain method on a level graph: each node in turn joins the neighbouring community
+ * with the largest modularity gain, until a pass moves nothing. Returns the community of each node and whether any moved.
+ */
+function localMoves(level: LevelGraph, twoM: number, resolution: number): { community: number[]; moved: boolean } {
+  const size = level.adjacency.length
+  const degree = level.adjacency.map((neighbors, i) => {
+    let sum = 2 * level.loops[i]!
+    for (const w of neighbors.values()) sum += w
+    return sum
+  })
+  const community = Array.from({ length: size }, (_, i) => i)
+  const total = degree.slice()
+  let moved = false
+  for (let pass = true; pass;) {
+    pass = false
+    for (let v = 0; v < size; v++) {
+      const own = community[v]!
+      const toCommunity = new Map<number, number>()
+      for (const [u, w] of level.adjacency[v]!) toCommunity.set(community[u]!, (toCommunity.get(community[u]!) ?? 0) + w)
+      total[own] -= degree[v]!
+      let best = own
+      let bestGain = (toCommunity.get(own) ?? 0) - (resolution * total[own]! * degree[v]!) / twoM
+      for (const [c, w] of toCommunity) {
+        if (c === own) continue
+        const gain = w - (resolution * total[c]! * degree[v]!) / twoM
+        if (gain > bestGain + 1e-12) {
+          best = c
+          bestGain = gain
+        }
+      }
+      total[best] += degree[v]!
+      if (best !== own) {
+        community[v] = best
+        pass = true
+        moved = true
       }
     }
-    for (let c = 0; c < communities.length; c++) {
-      modularity += inside[c]! / twoM - resolution * (total[c]! / twoM) ** 2
+  }
+  return { community, moved }
+}
+
+/** Renumbers the communities by first appearance and builds the level graph of the communities. */
+function aggregateLevel(level: LevelGraph, community: readonly number[]): { renumber: Map<number, number>; next: LevelGraph } {
+  const size = level.adjacency.length
+  const renumber = new Map<number, number>()
+  for (let v = 0; v < size; v++) if (!renumber.has(community[v]!)) renumber.set(community[v]!, renumber.size)
+  const next: LevelGraph = {
+    adjacency: Array.from({ length: renumber.size }, () => new Map<number, number>()),
+    loops: new Array<number>(renumber.size).fill(0),
+  }
+  for (let v = 0; v < size; v++) {
+    const a = renumber.get(community[v]!)!
+    next.loops[a] += level.loops[v]!
+    for (const [u, w] of level.adjacency[v]!) {
+      if (u < v) continue
+      const b = renumber.get(community[u]!)!
+      if (a === b) next.loops[a] += w
+      else {
+        next.adjacency[a]!.set(b, (next.adjacency[a]!.get(b) ?? 0) + w)
+        next.adjacency[b]!.set(a, (next.adjacency[b]!.get(a) ?? 0) + w)
+      }
     }
   }
-  return { communities, modularity }
+  return { renumber, next }
+}
+
+/**
+ * Modularity of a partition of the original graph: `membership` maps each node to its final super-node and `order`
+ * each super-node to its community index.
+ */
+function communityModularity(
+  original: LevelGraph, membership: readonly number[], order: ReadonlyMap<number, number>, communityCount: number, twoM: number,
+  resolution: number,
+): number {
+  let modularity = 0
+  const inside = new Array<number>(communityCount).fill(0)
+  const total = new Array<number>(communityCount).fill(0)
+  for (let v = 0; v < membership.length; v++) {
+    const c = order.get(membership[v]!)!
+    total[c] += 2 * original.loops[v]!
+    inside[c] += 2 * original.loops[v]!
+    for (const [u, w] of original.adjacency[v]!) {
+      total[c] += w
+      if (order.get(membership[u]!) === c) inside[c] += w
+    }
+  }
+  for (let c = 0; c < communityCount; c++) {
+    modularity += inside[c]! / twoM - resolution * (total[c]! / twoM) ** 2
+  }
+  return modularity
 }
 
 export interface GraphCommunityGroupsOptions {

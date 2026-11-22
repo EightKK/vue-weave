@@ -19,7 +19,7 @@ const tolerance = 0.5
 const builtinRoutes = new WeakMap<GraphLayout, ReadonlySet<string>>()
 
 /** Internal: the edges of a layout whose paths the core drew, as recorded by the functions that produced it. */
-export function builtinRoutedEdges(layout: GraphLayout): ReadonlySet<string> {
+function builtinRoutedEdges(layout: GraphLayout): ReadonlySet<string> {
   return builtinRoutes.get(layout) ?? new Set()
 }
 
