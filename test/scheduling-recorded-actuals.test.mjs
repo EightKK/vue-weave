@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
 import { sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
 
 // Seeded plans with calendars, every link type and lag, bounds, a deadline, pauses, manual and inactive tasks, summary
@@ -463,6 +463,8 @@ function progressPlanDigest() {
     const progress = new Map(tasks.filter(() => pick(2)).map(task => [task.id, [0, 0.25, 0.5, 0.75, 1, 0.3, 0.999][pick(7)]]))
     const status = (pick(30)) * quantum
     const rescheduled = run(() => core.rescheduleFromStatusDate(input, status, progress))
+    assertScheduleInvariants(range, schedule, plan)
+    assertScheduleInvariants(range, rescheduled, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(schedule))
     const statusDiagnostics = run(() => core.toPlanningDiagnostics(rescheduled))
     outputs.push([withPlainTrace(schedule), rescheduled, diagnostics, statusDiagnostics])

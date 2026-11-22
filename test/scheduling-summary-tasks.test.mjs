@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
 import { datesById, sparseLink as link, task, taskById as byId } from './helpers/builders.mjs'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { assertLevelingInvariants, assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 const {
   collectScheduleReasons, levelResources, propagateEdit, rescheduleFromStatusDate, scheduleTasks, scheduledBarFields,
@@ -348,6 +348,8 @@ function flatPlanDigest() {
     const edited = run(() => core.propagateEdit(input, { id: editable.id, start: (2 + pick(4)) * quantum }))
     const progress = new Map(tasks.filter(() => pick(2)).map(task => [task.id, pick(5) / 4]))
     const status = run(() => core.rescheduleFromStatusDate(input, (pick(20)) * quantum, progress))
+    assertScheduleInvariants(range, raw, plan)
+    assertLevelingInvariants(range, leveled, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(raw))
     outputs.push([plain, withPlainTrace(leveled), edited, status, diagnostics])
   }

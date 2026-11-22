@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as core from '@eightkk/vue-weave/core'
-import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
+import { assertLevelingInvariants, assertScheduleInvariants, attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/seeded.mjs'
 
 // Seeded plans mixing calendars, quanta, pauses, splittable, manual, inactive and summary tasks, priorities, several
 // resources with and without availability `periods`, and assignment units. The digest was produced before
@@ -85,6 +85,9 @@ function resourcePlanDigest() {
       : undefined
     const leveled = run(() => core.levelResources(input, { explain: true }))
     const plain = run(() => core.levelResources(input))
+    assertScheduleInvariants(range, schedule, plan)
+    assertLevelingInvariants(range, leveled, plan)
+    assertLevelingInvariants(range, plain, plan)
     const diagnostics = run(() => core.toPlanningDiagnostics(leveled))
     const withLoad = schedule.ok && Array.isArray(load) ? run(() => core.toPlanningDiagnostics(schedule, load)) : undefined
     outputs.push([load, withPlainTrace(leveled), plain, diagnostics, withLoad])
