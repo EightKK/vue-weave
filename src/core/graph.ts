@@ -11,6 +11,7 @@ import { graphIncidentCurve, graphPortControls } from './graphCurve.js'
 import { isGraphRouteValid, markBuiltinRoutes, type GraphRoutingPolicy } from './graphGeometry.js'
 import { duplicateIdError, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 import type { GraphEdgeStyle } from './graphRouting.js'
+import { walkWithinHops } from './graphWalk.js'
 
 export interface GraphPort {
   id: string
@@ -121,20 +122,9 @@ export function graphNeighborhood(index: GraphIndex, id: string, maxHops = Infin
 
   // Traverse each direction independently so a shared parent does not pull in siblings.
   for (const adjacency of [index.incoming, index.outgoing]) {
-    const visited = new Set([id])
-    const queue = [{ id, depth: 0 }]
-
-    for (let i = 0; i < queue.length; i++) {
-      const current = queue[i]!
-      if (current.depth >= maxHops) continue
-
-      for (const neighbor of adjacency.get(current.id)!) {
-        if (visited.has(neighbor)) continue
-        visited.add(neighbor)
-        result.add(neighbor)
-        queue.push({ id: neighbor, depth: current.depth + 1 })
-      }
-    }
+    walkWithinHops([id], node => adjacency.get(node), node => node, maxHops, (neighbor, reached) => {
+      if (reached) result.add(neighbor)
+    })
   }
 
   return result
