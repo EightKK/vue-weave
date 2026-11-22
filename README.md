@@ -6,11 +6,11 @@
 
 [Interactive demo](https://eightkk.github.io/vue-weave/) · [Source](https://github.com/EightKK/vue-weave) · [Issues](https://github.com/EightKK/vue-weave/issues) · [Releases](https://github.com/EightKK/vue-weave/releases)
 
-Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, process flows, production views, project schedules and resource timelines from two typed components, and do the graph, scheduling and resource-load calculations in a headless core that also runs in Node.js, workers and on servers.
+Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, process flows, BPMN diagrams, production views, project schedules and resource timelines from two typed components, add a kanban board, an event calendar or diagram editor parts when you need them, and do the graph, scheduling, resource-load and earned value calculations in a headless core that also runs in Node.js, workers and on servers.
 
-- **Two controlled components.** `NetworkGraph` and `GanttChart` never change your data. A user edit becomes a proposal event, and your code decides whether to apply it.
-- **Planning built in.** Calendars, dependencies, critical path, resource load and leveling, recorded actuals and plan scenario comparison, with an explanation of every date.
-- **Opt-in features.** The defaults stay simple; everything else is a prop. No runtime dependencies besides Vue, server-side rendering, SVG and PNG export, a dark theme and right-to-left layouts.
+- **Controlled components.** `NetworkGraph`, `GanttChart` and the opt-in `TaskBoard`, `EventCalendar`, `GraphPalette` and `PropertyInspector` never change your data. A user edit becomes a proposal event, and your code decides whether to apply it.
+- **Planning built in.** Calendars, dependencies, critical path, resource load and leveling, recorded actuals, earned value and plan scenario comparison, with an explanation of every date.
+- **Opt-in features.** The defaults stay simple; everything else is a prop. No runtime dependencies besides Vue, server-side rendering, SVG and PNG export, Microsoft Project, iCalendar, CSV, Mermaid, GraphML and draw.io interchange, a dark theme and right-to-left layouts.
 
 ## Install
 
@@ -179,7 +179,7 @@ All screenshots are from the [demo app](#run-the-demo) in this repository.
       <b>Diagram styles and dark theme.</b> Node shapes, edge markers, animated and parallel edges, and the built-in dark theme.
     </td>
     <td width="50%" valign="top">
-      <b>More in the demo:</b> project delivery, a 1,000-row timeline, a large graph, timeline editing, an asynchronous layout, graph analysis, resource planning with unplanned tasks, saved editing against a simulated server, a large plan loaded window by window, and a design gallery that restyles both components as a workflow builder, a database schema, an org chart, a roadmap, a sprint plan, room bookings and calendar views.
+      <b>More in the demo:</b> project delivery, a 1,000-row timeline, a large graph, timeline editing, an asynchronous layout, graph analysis, resource planning with unplanned tasks, saved editing against a simulated server, a large plan loaded window by window, diagram import and export, an event calendar, a diagram editor, a task board, earned value, a BPMN process, and a design gallery that restyles the components as a workflow builder, a database schema, an org chart, a roadmap, a sprint plan, room bookings, calendar views, a CI/CD pipeline, a knowledge graph, a construction program and a service map.
     </td>
   </tr>
 </table>
@@ -206,13 +206,15 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Spreadsheet editing (`spreadsheet`):** select cell ranges, copy, cut and paste with Excel or Google Sheets, clear, fill down with Ctrl/Cmd+D or the corner handle, and type to edit; each operation is one `sheet-edit` proposal that `validateSheetEdit` can reject as a whole and `applyTimelineSheetEdit` applies. The demo homepage has a schedule sheet whose bars, arrows and critical path the scheduler derives from the grid, and a purchase approval workflow editor.
 - **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
 - **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
-### EventCalendar
-- **Views:** day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
-- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create, checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too.
 
 ### TaskBoard
 
-- **Kanban board:** an opt-in third controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard).
+- **Kanban board:** an opt-in controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#taskboard).
+
+### EventCalendar
+
+- **Views:** an opt-in controlled component with day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
+- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create (`creatable`), checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too. See [EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar).
 
 ### Headless core (`@eightkk/vue-weave/core`)
 
@@ -222,7 +224,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#compare-plan-scenarios).
 - **Earned value:** `computeEarnedValue` calculates PV, EV and AC at a status date with SV, CV, SPI, CPI, EAC, ETC, VAC and TCPI per task and in total, accrues planned value on a work calendar, and returns a cumulative series for an S-curve; `rollupEarnedValue` sums summary rows. See [Earned value management](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/scheduling.md#earned-value-management).
 - **Interchange:** Microsoft Project XML (including calendars, resources and assignments), iCalendar and CSV import and export (`fromMsProjectXml`, `toMsProjectXml`, `fromICalendar`, `toICalendar`, `parseCsv`, `toCsv`), and `scheduleToGraph` for a PERT network diagram.
-- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`).
+- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`). See [Diagram files](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/integration.md#diagram-files-mermaid-graphml-and-drawio).
 
 ### Linked views, large data and saving
 
@@ -232,7 +234,7 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 
 ### Export, themes and accessibility
 
-- `exportSvg(options)` and `exportPng(options)` on both components, and `renderGraphSvg` and `renderTimelineSvg` for SVG on a server.
+- `exportSvg(options)` and `exportPng(options)` on `NetworkGraph` and `GanttChart`, and `renderGraphSvg` and `renderTimelineSvg` for SVG on a server.
 - A built-in dark theme (`vw-theme-dark`) and `vw-theme-auto`, which follows `prefers-color-scheme`; theming through `--vw-*` CSS variables; forced colors, reduced motion and print styles.
 - Right-to-left layouts with `dir="rtl"` (or `auto`).
 - Keyboard operation and ARIA names are built in; see [Status and support](#status-and-support) for what has been tested.
@@ -244,7 +246,7 @@ const png = await chart.value!.exportPng({ scale: 2 })
 
 ## Status and support
 
-- **Version 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
+- **Stable since 1.0.** Releases follow [Semantic Versioning](https://semver.org/): breaking changes are made only in major releases and are listed under "Breaking changes" in the [changelog](https://github.com/EightKK/vue-weave/blob/v1.2.0/CHANGELOG.md). [Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#compatibility-and-versioning) lists what that covers (exported names and types, props, events, slots, documented `--vw-*` properties and the snapshot format) and what it does not (the exact text of error messages, the emitted `vw-` classes, DOM structure and server-rendered markup).
 - **Vue:** 3.5 or later in 3.x (peer dependency `^3.5.0`).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `@eightkk/vue-weave/core` entry, server-side rendering and development.
@@ -252,8 +254,6 @@ const png = await chart.value!.exportPng({ scale: 2 })
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/architecture.md)), so do not assume full conformance.
 
 ## Run the demo
-
-The main page opens the production planning and lot flow demos. Use **Examples** to open the full sample gallery.
 
 The demo is hosted on [GitHub Pages](https://eightkk.github.io/vue-weave/) and is rebuilt from `main`, so it can be ahead of the latest release. To run it locally, use Node.js 22.18+ and npm. From a source checkout or GitHub source ZIP, run:
 
@@ -263,7 +263,9 @@ npm run build:demo
 npm start
 ```
 
-The demo has one page per example (listed under [Gallery](#gallery)), export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph** and **Planning overlays** turn on the opt-in features described above. The **Design gallery** row restyles the same two components using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state. The backlog, inspector, diagnostics list and toolbar of the demo are examples in `examples/components/`, not part of the package.
+The homepage opens the production planning, lot flow, schedule sheet and approval workflow demos in English (add `?lang=ja` to the URL, or use the language buttons, for Japanese). Use **Examples** to open the example gallery.
+
+The example gallery has one page per example (listed under [Gallery](#gallery)), export buttons, a theme switch, and **Undo** and **Redo** for accepted edits. Toggles such as **Edit graph** and **Planning overlays** turn on the opt-in features described above. The **Design gallery** row restyles the components using only slots, `--vw-*` variables and `vw-` classes. Edits remain in the demo's local state. The backlog, inspector, diagnostics list and toolbar of the demo are examples in `examples/components/`, not part of the package.
 
 On Windows you can double-click `Start.cmd` instead. It serves `preview/` when it was built from the current sources, and otherwise builds it first, running `npm ci` beforehand if the installed dependencies do not match `package-lock.json`. `npm start` serves `preview/` as it is.
 

@@ -843,7 +843,7 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
   // Top to bottom: vertical lanes stacked left to right in the same order; right to left keeps the rows.
   await page.getByLabel('Flow direction').selectOption('TB')
   await expect.poll(async () => ascending(await order('x'))).toBe(true)
-  expect(await within('Step 1', 'Shipping')).toBe(true)
+  await expect.poll(() => within('Step 1', 'Shipping')).toBe(true)
   await page.getByLabel('Flow direction').selectOption('RL')
   await expect.poll(async () => ascending(await order('y'))).toBe(true)
   await page.getByLabel('Process edge style').selectOption('orthogonal')
