@@ -178,14 +178,15 @@ export function resolveViewTargets(index: ViewBindingIndex, entities: Iterable<E
 export function resolveEntityRefs(index: ViewBindingIndex, targets: Iterable<ViewTarget>): ResolvedEntityRefs {
   const found = new Map<string, EntityRef>()
   const unknown = new Map<string, ViewTarget>()
-  let loads: { target: LoadViewTarget; entities: EntityRef[] }[] | undefined
+  // Bound load targets by resource, in index order, built on the first load query.
+  let loads: Map<string, { target: LoadViewTarget; entities: EntityRef[] }[]> | undefined
   for (const target of targets) {
     checkTarget(target)
     const matched: EntityRef[][] = []
     if (target.view === 'load') {
-      loads ??= [...index.targets.values()].filter((e): e is { target: LoadViewTarget; entities: EntityRef[] } => e.target.view === 'load')
-      for (const entry of loads) {
-        if (entry.target.resourceId === target.resourceId && overlaps(entry.target, target)) matched.push(entry.entities)
+      loads ??= loadTargetsByResource(index)
+      for (const entry of loads.get(target.resourceId) ?? []) {
+        if (overlaps(entry.target, target)) matched.push(entry.entities)
       }
     } else {
       const entry = index.targets.get(targetKey(target))
@@ -202,6 +203,20 @@ export function resolveEntityRefs(index: ViewBindingIndex, targets: Iterable<Vie
     }
   }
   return { entities: [...found.values()], unknown: [...unknown.values()] }
+}
+
+/** The bound load targets of an index grouped by resource, each group in index order. */
+function loadTargetsByResource(index: ViewBindingIndex) {
+  const byResource = new Map<string, { target: LoadViewTarget; entities: EntityRef[] }[]>()
+  for (const entry of index.targets.values()) {
+    const { target } = entry
+    if (target.view !== 'load') continue
+    const list = byResource.get(target.resourceId)
+    const item = { target, entities: entry.entities }
+    if (list) list.push(item)
+    else byResource.set(target.resourceId, [item])
+  }
+  return byResource
 }
 
 /**
