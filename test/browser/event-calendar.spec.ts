@@ -1,6 +1,6 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
+import { expect, test, animationFrames, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
@@ -356,7 +356,8 @@ test('a drag held near the bottom of the time grid scrolls it and moves the even
   expect(hour).toBeGreaterThanOrEqual(6)
   // After the release, scrolling stops.
   const top = await scrollTop()
-  await page.waitForTimeout(150)
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
   expect(await scrollTop()).toBe(top)
   expect(errors).toEqual([])
 })
@@ -369,7 +370,8 @@ test('Escape during an edge auto-scroll cancels the drag and stops scrolling', a
   await page.keyboard.press('Escape')
   await expect(log).toHaveText('cancel standup escape')
   const top = await scrollTop()
-  await page.waitForTimeout(150)
+  // A running edge scroller advances every animation frame; ten frames without a change show that it stopped.
+  await animationFrames(page, 10)
   expect(await scrollTop()).toBe(top)
   await page.mouse.up()
   await expect(log).toHaveText('cancel standup escape')
