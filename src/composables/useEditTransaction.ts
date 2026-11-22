@@ -35,6 +35,12 @@ export interface HistoryReset {
   version: string
 }
 
+/** The `invalid` outcome of a synchronous adapter hook that threw: its message, or `fallback` without one. */
+function thrown(error: unknown, fallback: string): Promise<{ status: 'invalid'; reason: string }> {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  return Promise.resolve({ status: 'invalid', reason: message || fallback })
+}
+
 let fallbackCounter = 0
 function defaultOperationId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
@@ -86,7 +92,12 @@ export function useEditTransaction<S, P>(options: UseEditTransactionOptions<S, P
     body: { kind: 'changes'; changes: readonly P[] } | { kind: 'restore'; snapshot: S },
     candidate: S,
   ): Promise<TransactionOutcome<S>> {
-    const operationId = createOperationId()
+    let operationId: string
+    try {
+      operationId = createOperationId()
+    } catch (error) {
+      return thrown(error, 'Could not create an operation ID')
+    }
     const started = beginTransaction(core.value, { operationId, kind: body.kind, source }, candidate)
     if (!started) return { status: 'busy' }
     core.value = started
@@ -108,14 +119,22 @@ export function useEditTransaction<S, P>(options: UseEditTransactionOptions<S, P
     return adopt(settleTransaction(core.value, operationId, epoch, response))
   }
 
-  /** Validate, apply and save a set of changes as one transaction. */
+  /**
+   * Validate, apply and save a set of changes as one transaction. It never throws: a `validate`, `apply` or
+   * `createOperationId` that throws resolves to `invalid` with the error message, and nothing is saved.
+   */
   function submit(changes: readonly P[], submitOptions: { source?: 'pointer' | 'keyboard' | 'api' } = {}): Promise<TransactionOutcome<S>> {
     if (core.value.status === 'saving') return Promise.resolve({ status: 'busy' })
     if (changes.length === 0) return Promise.resolve({ status: 'invalid', reason: 'No changes to save' })
-    const verdict = adapter.validate(core.value.acceptedState, changes)
-    if (verdict === false) return Promise.resolve({ status: 'invalid', reason: 'Changes failed validation' })
-    if (typeof verdict === 'string') return Promise.resolve({ status: 'invalid', reason: verdict || 'Changes failed validation' })
-    const candidate = adapter.apply(core.value.acceptedState, changes)
+    let candidate: S
+    try {
+      const verdict = adapter.validate(core.value.acceptedState, changes)
+      if (verdict === false) return Promise.resolve({ status: 'invalid', reason: 'Changes failed validation' })
+      if (typeof verdict === 'string') return Promise.resolve({ status: 'invalid', reason: verdict || 'Changes failed validation' })
+      candidate = adapter.apply(core.value.acceptedState, changes)
+    } catch (error) {
+      return thrown(error, 'Changes failed validation')
+    }
     return run(submitOptions.source ?? 'api', { kind: 'changes', changes }, candidate)
   }
 
