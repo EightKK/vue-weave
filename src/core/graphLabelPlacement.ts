@@ -2,8 +2,9 @@
 // just above the middle of its route; this module moves labels along and beside their routes to free space.
 import type { GraphEdge, GraphLayout, GraphPoint } from './graph.js'
 import { markBuiltinRoutes } from './graphGeometry.js'
-import { checkLayoutNumber } from './graphOptions.js'
+import { checkLayoutNumber, describeValue } from './graphOptions.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
+import { checkId } from './ids.js'
 import type { GraphRect } from './graphView.js'
 
 /** The width and height of one edge label in chart units. */
@@ -15,7 +16,8 @@ export interface GraphEdgeLabelSize {
 /**
  * Options of `placeGraphEdgeLabels` and the NetworkGraph `edgeLabelPlacement` prop. The font size and glyph width must
  * be finite numbers > 0, `gap` and `margin` finite numbers ≥ 0 and `samples` an integer from 1 to 32; otherwise a
- * RangeError names the option, as for the layouts (for example `gap must be a finite number ≥ 0 (got -1)`).
+ * RangeError names the option, as for the layouts (for example `gap must be a finite number ≥ 0 (got -1)` or
+ * `samples must be an integer from 1 to 32 (got 40)`).
  */
 export interface GraphEdgeLabelPlacementOptions<E extends GraphEdge = GraphEdge> {
   /** Font size of the labels in chart units, used to estimate their size and baseline. Default 11, the stylesheet's `.vw-edge-label` size. */
@@ -23,14 +25,21 @@ export interface GraphEdgeLabelPlacementOptions<E extends GraphEdge = GraphEdge>
   /** Average glyph width as a fraction of the font size, used to estimate the label width from its text. Default 0.6. */
   glyphWidth?: number
   /**
-   * The exact size of an edge's label, for callers that measure their text. Return nothing to use the estimate. The
-   * box is centred horizontally on the anchor and vertically on `anchor.y - 0.35 × fontSize`.
+   * The exact size of an edge's label, for callers that measure their text. Return nothing (undefined or null) to use
+   * the estimate. The box is centred horizontally on the anchor and vertically on `anchor.y - 0.35 × fontSize`.
    */
-  labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | undefined
+  labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | null | undefined
   /** The text of an edge's label. Default: `edge.label`. Edges without text keep their anchor and are not avoided. */
   labelText?: (edge: E) => string | undefined
   /** Distance between a route and a label placed beside it. Default 3. */
   gap?: number
+  /**
+   * The drawn width of an edge in chart units, for edges drawn wider than a thin line, such as the bands of a flow
+   * diagram. A label beside such an edge keeps `gap` from its outer side (`gap + width / 2` from its centre line), and
+   * other labels avoid its full width. Return nothing (undefined or null) or 0 for a thin line; any other value must
+   * be a finite number ≥ 0, else a RangeError names the edge. Default: every edge is a thin line.
+   */
+  edgeWidth?: (edge: E) => number | null | undefined
   /** Free space kept around each label when checking overlaps. Default 2. */
   margin?: number
   /** Number of positions tried along each route, besides the middles of its longest segments. An integer from 1 to 32. Default 9. */
@@ -93,8 +102,20 @@ function option(name: string, value: number | undefined, fallback: number, rule:
   return value
 }
 
+function checkSamples(value: number | undefined): number {
+  if (value === undefined) return 9
+  if (!Number.isInteger(value) || value < 1 || value > 32) {
+    throw new RangeError(`samples must be an integer from 1 to 32 (got ${describeValue(value)})`)
+  }
+  return value
+}
+
 function toRect(x: number, y: number, width: number, height: number, grow: number): SpatialRect {
   return { x1: x - width / 2 - grow, y1: y - height / 2 - grow, x2: x + width / 2 + grow, y2: y + height / 2 + grow }
+}
+
+function grow(rect: SpatialRect, by: number): SpatialRect {
+  return { x1: rect.x1 - by, y1: rect.y1 - by, x2: rect.x2 + by, y2: rect.y2 + by }
 }
 
 function overlap(a: SpatialRect, b: SpatialRect) {
@@ -129,6 +150,47 @@ function segmentAt(segments: readonly Segment[], s: number): Segment {
 }
 
 /**
+ * The checked size options of edge label placement and the label and edge sizes they give. Internal: shared with
+ * NetworkGraph's drag preview, which needs the same label boxes to find the labels a change reaches.
+ */
+export interface EdgeLabelGeometry<E extends GraphEdge> {
+  fontSize: number
+  gap: number
+  margin: number
+  /** Distance from the baseline of a label up to the centre of its box. */
+  shift: number
+  /** The size of a label's box: `labelSize`, else the estimate from the text. */
+  size(edge: E, text: string): GraphEdgeLabelSize
+  /** Half the drawn width of an edge: 0 for a thin line. */
+  halfWidth(edge: E): number
+}
+
+/** Checks the size options of `placeGraphEdgeLabels` (see GraphEdgeLabelPlacementOptions). Internal. */
+export function edgeLabelGeometry<E extends GraphEdge>(options: GraphEdgeLabelPlacementOptions<E>): EdgeLabelGeometry<E> {
+  const fontSize = option('fontSize', options.fontSize, 11, 'positive')
+  const glyphWidth = option('glyphWidth', options.glyphWidth, 0.6, 'positive')
+  const gap = option('gap', options.gap, 3, 'nonnegative')
+  const margin = option('margin', options.margin, 2, 'nonnegative')
+  return {
+    fontSize, gap, margin, shift: baselineRatio * fontSize,
+    size(edge, text) {
+      const size = options.labelSize?.(edge, text)
+      if (size === undefined || size === null) return { width: Math.max(1, [...text].length) * glyphWidth * fontSize, height: fontSize * lineHeight }
+      if (typeof size !== 'object' || ![size.width, size.height].every(Number.isFinite) || !(size.width > 0) || !(size.height > 0)) {
+        throw new RangeError('Invalid edge label size: ' + edge.id)
+      }
+      return { width: size.width, height: size.height }
+    },
+    halfWidth(edge) {
+      const width = options.edgeWidth?.(edge)
+      if (width === undefined || width === null) return 0
+      if (typeof width !== 'number' || !Number.isFinite(width) || width < 0) throw new RangeError('Invalid edge width: ' + edge.id)
+      return width / 2
+    },
+  }
+}
+
+/**
  * Places edge labels where they do not cover node boxes, other labels or other edges, when there is space for them,
  * and returns a new layout with the new `edgeLabels`; the input is not changed. Each label is tried at positions along
  * its route, beside it on either side and on it, and the one with the least overlap wins, preferring positions near
@@ -137,33 +199,33 @@ function segmentAt(segments: readonly Segment[], s: number): Segment {
  *
  * Anchors keep the meaning of `GraphLayout.edgeLabels`: the horizontal centre and the baseline of the text, as
  * NetworkGraph and `renderGraphSvg` draw it. Label sizes are estimated from the text length unless `labelSize` gives
- * them. Throws an Error for an edge without a layout path or an unknown ID in `edgeIds`, and a RangeError for an
- * invalid option.
+ * them. Throws an Error for an invalid or duplicate edge ID (`Duplicate edge ID: <id>`), an edge without a layout path
+ * or an unknown ID in `edgeIds`, and a RangeError for an invalid option, label size, edge width or obstacle (naming
+ * its index).
  */
 export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge = GraphEdge>(
   layout: L, edges: readonly E[], options: GraphEdgeLabelPlacementOptions<E> = {},
 ): L {
-  const fontSize = option('fontSize', options.fontSize, 11, 'positive')
-  const glyphWidth = option('glyphWidth', options.glyphWidth, 0.6, 'positive')
-  const gap = option('gap', options.gap, 3, 'nonnegative')
-  const margin = option('margin', options.margin, 2, 'nonnegative')
-  const samples = option('samples', options.samples, 9, 'positiveInteger')
-  if (samples > 32) throw new RangeError(`samples must be at most 32 (got ${samples})`)
+  const geometry = edgeLabelGeometry(options)
+  const { fontSize, gap, margin, shift } = geometry
+  const samples = checkSamples(options.samples)
   const textOf = options.labelText ?? ((edge: E) => edge.label)
-  const sizeOf = (edge: E, text: string): GraphEdgeLabelSize => {
-    const size = options.labelSize?.(edge, text)
-    if (size === undefined) return { width: Math.max(1, [...text].length) * glyphWidth * fontSize, height: fontSize * lineHeight }
-    if (!size || ![size.width, size.height].every(Number.isFinite) || !(size.width > 0) || !(size.height > 0)) {
-      throw new RangeError('Invalid edge label size: ' + edge.id)
-    }
-    return { width: size.width, height: size.height }
-  }
-  const shift = baselineRatio * fontSize
+  const sizeOf = geometry.size
 
   const byId = new Map<string, E>()
+  const seen = new Set<string>()
+  // Half the drawn width of each wide edge; thin lines are left out.
+  const halfWidths = new Map<string, number>()
+  let widest = 0
   for (const edge of edges) {
+    checkId('edge', edge.id, seen)
     if (layout.paths.get(edge.id) === undefined) throw new Error('Missing layout path: ' + edge.id)
     byId.set(edge.id, edge)
+    const half = geometry.halfWidth(edge)
+    if (half > 0) {
+      halfWidths.set(edge.id, half)
+      widest = Math.max(widest, half)
+    }
   }
   let chosen: Set<string> | undefined
   if (options.edgeIds !== undefined) {
@@ -193,7 +255,7 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
     const last = segments[segments.length - 1]!
     pending.push({ edge, size, segments, total: last.start + last.length })
     if (!chosen) continue
-    const reach = gap + margin + size.width + size.height
+    const reach = gap + margin + size.width + size.height + 2 * widest
     for (const { a, b } of segments) {
       const x1 = Math.min(a.x, b.x) - reach, y1 = Math.min(a.y, b.y) - reach, x2 = Math.max(a.x, b.x) + reach, y2 = Math.max(a.y, b.y) + reach
       if (!region) region = { x1, y1, x2, y2 }
@@ -211,23 +273,24 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
     obstacleWeights.push(weight)
   }
   for (const box of layout.boxes.values()) addObstacle({ x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y + box.height }, nodeWeight)
-  for (const area of options.obstacles ?? []) {
-    if (![area.x, area.y, area.width, area.height].every(Number.isFinite) || area.width < 0 || area.height < 0) {
-      throw new RangeError('Invalid edge label obstacle')
+  for (const [index, area] of (options.obstacles ?? []).entries()) {
+    if (!area || ![area.x, area.y, area.width, area.height].every(Number.isFinite) || area.width < 0 || area.height < 0) {
+      throw new RangeError('Invalid edge label obstacle at index ' + index)
     }
     addObstacle({ x1: area.x, y1: area.y, x2: area.x + area.width, y2: area.y + area.height }, obstacleWeight)
   }
 
   // Route segments, so labels avoid crossing other edges. Long segments are indexed in pieces, so the grid does not
-  // check them on every query.
+  // check them on every query; the pieces of a wide edge are indexed with its width.
   const lines = new SpatialGrid(cell), owners: string[] = [], ends: [GraphPoint, GraphPoint][] = []
   for (const [id, segments] of routes) {
+    const half = halfWidths.get(id) ?? 0
     for (const { a, b, length } of segments) {
       const pieces = Math.ceil(length / pieceLength)
       for (let i = 0; i < pieces; i++) {
         const p = i === 0 ? a : { x: a.x + (b.x - a.x) * i / pieces, y: a.y + (b.y - a.y) * i / pieces }
         const q = i === pieces - 1 ? b : { x: a.x + (b.x - a.x) * (i + 1) / pieces, y: a.y + (b.y - a.y) * (i + 1) / pieces }
-        const rect = { x1: Math.min(p.x, q.x), y1: Math.min(p.y, q.y), x2: Math.max(p.x, q.x), y2: Math.max(p.y, q.y) }
+        const rect = { x1: Math.min(p.x, q.x) - half, y1: Math.min(p.y, q.y) - half, x2: Math.max(p.x, q.x) + half, y2: Math.max(p.y, q.y) + half }
         if (!near(rect)) continue
         lines.insert(rect)
         owners.push(id)
@@ -245,8 +308,10 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
 
   const width = layout.width, height = layout.height
   const edgeLabels = new Map(layout.edgeLabels)
+  const layoutRect = { x1: 0, y1: 0, x2: width, y2: height }
   for (const { edge, size, segments, total } of pending) {
-    const area = size.width * size.height
+    const area = size.width * size.height, padded = (size.width + 2 * margin) * (size.height + 2 * margin)
+    const ownHalf = halfWidths.get(edge.id) ?? 0
     const candidates: Candidate[] = []
     const addAt = (s: number) => {
       const segment = segmentAt(segments, s)
@@ -260,12 +325,12 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
         ny = -ny
       }
       const travel = travelWeight * area * Math.abs(s - total / 2) / Math.max(total / 2, 1)
-      const reach = gap + Math.abs(nx) * size.width / 2 + Math.abs(ny) * size.height / 2
+      const reach = gap + ownHalf + Math.abs(nx) * size.width / 2 + Math.abs(ny) * size.height / 2
       candidates.push({ x: px + nx * reach, y: py + ny * reach, base: travel + sideWeights[0]! * area, onPath: false })
       candidates.push({ x: px - nx * reach, y: py - ny * reach, base: travel + sideWeights[1]! * area, onPath: false })
       candidates.push({ x: px, y: py, base: travel + sideWeights[2]! * area, onPath: true })
     }
-    for (let i = 0; i < samples; i++) addAt(samples === 1 ? total / 2 : total * (i + 1) / (samples + 1))
+    for (let i = 0; i < samples; i++) addAt(total * (i + 1) / (samples + 1))
     if (samples % 2 === 0) addAt(total / 2)
     const longest = segments.map((segment, index) => index)
       .sort((a, b) => segments[b]!.length - segments[a]!.length || a - b)
@@ -280,8 +345,9 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
       if (candidate.base >= bestCost) break
       let cost = candidate.base
       const box = toRect(candidate.x, candidate.y, size.width, size.height, margin)
-      const outside = area - overlap(box, { x1: 0, y1: 0, x2: width, y2: height })
-      if (outside > 0) cost += outsideWeight * Math.min(area, outside)
+      // The share of the padded box outside the layout, weighed in label area like the other costs.
+      const outside = padded - overlap(box, layoutRect)
+      if (outside > 0) cost += outsideWeight * area * Math.min(1, outside / padded)
       if (cost >= bestCost) continue
       obstacles.visit(box, (at, rect) => {
         cost += obstacleWeights[at]! * overlap(box, rect)
@@ -293,12 +359,21 @@ export function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge 
         return cost >= bestCost
       })
       if (cost >= bestCost) continue
+      // Other edges count when they meet the padded box, grown by their half width. The label's own route counts only
+      // where it enters the label box itself, grown by its half width: a label beside its route keeps `gap` to it,
+      // which may be less than `margin`, and a label on its route is meant to cover it.
+      const own = toRect(candidate.x, candidate.y, size.width, size.height, ownHalf)
       const crossed = new Set<string>()
       lines.visit(box, at => {
         const owner = owners[at]!
-        if (crossed.has(owner) || (candidate.onPath && owner === edge.id)) return false
+        if (crossed.has(owner)) return false
         const [a, b] = ends[at]!
-        if (!segmentMeetsRect(a, b, box, true)) return false
+        if (owner === edge.id) {
+          if (candidate.onPath || !segmentMeetsRect(a, b, own, true)) return false
+        } else {
+          const half = halfWidths.get(owner)
+          if (!segmentMeetsRect(a, b, half ? grow(box, half) : box, true)) return false
+        }
         crossed.add(owner)
         cost += edgeWeight * area
         return cost >= bestCost || crossed.size >= maxCrossings

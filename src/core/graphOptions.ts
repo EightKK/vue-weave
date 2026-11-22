@@ -51,7 +51,8 @@ function meetsRule(value: unknown, rule: LayoutNumberRule): boolean {
   }
 }
 
-function describeValue(value: unknown): string {
+/** How an invalid option value appears in a check message: strings quoted, other primitives as text, objects by type. */
+export function describeValue(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value)
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint' || value === null || value === undefined) return String(value)
   return typeof value

@@ -1,5 +1,5 @@
 import type { GraphLayout, GraphPoint } from './graph.js'
-import { svgPathArgumentCounts } from './graphSpatial.js'
+import { defaultLabelReach, rectsMeet, svgPathArgumentCounts } from './graphSpatial.js'
 import type { GraphViewport } from './types.js'
 
 /** An axis-aligned rectangle in graph (world) coordinates. */
@@ -55,10 +55,6 @@ export function graphRectsIntersect(a: GraphRect, b: GraphRect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
-// Closed-interval variant for culling: true also when the rectangles only touch.
-function rectsMeet(a: GraphRect, b: GraphRect): boolean {
-  return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
-}
 
 const pathNumber = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y
 
@@ -262,7 +258,7 @@ function includeArc(
 }
 
 /** Computes the bounding rectangle of every node and edge path in a layout. Edge labels are included. */
-export function graphLayoutBounds(layout: Pick<GraphLayout, 'boxes' | 'paths' | 'edgeLabels'>, labelReach = 80): GraphBounds {
+export function graphLayoutBounds(layout: Pick<GraphLayout, 'boxes' | 'paths' | 'edgeLabels'>, labelReach = defaultLabelReach): GraphBounds {
   const nodes = new Map<string, GraphRect>()
   for (const [id, box] of layout.boxes) nodes.set(id, { x: box.x, y: box.y, width: box.width, height: box.height })
   const edges = new Map<string, GraphRect>()

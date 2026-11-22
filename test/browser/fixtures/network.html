@@ -23,7 +23,9 @@
       // (comma-separated controlled collapsed group IDs), preset=ports (A to D with named ports on A and B and an
       // external route for edge ab), policy (routingPolicy), style (edgeStyle), gestures (logging gesture-* events),
       // boxselect, editableedges, resizable, labels (editableLabels, logging label-edit proposals), edgelabels (a label
-      // on every edge) and labelplacement (edgeLabelPlacement).
+      // on every edge), labelplacement (edgeLabelPlacement) and reconnectable. Every edit proposal is logged by event
+      // name in "Edit proposals" and passed through structuredClone; a payload that cannot be cloned is reported in
+      // "Clone errors".
       const query = new URLSearchParams(location.search)
       const preset = query.get('preset')
       const ids = preset === 'groups' || preset === 'ports'
@@ -103,6 +105,16 @@
       }
       const lastAfter = ref('')
       const lastLabel = ref('')
+      const proposalLog = ref([])
+      const cloneErrors = ref('')
+      const record = (name, payload) => {
+        try {
+          structuredClone(payload)
+        } catch (error) {
+          cloneErrors.value += name + ': ' + error.name + ' '
+        }
+        proposalLog.value = [...proposalLog.value, name].slice(-8)
+      }
       const lastDrop = ref('')
       const lastCopy = ref('')
       const lastPaste = ref('')
@@ -153,6 +165,8 @@
           h('output', { role: 'status', 'aria-label': 'Gesture events' }, gestureLog.value.join(' | ')),
           h('output', { role: 'status', 'aria-label': 'Open gestures' }, String(openGestures.value)),
           h('output', { role: 'status', 'aria-label': 'Last label' }, lastLabel.value),
+          h('output', { role: 'status', 'aria-label': 'Edit proposals' }, proposalLog.value.join(' ')),
+          h('output', { role: 'status', 'aria-label': 'Clone errors' }, cloneErrors.value),
           h(NetworkGraph, {
             highlightedNodeIds: list('highlight'), highlightedEdgeIds: list('highlightedges'), collapsedGroupIds: list('collapse'),
             routingPolicy: query.get('policy') ?? undefined, edgeStyle: query.get('style') ?? undefined,
@@ -171,8 +185,19 @@
             draggable: query.get('draggable') === '1', connectable: query.get('connectable') === '1', positions: positions.value,
             selectedId: selectedId.value,
             'onUpdate:selectedId': id => { selectedId.value = id },
-            onNodeMove: change => applyMoves([change]),
-            onNodesMove: applyMoves,
+            onNodeMove: change => {
+              record('node-move', change)
+              applyMoves([change])
+            },
+            onNodesMove: changes => {
+              record('nodes-move', changes)
+              applyMoves(changes)
+            },
+            reconnectable: query.get('reconnectable') === '1',
+            onReconnect: change => record('reconnect', change),
+            onConnect: connection => record('connect', connection),
+            onNodeResize: change => record('node-resize', change),
+            onEdgeReshape: change => record('edge-reshape', change),
             onViewportChange: () => { viewportEvents.value++ },
             edgesSelectable: query.get('edgeselect') === '1',
             selectedEdgeIds: query.get('edgeselect') === '1' ? selectedEdgeIds.value : undefined,

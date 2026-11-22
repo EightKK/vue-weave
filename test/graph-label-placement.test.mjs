@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { layoutLayeredGraph, placeGraphEdgeLabels, renderGraphSvg, routeGraphEdges } from '@eightkk/vue-weave/core'
+import { layoutLayeredGraph, placeGraphEdgeLabels, routeGraphEdges } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
 import { byId, deepFreeze } from './helpers/builders.mjs'
 import { renderComponent } from './helpers/ssr.mjs'
@@ -129,7 +129,13 @@ test('placeGraphEdgeLabels rejects invalid options and missing paths', () => {
     assert.throws(() => placeGraphEdgeLabels(layout, edges, options), RangeError, JSON.stringify(options))
   }
   assert.throws(() => placeGraphEdgeLabels(layout, edges, { gap: -1 }), { name: 'RangeError', message: 'gap must be a finite number ≥ 0 (got -1)' })
-  assert.throws(() => placeGraphEdgeLabels(layout, edges, { samples: 40 }), { name: 'RangeError', message: 'samples must be at most 32 (got 40)' })
+  for (const samples of [0, 2.5, 33, 40]) {
+    assert.throws(() => placeGraphEdgeLabels(layout, edges, { samples }), { name: 'RangeError', message: `samples must be an integer from 1 to 32 (got ${samples})` })
+  }
+  for (const [index, obstacles] of [[0, [null]], [1, [{ x: 0, y: 0, width: 1, height: 1 }, undefined]], [0, [{ x: 0, y: 0, width: Number.NaN, height: 1 }]]]) {
+    assert.throws(() => placeGraphEdgeLabels(layout, edges, { obstacles }), { name: 'RangeError', message: 'Invalid edge label obstacle at index ' + index })
+  }
+  assert.throws(() => placeGraphEdgeLabels(layout, edges, { labelSize: () => 'wide' }), { name: 'RangeError', message: 'Invalid edge label size: e0' })
   assert.throws(() => placeGraphEdgeLabels(layout, [...edges, { id: 'ghost', from: 'hub', to: 'n0', label: 'x' }]), /Missing layout path: ghost/)
 })
 
@@ -146,9 +152,22 @@ test('placeGraphEdgeLabels places the labels of 2,000 edges', () => {
   assert.ok(performance.now() - started < 20_000)
   assert.equal(placed.edgeLabels.size, layout.edgeLabels.size)
   for (const point of placed.edgeLabels.values()) assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y))
+  // Quality: far fewer labels cover a node or another label than at the midpoints.
+  const conflicts = anchors => {
+    const boxes = edges.map(edge => labelBox(anchors.get(edge.id), edge.label))
+    let count = 0
+    for (let i = 0; i < boxes.length; i++) {
+      for (const node of layout.boxes.values()) if (overlaps(boxes[i], node)) count++
+      for (let j = i + 1; j < boxes.length; j++) if (overlaps(boxes[i], boxes[j])) count++
+    }
+    return count
+  }
+  const before = conflicts(layout.edgeLabels), after = conflicts(placed.edgeLabels)
+  assert.ok(before > 0)
+  assert.ok(after * 2 < before, `${after} conflicts after placement, ${before} before`)
 })
 
-test('NetworkGraph edgeLabelPlacement is opt-in and the SVG export draws the placed labels', async () => {
+test('NetworkGraph edgeLabelPlacement is opt-in and checked', async () => {
   const { nodes, edges, layout } = hub()
   const positions = new Map([...layout.boxes].map(([id, box]) => [id, { x: box.x, y: box.y }]))
   const props = { nodes, edges, positions, edgeStyle: 'straight', options: { nodeWidth: 100, nodeHeight: 40 } }
@@ -159,9 +178,143 @@ test('NetworkGraph edgeLabelPlacement is opt-in and the SVG export draws the pla
   assert.equal(await renderComponent(NetworkGraph, { ...props, edgeLabelPlacement: {} }), avoided)
   await assert.rejects(renderComponent(NetworkGraph, { ...props, edgeLabelPlacement: 'everywhere' }), RangeError)
   await assert.rejects(renderComponent(NetworkGraph, { ...props, edgeLabelPlacement: { gap: -2 } }), RangeError)
+})
 
+// A layout without nodes: the given paths, each label at the router's spot just above the middle of its first segment.
+function manual(paths, { width = 600, height = 400, boxes = [] } = {}) {
+  const edgeLabels = new Map()
+  for (const [id, path] of paths) {
+    const [x1, y1, x2, y2] = (path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
+    if (y2 !== undefined) edgeLabels.set(id, { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 6 })
+  }
+  return { boxes: new Map(boxes), paths: new Map(paths), edgeLabels, width, height }
+}
+const edgeOf = (id, label) => ({ id, from: 'a', to: 'b', ...label !== undefined && { label } })
+
+test('placeGraphEdgeLabels keeps a label beside its route when the gap is smaller than the margin', () => {
+  const layout = manual([['flat', 'M 100 200 L 500 200']])
+  const edges = [edgeOf('flat', 'flows')]
+  for (const [gap, margin] of [[0, 6], [1, 8], [3, 2], [10, 0]]) {
+    const anchor = placeGraphEdgeLabels(layout, edges, { gap, margin }).edgeLabels.get('flat')
+    const box = labelBox(anchor, 'flows')
+    // Above the route, `gap` from it, not on it.
+    assert.ok(Math.abs(box.y + box.height - (200 - gap)) < 1e-6, `gap ${gap}, margin ${margin}: bottom ${box.y + box.height}`)
+    assert.ok(Math.abs(anchor.x - 300) < 1e-6)
+  }
+})
+
+test('placeGraphEdgeLabels moves a label off another edge that crosses its spot', () => {
+  // A vertical edge ends just above the middle of the long one, right where its label would go.
+  const layout = manual([['long', 'M 100 200 L 500 200'], ['cross', 'M 300 20 L 300 196']])
+  const edges = [edgeOf('long', 'carries'), edgeOf('cross')]
+  const box = labelBox(placeGraphEdgeLabels(layout, edges).edgeLabels.get('long'), 'carries')
+  const crossed = box.x < 300 && box.x + box.width > 300 && box.y < 196
+  assert.ok(!crossed, `label ${JSON.stringify(box)} crosses the vertical edge`)
+  // Without the vertical edge the label stays at the middle.
+  const alone = placeGraphEdgeLabels(layout, [edges[0]]).edgeLabels.get('long')
+  assert.ok(Math.abs(alone.x - 300) < 1e-6)
+})
+
+test('placeGraphEdgeLabels keeps labels inside the layout when there is room', () => {
+  // Routes along the top and right borders: the preferred spot above or right of each is outside the layout.
+  const layout = manual([['top', 'M 100 4 L 500 4'], ['right', 'M 596 100 L 596 300']])
+  const edges = [edgeOf('top', 'along top'), edgeOf('right', 'down')]
   const placed = placeGraphEdgeLabels(layout, edges)
-  const anchor = placed.edgeLabels.get('e1')
-  const num = value => String(Math.round(value * 1000) / 1000)
-  assert.ok(renderGraphSvg(placed, nodes, edges).includes(`x="${num(anchor.x)}" y="${num(anchor.y)}"`))
+  for (const edge of edges) {
+    const box = labelBox(placed.edgeLabels.get(edge.id), edge.label)
+    assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 600 && box.y + box.height <= 400, `${edge.id} outside: ${JSON.stringify(box)}`)
+  }
+})
+
+test('placeGraphEdgeLabels keeps labels clear of wide edges with edgeWidth', () => {
+  const layout = manual([['band', 'M 100 200 L 500 200'], ['thin', 'M 100 170 L 500 170']])
+  const edges = [edgeOf('band', 'band'), edgeOf('thin', 'thin')]
+  const widths = { band: 30 }
+  const placed = placeGraphEdgeLabels(layout, edges, { edgeWidth: edge => widths[edge.id], gap: 3 })
+  // The band's own label keeps the gap from the band's outer side.
+  const own = labelBox(placed.edgeLabels.get('band'), 'band')
+  const inside = (box, top, bottom) => box.y < bottom && box.y + box.height > top
+  assert.ok(!inside(own, 185, 215), `band label inside the band: ${JSON.stringify(own)}`)
+  assert.ok(Math.abs(own.y + own.height - 182) < 1e-6 || Math.abs(own.y - 218) < 1e-6, JSON.stringify(own))
+  // The thin edge's label does not reach into the band below it.
+  assert.ok(!inside(labelBox(placed.edgeLabels.get('thin'), 'thin'), 185, 215))
+  // Without the widths, the band's label sits right above its centre line, inside the band.
+  assert.ok(inside(labelBox(placeGraphEdgeLabels(layout, edges).edgeLabels.get('band'), 'band'), 185, 215))
+  // Nothing (undefined or null) and 0 are thin lines; other values are checked.
+  assert.deepEqual(placeGraphEdgeLabels(layout, edges, { edgeWidth: () => null }).edgeLabels, placeGraphEdgeLabels(layout, edges).edgeLabels)
+  assert.deepEqual(placeGraphEdgeLabels(layout, edges, { edgeWidth: () => 0 }).edgeLabels, placeGraphEdgeLabels(layout, edges).edgeLabels)
+  for (const width of [-1, Number.NaN, Infinity, '4']) {
+    assert.throws(() => placeGraphEdgeLabels(layout, edges, { edgeWidth: () => width }), { name: 'RangeError', message: 'Invalid edge width: band' })
+  }
+})
+
+test('placeGraphEdgeLabels rejects duplicate and invalid edge IDs in any order', () => {
+  const layout = manual([['a', 'M 100 200 L 500 200'], ['b', 'M 100 100 L 500 100']])
+  const first = edgeOf('a', 'one'), second = edgeOf('a', 'two')
+  for (const edges of [[first, second], [second, first], [edgeOf('b', 'x'), first, edgeOf('b', 'y')]]) {
+    assert.throws(() => placeGraphEdgeLabels(layout, edges), { name: 'Error', message: /^Duplicate edge ID: (a|b)$/ })
+  }
+  assert.throws(() => placeGraphEdgeLabels(layout, [{ ...first, id: '' }]), { name: 'Error', message: 'Invalid edge ID: ""' })
+})
+
+test('placeGraphEdgeLabels keeps the anchors of zero-length and empty routes and of edgeIds without text', () => {
+  const layout = manual([['dot', 'M 50 50 L 50 50'], ['empty', ''], ['flat', 'M 100 200 L 500 200'], ['quiet', 'M 100 300 L 500 300']])
+  layout.edgeLabels.set('empty', { x: 7, y: 9 })
+  const edges = [edgeOf('dot', 'dot'), edgeOf('empty', 'empty'), edgeOf('flat', 'flat'), edgeOf('quiet')]
+  const placed = placeGraphEdgeLabels(layout, edges)
+  assert.deepEqual(placed.edgeLabels.get('dot'), layout.edgeLabels.get('dot'))
+  assert.deepEqual(placed.edgeLabels.get('empty'), { x: 7, y: 9 })
+  // An edge without text may be named in edgeIds: its anchor is kept and nothing else changes.
+  const quiet = placeGraphEdgeLabels(layout, edges, { edgeIds: ['quiet'] })
+  assert.deepEqual(quiet.edgeLabels, layout.edgeLabels)
+})
+
+test('placeGraphEdgeLabels places labels beside curved routes', () => {
+  // A cubic arch with a node box right where the label would sit above its middle.
+  const path = 'M 100 300 C 150 100 450 100 500 300'
+  const node = { x: 270, y: 120, width: 60, height: 30 }
+  const layout = manual([['arch', path]], { boxes: [['n', node]] })
+  layout.edgeLabels.set('arch', { x: 300, y: 144 })
+  const anchor = placeGraphEdgeLabels(layout, [edgeOf('arch', 'arch label')]).edgeLabels.get('arch')
+  const box = labelBox(anchor, 'arch label')
+  assert.ok(!overlaps(box, node), 'label covers the node')
+  // No point of the curve lies inside the label box (shrunk by half a unit for the flattening).
+  for (let i = 0; i <= 200; i++) {
+    const t = i / 200, u = 1 - t
+    const x = u ** 3 * 100 + 3 * u * u * t * 150 + 3 * u * t * t * 450 + t ** 3 * 500
+    const y = u ** 3 * 300 + 3 * u * u * t * 100 + 3 * u * t * t * 100 + t ** 3 * 300
+    assert.ok(!(x > box.x + 0.5 && x < box.x + box.width - 0.5 && y > box.y + 0.5 && y < box.y + box.height - 0.5), `curve point ${x},${y} inside`)
+  }
+})
+
+test('placeGraphEdgeLabels treats a labelSize of null as the estimate', () => {
+  const { edges, layout } = hub()
+  assert.deepEqual(placeGraphEdgeLabels(layout, edges, { labelSize: () => null }).edgeLabels, placeGraphEdgeLabels(layout, edges).edgeLabels)
+})
+
+// The edge label anchors of server-rendered HTML, by label text.
+function renderedLabels(html) {
+  const anchors = new Map()
+  for (const [, x, y, text] of html.matchAll(/<text class="vw-edge-label" x="([^"]+)" y="([^"]+)">([^<]*)<\/text>/g)) anchors.set(text, { x: Number(x), y: Number(y) })
+  return anchors
+}
+
+test('NetworkGraph renders the anchors placeGraphEdgeLabels gives, with band widths from edgeBands', async () => {
+  const { nodes, edges, layout } = hub()
+  // The routed layout as a custom layout: the curve style keeps its paths, so the component places exactly these.
+  const props = { nodes, edges, layout: () => layout, height: 600 }
+  const expected = placeGraphEdgeLabels(layout, edges)
+  const rendered = renderedLabels(await renderComponent(NetworkGraph, { ...props, edgeLabelPlacement: 'avoid' }))
+  assert.equal(rendered.size, edges.length)
+  for (const edge of edges) assert.deepEqual(rendered.get(edge.label), expected.edgeLabels.get(edge.id), edge.id)
+  const midpoint = renderedLabels(await renderComponent(NetworkGraph, props))
+  assert.notDeepEqual(midpoint, rendered)
+  for (const edge of edges) assert.deepEqual(midpoint.get(edge.label), layout.edgeLabels.get(edge.id), edge.id)
+
+  // A band's label keeps its gap from the outer side of the band.
+  const edgeBands = new Map([['e3', { width: 24 }], ['e7', { width: 16 }]])
+  const banded = placeGraphEdgeLabels(layout, edges, { edgeWidth: edge => edgeBands.get(edge.id)?.width })
+  assert.notDeepEqual(banded.edgeLabels.get('e3'), expected.edgeLabels.get('e3'))
+  const withBands = renderedLabels(await renderComponent(NetworkGraph, { ...props, edgeBands, edgeLabelPlacement: { gap: 3 } }))
+  for (const edge of edges) assert.deepEqual(withBands.get(edge.label), banded.edgeLabels.get(edge.id), edge.id)
 })

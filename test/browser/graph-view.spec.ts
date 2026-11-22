@@ -1,5 +1,8 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
-import { expect, test, chainNode, dragBy, openComponentFixture, openDemo, openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, readCamera, serveFixture, touch, type Camera, type Page } from './support'
+import {
+  expect, test, centerOf, chainNode, dragBy, fixtureStatus, openComponentFixture, openDemo, openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors,
+  pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
+} from './support'
 
 async function openStylesFixture(page: Page, search = '') {
   await serveFixture(page, 'graph-styles-test', 'graph-styles.html')
@@ -784,12 +787,13 @@ test('the diagram demo places edge labels clear of nodes and each other, on scre
   expect((await labelOverlaps(page)).onLabels).toEqual(['ask / reserve'])
 
   await place.check()
+  // The placed labels are drawn after the next render.
+  await expect.poll(anchors).not.toEqual(midpoint)
   const placed = await labelOverlaps(page)
   expect(placed.labels).toHaveLength(8)
   expect(placed.onLabels).toEqual([])
   expect(placed.onNodes).toEqual([])
   const moved = await anchors()
-  expect(moved).not.toEqual(midpoint)
 
   // The export draws each label at its placed anchor.
   const { readFile } = await import('node:fs/promises')
@@ -801,29 +805,57 @@ test('the diagram demo places edge labels clear of nodes and each other, on scre
   expect(text).toContain('>ask<')
 
   await place.uncheck()
-  expect(await anchors()).toEqual(midpoint)
+  await expect.poll(anchors).toEqual(midpoint)
   await page.getByLabel('Edge style').selectOption('curve')
   expect(errors).toEqual([])
 })
 
-test('placed edge labels follow a node drag and stay clear of the nodes', async ({ page }) => {
+// Three nodes in a row with labelled orthogonal edges. After N0002 moves right and down, the route of link 1 has a
+// vertical run; the scenario then drags N0000 onto the label of link 1, whose own route does not change.
+async function openLabelDrag(page: Page, placement: string) {
+  await openNetworkFixture(page, `?nodes=3&draggable=1&edgelabels=1&labelplacement=${placement}&style=orthogonal`)
+  await dragBy(page, chainNode(page, 'N0002'), 200, 110)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  const label = await centerOf(page.locator('.vw-edge-label', { hasText: 'link 1' }))
+  const node = await centerOf(chainNode(page, 'N0000'))
+  return { dx: label.x - node.x, dy: label.y - node.y }
+}
+const labelAnchors = (page: Page) => page.locator('.vw-edge-label')
+  .evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('x'), item.getAttribute('y')].join(' ')))
+
+test('placed edge labels move off a node dragged onto them, in the preview and once saved', async ({ page }) => {
   const errors = pageErrors(page)
-  await openNetworkFixture(page, '?nodes=6&draggable=1&edgelabels=1&labelplacement=avoid&style=orthogonal')
-  const label = (name: string) => page.locator('.vw-edge-label', { hasText: name })
-  const anchor = async (name: string) => [await label(name).getAttribute('x'), await label(name).getAttribute('y')]
-  const before = await anchor('link 2')
+  // The control: with midpoint labels, the dragged node ends up covering the label of link 1.
+  const midpoint = await openLabelDrag(page, 'midpoint')
+  await dragBy(page, chainNode(page, 'N0000'), midpoint.dx, midpoint.dy)
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('2')
+  expect((await labelOverlaps(page)).onNodes.filter(pair => pair.startsWith('link 1 / N0000'))).toHaveLength(1)
+
+  const { dx, dy } = await openLabelDrag(page, 'avoid')
   expect((await labelOverlaps(page)).onNodes).toEqual([])
-  await dragBy(page, chainNode(page, 'N0003'), 20, 140, async () => {
-    // The preview places the labels of the rerouted edges again.
-    expect(await anchor('link 2')).not.toEqual(before)
-    const preview = await labelOverlaps(page)
-    expect(preview.onNodes).toEqual([])
-    expect(preview.onLabels).toEqual([])
+  let preview: Awaited<ReturnType<typeof labelOverlaps>> | undefined
+  await dragBy(page, chainNode(page, 'N0000'), dx, dy, async () => {
+    await expect.poll(async () => (await labelOverlaps(page)).onNodes).toEqual([])
+    preview = await labelOverlaps(page)
   })
-  await expect(label('link 2')).not.toHaveAttribute('y', before[1]!)
-  const saved = await labelOverlaps(page)
-  expect(saved.onNodes).toEqual([])
-  expect(saved.onLabels).toEqual([])
+  expect(preview!.onLabels).toEqual([])
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('2')
+  await expect.poll(async () => (await labelOverlaps(page)).onNodes).toEqual([])
+  expect((await labelOverlaps(page)).onLabels).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('a drag cancelled with Escape puts placed edge labels back at their saved anchors', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { dx, dy } = await openLabelDrag(page, 'avoid')
+  const saved = await labelAnchors(page)
+  await pressAndMove(page, chainNode(page, 'N0000'), dx, dy)
+  await expect.poll(() => labelAnchors(page)).not.toEqual(saved)
+  await page.keyboard.press('Escape')
+  await expect.poll(() => labelAnchors(page)).toEqual(saved)
+  await page.mouse.up()
+  await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
+  expect(await labelAnchors(page)).toEqual(saved)
   expect(errors).toEqual([])
 })
 

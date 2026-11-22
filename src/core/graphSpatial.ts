@@ -11,6 +11,22 @@ export interface SpatialRect {
   y2: number
 }
 
+/**
+ * How far an edge label can reach from its anchor, in chart units: the margin graphLayoutBounds keeps around a label
+ * anchor, and the distance NetworkGraph's drag preview looks around a changed node or route for labels to place again.
+ */
+export const defaultLabelReach = 80
+
+/**
+ * Whether two rectangles given by origin and size intersect or touch (closed intervals, unlike graphRectsIntersect):
+ * the culling and preview test, for bounds that leave out stroke widths.
+ */
+export function rectsMeet(
+  a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height
+}
+
 const keyRange = 2 ** 25
 // Rectangles that span more cells than this along an axis are kept in a list every query checks.
 const maxSpan = 64

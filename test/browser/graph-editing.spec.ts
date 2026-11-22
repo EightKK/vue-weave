@@ -1,5 +1,8 @@
 // NetworkGraph editing: moves, connections and ports, selection, deletion, menus and tooltips, snapping, clipboard, groups, waypoints, resizing, labels, lasso and toolbars.
-import { expect, test, chainNode, dragBy, fixtureStatus, openDemo, openGraphEditor, openNetworkFixture, pageErrors, readCamera, type Page } from './support'
+import {
+  expect, test, animationFrames, centerOf, chainNode, dragBy, fixtureStatus, openDemo, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera,
+  type Page,
+} from './support'
 
 // Clicks the middle of an SVG path. A straight horizontal edge has an empty bounding box, so locator.click cannot target it.
 async function clickPath(page: Page, path: ReturnType<Page['locator']>, modifiers: string[] = []) {
@@ -465,6 +468,8 @@ test('graph context menu opens by right-click and Shift+F10 and returns focus on
 })
 
 test('graph tooltip shows on hover after a delay and on keyboard focus, stays hoverable and hides with Escape or a drag', async ({ page }) => {
+  // A controlled clock: time flows as usual, and runFor below runs the tooltip's hide timer at once.
+  await page.clock.install()
   const { errors, button } = await openGraphEditor(page)
   const tooltip = page.getByRole('tooltip')
   const split = button('Split Operation 101')
@@ -477,7 +482,8 @@ test('graph tooltip shows on hover after a delay and on keyboard focus, stays ho
   // The pointer can move onto the tooltip without hiding it.
   const tip = (await tooltip.boundingBox())!
   await page.mouse.move(tip.x + tip.width / 2, tip.y + tip.height / 2)
-  await page.waitForTimeout(400)
+  // Past the 150 ms grace period of the hide timer.
+  await page.clock.runFor(400)
   await expect(tooltip).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(tooltip).toHaveCount(0)
@@ -641,7 +647,8 @@ test('context-menu events report the target, chart point and source and suppress
   const canvas = await last()
   expect(canvas).toMatchObject({ target: { kind: 'canvas' }, source: 'keyboard' })
   expect(canvas.clientX).toBeCloseTo(stage.x + stage.width / 2, 3)
-  await page.waitForTimeout(300)
+  // A contextmenu event the browser sends after the key has been dispatched by the next frames.
+  await animationFrames(page, 3)
   await expect(events).toHaveText('5')
   // Without the prop nothing is reported and the browser keeps its own menu.
   await openNetworkFixture(page, '?nodes=5')
@@ -766,7 +773,8 @@ test('auto-pan moves the camera while a node drag is held near the edge and stop
   expect(Math.abs(held.x + held.width / 2 - edgeX)).toBeLessThan(25)
   await page.mouse.up()
   const released = await readCamera(page)
-  await page.waitForTimeout(200)
+  // The auto-pan loop runs once per frame; ten frames later the camera has not moved.
+  await animationFrames(page, 10)
   expect(await readCamera(page)).toEqual(released)
   await expect(fixtureStatus(page, 'Move events')).toHaveText('1')
   // The proposal includes the distance the camera travelled, not only the pointer movement.
@@ -1492,5 +1500,48 @@ test('process lanes: with Route around steps, dragging a step across an unrelate
   await expect.poll(() => edge.getAttribute('d')).toBe(before)
   await page.mouse.up()
   await expect(edge).toHaveAttribute('d', before!)
+  expect(errors).toEqual([])
+})
+
+test('move, group move, resize, reshape and reconnect proposals are plain data that structuredClone copies', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?preset=groups&draggable=1&resizable=1&editableedges=1&reconnectable=1')
+  const button = (name: string) => page.getByRole('button', { name, exact: true })
+  const log = fixtureStatus(page, 'Edit proposals')
+  await dragBy(page, button('A'), 30, 20)
+  await expect(log).toHaveText('node-move')
+  await dragBy(page, button('Move group Inner within Outer'), 20, 30)
+  await expect(log).toHaveText('node-move nodes-move')
+  await button('B').click()
+  await dragBy(page, button('Resize B · bottom right'), 20, 15)
+  await expect(log).toHaveText('node-move nodes-move node-resize')
+  await button('Select edge e0').press('Enter')
+  await dragBy(page, button('Add waypoint 1 · e0'), 0, -30)
+  await expect(log).toHaveText('node-move nodes-move node-resize edge-reshape')
+  // A pointer reconnect of e0's target to D.
+  await pressAndMove(page, button('Reconnect target of e0'), 10, 10)
+  const target = await centerOf(button('Connect to D'))
+  await page.mouse.move(target.x, target.y, { steps: 4 })
+  await page.mouse.up()
+  await expect(log).toHaveText('node-move nodes-move node-resize edge-reshape reconnect')
+  await expect(fixtureStatus(page, 'Clone errors')).toHaveText('')
+  expect(errors).toEqual([])
+})
+
+test('arrow keys on a node do not propose a move while a keyboard connection is armed', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=4&draggable=1&connectable=1')
+  const moves = fixtureStatus(page, 'Move events')
+  await page.getByRole('button', { name: 'Start connection from N0001', exact: true }).press('Enter')
+  await expect(page.getByRole('button', { name: 'Connect to N0002', exact: true })).toBeVisible()
+  await chainNode(page, 'N0002').focus()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(moves).toHaveText('0')
+  // Once the connection is cancelled, the keys move the node again.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Connect to N0002', exact: true })).toHaveCount(0)
+  await chainNode(page, 'N0002').press('ArrowRight')
+  await expect(moves).toHaveText('1')
   expect(errors).toEqual([])
 })
