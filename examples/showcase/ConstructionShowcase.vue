@@ -658,7 +658,7 @@ function exportSvg() {
 .sc-build-milestones table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .sc-build-milestones th, .sc-build-milestones td { padding: 8px 6px; border-bottom: 1px solid #1c2632; text-align: left; white-space: nowrap; }
 .sc-build-milestones thead th { color: #6f8195; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.sc-build-milestones tbody th { color: #dfe7ef; font-weight: 600; }
+.sc-build-milestones tbody th { color: #dfe7ef; font-weight: 600; white-space: normal; }
 .sc-build-milestones td { color: #9fb0c2; }
 .sc-build-milestones td:last-child, .sc-build-milestones th:last-child { text-align: right; }
 .sc-build-ahead { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: ahead; }
@@ -679,6 +679,7 @@ function exportSvg() {
   .sc-build { padding: 18px 12px 14px; }
   .sc-build-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sc-build .vw-gantt { --vw-row-label-width: 170px; }
+  .sc-build-milestones th, .sc-build-milestones td { padding: 8px 4px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sc-build-animating .vw-gantt-bar, .sc-build-animating .vw-gantt-float, .sc-build-animating .vw-gantt-summary { transition: none; }
