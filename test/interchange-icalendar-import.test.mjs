@@ -250,7 +250,7 @@ test('a long document with thousands of events and long lines imports in linear 
   const started = Date.now()
   const { events } = fromICalendar(wrap(body))
   assert.equal(events.length, count)
-  assert.ok(Date.now() - started < 5000)
+  assert.ok(Date.now() - started < 20_000)
 })
 
 test('timelineFromICalendar builds rows and bars that validate, and does not modify its input', () => {

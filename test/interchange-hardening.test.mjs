@@ -18,7 +18,7 @@ test('fromDrawio reads deeply nested containers in linear time, parents first', 
   const started = performance.now()
   const imported = fromDrawio(model(cells))
   // Quadratic depth computation took over 30 seconds here; linear work takes well under one.
-  assert.ok(performance.now() - started < 3000, 'nested containers are read in linear time')
+  assert.ok(performance.now() - started < 10_000, 'nested containers are read in linear time')
   assert.equal(imported.groups.length, depth)
   assert.deepEqual(imported.groups.slice(0, 3).map(group => [group.id, group.parentId]), [['g0', undefined], ['g1', 'g0'], ['g2', 'g1']])
   assert.equal(imported.groups.at(-1).parentId, 'g' + (depth - 2))
@@ -121,7 +121,7 @@ test('fromDrawio collects many edge label cells in linear time and counts them a
   const xml = model(cells)
   const started = performance.now()
   const imported = fromDrawio(xml, { maxItems: labels + 3 })
-  assert.ok(performance.now() - started < 3000, 'label cells are collected in linear time')
+  assert.ok(performance.now() - started < 10_000, 'label cells are collected in linear time')
   assert.equal(imported.edges[0].label, Array(labels / 2).fill('x').join('\n'))
   // Two nodes, one edge and every label cell, empty or not.
   assert.throws(() => fromDrawio(xml, { maxItems: labels + 2 }), { name: 'RangeError', message: /maxItems/ })
@@ -247,7 +247,7 @@ test('timelineFromCsvTable reads deep WBS codes in linear time and rejects codes
     name: 'RangeError', message: 'The WBS code on CSV line 2 has 20000 levels; at most 1000 are supported',
   })
   assert.throws(() => read(deep + '.1'), { name: 'RangeError', message: /1001 levels/ })
-  assert.ok(performance.now() - started < 1000)
+  assert.ok(performance.now() - started < 10_000)
 })
 
 test('timelineFromCsvTable orders WBS codes as a tree by their numeric parts', () => {

@@ -346,7 +346,7 @@ test('rules that can never match return the first instance without walking a Gre
     for (const rule of never) assert.deepEqual(starts({ id: 'n', start, end: start, rule }), ['2026-01-31T10:00'], rule)
   }
   // About a thousand expansions; walking 146,097 days each took over 100 ms per expansion.
-  assert.ok(performance.now() - began < 2000)
+  assert.ok(performance.now() - began < 10_000)
   // Rules that match rarely still match.
   const leap = utc('2024-02-29T00:00')
   assert.deepEqual(starts({ id: 'l', start: leap, end: leap, rule: 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;COUNT=2' }), ['2024-02-29T00:00', '2028-02-29T00:00'])

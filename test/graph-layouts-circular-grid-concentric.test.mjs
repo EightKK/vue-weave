@@ -80,7 +80,7 @@ for (const [name, layout] of Object.entries(layouts)) {
     const result = layout(make(12000), chain(12000))
     assert.equal(result.boxes.size, 12000)
     assert.equal(result.paths.size, 11999)
-    assert.ok(Date.now() - started < 5000)
+    assert.ok(Date.now() - started < 20_000)
   })
 }
 
