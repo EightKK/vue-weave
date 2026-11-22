@@ -17,16 +17,17 @@
 
       // An editable spreadsheet TreeGrid. Rows: "Pending" (expanded, children still loading, so a status line follows
       // it), "Group" (expanded, children One and Two), then Bravo and Charlie. Columns: Status, a select whose option
-      // values and labels overlap (value A is "Active", value B is "A"), and Qty, an integer. The parent applies every
-      // proposal. Query parameters: max (maxSheetCells). Events are logged as JSON lines to the "Events" status.
+      // values and labels overlap (value A is "Active", value B is "A"), Qty (an integer), and the selects Kind, Blank and
+      // Guard described below. The parent applies every proposal. Query parameters: max (maxSheetCells), rows
+      // (rowsEditable). Events are logged as JSON lines to the "Events" status.
       // window.grid is the component; window.collapseGroup() collapses Group from outside, as a parent would.
       const query = new URLSearchParams(location.search)
       const rows = shallowRef([
-        { id: 'pending', label: 'Pending', childStatus: 'loading', status: 'A', qty: 0 },
+        { id: 'pending', label: 'Pending', childStatus: 'loading', status: 'A', qty: 0, kind: '1', blank: '', guard: 'A' },
         { id: 'group', label: 'Group', status: 'A', qty: 1 },
         { id: 'one', parentId: 'group', label: 'One', status: 'A', qty: 2 },
         { id: 'two', parentId: 'group', label: 'Two', status: 'B', qty: 3 },
-        { id: 'bravo', label: 'Bravo', status: 'A', qty: 4 },
+        { id: 'bravo', label: 'Bravo', status: 'A', qty: 4, guard: 'A' },
         { id: 'charlie', label: 'Charlie', status: 'B', qty: 5 },
       ])
       const expanded = ref(['pending', 'group'])
@@ -38,6 +39,18 @@
           update: (row, value) => ({ ...row, status: value }) },
         { id: 'qty', label: 'Qty', width: 90, editable: true, value: row => row.qty,
           editor: { kind: 'number', integer: true }, update: (row, value) => ({ ...row, qty: value }) },
+        // Options whose values look alike: the number 1 and the text '1'; '' as an option next to no value; and a
+        // column whose own parse rejects B.
+        { id: 'kind', label: 'Kind', width: 120, editable: true, value: row => row.kind ?? null,
+          editor: { kind: 'select', required: true, choices: [{ value: 1, label: 'Number one' }, { value: '1', label: 'Text one' }] },
+          update: (row, value) => ({ ...row, kind: value }) },
+        { id: 'blank', label: 'Blank', width: 120, editable: true, value: row => row.blank ?? null,
+          editor: { kind: 'select', choices: [{ value: '', label: 'Empty text' }, { value: 'x', label: 'X' }] },
+          update: (row, value) => ({ ...row, blank: value }) },
+        { id: 'guard', label: 'Guard', width: 120, editable: true, value: row => row.guard ?? null,
+          editor: { kind: 'select', choices: [{ value: 'A', label: 'A' }, { value: 'B', label: 'B' }],
+            parse: text => text === 'B' ? { error: 'B is not allowed here' } : text },
+          update: (row, value) => ({ ...row, guard: value }) },
       ]
       const grid = ref()
       window.collapseGroup = () => { expanded.value = expanded.value.filter(id => id !== 'group') }
@@ -50,12 +63,15 @@
             h(TreeGrid, {
               ref: el => { grid.value = el; window.grid = el },
               rows: rows.value, columns, expandedIds: expanded.value, editable: true, spreadsheet: true, height: 320,
+              rowsEditable: query.has('rows'),
+              'onRow-move': change => record('row-move', change.id),
               ...(query.has('max') ? { maxSheetCells: Number(query.get('max')) } : {}),
               'onUpdate:expandedIds': ids => { expanded.value = ids },
               'onCell-edit': change => { record('cell-edit', change.rowId, change.columnId, change.before, change.after); apply([change]) },
               'onSheet-edit': change => { record('sheet-edit', change.action, change.edits.map(edit => [edit.rowId, edit.columnId, edit.after])); apply(change.edits) },
               'onSheet-edit-rejected': (change, reason) => record('sheet-edit-rejected', change.action, reason),
               'onEdit-cancel': event => record('edit-cancel', event.kind, event.reason),
+              'onCell-edit-rejected': (change, reason) => record('cell-edit-rejected', change.columnId, reason),
             }),
             h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
           ])

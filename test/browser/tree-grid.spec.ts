@@ -494,7 +494,7 @@ test('fixture: committing a select without changing it proposes nothing, also wh
   // Enter moved down to Charlie; back up, choosing the option labelled "A" proposes its value B.
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('Enter')
-  await page.getByRole('combobox', { name: 'Edit Status for Bravo', exact: true }).selectOption('B')
+  await page.getByRole('combobox', { name: 'Edit Status for Bravo', exact: true }).selectOption({ label: 'A' })
   await page.keyboard.press('Enter')
   expect(await logged()).toEqual([['cell-edit', 'bravo', 'status', 'A', 'B']])
   expect(errors).toEqual([])
@@ -549,5 +549,59 @@ test('fixture: focusCell and startEdit refuse an unknown column', async ({ page 
     ]
   })
   expect(result).toEqual([false, false, true, true])
+  expect(errors).toEqual([])
+})
+
+test('fixture: select editors keep look-alike option values apart and run the column parse', async ({ page }) => {
+  const { errors, row, logged } = await openTreeGridFixture(page)
+  // The text '1' next to the number 1: Enter without a change proposes nothing.
+  await cellOf(row('Pending'), 4).click()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('combobox', { name: 'Edit Kind for Pending', exact: true })).toHaveValue('1')
+  await page.keyboard.press('Enter')
+  // '' as an option of an optional select stays ''.
+  await cellOf(row('Pending'), 5).click()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  expect(await logged()).toEqual([])
+  // Choosing the number proposes the number.
+  await cellOf(row('Pending'), 4).click()
+  await page.keyboard.press('Enter')
+  await page.getByRole('combobox', { name: 'Edit Kind for Pending', exact: true }).selectOption({ label: 'Number one' })
+  await page.keyboard.press('Enter')
+  // The column's parse rejects B, as it does for a paste.
+  await cellOf(row('Pending'), 6).click()
+  await page.keyboard.press('Enter')
+  await page.getByRole('combobox', { name: 'Edit Guard for Pending', exact: true }).selectOption({ label: 'B' })
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('B is not allowed here').first()).toBeVisible()
+  expect(await logged()).toEqual([['cell-edit', 'pending', 'kind', '1', 1]])
+  expect(errors).toEqual([])
+})
+
+test('fixture: a range whose last cell is empty pastes back in place without filling it', async ({ page }) => {
+  const { errors, row, logged } = await openTreeGridFixture(page)
+  await cellOf(row('Bravo'), 6).click()
+  await page.keyboard.press('Shift+ArrowDown')
+  const before = await cellOf(row('Charlie'), 6).textContent()
+  const text = await clipboard(page, 'copy')
+  expect(text).toBe('A\r\n\r\n')
+  await clipboard(page, 'paste', text)
+  expect(await logged()).toEqual([])
+  await expect(cellOf(row('Charlie'), 6)).toHaveText(before!)
+  expect(errors).toEqual([])
+})
+
+test('fixture: rows shown or hidden during a row drag cancel it without an error or a move', async ({ page }) => {
+  const { errors, header, logged } = await openTreeGridFixture(page, '?rows')
+  const box = (await header('Charlie').boundingBox())!
+  await page.mouse.move(box.x + 40, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 40, box.y - 32 * 3, { steps: 6 })
+  await page.evaluate(() => (window as unknown as { collapseGroup(): void }).collapseGroup())
+  await expect(header('One')).toHaveCount(0)
+  await page.mouse.move(box.x + 40, box.y - 32 * 2, { steps: 2 })
+  await page.mouse.up()
+  expect(await logged()).toEqual([['edit-cancel', 'row-move', 'source-changed']])
   expect(errors).toEqual([])
 })

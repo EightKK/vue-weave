@@ -15,7 +15,7 @@ import {
   type TreeGridRowCreateValidator, type TreeGridRowDelete, type TreeGridRowDeleteValidator, type TreeGridSheetBuild,
   type TreeGridSheetEdit, type TreeGridSheetEditValidator, type TreeGridSpan, type TreeGridValue,
 } from '../core/treeGrid.js'
-import { formatFieldValue, parseFieldValue, type FieldValue } from '../core/fieldEditing.js'
+import { formatFieldValue, parseFieldValue, validateFieldValue, type FieldParseResult, type FieldValue, type TimelineFieldSpec } from '../core/fieldEditing.js'
 import type { ChartDirection, RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../core/types.js'
 import type { RevealResult } from '../core/viewBindings.js'
 import { edgeScroller, pastThreshold } from './shared/pointer.js'
@@ -331,6 +331,21 @@ function cancelCellEdit(reason: TreeGridEditCancelReason, refocus = true) {
   if (refocus) void nextTick(focusActive)
   return true
 }
+// A select editor names its options by index, so options whose values or labels look alike (1 and '1', a value equal
+// to another option's label, '' and no value) stay apart; '' is no value.
+function selectKey(spec: TimelineFieldSpec<any>, value: FieldValue): string {
+  if (value === null) return ''
+  const at = spec.choices?.findIndex(choice => Object.is(choice.value, value)) ?? -1
+  return at < 0 ? '' : String(at)
+}
+/** The typed value of the chosen option. A column with its own `parse` reads the option's text, as a paste would. */
+function selectedValue(spec: TimelineFieldSpec<any>, key: string): FieldParseResult {
+  const choice = key === '' ? undefined : spec.choices?.[Number(key)]
+  if (!choice) return spec.required ? parseFieldValue(spec, '') : { ok: true, value: null }
+  if (spec.parse) return parseFieldValue(spec, formatFieldValue(spec, choice.value as FieldValue))
+  const check = validateFieldValue(spec, choice.value as FieldValue)
+  return check.ok ? { ok: true, value: choice.value as FieldValue } : check
+}
 function startEdit(at: TreeGridCursor, text?: string): boolean {
   const line = lines.value[at.line], column = columns.value[at.column - 1]
   if (!line || line.kind !== 'row' || !column || !cellEditable(line.row.id, column.id)) return false
@@ -346,7 +361,7 @@ function startEdit(at: TreeGridCursor, text?: string): boolean {
   }
   editing.value = {
     rowId: line.row.id, columnId: column.id, before, composing: false,
-    text: text ?? (before === null ? '' : spec.kind === 'select' ? String(before) : formatFieldValue(spec, before)),
+    text: text ?? (spec.kind === 'select' ? selectKey(spec, before) : before === null ? '' : formatFieldValue(spec, before)),
     select: text === undefined,
   }
   void nextTick(() => {
@@ -372,11 +387,10 @@ function commitEdit(source: TreeGridCellEdit['source'], move?: 'down' | 'up' | '
   if (!now || !model) return false
   const column = model.columns[model.columnIndex.get(now.columnId)!]!
   const spec = treeGridFieldSpec(column)!
-  // A select commits the typed value of the chosen option: its text is the option value, which the text parser would
-  // match against labels first.
-  const choice = spec.kind === 'select' ? spec.choices?.find(option => String(option.value) === now.text) : undefined
-  const parsed = spec.kind === 'select' && now.text === '' && !spec.required ? { ok: true as const, value: null }
-    : choice ? { ok: true as const, value: choice.value as FieldValue } : parseFieldValue(spec, now.text)
+  // An unchanged select keeps its value as it is, also one that no option lists.
+  const unchanged = spec.kind === 'select' && now.text === selectKey(spec, now.before)
+  const parsed: FieldParseResult = unchanged ? { ok: true, value: now.before }
+    : spec.kind === 'select' ? selectedValue(spec, now.text) : parseFieldValue(spec, now.text)
   if (!parsed.ok) {
     editing.value = { ...now, error: parsed.error }
     notice.value = parsed.error
@@ -416,7 +430,20 @@ function editorKeydown(event: KeyboardEvent) {
 }
 function editorInput(event: Event) {
   const now = editing.value
-  if (now) editing.value = { ...now, text: (event.target as HTMLInputElement).value, error: undefined, select: false }
+  if (!now) return
+  const target = event.target as HTMLInputElement | HTMLSelectElement
+  // A select reports the chosen option by position (see selectKey); its value attribute may repeat between options.
+  const text = target instanceof HTMLSelectElement ? selectKeyAt(target) : target.value
+  editing.value = { ...now, text, error: undefined, select: false }
+}
+function selectProps<T extends { value?: unknown }>(props: T): Omit<T, 'value'> {
+  const { value: _value, ...rest } = props
+  return rest
+}
+function selectKeyAt(select: HTMLSelectElement): string {
+  const first = select.options[0]?.hasAttribute('data-vw-none') ? 1 : 0
+  const at = select.selectedIndex - first
+  return at < 0 ? '' : String(at)
 }
 function editorBlur() {
   const now = editing.value
@@ -440,9 +467,10 @@ function renderEditor(column: TreeGridColumn<R>): VNode {
     onPointerdown: (event: Event) => event.stopPropagation(),
   }
   const control = spec.kind === 'select'
-    ? h('select', { ...common, onChange: editorInput }, [
-      ...spec.required ? [] : [h('option', { value: '' }, '')],
-      ...spec.choices!.map(choice => h('option', { value: String(choice.value), selected: String(choice.value) === now.text }, choice.label ?? String(choice.value))),
+    // The options carry the selection (by position); the select's value would match options by value text.
+    ? h('select', { ...selectProps(common), onChange: editorInput }, [
+      ...spec.required ? [] : [h('option', { value: '', 'data-vw-none': '', selected: now.text === '' }, '')],
+      ...spec.choices!.map((choice, i) => h('option', { value: String(choice.value), selected: String(i) === now.text }, choice.label ?? String(choice.value))),
     ])
     : h('input', {
       ...common, type: 'text', inputmode: spec.kind === 'number' || spec.kind === 'duration' ? 'decimal' : undefined, autocomplete: 'off',
@@ -606,8 +634,9 @@ watch(() => [props.rows, props.columns, props.cells, props.editable, props.sprea
 watch(lines, () => {
   const now = editing.value
   if (now && !flat.value.rowLine.has(now.rowId)) cancelCellEdit('hidden', false)
-  // A fill drag holds line numbers; once rows are shown or hidden they name other rows.
+  // Fill and row drags hold line numbers; once rows are shown or hidden they name other rows.
   cancelFill('source-changed')
+  cancelRowDrag('source-changed')
 })
 
 /** Cancels the open editor, fill drag or row drag (reason `api`). Returns whether one was in flight. */
@@ -1029,7 +1058,7 @@ const GridBody: FunctionalComponent<BodyProps> = ({ cellSlot, headerSlot, status
     }, children)
   }
   const drop = rowDrag.value?.dragging ? rowDrag.value.drop : undefined
-  const dropLine = drop && drop.placement !== 'inside'
+  const dropLine = drop && drop.placement !== 'inside' && list[drop.line]
     ? h('div', {
       class: 'vw-tree-grid-drop', 'aria-hidden': 'true',
       style: { transform: `translateY(${props.headerHeight + (drop.placement === 'after' ? drop.line + 1 : drop.line) * props.rowHeight - 1}px)`, '--vw-tree-grid-level': String(list[drop.line]!.level - 1 + (drop.placement === 'after' && drop.target.parentId === list[drop.line]!.row.id ? 1 : 0)) },

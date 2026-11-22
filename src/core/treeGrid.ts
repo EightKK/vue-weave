@@ -752,7 +752,11 @@ export function treeGridRangeText(index: TreeGridIndex<any>, flat: TreeGridLines
     for (let c = left; c <= Math.min(right, index.columns.length); c++) record.push(cellText(index, flat.lines[l]!, index.columns[c - 1]!))
     records.push(record)
   }
-  return formatSheetText(records)
+  const text = formatSheetText(records)
+  // A paste drops one line break at the end, so a range whose last line is one empty cell ends with an extra one;
+  // otherwise "5" over an empty cell would read as the single value 5 and fill the whole range.
+  const last = records[records.length - 1]
+  return records.length > 1 && last!.length === 1 && last![0] === '' ? text + '\r\n' : text
 }
 
 /** Result of the spreadsheet builders: the edits of one batch, or why there is none. */

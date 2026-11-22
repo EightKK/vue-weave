@@ -267,3 +267,16 @@ test('review regressions: copy skips status lines, fills respect maxCells, a new
   assert.equal(buildTreeGridFill(model, lines, fill, { maxCells: 2 }).edits.length, 2)
   assert.throws(() => insertTreeGridRow(statusRows, { parentId: 'n', index: 0 }, { id: 'n', label: 'N' }), /Unknown parent/)
 })
+
+test('range text keeps an empty last line, so pasting it back in place changes nothing', () => {
+  const qty = { id: 'qty', label: 'Qty', width: 60, editable: true, value: row => row.qty ?? null, editor: { kind: 'number' }, update: (row, value) => ({ ...row, qty: value }) }
+  const model = createTreeGridIndex({ rows: [{ id: 'a', label: 'A', qty: 5 }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], columns: [qty] })
+  const lines = flattenTreeGrid(model, [])
+  const two = { anchor: { line: 0, column: 1 }, focus: { line: 1, column: 1 } }
+  assert.equal(treeGridRangeText(model, lines, two), '5\r\n\r\n')
+  assert.deepEqual(buildTreeGridPaste(model, lines, two, treeGridRangeText(model, lines, two)).edits, [])
+  const three = { anchor: { line: 0, column: 1 }, focus: { line: 2, column: 1 } }
+  assert.equal(treeGridRangeText(model, lines, three), '5\r\n\r\n\r\n')
+  assert.deepEqual(buildTreeGridPaste(model, lines, three, treeGridRangeText(model, lines, three)).edits, [])
+  assert.equal(treeGridRangeText(model, lines, { anchor: { line: 1, column: 1 }, focus: { line: 1, column: 1 } }), '')
+})
