@@ -25,7 +25,8 @@
       // new but equal bars), ranges (two marker ranges, one restricted to Row 2, and an SVG export button), summaries (a
       // summary row Phase over a row with Task C, drawn with showSummaries and summaryDependencies; a button turns
       // summaryDependencies off), cancels (edit-cancel is shown as "Last edit cancel", as with summaries, and "Replace
-      // bars" is shown).
+      // bars" is shown), blankReject (validateEdit and validateConnection reject with a blank reason; edit-rejected and
+      // connect-rejected are shown as "Last rejection").
       const query = new URLSearchParams(location.search)
       const summarized = query.has('summaries')
       const cancels = query.has('cancels')
@@ -61,6 +62,8 @@
       ]
       const preset = ref('wide')
       const lastEdit = ref('')
+      const lastRejection = ref('')
+      const blankReject = query.has('blankReject')
       const deletes = ref(0)
       const selects = ref(0)
       const connects = ref(0)
@@ -102,6 +105,7 @@
             } }, 'Export SVG'),
           ] : []),
           ...(summarized || cancels ? [output('Last edit cancel', lastCancel.value)] : []),
+          ...(blankReject ? [output('Last rejection', lastRejection.value)] : []),
           ...(summarized ? [
             h('button', { type: 'button', onClick: () => { summaryLinks.value = false } }, 'Turn summary links off'),
           ] : []),
@@ -136,6 +140,11 @@
             ...(summarized ? { showSummaries: true, summaryDependencies: summaryLinks.value } : {}),
             ...(summarized || cancels ? { onEditCancel: event => { lastCancel.value = JSON.stringify(event) } } : {}),
             onEdit: change => { lastEdit.value = JSON.stringify(change) },
+            ...(blankReject ? {
+              validateEdit: () => '  ', validateConnection: () => '',
+              onEditRejected: (change, reason) => { lastRejection.value = `edit ${change.id}: ${reason}` },
+              onConnectRejected: (connection, reason) => { lastRejection.value = `connect ${connection.from}: ${reason}` },
+            } : {}),
             onDependencyDelete: () => { deletes.value++ },
             onDependencySelect: () => { selects.value++ },
             onConnect: connection => {

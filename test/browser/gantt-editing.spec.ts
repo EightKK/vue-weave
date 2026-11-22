@@ -534,6 +534,22 @@ test('gantt constraint markers describe their bars and their handles drag, snap 
   expect(errors).toEqual([])
 })
 
+test('gantt: a blank rejection reason rejects with the default text', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?blankReject=1')
+  const live = chart.locator('xpath=..').locator('[aria-live="polite"]')
+  await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).press('ArrowRight')
+  await expect(out('Last rejection')).toHaveText('edit a: This change was rejected.')
+  await expect(live).toHaveText('This change was rejected.')
+  await expect(out('Last edit')).toHaveText('')
+  await chart.getByRole('button', { name: 'Start dependency from finish of Task B', exact: true }).press('Enter')
+  await chart.getByRole('button', { name: 'Connect dependency to start of Task A', exact: true }).press('Enter')
+  await expect(out('Last rejection')).toHaveText('connect b: This dependency was rejected.')
+  await expect(live).toHaveText('This dependency was rejected.')
+  await expect(out('Connections')).toHaveText('0')
+  expect(errors).toEqual([])
+})
+
 test('gantt constraint edits are applied by the parent, rejected through the validator and mirrored right to left', async ({ page }) => {
   const errors = pageErrors(page)
   // The validator rejects: the reason is announced and nothing is proposed.
