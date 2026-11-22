@@ -90,6 +90,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
 })
 
 test('timeline columns edit through validation and keep summary bars when collapsed', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   const input = page.getByRole('textbox', { name: 'Cutting station · Resource note', exact: true })
@@ -112,6 +113,7 @@ test('timeline columns edit through validation and keep summary bars when collap
   await page.getByRole('button', { name: 'Collapse Production schedule' }).click()
   await expect(summary).toHaveAttribute('style', style!)
   await expect(input).toHaveCount(0)
+  expect(errors).toEqual([])
 })
 
 test('a move preview shifts the segments of a split bar and a resize preview draws it unsegmented', async ({ page }) => {

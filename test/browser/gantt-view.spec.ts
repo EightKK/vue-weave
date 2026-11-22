@@ -14,6 +14,7 @@ async function recordWheelDefaults(page: Page) {
 }
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Direction').selectOption('TB')
   await expect(page.locator('.vw-network-stage')).toHaveCSS('height', '470px')
@@ -31,9 +32,11 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
   await expect(page.getByText('Resource 1000', { exact: true })).toBeVisible()
   expect(await page.locator('.vw-gantt-row').count()).toBeLessThan(15)
   await page.screenshot({ path: 'test-results/large-dark.png', fullPage: true })
+  expect(errors).toEqual([])
 })
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Planning overlays').check()
   await expect(page.getByText('Operating window · UTC')).toBeVisible()
@@ -51,6 +54,7 @@ test('hierarchy, header bands, baselines and markers compose with controlled edi
   await expect(page.locator('.vw-gantt-links')).toHaveCount(0)
   await page.getByRole('button', { name: 'Expand Production schedule' }).click()
   await expect(page.getByRole('button', { name: 'Split · plan 09:15–11:15', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
 })
 
 test('gantt baseline sets follow baselineIds, mirror in right-to-left charts and feed a tooltip variance', async ({ page }) => {

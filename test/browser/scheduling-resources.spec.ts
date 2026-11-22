@@ -115,6 +115,7 @@ test('the scheduling demo compares two baseline sets, toggles them through basel
 })
 
 test('calendar-aware edits propagate downstream, expose overload and preserve the accepted plan on failure', async ({ page }) => {
+  const errors = pageErrors(page)
   await openDemo(page, 'Scheduling')
   const finish = page.getByTestId('schedule-finish')
   const cutting = page.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
@@ -138,6 +139,7 @@ test('calendar-aware edits propagate downstream, expose overload and preserve th
   await page.getByRole('button', { name: 'Reset schedule' }).click()
   await expect(finish).toHaveText('09 Nov 16:00')
   await expect(page.getByTestId('schedule-overload')).toHaveText('1 resource-hour')
+  expect(errors).toEqual([])
 })
 
 test('the scheduling demo shades non-working time and describes critical, float, deadline and split bars', async ({ page }) => {

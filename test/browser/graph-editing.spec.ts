@@ -105,6 +105,7 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
 })
 
 test('range selection and group movement commit an atomic batch', async ({ page }) => {
+  const errors = pageErrors(page)
   await page.goto('/gallery.html')
   await page.getByLabel('Edit graph').check()
   const lots = page.locator('.vw-network-node').filter({ hasText: 'Lot A123-' })
@@ -126,6 +127,7 @@ test('range selection and group movement commit an atomic batch', async ({ page 
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(lots.first()).toHaveAttribute('transform', before[0]!)
   await expect(lots.last()).toHaveAttribute('transform', before[1]!)
+  expect(errors).toEqual([])
 })
 
 test('dragging a node under culling emits one proposal and keeps the node rendered', async ({ page }) => {
