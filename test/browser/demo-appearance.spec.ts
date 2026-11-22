@@ -369,7 +369,7 @@ test('the calendar views showcase switches calendar zoom presets and locales and
   const labels = await showcase.locator('.vw-gantt-range-label').evaluateAll(elements => elements.map(element => {
     const rect = element.getBoundingClientRect()
     return { text: element.textContent, start: rect.left, end: rect.right }
-  }))
+  })).then(list => list.sort((a, b) => a.start - b.start))
   expect(labels.map(entry => entry.text)).toEqual(['Golden Week', 'Ascension Day', 'Code freeze', 'Corpus Christi'])
   for (let index = 1; index < labels.length; index++) expect(labels[index]!.start).toBeGreaterThanOrEqual(labels[index - 1]!.end - 0.5)
   const band = (await showcase.locator('.vw-gantt-range:not(.vw-is-row)').first().boundingBox())!
