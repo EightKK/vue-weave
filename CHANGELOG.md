@@ -19,6 +19,7 @@
 
 - New "Tree grid" demo: about 3,000 products against 30 columns with editing, spreadsheet operations, row structure editing, a lazily loaded group, undo and redo, linked to a NetworkGraph through `selectEntities`.
 - New "Period table" demo: a TreeGrid of sites, items and measures against day or week columns (`calendarBands`, `createTimeBucketColumns`, `aggregateTimeBuckets` with `sum`, `last` + `carryForward`, `min` and `ratio`). Days that are not loaded show their load state, never 0, and a mid-week shortage is marked inside a positive week. Columns follow a GanttChart's visible window (`timeBucketIndexRange`), demand cells are editable with undo, and selecting a cell highlights the orders that feed it.
+- A new design gallery showcase, **BOM editor**: a multi-level bill of materials with shared subassemblies, edited in `TreeGrid` and linked to an item graph, with where-used walks (`traverseGraph` with `edgeFilter`, `maxNodes` and `graphTracePath`), a revision comparison with `diffStructure`, search with `projectTimelineRows` and a quantity rollup.
 
 ## 1.3.0 - 2026-11-22
 

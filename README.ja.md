@@ -173,6 +173,13 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
       <b>サービスマップ。</b>折りたためる入れ子のグループ、通信量に応じた辺、<code>traverseGraph</code> による障害の影響範囲、連動するアラートのタイムライン。
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-bom.png" alt="BOMエディタの作例。ポンプ製品群の5階層の部品表をツリーグリッドで表示し、版AとBを比較。2箇所で使う六角ボルトの片方だけ数量が4から6に変わり、警告ラベルの明細が削除されている。変更一覧、使用先パネル、所要量の積み上げ、ボルトからCP-80ポンプまでの経路を強調した品目グラフ" width="100%"><br>
+      <b>BOMエディタ。</b>共通部組品を含む多段の部品表をツリーグリッドで編集し、品目グラフと連動。使用先の照会、版の比較、所要量の積み上げ（<code>TreeGrid</code>、<code>traverseGraph</code>、<code>diffStructure</code>）。
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
 </table>
 
 ![製造デモのNetworkGraph。材料、分割工程、2つのロット、仕上げ工程、製品を左から右へ階層配置したグラフ](https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/network-graph.png)

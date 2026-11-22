@@ -173,6 +173,13 @@ Showcases that combine several features and restyle the components with slots, `
       <b>Service map.</b> Nested collapsible groups, traffic-weighted edges, an incident blast radius from <code>traverseGraph</code> and a linked alert timeline.
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="https://raw.githubusercontent.com/EightKK/vue-weave/main/.github/images/showcase-bom.png" alt="BOM editor showcase: a five-level bill of materials for a pump family in a tree grid comparing revision A with B, where one of two hex bolt usages changed quantity from 4 to 6 and a warning label line was removed, with a change list, a where-used panel, a quantity rollup and an item graph highlighting the path from the bolt to the CP-80 pump" width="100%"><br>
+      <b>BOM editor.</b> A multi-level bill of materials with shared subassemblies, edited in a tree grid and linked to an item graph, with where-used walks, a revision comparison and a quantity rollup (<code>TreeGrid</code>, <code>traverseGraph</code>, <code>diffStructure</code>).
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
 </table>
 
 ![NetworkGraph in the manufacturing demo: material, a split operation, two lots, a finishing operation and the product in a layered left-to-right layout](https://raw.githubusercontent.com/EightKK/vue-weave/v1.3.0/.github/images/network-graph.png)
