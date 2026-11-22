@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (241)
+## Entry `.`: runtime exports (245)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -15,6 +15,7 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoard: object`
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `aggregateTimeBuckets: function`
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
@@ -48,6 +49,7 @@ in public signatures, so changes to them can break consumers too.
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
 - `createResourceTimelineProjector: function`
+- `createTimeBucketColumns: function`
 - `createTimeScale: function`
 - `createTimelineRowTree: function`
 - `createTimelineViewState: function`
@@ -208,6 +210,8 @@ in public signatures, so changes to them can break consumers too.
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
 - `summarizeTimelineRows: function`
+- `timeBucketIndex: function`
+- `timeBucketIndexRange: function`
 - `timeTicks: function`
 - `timelineBarsInRange: function`
 - `timelineBaseline: function`
@@ -249,7 +253,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (585)
+## Entry `.`: type-only exports (598)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -724,6 +728,19 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
 - `TaskBoardPosition`
+- `TimeBucket`
+- `TimeBucketAggregateOptions`
+- `TimeBucketCell`
+- `TimeBucketColumn`
+- `TimeBucketColumnOptions`
+- `TimeBucketItem`
+- `TimeBucketLoaded`
+- `TimeBucketPeriod`
+- `TimeBucketPlacement`
+- `TimeBucketReducer`
+- `TimeBucketReducerContext`
+- `TimeBucketRule`
+- `TimeBucketRuleName`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -837,10 +854,11 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (226)
+## Entry `./core`: runtime exports (230)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `aggregateTimeBuckets: function`
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
@@ -874,6 +892,7 @@ in public signatures, so changes to them can break consumers too.
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
 - `createResourceTimelineProjector: function`
+- `createTimeBucketColumns: function`
 - `createTimeScale: function`
 - `createTimelineRowTree: function`
 - `createTimelineViewState: function`
@@ -1031,6 +1050,8 @@ in public signatures, so changes to them can break consumers too.
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
 - `summarizeTimelineRows: function`
+- `timeBucketIndex: function`
+- `timeBucketIndexRange: function`
 - `timeTicks: function`
 - `timelineBarsInRange: function`
 - `timelineBaseline: function`
@@ -1066,7 +1087,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (547)
+## Entry `./core`: type-only exports (560)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1511,6 +1532,19 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
 - `TaskBoardPosition`
+- `TimeBucket`
+- `TimeBucketAggregateOptions`
+- `TimeBucketCell`
+- `TimeBucketColumn`
+- `TimeBucketColumnOptions`
+- `TimeBucketItem`
+- `TimeBucketLoaded`
+- `TimeBucketPeriod`
+- `TimeBucketPlacement`
+- `TimeBucketReducer`
+- `TimeBucketReducerContext`
+- `TimeBucketRule`
+- `TimeBucketRuleName`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -7464,6 +7498,129 @@ interface TaskBoardPosition {
 }
 ```
 
+### `TimeBucket`
+
+```ts
+interface TimeBucket extends TimeRange {
+    id: string;
+}
+```
+
+### `TimeBucketAggregateOptions`
+
+```ts
+interface TimeBucketAggregateOptions<T = TimeBucketItem> {
+    rule?: TimeBucketRule<T>;
+    rules?: ReadonlyMap<string, TimeBucketRule<T>> | Readonly<Record<string, TimeBucketRule<T>>>;
+    rowIds?: readonly string[];
+    loaded?: TimeBucketLoaded;
+    placement?: TimeBucketPlacement;
+    carryForward?: boolean | ((rowId: string) => boolean);
+    itemRow?: (item: T) => string;
+    itemTime?: (item: T) => number | TimeRange;
+    itemValue?: (item: T) => number;
+    itemDenominator?: (item: T) => number;
+    maxCells?: number;
+}
+```
+
+### `TimeBucketCell`
+
+```ts
+interface TimeBucketCell {
+    rowId: string;
+    columnId: string;
+    value: number | null;
+    status: WindowedCellStatus;
+    count: number;
+    numerator?: number;
+    denominator?: number;
+    carried?: boolean;
+}
+```
+
+### `TimeBucketColumn`
+
+```ts
+interface TimeBucketColumn extends TimeBucket {
+    label: string;
+    width: number;
+}
+```
+
+### `TimeBucketColumnOptions`
+
+```ts
+interface TimeBucketColumnOptions<P extends TimeBucketPeriod = TimeBucketPeriod> {
+    id?: (period: P, index: number) => string;
+    idPrefix?: string;
+    label?: (period: P, index: number) => string;
+    width?: number | ((period: P, index: number) => number);
+}
+```
+
+### `TimeBucketItem`
+
+```ts
+interface TimeBucketItem {
+    rowId: string;
+    time?: number;
+    start?: number;
+    end?: number;
+    value: number;
+    denominator?: number;
+}
+```
+
+### `TimeBucketLoaded`
+
+```ts
+type TimeBucketLoaded = readonly TimeRange[] | ((rowId: string, bucket: TimeBucket) => boolean | WindowedCellStatus);
+```
+
+### `TimeBucketPeriod`
+
+```ts
+interface TimeBucketPeriod extends TimeRange {
+    id?: string;
+    label?: string;
+}
+```
+
+### `TimeBucketPlacement`
+
+```ts
+type TimeBucketPlacement = 'start' | 'overlap' | 'prorate';
+```
+
+### `TimeBucketReducer`
+
+```ts
+type TimeBucketReducer<T> = (values: readonly number[], context: TimeBucketReducerContext<T>) => number | null;
+```
+
+### `TimeBucketReducerContext`
+
+```ts
+interface TimeBucketReducerContext<T> {
+    rowId: string;
+    bucket: TimeBucket;
+    items: readonly T[];
+}
+```
+
+### `TimeBucketRule`
+
+```ts
+type TimeBucketRule<T = TimeBucketItem> = TimeBucketRuleName | TimeBucketReducer<T>;
+```
+
+### `TimeBucketRuleName`
+
+```ts
+type TimeBucketRuleName = 'sum' | 'count' | 'min' | 'max' | 'first' | 'last' | 'ratio' | 'precomputed';
+```
+
 ### `TimeRange`
 
 ```ts
@@ -8749,6 +8906,12 @@ interface WorkWeek {
 function actualsTimelineBars(result: RescheduleFromActualsResult, options?: ActualsTimelineBarOptions): TimelineBar[];
 ```
 
+### `aggregateTimeBuckets`
+
+```ts
+function aggregateTimeBuckets<T = TimeBucketItem>(items: readonly T[], buckets: readonly TimeBucket[], options?: TimeBucketAggregateOptions<T>): TimeBucketCell[];
+```
+
 ### `applyBoardCardMove`
 
 ```ts
@@ -8956,6 +9119,12 @@ function createGraphExpansion<N extends {
 
 ```ts
 function createResourceTimelineProjector<D = unknown, R = unknown>(): (input: ResourceTimelineInput<D, R>, options?: ResourceTimelineOptions<D, R>) => ResourceTimelineProjection<D, R>;
+```
+
+### `createTimeBucketColumns`
+
+```ts
+function createTimeBucketColumns<P extends TimeBucketPeriod>(periods: readonly P[], options?: TimeBucketColumnOptions<P>): TimeBucketColumn[];
 ```
 
 ### `createTimeScale`
@@ -10003,6 +10172,21 @@ function splitDanglingLinks<L>(links: readonly L[], present: {
 
 ```ts
 function summarizeTimelineRows(tree: ReturnType<typeof createTimelineRowTree>, bars: readonly TimelineBar[]): Map<string, TimelineSummary>;
+```
+
+### `timeBucketIndex`
+
+```ts
+function timeBucketIndex(buckets: readonly TimeRange[], time: number): number;
+```
+
+### `timeBucketIndexRange`
+
+```ts
+function timeBucketIndexRange(buckets: readonly TimeRange[], range: TimeRange): {
+    start: number;
+    end: number;
+};
 ```
 
 ### `timeTicks`
