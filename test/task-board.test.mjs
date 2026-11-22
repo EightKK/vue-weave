@@ -146,10 +146,41 @@ test('wipMin must be a non-negative integer that does not exceed wipLimit', () =
 })
 
 test('a move proposed from a filtered view applies correctly to the full card list', () => {
-  // The component proposes indices that count hidden cards: moving "a" below the shown "c" lands after "c", past hidden "b".
-  const cards = [card('a', 'doing'), card('b', 'doing'), card('c', 'doing'), card('d', 'doing')]
-  const move = (id, after) => applyBoardCardMove(cards, { id, before: boardCardPosition(cards, id), after, source: 'keyboard' })
-  assert.deepEqual(ids(move('a', { columnId: 'doing', index: 2 })), ['b', 'c', 'a', 'd'])
-  assert.deepEqual(ids(move('d', { columnId: 'doing', index: 1 })), ['a', 'd', 'b', 'c'])
-  assert.deepEqual(boardCardPosition(cards, 'c'), { columnId: 'doing', index: 2 }, 'positions ignore any filter')
+  // The component proposes indices that count hidden cards: it drops before the shown card at the drop place, whose index
+  // among all cards of the cell (`indices`, without the moved card) is the proposal's `after.index`.
+  const cards = [card('a', 'doing'), card('b', 'doing'), card('c', 'doing'), card('d', 'doing'), card('e', 'doing')]
+  const filter = item => item.id !== 'b' && item.id !== 'e'
+  const groups = groupBoardCards(cards, columns, undefined, { filter })
+  const cell = groups.rows[0].cells[1]
+  assert.deepEqual(ids(cell.cards), ['a', 'c', 'd'])
+  assert.deepEqual(cell.indices, [0, 2, 3])
+  assert.equal(cell.total, 5)
+  const fullIndex = (shownId, movingId) => {
+    const full = cell.indices[cell.cards.findIndex(item => item.id === shownId)]
+    return full > groups.positions.get(movingId).index ? full - 1 : full
+  }
+  const move = (id, index) => applyBoardCardMove(cards, { id, before: groups.positions.get(id), after: { columnId: 'doing', index }, source: 'keyboard' })
+  const shown = list => ids(groupBoardCards(list, columns, undefined, { filter }).rows[0].cells[1].cards)
+  // "a" dropped before the shown "d" lands after "c", past the hidden "b".
+  const below = move('a', fullIndex('d', 'a'))
+  assert.deepEqual(ids(below), ['b', 'c', 'a', 'd', 'e'])
+  assert.deepEqual(shown(below), ['c', 'a', 'd'])
+  // "d" dropped before the shown "c" keeps the hidden "b" in front of it.
+  const above = move('d', fullIndex('c', 'd'))
+  assert.deepEqual(ids(above), ['a', 'b', 'd', 'c', 'e'])
+  assert.deepEqual(shown(above), ['a', 'd', 'c'])
+  // "a" dropped after the last shown card goes right after it, before the hidden "e".
+  const last = move('a', fullIndex('d', 'a') + 1)
+  assert.deepEqual(ids(last), ['b', 'c', 'd', 'a', 'e'])
+  assert.deepEqual(shown(last), ['c', 'd', 'a'])
+  assert.deepEqual(groups.positions.get('c'), { columnId: 'doing', index: 2 }, 'positions count hidden cards')
+})
+
+test('groupBoardCards rejects a filter that is not a function', () => {
+  for (const [filter, type] of [['todo', 'string'], [null, 'null'], [{}, 'object'], [1, 'number']]) {
+    assert.throws(() => groupBoardCards([card('a', 'todo')], columns, undefined, { filter }), {
+      name: 'TypeError', message: `The board filter must be a function: ${type}`,
+    })
+  }
+  assert.equal(groupBoardCards([card('a', 'todo')], columns, undefined, { filter: undefined }).columns[0].count, 1)
 })

@@ -20,6 +20,8 @@ const dragThreshold = 4
 const minEventHeight = 18
 /** Height of an event lane in the all-day row and the month view, and of a month day's header, in pixels. */
 const laneHeight = 22
+/** Space below the last event lane of the all-day row and of a month week, in pixels. */
+const lanePadding = 6
 const monthHeader = 26
 
 const props = withDefaults(defineProps<{
@@ -128,6 +130,8 @@ const messages = computed<EventCalendarLabels>(() => ({
   day: 'Day', week: 'Week', month: 'Month', allDay: 'All day', more: 'more', showDay: 'Show day',
   editHint: 'Up and Down arrows move the event, Shift resizes its end. Left and Right move it to another day or resource. Escape cancels a drag.',
   dayEditHint: 'Left and Right arrows move the event by a day, Shift resizes its end. Escape cancels a drag.',
+  // A localized `dayEditHint` without `monthEditHint` keeps the month view localized.
+  monthEditHint: props.labels?.dayEditHint ?? 'Left and Right arrows move the event by a day, Up and Down by a week, and Shift with Left or Right resizes the end of an all-day event. Escape cancels a drag.',
   rejected: 'This change was rejected.', createRejected: 'This new event was rejected.',
   resources: 'Resources', now: 'Now', empty: 'No events to display', recurring: 'Recurring',
   ...props.labels,
@@ -165,10 +169,22 @@ function checkProps() {
   }
   if (!Number.isInteger(props.maxMonthLanes) || props.maxMonthLanes < 1) throw new RangeError('maxMonthLanes must be an integer >= 1')
   if (props.now !== undefined && !Number.isFinite(props.now)) throw new RangeError('now must be finite')
+  try {
+    cachedDateFormat(props.locale, { timeZone: 'UTC' })
+  } catch {
+    throw new RangeError('Invalid locale: ' + String(props.locale))
+  }
+  const height = props.height
+  if (typeof height === 'number' ? !Number.isFinite(height) || height < 0 : typeof height !== 'string') {
+    throw new RangeError('height must be a finite non-negative number of pixels or a CSS length')
+  }
+  if (!['ltr', 'rtl', 'auto'].includes(props.dir)) throw new RangeError('dir must be ltr, rtl or auto: ' + String(props.dir))
 }
 watch([
   () => props.events, () => props.resources, view, localDate, () => props.weekStartsOn, () => props.timeZone, () => props.dayStart,
   () => props.dayEnd, () => props.hourHeight, () => props.snap, () => props.createDuration, () => props.maxMonthLanes, () => props.now,
+  // By value, so a locale array written inline does not validate again on every render of the parent.
+  () => JSON.stringify(props.locale), () => props.height, () => props.dir,
 ], () => {
   try {
     checkProps()
@@ -245,8 +261,20 @@ const visibleStart = computed(() => props.dayStart * hour)
 const bodyHeight = computed(() => (props.dayEnd - props.dayStart) * props.hourHeight)
 const hours = computed(() => Array.from({ length: props.dayEnd - props.dayStart }, (_, index) => {
   const offset = (props.dayStart + index) * hour
-  return { key: offset, top: index * props.hourHeight, label: hourLabel.value.format(offset) }
+  return { key: offset, top: index * props.hourHeight, label: hourText(offset) }
 }))
+/**
+ * The label of an hour of the gutter. With `formatTime`, that hour on the first column's day, so the gutter reads like
+ * the event times (for example in 12-hour clocks); an hour skipped by a daylight-saving change falls back to `HH:mm`.
+ */
+function hourText(offset: number) {
+  const day = columns.value[0]?.day
+  if (props.formatTime && day) {
+    const time = timeAt(day.start, offset)
+    if (timeOfDay(day.start, time) === offset) return props.formatTime(time)
+  }
+  return hourLabel.value.format(offset)
+}
 const pxOf = (offset: number) => (offset - visibleStart.value) / hour * props.hourHeight
 const isToday = (day: TimeRange) => props.now !== undefined && props.now >= day.start && props.now < day.end
 const scrollHeight = computed(() => typeof props.height === 'number' ? props.height + 'px' : props.height)
@@ -280,7 +308,8 @@ const timedBoxes = computed<TimedBox[][]>(() => markedColumns(columns.value.map(
     const height = Math.max(minEventHeight, clippedBottom - clippedTop)
     return [{
       short: height < 34,
-      key: column.key + ':' + event.id, event, primary: event.start >= column.day.start,
+      // `primary` is assigned by markPrimary over all columns.
+      key: column.key + ':' + event.id, event, primary: false,
       continuesBefore: event.start < column.day.start, continuesAfter: event.end > column.day.end,
       style: {
         top: clippedTop + 'px', height: height + 'px',
@@ -328,7 +357,8 @@ function packRow(events: readonly E[], from: number, count: number, offset = 0, 
     segments: packed.segments.map<DaySegment>(segment => ({
       key: `${from + offset}:${segment.id}`, event: byId.get(segment.id)!, lane: segment.lane,
       startIndex: from + segment.startIndex + offset, endIndex: from + segment.endIndex + offset,
-      primary: !segment.continuesBefore, continuesBefore: segment.continuesBefore, continuesAfter: segment.continuesAfter,
+      // `primary` is assigned by markPrimary over the whole row or grid.
+      primary: false, continuesBefore: segment.continuesBefore, continuesAfter: segment.continuesAfter,
       style: {
         insetInlineStart: `calc(${(segment.startIndex + offset) / total * 100}% + 2px)`,
         width: `calc(${(segment.endIndex - segment.startIndex) / total * 100}% - 4px)`,
@@ -374,7 +404,8 @@ const monthWeeks = computed<MonthWeek[]>(() => {
   markPrimary(weeks.flatMap(week => week.segments))
   return weeks
 })
-const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHeight + 6)
+const monthRowHeight = computed(() => monthHeader + props.maxMonthLanes * laneHeight + lanePadding)
+const allDayHeight = computed(() => Math.max(1, allDayRow.value.lanes) * laneHeight + lanePadding)
 const weekdayNames = computed(() => visibleDays.value.slice(0, 7).map(day => ({ key: day.weekday, label: weekdayName.value.format(day.start) })))
 
 // Navigation ---------------------------------------------------------------------------------------------------------
@@ -443,11 +474,15 @@ function settle(result: boolean | string | void, fallback: string) {
   notice.value = reason ?? ''
   return reason
 }
+/** Emit an edit proposal, or its rejection. Returns whether `edit` was emitted. */
 function propose(change: EventCalendarEdit) {
   if (change.before.start === change.after.start && change.before.end === change.after.end && !change.resource) return false
   const reason = settle(props.validateEdit?.(change), messages.value.rejected)
-  if (reason !== undefined) emit('edit-rejected', change, reason)
-  else emit('edit', change)
+  if (reason !== undefined) {
+    emit('edit-rejected', change, reason)
+    return false
+  }
+  emit('edit', change)
   return true
 }
 function proposeCreate(proposal: EventCalendarCreate) {
@@ -649,7 +684,9 @@ function cancelGesture(reason: EventCalendarEditCancelReason) {
   gesture = undefined
   preview.value = undefined
   releaseCapture(active)
-  if (active.started || active.kind === 'create') suppressClick = true
+  // The click that follows the release of a cancelled drag selects nothing. A cancelled pointer has no release and no
+  // click, so it leaves the next click alone.
+  if (reason !== 'pointer-cancel' && (active.started || active.kind === 'create')) suppressClick = true
   emit('edit-cancel', { reason, eventIds: active.event ? [active.event.id] : [] })
   return true
 }
@@ -699,11 +736,15 @@ let pendingFocus: string | undefined
 function isRtl() {
   return props.dir === 'rtl' || (props.dir === 'auto' && root.value !== undefined && getComputedStyle(root.value).direction === 'rtl')
 }
+/** Escape anywhere in the calendar cancels the gesture in flight. */
+function escapeKey(key: KeyboardEvent) {
+  if (cancelGesture('escape')) key.preventDefault()
+}
+/** A new press starts afresh: a click suppressed for a release that never came must not swallow the next one. */
+function pressStart() {
+  if (!gesture) suppressClick = false
+}
 function eventKeys(key: KeyboardEvent, event: E, area: Area) {
-  if (key.key === 'Escape') {
-    if (cancelGesture('escape')) key.preventDefault()
-    return
-  }
   if (key.key === 'Enter') {
     // Enter opens the event; Space and clicks select it.
     key.preventDefault()
@@ -737,6 +778,16 @@ function eventKeys(key: KeyboardEvent, event: E, area: Area) {
   key.preventDefault()
   if (propose(change)) pendingFocus = event.id
 }
+/**
+ * Focus that leaves an event for another place drops a pending focus request. A redraw that moves or removes the focused
+ * element blurs it too, while the update that restores the focus runs; the check waits until that update is done.
+ */
+function eventBlur(focus: FocusEvent) {
+  const element = focus.target as Element
+  queueMicrotask(() => {
+    if (element.isConnected && document.activeElement !== element) pendingFocus = undefined
+  })
+}
 // After the parent applies a keyboard edit, the event may be drawn by another element: keep the focus on it.
 watch(() => props.events, () => {
   const id = pendingFocus
@@ -764,7 +815,7 @@ function eventClasses(event: E, extra: Record<string, boolean>) {
     'vw-is-dragging': preview.value?.eventId === event.id, 'vw-is-recurring': isOccurrence(event), ...extra,
   }]
 }
-const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint` : undefined
+const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value === 'month' ? 'month' : area}-hint` : undefined
 </script>
 
 <template>
@@ -772,7 +823,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
     ref="root" class="vw-calendar" :class="[`vw-calendar-view-${view}`, { 'vw-rtl': dir === 'rtl', 'vw-is-creatable': creatable && !readonly }]"
     :dir="dir === 'auto' ? undefined : dir" :style="scrollbarWidth ? { '--vw-calendar-scrollbar': scrollbarWidth + 'px' } : undefined" role="region" :aria-label="messages.region"
     @pointermove="movePointer" @pointerup="pointerUp" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer"
-    @keydown.esc="cancelGesture('escape')"
+    @pointerdown.capture="pressStart" @keydown.esc="escapeKey"
   >
     <div v-if="showToolbar" class="vw-calendar-toolbar">
       <slot name="toolbar" v-bind="toolbarProps">
@@ -806,7 +857,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
       </div>
       <div class="vw-calendar-all-day" :style="gridStyle">
         <div class="vw-calendar-corner">{{ messages.allDay }}</div>
-        <div class="vw-calendar-all-day-cells" :style="{ height: Math.max(1, allDayRow.lanes) * 22 + 6 + 'px', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }">
+        <div class="vw-calendar-all-day-cells" :style="{ height: allDayHeight + 'px', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }">
           <div v-for="(column, index) in columns" :key="column.key" class="vw-calendar-cell" :data-vw-cell="index" @pointerdown="startCreate($event, 'days', index)" />
           <button
             v-for="segment in allDayRow.segments" :key="segment.key" type="button" class="vw-calendar-event vw-calendar-segment"
@@ -815,7 +866,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
             @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
-            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')"
+            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="true" :view="view">
               <span class="vw-calendar-event-label">{{ segment.event.label }}</span>
@@ -844,7 +895,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
               :aria-label="eventName(box.event)" :title="eventName(box.event)" :aria-pressed="localSelected === box.event.id"
               :aria-describedby="hintIds(box.event, 'grid')"
               @pointerdown="startEdit($event, box.event, 'grid', index, 'move')" @click="select(box.event)"
-              @dblclick="emit('event-activate', box.event.id, 'pointer')" @keydown="eventKeys($event, box.event, 'grid')"
+              @dblclick="emit('event-activate', box.event.id, 'pointer')" @keydown="eventKeys($event, box.event, 'grid')" @blur="eventBlur"
             >
               <span v-if="editable(box.event) && !box.continuesBefore" class="vw-calendar-handle vw-is-start" aria-hidden="true" @pointerdown="startEdit($event, box.event, 'grid', index, 'start')" />
               <slot name="event" :event="box.event" :range="rangeOf(box.event)" :selected="localSelected === box.event.id" :all-day="false" :view="view">
@@ -891,7 +942,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
             :aria-label="eventName(segment.event)" :title="eventName(segment.event)" :aria-pressed="localSelected === segment.event.id"
             :aria-describedby="hintIds(segment.event, 'days')"
             @pointerdown="startEdit($event, segment.event, 'days', segment.startIndex, 'move')" @click="select(segment.event)"
-            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')"
+            @dblclick="emit('event-activate', segment.event.id, 'pointer')" @keydown="eventKeys($event, segment.event, 'days')" @blur="eventBlur"
           >
             <slot name="event" :event="segment.event" :range="rangeOf(segment.event)" :selected="localSelected === segment.event.id" :all-day="inAllDayRow(segment.event)" :view="view">
               <span v-if="!inAllDayRow(segment.event)" class="vw-calendar-event-time">{{ timeText(segment.event.start) }}</span>
@@ -911,6 +962,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint
 
     <span :id="`${uid}-grid-hint`" class="vw-sr-only">{{ messages.editHint }}</span>
     <span :id="`${uid}-days-hint`" class="vw-sr-only">{{ messages.dayEditHint }}</span>
+    <span v-if="view === 'month'" :id="`${uid}-month-hint`" class="vw-sr-only">{{ messages.monthEditHint }}</span>
     <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
   </div>
 </template>

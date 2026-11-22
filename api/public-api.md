@@ -2918,6 +2918,7 @@ interface EventCalendarLabels {
     showDay: string;
     editHint: string;
     dayEditHint: string;
+    monthEditHint?: string;
     rejected: string;
     createRejected: string;
     resources: string;
@@ -7284,7 +7285,7 @@ interface TaskBoardMoveCancel {
 ### `TaskBoardMoveCancelReason`
 
 ```ts
-type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change';
+type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change' | 'api';
 ```
 
 ### `TaskBoardPosition`

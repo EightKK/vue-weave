@@ -26,6 +26,13 @@ test('TaskBoard renders on the server with columns, lanes, WIP state and accessi
   assert.match(html, /Backend/)
   assert.match(html, /No cards/)
   assert.match(html, /Space picks the card up/)
+  // A card's detail describes it; its name stays the label.
+  const described = html.match(/aria-label="Wireframes" aria-pressed="false" aria-describedby="([^"]+)"/)
+  assert.ok(described, 'the card with a detail is described')
+  const [detailId, hintId] = described[1].split(' ')
+  assert.match(hintId, /-move-hint$/)
+  assert.match(html, new RegExp(`id="${detailId}" hidden>Design<`))
+  assert.match(html, /aria-label="Login form" aria-pressed="true" aria-describedby="[^" ]+-move-hint"/)
   assert.doesNotMatch(html, /undefined|NaN/)
   // Ids from useId are unique per board, so two boards on one page do not share descriptions.
   const two = await renderComponent({ render: () => h('div', [h(TaskBoard, { columns, cards: [] }), h(TaskBoard, { columns, cards: [] })]) })
@@ -72,6 +79,12 @@ test('TaskBoard renders collapsed columns and lanes, the filter counts and the W
   assert.match(html, /aria-label="Collapse To do" aria-expanded="true"|aria-expanded="true"[^>]*aria-label="Collapse To do"/)
   assert.match(html, /aria-expanded="false"[^>]*aria-label="Expand Doing"/)
   assert.match(html, /aria-expanded="false"[^>]*aria-label="Expand API"/)
+  // The toggles are described by the column's count and WIP state and the lane's count, also while collapsed.
+  const describedBy = name => html.match(new RegExp(`aria-label="${name}" aria-describedby="([^"]+)"`))?.[1]
+  assert.match(html, new RegExp(`id="${describedBy('Collapse To do')}" hidden>0 of 1 card, WIP minimum 2, Under WIP minimum<`))
+  assert.match(html, new RegExp(`id="${describedBy('Expand Doing')}" hidden>2 cards<`))
+  assert.match(html, new RegExp(`id="${describedBy('Expand API')}" hidden>1 card<`))
+  assert.match(html, new RegExp(`id="${describedBy('Collapse Web')}" hidden>1 of 2 cards<`))
   assert.match(html, /vw-board-column-head[^"]*vw-is-collapsed/)
   assert.match(html, /vw-is-under-minimum/)
   assert.match(html, /Under WIP minimum/)

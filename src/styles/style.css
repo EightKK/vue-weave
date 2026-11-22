@@ -687,8 +687,11 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-board-toggle { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; background: var(--vw-surface, #fff); }
 .vw-board-toggle:hover { background: var(--vw-surface-hover, #edf5fa); }
 .vw-board-toggle:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
-.vw-board-toggle-icon { width: 6px; height: 6px; border-inline-end: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translate(-1px, -1px); }
+.vw-board-toggle-icon { width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translate(-1px, -1px); }
+/* Physical borders, so the chevron points down when expanded and toward the reading direction when collapsed. */
 .vw-board-toggle[aria-expanded="false"] .vw-board-toggle-icon { transform: rotate(-45deg); }
+.vw-board.vw-rtl .vw-board-toggle[aria-expanded="false"] .vw-board-toggle-icon { transform: rotate(135deg); }
+.vw-board:dir(rtl) .vw-board-toggle[aria-expanded="false"] .vw-board-toggle-icon { transform: rotate(135deg); }
 .vw-board-column-head.vw-is-collapsed { flex-direction: column; flex-wrap: nowrap; justify-content: flex-start; padding-inline: 2px; }
 .vw-board-column-head.vw-is-collapsed .vw-board-column-title { flex: none; writing-mode: vertical-rl; max-height: 160px; }
 .vw-board-cell.vw-is-collapsed { min-height: 0; padding: 0; background: var(--vw-board-collapsed-fill, color-mix(in srgb, var(--vw-border, #d8e2e9) 35%, transparent)); }
@@ -718,9 +721,6 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 @media (max-width: 700px) {
   .vw-board { --vw-board-column-width: 196px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .vw-board, .vw-board * { transition: none !important; animation: none !important; }
-}
 @media (forced-colors: active) {
   .vw-board { border-color: CanvasText; }
   .vw-board-card { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
@@ -731,6 +731,16 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, CanvasText 0 6px, transparent 6px 9px); }
   .vw-board-column-head.vw-is-over-limit .vw-board-count { forced-color-adjust: none; background: CanvasText; color: Canvas; }
   .vw-board-cell.vw-is-over-limit { background: none; outline: 1px dashed CanvasText; }
+  /* Colour alone marks a column under its minimum and a collapsed strip; system colours need a pattern. */
+  .vw-board-column-head.vw-is-under-minimum { border-bottom-style: dashed; }
+  .vw-board-column-head.vw-is-under-minimum .vw-board-count { border-style: dashed; border-width: 2px; }
+  .vw-board-cell.vw-is-collapsed { border: 1px dashed GrayText; }
+}
+@media print {
+  .vw-board { print-color-adjust: exact; }
+  .vw-board-scroll { height: auto !important; overflow: visible; }
+  .vw-board-column-head { position: static; }
+  .vw-board-toggle { display: none; }
 }
 
 /* BPMN and flowchart nodes, pools and dashed edges (NetworkGraph). Opt in through the node fields, `pools` and `GraphEdge.dashed`. */
@@ -829,10 +839,6 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-calendar-more:hover { background: var(--vw-surface-hover, #edf5fa); }
 .vw-calendar-week-events { position: absolute; inset: 26px 0 0; pointer-events: none; }
 .vw-calendar-week-events > .vw-calendar-event { pointer-events: auto; }
-.vw-theme-dark.vw-calendar { color-scheme: dark; }
-@media (prefers-color-scheme: dark) {
-  .vw-theme-auto.vw-calendar { color-scheme: dark; }
-}
 @media (max-width: 700px) {
   .vw-calendar { --vw-calendar-gutter: 42px; }
   .vw-calendar-column-head { padding-inline: 4px; }
@@ -843,14 +849,13 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-calendar-event:focus-visible { outline: 3px solid Highlight; }
   .vw-calendar-preview { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: Highlight; }
   .vw-calendar-now, .vw-calendar-now::before { forced-color-adjust: none; border-top-color: Highlight; background: Highlight; }
-  .vw-calendar-column { forced-color-adjust: none; background-image: linear-gradient(GrayText 1px, transparent 1px); }
+  .vw-calendar-column { forced-color-adjust: none; background-color: Canvas; background-image: linear-gradient(GrayText 1px, transparent 1px); }
+  .vw-calendar-column.vw-is-today { background-color: Canvas; box-shadow: inset 0 0 0 2px Highlight; }
+  .vw-calendar-column-head.vw-is-today { text-decoration: underline; }
   .vw-calendar-views button[aria-pressed="true"], .vw-calendar-month-day.vw-is-today .vw-calendar-day-number { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
 @media print {
   .vw-calendar-nav, .vw-calendar-views, .vw-calendar-handle, .vw-calendar-preview { display: none; }
   .vw-calendar { print-color-adjust: exact; }
   .vw-calendar-scroll { height: auto !important; overflow: visible; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vw-calendar, .vw-calendar * { transition: none !important; animation: none !important; }
 }

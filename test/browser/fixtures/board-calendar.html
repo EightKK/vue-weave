@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>TaskBoard and EventCalendar regression fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/board-calendar-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/board-calendar-test/vue.js", "@eightkk/vue-weave": "/board-calendar-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { EventCalendar, TaskBoard, applyBoardCardMove } from '@eightkk/vue-weave'
+
+      const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
+      const columns = [{ id: 'todo', label: 'To do' }, { id: 'doing', label: 'Doing' }, { id: 'done', label: 'Done' }]
+      const at = time => Date.parse(`2026-11-11T${time}:00Z`)
+
+      createApp({
+        setup() {
+          // TaskBoard: the filter and the collapsed IDs are written inline, so every render passes a new function and a
+          // new array with the same content.
+          const board = ref()
+          const cards = shallowRef([
+            { id: 'alpha', columnId: 'todo', label: 'Alpha' },
+            { id: 'bravo', columnId: 'doing', label: 'Bravo' },
+            { id: 'charlie', columnId: 'doing', label: 'Charlie' },
+            { id: 'delta', columnId: 'done', label: 'Delta' },
+          ])
+          const hideCharlie = ref(false)
+          const collapsed = ref([])
+          const applyToggles = ref(true)
+          const renders = ref(0)
+          const boardLog = ref('none')
+
+          const calendar = ref()
+          const events = shallowRef([{ id: 'review', label: 'Review', start: at('10:00'), end: at('11:00') }])
+          const calendarLog = ref('none')
+
+          return () => h('main', [
+            h('section', { 'aria-label': 'Board fixture' }, [
+              control('Re-render', () => { renders.value++ }),
+              control('Hide Charlie', () => { hideCharlie.value = true }),
+              control('Collapse the Done column', () => { collapsed.value = ['done'] }),
+              control('Ignore toggles', () => { applyToggles.value = false }),
+              control('Cancel move', () => board.value.cancelMove()),
+              h('output', { role: 'status', 'aria-label': 'Board renders' }, String(renders.value)),
+              h('output', { role: 'status', 'aria-label': 'Board log' }, boardLog.value),
+              h(TaskBoard, {
+                ref: board, columns, cards: cards.value, collapsible: true, labels: { region: 'Fixture board' },
+                filter: (hide => card => !hide || card.id !== 'charlie')(hideCharlie.value),
+                collapsedColumnIds: [...collapsed.value],
+                'onUpdate:collapsedColumnIds': ids => {
+                  boardLog.value = 'toggle ' + ids.join(',')
+                  if (applyToggles.value) collapsed.value = ids
+                },
+                onCardMove: change => {
+                  cards.value = applyBoardCardMove(cards.value, change, { columns })
+                  boardLog.value = `move ${change.id} ${change.after.columnId} ${change.after.index}`
+                },
+                onCardMoveCancel: event => { boardLog.value = `cancel ${event.id} ${event.reason}` },
+              }),
+            ]),
+            h('section', { 'aria-label': 'Calendar fixture' }, [
+              control('Cancel edit', () => calendar.value.cancelEdit()),
+              control('Replace events', () => { events.value = events.value.map(event => ({ ...event })) }),
+              h('output', { role: 'status', 'aria-label': 'Calendar log' }, calendarLog.value),
+              h(EventCalendar, {
+                ref: calendar, events: events.value, date: at('10:00'), view: 'day', dayStart: 8, dayEnd: 14, height: 320,
+                labels: { region: 'Fixture calendar' },
+                onSelect: id => { calendarLog.value = 'select ' + id },
+                onEdit: change => {
+                  events.value = events.value.map(event => event.id === change.id ? { ...event, ...change.after } : event)
+                  calendarLog.value = 'edit ' + change.id
+                },
+                onEditCancel: event => { calendarLog.value = `cancel ${event.eventIds.join(',')} ${event.reason}` },
+              }),
+            ]),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

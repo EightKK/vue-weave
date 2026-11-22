@@ -171,8 +171,10 @@ export interface EventCalendarLabels {
   showDay: string
   /** Description of editable timed events. */
   editHint: string
-  /** Description of editable events of the all-day row and the month view. */
+  /** Description of editable events of the all-day row. */
   dayEditHint: string
+  /** Description of editable events of the month view, where Up and Down move by a week. Default: an English hint, or `dayEditHint` when only that is given. */
+  monthEditHint?: string
   /** Announced when `validateEdit` returns false. Default "This change was rejected." */
   rejected: string
   /** Announced when `validateCreate` returns false. Default "This new event was rejected." */

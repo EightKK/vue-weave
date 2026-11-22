@@ -22,7 +22,8 @@ const props = withDefaults(defineProps<{
   /**
    * Shows only the cards for which it returns true. Column counts show "shown of all" while it hides cards; WIP limits and
    * minimums still count every card. Move proposals count hidden cards in their indices, so `applyBoardCardMove` works on
-   * the full `cards` array. Pass a new function when the criteria change.
+   * the full `cards` array. Pass a new function when the criteria change. A move in progress is cancelled only when the
+   * shown cards change, but every new function regroups the board, so keep its identity (for example in a `computed`).
    */
   filter?: (card: C) => boolean
   /** Shows a collapse/expand button in every column header and lane header. Default: false. */
@@ -112,8 +113,12 @@ const rtl = computed(() => props.dir === 'rtl')
 const cardById = computed(() => new Map(props.cards.map(card => [card.id, card])))
 const laneOf = (index: number) => laned.value ? props.lanes![index] : undefined
 const movable = (card: C) => !props.readonly && card.draggable !== false && !validationError.value
-const collapsedColumns = computed(() => new Set(props.collapsedColumnIds))
-const collapsedLanes = computed(() => new Set(props.collapsedLaneIds))
+// The collapsed IDs by value: an equal array passed inline (a new array on every render of the parent) changes nothing.
+const idKey = (ids: readonly string[] | undefined) => JSON.stringify([...new Set(ids ?? [])].sort())
+const collapsedColumnKey = computed(() => idKey(props.collapsedColumnIds))
+const collapsedLaneKey = computed(() => idKey(props.collapsedLaneIds))
+const collapsedColumns = computed(() => new Set<string>(JSON.parse(collapsedColumnKey.value) as string[]))
+const collapsedLanes = computed(() => new Set<string>(JSON.parse(collapsedLaneKey.value) as string[]))
 const columnCollapsed = (index: number) => collapsedColumns.value.has(props.columns[index]?.id as string)
 const laneCollapsed = (index: number) => laned.value && collapsedLanes.value.has(props.lanes![index]?.id as string)
 // The groups as the keyboard sees them: the cards of collapsed columns and lanes are not rendered, so they are skipped.
@@ -129,20 +134,14 @@ const navGroups = computed<TaskBoardGroups<C>>(() => {
 const gridColumns = computed(() => collapsedColumns.value.size && props.columns.some(column => collapsedColumns.value.has(column.id))
   ? props.columns.map(column => collapsedColumns.value.has(column.id) ? 'var(--vw-board-collapsed-width)' : 'minmax(var(--vw-board-column-width), 1fr)').join(' ')
   : undefined)
-function toggleColumn(id: string) {
-  const ids = props.collapsedColumnIds ?? []
-  emit('update:collapsedColumnIds', ids.includes(id) ? ids.filter(item => item !== id) : [...ids, id])
-}
-function toggleLane(id: string) {
-  const ids = props.collapsedLaneIds ?? []
-  emit('update:collapsedLaneIds', ids.includes(id) ? ids.filter(item => item !== id) : [...ids, id])
-}
+/** The IDs with `id` removed when present, or added at the end. */
+const toggled = (ids: readonly string[] | undefined, id: string) => ids?.includes(id) ? ids.filter(item => item !== id) : [...ids ?? [], id]
+const toggleColumn = (id: string) => emit('update:collapsedColumnIds', toggled(props.collapsedColumnIds, id))
+const toggleLane = (id: string) => emit('update:collapsedLaneIds', toggled(props.collapsedLaneIds, id))
 const toggleName = (collapsed: boolean, label: string) => `${collapsed ? messages.value.expand : messages.value.collapse} ${label}`
 function countText(status: TaskBoardColumnStatus | { count: number; total: number }) {
   return status.count === status.total ? String(status.count) : `${status.count} ${messages.value.of} ${status.total}`
 }
-const laneCount = (r: number) => groups.value.rows[r]!.cells.reduce((sum, cell) => sum + cell.cards.length, 0)
-const laneTotal = (r: number) => groups.value.rows[r]!.cells.reduce((sum, cell) => sum + cell.total, 0)
 const boardStyle = computed(() => ({
   '--vw-board-column-count': String(Math.max(1, props.columns.length)),
   ...props.height === undefined ? {} : { height: typeof props.height === 'number' ? props.height + 'px' : props.height },
@@ -151,8 +150,9 @@ const boardStyle = computed(() => ({
 function cellName(column: TaskBoardColumn, lane?: TaskBoardLane) {
   return lane ? `${column.label} · ${lane.label}` : column.label
 }
+const cardsText = (status: { count: number; total: number }) => `${countText(status)} ${status.total === 1 ? messages.value.card : messages.value.cards}`
 function columnDescription(status: TaskBoardColumnStatus) {
-  const parts = [`${countText(status)} ${status.total === 1 ? messages.value.card : messages.value.cards}`]
+  const parts = [cardsText(status)]
   if (status.wipMin !== undefined) parts.push(`${messages.value.wipMin} ${status.wipMin}`)
   if (status.wipLimit !== undefined) parts.push(`${messages.value.wipLimit} ${status.wipLimit}`)
   if (status.underMinimum) parts.push(messages.value.underMinimum)
@@ -160,9 +160,35 @@ function columnDescription(status: TaskBoardColumnStatus) {
   return parts.join(', ')
 }
 
+// View models of the column and lane headers. The column description also describes the cells and the toggle, so a
+// collapsed column still reports its count and WIP state to assistive technology.
+const columnViews = computed(() => groups.value.columns.map((status, c) => {
+  const column = props.columns[c]!, collapsed = collapsedColumns.value.has(column.id)
+  return {
+    column, status, collapsed, toggleName: toggleName(collapsed, column.label), descriptionId: `${uid}-column-${c}`,
+    description: columnDescription(status), count: countText(status) + (status.wipLimit === undefined ? '' : ' / ' + status.wipLimit),
+  }
+}))
+const laneViews = computed(() => groups.value.rows.map((row, r) => {
+  const lane = laneOf(r), collapsed = laneCollapsed(r)
+  const counts = { count: row.cells.reduce((sum, cell) => sum + cell.cards.length, 0), total: row.cells.reduce((sum, cell) => sum + cell.total, 0) }
+  return {
+    row, lane, collapsed, toggleName: lane ? toggleName(collapsed, lane.label) : '', descriptionId: `${uid}-lane-${r}`,
+    description: cardsText(counts), count: countText(counts),
+  }
+}))
+// Card descriptions: the detail (the accessible name is the label alone) and, for a movable card, the move hint. IDs
+// use the card's index, since card IDs may hold characters that an ID reference list cannot.
+const cardIndex = computed(() => new Map(props.cards.map((card, index) => [card.id, index])))
+const detailId = (card: C) => `${uid}-detail-${cardIndex.value.get(card.id)}`
+function cardDescribedBy(card: C) {
+  const ids = [...card.detail ? [detailId(card)] : [], ...movable(card) ? [`${uid}-move-hint`] : []]
+  return ids.length ? ids.join(' ') : undefined
+}
+
 // Moves. A move starts with a pointer drag or a Space key press on a movable card and keeps the card in place while a
-// drop indicator shows the target; only a drop proposes `card-move`. Changes to `cards`, `columns`, `lanes` or
-// `readonly` cancel a move in progress.
+// drop indicator shows the target; only a drop proposes `card-move`. Changes to `cards`, `columns`, `lanes`, `readonly`,
+// the collapsed column or lane IDs (by value) or the cards that `filter` shows cancel a move in progress.
 type ActiveMove = { id: string; source: 'pointer' | 'keyboard'; before: TaskBoardPosition }
 type PointerGesture = {
   id: string; pointerId: number; element: HTMLElement; x: number; y: number; scrollLeft: number; scrollTop: number
@@ -255,15 +281,13 @@ function drop() {
   if (!active) return
   if (!target) return cancelMove('no-target')
   const from = targetOf(active.id)
-  // A drop on the card's own place, among the shown cards, is no move even if hidden cards sit next to it.
+  // A drop on the card's own place, among the shown cards, is no move even if hidden cards sit next to it: it ends like
+  // a release outside every cell.
   const unchanged = from.column === target.column && from.lane === target.lane && from.index === target.index
   const after = unchanged ? active.before : positionOf(target, active.id)
+  if (samePosition(active.before, after)) return cancelMove('no-target')
   const description = describeTarget(target, active.id)
   endMove()
-  if (samePosition(active.before, after)) {
-    notice.value = messages.value.moveCancelled
-    return
-  }
   const change: TaskBoardCardMove = { id: active.id, before: active.before, after, source: active.source }
   const result = props.validateCardMove?.(change)
   const reason = result === false ? messages.value.moveRejected : typeof result === 'string' ? result : undefined
@@ -278,7 +302,10 @@ function drop() {
   emit('card-move', change)
 }
 
-watch([() => props.cards, () => props.columns, () => props.lanes, () => props.readonly, () => props.filter, collapsedColumns, collapsedLanes],
+// Which cards are shown, by cell. A new filter function that shows the same cards keeps a move going: the drop target
+// counts shown cards, so it stays valid.
+const shownKey = computed(() => JSON.stringify(groups.value.rows.map(row => row.cells.map(cell => cell.cards.map(card => card.id)))))
+watch([() => props.cards, () => props.columns, () => props.lanes, () => props.readonly, shownKey, collapsedColumnKey, collapsedLaneKey],
   () => cancelMove('data-change'))
 // After the parent applies a move, the card is rendered in its new cell; give it the focus back.
 watch(() => props.cards, async () => {
@@ -461,8 +488,8 @@ function cardStyle(card: C) {
 defineExpose({
   /** Move the keyboard focus to a card. Returns false when the card is not shown. */
   focusCard,
-  /** Cancel a pick-up or drag in progress, reporting `card-move-cancel` with reason `escape`. */
-  cancelMove: () => cancelMove('escape'),
+  /** Cancel a pick-up or drag in progress, reporting `card-move-cancel` with reason `api`. */
+  cancelMove: () => cancelMove('api'),
 })
 </script>
 
@@ -472,41 +499,42 @@ defineExpose({
       <div v-if="validationError || !columns.length" class="vw-board-empty"><slot name="empty">{{ messages.empty }}</slot></div>
       <div v-else class="vw-board-grid" :class="{ 'vw-has-lanes': laned, 'vw-is-moving': activeMove }"
         :style="gridColumns === undefined ? undefined : { gridTemplateColumns: gridColumns }">
-        <div v-for="(column, c) in columns" :key="column.id" class="vw-board-column-head"
+        <div v-for="(item, c) in columnViews" :key="item.column.id" class="vw-board-column-head"
           :class="{
-            'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-at-limit': groups.columns[c]!.atLimit,
-            'vw-is-under-minimum': groups.columns[c]!.underMinimum, 'vw-is-collapsed': columnCollapsed(c),
+            'vw-is-over-limit': item.status.overLimit, 'vw-is-at-limit': item.status.atLimit,
+            'vw-is-under-minimum': item.status.underMinimum, 'vw-is-collapsed': item.collapsed,
           }">
-          <slot name="column-header" :column="column" :status="groups.columns[c]!">
-            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!columnCollapsed(c)"
-              :aria-label="toggleName(columnCollapsed(c), column.label)" @click="toggleColumn(column.id)">
+          <slot name="column-header" :column="item.column" :status="item.status">
+            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!item.collapsed"
+              :aria-label="item.toggleName" :aria-describedby="item.descriptionId" @click="toggleColumn(item.column.id)">
               <span class="vw-board-toggle-icon" aria-hidden="true"></span>
             </button>
             <span class="vw-board-column-title">
-              <strong>{{ column.label }}</strong>
-              <small v-if="column.detail && !columnCollapsed(c)">{{ column.detail }}</small>
+              <strong>{{ item.column.label }}</strong>
+              <small v-if="item.column.detail && !item.collapsed">{{ item.column.detail }}</small>
             </span>
-            <span class="vw-board-count" aria-hidden="true">{{ countText(groups.columns[c]!) }}{{ column.wipLimit === undefined ? '' : ' / ' + column.wipLimit }}</span>
-            <span v-if="groups.columns[c]!.overLimit && !columnCollapsed(c)" class="vw-board-wip-warning">{{ messages.overLimit }}</span>
-            <span v-if="groups.columns[c]!.underMinimum && !columnCollapsed(c)" class="vw-board-wip-warning vw-is-under">{{ messages.underMinimum }}</span>
+            <span class="vw-board-count" aria-hidden="true">{{ item.count }}</span>
+            <span v-if="item.status.overLimit && !item.collapsed" class="vw-board-wip-warning">{{ messages.overLimit }}</span>
+            <span v-if="item.status.underMinimum && !item.collapsed" class="vw-board-wip-warning vw-is-under">{{ messages.underMinimum }}</span>
           </slot>
-          <span :id="`${uid}-column-${c}`" hidden>{{ columnDescription(groups.columns[c]!) }}</span>
+          <span :id="item.descriptionId" hidden>{{ item.description }}</span>
         </div>
-        <template v-for="(row, r) in groups.rows" :key="row.laneId ?? ''">
-          <div v-if="laneOf(r)" class="vw-board-lane-head" :class="{ 'vw-is-collapsed': laneCollapsed(r) }">
-            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!laneCollapsed(r)"
-              :aria-label="toggleName(laneCollapsed(r), laneOf(r)!.label)" @click="toggleLane(laneOf(r)!.id)">
+        <template v-for="(laneView, r) in laneViews" :key="laneView.row.laneId ?? ''">
+          <div v-if="laneView.lane" class="vw-board-lane-head" :class="{ 'vw-is-collapsed': laneView.collapsed }">
+            <button v-if="collapsible" type="button" class="vw-board-toggle" :aria-expanded="!laneView.collapsed"
+              :aria-label="laneView.toggleName" :aria-describedby="laneView.descriptionId" @click="toggleLane(laneView.lane.id)">
               <span class="vw-board-toggle-icon" aria-hidden="true"></span>
             </button>
-            <span class="vw-board-lane-title"><strong>{{ laneOf(r)!.label }}</strong><small v-if="laneOf(r)!.detail">{{ laneOf(r)!.detail }}</small></span>
-            <span v-if="collapsible || laneCollapsed(r)" class="vw-board-count" aria-hidden="true">{{ countText({ count: laneCount(r), total: laneTotal(r) }) }}</span>
+            <span class="vw-board-lane-title"><strong>{{ laneView.lane.label }}</strong><small v-if="laneView.lane.detail">{{ laneView.lane.detail }}</small></span>
+            <span v-if="collapsible || laneView.collapsed" class="vw-board-count" aria-hidden="true">{{ laneView.count }}</span>
+            <span :id="laneView.descriptionId" hidden>{{ laneView.description }}</span>
           </div>
-          <template v-if="!laneCollapsed(r)">
-            <template v-for="(cell, c) in row.cells" :key="cell.columnId">
-              <div v-if="columnCollapsed(c)" class="vw-board-cell vw-is-collapsed" aria-hidden="true"></div>
+          <template v-if="!laneView.collapsed">
+            <template v-for="(cell, c) in laneView.row.cells" :key="cell.columnId">
+              <div v-if="columnViews[c]!.collapsed" class="vw-board-cell vw-is-collapsed" aria-hidden="true"></div>
               <ul v-else class="vw-board-cell" role="list"
-                :class="{ 'vw-is-over-limit': groups.columns[c]!.overLimit, 'vw-is-target': dropTarget?.lane === r && dropTarget?.column === c }"
-                :aria-label="cellName(columns[c]!, laneOf(r))" :aria-describedby="`${uid}-column-${c}`" :data-vw-cell="`${r}:${c}`">
+                :class="{ 'vw-is-over-limit': columnViews[c]!.status.overLimit, 'vw-is-target': dropTarget?.lane === r && dropTarget?.column === c }"
+                :aria-label="cellName(columnViews[c]!.column, laneView.lane)" :aria-describedby="columnViews[c]!.descriptionId" :data-vw-cell="`${r}:${c}`">
             <template v-for="item in cellItems(r, c)" :key="item.kind === 'card' ? item.card.id : '$drop'">
               <li v-if="item.kind === 'drop'" class="vw-board-drop" :class="{ 'vw-is-over-limit': item.over }" aria-hidden="true"></li>
               <li v-else class="vw-board-card-item">
@@ -515,20 +543,21 @@ defineExpose({
                   'vw-is-dragging': activeMove?.id === item.card.id && activeMove.source === 'pointer',
                   'vw-is-picked': activeMove?.id === item.card.id && activeMove.source === 'keyboard',
                 }]" :style="cardStyle(item.card)" :data-vw-card="item.card.id" :aria-label="item.card.label"
-                  :aria-pressed="selectedId === item.card.id" :aria-describedby="movable(item.card) ? `${uid}-move-hint` : undefined"
+                  :aria-pressed="selectedId === item.card.id" :aria-describedby="cardDescribedBy(item.card)"
                   @keydown="cardKeys($event, item.card)" @blur="cardBlur(item.card)" @click="cardClick(item.card)"
                   @pointerdown="pressCard($event, item.card)" @pointermove="moveCard" @pointerup="releaseCard" @pointercancel="releaseCard"
                   @lostpointercapture="lostCapture">
                   <slot name="card" :card="item.card" :selected="selectedId === item.card.id" :moving="activeMove?.id === item.card.id"
-                    :column="columns[c]!" :lane="laneOf(r)">
+                    :column="columnViews[c]!.column" :lane="laneView.lane">
                     <span class="vw-board-card-label">{{ item.card.label }}</span>
                     <span v-if="item.card.detail" class="vw-board-card-detail">{{ item.card.detail }}</span>
                   </slot>
                 </button>
+                <span v-if="item.card.detail" :id="detailId(item.card)" hidden>{{ item.card.detail }}</span>
               </li>
             </template>
             <li v-if="!cell.cards.length && !(dropTarget?.lane === r && dropTarget?.column === c)" class="vw-board-cell-empty">
-              <slot name="empty" :column="columns[c]" :lane="laneOf(r)">{{ messages.emptyCell }}</slot>
+              <slot name="empty" :column="columnViews[c]!.column" :lane="laneView.lane">{{ messages.emptyCell }}</slot>
             </li>
               </ul>
             </template>

@@ -1,6 +1,6 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openDemo, pageErrors, serveFixture, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
@@ -98,8 +98,9 @@ test('arrow keys move and resize the focused event, which keeps the focus', asyn
   await expect(status).toHaveText('Lab safety → Thu, Nov 12 13:15–14:30.')
   await expect(calendar.getByRole('button', { name: 'Lab safety, Thu, Nov 12 13:15–14:30, Hardware lab', exact: true })).toBeFocused()
 
-  // All-day events move by whole days in the month view.
+  // All-day events move by whole days in the month view, whose hint names both directions.
   await button('Month').click()
+  await expect(event('Release day')).toHaveAccessibleDescription(/Left and Right arrows move the event by a day, Up and Down by a week/)
   await event('Release day').focus()
   await page.keyboard.press('ArrowRight')
   await expect(status).toHaveText('Release day → Sat, Nov 14.')
@@ -180,8 +181,10 @@ test('the month view does not resize a timed event by whole days, and events con
   await event('Design review').focus()
   await page.keyboard.press('Shift+ArrowLeft')
   await page.keyboard.press('Shift+ArrowRight')
-  await expect(status).not.toHaveText(/^Design review →/)
-  await expect(calendar.getByRole('button', { name: /^Design review, Wed, Nov 11 10:00–11:00/ })).toBeVisible()
+  // A plain move afterwards still starts from the original times, so neither resize was proposed.
+  await page.keyboard.press('ArrowRight')
+  await expect(status).toHaveText('Design review → Thu, Nov 12 10:00–11:00.')
+  await expect(calendar.getByRole('button', { name: 'Design review, Thu, Nov 12 10:00–11:00, Atlas', exact: true })).toBeFocused()
 
   // Saturday's day view shows the overnight migration that started on Friday; Wednesday, Nov 18 shows the offsite that
   // started on Tuesday. Each is the only element of its event and takes the Tab stop.
@@ -244,5 +247,70 @@ test('"this and following" splits the series, also at an occurrence that was cha
   await button('Previous').click()
   await button('Previous').click()
   await expect(sync('3', '16:00–16:30')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a rejected keyboard edit does not take the focus back after a later change', async ({ page }) => {
+  const { errors, calendar, status, event, button } = await openCalendar(page)
+  await button('Day').click()
+  await event('Design review').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(status).toHaveText('Rejected: Borealis is already booked for Customer call.')
+  // A pointer move of another event changes the events; the focus stays with that event.
+  const safety = (await event('Lab safety').boundingBox())!
+  await drag(page, safety, 0, 48)
+  await expect(status).toHaveText('Lab safety → Wed, Nov 11 14:00–15:00.')
+  await expect(calendar.getByRole('button', { name: 'Lab safety, Wed, Nov 11 14:00–15:00, Hardware lab', exact: true })).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+/** The regression fixture: a day view of one event with buttons that cancel through the API and replace the events. */
+async function openCalendarFixture(page: Page) {
+  const errors = pageErrors(page)
+  await serveFixture(page, 'board-calendar-test', 'board-calendar.html')
+  await page.goto('/board-calendar-test/')
+  const section = page.getByRole('region', { name: 'Calendar fixture', exact: true })
+  const calendar = section.getByRole('region', { name: 'Fixture calendar', exact: true })
+  await expect(calendar).toBeVisible()
+  return {
+    errors,
+    review: calendar.getByRole('button', { name: /^Review, Wed, Nov 11 10:00–11:00$/ }),
+    control: (name: string) => section.getByRole('button', { name, exact: true }),
+    log: section.getByRole('status', { name: 'Calendar log', exact: true }),
+  }
+}
+
+test('cancelEdit(), new events and pointer cancellation end a drag with their reasons and no proposal', async ({ page }) => {
+  const { errors, review, control, log } = await openCalendarFixture(page)
+  const box = (await review.boundingBox())!
+  const press = async () => {
+    await page.mouse.move(box.x + box.width / 2, box.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2, box.y + 30, { steps: 4 })
+  }
+  // The exposed method; the release afterwards neither proposes nor selects.
+  await press()
+  await control('Cancel edit').dispatchEvent('click')
+  await expect(log).toHaveText('cancel review api')
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel review api')
+  // New events while the button is held.
+  await press()
+  await control('Replace events').dispatchEvent('click')
+  await expect(log).toHaveText('cancel review source-changed')
+  await page.mouse.up()
+  await expect(log).toHaveText('cancel review source-changed')
+  // A cancelled pointer (as when a touch turns into a scroll) has no release; the next Space still selects.
+  await review.evaluate((element: HTMLElement) => {
+    const rect = element.getBoundingClientRect()
+    const init = { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, clientX: rect.x + 10, clientY: rect.y + 10 }
+    element.dispatchEvent(new PointerEvent('pointerdown', init))
+    element.dispatchEvent(new PointerEvent('pointermove', { ...init, clientY: rect.y + 40 }))
+    element.dispatchEvent(new PointerEvent('pointercancel', { ...init, clientY: rect.y + 40 }))
+  })
+  await expect(log).toHaveText('cancel review pointer-cancel')
+  await review.focus()
+  await page.keyboard.press('Space')
+  await expect(log).toHaveText('select review')
   expect(errors).toEqual([])
 })
