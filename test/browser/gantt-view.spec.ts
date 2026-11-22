@@ -1,5 +1,8 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
-import { expect, test, fixtureStatus, openComponentFixture, openDemo, openGanttFixture, openGestureFixture, openLinkedGanttFixture, openTimelineEditing, pageErrors, serveFixture, touch, type LinkedFixture, type Page } from './support'
+import {
+  expect, test, dragBy, fixtureStatus, openComponentFixture, openDemo, openGanttFixture, openGestureFixture, openLinkedGanttFixture,
+  openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
+} from './support'
 
 async function recordWheelDefaults(page: Page) {
   await page.evaluate(() => {
@@ -90,9 +93,7 @@ test('gantt baseline sets follow baselineIds, mirror in right-to-left charts and
   const { chart, out } = await openGanttFixture(page, '?baselines=1&sets=plan,rev1')
   const task = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
   const box = (await task.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
+  await pressAndMove(page, box, 100, 0, 5)
   await page.getByRole('button', { name: 'Show only the plan baseline', exact: true }).dispatchEvent('click')
   await page.mouse.up()
   await expect(chart.locator('[data-vw-baseline="rev1"]')).toHaveCount(0)
@@ -416,10 +417,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   expect(await chart.evaluate(element => element.scrollLeft)).toBeLessThanOrEqual(0)
 
   // Dragging to the left proposes a later interval: 58 px at 115 px per hour snaps to 30 minutes.
-  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bar.x + bar.width / 2 - 58, bar.y + bar.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, bar, -58, 0)
   await expect(status('Billing API → 10:30–13:30.')).toBeVisible()
   await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
 
@@ -427,10 +425,7 @@ test('right-to-left gantt mirrors layout, pointer drag, resize, keyboard moves a
   const startHandle = await box(api.locator('.vw-bar-handle.vw-is-first'))
   bar = await box(api)
   expect(startHandle.x + startHandle.width).toBeGreaterThan(bar.x + bar.width - 2)
-  await page.mouse.move(startHandle.x + startHandle.width / 2, startHandle.y + startHandle.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(startHandle.x + startHandle.width / 2 - 29, startHandle.y + startHandle.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, startHandle, -29, 0, { steps: 5 })
   await expect(status('Billing API → 10:45–13:30.')).toBeVisible()
 
   // Arrow keys follow the visual direction: Left is later, Right is earlier; Shift still resizes the end.
@@ -556,10 +551,7 @@ test('gantt Ctrl+wheel zooms around the pointer in both directions while a plain
     // Like a pinch, a wheel zoom during a drag cancels the drag without a proposal.
     const taskA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
     await chart.evaluate(element => { element.scrollLeft = 0 })
-    const a = (await taskA.boundingBox())!
-    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(a.x + a.width / 2 + (rtl ? -60 : 60), a.y + a.height / 2, { steps: 4 })
+    await pressAndMove(page, taskA, (rtl ? -60 : 60), 0, 4)
     await expect(taskA).toHaveClass(/\bvw-is-dragging\b/)
     await wheel('Control', 100)
     await expect(zoom).toHaveText('222%')
@@ -599,10 +591,7 @@ test('gantt highlighted bars are display-only: not deleted with the selection an
   await expect.poll(() => json('Last delete')).toEqual(['a'])
 
   // Changing the highlight during a drag neither cancels it nor moves the highlighted bar.
-  const box = (await taskA.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, taskA, 40, 0, 4)
   await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.highlight(['a', 'b']))
   // The accessible name follows the drag preview, so the dragged bar is found by its ID here.
   const dragged = chart.locator('[data-vw-bar="a"]')
@@ -745,11 +734,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
   // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
   const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
-  const box = (await setup.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 28, box.y + box.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, setup, 28, 0, { steps: 5 })
   await expect(page.getByRole('button', { name: 'Guided setup Jan 13–Feb 24', exact: true })).toBeVisible()
   await expect(showcase.getByRole('status').filter({ hasText: 'Moved Guided setup to Jan 13 – Feb 24' })).toBeVisible()
   // A plain click still reports the project.
@@ -789,12 +774,7 @@ test('compressing non-working time widens working bars and keeps edits snapped t
   expect(compressedWidth).toBeGreaterThan(linearWidth * 1.5)
 
   // Dragging one hour of working time (36 px) proposes a whole-hour move that snaps to the same grid as before.
-  const box = (await cutting.boundingBox())!
-  const y = box.y + box.height / 2
-  await page.mouse.move(box.x + box.width / 2, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, cutting, 36, 0)
   const moved = plan.getByRole('button', { name: 'Cut order A 09 Nov 09:00–09 Nov 12:00', exact: true })
   await expect(moved).toBeVisible()
 
@@ -997,18 +977,12 @@ test('gantt header filters work in right-to-left and dark charts and keep the di
 test('gantt sorting or filtering during a drag cancels the gesture as a source change, also when the filter removes the bar', async ({ page }) => {
   const { errors, chart, events } = await openHeaderFixture(page)
   const bar = chart.getByRole('button', { name: /^Bar Gamma/ })
-  const box = (await bar.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, bar, 40, 0, 4)
   await page.evaluate(() => (window as any).applyView({ sort: [{ ruleId: 'owner', direction: 'desc' }] }))
   await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')
   await page.mouse.up()
   await page.getByRole('button', { name: 'Clear log', exact: true }).click()
-  const moved = (await bar.boundingBox())!
-  await page.mouse.move(moved.x + moved.width / 2, moved.y + moved.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(moved.x + moved.width / 2 + 40, moved.y + moved.height / 2, { steps: 4 })
+  await pressAndMove(page, bar, 40, 0, 4)
   // The projection drops the bar together with its row, so the bar is gone from the source rather than hidden.
   await page.evaluate(() => (window as any).applyView({ filters: [{ columnId: 'owner', text: 'ann' }] }))
   await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')

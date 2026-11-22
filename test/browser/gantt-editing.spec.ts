@@ -1,5 +1,8 @@
 // GanttChart editing: bar moves and resizes, dependencies, progress, constraints, deletion, menus, creation, row moves, columns, cell editing and file import.
-import { expect, test, openComponentFixture, openDemo, openGanttFixture, openLinkedGanttFixture, openTimelineEditing, pageErrors, releaseLine, touch, type LinkedFixture, type Page } from './support'
+import {
+  expect, test, boxCenter, centerOf, dragBy, openComponentFixture, openDemo, openGanttFixture, openLinkedGanttFixture, openTimelineEditing,
+  pageErrors, pressAndMove, pressAndMoveTo, releaseLine, touch, type LinkedFixture, type Page,
+} from './support'
 
 /** Pixel positions in the timeline editing demo, measured from Checkout UI (10:00–14:00 in the Web team row, 115 px per hour). */
 async function editingGeometry(chart: ReturnType<Page['getByRole']>, rtl = false) {
@@ -19,10 +22,7 @@ test('row hierarchy failures notify, cancel pending edits and recover on replace
   const timeline = page.getByRole('region', { name: 'Timeline fixture', exact: true })
   const bar = timeline.getByRole('button', { name: 'Editable bar 1–3', exact: true })
   await expect(bar).toBeVisible()
-  const box = (await bar.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 5 })
+  await pressAndMove(page, bar, 100, 0, 5)
   await timeline.getByRole('button', { name: 'Missing parent', exact: true }).dispatchEvent('click')
   await page.mouse.up()
   await expect(timeline.getByRole('status', { name: 'Validation reports' })).toHaveText('Unknown parent for row: a')
@@ -79,10 +79,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
   await dragEnd(58, true)
   await expect(plan).toBeVisible()
   // Simulate a source refresh while the pointer gesture owns capture.
-  const initial = (await plan.boundingBox())!
-  await page.mouse.move(initial.x + initial.width / 2, initial.y + initial.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(initial.x + initial.width / 2 + 58, initial.y + initial.height / 2, { steps: 5 })
+  await pressAndMove(page, plan, 58, 0, 5)
   await page.getByRole('button', { name: 'Reset', exact: true }).dispatchEvent('click')
   await page.mouse.up()
   await expect(plan).toBeVisible()
@@ -132,9 +129,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
 
   const box = (await cutting.boundingBox())!
   const y = box.y + box.height / 2
-  await page.mouse.move(box.x + box.width / 2, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
+  await pressAndMove(page, box, 36, 0, 6)
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 12:00–09 Nov 16:00')
   await expect(cutting).toHaveClass(/\bvw-is-dragging\b/)
   await expect(segments).toHaveCount(2)
@@ -170,11 +165,7 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
   await expect(count).toHaveText('0')
   await plan.click()
   await expect(count).toHaveText('1')
-  const box = (await plan.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, plan, 30, 0, { steps: 5 })
   await expect(count).toHaveText('2')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
 
@@ -203,9 +194,7 @@ test('dragging a bar near the viewport edge scrolls the timeline and keeps the p
   await bar.scrollIntoViewIfNeeded()
   const area = (await region.boundingBox())!
   const box = (await bar.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(area.x + area.width - 10, box.y + box.height / 2, { steps: 8 })
+  await pressAndMoveTo(page, box, { x: area.x + area.width - 10, y: box.y + box.height / 2 }, 8)
   await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
   await page.mouse.up()
   await expect(page.locator('.vw-gantt-bar[aria-label^="Split · plan"]')).not.toHaveAttribute('aria-label', 'Split · plan 09:00–11:00')
@@ -236,9 +225,7 @@ test('gantt dependencies connect by keyboard and pointer, reject duplicates, rec
   // Pointer drag between handles derives the type from the joined ends.
   const source = (await chart.getByRole('button', { name: 'Start dependency from finish of Wireframes', exact: true }).boundingBox())!
   const target = (await chart.getByRole('button', { name: 'Start dependency from finish of Checkout UI', exact: true }).boundingBox())!
-  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
+  await pressAndMoveTo(page, source, target, 10)
   await expect(chart.locator('.vw-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
   await page.mouse.up()
   await expect(status('Added FF dependency from Wireframes to Checkout UI.')).toBeVisible()
@@ -284,11 +271,7 @@ test('gantt multi-selection moves bars as one batch and bars move between rows w
   await page.getByRole('button', { name: 'Reset timeline', exact: true }).click()
   await chart.getByRole('button', { name: 'Billing API 10:00–13:00', exact: true }).click()
   await chart.getByRole('button', { name: 'Checkout UI 10:00–14:00', exact: true }).click({ modifiers: ['Control'] })
-  const box = (await api.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 58, box.y + box.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, api, 58, 0)
   await expect(api).toHaveAttribute('aria-label', 'Billing API 10:30–13:30')
   await expect(ui).toHaveAttribute('aria-label', 'Checkout UI 10:30–14:30')
   await expect(api).toHaveAttribute('aria-pressed', 'true')
@@ -312,23 +295,14 @@ test('gantt multi-selection moves bars as one batch and bars move between rows w
   // Pointer row drags propose the row under the pointer; Escape cancels a drag.
   const tests = chart.getByRole('button', { name: 'Acceptance tests 14:00–16:00', exact: true })
   const start = (await tests.boundingBox())!
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
+  await pressAndMove(page, start, 0, -66, 6)
   await expect(chart.locator('.vw-gantt-bar.vw-is-dragging')).toHaveAttribute('style', /translateY\(-66px\)/)
   await page.keyboard.press('Escape')
   await page.mouse.up()
   await expect(chart.locator('.vw-gantt-bar.vw-is-dragging')).toHaveCount(0)
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2 - 66, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, start, 0, -66)
   await expect(status('Moved Acceptance tests to Web team.')).toBeVisible()
-  const checkout = (await ui.boundingBox())!
-  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(checkout.x + checkout.width / 2, checkout.y + checkout.height / 2 + 66, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, ui, 0, 66)
   await expect(status('Only acceptance work can move to Quality.')).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -368,10 +342,7 @@ test('gantt: bar keys do not edit while a connection is armed, and a bar press d
   await taskB.press('ArrowRight')
   await taskB.press('Shift+ArrowRight')
   await expect(out('Last edit')).toHaveText('')
-  const box = (await taskB.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, taskB, 80, 0, 4)
   await expect(taskB).not.toHaveClass(/\bvw-is-dragging\b/)
   await page.mouse.up()
   await expect(out('Last edit')).toHaveText('')
@@ -402,19 +373,14 @@ test('gantt progress slider edits by pointer and keyboard, cancels with Escape a
   const slider = chart.getByRole('slider', { name: 'Progress of Billing API', exact: true })
   await expect(slider).toHaveAttribute('aria-valuetext', '30%')
   await expect(slider).toHaveAttribute('aria-valuenow', '30')
-  const centre = async () => {
-    const box = (await slider.boundingBox())!
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  }
+  const centre = () => centerOf(slider)
   // The slider sits on the progress boundary: 30% of the three-hour bar.
   let bar = (await api.boundingBox())!
   let handle = await centre()
   expect(Math.abs(handle.x - (bar.x + bar.width * 0.3))).toBeLessThanOrEqual(1)
 
   // A drag previews the fill and proposes the snapped value on release: 69 px of 345 px is 20%.
-  await page.mouse.move(handle.x, handle.y)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 69, handle.y, { steps: 6 })
+  await pressAndMove(page, handle, 69, 0, 6)
   await expect(slider).toHaveAttribute('aria-valuetext', '50%')
   await expect(api.locator('.vw-bar-progress')).toHaveAttribute('style', /width: 50%/)
   await page.mouse.up()
@@ -423,9 +389,7 @@ test('gantt progress slider edits by pointer and keyboard, cancels with Escape a
 
   // Escape discards a drag preview without a proposal.
   handle = await centre()
-  await page.mouse.move(handle.x, handle.y)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 69, handle.y, { steps: 6 })
+  await pressAndMove(page, handle, 69, 0, 6)
   await expect(slider).toHaveAttribute('aria-valuetext', '70%')
   await page.keyboard.press('Escape')
   await expect(slider).toHaveAttribute('aria-valuetext', '50%')
@@ -473,16 +437,11 @@ test('gantt constraint markers describe their bars and their handles drag, snap 
 
   // The glyph is centred on its time: 50 px per unit from Task A's start.
   const a = (await barA.boundingBox())!
-  const centre = async () => {
-    const box = (await finish.boundingBox())!
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  }
+  const centre = () => centerOf(finish)
   let handle = await centre()
   expect(Math.abs(handle.x - (a.x + 150))).toBeLessThanOrEqual(1)
   // A drag previews the snapped time and proposes it once on release: 2.4 units snap to 2. Nothing is applied.
-  await page.mouse.move(handle.x, handle.y)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 120, handle.y, { steps: 6 })
+  await pressAndMove(page, handle, 120, 0, 6)
   await expect(finish).toHaveAttribute('aria-valuetext', '5')
   await expect(finish).toHaveClass(/vw-is-dragging/)
   await expect(barA).toHaveAccessibleDescription(/Finish no later than 5\./)
@@ -493,17 +452,12 @@ test('gantt constraint markers describe their bars and their handles drag, snap 
   await expect(finish).toBeFocused()
   // A drag is clamped to editBounds (here the range, from 0).
   handle = await centre()
-  await page.mouse.move(handle.x, handle.y)
-  await page.mouse.down()
-  await page.mouse.move(handle.x - 400, handle.y, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, handle, -400, 0)
   expect(await json()).toMatchObject({ after: 0, source: 'pointer' })
 
   // Escape ends a drag without a proposal.
   handle = await centre()
-  await page.mouse.move(handle.x, handle.y)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 120, handle.y, { steps: 6 })
+  await pressAndMove(page, handle, 120, 0, 6)
   await expect(finish).toHaveAttribute('aria-valuetext', '5')
   await page.keyboard.press('Escape')
   await expect(finish).toHaveAttribute('aria-valuetext', '3')
@@ -560,11 +514,7 @@ test('gantt constraint edits are applied by the parent, rejected through the val
   const locked = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
   await locked.press('ArrowRight')
   await expect(live).toHaveText('Constraints are locked in this test.')
-  const box0 = (await locked.boundingBox())!
-  await page.mouse.move(box0.x + box0.width / 2, box0.y + box0.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box0.x + box0.width / 2 + 100, box0.y + box0.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, locked, 100, 0, { steps: 5 })
   await expect(out('Constraint edits')).toHaveText('0')
   await expect(locked).toHaveAttribute('aria-valuetext', '3')
 
@@ -587,10 +537,7 @@ test('gantt constraint edits are applied by the parent, rejected through the val
   // A pointer drag on the fixed start moves it; the bar itself stays where it is and the constraint is violated.
   const fixed = chart.getByRole('slider', { name: 'Must start on · Task B', exact: true })
   const box = (await fixed.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 52, box.y + box.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, box, 52, 0, { steps: 5 })
   await expect(fixed).toHaveAttribute('aria-valuetext', '5, violated')
   await expect(barB).toBeVisible()
 
@@ -601,10 +548,7 @@ test('gantt constraint edits are applied by the parent, rejected through the val
   const a = (await chart.getByRole('button', { name: 'Task A 0–2', exact: true }).boundingBox())!
   const handle = (await finish.boundingBox())!
   expect(Math.abs(handle.x + handle.width / 2 - (a.x + a.width - 150))).toBeLessThanOrEqual(1)
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + handle.width / 2 - 100, handle.y + handle.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, handle, -100, 0, { steps: 5 })
   expect(await json()).toEqual({ id: 'a', kind: 'finishNoLaterThan', before: 3, after: 5, source: 'pointer' })
   await finish.press('ArrowLeft')
   expect(await json()).toMatchObject({ after: 4, source: 'keyboard' })
@@ -1067,9 +1011,7 @@ test('gantt row handles drag rows between rows with a drop indicator and cancel 
   // A row cannot be dropped inside its own subtree.
   const platform = (await handle('Platform team').boundingBox())!
   const child = (await chart.locator('.vw-gantt-row').filter({ has: page.getByRole('button', { name: 'Move row Web team', exact: true }) }).boundingBox())!
-  await page.mouse.move(platform.x + platform.width / 2, platform.y + platform.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(platform.x + platform.width / 2, child.y + child.height * 0.3, { steps: 8 })
+  await pressAndMoveTo(page, platform, { x: platform.x + platform.width / 2, y: child.y + child.height * 0.3 }, 8)
   await expect(indicator).toHaveCount(0)
   await page.mouse.up()
   await expect(wbs('Platform team')).toHaveText('1')
@@ -1103,7 +1045,7 @@ test('gantt columns resize by pointer and keyboard with validation, Escape, undo
   // A pointer drag previews the width and proposes it on release; the timeline moves with the label area.
   const barStart = (await bar.boundingBox())!.x
   const box = (await team.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  const { x, y } = boxCenter(box)
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x + 60, y, { steps: 6 })
@@ -1145,11 +1087,7 @@ test('gantt columns resize by pointer and keyboard with validation, Escape, undo
   await expect(status('Resized the WBS column to 58 px.')).toBeVisible()
   await wbs.press('ArrowRight')
   await expect(status('Resized the WBS column to 48 px.')).toBeVisible()
-  const rtlBox = (await team.boundingBox())!
-  await page.mouse.move(rtlBox.x + rtlBox.width / 2, rtlBox.y + rtlBox.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(rtlBox.x + rtlBox.width / 2 - 30, rtlBox.y + rtlBox.height / 2, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, team, -30, 0, { steps: 5 })
   await expect(status('Resized the Team column to 168 px.')).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -1524,10 +1462,7 @@ test('gantt edit-cancel reports gestures and cell editors cancelled by new sourc
   const errors = pageErrors(page)
   const { chart, out, json } = await openLinkedGanttFixture(page)
   const taskB = chart.getByRole('button', { name: 'Task B 8–12', exact: true })
-  const box = (await taskB.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, taskB, 40, 0, 4)
   const dragged = chart.locator('[data-vw-bar="b"]')
   await expect(dragged).toHaveClass(/\bvw-is-dragging\b/)
   await page.evaluate(() => (window as unknown as { linkedFixture: LinkedFixture }).linkedFixture.replaceBars())

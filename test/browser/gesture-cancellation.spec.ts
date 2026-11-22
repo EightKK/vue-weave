@@ -1,6 +1,7 @@
 // Gesture cancellation in both components: context menus, fresh but equal props, a second pointer, changed source data and gesture events.
 import {
-  expect, test, centerOf, chainNode, dragBy, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors, pressAndMove, type Page,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, openGanttFixture, openGestureFixture, openNetworkFixture, pageErrors, pressAndMove,
+  pressAndMoveTo, type Page,
 } from './support'
 
 // A second, primary pen pointer as synthetic events: isPrimary is per pointer type, so a pen is primary next to the
@@ -40,10 +41,7 @@ test('dir="auto" follows a runtime change of an ancestor dir attribute and cance
   await expect(graph).not.toHaveClass(/vw-rtl/)
   expect(await toolsCentre()).toBeGreaterThan(stage.x + stage.width / 2)
   const node = page.getByRole('button', { name: 'A', exact: true })
-  const box = (await node.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 3 })
+  await pressAndMove(page, node, 30, 20)
   await setDocumentDir('rtl')
   await expect(graph).toHaveClass(/vw-rtl/)
   await expect(graph).not.toHaveAttribute('dir', /./)
@@ -92,7 +90,7 @@ test('a context menu during a graph node drag cancels the drag without a proposa
     const out = (name: string) => page.getByRole('status', { name, exact: true })
     const node = chainNode(page, 'N0001')
     const box = (await node.boundingBox())!
-    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    const { x, y } = boxCenter(box)
     // macOS Control-click: a primary press followed by contextmenu; the native menu then swallows pointerup.
     await page.mouse.move(x, y)
     await page.mouse.down()
@@ -108,11 +106,7 @@ test('a context menu during a graph node drag cancels the drag without a proposa
       await expect(out('Menu events')).toHaveText('1')
       expect(JSON.parse((await out('Last menu').textContent())!)).toMatchObject({ target: { kind: 'node', id: 'N0001' }, source: 'pointer' })
     }
-    const after = (await node.boundingBox())!
-    await page.mouse.move(after.x + after.width / 2, after.y + after.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(after.x + after.width / 2 + 40, after.y + after.height / 2 + 30, { steps: 6 })
-    await page.mouse.up()
+    await dragBy(page, node, 40, 30)
     await expect(out('Move events')).toHaveText('1')
     await expect(out('Last move')).toHaveText('N0001')
   }
@@ -127,7 +121,7 @@ test('a context menu during a gantt bar drag cancels the drag without an edit pr
     // The accessible name follows the drag preview, so keep the element itself.
     const element = (await bar.elementHandle())!
     const box = (await bar.boundingBox())!
-    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    const { x, y } = boxCenter(box)
     // macOS Control-click: a primary press followed by contextmenu; the native menu then swallows pointerup.
     await page.mouse.move(x, y)
     await page.mouse.down()
@@ -158,7 +152,7 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
     const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
     const element = (await finish.elementHandle())!
     const box = (await finish.boundingBox())!
-    const x = box.x + box.width / 2, y = box.y + box.height / 2
+    const { x, y } = boxCenter(box)
     /** Press the handle, drag 2 units to the right, run `interrupt`, then release. */
     const drag = async (interrupt: () => Promise<unknown>) => {
       await page.mouse.move(x, y)
@@ -293,7 +287,7 @@ test('a pen cannot start a second gesture while a mouse gesture is in flight', a
   const row = (await page.locator('.vw-gantt-row').first().boundingBox())!
   const taskB = page.getByRole('button', { name: 'Task B 8–12', exact: true })
   const box = (await taskB.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  const { x, y } = boxCenter(box)
   await page.mouse.move(row.x + 450, row.y + row.height / 2)
   await page.mouse.down()
   await page.mouse.move(row.x + 520, row.y + row.height / 2, { steps: 4 })
@@ -336,7 +330,6 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
     await page.evaluate(() => (window as any).__vw.clearGestureLog())
   }
   const button = (name: string) => page.getByRole('button', { name, exact: true })
-  const center = (name: string) => centerOf(button(name))
   const pressAndMoveNode = (name: string) => pressAndMove(page, button(name), 30, 12)
   // The pointer ID of the last press, for synthetic cancellation events.
   await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
@@ -402,11 +395,9 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   await expectEvents(['start box-select pointer', 'end box-select pointer committed'])
 
   // A pointer connection dragged from one handle to another, and a keyboard connection armed and cancelled.
-  const from = await center('Start connection from N0000')
-  const to = await center('Start connection from N0005')
-  await page.mouse.move(from.x, from.y)
-  await page.mouse.down()
-  await page.mouse.move(to.x, to.y, { steps: 5 })
+  const from = await centerOf(button('Start connection from N0000'))
+  const to = await centerOf(button('Start connection from N0005'))
+  await pressAndMoveTo(page, from, to, 5)
   await expect(log).toHaveText('start connect pointer')
   await page.mouse.up()
   await expectEvents(['start connect pointer', 'end connect pointer committed'])
@@ -425,11 +416,8 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   // A resize handle drag. Selecting the node first is a press without movement: a committed drag without a proposal.
   await page.getByRole('button', { name: 'N0002', exact: true }).click()
   await expectEvents(['start node-drag pointer', 'end node-drag pointer committed'])
-  const corner = await center('Resize N0002 · bottom right')
-  await page.mouse.move(corner.x, corner.y)
-  await page.mouse.down()
-  await page.mouse.move(corner.x + 30, corner.y + 20, { steps: 3 })
-  await page.mouse.up()
+  const corner = await centerOf(button('Resize N0002 · bottom right'))
+  await dragBy(page, corner, 30, 20, { steps: 3 })
   await expectEvents(['start node-resize pointer', 'end node-resize pointer committed'])
 
   // Over the whole session, each start is followed by exactly one end of the same gesture before the next start.
@@ -516,7 +504,7 @@ test('Gantt: a zoom change cancels a progress drag as a source change, while a b
   const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true })
   const slider = chart.getByRole('slider', { name: 'Progress of Task A', exact: true })
   const handle = (await slider.boundingBox())!
-  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2
+  const { x, y } = boxCenter(handle)
   await page.mouse.move(x, y)
   await page.mouse.down()
   await page.mouse.move(x + 30, y, { steps: 3 })
@@ -529,10 +517,7 @@ test('Gantt: a zoom change cancels a progress drag as a source change, while a b
   await expect(out('Last progress edit')).toHaveText('')
   // A bar drag scrolls at the edges, so the zoom buttons wait for it instead of cancelling it.
   const taskB = chart.getByRole('button', { name: /^Task B \d/ })
-  const box = (await taskB.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2, { steps: 4 })
+  await pressAndMove(page, taskB, 70, 0, 4)
   await expect(taskB).toHaveClass(/\bvw-is-dragging\b/)
   await zoom.getByRole('button', { name: 'Zoom out', exact: true }).dispatchEvent('click')
   await expect(zoom.locator('output')).toHaveText('135%')

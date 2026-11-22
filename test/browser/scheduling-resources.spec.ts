@@ -1,5 +1,5 @@
 // The scheduling demo (calendars, constraints, status date, exports, network view, manual tasks, summary links, actuals, scenarios) and resource planning.
-import { expect, test, dragBy, openDemo, pageErrors, type Locator, type Page } from './support'
+import { expect, test, dragBy, dragTo, openDemo, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
 
 async function openResourcePlanning(page: Page) {
   const errors = pageErrors(page)
@@ -230,20 +230,14 @@ test('the scheduling demo shows scheduling constraints, reschedules when one mov
   // A drag of 3 hours (18 px each) proposes 13:00; the demo reschedules.
   const status = page.getByRole('status').filter({ hasText: /Cut order B|Infeasible/ })
   let box = (await constraint.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 54, box.y + box.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, box, 54, 0)
   await expect(status).toHaveText('Cut order B: start no earlier than 09 Nov 13:00. Plan recalculated.')
   await expect(plan.getByRole('button', { name: 'Cut order B 09 Nov 13:00–09 Nov 15:00', exact: true })).toBeVisible()
   await expect(constraint).toHaveAttribute('aria-valuetext', '09 Nov 13:00')
 
   // Three more hours leave packing no room before the cut-off: the scheduler's diagnostic is shown and nothing changes.
   box = (await constraint.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 54, box.y + box.height / 2, { steps: 6 })
-  await page.mouse.up()
+  await dragBy(page, box, 54, 0)
   await expect(status).toHaveText('Infeasible: Pack order A cannot meet its finish no later than with the link Cut order B → Pack order A. The change was not applied.')
   await expect(constraint).toHaveAttribute('aria-valuetext', '09 Nov 13:00')
   await expect(finish).toHaveText('09 Nov 16:00')
@@ -289,10 +283,7 @@ test('the scheduling demo previews cascaded operations during a drag and applies
   const inspect = (await inspection.boundingBox())!
   const y = box.y + box.height / 2
   const drag = async () => {
-    await page.mouse.move(box.x + box.width / 2, y)
-    await page.mouse.down()
-    // 36 px is two hours: the requested start becomes 10:00.
-    await page.mouse.move(box.x + box.width / 2 + 36, y, { steps: 6 })
+    await pressAndMove(page, box, 36, 0, 6)
   }
 
   // Inspection (14:00–16:00) and packing follow the dragged order while it is held; Escape discards the preview.
@@ -498,11 +489,7 @@ test('the scheduling demo pins inspection manually, lists manual conflicts and l
 
   // Dragging the manual bar one hour later previews packing, then moves the manual dates; packing follows and the conflict is resolved.
   const ghosts = plan.locator('.vw-gantt-cascade-preview')
-  const box = (await inspection.boundingBox())!
-  const y = box.y + box.height / 2
-  await page.mouse.move(box.x + box.width / 2, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 18, y, { steps: 6 })
+  await pressAndMove(page, inspection, 18, 0, 6)
   await expect(ghosts).toHaveCount(1)
   await page.mouse.up()
   await expect(status).toHaveText('Plan recalculated. 1 other operation changed.')
@@ -588,12 +575,9 @@ test('the scheduling demo labels a lead and its cascade preview and batch honour
   await expect(packing).toHaveAttribute('aria-label', 'Pack order A 09 Nov 14:00–09 Nov 16:00')
   const box = (await other.boundingBox())!
   const pack = (await packing.boundingBox())!
-  const y = box.y + box.height / 2
   // 90 px is five hours: cutting order B would end at 17:00, so with the two-hour lead packing starts at 15:00 the
   // same day. Without the lead it would wait for 17:00 and move past the plant closure to 11 November.
-  await page.mouse.move(box.x + box.width / 2, y)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 90, y, { steps: 9 })
+  await pressAndMove(page, box, 90, 0, 9)
   await expect(ghosts).toHaveCount(1)
   const ghost = (await ghosts.first().boundingBox())!
   expect(ghost.x - pack.x).toBeCloseTo(18, 0)
@@ -849,10 +833,7 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
 
   // Dragging a subtask moves the rollup bar and the link out of it during the preview and after the accepted edit.
   const frame = chart.getByRole('button', { name: 'Frame 10:00–13:00', exact: true })
-  const box = (await frame.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2, { steps: 6 })
+  await pressAndMove(page, frame, 70, 0, 6)
   await expect(rollup).toHaveAttribute('title', 'Build phase · 2 · 10:00–14:00')
   edge = await edges()
   await expect(out).toHaveAttribute('d', new RegExp(`^M ${edge.finish} `))
@@ -871,11 +852,8 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
 
   // The rollup bar has link handles: drag from its finish onto a bar to propose a link out of the summary. Without the
   // link, the inspection starts at the beginning of the horizon.
-  const source = (await chart.getByRole('button', { name: 'Start dependency from finish of Build phase', exact: true }).boundingBox())!
   const target = (await chart.getByRole('button', { name: 'Final inspection 08:00–09:00', exact: true }).boundingBox())!
-  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(target.x + 4, target.y + target.height / 2, { steps: 10 })
+  await pressAndMoveTo(page, chart.getByRole('button', { name: 'Start dependency from finish of Build phase', exact: true }), { x: target.x + 4, y: target.y + target.height / 2 }, 10)
   await expect(chart.locator('.vw-gantt-link-preview path')).toHaveAttribute('d', /^M .+ L /)
   await page.mouse.up()
   await expect(status('Added FS link from Build phase to Final inspection.')).toBeVisible()
@@ -897,10 +875,7 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
   // Dropping a dragged link on the rollup bar body joins its nearer end.
   const from = (await chart.getByRole('button', { name: 'Start dependency from finish of Design review', exact: true }).boundingBox())!
   const bar = (await rollup.boundingBox())!
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bar.x + 6, bar.y + bar.height / 2, { steps: 10 })
-  await page.mouse.up()
+  await dragTo(page, from, { x: bar.x + 6, y: bar.y + bar.height / 2 }, { steps: 10 })
   await expect(status('Added FS link from Design review to Build phase.')).toBeVisible()
   await expect(into).toHaveCount(1)
 

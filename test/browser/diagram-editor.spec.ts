@@ -1,6 +1,6 @@
 // Diagram editor parts: GraphPalette drags and keyboard inserts onto NetworkGraph, and PropertyInspector edits of the
 // selected node (accepted, refused by the field checks, rejected by validateChange and cancelled by stale data), and its list fields.
-import { expect, fixtureStatus, openDemo, pageErrors, serveFixture, test, type Page } from './support'
+import { expect, test, fixtureStatus, openDemo, pageErrors, serveFixture, type Page } from './support'
 
 async function openEditor(page: Page) {
   const errors = pageErrors(page)

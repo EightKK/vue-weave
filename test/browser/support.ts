@@ -137,19 +137,41 @@ export async function openGraphEditor(page: Page) {
 
 export const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })
 
+export type Point = { x: number; y: number }
+export type Box = Point & { width: number; height: number }
+/** Where a pointer helper presses or moves to: the centre of an element or a box, or a point in viewport pixels. */
+export type PointerTarget = Locator | Box | Point
+
+/** The centre of a bounding box. */
+export const boxCenter = (box: Box): Point => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
+
 /** The centre of an element's bounding box in viewport pixels. */
 export async function centerOf(target: Locator) {
   const box = await target.boundingBox()
   if (!box) throw new Error('centerOf needs a visible element')
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  return boxCenter(box)
 }
 
-/** Presses the mouse at the centre of an element and moves it by `dx`, `dy` in a few steps, keeping the button down. */
-export async function pressAndMove(page: Page, target: Locator, dx: number, dy: number) {
-  const { x, y } = await centerOf(target)
+/** The point a pointer target stands for: an element's centre, a box's centre or the point itself. */
+export async function pointOf(target: PointerTarget): Promise<Point> {
+  if ('boundingBox' in target) return centerOf(target)
+  return 'width' in target ? boxCenter(target) : { x: target.x, y: target.y }
+}
+
+/** Presses the mouse at a target (the centre of an element or box) and moves it by `dx`, `dy` in `steps`, keeping the button down. */
+export async function pressAndMove(page: Page, target: PointerTarget, dx: number, dy: number, steps = 3) {
+  const { x, y } = await pointOf(target)
   await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(x + dx, y + dy, { steps: 3 })
+  await page.mouse.move(x + dx, y + dy, { steps })
+}
+
+/** Presses the mouse at one target and moves it to another in `steps`, keeping the button down. Both points are read before the press. */
+export async function pressAndMoveTo(page: Page, from: PointerTarget, to: PointerTarget, steps = 6) {
+  const start = await pointOf(from), end = await pointOf(to)
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y, { steps })
 }
 
 /** Waits for `count` animation frames of the page, so work scheduled per frame (such as auto-pan) has had its turn. */
@@ -161,11 +183,23 @@ export async function animationFrames(page: Page, count = 2) {
   }), count)
 }
 
-export async function dragBy(page: Page, target: ReturnType<Page['locator']>, dx: number, dy: number, hold?: () => Promise<void>) {
-  const { x, y } = await centerOf(target)
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.move(x + dx, y + dy, { steps: 6 })
+/** How a drag moves (`steps`, 6 by default) and what runs while the button is still down (`hold`), or just `hold`. */
+export type DragOptions = { steps?: number; hold?: () => Promise<unknown> } | (() => Promise<unknown>)
+
+const dragOptions = (options: DragOptions) => typeof options === 'function' ? { hold: options, steps: 6 } : { steps: 6, ...options }
+
+/** Drags from a target by `dx`, `dy`: press, move in steps, run `hold`, release. */
+export async function dragBy(page: Page, target: PointerTarget, dx: number, dy: number, options: DragOptions = {}) {
+  const { steps, hold } = dragOptions(options)
+  await pressAndMove(page, target, dx, dy, steps)
+  await hold?.()
+  await page.mouse.up()
+}
+
+/** Drags from one target to another: press, move in steps, run `hold`, release. */
+export async function dragTo(page: Page, from: PointerTarget, to: PointerTarget, options: DragOptions = {}) {
+  const { steps, hold } = dragOptions(options)
+  await pressAndMoveTo(page, from, to, steps)
   await hold?.()
   await page.mouse.up()
 }

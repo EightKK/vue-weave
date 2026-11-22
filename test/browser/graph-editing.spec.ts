@@ -1,7 +1,7 @@
 // NetworkGraph editing: moves, connections and ports, selection, deletion, menus and tooltips, snapping, clipboard, groups, waypoints, resizing, labels, lasso and toolbars.
 import {
-  expect, test, animationFrames, centerOf, chainNode, dragBy, fixtureStatus, openDemo, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera,
-  type Page,
+  expect, test, animationFrames, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, openDemo, openGraphEditor, openNetworkFixture,
+  pageErrors, pressAndMove, pressAndMoveTo, readCamera, type Page,
 } from './support'
 
 // Clicks the middle of an SVG path. A straight horizontal edge has an empty bounding box, so locator.click cannot target it.
@@ -68,10 +68,7 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
   const source = page.getByRole('button', { name: 'Start connection from Design · Output', exact: true })
   const target = page.getByRole('button', { name: /^(Start connection from|Connect to) Release · Input$/ })
   await expect(source).toBeVisible()
-  const a = (await source.boundingBox())!, b = (await target.boundingBox())!
-  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 })
+  await pressAndMoveTo(page, source, target, 12)
   await expect(page.locator('.vw-connection-preview')).toHaveAttribute('d', /^M .+ L /)
   await page.mouse.up()
   await expect(page.locator('.vw-network-edge')).toHaveCount(5)
@@ -93,12 +90,7 @@ test('named port drag, edge reconnection and undo preserve the graph', async ({ 
 
   const secondEdge = page.getByRole('button', { name: 'Select edge du', exact: true })
   await secondEdge.press('Enter')
-  const endpoint = (await page.getByRole('button', { name: 'Reconnect source of du', exact: true }).boundingBox())!
-  const replacement = (await page.getByRole('button', { name: 'Start connection from API · Output', exact: true }).boundingBox())!
-  await page.mouse.move(endpoint.x + endpoint.width / 2, endpoint.y + endpoint.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(replacement.x + replacement.width / 2, replacement.y + replacement.height / 2, { steps: 10 })
-  await page.mouse.up()
+  await dragTo(page, page.getByRole('button', { name: 'Reconnect source of du', exact: true }), page.getByRole('button', { name: 'Start connection from API · Output', exact: true }), { steps: 10 })
   await expect(page.getByRole('status').filter({ hasText: 'Reconnected edge du' })).toBeVisible()
   await expect(page.locator('.vw-network-edge')).toHaveCount(4)
   expect(errors).toEqual([])
@@ -134,10 +126,7 @@ test('dragging a node under culling emits one proposal and keeps the node render
   const errors = pageErrors(page)
   await openNetworkFixture(page, '?nodes=600&cull=1&draggable=1')
   const node = chainNode(page, 'N0001')
-  const box = (await node.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30, { steps: 6 })
+  await pressAndMove(page, node, 40, 30, 6)
   await expect(node).toHaveCount(1)
   await page.mouse.up()
   await expect(page.getByRole('status', { name: 'Last move', exact: true })).toHaveText('N0001')
@@ -158,10 +147,7 @@ test('the preserve routing policy keeps an external port route while an unrelate
     // The drag preview updates the dragged node's edges locally; it must equal the full routing of the committed move.
     for (const [name, count] of [['D', '1'], ['B', '2']] as const) {
       const node = chainNode(page, name)
-      const box = (await node.boundingBox())!
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-      await page.mouse.down()
-      await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 70, { steps: 5 })
+      await pressAndMove(page, node, 30, 70, 5)
       const preview = await paths()
       if (name === 'D') {
         expect(preview.ab).toBe(initial.ab)
@@ -189,19 +175,11 @@ test('moving a parent group proposes one batch with every descendant; a child mo
   const last = page.getByRole('status', { name: 'Last move', exact: true })
   const events = page.getByRole('status', { name: 'Move events', exact: true })
 
-  const o = (await outer.boundingBox())!
-  await page.mouse.move(o.x + o.width / 2, o.y + o.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(o.x + o.width / 2 + 30, o.y + o.height / 2 + 20, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, outer, 30, 20, { steps: 5 })
   await expect(last).toHaveText('B,C,D')
   await expect(events).toHaveText('1')
 
-  const i = (await inner.boundingBox())!
-  await page.mouse.move(i.x + i.width / 2, i.y + i.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(i.x + i.width / 2 + 30, i.y + i.height / 2 + 20, { steps: 5 })
-  await page.mouse.up()
+  await dragBy(page, inner, 30, 20, { steps: 5 })
   await expect(last).toHaveText('C,D')
   await expect(events).toHaveText('2')
 
@@ -219,7 +197,7 @@ test('a node drag preview re-renders only the dragged node and its edges, withou
   await expect(page.locator('.vw-test-node')).toHaveCount(300)
   const node = chainNode(page, 'N0001')
   const box = (await node.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  const { x, y } = boxCenter(box)
   await page.mouse.move(x, y)
   await page.mouse.down()
   // Past the drag threshold, so every following move updates the preview.
@@ -265,7 +243,7 @@ test('a node drag preview with the minimap, connection handles and groups change
   await expect(page.getByRole('button', { name: 'Move group Group 0 within Parent 0', exact: true })).toBeVisible()
   const node = chainNode(page, 'N0001')
   const box = (await node.boundingBox())!
-  const x = box.x + box.width / 2, y = box.y + box.height / 2
+  const { x, y } = boxCenter(box)
   await page.mouse.move(x, y)
   await page.mouse.down()
   // Past the drag threshold, so every following move updates the preview.
@@ -325,9 +303,7 @@ test('culled drag previews keep the edges of dragged nodes rendered', async ({ p
   const node = chainNode(page, 'N0002')
   const box = (await node.boundingBox())!
   const before = await edges.count()
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 6 })
+  await pressAndMove(page, box, 60, 40, 6)
   await expect(node).toHaveCount(1)
   expect(await edges.count()).toBeGreaterThanOrEqual(before)
   // The edges attached to the dragged node follow it.
@@ -398,10 +374,7 @@ test('graph deletion by keyboard removes nodes, edges and incident edges, valida
   await expect(edges).toHaveCount(6)
 
   // Nothing is proposed while a drag is in flight.
-  const box = (await lot2.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 40, { steps: 5 })
+  await pressAndMove(page, lot2, 30, 40, 5)
   await page.keyboard.press('Delete')
   await page.mouse.up()
   await expect(status('Moved node lot2.')).toBeVisible()
@@ -761,7 +734,7 @@ test('auto-pan moves the camera while a node drag is held near the edge and stop
   const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
   const node = chainNode(page, 'N0002')
   const box = (await node.boundingBox())!
-  const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const start = boxCenter(box)
   const edgeX = stage.x + stage.width - 10
   const viewportEvents = Number(await fixtureStatus(page, 'Viewport events').textContent())
   await page.mouse.move(start.x, start.y)
@@ -794,7 +767,7 @@ test('toGraphPoint, getViewportCenter and drop events report chart coordinates',
   const centre = await page.evaluate(({ x, y }) => {
     const graph = (window as any).__vw.graph()
     return { point: graph.toGraphPoint(x, y), centre: graph.getViewportCenter() }
-  }, { x: stage.x + stage.width / 2, y: stage.y + stage.height / 2 })
+  }, boxCenter(stage))
   expect(centre.point.x).toBeCloseTo(centre.centre.x, 3)
   expect(centre.point.y).toBeCloseTo(centre.centre.y, 3)
   const camera = await readCamera(page)
@@ -1066,9 +1039,7 @@ test('demo waypoints are added, moved and removed by keyboard and pointer with u
   // Escape cancels a drag in flight without a proposal.
   const cy = await waypoint.getAttribute('cy')
   const box = (await waypoint.boundingBox())!
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2, box.y + 60, { steps: 4 })
+  await pressAndMove(page, box, 0, 60 - box.height / 2, 4)
   await expect(waypoint).not.toHaveAttribute('cy', cy!)
   await page.keyboard.press('Escape')
   await expect(waypoint).toHaveAttribute('cy', cy!)
@@ -1118,9 +1089,7 @@ test('demo nodes resize by pointer and keyboard with undo', async ({ page }) => 
   await expect(status('Keep nodes within 360 × 200.')).toBeVisible()
   await expect(frame).toHaveAttribute('width', width!)
   const handle = (await corner.boundingBox())!
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 80, handle.y + 40, { steps: 4 })
+  await pressAndMoveTo(page, handle, { x: handle.x + 80, y: handle.y + 40 }, 4)
   await expect(frame).not.toHaveAttribute('width', width!)
   await page.keyboard.press('Escape')
   await expect(frame).toHaveAttribute('width', width!)
@@ -1450,9 +1419,7 @@ test('typed port rules hint valid targets, reject type and limit violations with
   await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
   const a = (await handle('Start connection from Sensor · Reading').boundingBox())!
   const b = (await handle('Start connection from Average · Input B').boundingBox())!
-  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
-  await page.mouse.down()
-  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2 + 20, { steps: 6 })
+  await pressAndMoveTo(page, a, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 20 })
   await expect(handle('Connect to Average · Input B')).toHaveClass(/vw-is-valid-target/)
   await expect(handle('Connect to Display · Show')).toHaveClass(/vw-is-valid-target/)
   await expect(handle('Connect to Average · Input A')).toHaveClass(/vw-is-invalid-target/)
@@ -1474,12 +1441,7 @@ test('typed port rules hint valid targets, reject type and limit violations with
 
   // A pointer drop on a full limit-1 input is rejected with its reason.
   await graph.locator('svg.vw-network-stage').scrollIntoViewIfNeeded()
-  const backup = (await handle('Start connection from Backup sensor · Reading').boundingBox())!
-  const full = (await handle('Start connection from Average · Input A').boundingBox())!
-  await page.mouse.move(backup.x + backup.width / 2, backup.y + backup.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(full.x + full.width / 2, full.y + full.height / 2, { steps: 10 })
-  await page.mouse.up()
+  await dragTo(page, handle('Start connection from Backup sensor · Reading'), handle('Start connection from Average · Input A'), { steps: 10 })
   await expect(status).toHaveText('Rejected: Average · Input A already has its maximum of 1 connection.')
   await expect(edges).toHaveCount(2)
 
@@ -1511,7 +1473,7 @@ test('process lanes: with Route around steps, dragging a step across an unrelate
     return { x: point.x * matrix.a + point.y * matrix.c + matrix.e, y: point.x * matrix.b + point.y * matrix.d + matrix.f }
   })
   const step = (await stage.getByRole('button', { name: 'Final check', exact: true }).boundingBox())!
-  const start = { x: step.x + step.width / 2, y: step.y + step.height / 2 }
+  const start = boxCenter(step)
   await page.mouse.move(start.x, start.y)
   await page.mouse.down()
   await page.mouse.move(middle.x, middle.y, { steps: 10 })
