@@ -13,6 +13,7 @@ import type { TimeRange } from './timeline.js'
 import { normalizeWorkPeriods } from './workCalendar.js'
 import { assignmentWorkRange, createAssignmentChecker, resourceCapacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
 import { checkId } from './ids.js'
+import { MinHeap } from './graphHeap.js'
 
 export interface LevelResourcesInput extends ScheduleInput {
   resources: readonly ResourceCapacity[]
@@ -45,10 +46,34 @@ export interface LevelResourcesSuccess extends ScheduleSuccess {
 
 export type LevelResourcesResult = LevelResourcesSuccess | ScheduleFailure
 
-/** One reservation of a resource, kept only when explaining. */
+/** One reservation of a resource, kept only when explaining. `order` counts the reservations of the resource. */
 interface Holding extends TimeRange {
   taskId: string
   units: number
+  order: number
+}
+
+/** The reservations of one resource, sorted by start, so that those in a window are found without a full scan. */
+class Holdings {
+  private items: Holding[] = []
+  private longest = 0
+  add(taskId: string, slice: TimeRange, units: number) {
+    const { start, end } = slice
+    const index = firstIndex(this.items.length, i => this.items[i]!.start > start)
+    this.items.splice(index, 0, { taskId, start, end, units, order: this.items.length })
+    this.longest = Math.max(this.longest, end - start)
+  }
+  /** The reservations that overlap `window`, sorted by start. */
+  overlapping(window: TimeRange): Holding[] {
+    const { items } = this, result: Holding[] = []
+    // A reservation that starts `longest` or more before the window ends before it.
+    for (let i = firstIndex(items.length, k => items[k]!.start > window.start - this.longest); i < items.length; i++) {
+      const item = items[i]!
+      if (item.start >= window.end) break
+      if (item.end > window.start) result.push(item)
+    }
+    return result
+  }
 }
 
 /** Remaining capacity as a step function over the horizon. Segment i is [times[i], times[i + 1] ?? range.end). */
@@ -78,10 +103,17 @@ class Profile {
     const last = interval.end < rangeEnd ? this.split(interval.end) : this.times.length
     for (let i = first; i < last; i++) this.values[i]! -= units
   }
-  /** Intervals where fewer than `units` remain. */
-  blocked(units: number, rangeEnd: number): TimeRange[] {
+  /** Index of the segment that holds `time`, or 0 before the first segment. */
+  indexAt(time: number): number {
+    return Math.max(0, firstIndex(this.times.length, i => this.times[i]! > time) - 1)
+  }
+  /**
+   * Intervals where fewer than `units` remain, sorted and merged. Shortages that end at or before `from` are left out;
+   * the first interval can start before it.
+   */
+  blocked(units: number, rangeEnd: number, from = -Infinity): TimeRange[] {
     const result: TimeRange[] = []
-    for (let i = 0; i < this.times.length; i++) {
+    for (let i = this.indexAt(from); i < this.times.length; i++) {
       if (this.values[i]! >= units) continue
       const start = this.times[i]!, end = this.times[i + 1] ?? rangeEnd
       const previous = result.at(-1)
@@ -92,8 +124,11 @@ class Profile {
   }
 }
 
-/** Free intervals of a task clock, expressed as merged work-unit ranges. */
-function freeWork(clock: WorkClock, blocked: readonly TimeRange[]): TimeRange[] {
+/**
+ * Free intervals of a task clock, expressed as merged work-unit ranges. Working periods that end at or before `from`
+ * are skipped, so the first range can start later than it would otherwise, but never after `clock.workAt(from)`.
+ */
+function freeWork(clock: WorkClock, blocked: readonly TimeRange[], from = -Infinity): TimeRange[] {
   const result: TimeRange[] = []
   const add = (from: number, to: number) => {
     if (from >= to) return
@@ -103,7 +138,9 @@ function freeWork(clock: WorkClock, blocked: readonly TimeRange[]): TimeRange[] 
     else result.push({ start, end })
   }
   let b = 0
-  for (const period of clock.periods) {
+  const { periods } = clock
+  for (let p = firstIndex(periods.length, i => periods[i]!.end > from); p < periods.length; p++) {
+    const period = periods[p]!
     let start = period.start
     while (b < blocked.length && blocked[b]!.end <= start) b++
     for (let i = b; i < blocked.length && blocked[i]!.start < period.end; i++) {
@@ -141,45 +178,6 @@ function interrupted(free: readonly TimeRange[], first: number, duration: number
   return remaining || chunks.at(-1)!.end > lastEnd ? undefined : chunks
 }
 
-class Heap<T> {
-  private items: T[] = []
-  constructor(private before: (a: T, b: T) => boolean) {}
-  get size() {
-    return this.items.length
-  }
-  private swap(i: number, j: number) {
-    const item = this.items[i]!
-    this.items[i] = this.items[j]!
-    this.items[j] = item
-  }
-  push(item: T) {
-    let i = this.items.push(item) - 1
-    while (i > 0) {
-      const parent = (i - 1) >> 1
-      if (!this.before(this.items[i]!, this.items[parent]!)) break
-      this.swap(i, parent)
-      i = parent
-    }
-  }
-  pop(): T {
-    const items = this.items, top = items[0]!, last = items.pop()!
-    if (items.length) {
-      items[0] = last
-      let i = 0
-      for (;;) {
-        const left = 2 * i + 1, right = left + 1
-        let best = i
-        if (left < items.length && this.before(items[left]!, items[best]!)) best = left
-        if (right < items.length && this.before(items[right]!, items[best]!)) best = right
-        if (best === i) break
-        this.swap(i, best)
-        i = best
-      }
-    }
-    return top
-  }
-}
-
 /** A resource that a task needs and, for a partial assignment, its part of the task's work in elapsed working time. */
 interface Need {
   profile: Profile
@@ -204,7 +202,9 @@ interface WorkPiece {
  * Cut a task's work units `[0, duration)` where the set of needed resources changes, with the free work units of each
  * stretch. Stretches that need the same resources share one free list.
  */
-function workPieces(clock: WorkClock, duration: number, spans: ReadonlyMap<Need, TimeRange>, range: TimeRange): WorkPiece[] {
+function workPieces(
+  clock: WorkClock, duration: number, spans: ReadonlyMap<Need, TimeRange>, range: TimeRange, from: number,
+): WorkPiece[] {
   const entries = [...spans]
   const cuts = [...new Set([0, duration, ...entries.flatMap(([, span]) => [span.start, span.end])])].sort((a, b) => a - b)
   const cache = new Map<string, TimeRange[]>()
@@ -218,16 +218,21 @@ function workPieces(clock: WorkClock, duration: number, spans: ReadonlyMap<Need,
     const key = members.join()
     let free = cache.get(key)
     if (!free) {
-      const blocked = members.flatMap(index => {
-        const need = entries[index]![0]
-        return need.profile.blocked(need.units, range.end)
-      })
-      free = freeWork(clock, normalizeWorkPeriods(blocked, range))
+      free = freeWork(clock, blockedBy(members.map(index => entries[index]![0]), range, from), from)
       cache.set(key, free)
     }
     pieces.push({ from, to, free })
   }
   return pieces
+}
+
+/**
+ * The sorted, merged intervals in which any of `needs` finds too little capacity, leaving out shortages that end at or
+ * before `from`. One need's intervals are already sorted and merged.
+ */
+function blockedBy(needs: readonly Need[], range: TimeRange, from: number): TimeRange[] {
+  if (needs.length === 1) return needs[0]!.profile.blocked(needs[0]!.units, range.end, from)
+  return normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end, from)), range)
 }
 
 /** The closed intervals `[start, end]` common to two sorted lists of disjoint closed intervals. */
@@ -326,7 +331,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const model = buildScheduleModel(plain, explain)
   const { range, tasks } = model
   const trace = explain ? new ScheduleTraceRecorder(plain.tasks.filter(task => tasks.has(task.id)).map(task => task.id)) : undefined
-  const holdings = explain ? new Map<string, Holding[]>() : undefined
+  const holdings = explain ? new Map<string, Holdings>() : undefined
 
   const profiles = new Map<string, Profile>()
   const resourceIds = new Set<string>()
@@ -395,7 +400,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     const { totalFloat, start } = unleveled.get(task.id)!
     return { task, manual: Boolean(task.manual), priority: task.source.priority ?? 0, totalFloat, start }
   }
-  const queue = new Heap<ReturnType<typeof entry>>((a, b) => a.manual !== b.manual ? a.manual
+  const queue = new MinHeap<ReturnType<typeof entry>>((a, b) => a.manual !== b.manual ? a.manual
     : a.priority !== b.priority ? a.priority > b.priority
       : a.totalFloat !== b.totalFloat ? a.totalFloat < b.totalFloat
         : a.start !== b.start ? a.start < b.start : a.task.id < b.task.id)
@@ -412,7 +417,10 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
   const reserved = new Map<string, TimeRange[]>()
   /**
    * Record the shortages of every resource the task needs in `window` as `capacity` reasons. Capacity is reserved
-   * before this task, so each holding names a task that occupies the resource first.
+   * before this task, so each holding names a task that occupies the resource first. Adjacent shortages with the same
+   * capacity form one reason that names every task holding the resource in it, so a task delayed behind many short
+   * reservations gets one reason, not one per reservation. The profile and the reservations are swept once, from the
+   * start of the window.
    */
   const recordCapacity = (
     recorder: ScheduleTraceRecorder, task: ModelTask, needs: readonly Need[], defaultWindow: TimeRange, startMoved: boolean,
@@ -422,27 +430,40 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       const { profile, units, resourceId } = need
       // A partial assignment only competes for its resource during its part of the work.
       const window = windows?.get(need) ?? defaultWindow
-      const held = holdings!.get(resourceId) ?? []
-      const pieces: { start: number; end: number; capacity: number; taskIds: string[] }[] = []
-      for (let i = 0; i < profile.times.length; i++) {
-        if (profile.values[i]! >= units) continue
-        const start = Math.max(profile.times[i]!, window.start), end = Math.min(profile.times[i + 1] ?? range.end, window.end)
-        if (start >= end || !task.clock.slices({ start, end }).length) continue
-        const holders = held.filter(holding => holding.start < end && holding.end > start)
-        const capacity = holders.reduce((sum, holding) => sum + holding.units, profile.values[i]!)
-        const taskIds = [...new Set(holders.map(holding => holding.taskId))]
+      const held = holdings!.get(resourceId)?.overlapping(window) ?? []
+      const pieces: { start: number; end: number; capacity: number; holders: Set<Holding> }[] = []
+      const active: Holding[] = []
+      let next = 0
+      const { times, values } = profile, { workAt } = task.clock
+      for (let i = profile.indexAt(window.start); i < times.length && times[i]! < window.end; i++) {
+        if (values[i]! >= units) continue
+        const start = Math.max(times[i]!, window.start), end = Math.min(times[i + 1] ?? range.end, window.end)
+        // Only a shortage in the task's working time can hold it up.
+        if (start >= end || workAt(end) <= workAt(start)) continue
+        while (next < held.length && held[next]!.start < end) active.push(held[next++]!)
+        // Keep the reservations that still overlap this segment; every one of them started before its end.
+        let kept = 0, capacity = values[i]!
+        for (const holding of active) {
+          if (holding.end <= start) continue
+          active[kept++] = holding
+          capacity += holding.units
+        }
+        active.length = kept
         const previous = pieces.at(-1)
-        if (previous?.end === start && previous.capacity === capacity
-          && previous.taskIds.length === taskIds.length && previous.taskIds.every((id, k) => id === taskIds[k])) previous.end = end
-        else pieces.push({ start, end, capacity, taskIds })
+        if (previous?.end === start && previous.capacity === capacity) {
+          previous.end = end
+          for (const holding of active) previous.holders.add(holding)
+        } else pieces.push({ start, end, capacity, holders: new Set(active) })
       }
       for (const piece of pieces) {
+        const taskIds = [...new Set([...piece.holders].sort((a, b) => a.order - b.order).map(holding => holding.taskId))]
+        // Each task has its own reasons, so the holders' reason IDs never repeat.
         recorder.add({
           taskId: task.id, phase: 'leveling', kind: 'capacity', bound: startMoved ? 'startLower' : 'endLower',
           candidateTime: startMoved ? early.start : early.end, placedTime: startMoved ? slot.start : slot.end,
-          resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: piece.taskIds,
+          resourceId, demand: units, capacity: piece.capacity, relatedTaskIds: taskIds,
           range: { start: piece.start, end: piece.end },
-          parentReasonIds: [...new Set(piece.taskIds.flatMap(id => recorder.ids('leveling', id)))],
+          parentReasonIds: taskIds.flatMap(id => recorder.ids('leveling', id)),
         })
       }
     }
@@ -454,8 +475,8 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
         need.profile.reserve(slice, need.units, range.end)
         if (holdings) {
           let list = holdings.get(need.resourceId)
-          if (!list) holdings.set(need.resourceId, list = [])
-          list.push({ taskId: task.id, start: slice.start, end: slice.end, units: need.units })
+          if (!list) holdings.set(need.resourceId, list = new Holdings())
+          list.add(task.id, slice, need.units)
         }
       }
     }
@@ -493,15 +514,14 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
             const own = needSlices(need, slices)
             if (!own.length) continue
             windows.set(need, need.part ? { start: own[0]!.start, end: own.at(-1)!.end } : slot)
-            if (rangesOverlap(own, need.profile.blocked(need.units, range.end))) short = true
+            if (rangesOverlap(own, need.profile.blocked(need.units, range.end, slot.start))) short = true
           }
           if (short) {
             unresolved.add(task.id)
             if (trace) recordCapacity(trace, task, [...windows.keys()], slot, true, slot, slot, windows)
           }
         } else {
-          const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
-          if (rangesOverlap(slices, blocked)) {
+          if (rangesOverlap(slices, blockedBy(needs, range, slot.start))) {
             unresolved.add(task.id)
             if (trace) recordCapacity(trace, task, needs, slot, true, slot, slot)
           }
@@ -535,8 +555,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
     }
     const whole = spans.size === needs.length && [...spans.values()].every(span => span.start === 0 && span.end === duration)
     if (duration > 0 && needs.length && whole) {
-      const blocked = normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end)), range)
-      const free = freeWork(clock, blocked)
+      const free = freeWork(clock, blockedBy(needs, range, early.start), early.start)
       lastSlot = slotFor(clock, duration, limits, true)!
       const lastStart = lastSlot.workStart
       const found = task.source.splittable
@@ -545,7 +564,7 @@ export function levelResources(input: LevelResourcesInput, options?: ScheduleOpt
       if (found) chunks = found
       else unresolved.add(task.id)
     } else if (duration > 0 && spans.size) {
-      const pieces = workPieces(clock, duration, spans, range)
+      const pieces = workPieces(clock, duration, spans, range, early.start)
       lastSlot = slotFor(clock, duration, limits, true)!
       const lastStart = lastSlot.workStart
       const found = task.source.splittable

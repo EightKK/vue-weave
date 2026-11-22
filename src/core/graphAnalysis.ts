@@ -1,6 +1,7 @@
 import { indexGraph } from './graph.js'
 import type { GraphEdge, GraphGroup, IdentifiedNode } from './graph.js'
-import { heapPop, heapPush } from './graphHeap.js'
+import { KeyedMinHeap } from './graphHeap.js'
+import { checkLayoutNumber } from './graphOptions.js'
 
 interface Arc {
   to: number
@@ -25,27 +26,6 @@ function edgeCost(edge: GraphEdge, weight: ((edge: GraphEdge) => number) | undef
     throw new RangeError(`Edge weights must be finite and ${allowZero ? 'nonnegative' : 'greater than 0'}: ${edge.id}`)
   }
   return cost
-}
-
-type HeapItem = [key: number, sequence: number, value: number]
-
-const heapBefore = (a: HeapItem, b: HeapItem) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
-
-/** Binary min-heap of [key, sequence, value]; the sequence breaks ties so pops are deterministic. */
-class MinHeap {
-  private readonly items: HeapItem[] = []
-  private sequence = 0
-
-  get size(): number { return this.items.length }
-
-  push(key: number, value: number): void {
-    heapPush(this.items, [key, this.sequence++, value], heapBefore)
-  }
-
-  pop(): [number, number] {
-    const top = heapPop(this.items, heapBefore)!
-    return [top[0], top[2]]
-  }
 }
 
 /**
@@ -179,7 +159,7 @@ export function graphBetweennessCentrality(
         }
       }
     } else {
-      const heap = new MinHeap()
+      const heap = new KeyedMinHeap<number>()
       const settled = new Array<boolean>(count).fill(false)
       heap.push(0, source)
       while (heap.size) {
@@ -253,8 +233,8 @@ export function graphPageRank(
 ): GraphPageRankResult {
   const { damping = 0.85, tolerance = 1e-6, maxIterations = 100, weight } = options
   if (!Number.isFinite(damping) || damping < 0 || damping >= 1) throw new RangeError('damping must be in [0, 1)')
-  if (!Number.isFinite(tolerance) || tolerance <= 0) throw new RangeError('tolerance must be finite and greater than 0')
-  if (!Number.isInteger(maxIterations) || maxIterations < 1) throw new RangeError('maxIterations must be a positive integer')
+  checkLayoutNumber('tolerance', tolerance, 'positive')
+  checkLayoutNumber('maxIterations', maxIterations, 'positiveInteger')
   const { ids, count, position } = indexNodes(nodes, edges)
   if (!count) return { scores: new Map(), iterations: 0, converged: true }
 
@@ -325,7 +305,7 @@ export function detectGraphCommunities(
   options: GraphCommunityOptions = {},
 ): GraphCommunityResult {
   const { resolution = 1, weight } = options
-  if (!Number.isFinite(resolution) || resolution <= 0) throw new RangeError('resolution must be finite and greater than 0')
+  checkLayoutNumber('resolution', resolution, 'positive')
   const { ids, count, position } = indexNodes(nodes, edges)
 
   let level: LevelGraph = { adjacency: ids.map(() => new Map<number, number>()), loops: new Array<number>(count).fill(0) }
@@ -462,7 +442,7 @@ export function graphCommunityGroups(
   options: GraphCommunityGroupsOptions = {},
 ): GraphGroup[] {
   const { idPrefix = 'community-', label, minSize = 2 } = options
-  if (!Number.isInteger(minSize) || minSize < 1) throw new RangeError('minSize must be a positive integer')
+  checkLayoutNumber('minSize', minSize, 'positiveInteger')
   if (typeof idPrefix !== 'string') throw new RangeError('idPrefix must be a string')
   const seen = new Set<string>()
   for (const members of communities) {

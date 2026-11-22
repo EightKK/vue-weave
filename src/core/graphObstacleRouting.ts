@@ -2,6 +2,8 @@ import type { GraphPoint, GraphPort } from './graph.js'
 import { heapPop, heapPush } from './graphHeap.js'
 import { isGraphPortSide } from './graphPortSide.js'
 import { SpatialGrid, type SpatialRect } from './graphSpatial.js'
+import { isFiniteRect } from './graphGeometry.js'
+import { checkLayoutNumbers } from './graphOptions.js'
 import type { GraphRect } from './graphView.js'
 
 type Side = GraphPort['side']
@@ -63,12 +65,7 @@ export function resolveObstacleAvoidance(value: unknown, name = 'avoidNodes'): R
     throw new RangeError(name + ' must be a boolean or an options object')
   }
   const { clearance = 8, bendPenalty = 24 } = value === true ? {} : value as GraphObstacleAvoidance
-  if (typeof clearance !== 'number' || !Number.isFinite(clearance) || clearance < 0) {
-    throw new RangeError('clearance must be finite and nonnegative')
-  }
-  if (typeof bendPenalty !== 'number' || !Number.isFinite(bendPenalty) || bendPenalty < 0) {
-    throw new RangeError('bendPenalty must be finite and nonnegative')
-  }
+  checkLayoutNumbers({ clearance, bendPenalty }, 'nonnegative')
   return { clearance, bendPenalty }
 }
 
@@ -386,7 +383,7 @@ export function findOrthogonalRoute(
   assertEnd(to, 'to')
   const { clearance, bendPenalty } = resolveObstacleAvoidance(options ?? {}, 'options')!
   obstacles.forEach((rect, i) => {
-    if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height < 0) {
+    if (!isFiniteRect(rect)) {
       throw new RangeError('Obstacle ' + i + ' must have finite coordinates and a nonnegative finite size')
     }
   })

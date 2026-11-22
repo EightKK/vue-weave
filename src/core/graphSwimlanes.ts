@@ -8,6 +8,7 @@ import {
   checkLayoutNumber, checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap,
   sameRankTurnDistance,
 } from './graphOptions.js'
+import { isFiniteRect } from './graphGeometry.js'
 import type { GraphRect } from './graphView.js'
 import { duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
@@ -126,7 +127,7 @@ export function assertGraphSwimlanePools(pools: readonly GraphSwimlanePoolBand[]
     if (typeof pool.label !== 'string') throw new Error(where + ' pool ' + pool.id + ' needs a string label')
     if (!Array.isArray(pool.laneIds) || !pool.laneIds.every(isId)) throw new Error(where + ' pool ' + pool.id + ' needs an array of lane IDs')
     for (const rect of [pool, pool.header]) {
-      if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height < 0) {
+      if (!isFiniteRect(rect)) {
         throw new RangeError(where + ' pool ' + pool.id + ' needs finite geometry with nonnegative sizes')
       }
     }
@@ -146,7 +147,7 @@ export function assertGraphSwimlaneBands(lanes: readonly GraphSwimlaneBand[], wh
     ids.add(lane.id)
     if (typeof lane.label !== 'string') throw new Error(where + ' lane ' + lane.id + ' needs a string label')
     for (const rect of [lane, lane.header]) {
-      if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height < 0) {
+      if (!isFiniteRect(rect)) {
         throw new RangeError(where + ' lane ' + lane.id + ' needs finite geometry with nonnegative sizes')
       }
     }

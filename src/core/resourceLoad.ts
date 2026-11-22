@@ -1,6 +1,6 @@
 import type { ScheduledTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
-import { assertScheduleRange, normalizeWorkPeriods } from './workCalendar.js'
+import { assertScheduleRange, integerPeriodMessage, normalizeWorkPeriods } from './workCalendar.js'
 import { uniteRanges } from './intervals.js'
 import { assignmentWorkRange, createAssignmentChecker, resourceCapacitySteps, sliceWork } from './resourceCapacity.js'
 import { checkId } from './ids.js'
@@ -69,7 +69,7 @@ export function assignmentWorkPeriods(
   const part = assignmentWorkRange(assignment)
   for (const period of work) {
     if (!Number.isSafeInteger(period.start) || !Number.isSafeInteger(period.end) || period.end <= period.start) {
-      throw new RangeError('Working periods must have finite integer endpoints and positive length')
+      throw new RangeError(integerPeriodMessage)
     }
   }
   const merged = uniteRanges(work)

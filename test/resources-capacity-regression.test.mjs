@@ -6,9 +6,11 @@ import { attempt, seededRandom, sha256Json, withPlainTrace } from './helpers/see
 // Seeded plans mixing calendars, quanta, pauses, splittable, manual, inactive and summary tasks, priorities, several
 // resources with and without availability `periods`, and assignment units. The digest was produced before
 // `capacityPeriods` and partial assignments (`workOffset`, `workDuration`) were added; it must not change, because
-// input without those fields is calculated exactly as before.
+// input without those fields is calculated exactly as before. (It was updated once, when adjacent leveling `capacity`
+// reasons of equal capacity were merged into one; every date, delay, overload and diagnostic stayed the same, and only
+// the trace reasons and the reason IDs that diagnostics refer to changed.)
 test('resource load, leveling and diagnostics without capacity periods or partial assignments are unchanged', () => {
-  assert.equal(resourcePlanDigest(), 'ee5dec5eb6fae7bc71cd956b530db95a5a9465c5902f20ef225eb0a057a694a9')
+  assert.equal(resourcePlanDigest(), '636894e1ec8f48afa6acbafa4b894cf1b987f7933272e641dafc719e08ece5eb')
 })
 
 function resourcePlanDigest() {

@@ -4,6 +4,7 @@ import {
   buildWorkPeriods, calendarBands, editTimeRange, invertWorkPeriods, moveTimeRanges, normalizeWorkPeriods, scheduleTasks, timeTicks,
   validateTimelineData,
 } from '@eightkk/vue-weave/core'
+import { utc } from './helpers/time.mjs'
 
 test('invertWorkPeriods accepts finite non-integer periods while normalizeWorkPeriods still needs integers', () => {
   const periods = [{ start: 1.25, end: 2.5 }, { start: 0.5, end: 1.25 }, { start: 3.75, end: 9 }]
@@ -19,11 +20,11 @@ test('invertWorkPeriods accepts finite non-integer periods while normalizeWorkPe
 })
 
 test('fixed UTC offsets share one limit of ±1080 minutes', () => {
-  const range = { start: Date.UTC(2026, 10, 9), end: Date.UTC(2026, 10, 10) }
+  const range = { start: utc(2026, 11, 9), end: utc(2026, 11, 10) }
   const week = { weekly: [{ weekday: 1, startMinute: 0, endMinute: 60 }] }
   // UTC−17:00: Monday 00:00 local is Monday 17:00 UTC.
   assert.deepEqual(buildWorkPeriods(range, { ...week, utcOffsetMinutes: -1020 }), [
-    { start: Date.UTC(2026, 10, 9, 17), end: Date.UTC(2026, 10, 9, 18) },
+    { start: utc(2026, 11, 9, 17), end: utc(2026, 11, 9, 18) },
   ])
   assert.equal(buildWorkPeriods(range, { ...week, utcOffsetMinutes: 1080 }).length, 0)
   assert.equal(buildWorkPeriods(range, { ...week, utcOffsetMinutes: 840 }).length, 0)
@@ -84,6 +85,9 @@ test('validateTimelineData scopes ID uniqueness to each collection and rejects s
     assert.throws(() => validateTimelineData(rows, bars, dependencies), error =>
       error.constructor === Error && error.message === 'A dependency cannot link a bar to itself: loop on bar y')
   }
+  // An unknown dependency type names the dependency.
+  assert.throws(() => validateTimelineData(rows, bars, [{ id: 'xy', from: 'x', to: 'y', type: 'XX' }]),
+    { name: 'Error', message: 'Invalid dependency type: xy' })
   // scheduleTasks takes its own links and still reports a self-link as a one-task cycle.
   assert.deepEqual(scheduleTasks({ range: { start: 0, end: 10 }, tasks: [{ id: 'x', duration: 2 }], dependencies: [{ id: 'self', from: 'x', to: 'x' }] }),
     { ok: false, code: 'cycle', cycles: [{ taskIds: ['x'], dependencyIds: ['self'] }] })

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  countGraphCrossings, filterGraph, findGraphCycles, graphEdgeEndpoint, layoutLayeredGraph, layoutRadialGraph, layoutTreeGraph,
-  searchGraphNodes, shortestGraphPath, topologicalOrder,
+  countGraphCrossings, filterGraph, findGraphCycles, graphEdgeEndpoint, graphNeighborhood, indexGraph, layoutLayeredGraph,
+  layoutRadialGraph, layoutTreeGraph, searchGraphNodes, shortestGraphPath, topologicalOrder,
 } from '@eightkk/vue-weave/core'
+import { chainEdges, graphEdges, graphNodes, nodeIds } from './helpers/builders.mjs'
+import { seededRandom } from './helpers/seeded.mjs'
 
-const nodes = (...ids) => ids.map(id => ({ id, label: id.toUpperCase() + ' node' }))
-const edges = (...pairs) => pairs.map(([from, to], i) => ({ id: `e${i}`, from, to }))
+const nodes = (...ids) => graphNodes(ids, id => id.toUpperCase() + ' node')
+const edges = (...pairs) => graphEdges(pairs, 'e')
 
 const crossed = [nodes('a', 'b', 'c', 'd'), edges(['a', 'd'], ['b', 'c'])]
 
@@ -35,6 +37,23 @@ test('crossing reduction is opt-in and lowers crossings', () => {
   }
 })
 
+test('countGraphCrossings validates the direction, the edge ends and the boxes it measures', () => {
+  const [n, e] = crossed
+  const layout = layoutLayeredGraph(n, e)
+  for (const direction of ['LR', 'RL', 'TB', 'BT']) assert.equal(typeof countGraphCrossings(layout, e, direction), 'number')
+  assert.throws(() => countGraphCrossings(layout, e, 'XY'), { name: 'RangeError', message: 'Unknown layout direction' })
+  assert.throws(() => countGraphCrossings(layout, edges(['a', 'zz'])), { name: 'Error', message: 'Unknown node in graph edge e0: zz' })
+  const boxes = new Map(layout.boxes)
+  boxes.set('d', { ...boxes.get('d'), y: Number.NaN })
+  assert.throws(() => countGraphCrossings({ ...layout, boxes }, e), { name: 'RangeError', message: 'Graph box geometry must be finite: d' })
+  boxes.set('d', { ...layout.boxes.get('d'), rank: undefined })
+  assert.throws(() => countGraphCrossings({ ...layout, boxes }, e), RangeError)
+  // Boxes that no edge ends at are not measured.
+  boxes.set('d', layout.boxes.get('d'))
+  boxes.set('extra', { x: Number.NaN, y: 0, width: 1, height: 1, rank: 0 })
+  assert.equal(countGraphCrossings({ ...layout, boxes }, e), 1)
+})
+
 test('crossing reduction handles a denser bipartite graph and never worsens the input order', () => {
   const left = ['a', 'b', 'c', 'd', 'e', 'f'], right = ['g', 'h', 'i', 'j', 'k', 'l']
   const n = nodes(...left, ...right)
@@ -47,15 +66,15 @@ test('crossing reduction handles a denser bipartite graph and never worsens the 
   assertNoOverlap(reduced)
 })
 
-test('crossing reduction validates options and keeps 12,000-node chains fast', () => {
+test('crossing reduction validates options and lays out 12,000-node chains without recursion', () => {
   assert.throws(() => layoutLayeredGraph([], [], { crossingReduction: 'bogus' }), RangeError)
   assert.throws(() => layoutLayeredGraph([], [], { crossingSweeps: 0 }), RangeError)
-  const ids = Array.from({ length: 12000 }, (_, i) => 'n' + i)
-  const chain = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
-  const started = performance.now()
-  const layout = layoutLayeredGraph(nodes(...ids), chain, { crossingReduction: 'barycenter' })
+  const ids = nodeIds(12000)
+  const layout = layoutLayeredGraph(nodes(...ids), chainEdges(ids), { crossingReduction: 'barycenter' })
   assert.equal(layout.boxes.size, 12000)
-  assert.ok(performance.now() - started < 5000)
+  // One node per rank: a chain has nothing to reorder, so every node stays on the first row.
+  assert.equal(layout.boxes.get('n11999').rank, 11999)
+  assert.equal(new Set([...layout.boxes.values()].map(box => box.y)).size, 1)
 })
 
 test('RL and BT mirror LR and TB consistently', () => {
@@ -156,8 +175,8 @@ test('radial layout places depth rings around a centred root without overlaps', 
 })
 
 test('tree layout of a 12,000-node chain is iterative', () => {
-  const ids = Array.from({ length: 12000 }, (_, i) => 'n' + i)
-  const chain = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+  const ids = nodeIds(12000)
+  const chain = chainEdges(ids)
   assert.equal(layoutTreeGraph(nodes(...ids), chain).boxes.size, 12000)
   assert.equal(layoutRadialGraph(nodes(...ids), chain).boxes.size, 12000)
   assert.equal(findGraphCycles(nodes(...ids), chain).length, 0)
@@ -182,6 +201,14 @@ test('findGraphCycles returns non-trivial components and self-loops', () => {
   assert.deepEqual(findGraphCycles(n, e), [['a', 'b', 'c'], ['d', 'e'], ['f']])
   assert.deepEqual(findGraphCycles(n, edges(['a', 'b'])), [])
   assert.deepEqual(findGraphCycles([], []), [])
+})
+
+test('findGraphCycles finds a 12,000-node single cycle without recursion', () => {
+  const ids = nodeIds(12000)
+  const cycles = findGraphCycles(nodes(...ids), chainEdges(ids, true))
+  assert.equal(cycles.length, 1)
+  assert.deepEqual(cycles[0], ids)
+  assert.deepEqual(topologicalOrder(nodes(...ids), chainEdges(ids, true)).order, [])
 })
 
 test('shortestGraphPath supports BFS, Dijkstra, undirected search and unreachable targets', () => {
@@ -222,6 +249,40 @@ test('searchGraphNodes and filterGraph match text or predicates without mutating
   assert.equal(JSON.stringify([n, e]), before)
   assert.throws(() => filterGraph(n, edges(['web', 'zz']), 'x'), Error)
   assert.throws(() => filterGraph(n, e, 'x', { neighborhood: -1 }), RangeError)
+  assert.throws(() => filterGraph(n, e, 'x', { neighborhood: 1.5 }), { name: 'RangeError', message: 'neighborhood must be an integer ≥ 0 (got 1.5)' })
+})
+
+test('filterGraph keeps the union of the neighbourhoods of every match, walking each direction on its own', () => {
+  const { pick } = seededRandom(4242)
+  for (let round = 0; round < 40; round++) {
+    const ids = nodeIds(3 + pick(25))
+    const links = Array.from({ length: pick(40) }, (_, i) => ({ id: 'e' + i, from: ids[pick(ids.length)], to: ids[pick(ids.length)] }))
+    const graph = graphNodes(ids)
+    const matched = new Set(ids.filter(() => pick(4) === 0))
+    const hops = pick(4)
+    const index = indexGraph(graph, links)
+    const expected = new Set([...matched].flatMap(id => [...graphNeighborhood(index, id, hops)]))
+    const result = filterGraph(graph, links, node => matched.has(node.id), { neighborhood: hops })
+    assert.deepEqual(result.nodes.map(node => node.id), ids.filter(id => expected.has(id)))
+    assert.deepEqual(result.edges, links.filter(link => expected.has(link.from) && expected.has(link.to)))
+  }
+  // A shared parent does not pull in its other children.
+  const shared = filterGraph(nodes('p', 'a', 'b'), edges(['p', 'a'], ['p', 'b']), node => node.id === 'a', { neighborhood: 5 })
+  assert.deepEqual(shared.nodes.map(node => node.id), ['p', 'a'])
+})
+
+test('filterGraph walks once from every match, so a 20,000-node chain where every node matches stays linear', () => {
+  const ids = nodeIds(20000)
+  const chain = chainEdges(ids)
+  // Each match used to walk the whole chain on its own, about 400 million steps; one walk from all matches visits
+  // every node once per direction.
+  const result = filterGraph(nodes(...ids), chain, () => true, { neighborhood: 20000 })
+  assert.equal(result.nodes.length, 20000)
+  assert.equal(result.edges.length, 19999)
+  const tail = filterGraph(nodes(...ids), chain, node => node.id === 'n19999', { neighborhood: 20000 })
+  assert.equal(tail.nodes.length, 20000)
+  assert.deepEqual(filterGraph(nodes(...ids), chain, node => node.id === 'n10', { neighborhood: 2 }).nodes.map(node => node.id),
+    ['n8', 'n9', 'n10', 'n11', 'n12'])
 })
 
 test('unnamed edge endpoints follow the drawn path after moves, in every direction and for custom layouts', async () => {

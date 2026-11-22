@@ -477,7 +477,7 @@ export function validateTimelineData(
       if (barIds.has(summary) || !summaryIds.has(summary) || !above(summary, rowOf(other))) continue
       throw new Error(`Dependency ${dependency.id} links summary row ${summary} with its own subtask ${other}`)
     }
-    if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type')
+    if (dependency.type && !['FS', 'SS', 'FF', 'SF'].includes(dependency.type)) throw new Error('Invalid dependency type: ' + dependency.id)
     const lag = dependency.lag
     if (lag !== undefined && (typeof lag !== 'number' || !Number.isFinite(lag))) throw new RangeError('Dependency lag must be finite: ' + dependency.id)
   }
@@ -941,7 +941,7 @@ export function resourceLoadHistogram(
   for (const [id, group] of groups) {
     group.segments.sort((a, b) => a.start - b.start)
     for (let i = 1; i < group.segments.length; i++) {
-      if (group.segments[i]!.start < group.segments[i - 1]!.end) throw new Error('Overlapping load segments for resource: ' + id)
+      if (group.segments[i]!.start < group.segments[i - 1]!.end) throw new RangeError('Overlapping load segments for resource: ' + id)
     }
   }
   return groups

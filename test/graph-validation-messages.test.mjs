@@ -45,6 +45,7 @@ const cases = [
     [name + ' edges', 'graph edge', 'ab', id => { const e = edges(); e[1].id = id; call(nodes(), e) }],
     [name + ' ports', 'port', 'p', id => { const n = nodes(); n[0].ports = [{ id: 'p', side: 'right' }, { id, side: 'left' }]; call(n, edges()) }, ' (graph node a)'],
   ]),
+  ['traverseGraph nodes', 'graph node', 'a', id => { const n = nodes(); n[1].id = id; traverseGraph({ nodes: n, edges: [] }, ['a']) }],
   ['traverseGraph edges', 'graph edge', 'ab', id => { const e = edges(); e[1].id = id; traverseGraph({ nodes: nodes(), edges: e }, ['a']) }],
   ['collapseGraphGroups groups', 'graph group', 'g', id => { const g = groups(); g[1].id = id; collapseGraphGroups(nodes(), edges(), g, []) }],
   ['buildGraphLayoutRequests groups', 'graph group', 'g', id => { const g = groups(); g[1].id = id; buildGraphLayoutRequests({ nodes: nodes(), edges: edges(), groups: g, collapsedGroupIds: ['g'] }, 'r') }],

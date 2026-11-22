@@ -1,6 +1,6 @@
 import type { GraphEdge } from './graph.js'
 import type { GraphCollapseResult } from './graphCollapse.js'
-import { duplicateIdError, invalidIdError, isId, unknownReferenceError } from './ids.js'
+import { checkId, uniqueIds, unknownReferenceError } from './ids.js'
 
 export type GraphTraversalDirection = 'forward' | 'backward' | 'both'
 
@@ -24,8 +24,8 @@ export interface GraphTraversalResult {
  * Finds the nodes and edges reached from `startIds` along `options.direction` within `options.maxHops`. With `both`,
  * the two directions are walked independently, so a shared parent does not pull in its other children. The walk is
  * iterative, so it handles long chains, and it terminates on cycles. Unknown start IDs are reported in `unknownIds`
- * instead of throwing. Throws RangeError for an invalid `maxHops` or direction and Error for an edge with an unknown
- * endpoint or a duplicate or empty edge ID. The inputs are not modified.
+ * instead of throwing. Throws RangeError for an invalid `maxHops` or direction and Error for a duplicate or empty node
+ * or edge ID or an edge with an unknown endpoint. The inputs are not modified.
  */
 export function traverseGraph(
   graph: { nodes: readonly { id: string }[]; edges: readonly GraphEdge[] },
@@ -37,15 +37,12 @@ export function traverseGraph(
   if (typeof maxHops !== 'number' || maxHops < 0 || (maxHops !== Infinity && !Number.isInteger(maxHops))) {
     throw new RangeError('maxHops must be a nonnegative integer or Infinity')
   }
-  const nodeIds = new Set<string>()
-  for (const { id } of graph.nodes) nodeIds.add(id)
+  const nodeIds = uniqueIds(graph.nodes, 'graph node')
   const outgoing = new Map<string, { edge: string; node: string }[]>()
   const incoming = new Map<string, { edge: string; node: string }[]>()
   const seenEdges = new Set<string>()
   for (const { id, from, to } of graph.edges) {
-    if (!isId(id)) throw invalidIdError('graph edge', id)
-    if (seenEdges.has(id)) throw duplicateIdError('graph edge', id)
-    seenEdges.add(id)
+    checkId('graph edge', id, seenEdges)
     if (!nodeIds.has(from)) throw unknownReferenceError('node', 'graph edge ' + id, from)
     if (!nodeIds.has(to)) throw unknownReferenceError('node', 'graph edge ' + id, to)
     for (const [map, key, node] of [[outgoing, from, to], [incoming, to, from]] as const) {

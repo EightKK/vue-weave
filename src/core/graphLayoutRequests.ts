@@ -4,7 +4,7 @@ import {
 } from './graph.js'
 import { collapseGraphGroups, type GraphCollapseResult, type GraphShownEdge, type GraphShownNode } from './graphCollapse.js'
 import { graphIncidentCurve } from './graphCurve.js'
-import { markBuiltinRoutes } from './graphGeometry.js'
+import { isFiniteRect, markBuiltinRoutes } from './graphGeometry.js'
 import { assertGraphLayoutDirection, isGraphLayoutDirection } from './graphOrient.js'
 import { isGraphPortSide } from './graphPortSide.js'
 import type { GraphLabels, NetworkGroup, NetworkNode } from './types.js'
@@ -223,7 +223,7 @@ export function validateGraphLayoutResponse(request: GraphLayoutRequest, respons
   for (const node of request.nodes) {
     const box = layout.boxes.get(node.id) as GraphBox | undefined
     if (!box) throw new Error('Missing layout box: ' + node.id)
-    if (!finite(box.x, box.y, box.width, box.height) || box.width <= 0 || box.height <= 0) throw new RangeError('Invalid layout box: ' + node.id)
+    if (!isFiniteRect(box, 'positive')) throw new RangeError('Invalid layout box: ' + node.id)
   }
   if (request.scope === 'expanded') return layout
   if (!finite(layout.width, layout.height) || layout.width <= 0 || layout.height <= 0) {

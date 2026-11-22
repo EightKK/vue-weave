@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { applyGraphPositions, routeGraphPorts, graphNeighborhood, indexGraph, layoutLayeredGraph } from '@eightkk/vue-weave/core'
+import { chainEdges, graphEdges, graphNodes, nodeIds } from './helpers/builders.mjs'
 
-const nodes = (...ids) => ids.map(id => ({ id, label: id }))
-const edges = (...pairs) => pairs.map(([from, to], i) => ({ id: String(i), from, to }))
+const nodes = (...ids) => graphNodes(ids)
+const edges = (...pairs) => graphEdges(pairs)
 
 test('branch, merge, disconnected nodes and a skip edge preserve ranks', () => {
   const result = layoutLayeredGraph(nodes('a', 'b', 'c', 'd', 'e', 'isolated'),
@@ -91,4 +92,15 @@ test('long edges reuse lanes so headroom follows overlap, not edge count', () =>
   const overlap = layoutLayeredGraph(nodes('a', 'b', 'c'), edges(['a', 'b'], ['b', 'c'], ['a', 'c'], ['a', 'c']))
   assert.equal(new Set(['2', '3'].map(id => overlap.paths.get(id).match(/ V (-?[\d.]+) H /)[1])).size, 2)
   assert.equal(overlap.boxes.get('a').y, 20 + 2 * 9)
+})
+
+test('a 12,000-node single cycle is laid out without recursion', () => {
+  const ids = nodeIds(12000)
+  const layout = layoutLayeredGraph(graphNodes(ids), chainEdges(ids, true))
+  assert.equal(layout.boxes.size, 12000)
+  assert.equal(layout.paths.size, 12000)
+  // A strongly connected component shares one rank; its nodes are stacked without overlapping.
+  const boxes = [...layout.boxes.values()]
+  assert.deepEqual([...new Set(boxes.map(box => box.rank))], [0])
+  assert.equal(new Set(boxes.map(box => box.y)).size, 12000)
 })

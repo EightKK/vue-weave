@@ -6,6 +6,7 @@ import { graphIncidentCurve } from './graphCurve.js'
 import { checkLayoutSizes, defaultColumnGap, defaultNodeHeight, defaultNodeWidth, defaultPadding, defaultRowGap } from './graphOptions.js'
 import { assertGraphLayoutDirection } from './graphOrient.js'
 import { SpatialGrid, graphPathPolylines, segmentMeetsRect, type SpatialRect } from './graphSpatial.js'
+import { isFiniteRect } from './graphGeometry.js'
 import { unknownReferenceError } from './ids.js'
 
 /**
@@ -421,7 +422,7 @@ export function graphLayoutChangeMetrics(
   const ids: string[] = [], rects: SpatialRect[] = []
   let size = 0
   for (const [id, box] of after.boxes) {
-    if (![box.x, box.y, box.width, box.height].every(Number.isFinite)) throw new RangeError('Graph boxes must be finite: ' + id)
+    if (!isFiniteRect(box, 'any')) throw new RangeError('Graph boxes must be finite: ' + id)
     ids.push(id)
     rects.push({ x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y + box.height })
     size += (Math.abs(box.width) + Math.abs(box.height)) / 2

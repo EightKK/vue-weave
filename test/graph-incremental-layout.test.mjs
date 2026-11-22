@@ -175,6 +175,9 @@ test('layoutGraphIncrementally only moves unfixed positioned nodes in relaxed mo
   const metrics = graphLayoutChangeMetrics(positions, relaxed)
   assert.ok(metrics.maxDisplacement > 0 && metrics.maxDisplacement <= 100)
   assert.deepEqual(metrics.movedIds, ['blocker'])
+  for (const box of [null, { x: 0, y: 0, width: Number.NaN, height: 1 }]) {
+    assert.throws(() => graphLayoutChangeMetrics(new Map(), { boxes: new Map([['x', box]]) }), { name: 'RangeError', message: 'Graph boxes must be finite: x' })
+  }
   // Too little room: nobody moves.
   const tight = layoutGraphIncrementally(allNodes, allEdges, positions, { maxDisplacement: 10 })
   assert.deepEqual(tight.movedIds, [])

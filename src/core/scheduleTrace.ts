@@ -130,7 +130,8 @@ type ReasonData = Omit<ScheduleReason, 'id'>
 export class ScheduleTraceRecorder {
   private readonly reasons: ScheduleReason[] = []
   private readonly byTask = new Map<string, string[]>()
-  private readonly byPhase = new Map<string, string[]>()
+  /** Reason IDs by phase, then task ID. */
+  private readonly byPhase = new Map<ScheduleReasonPhase, Map<string, string[]>>()
 
   constructor(taskIds: Iterable<string>) {
     for (const id of taskIds) this.byTask.set(id, [])
@@ -140,15 +141,16 @@ export class ScheduleTraceRecorder {
     const id = 'r' + this.reasons.length
     this.reasons.push({ id, ...data })
     this.byTask.get(data.taskId)!.push(id)
-    const key = JSON.stringify([data.phase, data.taskId])
-    const list = this.byPhase.get(key)
+    let phase = this.byPhase.get(data.phase)
+    if (!phase) this.byPhase.set(data.phase, phase = new Map())
+    const list = phase.get(data.taskId)
     if (list) list.push(id)
-    else this.byPhase.set(key, [id])
+    else phase.set(data.taskId, [id])
     return id
   }
 
   ids(phase: ScheduleReasonPhase, taskId: string): readonly string[] {
-    return this.byPhase.get(JSON.stringify([phase, taskId])) ?? []
+    return this.byPhase.get(phase)?.get(taskId) ?? []
   }
 
   trace(): ScheduleTrace {

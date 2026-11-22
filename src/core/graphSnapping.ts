@@ -1,4 +1,6 @@
 import type { GraphPoint } from './graph.js'
+import { isFiniteGraphPoint, isFiniteRect } from './graphGeometry.js'
+import { checkLayoutNumber } from './graphOptions.js'
 import type { GraphRect } from './graphView.js'
 
 /**
@@ -23,10 +25,6 @@ type Axis = 'x' | 'y'
 
 // Anchors compare equal within this distance, so a shift computed in floating point still counts as aligned.
 const alignedWithin = 1e-9
-
-function validRect(rect: GraphRect) {
-  return [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) && rect.width >= 0 && rect.height >= 0
-}
 
 /** Start, centre and end of a rectangle along an axis. */
 function anchors(rect: GraphRect, axis: Axis): [number, number, number] {
@@ -90,10 +88,10 @@ function collectGuides(moving: GraphRect, others: readonly GraphRect[], axis: Ax
  * threshold and for rectangles with non-finite values or a negative size.
  */
 export function graphAlignmentGuides(moving: GraphRect, others: readonly GraphRect[], threshold: number): GraphAlignment {
-  if (!Number.isFinite(threshold) || threshold < 0) throw new RangeError('Alignment threshold must be a nonnegative finite number')
-  if (!validRect(moving)) throw new RangeError('The moving rectangle needs finite coordinates and a nonnegative size')
+  checkLayoutNumber('threshold', threshold, 'nonnegative')
+  if (!isFiniteRect(moving)) throw new RangeError('The moving rectangle needs finite coordinates and a nonnegative size')
   for (let index = 0; index < others.length; index++) {
-    if (!validRect(others[index]!)) throw new RangeError('Alignment rectangle ' + index + ' needs finite coordinates and a nonnegative size')
+    if (!isFiniteRect(others[index])) throw new RangeError('Alignment rectangle ' + index + ' needs finite coordinates and a nonnegative size')
   }
   const dx = nearestShift(moving, others, threshold, 'x')
   const dy = nearestShift(moving, others, threshold, 'y')
@@ -110,8 +108,8 @@ export function graphAlignmentGuides(moving: GraphRect, others: readonly GraphRe
  * positive finite number or a point with non-finite coordinates. Returns a new point.
  */
 export function snapGraphPoint(point: GraphPoint, grid: number): GraphPoint {
-  if (!Number.isFinite(grid) || grid <= 0) throw new RangeError('The snap grid must be a positive finite number')
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new RangeError('A snapped point needs finite coordinates')
+  checkLayoutNumber('grid', grid, 'positive')
+  if (!isFiniteGraphPoint(point)) throw new RangeError('A snapped point needs finite coordinates')
   // Adding 0 turns a rounded -0 into 0.
   return { x: Math.round(point.x / grid) * grid + 0, y: Math.round(point.y / grid) * grid + 0 }
 }

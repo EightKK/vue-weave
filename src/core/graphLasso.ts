@@ -1,5 +1,5 @@
 import type { GraphPoint } from './graph.js'
-import { isFiniteGraphPoint } from './graphGeometry.js'
+import { isFiniteGraphPoint, isFiniteRect } from './graphGeometry.js'
 import type { GraphRect } from './graphView.js'
 
 function finitePoint(point: GraphPoint, what: string) {
@@ -59,7 +59,7 @@ export function graphNodesInPolygon(boxes: ReadonlyMap<string, GraphRect>, polyg
   }
   const ids: string[] = []
   for (const [id, box] of boxes) {
-    if (![box.x, box.y, box.width, box.height].every(Number.isFinite)) throw new RangeError('Graph box geometry must be finite: ' + id)
+    if (!isFiniteRect(box, 'any')) throw new RangeError('Graph box geometry must be finite: ' + id)
     const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     if (center.x < left || center.x > right || center.y < top || center.y > bottom) continue
     if (contains(center, polygon)) ids.push(id)

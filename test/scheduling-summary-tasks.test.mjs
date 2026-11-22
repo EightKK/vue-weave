@@ -300,9 +300,10 @@ test('deep summary hierarchies and long chains under a summary are handled witho
 
 // Seeded plans without `parentId` mixing calendars, quanta, all link types and lags, bounds, ALAP, manual, inactive,
 // pauses and leveling flags. The digest was produced by release 0.5.0 before summary tasks were added; it must not
-// change, because plans without hierarchy are scheduled exactly as before.
+// change, because plans without hierarchy are scheduled exactly as before. (It was updated once, when adjacent leveling
+// `capacity` reasons of equal capacity were merged into one; only the leveling traces changed.)
 test('plans without hierarchy give the same results as before summary tasks', () => {
-  assert.equal(flatPlanDigest(), '7228031770fa93ae2d3eb09d626780d61fabde0787bee5958354d603a6fe9d2b')
+  assert.equal(flatPlanDigest(), 'e2e9b3e638c9d9618f11ef02dc9c3fa6b70c7f76a0ad3cbfd0fc74d530c3712c')
 })
 
 function flatPlanDigest() {
