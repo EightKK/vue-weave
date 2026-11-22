@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { checkNpmVersion, publishRelease } from '../scripts/publish-release.mjs'
+import { checkNpmVersion, publishRelease, registryRetryDelays } from '../scripts/publish-release.mjs'
 
 // Release tooling: the npm workflow publishes only the verified Release tarball, at most once.
 
@@ -81,6 +81,18 @@ test('waits for the registry to list a fresh publication', async () => {
   await withRelease({ registry: [missing, missing, missing, metadata()] }, async ({ run, reads }) => {
     await run()
     assert.equal(reads.length, 4)
+  })
+})
+
+test('the default registry wait covers the several minutes npm can take to list a new version', async () => {
+  const total = registryRetryDelays.reduce((sum, ms) => sum + ms, 0)
+  // 1.1.0 and 1.2.0 were listed only after the earlier 90-second wait had run out.
+  assert.ok(total >= 8 * 60_000 && total <= 15 * 60_000, `waits ${total / 1000} s in total`)
+  // A version listed late in that window passes without a rerun, and each wait is logged.
+  const registry = [missing, ...registryRetryDelays.slice(1).map(() => missing), metadata()]
+  await withRelease({ registry, delays: registryRetryDelays }, async ({ run, reads }) => {
+    await run()
+    assert.equal(reads.length, registryRetryDelays.length + 1)
   })
 })
 

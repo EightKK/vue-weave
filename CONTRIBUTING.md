@@ -101,7 +101,7 @@ Also set the repository's **Settings > Pages > Build and deployment > Source** t
 4. Run `npm run prepare:release` (below) to produce the verified tarball and offline demo under `artifacts/release/<version>/`.
 5. Create and push the `v<version>` tag on the checked revision from `main`. The tagged revision must contain the npm workflow.
 6. Draft the GitHub Release with the changelog entry as its notes. Attach `eightkk-vue-weave-<version>.tgz`, `eightkk-vue-weave-<version>-source-demo.tar.gz`, and `SHA256SUMS` before publishing the Release.
-7. Check the **Publish to npm** run in Actions. It checks the tarball checksum and package version before publication, then waits up to about 90 seconds for the registry to list the version and compares its integrity with the attached tarball. Rerun a failed job after fixing its cause. If npm already holds the same bytes, the rerun succeeds without uploading again. If npm holds different bytes, investigate and release a new version.
+7. Check the **Publish to npm** run in Actions. It checks the tarball checksum and package version before publication, then waits up to about 10 minutes for the registry to list the version (npm can take several minutes; the job logs each wait) and compares its integrity with the attached tarball. Rerun a failed job after fixing its cause. If npm already holds the same bytes, the rerun succeeds without uploading again. If npm holds different bytes, investigate and release a new version.
 
 The workflow publishes every stable release with the `latest` dist-tag. After a patch release for an older release line (for example 1.0.4 after 1.1.0), move `latest` back to the newest version with `npm dist-tag add @eightkk/vue-weave@<newest-version> latest`.
 
