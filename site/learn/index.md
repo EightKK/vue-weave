@@ -18,7 +18,7 @@ Import the stylesheet once, for example in your application's entry file:
 import '@eightkk/vue-weave/style.css'
 ```
 
-Vite and other bundlers with CSS support handle this import as it is. In Nuxt, list it in `css` in `nuxt.config.ts`. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, see [The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#the-stylesheet-and-typescript).
+Vite and other bundlers with CSS support handle this import as it is. In Nuxt, list it in `css` in `nuxt.config.ts`. If your `tsconfig.json` enables `noUncheckedSideEffectImports`, see [The stylesheet and TypeScript](../api/guides/setup.md#the-stylesheet-and-typescript).
 
 ## A network graph
 
@@ -94,15 +94,15 @@ The components never change the data you pass in. A user edit, such as dragging 
 - If the source data changes while a gesture is in flight, the gesture is cancelled and reported through `edit-cancel`.
 - `useEditHistory` adds undo and redo, and `useEditTransaction` saves through your server adapter with conflict handling.
 
-See the [editing contract](https://github.com/EightKK/vue-weave/blob/main/docs/api.md#editing-contract) for the details.
+See the [editing contract](../api/components/gantt-chart.md#editing-contract) for the details.
 
 ## Server-side rendering
 
-The components render on the server. They access DOM measurement and `ResizeObserver` only after mounting; the initial server render uses deterministic fallback viewport sizes and then measures the actual container, and SVG IDs come from Vue's `useId`. Keep the data and the `formatTime` output the same on the server and the client: for time zone specific labels, use `Intl.DateTimeFormat` with an explicit `timeZone` and locale. See [Nuxt](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#nuxt).
+The components render on the server. They access DOM measurement and `ResizeObserver` only after mounting; the initial server render uses deterministic fallback viewport sizes and then measures the actual container, and SVG IDs come from Vue's `useId`. Keep the data and the `formatTime` output the same on the server and the client: for time zone specific labels, use `Intl.DateTimeFormat` with an explicit `timeZone` and locale. See [Nuxt](../api/guides/setup.md#nuxt).
 
 ## Core only: servers and Workers
 
-`@eightkk/vue-weave/core` does not import Vue, the DOM or browser globals, so scheduling, layout, interchange and SVG export run in Node.js 22.18+, Workers and serverless functions. See [Core only](https://github.com/EightKK/vue-weave/blob/main/docs/integration.md#core-only-servers-and-workers).
+`@eightkk/vue-weave/core` does not import Vue, the DOM or browser globals, so scheduling, layout, interchange and SVG export run in Node.js 22.18+, Workers and serverless functions. See [Core only](../api/guides/setup.md#core-only-servers-and-workers).
 
 ## Next steps
 

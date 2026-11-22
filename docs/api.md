@@ -1,10 +1,16 @@
 # Public API
 
+<!-- #region intro -->
+
 Identifiers are nonempty strings and must be unique within their corresponding collection. Named port IDs are scoped to each node. Labels are rendered as Vue text. Escape/sanitize any HTML you supply in custom slots according to your application's trust boundaries.
 
 The package is ESM-only. Import Vue components and shared types from `@eightkk/vue-weave`, headless calculations from `@eightkk/vue-weave/core`, and the stylesheet from `@eightkk/vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency. The package also exports `@eightkk/vue-weave/package.json`, so tools can read the installed version.
 
 The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
+
+<!-- #endregion intro -->
+
+<!-- #region compatibility -->
 
 ## Compatibility and versioning
 
@@ -23,6 +29,10 @@ Not covered, and allowed to change in a minor or patch release (noted in the cha
 - The `vw-` classes that the components emit, the generated DOM and SVG structure, and the exact bytes of server-rendered markup and of SVG export (`exportSvg`, `renderGraphSvg`, `renderTimelineSvg`). Output is deterministic for the same input and version, and server rendering hydrates cleanly with the same version on the client, but markup can change between releases. Custom stylesheets and tests that rely on these classes or that structure may need updates; prefer slots, `--vw-*` properties, and roles and accessible names in tests.
 - Undocumented modules and files inside `dist/`; import only the published entries.
 
+<!-- #endregion compatibility -->
+
+<!-- #region validation -->
+
 ## Validation and errors
 
 The planning, timeline and data functions of `@eightkk/vue-weave/core` (scheduling, leveling and resource load, status-date and actuals rescheduling, plan comparison, placement, resource timelines, timeline data and row trees, `renderTimelineSvg`, snapshots, windowed data and the MS Project, iCalendar and CSV interchange), its graph functions (`indexGraph` and everything that validates a graph through it: every layout, the algorithms and analysis, editing, port rules and `renderGraphSvg`; group collapse, swimlanes, traversal, layout requests and the view bindings) and the prop checks of GanttChart and NetworkGraph share one ID rule: an ID is a non-empty string, and IDs are unique within their collection. Any other value (a number such as `0` or `5`, `''`, `null`, `undefined`, an object) is invalid. Each failure kind currently has one message format, thrown as an `Error`. The texts help people read logs; they are not part of the [compatibility promise](#compatibility-and-versioning), so code should check the class:
@@ -38,6 +48,8 @@ The planning, timeline and data functions of `@eightkk/vue-weave/core` (scheduli
 The kinds are `task`, `dependency`, `calendar`, `resource`, `row`, `bar`, `baseline set`, `marker`, `marker range`, `load row`, `event`, `unplanned task`, `windowed data item`, `windowed data link`, `view row` (the `rowIds` of a `WindowedView`), `graph page node`, `graph page edge`, `column` (`renderTimelineSvg` and GanttChart `columns`), `graph node`, `graph edge`, `port` (named ports, unique per node), `graph group`, `group member` (a node listed by two groups, or twice by one), `swimlane` (lanes of `layoutSwimlaneGraph`, `renderGraphSvg` and the NetworkGraph `lanes` prop), `export group` (`renderGraphSvg` `groups`), `graph layout request` (the `requestId` of `buildGraphLayoutRequests`), `entity` and `view target` (view bindings; a load target's `resourceId` uses `resource`), `item` and `parent` (`diffStructure` keys and parent keys) (snapshot diagnostics also use `node`, `edge`, `group` and `column`). Where the same check runs in a context that the message would not show, the context is appended in parentheses: `(current plan)` or `(candidate plan)` for `comparePlans`, `(before)` or `(after)` for `diffStructure`, `(actual interval of task <id>)` for `rescheduleFromActuals`, `(bar <id>)` for `TimelineBar.baselines`, `(baselineIds)`, `(baseline <number>)` for the `timelineFromMsProject` `baselineId` option, `(in one response)` for windowed data, `(in one page)` for graph expansion pages, `(graph node <id>)` for port IDs, `(graph group <id>)` for a repeated group member, `(createId for <source ID>)` for the IDs `cloneGraphElements` gets from `createId` (an ID already used in the input is a duplicate) and `(load target)` for the `resourceId` of a load view target. The context never changes the class: invalid numbers and geometry stay `RangeError`, references, duplicates and cycles `Error`. Snapshot diagnostics carry the same texts as their `message`.
 
 The prop checks of GanttChart and NetworkGraph follow the same class rule: a RangeError for invalid numbers and geometry (non-finite times, sizes that are not positive, inverted ranges, out-of-range options) and for an unknown value of a string option such as `selectionMode`, `background`, `edgeStyle`, `routingPolicy` or `dependencyStyle` (as the core does for an unknown layout `direction`), and an Error for bad references, invalid or duplicate IDs and cycles. GanttChart's own ID checks use the strict rule and the texts above, with the kinds `marker`, `load row`, `zoom preset` and `column` (for example `Invalid marker ID: 3`, `Duplicate column ID: c`); its checks of columns, load rows, header bands and markers are the ones `renderTimelineSvg` runs, so both report the same class and text for the same input. NetworkGraph's node, edge, port, group and lane checks use the same rule and texts (for example `Invalid graph node ID: 5`, `Duplicate graph group ID: g`, `Unknown node in graph group g: zz`); its group checks and `collapseGraphGroups` share one implementation. Checks of data that a core function validates (rows, bars, dependencies, ranges, marker ranges, baselines, non-working periods, layout options, lanes, edge bands, positions and sizes) report the core's error. Numeric prop messages keep their own clear texts that name the prop, such as `tooltipDelay must be finite and nonnegative`, `snap must be finite and positive`, `minDuration must be finite and positive` or `snapGrid must be a positive finite number of chart units`.
+
+<!-- #endregion validation -->
 
 ## Contents
 
@@ -125,6 +137,8 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [Right-to-left layout](#right-to-left-layout)
 - [Typed data](#typed-data)
 - [Diagram editor parts](#diagram-editor-parts)
+
+<!-- #region network-graph -->
 
 ## NetworkGraph
 
@@ -494,6 +508,10 @@ const bands = computed(() => graphFlowBands(flow.value))
 ```
 
 A band is a stroke along the edge path, not a filled outline, so every edge feature that reads the path (hit areas, toolbars, culling, exports) works unchanged. Where a curve turns steeply its stroke looks slightly thinner than at its ends; keep `rankGap` large compared with the band widths. Saved `positions`, node drags and edge styles reroute bands like other edges, as curves between box centres, so keep flow pictures non-draggable. The theme variables are `--vw-flow-band-opacity` (default .5), `--vw-flow-band-active-opacity` (hover, selected and highlighted, default .78), `--vw-flow-reference-opacity` (default .35) and `--vw-flow-reference-dash` (default `10 6`, lengthened for wide bands to a dash of twice and a gap of at least three quarters of the band width, with the gaps of a straight-segment loop route evened out so it starts and ends with a dash; the export draws the same); in forced colors bands use CanvasText, reference bands GrayText with the dash, and selected bands Highlight.
+
+<!-- #endregion network-graph -->
+
+<!-- #region gantt-chart -->
 
 ## GanttChart
 
@@ -1061,6 +1079,10 @@ function onConstraintEdit(change: TimelineConstraintEdit) {
 
 `exportSvg`, `exportPng` and `renderTimelineSvg` draw the same glyphs with the colours of `--vw-constraint` and `--vw-constraint-violated`, each in a `<g>` with the same classes and a `<title>` such as "Finish no later than · Pack order A 09 Nov 17:00 · violated" (options `constraintLabels` and `constraintViolatedLabel`; the component passes its labels). `toMsProjectXml` writes a task's single constraint (or the finish pair at one time as Must Finish On); see [Interchange exports](#interchange-exports). To schedule with the constraints, spread them into the tasks and pass the results back with `scheduledBarFields`; see [Scheduling constraints from the chart](scheduling.md#scheduling-constraints-from-the-chart).
 
+<!-- #endregion gantt-chart -->
+
+<!-- #region timeline-editing-helpers -->
+
 ### Timeline editing helpers
 
 | Export | Purpose |
@@ -1105,6 +1127,10 @@ const headerBands = [
   calendarBands(range, 'hour', { timeZone: 'Europe/Berlin', step: 6 }),
 ]
 ```
+
+<!-- #endregion timeline-editing-helpers -->
+
+<!-- #region event-calendar -->
 
 ## EventCalendar
 
@@ -1213,6 +1239,10 @@ function apply(change: EventCalendarEdit) {
 
 Related exported types: `RecurrenceFrequency`, `RecurrenceWeekday`, `RecurrenceRule`, `RecurrenceZoneOptions`, `CalendarRecurrence`, `RecurrenceSeries`, `RecurrenceOccurrence`, `RecurrenceExpandOptions`, `RecurringEditScope`, `RecurringEditTarget`, `RecurringEditChange` and `RecurringEditOptions`.
 
+<!-- #endregion event-calendar -->
+
+<!-- #region task-board -->
+
 ## TaskBoard
 
 An opt-in third controlled component: a kanban board that shows cards in status columns, optionally split into horizontal swimlanes. It never changes its data. A drag or keyboard move becomes a `card-move` proposal, and the parent applies it, for example with `applyBoardCardMove`. It is designed to sit next to a GanttChart on the same tasks: give the bars and the cards the same IDs and share one selected ID (see the "Task board" demo).
@@ -1280,6 +1310,10 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | groupBoardCards(cards, columns, lanes?, { filter }?) | `TaskBoardGroups`: `rows` (one per lane in lane order, or one without `laneId` when there are no lanes), each with one `TaskBoardCell` per column holding its cards in `cards` order (with `filter`, only the accepted ones, plus `indices`, their indexes among all cards of the cell, and `total`); `columns`, one `TaskBoardColumnStatus` per column with `count` (shown cards over all lanes), `total` (all cards), `wipLimit`, `wipMin`, `atLimit` (`total >= wipLimit`), `overLimit` (`total > wipLimit`) and `underMinimum` (`total < wipMin`); and `positions`, every card's `TaskBoardPosition` by ID, counting hidden cards. Throws `Invalid column ID`, `Duplicate card ID` and the like for IDs (kinds `column`, `lane` and `card`), `Unknown column in card <id>: <value>` and `Unknown lane in card <id>: <value>` (also for a missing `laneId` on a board with lanes), a RangeError for a WIP limit or minimum that is not a non-negative integer, or a minimum above the limit, and a TypeError for a `filter` that is not a function (`The board filter must be a function: <type>`) |
 | boardCardPosition(cards, id, { lanes }?) | The `TaskBoardPosition` of one card; with `lanes: true` the index counts only the cards of the same lane. Throws `Unknown card in board: <id>` |
 | applyBoardCardMove(cards, move, { columns, lanes }?) | A new array in which the card has the target column (and lane when `after.laneId` is set) and sits before the card that had `after.index` in the target cell, or after the cell's last card. Other cards are kept as they are; the moved card is a shallow copy. A move whose positions have no `laneId` treats each column as one cell and keeps the card's `laneId`. With `columns` or `lanes`, the target must name one (`Unknown column in card move <id>: <value>`, `Unknown lane in card move <id>: <value>`). Throws an Error for an unknown card, a move that names a lane in only one position, and a stale move whose `before` is not the card's current position (`Stale card move for <id>: …`), and a RangeError for an index that is not an integer from 0 to the size of the target cell |
+
+<!-- #endregion task-board -->
+
+<!-- #region tree-grid -->
 
 ## TreeGrid
 
@@ -1392,6 +1426,10 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | deleteTreeGridRows({ rows, cells? }, { ids, includeDescendants }) | New `{ rows, cells }` without the deleted rows |
 | treeGridRowMoveForKey(key, rows, id, rtl?), treeGridDropAt(index, lines, id, line, fraction) | The target of a row move key (`'ignore'` for other keys, undefined when the row cannot move) and the drop place of a row drag |
 
+<!-- #endregion tree-grid -->
+
+<!-- #region core-entry -->
+
 ## Core entry point
 
 Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry also re-exports them. Core has no Vue or DOM runtime dependency and does not mutate input data.
@@ -1461,6 +1499,10 @@ Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry al
 | snapGraphPoint(point, grid) | The point with both coordinates rounded to the nearest multiple of a positive finite `grid` (RangeError otherwise, and for non-finite coordinates); never returns -0 |
 
 All exported interfaces and component props are included in the declaration files. Validation functions reject invalid references and numeric geometry with descriptive errors. Scheduling failures such as cycles and infeasible plans are returned as results; malformed scheduling inputs throw. Routing helpers assume validated graph data as described below.
+
+<!-- #endregion core-entry -->
+
+<!-- #region graph-layout -->
 
 ### Graph routing
 
@@ -1653,6 +1695,10 @@ Sizes that are not finite or are negative (and a node thickness, minimum node si
 
 Related exported types: `GraphFlowOptions`, `GraphFlowScale`.
 
+<!-- #endregion graph-layout -->
+
+<!-- #region graph-algorithms -->
+
 ### Graph algorithms
 
 All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs and bad ports throw `Error`) and never mutate their arguments.
@@ -1689,6 +1735,10 @@ const groups = graphCommunityGroups(communities, { label: members => `${members.
 
 Related exported types: `GraphDegreeCentralityOptions`, `GraphBetweennessOptions`, `GraphPageRankOptions`, `GraphPageRankResult`, `GraphCommunityOptions`, `GraphCommunityResult`, `GraphCommunityGroupsOptions`.
 
+<!-- #endregion graph-algorithms -->
+
+<!-- #region viewport-helpers -->
+
 ### Viewport helpers
 
 The helpers behind `cullOffscreen` are exported for custom renderers and workers. Rectangles are `GraphRect` values (`x`, `y`, `width`, `height`) in chart coordinates.
@@ -1705,11 +1755,19 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | graphPointInPolygon(point, polygon) | Whether a point is inside a polygon of vertices in order (closed implicitly), by the even-odd rule; a point on the outline counts as inside, and a polygon with fewer than three vertices contains nothing. Throws `RangeError` for a non-finite coordinate |
 | graphNodesInPolygon(boxes, polygon) | IDs of the boxes (for example `layout.boxes`) whose centre is inside the polygon, in map order; the lasso of `selectionMode` uses it. Throws `RangeError` for non-finite polygon points or box geometry |
 
+<!-- #endregion viewport-helpers -->
+
+<!-- #region row-trees -->
+
 ### Row trees and summaries
 
 `createTimelineRowTree(rows)` validates unique nonempty IDs, parent references and cycles. Each preorder entry contains `row`, `depth`, `hasChildren` and `afterSubtree`, the exclusive index after that row and its descendants. Root and sibling order follows input order.
 
 `summarizeTimelineRows(tree, bars)` expects the tree returned by `createTimelineRowTree` and valid bars for those rows. It aggregates leaf-row bars into their ancestors and returns a Map keyed by row ID, including leaves with bars. Each summary reports the earliest start, latest end and interval count. Progress is weighted by duration across bars with known progress. Bars without progress and zero-duration milestones do not contribute to the progress denominator. Explicit parent bars are excluded from descendant aggregation.
+
+<!-- #endregion row-trees -->
+
+<!-- #region scheduling -->
 
 ### Calendars, scheduling and resource load
 
@@ -1838,6 +1896,10 @@ An undefined ratio is left out of the object; no field is ever NaN or Infinity. 
 Errors of `computeEarnedValue`: RangeError for `statusDate must be a finite number (got …)`, `Budget of task <id> must be a finite number ≥ 0 (got …)`, `Planned dates of task <id> must be finite with end ≥ start (got …)`, `Progress must be between zero and one: <id>` (with ` (history)` for a record), `Actual cost must be a finite number ≥ 0: <id> (got …)`, `History times of task <id> must be finite, strictly increasing and not after the status date (got …)`, `Working periods must have finite endpoints and positive length (calendar <id>)`, `series.step must be a finite number > 0 (got …)`, `series.start`/`series.end` that are not finite or end before the start, and a series with too many points; Error for tasks that are not an array, missing options, an invalid or duplicate task or calendar ID, `Unknown calendar: <id>` (with ` (task <id>)` for a task's calendar), `History must be an array: <id>`, `Invalid history record: <id>` and `Unknown EAC method: …`. The arguments are not modified.
 
 GanttChart needs no new prop to show EVM figures: return them from `TimelineColumn.value(row)`, using `rollupEarnedValue` over a summary row's tasks, and pass the status date as `statusDate`. Related exported types: `EarnedValueTask`, `EarnedValueRecord`, `EarnedValueOptions`, `EarnedValueSeriesOptions`, `EarnedValueEacMethod`, `EarnedValueAmounts`, `EarnedValueMetrics`, `EarnedValueTaskResult`, `EarnedValuePoint`, `EarnedValueResult`.
+
+<!-- #endregion scheduling -->
+
+<!-- #region interchange -->
 
 ### Interchange exports
 
@@ -2035,6 +2097,10 @@ Other shapes in a file (Mermaid subroutines and trapezoids, yEd octagons, …) a
 
 Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `MermaidOptions`, `GraphMlOptions`, `DrawioOptions`, `DrawioImportOptions`, `DrawioAsyncImportOptions`.
 
+<!-- #endregion interchange -->
+
+<!-- #region schedule-network -->
+
 ### Network diagram from a schedule
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful `scheduleTasks` (or `propagateEdit`, `rescheduleFromStatusDate`) result into an activity-on-node diagram for NetworkGraph. It returns a `ScheduleGraph`: `nodes` (one `NetworkNode<ScheduleGraphNodeData>` per task in result order, with ID, label, a detail with the early start, early finish and total float, and `data` of type `ScheduleGraphNodeData`: `task`, `earlyStart`, `earlyFinish` and `critical`), `edges` (one `GraphEdge<ScheduleGraphEdgeData>` per dependency with the dependency's ID, a label and `data` of type `ScheduleGraphEdgeData`: `type`, `critical` and, only for a non-zero lag, `lag`), `criticalNodeIds` and `criticalEdgeIds` (the result's `criticalDependencyIds`). Because the arrays carry these data types, `graph.nodes[0].data?.critical` and `graph.edges[0].data?.lag` are typed without casts, and NetworkGraph slots and events infer the same data types. Critical tasks get the `criticalTone` (default amber) and the others the `tone` (default blue). For an ALAP task the early dates are `earliestStart` and `earliestEnd`. An edge label shows the dependency type when it is not FS and a non-zero `lag` formatted by `formatLag`, separated by a space: `SS`, `+2 h`, `SS +2 h` or `FF −0.5 h` (a lead). An FS dependency without lag, or with a lag of 0, has no label. A dependency that touches a task listed in the result's `inactiveTaskIds` is left out, so the plan's full dependency list can be passed; a manual task is a node like any other, with zero float.
@@ -2046,6 +2112,10 @@ Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `Merm
 ```
 
 `relatedIds` highlights the critical tasks and the edges between them; use `criticalEdgeIds` with an `edge` slot to style exactly the controlling links.
+
+<!-- #endregion schedule-network -->
+
+<!-- #region linked-views -->
 
 ## Linked views
 
@@ -2100,6 +2170,10 @@ Each set object also has `related*` sets (`relatedNodeIds`, `relatedEdgeIds`, `r
 
 Related exported types: `ViewBinding`, `ViewBindingIndex`, `LoadSegmentLike`, `ResolvedEntityRefs`, `ResolvedViewTargets`, `ResolvedLoadTargets`, `GraphTraversalDirection`, `GraphTraversalOptions`, `GraphTraversalResult`, `GraphWalkDirection`, `GraphTraversalTruncation`, `GraphTraversalStep`, `GraphTraversalVia`, `GraphTracedPath`, `CollapsedTargetsResult`, `LinkedViewName`, `UseLinkedSelectionOptions`, `RevealLinkedTargetOptions`.
 
+<!-- #endregion linked-views -->
+
+<!-- #region traversal -->
+
 ### Traversal filters, limits and paths
 
 `traverseGraph` takes three opt-in options next to `direction` and `maxHops`. Without them the result is exactly `{ nodeIds, edgeIds, unknownIds }`, as before.
@@ -2135,6 +2209,10 @@ Maps keyed by node ID follow `collapseGraphGroups` (`owners`, `mergedEdges`) and
 
 `graphTracePath(result, nodeId, { direction }?)` follows `via` back from `nodeId` to a start and returns `{ direction, nodeIds, edgeIds }` from the start to the node (`edgeIds` has one entry fewer than `nodeIds`). Without `direction` it uses the walk with the shorter path, the backward walk on a tie. A start gives `{ nodeIds: [nodeId], edgeIds: [] }` without `direction`. It returns undefined for a node the walk did not reach, throws Error for a result without `via` (`graphTracePath needs a traverseGraph result made with paths: true`) or with steps that form a cycle, and RangeError for a direction other than `'forward'` or `'backward'`. It loops, so a path of any length is fine.
 
+<!-- #endregion traversal -->
+
+<!-- #region time-range-exploration -->
+
 ### Time range exploration
 
 Select a time range, for example 14:00–16:00 on inspection machine X, and show what was worked on in it in the linked views, optionally with what the graph relates to it. Times are never inferred from the graph: activity comes only from the bars.
@@ -2167,6 +2245,10 @@ It throws `RangeError` for a range or bar time that is not finite or ends before
 Pass `graph.relatedNodeIds` to NetworkGraph `relatedIds` to draw related nodes, and the edges between them, apart from active ones (`vw-is-related` instead of `vw-is-highlighted`). GanttChart has no related-bar prop; merge `relatedBarIds` into `highlightedBarIds` or style them yourself, for example through `appearance` or `tone` on derived bars.
 
 Related exported types: `TimelineBarsInRangeOptions`, `TimeRangeTargetsOptions`.
+
+<!-- #endregion time-range-exploration -->
+
+<!-- #region plan-analysis -->
 
 ## Resource timelines and unplanned tasks
 
@@ -2265,6 +2347,10 @@ Core helpers that compare a candidate plan with the current plan. They are pure,
 
 The exported types are `PlanComparisonTask`, `PlanComparisonInput`, `PlanScenario`, `PlanScheduleState`, `PlanTaskSide`, `PlanFieldChange`, `PlanCollectionDiff`, `PlanAssignmentChange`, `PlanAssignmentDiff`, `PlanInputDiff`, `PlanViolation`, `PlanTaskComparison`, `PlanResourceOverload`, `PlanResultDiff`, `PlanComparison`, `PlanComparisonTargetOptions` and `PlanComparisonTargets`.
 
+<!-- #endregion plan-analysis -->
+
+<!-- #region structure-comparison -->
+
 ## Structure comparison
 
 `diffStructure(before, after, options)` (core) compares two versions of a flat or tree-shaped keyed collection, for example two revisions of a bill of materials, a WBS or a product hierarchy. Unlike the `PlanCollectionDiff` parts of `comparePlans`, which name changed fields only, it returns the values of both versions. It is pure, uses loops only (a 12,000-item chain is fine), never changes its arguments and runs in linear time apart from the field comparisons. Resolve effective dates, variants and the like before the call: it compares two already resolved snapshots.
@@ -2297,6 +2383,10 @@ diff.moved   // [{ key: 'spoke', beforeParent: 'wheel', afterParent: 'hub' }]
 
 The exported types are `StructureDiffOptions`, `StructureKeyAccessor`, `StructureDiff`, `StructureChange`, `StructureFieldChange` and `StructureMove`.
 
+<!-- #endregion structure-comparison -->
+
+<!-- #region async-layouts -->
+
 ## Asynchronous layouts and preserved routes
 
 Core (`@eightkk/vue-weave/core`):
@@ -2319,6 +2409,10 @@ Vue (`@eightkk/vue-weave`):
 - Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `AsyncGraphGestureListeners`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.
 
 Related exported types: `GraphLayoutRequestMessage`, `GraphLayoutCancelMessage`, `GraphLayoutSuccessMessage`, `GraphLayoutFailureMessage`.
+
+<!-- #endregion async-layouts -->
+
+<!-- #region partial-data-loading -->
 
 ## Partial data loading
 
@@ -2352,6 +2446,10 @@ Vue (`@eightkk/vue-weave`):
 - Types: `UseWindowedDataOptions`, `WindowedData`, `WindowedDataLoader`, `WindowedDataError`.
 
 Partial data cannot answer questions about the whole: `complete` describes the loaded part of the current view, not the plan. Run scheduling, leveling, resource load, critical paths, deadlines and plan comparisons on complete inputs (on the server or over the full data set) and show their results as data, or label any figure computed over the loaded part as partial. A total or aggregate must not change when the visible subset changes.
+
+<!-- #endregion partial-data-loading -->
+
+<!-- #region time-buckets -->
 
 ## Time bucket tables
 
@@ -2403,6 +2501,10 @@ Windowed data chunks are fixed lengths in time units from their origin, so day-s
 
 Types: `TimeBucketPeriod`, `TimeBucket`, `TimeBucketColumn`, `TimeBucketColumnOptions`, `TimeBucketRuleName`, `TimeBucketRule`, `TimeBucketReducer`, `TimeBucketReducerContext`, `TimeBucketPlacement`, `TimeBucketLoaded`, `TimeBucketItem`, `TimeBucketAggregateOptions`, `TimeBucketCell`.
 
+<!-- #endregion time-buckets -->
+
+<!-- #region timeline-views -->
+
 ## Typed fields and timeline views
 
 `TimelineColumn.field` is an optional `TimelineFieldSpec` (`id`, `kind`, raw getter `get`, optional `parse`, `format`, `required`, `choices`, `multiple`, `min`, `max`, `integer`, `allowNegative`, `timeZone`, `utcOffsetMinutes`, `durationBasis`, `unitSize`, `unitLabel`). Columns without it are edited as text through `cell-edit`. `kind` is `'text'`, `'number'`, `'time'`, `'duration'`, `'select'` or `'checkbox'`; `FieldValue` is a string, number, boolean, `null` or an array of those (multiple selection). `TimelineFieldEdit<R>` describes a typed change (`rowId`, `columnId`, `fieldId`, `before`, `after`, `source`). GanttChart emits it through `field-edit`; see [Timeline columns and rollups](#timeline-columns-and-rollups).
@@ -2430,6 +2532,10 @@ Timeline view state (`TimelineViewState`, version 1) is JSON-safe: column order,
 `useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state` (a writable `ShallowRef<TimelineViewState>`), `projection` (pass its `rows`, `bars` and `dependencies` to GanttChart), `columns` (the visible `TimelineColumn<R>` array in saved order with saved widths, ready for the `columns` prop), `diagnostics` (saved-view problems, column problems included), `setSearch`, `setSort`, `setFilters` (an empty list removes `filters`), `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.
 
 Related exported types: `TimelineFieldKind`, `FieldPrimitive`, `FieldChoice`, `FieldDurationBasis`, `FieldErrorCode`, `FieldParseResult`, `TimelineViewInput`, `TimelineViewColumn`, `TimelineViewSort`, `TimelineViewSearch`, `TimelineViewFilter`, `TimelineRowCompare`, `TimelineHiddenTarget`, `TimelineViewProjection`, `TimelineViewDiagnostic`, `TimelineViewDiagnosticCode`, `TimelineRowsInput`, `TimelineRowViewState`, `TimelineRowsProjection`.
+
+<!-- #endregion timeline-views -->
+
+<!-- #region undo-redo -->
 
 ## Application undo and redo
 
@@ -2470,6 +2576,10 @@ The server must apply each save as a conditional update on `baseVersion`, dedupl
 
 Related exported types: `TransactionSource`, `TransactionStatus`, `TransactionCoreState`, `PendingTransaction`, `TransactionFailure`, `SettleResult`, `UseEditTransactionOptions`, `HistoryReset`.
 
+<!-- #endregion undo-redo -->
+
+<!-- #region snapshots -->
+
 ## Versioned JSON snapshots
 
 `@eightkk/vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
@@ -2502,6 +2612,10 @@ Rules the functions enforce:
 `parseWeaveSnapshot` and `restoreWeaveSnapshot` report `SnapshotDiagnostic` items (`severity`, `code`, `path`, `message`). The graph and timeline types of the restored value are the ordinary `NetworkNode`, `GraphEdge`, `NetworkGroup`, `TimelineRow`, `TimelineBar` and `TimelineDependency`.
 
 Related exported types: `JsonValue`, `SnapshotKind`, `SnapshotMetadata`, `SnapshotColumnDefinition`, `SnapshotColumnState`, `SnapshotSortRule`, `SnapshotDiagnosticCode`, `SnapshotDiagnosticSeverity`, `SnapshotLayoutFactory`, `SnapshotMigration`, `GraphCameraTarget`, `GraphSnapshotView`, `GraphSnapshotData`, `GraphSnapshotInput`, `GraphSnapshotV1`, `TimelineSnapshotView`, `TimelineSnapshotData`, `TimelineSnapshotInput`, `TimelineSnapshotV1`, `PlanningTaskDisplay`, `PlanningPlacement`, `PlanningSnapshotData`, `PlanningSnapshotInput`, `PlanningSnapshotV1`, `SerializeWeaveSnapshotOptions`, `ParseWeaveSnapshotOptions`, `ParseWeaveSnapshotResult`, `WeaveSnapshotRegistry`, `RestoreWeaveSnapshotResult`, `RestoredWeaveSnapshot`, `RestoredGraphSnapshot`, `RestoredGraphView`, `RestoredTimelineSnapshot`, `RestoredTimelineView`, `RestoredPlanningSnapshot`, `RestoredColumn`, `RestoredSortRule`.
+
+<!-- #endregion snapshots -->
+
+<!-- #region export -->
 
 ## Export to SVG and PNG
 
@@ -2541,6 +2655,10 @@ Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, 
 
 Related exported types: `GraphPngExportOptions`, `GanttPngExportOptions`, `SvgToneColors`.
 
+<!-- #endregion export -->
+
+<!-- #region rtl -->
+
 ## Right-to-left layout
 
 Both components take an opt-in `dir` prop of type `ChartDirection`.
@@ -2558,6 +2676,10 @@ Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused
 In a right-to-left NetworkGraph only the chrome changes: the zoom tools and the minimap move to the bottom-left corner, node titles and details, group labels, swimlane titles and edge labels are right-aligned with `direction: rtl`, and the default node text is anchored at the box's right edge. Layout geometry, edge routes, camera, panning keys and saved positions are unchanged; use `options.direction: 'RL'` to mirror the layout itself. Custom node slots own their own text alignment.
 
 `exportSvg` and `exportPng` follow the component's direction. In the core, `renderTimelineSvg` and `renderGraphSvg` take `direction: 'rtl'`, and `mirrorTimeScale(scale)` returns a scale with `toX(range.start) = width` and `toX(range.end) = 0`; its round trips are exact whenever those of `scale` are and the pixel values are exactly representable.
+
+<!-- #endregion rtl -->
+
+<!-- #region typed-data -->
 
 ## Typed data
 
@@ -2625,6 +2747,10 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+<!-- #endregion typed-data -->
+
+<!-- #region diagram-editor -->
 
 ## Diagram editor parts
 
@@ -2705,3 +2831,5 @@ const fields: InspectorListField<Task>[] = [
 Map assignment rows to `ResourceAssignment` with the task ID, and dependency rows to `ScheduleLink` or `TimelineDependency` (`from: predecessorId`, `to` the item).
 
 Related exported types: `InspectorItem`, `InspectorField`, `InspectorFieldKind`, `InspectorChange`, `InspectorChangeValidator`, `PropertyInspectorLabels`, `PropertyInspectorFieldSlot`, `InspectorListFieldKind`, `InspectorOption`, `InspectorAssignment`, `InspectorDependency`, `InspectorAssignmentsField`, `InspectorDependenciesField`, `InspectorListField`, `InspectorListChange`, `InspectorListChangeValidator`.
+
+<!-- #endregion diagram-editor -->

@@ -7,7 +7,7 @@ import { apiHref, sourceHref, useSiteLocale } from '../i18n'
 import ExampleFrame from './ExampleFrame.vue'
 
 const props = defineProps<{ id: string }>()
-const { t, pick, link } = useSiteLocale()
+const { locale, t, pick, link } = useSiteLocale()
 const entry = computed(() => {
   const found = exampleById(props.id)
   if (!found) throw new Error('Unknown example: ' + props.id)
@@ -43,7 +43,7 @@ const full = ref(false)
       <aside v-if="entry.api.length" class="vw-site-related" aria-labelledby="vw-site-related-title">
         <h2 id="vw-site-related-title">{{ t.relatedApi }}</h2>
         <ul>
-          <li v-for="item in entry.api" :key="item.doc + item.text"><a :href="apiHref(item.doc)">{{ item.text }}</a></li>
+          <li v-for="item in entry.api" :key="item.doc + item.text"><a :href="apiHref(item.doc, locale)">{{ item.text }}</a></li>
         </ul>
       </aside>
     </div>

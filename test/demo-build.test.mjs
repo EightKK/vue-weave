@@ -59,6 +59,17 @@ describe('demo build stamp', () => {
     assert.notEqual(await hashDemoInputs(root), withExtra)
   })
 
+  it('leaves out the type reference that the build generates, but not the TypeDoc configuration', async () => {
+    await sources()
+    await put('site/api/index.md', '# API\n')
+    const before = await hashDemoInputs(root)
+    // A checkout without the generated (gitignored) pages matches the build that wrote them.
+    await put('site/api/reference/core/functions/traverseGraph.md', '# traverseGraph\n')
+    assert.equal(await hashDemoInputs(root), before)
+    await put('typedoc.json', '{}\n')
+    assert.notEqual(await hashDemoInputs(root), before)
+  })
+
   it('reports missing, stale and current builds', async () => {
     await sources()
     assert.equal(await demoBuildState(root), 'missing')

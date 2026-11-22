@@ -1,6 +1,7 @@
 // The interface text of the site's own components in each language, and helpers for the current locale.
 import { computed, onMounted, ref } from 'vue'
 import { useData, withBase } from 'vitepress'
+import apiLinks from 'virtual:vw-api-links'
 import type { Localized } from '../../examples/registry'
 
 export type SiteLocale = 'en' | 'ja'
@@ -63,9 +64,19 @@ export function useSiteLocale() {
   return { locale, t, pick, link }
 }
 
-/** The URL of an API reference entry. Points at the hand-written docs on GitHub until the site has its API pages. */
-export function apiHref(doc: string) {
-  return `${repository}/blob/main/docs/${doc}`
+/**
+ * The URL of an API reference entry, such as `api.md#treegrid` or `scheduling.md`: the API page (in `locale`) that
+ * shows that heading of docs/*.md. A heading that no page includes falls back to the document on GitHub;
+ * scripts/check-site-links.mjs fails the build for such an entry.
+ */
+export function apiHref(doc: string, locale: SiteLocale = 'en') {
+  const [file = '', anchor] = doc.split('#', 2)
+  const route = anchor ? apiLinks.anchors[`${file}#${anchor}`] : apiLinks.files[file]
+  if (!route) return `${repository}/blob/main/docs/${doc}`
+  const [path, hash] = route.split('#', 2)
+  // Page routes have no extension; the site is built without clean URLs, so pages end in .html.
+  const page = path!.endsWith('/') ? path! : path + '.html'
+  return withBase((locale === 'ja' ? '/ja' : '') + page) + (hash ? '#' + hash : '')
 }
 
 /** The GitHub URL of a repository file. */

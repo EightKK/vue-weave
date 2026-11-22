@@ -44,10 +44,10 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "vitepress dev site",
+    "dev": "node scripts/api-reference.mjs && vitepress dev site",
     "dev:demo": "vite --config vite.demo.config.ts --host 127.0.0.1",
     "build": "vite build && vue-tsc -p tsconfig.build.json && node scripts/finalize-declarations.mjs",
-    "build:demo": "vitepress build site && vite build --config vite.demo.config.ts",
+    "build:demo": "node scripts/api-reference.mjs && vitepress build site && vite build --config vite.demo.config.ts && node scripts/check-site-links.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:e2e": "playwright test",

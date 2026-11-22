@@ -1,5 +1,7 @@
 # Integration
 
+<!-- #region setup -->
+
 ## Node.js and TypeScript
 
 The package exports ES modules. Use `@eightkk/vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `@eightkk/vue-weave/style.css` once.
@@ -48,6 +50,10 @@ const edges: GraphEdge[] = []
 ```
 
 The library accesses DOM measurement and ResizeObserver after mounting. Initial server rendering uses deterministic fallback viewport dimensions, then measures the actual container. Vue useId supplies instance-specific SVG marker IDs. Keep server/client data and formatTime output consistent. For timezone-specific labels, use Intl.DateTimeFormat with an explicit timeZone and locale.
+
+<!-- #endregion setup -->
+
+<!-- #region graph-guides -->
 
 ## Large graphs, touch and search
 
@@ -242,6 +248,10 @@ const bands = computed(() => graphFlowBands(flow.value))
 - Band names come from `label`, for example "Cut → Inspect: 60 pcs"; pass `nodeLabel` and `formatQuantity` to localize them. Thin node boxes leave little room for text: draw labels next to the boxes in a `node` slot, as the demo does, and remember that exports use the default node drawing.
 - `exportSvg`, `exportPng` and `renderGraphSvg(flow, nodes, shown, { edgeBands: bands })` draw the same bands, each with its label as `<title>`. The demo's Quantity flow example (`examples/QuantityFlowDemo.vue`) shows a split, a merge, a yield loss, a rework loop and a unit switch.
 
+<!-- #endregion graph-guides -->
+
+<!-- #region custom-content -->
+
 ## Custom content
 
 The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and elements with the class `vw-node-shape` (the outline of the default diamond, ellipse and hexagon nodes), and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
@@ -259,6 +269,10 @@ The graph node slot receives its node, measured layout box, the camera `scale` a
 Return a custom GraphLayout to use stored node positions or another layout algorithm. The layout callback is pure. It returns boxes, paths and label positions in the same world coordinate space.
 
 Gantt row/bar/tick slots accept ordinary HTML. The bar slot is already inside a focusable button, so avoid nested buttons or links. Use the select event to open a detail panel elsewhere.
+
+<!-- #endregion custom-content -->
+
+<!-- #region themes -->
 
 ## Themes and localization
 
@@ -465,6 +479,10 @@ Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
 
+<!-- #endregion themes -->
+
+<!-- #region persistence -->
+
 ## Persistence
 
 The edit event carries the previous interval so your parent can detect a stale proposal. A synchronous local commit is shown in the README.
@@ -578,6 +596,10 @@ Use the core entry in a worker or server to compute layouts, transform times or 
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
 
+<!-- #endregion persistence -->
+
+<!-- #region linking-views -->
+
 ## Linking views
 
 To show one plan as a graph, a Gantt chart and load rows that follow each other, bind your entities to what each view draws and let `useLinkedSelection` work out what every view shows. The view the user acts in keeps the selection; the others only highlight, so a linked bar is never deleted, moved or used to cancel a drag in another view.
@@ -640,6 +662,10 @@ Keep the source rows, bars and dependencies as they are and render the output of
 To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
 
 For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text. In GanttChart, a column with `field` emits `field-edit` instead of `cell-edit`: listen to `field-edit`, check it in `validateFieldEdit` and apply `change.after` to your row. Provide your own editor through the `cell-editor` slot (call `commit(value)` or `commitText(text)` and `cancel()`), or leave the slot out to use the built-in text input, which parses with the field. A `cell` slot still owns the whole cell. An editor that commits on Enter should skip keys with `event.isComposing` (or keyCode 229), so that confirming an input method conversion does not commit; the built-in inputs already do.
+
+<!-- #endregion linking-views -->
+
+<!-- #region elk -->
 
 ## Use ELK.js for layout
 
@@ -811,6 +837,10 @@ const xml = toDrawio({ nodes, edges, groups, positions, sizes }, { pageName: 'Pr
 
 A Mermaid file has no coordinates, so NetworkGraph lays it out; use the returned `direction` in `options`. GraphML and draw.io keep the positions and sizes of every node. Keep accepted `node-move`, `nodes-move` and `node-resize` proposals in `positions` and `sizes` so the next export carries them. The readers walk groups and chains with loops, bound their work with `maxItems`, and never expand XML entities; bound the size of uploaded files yourself as well. See [Graph interchange](api.md#graph-interchange) for the mapping of shapes, markers and IDs.
 
+<!-- #endregion elk -->
+
+<!-- #region export -->
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
@@ -827,6 +857,10 @@ The export reads the `--vw-*` colours and the font in effect on the component, s
 
 To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `@eightkk/vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
 
+<!-- #endregion export -->
+
+<!-- #region rtl -->
+
 ## Right-to-left languages
 
 Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to follow the direction inherited from the page (for example `<html dir="rtl">`). The default `ltr` leaves rendering unchanged; in a right-to-left page it keeps the inherited direction, which the timeline does not support, so pass `rtl` or `auto` there.
@@ -840,6 +874,10 @@ The timeline then runs from right to left and its row headings sit on the right.
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
 The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels (swimlane titles included); choose `options.direction: 'RL'` to lay out ranks from right to left.
+
+<!-- #endregion rtl -->
+
+<!-- #region saved-view -->
 
 ## Saving and restoring a view
 
@@ -881,6 +919,10 @@ if (camera) graph.value?.setViewportCenter(camera.center, camera.scale)
 Functions are never stored. Columns, layouts, sort comparators, editors and renderers are saved by name and resolved on restore from the registry you pass to `restoreWeaveSnapshot`: `{ codecs, layouts, columns, editors, renderers, comparators, onMissing }`. `columns` maps a column ID (or the saved `registryId`) to its label, `value` and other functions, `layouts` maps a layout ID to a factory that receives the saved options. A name that is not registered fails the restore, unless `onMissing: 'fallback'` turns it into a warning and the default display; a missing codec always fails. Keep registries in code and version them with your application, and record a codec `version` when its encoding changes.
 
 For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (or `restored.input` and `restored.schedule`) to your state first, then apply `view.window`, `view.collapsedRowIds` and the resolved `view.columns`. Reading a file never saves to a server by itself. To apply it to server data, fetch the server's current version and save the restored data as one change; `metadata.sourceVersion` is not that version.
+
+<!-- #endregion saved-view -->
+
+<!-- #region async-layouts -->
 
 ## Asynchronous layouts and preserved routes
 
@@ -942,6 +984,10 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+<!-- #endregion async-layouts -->
+
+<!-- #region windowed-loading -->
 
 ## Loading only what is visible
 
@@ -1077,6 +1123,10 @@ const shownColumns = columns.slice(start, end)
 
 See [Time bucket tables](api.md#time-bucket-tables) for every rule and error.
 
+<!-- #endregion windowed-loading -->
+
+<!-- #region sheet-editing -->
+
 ## Spreadsheet editing in a schedule
 
 Turn on `spreadsheet` on a Gantt chart with editable `columns`, and the cells work like a spreadsheet: select a rectangle with Shift+click, a mouse drag or Shift+arrows, copy, cut and paste tab-separated text with other spreadsheet applications, clear with Delete, fill down with Ctrl/Cmd+D or the corner handle, and type to edit a cell. Each operation arrives as one `sheet-edit` proposal (see [Spreadsheet editing](api.md#spreadsheet-editing) for every key and rule).
@@ -1109,6 +1159,10 @@ const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 
 ```
 
 The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.
+
+<!-- #endregion sheet-editing -->
+
+<!-- #region diagram-editor -->
 
 ## Diagram editor parts
 
@@ -1172,6 +1226,10 @@ Both components use the shared variables (`--vw-surface`, `--vw-surface-muted`, 
 
 Classes: `vw-palette`, `vw-palette-search`, `vw-palette-list`, `vw-palette-section`, `vw-palette-heading`, `vw-palette-item` (with `vw-is-active` and `vw-is-disabled`), `vw-palette-preview`, `vw-palette-label`, `vw-palette-detail`, `vw-palette-empty`; `vw-inspector`, `vw-inspector-field` (with `vw-is-<kind>`, `vw-is-readonly` and `vw-is-invalid`), `vw-inspector-label`, `vw-inspector-input`, `vw-inspector-check`, `vw-inspector-color`, `vw-inspector-swatch`, `vw-inspector-description`, `vw-inspector-error` and `vw-inspector-empty`. Layout uses logical properties, so `dir="rtl"` (or an inherited right-to-left direction with `dir="auto"`) mirrors both. In forced-colors mode palette previews are drawn in `CanvasText` on `Canvas` and messages are underlined; the filter box is not printed.
 
+<!-- #endregion diagram-editor -->
+
+<!-- #region tree-grids -->
+
 ## Tree grids, matrices and bills of materials
 
 TreeGrid shows a row tree against columns. Keep three things apart in your data:
@@ -1197,3 +1255,5 @@ A graph or Gantt chart bound to the same entities then highlights its items, and
 **Loading children on demand.** Give a row `childStatus: 'unloaded'`. Expanding it emits `expand-request`; set `childStatus` to `loading`, fetch, then add the child rows with `childStatus: 'loaded'` (or `failed`, which a status line shows; Enter on it asks again). Keep loaded rows out of the undo history, or replace the current history entry, since loading is not an edit.
 
 **Editing.** Every change is a proposal, and validators are synchronous. Accept a `cell-edit` or a `sheet-edit` with `applyTreeGridEdits`, a `row-create` with `insertTreeGridRow` (you choose the new ID), a `row-delete` with `deleteTreeGridRows` and a `row-move` with `moveTimelineRow`, and commit each result as one history entry (`useEditHistory`) or one save (`useEditTransaction`). A paste, fill, clear or cut is one batch, so it undoes in one step. Changes to `rows`, `columns` or `cells` cancel an open editor, a fill drag or a row drag (`edit-cancel` with `source-changed`), so a server update never lands in a stale edit. For a server-backed grid, send the batch with the version it was made against, as for the other components (see [Saving through a server](#saving-through-a-server)).
+
+<!-- #endregion tree-grids -->

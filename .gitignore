@@ -25,3 +25,4 @@ coverage/
 Thumbs.db
 site/.vitepress/.temp/
 site/.vitepress/cache/
+site/api/reference/
