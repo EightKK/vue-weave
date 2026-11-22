@@ -194,3 +194,18 @@ export type {
   EarnedValueRecord, EarnedValueTask, EarnedValueEacMethod, EarnedValueSeriesOptions, EarnedValueOptions, EarnedValueAmounts,
   EarnedValueMetrics, EarnedValueTaskResult, EarnedValuePoint, EarnedValueResult,
 } from './earnedValue.js'
+export {
+  treeGridDefaultLabels, createTreeGridIndex, treeGridRowExpandable, flattenTreeGrid, findTreeGridLine, treeGridPositionAt,
+  treeGridColumnOffsets, treeGridRowWindow, treeGridColumnAt, treeGridColumnWindow, treeGridKeyAction, resolveTreeGridCell,
+  treeGridCellValue, isTreeGridCellEditable, treeGridFieldSpec, matchTreeGridEntities, treeGridRangeBounds, treeGridRangeText,
+  buildTreeGridPaste, buildTreeGridClear, buildTreeGridFill, applyTreeGridEdits, treeGridRowCreate, insertTreeGridRow,
+  deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt,
+} from './treeGrid.js'
+export type {
+  TreeGridValue, TreeGridRow, TreeGridCellStatus, TreeGridMissingCell, TreeGridCellState, TreeGridCellContent, TreeGridCell,
+  TreeGridCellRef, TreeGridEditor, TreeGridColumn, TreeGridInput, TreeGridIndex, TreeGridLine, TreeGridLines, TreeGridPosition,
+  TreeGridCursor, TreeGridRange, TreeGridSpan, TreeGridCellView, TreeGridKeyInput, TreeGridKeyContext, TreeGridKeyAction,
+  TreeGridActivation, TreeGridCellEdit, TreeGridSheetEdit, TreeGridRowCreate, TreeGridRowDelete, TreeGridEditCancelReason,
+  TreeGridEditCancel, TreeGridValidatorResult, TreeGridCellEditValidator, TreeGridSheetEditValidator, TreeGridRowCreateValidator,
+  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild,
+} from './treeGrid.js'

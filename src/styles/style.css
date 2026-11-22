@@ -2,12 +2,12 @@
    rules read them as fallbacks, `var(--vw-muted, var(--_vw-muted))`, so a `--vw-*` variable set on an ancestor, on the root
    or on any element inside still wins, and the built-in dark themes apply unchanged. Fallbacks that differ on purpose,
    such as lighter grid lines or darker selection rings, stay literal in their rules. */
-.vw-network, .vw-gantt, .vw-board, .vw-calendar, .vw-palette, .vw-inspector {
+.vw-network, .vw-gantt, .vw-board, .vw-calendar, .vw-palette, .vw-inspector, .vw-tree-grid {
   --_vw-surface: #fff; --_vw-surface-hover: #edf5fa; --_vw-text: #172c3b; --_vw-muted: #4c6371; --_vw-accent: #245e96; --_vw-on-solid: #fff;
   color: var(--vw-text, var(--_vw-text)); font-family: inherit;
 }
-.vw-network *, .vw-gantt *, .vw-board *, .vw-calendar *, .vw-palette *, .vw-inspector * { box-sizing: border-box; }
-.vw-network button, .vw-gantt button, .vw-board button, .vw-calendar button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-network *, .vw-gantt *, .vw-board *, .vw-calendar *, .vw-palette *, .vw-inspector *, .vw-tree-grid * { box-sizing: border-box; }
+.vw-network button, .vw-gantt button, .vw-board button, .vw-calendar button, .vw-tree-grid button { color: inherit; font-family: inherit; cursor: pointer; }
 .vw-network button:disabled, .vw-gantt button:disabled, .vw-calendar button:disabled { cursor: default; opacity: .5; }
 .vw-network button:focus-visible, .vw-gantt button:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: 2px; }
 .vw-network { position: relative; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: radial-gradient(circle, var(--vw-grid, #c7d6df) 1px, transparent 1.1px) 1px 1px / 17px 17px, var(--vw-surface-muted, #f6f9fb); }
@@ -392,6 +392,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   /* Component variables: ranges (GanttChart), inspector errors and TaskBoard WIP and drop colours. */
   --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; --vw-inspector-error: #ff8a80;
   --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf;
+  --vw-tree-grid-highlight: #f0a060; --vw-tree-grid-selected: #243e58; --vw-tree-grid-error: #ff8a80;
 }
 .vw-theme-dark.vw-gantt { background: var(--vw-surface); }
 @media (prefers-color-scheme: dark) {
@@ -413,6 +414,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
     /* Component variables: ranges (GanttChart), inspector errors and TaskBoard WIP and drop colours. */
     --vw-range: #43331a; --vw-range-ink: #f3d49a; --vw-range-line: #b58848; --vw-inspector-error: #ff8a80;
     --vw-board-wip-warning: #ff8a80; --vw-board-wip-under: #f0c060; --vw-board-drop: #82badf;
+    --vw-tree-grid-highlight: #f0a060; --vw-tree-grid-selected: #243e58; --vw-tree-grid-error: #ff8a80;
   }
   .vw-theme-auto.vw-gantt { background: var(--vw-surface); }
 }
@@ -852,4 +854,71 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-calendar-nav, .vw-calendar-views, .vw-calendar-handle, .vw-calendar-preview { display: none; }
   .vw-calendar { print-color-adjust: exact; }
   .vw-calendar-scroll { height: auto !important; overflow: visible; }
+}
+
+/* TreeGrid: a two-dimensionally virtualized tree grid. Rows and cells are absolutely positioned with logical properties,
+   so right-to-left grids (`dir`) mirror without extra rules; the header row and the tree column are sticky. */
+.vw-tree-grid { --vw-tree-grid-indent: 16px; position: relative; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 8px; background: var(--vw-surface, var(--_vw-surface)); font-size: 12px; }
+.vw-tree-grid-scroll { position: relative; overflow: auto; contain: strict; border-radius: inherit; scrollbar-width: thin; outline: none; }
+.vw-tree-grid-scroll:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
+.vw-tree-grid-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, var(--_vw-muted)); }
+.vw-tree-grid-canvas { position: relative; }
+.vw-tree-grid-head { position: sticky; top: 0; z-index: 3; height: var(--vw-tree-grid-header-height); background: var(--vw-tree-grid-header, var(--vw-surface-muted, #f3f7fa)); border-bottom: 2px solid var(--vw-border, #d8e2e9); }
+.vw-tree-grid-corner, .vw-tree-grid-column-head { display: flex; align-items: center; height: 100%; padding-inline: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; color: var(--vw-muted, var(--_vw-muted)); }
+.vw-tree-grid-corner { position: sticky; inset-inline-start: 0; z-index: 4; width: var(--vw-tree-grid-tree-width); background: inherit; border-inline-end: 1px solid var(--vw-border, #d8e2e9); }
+.vw-tree-grid-column-head { position: absolute; top: 0; border-inline-end: 1px solid var(--vw-tree-grid-line, var(--vw-grid, #e2e9ef)); }
+.vw-tree-grid-row { position: absolute; top: 0; inset-inline-start: 0; width: 100%; height: var(--vw-tree-grid-row-height); border-bottom: 1px solid var(--vw-tree-grid-line, var(--vw-grid, #e8eef2)); }
+.vw-tree-grid-header-cell { position: sticky; inset-inline-start: 0; z-index: 2; display: flex; align-items: center; gap: 4px; width: var(--vw-tree-grid-tree-width); height: 100%; padding-inline: calc(6px + var(--vw-tree-grid-level, 0) * var(--vw-tree-grid-indent)) 6px; overflow: hidden; white-space: nowrap; background: var(--vw-surface, var(--_vw-surface)); border-inline-end: 1px solid var(--vw-border, #d8e2e9); outline: none; user-select: none; }
+.vw-tree-grid-label { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.vw-tree-grid-detail { overflow: hidden; text-overflow: ellipsis; color: var(--vw-muted, var(--_vw-muted)); font-size: 10.5px; }
+.vw-tree-grid-toggle { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; cursor: pointer; }
+.vw-tree-grid-toggle:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+.vw-tree-grid-toggle::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }
+.vw-tree-grid-toggle.vw-is-leaf { cursor: default; }
+.vw-tree-grid-toggle.vw-is-leaf::before { content: none; }
+.vw-tree-grid-row[aria-expanded="true"] .vw-tree-grid-toggle::before { transform: rotate(45deg); }
+.vw-tree-grid.vw-rtl .vw-tree-grid-row[aria-expanded="false"] .vw-tree-grid-toggle::before { transform: rotate(135deg); }
+.vw-tree-grid-cell { position: absolute; top: 0; display: flex; align-items: center; height: 100%; padding-inline: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-inline-end: 1px solid var(--vw-tree-grid-line, var(--vw-grid, #e8eef2)); outline: none; font-variant-numeric: tabular-nums; }
+.vw-tree-grid-cell.vw-align-end { justify-content: flex-end; }
+.vw-tree-grid-cell.vw-align-center { justify-content: center; }
+.vw-tree-grid-cell[class*="vw-tone-"] { background: var(--vw-item-pale); color: var(--vw-item-ink); }
+.vw-tree-grid-mark { color: var(--vw-muted, var(--_vw-muted)); }
+.vw-tree-grid-cell.vw-is-failed .vw-tree-grid-mark { color: var(--vw-tree-grid-error, #a8361f); font-weight: 700; }
+.vw-tree-grid-cell.vw-is-not-applicable { background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--vw-border, #d8e2e9) 45%, transparent) 5px 6px); }
+.vw-tree-grid-row.vw-is-status .vw-tree-grid-header-cell { font-style: italic; color: var(--vw-muted, var(--_vw-muted)); }
+.vw-tree-grid-row.vw-is-selected, .vw-tree-grid-row.vw-is-selected .vw-tree-grid-header-cell { background: linear-gradient(var(--vw-tree-grid-selected, #e3eefa), var(--vw-tree-grid-selected, #e3eefa)), var(--vw-surface, var(--_vw-surface)); }
+.vw-tree-grid-row.vw-is-highlighted .vw-tree-grid-header-cell { box-shadow: inset 4px 0 0 var(--vw-tree-grid-highlight, var(--vw-dependency-highlight, #a74f08)); }
+.vw-tree-grid.vw-rtl .vw-tree-grid-row.vw-is-highlighted .vw-tree-grid-header-cell { box-shadow: inset -4px 0 0 var(--vw-tree-grid-highlight, var(--vw-dependency-highlight, #a74f08)); }
+.vw-tree-grid-row.vw-is-highlighted .vw-tree-grid-label { color: var(--vw-tree-grid-highlight, var(--vw-dependency-highlight, #a74f08)); }
+.vw-tree-grid-cell.vw-is-highlighted { box-shadow: inset 0 0 0 2px var(--vw-tree-grid-highlight, var(--vw-dependency-highlight, #a74f08)); }
+.vw-tree-grid-cell.vw-is-in-range { background: color-mix(in srgb, var(--vw-accent, var(--_vw-accent)) 15%, transparent); }
+.vw-tree-grid-cell.vw-is-fill-preview { outline: 1px dashed var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
+.vw-tree-grid-cell:focus, .vw-tree-grid-header-cell:focus { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
+.vw-tree-grid-cell.vw-is-editing { overflow: visible; z-index: 1; padding: 0; }
+.vw-tree-grid-editor { width: 100%; height: 100%; min-width: 0; padding: 0 6px; border: 2px solid var(--vw-accent, var(--_vw-accent)); border-radius: 2px; background: var(--vw-surface, var(--_vw-surface)); color: inherit; font: inherit; }
+.vw-tree-grid-editor[aria-invalid="true"] { border-color: var(--vw-tree-grid-error, #a8361f); }
+.vw-tree-grid-editor-error { position: absolute; top: 100%; inset-inline-start: 0; z-index: 5; width: max-content; max-width: 320px; padding: 3px 6px; border-radius: 3px; background: var(--vw-tree-grid-error, #a8361f); color: var(--vw-on-solid, var(--_vw-on-solid)); font-size: 11px; white-space: normal; }
+.vw-tree-grid-fill-handle { position: absolute; inset-inline-end: 0; bottom: 0; width: 7px; height: 7px; border: 1px solid var(--vw-surface, var(--_vw-surface)); background: var(--vw-accent, var(--_vw-accent)); cursor: ns-resize; touch-action: none; }
+.vw-tree-grid-header-cell.vw-is-movable { cursor: grab; touch-action: none; }
+.vw-tree-grid-row.vw-is-dragging { opacity: .55; }
+.vw-tree-grid-row.vw-is-drop-inside .vw-tree-grid-header-cell { outline: 2px dashed var(--vw-tree-grid-drop, var(--vw-accent, var(--_vw-accent))); outline-offset: -3px; }
+.vw-tree-grid-drop { position: absolute; top: 0; z-index: 3; inset-inline: calc(6px + var(--vw-tree-grid-level, 0) * var(--vw-tree-grid-indent)) 0; height: 3px; border-radius: 2px; background: var(--vw-tree-grid-drop, var(--vw-accent, var(--_vw-accent))); pointer-events: none; }
+.vw-tree-grid-row-actions { display: inline-flex; gap: 2px; margin-inline-start: auto; }
+.vw-tree-grid-row-actions button { width: 20px; height: 20px; padding: 0; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; background: var(--vw-surface, var(--_vw-surface)); font-size: 12px; line-height: 1; }
+.vw-tree-grid-row-actions button:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
+@media (forced-colors: active) {
+  .vw-tree-grid { border-color: CanvasText; }
+  .vw-tree-grid-cell:focus, .vw-tree-grid-header-cell:focus { outline: 3px solid Highlight; }
+  .vw-tree-grid-row.vw-is-selected, .vw-tree-grid-row.vw-is-selected .vw-tree-grid-header-cell { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  .vw-tree-grid-row.vw-is-highlighted .vw-tree-grid-header-cell, .vw-tree-grid-cell.vw-is-highlighted { box-shadow: none; outline: 2px dashed CanvasText; outline-offset: -3px; }
+  .vw-tree-grid-cell.vw-is-in-range { forced-color-adjust: none; background: Canvas; color: CanvasText; outline: 2px solid Highlight; outline-offset: -2px; }
+  .vw-tree-grid-cell[class*="vw-tone-"] { forced-color-adjust: none; background: Canvas; color: CanvasText; }
+  .vw-tree-grid-drop, .vw-tree-grid-fill-handle { forced-color-adjust: none; background: Highlight; }
+  .vw-tree-grid-editor-error { forced-color-adjust: none; background: Canvas; color: CanvasText; border: 2px solid CanvasText; }
+}
+@media print {
+  .vw-tree-grid { print-color-adjust: exact; }
+  .vw-tree-grid-scroll { contain: none; height: auto !important; overflow: visible; }
+  .vw-tree-grid-head, .vw-tree-grid-header-cell, .vw-tree-grid-corner { position: static; }
+  .vw-tree-grid-row-actions, .vw-tree-grid-fill-handle, .vw-tree-grid-drop { display: none; }
 }

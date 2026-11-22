@@ -328,6 +328,20 @@ The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-su
 | `--vw-board-collapsed-fill` | border colour at 35% | Fill of the cells below a collapsed column |
 | `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
 
+The opt-in TreeGrid component (`vw-tree-grid`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-border`, `--vw-grid`, `--vw-text`, `--vw-muted`, `--vw-accent`, `--vw-on-solid` and the tone families through `vw-tone-*` on cells with a `tone`), so the built-in dark themes and your own theme apply to it. Rows and cells are positioned with logical properties, so `dir="rtl"` puts the tree column on the right without extra rules. Its classes start with `vw-tree-grid-` (`vw-tree-grid-row`, `vw-tree-grid-header-cell`, `vw-tree-grid-cell`, `vw-tree-grid-editor`, `vw-tree-grid-fill-handle`, `vw-tree-grid-drop`), with the shared modifiers `vw-is-selected`, `vw-is-highlighted`, `vw-is-active`, `vw-is-editing`, `vw-is-in-range`, `vw-is-status` (a status line) and `vw-is-<state>` on cells without a value (`vw-is-none`, `vw-is-unknown`, `vw-is-not-applicable`, `vw-is-loading`, ...). In forced-colors mode the focus and range use `Highlight`, selected rows `Highlight` with `HighlightText`, and highlights a dashed `CanvasText` outline. In print the scroller grows to its content, but only the rendered window of lines and columns is in the DOM; use a dedicated export for complete output. It adds these variables; the built-in dark themes set `--vw-tree-grid-highlight` to `#f0a060`, `--vw-tree-grid-selected` to `#243e58` and `--vw-tree-grid-error` to `#ff8a80`.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-tree-grid-indent` | `16px` | Indent per tree level in the row headers |
+| `--vw-tree-grid-header` | `--vw-surface-muted` (`#f3f7fa`) | Background of the header row |
+| `--vw-tree-grid-line` | `--vw-grid` (`#e8eef2`) | Row and cell rules |
+| `--vw-tree-grid-selected` | `#e3eefa` (dark `#243e58`) | Background of the rows in `selectedRowIds` |
+| `--vw-tree-grid-highlight` | `--vw-dependency-highlight` (`#a74f08`, dark `#f0a060`) | Bar and label of highlighted rows and the outline of highlighted cells |
+| `--vw-tree-grid-error` | `#a8361f` (dark `#ff8a80`) | Editor error messages, the border of an invalid editor and the mark of a `failed` cell |
+| `--vw-tree-grid-drop` | `--vw-accent` | Drop indicator and outline of a row drag |
+
+The component also sets `--vw-tree-grid-row-height`, `--vw-tree-grid-header-height`, `--vw-tree-grid-tree-width` (from its props) and `--vw-tree-grid-level` (on each row header) inline; they are internal, set the props instead.
+
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
@@ -439,7 +453,7 @@ The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-au
 
 ### Built-in dark theme
 
-Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, `--vw-range`, `--vw-range-line`, `--vw-range-ink`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, `--vw-range`, `--vw-range-line`, `--vw-range-ink`, the tone families, `--vw-marker-ink` and the component variables of TaskBoard and TreeGrid. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
 
@@ -615,6 +629,7 @@ async function showInGraph(nodeId: string) {
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
 - For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached. Opt-in `edgeFilter` follows only some relations (it is told the walk direction, so upstream and downstream can follow different ones), `maxNodes` caps the result nearest first and `truncated` lists where a limit stopped the walk (the places to offer "show more"), and `paths: true` lets `graphTracePath(result, id)` rebuild the edges from a start to a node (why it is affected) and lists in `multiplyReachedIds` the nodes reached by more than one path; see [Traversal filters, limits and paths](api.md#traversal-filters-limits-and-paths). `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
 - To explore a time range (what ran on machine X between 14:00 and 16:00), pass `timeRange: { range, bars, rowIds, graph, traversal }` to `useLinkedSelection`. Bars are tested by their work `segments` when they have them, so a pause covering the range does not count. Active tasks join the highlight sets and related tasks the `related*` sets, for example `:related-ids="linked.graph.value.relatedNodeIds"` on NetworkGraph. Nothing is selected, so Delete never removes them. `timelineBarsInRange` and `resolveTimeRangeTargets` do the same in core; see [Time range exploration](api.md#time-range-exploration).
+- TreeGrid links the same way; see [Tree grids, matrices and bills of materials](#tree-grids-matrices-and-bills-of-materials).
 - A view of your own (a task table, a list, a diagnostics panel) links through entities instead of a view name: call `linked.selectEntities([{ kind: 'task', id }], { source: 'task-table' })` when the user selects in it, and render its own selected rows from `linked.selectedEntities`, which also follows selections made in the graph or the timeline. No view owns such a selection, so the graph and the Gantt chart only highlight the bound items and never receive them as `selectedIds`. Reporting the same entities with the same `source` again changes nothing and does not call `onSelect`, so a table that echoes its selection back cannot loop; an empty list clears the selection. `linked.selectionSource` tells which of your views made the current selection.
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
 
@@ -1155,3 +1170,29 @@ Both components use the shared variables (`--vw-surface`, `--vw-surface-muted`, 
 | `--vw-inspector-error` | `#b3261e` (`#ff8a80` in the dark themes) | Messages under inspector fields (`vw-inspector-error`) and the border of an invalid control |
 
 Classes: `vw-palette`, `vw-palette-search`, `vw-palette-list`, `vw-palette-section`, `vw-palette-heading`, `vw-palette-item` (with `vw-is-active` and `vw-is-disabled`), `vw-palette-preview`, `vw-palette-label`, `vw-palette-detail`, `vw-palette-empty`; `vw-inspector`, `vw-inspector-field` (with `vw-is-<kind>`, `vw-is-readonly` and `vw-is-invalid`), `vw-inspector-label`, `vw-inspector-input`, `vw-inspector-check`, `vw-inspector-color`, `vw-inspector-swatch`, `vw-inspector-description`, `vw-inspector-error` and `vw-inspector-empty`. Layout uses logical properties, so `dir="rtl"` (or an inherited right-to-left direction with `dir="auto"`) mirrors both. In forced-colors mode palette previews are drawn in `CanvasText` on `Canvas` and messages are underlined; the filter box is not printed.
+
+## Tree grids, matrices and bills of materials
+
+TreeGrid shows a row tree against columns. Keep three things apart in your data:
+
+- **Rows are positions.** A row ID names one place in the tree, such as "the second use of bolt M6 in frame F1". The parent decides IDs, and a row move or delete changes positions only.
+- **Entities are what rows and cells stand for.** Put them in `entities`; the same part may be used in many rows. `matchTreeGridEntities({ rows, columns, cells }, entities)` returns every row and cell that lists one, so a highlight shows all usages.
+- **Cells say what they know.** A listed 0 is a value; `status: 'none'` says the value is known to be absent, `unknown` that it is not known, `not-applicable` that the row has no such attribute, and `unloaded`, `loading` and `failed` that it is not loaded. `missingCell` (on the grid or a column) states what an unlisted cell means.
+
+**Linking.** TreeGrid is not a `LinkedViewName`, so it links through entities, and `ViewTarget` stays as it is. Report its activations with `selectEntities`, and draw the linked state from `selectedEntities`:
+
+```ts
+const linked = useLinkedSelection({ bindings })
+const matches = computed(() => matchTreeGridEntities({ rows: rows.value, columns, cells: cells.value }, linked.selectedEntities.value))
+function activate(activation: TreeGridActivation) {
+  linked.selectEntities(activation.entities, { source: 'tree-grid' })
+}
+// <TreeGrid :rows="rows" :columns="columns" :cells="cells" :highlighted-row-ids="matches.rowIds"
+//   :highlighted-cells="matches.cells" @row-activate="activate" @cell-activate="activate" />
+```
+
+A graph or Gantt chart bound to the same entities then highlights its items, and a selection made there highlights the grid's rows and cells. To show a row that a collapsed ancestor hides, call `revealRow(rowId)`: it reports `hidden-by-collapse` with the displayed ancestor, and expanding is your decision (add the ancestors to `expandedIds`).
+
+**Loading children on demand.** Give a row `childStatus: 'unloaded'`. Expanding it emits `expand-request`; set `childStatus` to `loading`, fetch, then add the child rows with `childStatus: 'loaded'` (or `failed`, which a status line shows; Enter on it asks again). Keep loaded rows out of the undo history, or replace the current history entry, since loading is not an edit.
+
+**Editing.** Every change is a proposal, and validators are synchronous. Accept a `cell-edit` or a `sheet-edit` with `applyTreeGridEdits`, a `row-create` with `insertTreeGridRow` (you choose the new ID), a `row-delete` with `deleteTreeGridRows` and a `row-move` with `moveTimelineRow`, and commit each result as one history entry (`useEditHistory`) or one save (`useEditTransaction`). A paste, fill, clear or cut is one batch, so it undoes in one step. Changes to `rows`, `columns` or `cells` cancel an open editor, a fill drag or a row drag (`edit-cancel` with `source-changed`), so a server update never lands in a stale edit. For a server-backed grid, send the batch with the version it was made against, as for the other components (see [Saving through a server](#saving-through-a-server)).
