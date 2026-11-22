@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (245)
+## Entry `.`: runtime exports (273)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -13,6 +13,7 @@ in public signatures, so changes to them can break consumers too.
 - `NetworkGraph: object`
 - `PropertyInspector: object`
 - `TaskBoard: object`
+- `TreeGrid: object`
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
 - `aggregateTimeBuckets: function`
@@ -22,6 +23,7 @@ in public signatures, so changes to them can break consumers too.
 - `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
+- `applyTreeGridEdits: function`
 - `assignLanes: function`
 - `assignmentWorkPeriods: function`
 - `baselineVariance: function`
@@ -30,6 +32,9 @@ in public signatures, so changes to them can break consumers too.
 - `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
+- `buildTreeGridClear: function`
+- `buildTreeGridFill: function`
+- `buildTreeGridPaste: function`
 - `buildViewBindingIndex: function`
 - `buildWorkPeriods: function`
 - `calculateResourceLoad: function`
@@ -54,11 +59,13 @@ in public signatures, so changes to them can break consumers too.
 - `createTimelineRowTree: function`
 - `createTimelineViewState: function`
 - `createTransactionState: function`
+- `createTreeGridIndex: function`
 - `createWindowedDataState: function`
 - `createWorkingTimeScale: function`
 - `cullGraphElements: function`
 - `defaultNonWorkingRatio: number`
 - `defaultSvgExportTheme: object`
+- `deleteTreeGridRows: function`
 - `dependencyEndsForType: function`
 - `dependencyPath: function`
 - `dependencyTimes: function`
@@ -79,6 +86,8 @@ in public signatures, so changes to them can break consumers too.
 - `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
+- `findTreeGridLine: function`
+- `flattenTreeGrid: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatRecurrenceRule: function`
@@ -127,11 +136,13 @@ in public signatures, so changes to them can break consumers too.
 - `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
+- `insertTreeGridRow: function`
 - `intersectsWindow: function`
 - `intlTimeFormatter: function`
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `isTreeGridCellEditable: function`
 - `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
@@ -144,6 +155,7 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `matchTreeGridEntities: function`
 - `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
@@ -186,6 +198,7 @@ in public signatures, so changes to them can break consumers too.
 - `resolveResourceTimelineEdits: function`
 - `resolveTimeRangeTargets: function`
 - `resolveTimelineColumns: function`
+- `resolveTreeGridCell: function`
 - `resolveViewTargets: function`
 - `resolveWindowedRequest: function`
 - `resourceLoadFromMsProject: function`
@@ -237,6 +250,21 @@ in public signatures, so changes to them can break consumers too.
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `treeGridCellValue: function`
+- `treeGridColumnAt: function`
+- `treeGridColumnOffsets: function`
+- `treeGridColumnWindow: function`
+- `treeGridDefaultLabels: object`
+- `treeGridDropAt: function`
+- `treeGridFieldSpec: function`
+- `treeGridKeyAction: function`
+- `treeGridPositionAt: function`
+- `treeGridRangeBounds: function`
+- `treeGridRangeText: function`
+- `treeGridRowCreate: function`
+- `treeGridRowExpandable: function`
+- `treeGridRowMoveForKey: function`
+- `treeGridRowWindow: function`
 - `useAsyncGraphLayout: function`
 - `useEditHistory: function`
 - `useEditTransaction: function`
@@ -253,7 +281,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (598)
+## Entry `.`: type-only exports (638)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -822,6 +850,46 @@ in public signatures, so changes to them can break consumers too.
 - `TransactionOutcome`
 - `TransactionSource`
 - `TransactionStatus`
+- `TreeGridActivation`
+- `TreeGridCell`
+- `TreeGridCellContent`
+- `TreeGridCellEdit`
+- `TreeGridCellEditValidator`
+- `TreeGridCellRef`
+- `TreeGridCellState`
+- `TreeGridCellStatus`
+- `TreeGridCellView`
+- `TreeGridColumn`
+- `TreeGridComponent`
+- `TreeGridCursor`
+- `TreeGridDrop`
+- `TreeGridEditCancel`
+- `TreeGridEditCancelReason`
+- `TreeGridEditor`
+- `TreeGridEntityMatches`
+- `TreeGridExposed`
+- `TreeGridIndex`
+- `TreeGridInput`
+- `TreeGridKeyAction`
+- `TreeGridKeyContext`
+- `TreeGridKeyInput`
+- `TreeGridLabels`
+- `TreeGridLine`
+- `TreeGridLines`
+- `TreeGridMissingCell`
+- `TreeGridPosition`
+- `TreeGridRange`
+- `TreeGridRow`
+- `TreeGridRowCreate`
+- `TreeGridRowCreateValidator`
+- `TreeGridRowDelete`
+- `TreeGridRowDeleteValidator`
+- `TreeGridSheetBuild`
+- `TreeGridSheetEdit`
+- `TreeGridSheetEditValidator`
+- `TreeGridSpan`
+- `TreeGridValidatorResult`
+- `TreeGridValue`
 - `UseAsyncGraphLayoutOptions`
 - `UseEditTransactionOptions`
 - `UseLinkedSelectionOptions`
@@ -854,7 +922,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (230)
+## Entry `./core`: runtime exports (257)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -865,6 +933,7 @@ in public signatures, so changes to them can break consumers too.
 - `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
+- `applyTreeGridEdits: function`
 - `assignLanes: function`
 - `assignmentWorkPeriods: function`
 - `baselineVariance: function`
@@ -873,6 +942,9 @@ in public signatures, so changes to them can break consumers too.
 - `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
+- `buildTreeGridClear: function`
+- `buildTreeGridFill: function`
+- `buildTreeGridPaste: function`
 - `buildViewBindingIndex: function`
 - `buildWorkPeriods: function`
 - `calculateResourceLoad: function`
@@ -897,11 +969,13 @@ in public signatures, so changes to them can break consumers too.
 - `createTimelineRowTree: function`
 - `createTimelineViewState: function`
 - `createTransactionState: function`
+- `createTreeGridIndex: function`
 - `createWindowedDataState: function`
 - `createWorkingTimeScale: function`
 - `cullGraphElements: function`
 - `defaultNonWorkingRatio: number`
 - `defaultSvgExportTheme: object`
+- `deleteTreeGridRows: function`
 - `dependencyEndsForType: function`
 - `dependencyPath: function`
 - `dependencyTimes: function`
@@ -922,6 +996,8 @@ in public signatures, so changes to them can break consumers too.
 - `filterTimelineRows: function`
 - `findGraphCycles: function`
 - `findOrthogonalRoute: function`
+- `findTreeGridLine: function`
+- `flattenTreeGrid: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatRecurrenceRule: function`
@@ -969,11 +1045,13 @@ in public signatures, so changes to them can break consumers too.
 - `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
+- `insertTreeGridRow: function`
 - `intersectsWindow: function`
 - `intlTimeFormatter: function`
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `isTreeGridCellEditable: function`
 - `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
@@ -986,6 +1064,7 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `matchTreeGridEntities: function`
 - `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
@@ -1027,6 +1106,7 @@ in public signatures, so changes to them can break consumers too.
 - `resolveResourceTimelineEdits: function`
 - `resolveTimeRangeTargets: function`
 - `resolveTimelineColumns: function`
+- `resolveTreeGridCell: function`
 - `resolveViewTargets: function`
 - `resolveWindowedRequest: function`
 - `resourceLoadFromMsProject: function`
@@ -1077,6 +1157,21 @@ in public signatures, so changes to them can break consumers too.
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `treeGridCellValue: function`
+- `treeGridColumnAt: function`
+- `treeGridColumnOffsets: function`
+- `treeGridColumnWindow: function`
+- `treeGridDefaultLabels: object`
+- `treeGridDropAt: function`
+- `treeGridFieldSpec: function`
+- `treeGridKeyAction: function`
+- `treeGridPositionAt: function`
+- `treeGridRangeBounds: function`
+- `treeGridRangeText: function`
+- `treeGridRowCreate: function`
+- `treeGridRowExpandable: function`
+- `treeGridRowMoveForKey: function`
+- `treeGridRowWindow: function`
 - `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
@@ -1087,7 +1182,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (560)
+## Entry `./core`: type-only exports (598)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1625,6 +1720,44 @@ in public signatures, so changes to them can break consumers too.
 - `TransactionOutcome`
 - `TransactionSource`
 - `TransactionStatus`
+- `TreeGridActivation`
+- `TreeGridCell`
+- `TreeGridCellContent`
+- `TreeGridCellEdit`
+- `TreeGridCellEditValidator`
+- `TreeGridCellRef`
+- `TreeGridCellState`
+- `TreeGridCellStatus`
+- `TreeGridCellView`
+- `TreeGridColumn`
+- `TreeGridCursor`
+- `TreeGridDrop`
+- `TreeGridEditCancel`
+- `TreeGridEditCancelReason`
+- `TreeGridEditor`
+- `TreeGridEntityMatches`
+- `TreeGridIndex`
+- `TreeGridInput`
+- `TreeGridKeyAction`
+- `TreeGridKeyContext`
+- `TreeGridKeyInput`
+- `TreeGridLabels`
+- `TreeGridLine`
+- `TreeGridLines`
+- `TreeGridMissingCell`
+- `TreeGridPosition`
+- `TreeGridRange`
+- `TreeGridRow`
+- `TreeGridRowCreate`
+- `TreeGridRowCreateValidator`
+- `TreeGridRowDelete`
+- `TreeGridRowDeleteValidator`
+- `TreeGridSheetBuild`
+- `TreeGridSheetEdit`
+- `TreeGridSheetEditValidator`
+- `TreeGridSpan`
+- `TreeGridValidatorResult`
+- `TreeGridValue`
 - `ViewBinding`
 - `ViewBindingIndex`
 - `ViewTarget`
@@ -2267,6 +2400,10 @@ scrollToTime: (time: number) => void;
 - `--vw-teal-pale`
 - `--vw-teal-solid`
 - `--vw-text`
+- `--vw-tree-grid-error`
+- `--vw-tree-grid-highlight`
+- `--vw-tree-grid-indent`
+- `--vw-tree-grid-selected`
 - `--vw-violet-ink`
 - `--vw-violet-line`
 - `--vw-violet-pale`
@@ -2311,6 +2448,13 @@ scrollToTime: (time: number) => void;
 - `--vw-range-opacity`
 - `--vw-row-depth`
 - `--vw-toolbar-offset`
+- `--vw-tree-grid-drop`
+- `--vw-tree-grid-header`
+- `--vw-tree-grid-header-height`
+- `--vw-tree-grid-level`
+- `--vw-tree-grid-line`
+- `--vw-tree-grid-row-height`
+- `--vw-tree-grid-tree-width`
 
 ## Declarations
 
@@ -8539,6 +8683,443 @@ type TransactionSource = 'pointer' | 'keyboard' | 'api' | 'undo' | 'redo';
 type TransactionStatus = 'idle' | 'saving' | 'rejected' | 'conflict' | 'uncertain';
 ```
 
+### `TreeGrid`
+
+```ts
+const TreeGrid: TreeGridComponent;
+```
+
+### `TreeGridActivation`
+
+```ts
+interface TreeGridActivation {
+    rowId: string;
+    columnId?: string;
+    entities: readonly EntityRef[];
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TreeGridCell`
+
+```ts
+interface TreeGridCell extends TreeGridCellContent {
+    rowId: string;
+    columnId: string;
+}
+```
+
+### `TreeGridCellContent`
+
+```ts
+interface TreeGridCellContent {
+    value?: TreeGridValue;
+    status?: TreeGridCellStatus;
+    label?: string;
+    tone?: ChartTone;
+    entities?: readonly EntityRef[];
+    editable?: boolean;
+}
+```
+
+### `TreeGridCellEdit`
+
+```ts
+interface TreeGridCellEdit {
+    rowId: string;
+    columnId: string;
+    before: FieldValue;
+    after: FieldValue;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TreeGridCellEditValidator`
+
+```ts
+type TreeGridCellEditValidator = (change: TreeGridCellEdit) => TreeGridValidatorResult;
+```
+
+### `TreeGridCellRef`
+
+```ts
+interface TreeGridCellRef {
+    rowId: string;
+    columnId: string;
+}
+```
+
+### `TreeGridCellState`
+
+```ts
+type TreeGridCellState = 'value' | 'empty' | TreeGridCellStatus;
+```
+
+### `TreeGridCellStatus`
+
+```ts
+type TreeGridCellStatus = 'none' | 'unknown' | 'not-applicable' | 'unloaded' | 'loading' | 'failed';
+```
+
+### `TreeGridCellView`
+
+```ts
+interface TreeGridCellView {
+    state: TreeGridCellState;
+    value?: TreeGridValue;
+    label?: string;
+    tone?: ChartTone;
+    entities: readonly EntityRef[];
+    source: 'column' | 'cell' | 'missing';
+    editable?: boolean;
+}
+```
+
+### `TreeGridColumn`
+
+```ts
+interface TreeGridColumn<R extends TreeGridRow = TreeGridRow> {
+    id: string;
+    label: string;
+    width: number;
+    value?: (row: R) => TreeGridValue | TreeGridCellContent | null | undefined;
+    missingCell?: TreeGridMissingCell;
+    align?: 'start' | 'center' | 'end';
+    editor?: TreeGridEditor;
+    editable?: boolean | ((row: R) => boolean);
+    update?: (row: R, value: FieldValue) => R;
+}
+```
+
+### `TreeGridComponent`
+
+```ts
+type TreeGridComponent = (new <R extends TreeGridRow = TreeGridRow>(props: {
+    rows: readonly R[];
+    columns: readonly TreeGridColumn<R>[];
+} & Record<string, unknown>) => SfcInstance<TreeGridSfc<R & TreeGridRow>>) & SfcDefaultComponent<TreeGridSfc<TreeGridRow>>;
+```
+
+### `TreeGridCursor`
+
+```ts
+interface TreeGridCursor {
+    line: number;
+    column: number;
+}
+```
+
+### `TreeGridDrop`
+
+```ts
+interface TreeGridDrop {
+    line: number;
+    placement: 'before' | 'after' | 'inside';
+    target: TimelineRowPosition;
+}
+```
+
+### `TreeGridEditCancel`
+
+```ts
+interface TreeGridEditCancel {
+    kind: 'cell' | 'fill' | 'row-move';
+    reason: TreeGridEditCancelReason;
+    rowId?: string;
+    columnId?: string;
+}
+```
+
+### `TreeGridEditCancelReason`
+
+```ts
+type TreeGridEditCancelReason = 'escape' | 'source-changed' | 'hidden' | 'blur' | 'pointer-cancel' | 'api';
+```
+
+### `TreeGridEditor`
+
+```ts
+type TreeGridEditor = Omit<TimelineFieldSpec, 'id' | 'get'>;
+```
+
+### `TreeGridEntityMatches`
+
+```ts
+interface TreeGridEntityMatches {
+    rowIds: string[];
+    cells: TreeGridCellRef[];
+}
+```
+
+### `TreeGridExposed`
+
+```ts
+type TreeGridExposed<R extends TreeGridRow = TreeGridRow> = SfcExposed<TreeGridSfc<R>>;
+```
+
+### `TreeGridIndex`
+
+```ts
+interface TreeGridIndex<R extends TreeGridRow = TreeGridRow> {
+    readonly rows: readonly R[];
+    readonly columns: readonly TreeGridColumn<R>[];
+    readonly tree: readonly {
+        row: R;
+        depth: number;
+        hasChildren: boolean;
+        afterSubtree: number;
+    }[];
+    readonly rowById: ReadonlyMap<string, R>;
+    readonly columnIndex: ReadonlyMap<string, number>;
+    readonly cells: ReadonlyMap<string, ReadonlyMap<string, TreeGridCell>>;
+    readonly childCounts: ReadonlyMap<string, number>;
+    readonly rootCount: number;
+    readonly missingCell: TreeGridMissingCell;
+}
+```
+
+### `TreeGridInput`
+
+```ts
+interface TreeGridInput<R extends TreeGridRow = TreeGridRow> {
+    rows: readonly R[];
+    columns: readonly TreeGridColumn<R>[];
+    cells?: readonly TreeGridCell[];
+    missingCell?: TreeGridMissingCell;
+}
+```
+
+### `TreeGridKeyAction`
+
+```ts
+type TreeGridKeyAction = {
+    type: 'move';
+    to: TreeGridCursor;
+} | {
+    type: 'expand';
+    line: number;
+} | {
+    type: 'collapse';
+    line: number;
+} | {
+    type: 'activate';
+    at: TreeGridCursor;
+};
+```
+
+### `TreeGridKeyContext`
+
+```ts
+interface TreeGridKeyContext {
+    lines: readonly TreeGridLine<any>[];
+    columnCount: number;
+    pageSize: number;
+    rtl?: boolean;
+}
+```
+
+### `TreeGridKeyInput`
+
+```ts
+interface TreeGridKeyInput {
+    key: string;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+}
+```
+
+### `TreeGridLabels`
+
+```ts
+interface TreeGridLabels {
+    grid: string;
+    treeColumn: string;
+    empty: string;
+    keyboardHint: string;
+    expand: string;
+    collapse: string;
+    none: string;
+    unknown: string;
+    notApplicable: string;
+    unloaded: string;
+    loading: string;
+    failed: string;
+    noneMark: string;
+    unknownMark: string;
+    notApplicableMark: string;
+    unloadedMark: string;
+    loadingMark: string;
+    failedMark: string;
+    yes: string;
+    no: string;
+    edit: string;
+    for: string;
+    editRejected: string;
+    sheetRejected: string;
+    pasteTooLarge: string;
+    fillHandle: string;
+    addBelow: string;
+    addChild: string;
+    deleteRow: string;
+    moveRow: string;
+    rowActions: string;
+    moveBefore: string;
+    moveAfter: string;
+    moveInto: string;
+    rowCreateRejected: string;
+    rowDeleteRejected: string;
+    rowMoveRejected: string;
+    rowMoveHint: string;
+}
+```
+
+### `TreeGridLine`
+
+```ts
+interface TreeGridLine<R extends TreeGridRow = TreeGridRow> {
+    kind: 'row' | 'status';
+    row: R;
+    level: number;
+    expandable: boolean;
+    expanded: boolean;
+    posinset: number;
+    setsize: number;
+    parent: number;
+    status?: WindowedCellStatus;
+}
+```
+
+### `TreeGridLines`
+
+```ts
+interface TreeGridLines<R extends TreeGridRow = TreeGridRow> {
+    lines: readonly TreeGridLine<R>[];
+    rowLine: ReadonlyMap<string, number>;
+    statusLine: ReadonlyMap<string, number>;
+}
+```
+
+### `TreeGridMissingCell`
+
+```ts
+type TreeGridMissingCell = 'empty' | 'none' | 'unknown' | 'not-applicable';
+```
+
+### `TreeGridPosition`
+
+```ts
+interface TreeGridPosition {
+    rowId: string;
+    columnId?: string;
+    status?: boolean;
+}
+```
+
+### `TreeGridRange`
+
+```ts
+interface TreeGridRange {
+    anchor: TreeGridCursor;
+    focus: TreeGridCursor;
+}
+```
+
+### `TreeGridRow`
+
+```ts
+interface TreeGridRow<D = unknown> extends TimelineRow<D> {
+    entities?: readonly EntityRef[];
+    childStatus?: WindowedCellStatus;
+}
+```
+
+### `TreeGridRowCreate`
+
+```ts
+interface TreeGridRowCreate {
+    parentId?: string;
+    index: number;
+    referenceId: string;
+    placement: 'before' | 'after' | 'child';
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TreeGridRowCreateValidator`
+
+```ts
+type TreeGridRowCreateValidator = (change: TreeGridRowCreate) => TreeGridValidatorResult;
+```
+
+### `TreeGridRowDelete`
+
+```ts
+interface TreeGridRowDelete {
+    ids: string[];
+    includeDescendants: boolean;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TreeGridRowDeleteValidator`
+
+```ts
+type TreeGridRowDeleteValidator = (change: TreeGridRowDelete) => TreeGridValidatorResult;
+```
+
+### `TreeGridSheetBuild`
+
+```ts
+type TreeGridSheetBuild = {
+    ok: true;
+    edits: TreeGridCellEdit[];
+} | {
+    ok: false;
+    reason: 'too-large' | 'invalid';
+    error: string;
+    cell?: TreeGridCellRef;
+};
+```
+
+### `TreeGridSheetEdit`
+
+```ts
+interface TreeGridSheetEdit {
+    action: 'paste' | 'fill' | 'clear' | 'cut';
+    edits: TreeGridCellEdit[];
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TreeGridSheetEditValidator`
+
+```ts
+type TreeGridSheetEditValidator = (change: TreeGridSheetEdit) => TreeGridValidatorResult;
+```
+
+### `TreeGridSpan`
+
+```ts
+interface TreeGridSpan {
+    start: number;
+    end: number;
+}
+```
+
+### `TreeGridValidatorResult`
+
+```ts
+type TreeGridValidatorResult = boolean | string | void | undefined;
+```
+
+### `TreeGridValue`
+
+```ts
+type TreeGridValue = string | number | boolean;
+```
+
 ### `UseAsyncGraphLayoutOptions`
 
 ```ts
@@ -8951,6 +9532,19 @@ function applyTimelineConstraintEdit<B extends TimelineBar>(bars: readonly B[], 
 function applyTimelineSheetEdit<R extends TimelineRow>(rows: readonly R[], change: TimelineSheetChanges<R>, appliers: TimelineSheetAppliers<R>): R[];
 ```
 
+### `applyTreeGridEdits`
+
+```ts
+function applyTreeGridEdits<R extends TreeGridRow>(input: {
+    rows: readonly R[];
+    columns: readonly TreeGridColumn<R>[];
+    cells?: readonly TreeGridCell[];
+}, edits: Iterable<TreeGridCellEdit>): {
+    rows: R[];
+    cells: TreeGridCell[];
+};
+```
+
 ### `assignLanes`
 
 ```ts
@@ -9001,6 +9595,30 @@ function buildGraphLayoutRequests<N extends NetworkNode, E extends GraphEdge, G 
 
 ```ts
 function buildPlacementInput<I extends PlacementInput>(input: I, placedTaskIds: Iterable<string>): PlacementResult<I>;
+```
+
+### `buildTreeGridClear`
+
+```ts
+function buildTreeGridClear(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange, source?: TreeGridCellEdit['source']): TreeGridSheetBuild;
+```
+
+### `buildTreeGridFill`
+
+```ts
+function buildTreeGridFill(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange, options?: {
+    source?: TreeGridRange;
+    origin?: TreeGridCellEdit['source'];
+}): TreeGridSheetBuild;
+```
+
+### `buildTreeGridPaste`
+
+```ts
+function buildTreeGridPaste(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange, text: string, options?: {
+    maxCells?: number;
+    source?: TreeGridCellEdit['source'];
+}): TreeGridSheetBuild;
 ```
 
 ### `buildViewBindingIndex`
@@ -9156,6 +9774,12 @@ function createTimelineViewState(columns?: readonly Pick<TimelineColumn, 'id'>[]
 function createTransactionState<S>(acceptedState: S, acceptedVersion: string): TransactionCoreState<S>;
 ```
 
+### `createTreeGridIndex`
+
+```ts
+function createTreeGridIndex<R extends TreeGridRow>(input: TreeGridInput<R>): TreeGridIndex<R>;
+```
+
 ### `createWindowedDataState`
 
 ```ts
@@ -9184,6 +9808,18 @@ const defaultNonWorkingRatio = 0.1;
 
 ```ts
 const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>>;
+```
+
+### `deleteTreeGridRows`
+
+```ts
+function deleteTreeGridRows<R extends TreeGridRow>(input: {
+    rows: readonly R[];
+    cells?: readonly TreeGridCell[];
+}, change: Pick<TreeGridRowDelete, 'ids' | 'includeDescendants'>): {
+    rows: R[];
+    cells: TreeGridCell[];
+};
 ```
 
 ### `dependencyEndsForType`
@@ -9313,6 +9949,21 @@ function findGraphCycles(nodes: readonly IdentifiedNode[], edges: readonly Graph
 
 ```ts
 function findOrthogonalRoute(from: GraphRouteEnd, to: GraphRouteEnd, obstacles: readonly GraphRect[], options?: GraphObstacleAvoidance): GraphPoint[] | undefined;
+```
+
+### `findTreeGridLine`
+
+```ts
+function findTreeGridLine(index: TreeGridIndex<any>, flat: TreeGridLines<any>, position: TreeGridPosition): {
+    line: number;
+    exact: boolean;
+} | undefined;
+```
+
+### `flattenTreeGrid`
+
+```ts
+function flattenTreeGrid<R extends TreeGridRow>(index: TreeGridIndex<R>, expandedIds: Iterable<string>): TreeGridLines<R>;
 ```
 
 ### `formatDependencyLag`
@@ -9627,6 +10278,12 @@ function indentTimelineRow<R extends TimelineRow>(rows: readonly R[], id: string
 function indexGraph(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[]): GraphIndex;
 ```
 
+### `insertTreeGridRow`
+
+```ts
+function insertTreeGridRow<R extends TreeGridRow>(rows: readonly R[], change: Pick<TreeGridRowCreate, 'parentId' | 'index'>, row: R): R[];
+```
+
 ### `intersectsWindow`
 
 ```ts
@@ -9655,6 +10312,12 @@ function invertWorkPeriods(periods: readonly TimeRange[], range: TimeRange): Tim
 
 ```ts
 function isGraphRouteValid(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphEdge): boolean;
+```
+
+### `isTreeGridCellEditable`
+
+```ts
+function isTreeGridCellEditable(index: TreeGridIndex<any>, rowId: string, columnId: string): boolean;
 ```
 
 ### `layoutCalendarDayEvents`
@@ -9739,6 +10402,12 @@ function levelResources(input: LevelResourcesInput, options: ScheduleOptions & {
     explain: true;
 }): ExplainedLevelResourcesResult;
 function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult;
+```
+
+### `matchTreeGridEntities`
+
+```ts
+function matchTreeGridEntities<R extends TreeGridRow>(input: TreeGridInput<R> | TreeGridIndex<R>, entities: Iterable<EntityRef>): TreeGridEntityMatches;
 ```
 
 ### `maxEarnedValuePoints`
@@ -10012,6 +10681,12 @@ function resolveTimelineColumns<C extends Pick<TimelineColumn, 'id' | 'width'>>(
     columns: C[];
     diagnostics: TimelineViewDiagnostic[];
 };
+```
+
+### `resolveTreeGridCell`
+
+```ts
+function resolveTreeGridCell<R extends TreeGridRow>(index: TreeGridIndex<R>, rowId: string, columnId: string): TreeGridCellView;
 ```
 
 ### `resolveViewTargets`
@@ -10344,6 +11019,114 @@ function traverseGraph<E extends GraphEdge = GraphEdge>(graph: {
 }, startIds: Iterable<string>, options?: GraphTraversalOptions<E>): GraphTraversalResult;
 ```
 
+### `treeGridCellValue`
+
+```ts
+function treeGridCellValue(index: TreeGridIndex<any>, rowId: string, columnId: string): FieldValue;
+```
+
+### `treeGridColumnAt`
+
+```ts
+function treeGridColumnAt(offsets: readonly number[], x: number): number;
+```
+
+### `treeGridColumnOffsets`
+
+```ts
+function treeGridColumnOffsets(columns: readonly {
+    id: string;
+    width: number;
+}[]): number[];
+```
+
+### `treeGridColumnWindow`
+
+```ts
+function treeGridColumnWindow(offsets: readonly number[], options: {
+    scrollStart: number;
+    viewport: number;
+    overscan?: number;
+}): TreeGridSpan;
+```
+
+### `treeGridDefaultLabels`
+
+```ts
+const treeGridDefaultLabels: Readonly<TreeGridLabels>;
+```
+
+### `treeGridDropAt`
+
+```ts
+function treeGridDropAt(index: TreeGridIndex<any>, flat: TreeGridLines<any>, id: string, line: number, fraction: number): TreeGridDrop | undefined;
+```
+
+### `treeGridFieldSpec`
+
+```ts
+function treeGridFieldSpec(column: TreeGridColumn<any>): TimelineFieldSpec<any> | undefined;
+```
+
+### `treeGridKeyAction`
+
+```ts
+function treeGridKeyAction(input: TreeGridKeyInput, at: TreeGridCursor, context: TreeGridKeyContext): TreeGridKeyAction | undefined;
+```
+
+### `treeGridPositionAt`
+
+```ts
+function treeGridPositionAt(index: TreeGridIndex<any>, flat: TreeGridLines<any>, cursor: TreeGridCursor): TreeGridPosition | undefined;
+```
+
+### `treeGridRangeBounds`
+
+```ts
+function treeGridRangeBounds(range: TreeGridRange): {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+};
+```
+
+### `treeGridRangeText`
+
+```ts
+function treeGridRangeText(index: TreeGridIndex<any>, flat: TreeGridLines<any>, range: TreeGridRange): string;
+```
+
+### `treeGridRowCreate`
+
+```ts
+function treeGridRowCreate(rows: readonly TreeGridRow[], referenceId: string, placement: TreeGridRowCreate['placement'], source?: TreeGridRowCreate['source']): TreeGridRowCreate;
+```
+
+### `treeGridRowExpandable`
+
+```ts
+function treeGridRowExpandable(index: TreeGridIndex<any>, row: TreeGridRow): boolean;
+```
+
+### `treeGridRowMoveForKey`
+
+```ts
+function treeGridRowMoveForKey(input: TreeGridKeyInput, rows: readonly TreeGridRow[], id: string, rtl?: boolean): TimelineRowMove['after'] | undefined | 'ignore';
+```
+
+### `treeGridRowWindow`
+
+```ts
+function treeGridRowWindow(options: {
+    scrollTop: number;
+    viewport: number;
+    rowHeight: number;
+    count: number;
+    overscan?: number;
+}): TreeGridSpan;
+```
+
 ### `useAsyncGraphLayout`
 
 ```ts
@@ -10618,4 +11401,10 @@ interface SnapshotBase {
 
 ```ts
 type TaskBoardSfc<C extends TaskBoardCard> = typeof TaskBoardVue<C>;
+```
+
+### Internal `TreeGridSfc (dist/types/index.d.ts)`
+
+```ts
+type TreeGridSfc<R extends TreeGridRow> = typeof TreeGridVue<R>;
 ```
