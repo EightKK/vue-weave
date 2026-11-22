@@ -173,6 +173,11 @@ test('range text, paste, clear and fill build one batch each', () => {
   assert.equal(buildTreeGridPaste(index, flat, { anchor: { line: 4, column: 3 }, focus: { line: 4, column: 3 } }, '1\t2\t3').reason, 'too-large')
   assert.equal(buildTreeGridPaste(index, flat, { anchor: { line: 4, column: 1 }, focus: { line: 4, column: 1 } }, '1\n2\n3\n4').reason, 'too-large')
   assert.equal(buildTreeGridPaste(index, flat, range, '1\t2\n3\t4', { maxCells: 3 }).reason, 'too-large')
+  // A tall paste is rejected as too large instead of overflowing the call stack.
+  assert.equal(buildTreeGridPaste(index, flat, range, '1\n'.repeat(300_000)).reason, 'too-large')
+  // A range that starts on the row headers pastes from the first data column.
+  const fromHeader = buildTreeGridPaste(index, flat, { anchor: { line: 1, column: 0 }, focus: { line: 1, column: 0 } }, '9')
+  assert.deepEqual(fromHeader.edits, [{ rowId: 'a1', columnId: 'qty', before: 4, after: 9, source: 'keyboard' }])
   const clear = buildTreeGridClear(index, flat, range)
   assert.deepEqual(clear.edits.map(edit => [edit.rowId, edit.columnId, edit.after]), [['a1', 'qty', null], ['a1', 'color', null], ['a1', 'stock', null], ['a2', 'qty', null]])
   const filled = buildTreeGridFill(index, flat, { anchor: { line: 1, column: 1 }, focus: { line: 5, column: 1 } })

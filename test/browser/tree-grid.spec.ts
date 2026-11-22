@@ -247,6 +247,9 @@ test('cell editing: typing, typed editors, Enter, Tab, Escape and an inline reje
   await page.keyboard.press('ArrowUp')
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight')
   await expect(cellOf(row('Tools Basic 001'), 7)).toHaveText('No')
+  // Typing a letter does not toggle a checkbox; Space does.
+  await page.keyboard.press('a')
+  await expect(cellOf(row('Tools Basic 001'), 7)).toHaveText('No')
   await page.keyboard.press('Space')
   await expect(cellOf(row('Tools Basic 001'), 7)).toHaveText('Yes')
   // A double-click opens the editor too; a category row is read-only.

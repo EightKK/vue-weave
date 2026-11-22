@@ -334,7 +334,8 @@ function cancelCellEdit(reason: TreeGridEditCancelReason, refocus = true) {
 function startEdit(at: TreeGridCursor, text?: string): boolean {
   const line = lines.value[at.line], column = columns.value[at.column - 1]
   if (!line || line.kind !== 'row' || !column || !cellEditable(line.row.id, column.id)) return false
-  if (editing.value) cancelCellEdit('escape', false)
+  // An editor that is still open commits first, as leaving it does; an invalid or rejected value keeps it open.
+  if (editing.value && !commitEdit('keyboard')) return false
   setActive(at)
   const before = treeGridCellValue(index.value!, line.row.id, column.id)
   const spec = treeGridFieldSpec(column)!
@@ -659,7 +660,8 @@ function onKeydown(event: KeyboardEvent) {
     const column = columns.value[at.column - 1]!
     const startsEdit = event.key === 'F2' || (event.key === 'Enter' && !ctrl && !event.altKey)
       || (event.key === ' ' && treeGridFieldSpec(column)?.kind === 'checkbox')
-    const typed = event.key.length === 1 && !ctrl && !event.altKey && event.key !== ' '
+    // Typing starts a text edit; it never toggles a checkbox (Space, Enter or F2 do).
+    const typed = event.key.length === 1 && !ctrl && !event.altKey && event.key !== ' ' && treeGridFieldSpec(column)?.kind !== 'checkbox'
     if ((startsEdit || typed) && cellEditable(line.row.id, column.id)) {
       const kind = treeGridFieldSpec(column)!.kind
       event.preventDefault()

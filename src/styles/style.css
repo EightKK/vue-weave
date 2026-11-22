@@ -903,7 +903,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-tree-grid-row.vw-is-dragging { opacity: .55; }
 .vw-tree-grid-row.vw-is-drop-inside .vw-tree-grid-header-cell { outline: 2px dashed var(--vw-tree-grid-drop, var(--vw-accent, var(--_vw-accent))); outline-offset: -3px; }
 .vw-tree-grid-drop { position: absolute; top: 0; z-index: 3; inset-inline: calc(6px + var(--vw-tree-grid-level, 0) * var(--vw-tree-grid-indent)) 0; height: 3px; border-radius: 2px; background: var(--vw-tree-grid-drop, var(--vw-accent, var(--_vw-accent))); pointer-events: none; }
-.vw-tree-grid-row-actions { display: inline-flex; gap: 2px; margin-inline-start: auto; }
+.vw-tree-grid-row-actions { position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%); display: inline-flex; gap: 2px; padding-inline-start: 4px; background: inherit; }
 .vw-tree-grid-row-actions button { width: 20px; height: 20px; padding: 0; border: 1px solid var(--vw-border, #d8e2e9); border-radius: 4px; background: var(--vw-surface, var(--_vw-surface)); font-size: 12px; line-height: 1; }
 .vw-tree-grid-row-actions button:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 @media (forced-colors: active) {

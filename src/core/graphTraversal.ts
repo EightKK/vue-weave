@@ -35,7 +35,7 @@ export interface GraphTraversalTruncation {
   nodeId: string
   /** The walk that stopped at the node. */
   direction: GraphWalkDirection
-  /** `max-hops`: the node is `maxHops` edges from a start. `max-nodes`: an edge leads to a node that `maxNodes` left out. */
+  /** `max-hops`: the node is `maxHops` edges from a start and has accepted edges to nodes the walk has not reached. `max-nodes`: an edge leads to a node that `maxNodes` left out. */
   reason: 'max-hops' | 'max-nodes'
 }
 
@@ -172,6 +172,7 @@ function traverseWithOptions<E extends GraphEdge>(
   const startSet = new Set(starts)
   const admitted = new Set<string>(starts)
   const walkNodes = directions.map(() => [] as string[])
+  const walkSeen = directions.map(() => new Set<string>(starts))
   const walkEdges = directions.map(() => new Set<string>())
   const via = directions.map(() => new Map<string, GraphTraversalStep>())
   const truncatedIn = directions.map(() => new Set<string>())
@@ -198,6 +199,7 @@ function traverseWithOptions<E extends GraphEdge>(
     walkEdges[walk]!.add(step.edge.id)
     if (!seen) {
       walkNodes[walk]!.push(next)
+      walkSeen[walk]!.add(next)
       if (paths) via[walk]!.set(next, { edgeId: step.edge.id, previousId: from })
     }
     if (paths && !startSet.has(next)) {
@@ -207,7 +209,8 @@ function traverseWithOptions<E extends GraphEdge>(
     }
     return true
   }, (walk, id) => {
-    if (adjacencies[walk]!.get(id)?.some(step => accepts(step.edge, walk))) truncate(walk, id, 'max-hops')
+    // Only edges to nodes this walk has not reached would show more; every closer node is reached by now (breadth first).
+    if (adjacencies[walk]!.get(id)?.some(step => !walkSeen[walk]!.has(step.node) && accepts(step.edge, walk))) truncate(walk, id, 'max-hops')
   })
 
   const nodeIds = new Set<string>(starts)

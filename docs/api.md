@@ -2127,7 +2127,7 @@ Optional result fields, present only when `edgeFilter`, `maxNodes` or `paths: tr
 
 | Field | Contract |
 | --- | --- |
-| `truncated: GraphTraversalTruncation[]` | `{ nodeId, direction, reason }`, once per node and walk, in the order the walks met them: the reached nodes with accepted edges that a walk did not follow because a limit stopped it. `reason` is `'max-hops'` for a node `maxHops` edges from a start, `'max-nodes'` for a node with an edge to a node that `maxNodes` left out. Empty when the walk was complete. A node whose only edges the filter rejects is never truncated. |
+| `truncated: GraphTraversalTruncation[]` | `{ nodeId, direction, reason }`, once per node and walk, in the order the walks met them: the reached nodes with accepted edges that a walk did not follow because a limit stopped it. `reason` is `'max-hops'` for a node `maxHops` edges from a start that has accepted edges to nodes the walk has not reached, `'max-nodes'` for a node with an edge to a node that `maxNodes` left out. Empty when the walk was complete. A node whose only edges the filter rejects is never truncated. |
 | `via: GraphTraversalVia` | With `paths: true`: `{ forward?, backward? }`, one `Map` per walk that ran, from each node that walk reached (starts excepted) to its first step `{ edgeId, previousId }`. Walks are breadth-first, so the step lies on a path with the fewest hops within that walk. There is one map per walk because a node can be reached upstream and downstream; following one map back always gives a path in one direction. |
 | `multiplyReachedIds: string[]` | With `paths: true`: the reached nodes, starts excepted, into which more than one followed edge leads (in any walk), so that more than one path reaches them, in `nodeIds` order. |
 

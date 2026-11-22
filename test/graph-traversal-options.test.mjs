@@ -181,3 +181,12 @@ test('a 12,000-node chain is walked with paths and limits without recursion', ()
   assert.deepEqual(graphTracePath(hops, 'n1000').edgeIds.slice(0, 2), ['e5999', 'e5998'])
   assert.equal(graphTracePath(hops, 'n11000').edgeIds.length, 5000)
 })
+
+test('the hop limit truncates only nodes with accepted edges to nodes the walk has not reached', () => {
+  const loop = { nodes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], edges: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'ba', from: 'b', to: 'a' }] }
+  assert.deepEqual(traverseGraph(loop, ['a'], { direction: 'forward', maxHops: 1, maxNodes: Infinity }).truncated, [])
+  const chain = { ...loop, edges: [...loop.edges, { id: 'bc', from: 'b', to: 'c' }] }
+  assert.deepEqual(traverseGraph(chain, ['a'], { direction: 'forward', maxHops: 1, maxNodes: Infinity }).truncated, [
+    { nodeId: 'b', direction: 'forward', reason: 'max-hops' },
+  ])
+})

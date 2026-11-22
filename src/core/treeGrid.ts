@@ -784,10 +784,15 @@ export function buildTreeGridPaste(
   options: { maxCells?: number; source?: TreeGridCellEdit['source'] } = {},
 ): TreeGridSheetBuild {
   const records = parseSheetText(text)
-  const width = Math.max(...records.map(record => record.length))
+  // A loop, not `Math.max(...records)`: spreading a tall paste into one call exceeds the argument limit.
+  let width = 0
+  for (const record of records) if (record.length > width) width = record.length
   const maxCells = options.maxCells ?? 10_000
   const source = options.source ?? 'keyboard'
-  const { top, bottom, left, right } = treeGridRangeBounds(range)
+  const bounds = treeGridRangeBounds(range)
+  const { top, bottom } = bounds
+  // A range that starts on the row headers pastes from the first data column.
+  const left = Math.max(1, bounds.left), right = Math.max(left, bounds.right)
   const single = records.length === 1 && width === 1
   const rowLines: number[] = []
   const wantLines = single ? bottom - top + 1 : records.length
