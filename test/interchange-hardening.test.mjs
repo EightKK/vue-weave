@@ -66,6 +66,28 @@ for (const [format, write, read] of [['toGraphMl', toGraphMl, fromGraphMl], ['to
   })
 }
 
+test('the graph writers check group hierarchies listed children first in linear time', () => {
+  const depth = 20_000
+  const graph = nestedGroups(depth)
+  const reversed = { ...graph, groups: [...graph.groups].reverse() }
+  const started = performance.now()
+  const text = toGraphMl(reversed)
+  assert.ok(performance.now() - started < 10_000, 'group depths are found in linear time')
+  assert.equal(text, toGraphMl(graph))
+  const nodes = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }]
+  const cycle = [
+    { id: 'x', label: 'X', nodeIds: ['a'], parentId: 'y' },
+    { id: 'y', label: 'Y', nodeIds: ['b'], parentId: 'z' },
+    { id: 'z', label: 'Z', nodeIds: ['c'], parentId: 'y' },
+  ]
+  for (const write of [toGraphMl, toMermaid, toDrawio]) {
+    assert.throws(() => write({ nodes, edges: [], groups: cycle }), { message: 'Graph group hierarchy contains a cycle at group: x' })
+    assert.throws(() => write({ nodes, edges: [], groups: [{ id: 'x', label: 'X', nodeIds: ['a'], parentId: 'x' }] }), {
+      message: 'Graph group hierarchy contains a cycle at group: x',
+    })
+  }
+})
+
 test('the graph writers indent the first 32 nesting levels and no deeper', () => {
   const graph = nestedGroups(40)
   const indents = (text, pattern) => text.split('\n').filter(line => pattern.test(line)).map(line => line.length - line.trimStart().length)
