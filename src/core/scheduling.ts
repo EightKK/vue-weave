@@ -1,10 +1,11 @@
 import {
-  addManualUpper, addSummaryUpper, addUpperBounds, buildScheduleModel, cloneBounds, diagnose, limitsOf, lowerBounds, manualSlot,
+  addManualUpper, addSummaryUpper, addUpperBounds, buildScheduleModel, diagnose, limitsOf, lowerBounds, manualSlot,
   rollUpSummaries, slotFor, sourceFinish, summarySlot, summaryUpper, targetFinish, topologicalOrder, type Slot, type SummaryUpper,
 } from './scheduleModel.js'
 import {
   explainOption, recordManualReason, recordSlotReasons, ScheduleTraceRecorder, type ExplainedScheduleResult, type ScheduleOptions,
 } from './scheduleTrace.js'
+import { latestSlots } from './schedulePasses.js'
 import type { WorkCalendar } from './workCalendar.js'
 import type { TimeRange } from './timeline.js'
 import type { TimelineDependency } from './types.js'
@@ -206,31 +207,9 @@ export function scheduleTasks(input: ScheduleInput, options?: ScheduleOptions): 
     const taskIds = active.filter(task => !tasks.get(task.id)!.summary && earliest.get(task.id)!.end === finish).map(task => task.id)
     finishers = { taskIds, parents: taskIds.flatMap(id => trace.ids('earliest', id)) }
   }
-  const latest = new Map<string, Slot>()
-  // Upper bounds that summaries pass down to their subtasks; a summary comes before its subtasks in reverse order.
-  const inheritedLatest = new Map<string, SummaryUpper>()
-  for (let i = order.length - 1; i >= 0; i--) {
-    const task = tasks.get(order[i]!)!
-    if (task.summary) {
-      inheritedLatest.set(task.id, summaryUpper(model, task, latest, inheritedLatest, earliest))
-      continue
-    }
-    if (task.manual) {
-      if (trace) recordManualReason(trace, 'latest', task)
-      latest.set(task.id, manualSlot(task))
-      continue
-    }
-    const bounds = addSummaryUpper(addUpperBounds(cloneBounds(task.bounds), task, latest, finish), task, inheritedLatest, earliest)
-    const limits = limitsOf(bounds)
-    const slot = slotFor(task.clock, task.duration, limits, true)
-    if (!slot) return diagnose(model, task, bounds)
-    if (trace) {
-      recordSlotReasons(trace, 'latest', task, bounds, limits, slot, true, {
-        linkParents: link => trace.ids('latest', link.to), finish: finishers, links: model.links,
-      })
-    }
-    latest.set(task.id, slot)
-  }
+  const backward = latestSlots(model, order, earliest, trace, finish, finishers)
+  if (!(backward instanceof Map)) return backward
+  const latest = backward
 
   // ALAP tasks consume only the float that moves no other task: successors keep their placed dates. A link into a
   // manual task holds an ALAP task back only when its earliest dates already meet it, so placement adds no conflict.
