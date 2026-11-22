@@ -1311,16 +1311,19 @@ const shownRows = computed(() => {
   return displayedRows.value.slice(first, afterLast).map((item, i) => {
     const bars = barsByRow.value.get(item.row.id) ?? []
     const shown = bars.filter(bar => previews.value?.has(bar.id) || focusedBarId.value === bar.id || intersectsWindow(rangeOf(bar), timeWindow.value))
-    const overlays = new Map<string, BarOverlay>()
-    for (const bar of shown) {
-      const overlay = barOverlay(bar)
-      if (overlay) overlays.set(bar.id, overlay)
-    }
+    const shownSet = new Set(shown)
     return {
       ...item,
       index: first + i,
       bars: shown,
-      overlays,
+      // What the template reads of each shown bar, worked out once per bar.
+      items: shown.map(bar => {
+        const canEdit = editable(bar)
+        return {
+          bar, overlay: barOverlay(bar), progress: shownProgress(bar), range: rangeOf(bar), canEdit,
+          resizable: canEdit && bar.end - bar.start >= minimum.value,
+        }
+      }),
       creatable: canCreateIn(item.row),
       reorderable: rowHandlesVisible.value,
       progress: progressSegment(item.row.id),
@@ -1336,7 +1339,7 @@ const shownRows = computed(() => {
           ? [{ key: bar.id + ':deadline', className: rangeOf(bar).end > bar.deadline ? 'vw-gantt-deadline vw-late' : 'vw-gantt-deadline', style: deadlineStyle(bar, bar.deadline) }]
           : []),
         // The constraints of a bar with handles (`constraintsEditable`) are drawn by its handles instead.
-        ...bars.flatMap(bar => bar.constraints && !(constraintHandlesVisible.value && canEditConstraints(bar) && shown.includes(bar))
+        ...bars.flatMap(bar => bar.constraints && !(constraintHandlesVisible.value && canEditConstraints(bar) && shownSet.has(bar))
           ? constraintMarks(bar) : []),
       ],
     }
@@ -1461,13 +1464,20 @@ function dependencyName(dep: TimelineDependency) {
 // Summary rows as dependency ends (`summaryDependencies`). The rollups then follow the time ranges of a drag preview,
 // so a rollup bar and the dependencies that end at it move with the dragged descendants. Without the prop, the rollups
 // are those of `summaries`.
+// The rollups of a preview are kept while its time ranges stay the same (a move between rows changes none of them).
+let previewSummaries: { bars: readonly B[]; tree: typeof tree.value; key: string; rollups: ReturnType<typeof summarizeTimelineRows> } | undefined
 const drawnSummaries = computed(() => {
   const moved = previews.value
   if (!props.summaryDependencies || !props.showSummaries || !moved?.size || validationError.value) return summaries.value
-  return summarizeTimelineRows(tree.value, props.bars.map(bar => {
+  const key = JSON.stringify([...moved].map(([id, preview]) => [id, preview.range.start, preview.range.end]))
+  const cached = previewSummaries
+  if (cached && cached.bars === props.bars && cached.tree === tree.value && cached.key === key) return cached.rollups
+  const rollups = summarizeTimelineRows(tree.value, props.bars.map(bar => {
     const range = moved.get(bar.id)?.range
     return range ? { ...bar, start: range.start, end: range.end } : bar
   }))
+  previewSummaries = { bars: props.bars, tree: tree.value, key, rollups }
+  return rollups
 })
 /** The drawn rollup and displayed row index of each summary row a dependency end can name. Empty without the prop. */
 const summaryAnchors = computed(() => {
@@ -1497,10 +1507,25 @@ function dependencyEnd(id: string) {
   return anchor && { range: anchor.range, row: anchor.index, offset: props.rowHeight / 2 }
 }
 
+/**
+ * The displayed rows of the ends of each dependency without a drag preview (a bar end is the row of its bar, a summary
+ * end the summary row itself), worked out when the dependencies, bars or displayed rows change.
+ */
+const dependencyRows = computed(() => {
+  const row = (id: string) => {
+    const bar = barById.value.get(id)
+    return bar ? rowOrder.value.get(bar.rowId) : rowOrder.value.get(id)
+  }
+  return (validationError.value ? [] : props.dependencies).map(dep => ({ dep, from: row(dep.from), to: row(dep.to) }))
+})
 const shownLines = computed(() => {
   const { first, afterLast } = rowWindow.value
   const { left, right } = xWindow.value
-  return (validationError.value ? [] : props.dependencies).flatMap(dep => {
+  const moved = previews.value
+  return dependencyRows.value.flatMap(({ dep, from, to }) => {
+    // A line whose ends no preview moves keeps those rows: skip it early when it is outside the row window.
+    if (!moved?.has(dep.from) && !moved?.has(dep.to)
+      && (from === undefined || to === undefined || Math.max(from, to) < first || Math.min(from, to) >= afterLast)) return []
     const source = dependencyEnd(dep.from)
     const target = dependencyEnd(dep.to)
     if (!source || !target) return []
@@ -1972,7 +1997,13 @@ function updatePreview() {
     ? moveTimeRanges(drag.group, deltaTime, activeSnap.value, bounds.value)
     : [editTimeRange(drag.initial, drag.mode, deltaTime, activeSnap.value, bounds.value, minimum.value)]
   const mode = drag.mode
-  previews.value = new Map(drag.group.map((bar, i) => [bar.id, { range: ranges[i]!, rowShift: shift, mode }]))
+  // A pointer move that snaps to the same ranges keeps the preview, so nothing that is drawn from it is worked out again.
+  const current = previews.value
+  const same = current?.size === drag.group.length && drag.group.every((bar, i) => {
+    const preview = current.get(bar.id)
+    return preview && preview.rowShift === shift && preview.mode === mode && sameRange(preview.range, ranges[i])
+  })
+  if (!same) previews.value = new Map(drag.group.map((bar, i) => [bar.id, { range: ranges[i]!, rowShift: shift, mode }]))
   if (props.cascade) updateCascade(buildChanges(drag.group, ranges, mode, 'pointer', shift))
 }
 
@@ -3501,35 +3532,35 @@ onUnmounted(() => {
             :style="strip.style" :title="strip.title" :data-vw-baseline="strip.set"></div>
           <div v-for="item in row.floats" :key="item.bar.id + ':float'" class="vw-gantt-float" :style="item.style" aria-hidden="true"></div>
           <button
-            v-for="bar in row.bars" :key="bar.id" type="button" class="vw-gantt-bar"
+            v-for="{ bar, overlay, progress, range, canEdit, resizable } in row.items" :key="bar.id" type="button" class="vw-gantt-bar"
             :class="[`vw-tone-${bar.tone ?? 'blue'}`, bar.appearance === 'outline' ? 'vw-is-outline' : 'vw-is-solid', {
-              'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': editable(bar), 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
+              'vw-is-selected': selectedIds?.has(bar.id), 'vw-is-editable': canEdit, 'vw-is-dragging': previews?.has(bar.id), 'vw-is-milestone': bar.start === bar.end,
               'vw-has-slot': bar.start === bar.end && Boolean($slots.bar),
-              'vw-critical': bar.critical, 'vw-late': row.overlays.get(bar.id)?.late, 'vw-segmented': row.overlays.get(bar.id)?.segments,
+              'vw-critical': bar.critical, 'vw-late': overlay?.late, 'vw-segmented': overlay?.segments,
               'vw-is-highlighted': highlightedBarIds?.has(bar.id),
             }]"
             :style="barStyle(bar)" :data-vw-bar="bar.id"
-            :title="$slots.tooltip ? undefined : barTitle(bar, row.overlays.get(bar.id))"
-            :aria-label="`${bar.label} ${formatTime(rangeOf(bar).start)}–${formatTime(rangeOf(bar).end)}`"
+            :title="$slots.tooltip ? undefined : barTitle(bar, overlay)"
+            :aria-label="`${bar.label} ${formatTime(range.start)}–${formatTime(range.end)}`"
             :aria-pressed="Boolean(selectedIds?.has(bar.id))"
             @keydown="editWithKeys($event, bar)" @focus="onBarFocus($event, bar)" @blur="onBarBlur(bar.id)"
-            :aria-describedby="barDescribedBy(bar, row.overlays.get(bar.id))"
+            :aria-describedby="barDescribedBy(bar, overlay)"
             @pointerdown="pressBar(bar); startEdit($event, bar)" @click="clickBar(bar, $event)"
             @pointerenter="hoverBar(bar); enterTarget(barTarget(bar.id), 'pointer')" @pointerleave="leaveBar(bar); leaveTarget(barTarget(bar.id), 'pointer')"
           >
-            <template v-if="row.overlays.get(bar.id)?.segments">
-              <span v-for="gap in row.overlays.get(bar.id)!.segments!.gaps" :key="'gap:' + gap.key" class="vw-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
-              <span v-for="piece in row.overlays.get(bar.id)!.segments!.pieces" :key="piece.key" class="vw-gantt-segment" :style="piece.style" aria-hidden="true">
-                <span v-if="shownProgress(bar) !== undefined" class="vw-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
+            <template v-if="overlay?.segments">
+              <span v-for="gap in overlay.segments.gaps" :key="'gap:' + gap.key" class="vw-gantt-segment-gap" :style="gap.style" aria-hidden="true"></span>
+              <span v-for="piece in overlay.segments.pieces" :key="piece.key" class="vw-gantt-segment" :style="piece.style" aria-hidden="true">
+                <span v-if="progress !== undefined" class="vw-bar-progress" :style="{ width: (piece.filled * 100) + '%' }"></span>
               </span>
             </template>
-            <span v-else-if="shownProgress(bar) !== undefined" class="vw-bar-progress" :style="{ width: (shownProgress(bar)! * 100) + '%' }" aria-hidden="true"></span>
-            <slot name="bar" :bar="bar" :range="rangeOf(bar)" :selected="Boolean(selectedIds?.has(bar.id))">
+            <span v-else-if="progress !== undefined" class="vw-bar-progress" :style="{ width: (progress * 100) + '%' }" aria-hidden="true"></span>
+            <slot name="bar" :bar="bar" :range="range" :selected="Boolean(selectedIds?.has(bar.id))">
               <span class="vw-bar-text">{{ bar.label }}</span>
             </slot>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-first" data-edit-mode="start" aria-hidden="true"></span>
-            <span v-if="editable(bar) && bar.end - bar.start >= minimum" class="vw-bar-handle vw-is-last" data-edit-mode="end" aria-hidden="true"></span>
-            <span v-if="row.overlays.get(bar.id)?.description" :id="barDescriptionId(bar)" hidden>{{ row.overlays.get(bar.id)!.description }}</span>
+            <span v-if="resizable" class="vw-bar-handle vw-is-first" data-edit-mode="start" aria-hidden="true"></span>
+            <span v-if="resizable" class="vw-bar-handle vw-is-last" data-edit-mode="end" aria-hidden="true"></span>
+            <span v-if="overlay?.description" :id="barDescriptionId(bar)" hidden>{{ overlay.description }}</span>
           </button>
           <!-- Deadline indicators and the constraint markers of bars without handles share one list, so the default markup stays unchanged. -->
           <div v-for="item in row.decorations" :key="item.key" :class="item.className" :style="item.style" aria-hidden="true"></div>
