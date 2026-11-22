@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-11-22
+
+Adds recurring events, automatic edge label placement, GanttChart header sorting and filtering, PropertyInspector assignment and dependency fields, TaskBoard collapse, filters and WIP minimums, and an opt-in CSV formula escape. It also fixes the findings of a full review of the components, the core and the interchange (including imports that a small hostile file could stall for seconds), and refactors large parts of GanttChart, NetworkGraph and the core without changing their results. A few changes are not strictly backward compatible: they are listed under "Breaking changes" and marked **Behaviour change** under "Fixed"; read them before upgrading.
+
 ### Breaking changes
 
 - `resourceLoadHistogram` now throws a `RangeError`, not an `Error`, for load segments that overlap within a resource, like its other checks of times, load and capacity (an unknown resource still throws an `Error`). GanttChart reports overlapping `loadSegments` through `validation-error` with the same `RangeError`. Who is affected: code that tells this failure apart by its class, for example `error.constructor === Error` or `!(error instanceof RangeError)`. What to do: check for `RangeError`; the message is unchanged.
