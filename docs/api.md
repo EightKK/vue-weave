@@ -85,6 +85,10 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Recurring events](#recurring-events)
 - [TaskBoard](#taskboard)
   - [Task board helpers](#task-board-helpers)
+- [TreeGrid](#treegrid)
+  - [Tree grid editing](#tree-grid-editing)
+  - [Tree grid row structure](#tree-grid-row-structure)
+  - [Tree grid helpers](#tree-grid-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
   - [Layout defaults and option checks](#layout-defaults-and-option-checks)
@@ -1275,6 +1279,116 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | groupBoardCards(cards, columns, lanes?, { filter }?) | `TaskBoardGroups`: `rows` (one per lane in lane order, or one without `laneId` when there are no lanes), each with one `TaskBoardCell` per column holding its cards in `cards` order (with `filter`, only the accepted ones, plus `indices`, their indexes among all cards of the cell, and `total`); `columns`, one `TaskBoardColumnStatus` per column with `count` (shown cards over all lanes), `total` (all cards), `wipLimit`, `wipMin`, `atLimit` (`total >= wipLimit`), `overLimit` (`total > wipLimit`) and `underMinimum` (`total < wipMin`); and `positions`, every card's `TaskBoardPosition` by ID, counting hidden cards. Throws `Invalid column ID`, `Duplicate card ID` and the like for IDs (kinds `column`, `lane` and `card`), `Unknown column in card <id>: <value>` and `Unknown lane in card <id>: <value>` (also for a missing `laneId` on a board with lanes), a RangeError for a WIP limit or minimum that is not a non-negative integer, or a minimum above the limit, and a TypeError for a `filter` that is not a function (`The board filter must be a function: <type>`) |
 | boardCardPosition(cards, id, { lanes }?) | The `TaskBoardPosition` of one card; with `lanes: true` the index counts only the cards of the same lane. Throws `Unknown card in board: <id>` |
 | applyBoardCardMove(cards, move, { columns, lanes }?) | A new array in which the card has the target column (and lane when `after.laneId` is set) and sits before the card that had `after.index` in the target cell, or after the cell's last card. Other cards are kept as they are; the moved card is a shallow copy. A move whose positions have no `laneId` treats each column as one cell and keeps the card's `laneId`. With `columns` or `lanes`, the target must name one (`Unknown column in card move <id>: <value>`, `Unknown lane in card move <id>: <value>`). Throws an Error for an unknown card, a move that names a lane in only one position, and a stale move whose `before` is not the card's current position (`Stale card move for <id>: …`), and a RangeError for an index that is not an integer from 0 to the size of the target cell |
+
+## TreeGrid
+
+An opt-in controlled component that unifies a tree grid and a matrix: a tree of rows against columns, for example a product hierarchy against attributes and warehouses, or a bill of materials against plants. The tree column is the sticky row header; the other columns are field columns, which read each row through `value(row)`, or sparse columns, which read the `cells` list. Rows and columns are virtualized together. The grid never changes its data: expansion, the active cell, cell edits, spreadsheet batches and row structure changes are events, and the parent applies them (see the "Tree grid" demo).
+
+**Rows are positions, entities are what they show.** A row's `id` identifies one position in the tree. What it stands for goes in `entities` (`EntityRef[]`, as in [Linked views](#linked-views)), and the same entity may appear in several rows, such as one part used in two assemblies. Activation reports entities, and `matchTreeGridEntities` marks every row and cell that lists one of the given entities, so an entity highlight shows all of its usages.
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| rows | readonly R[] (R extends TreeGridRow) / required | ID, optional `parentId`, label, optional `detail`, `entities`, `childStatus` (`WindowedCellStatus`) and `data`. Array order is sibling order. R is inferred |
+| columns | readonly TreeGridColumn&lt;R&gt;[] / required | ID, label, `width` (pixels, finite and positive) and optionally `value(row)` (a field column), `missingCell`, `align` (`start`, `center`, `end`; numbers default to `end`), `editor`, `editable` (boolean or `(row) => boolean`, default true) and `update(row, value)` |
+| cells | readonly TreeGridCell[] / undefined | Sparse cells of the columns without `value`: `rowId`, `columnId`, and `value` (string, number or boolean) or `status`, plus optional `label`, `tone`, `entities` and `editable: false` |
+| missingCell | `empty`, `none`, `unknown` or `not-applicable` / `empty` | What a cell that the data does not list means; a column's own `missingCell` wins |
+| expandedIds | readonly string[] / undefined | Controlled expanded rows; supports `v-model:expanded-ids`. Compared by value |
+| activeCell | TreeGridPosition / undefined | Controlled active cell (`{ rowId, columnId?, status? }`: no `columnId` is the row header, `status: true` the status line under the row); supports `v-model:active-cell`. The grid moves it itself and reports each move; setting it moves the focus stop |
+| selectedRowIds | readonly string[] or ReadonlySet / undefined | Selected rows (`aria-selected`, `vw-is-selected`). Display only |
+| highlightedRowIds, highlightedCells | readonly string[] or ReadonlySet, readonly TreeGridCellRef[] / undefined | Display-only highlights for linked views (`vw-is-highlighted`) |
+| formatValue | (value, { row, column }) => string / undefined | Cell text. Default: the cell `label`, booleans as `labels.yes` and `labels.no`, the editor's format, else the value as text |
+| rowHeight, headerHeight, treeColumnWidth | number / 32, 36, 240 | Fixed line height, header height and tree column width in pixels |
+| height | number or CSS length / 400 | Height of the scroll viewport |
+| initialWidth | number / 960 | Viewport width assumed before mounting, so server rendering emits a bounded column window |
+| overscan, columnOverscan | number / 6, 2 | Lines and columns rendered beyond each edge of the viewport |
+| labels | Partial&lt;TreeGridLabels&gt; / English | Every user-visible string and accessible name (`treeGridDefaultLabels` lists them) |
+| dir | ChartDirection / ltr | `rtl` puts the tree column on the right and swaps ArrowLeft and ArrowRight; `auto` follows the inherited direction |
+| editable, validateCellEdit | boolean / false, TreeGridCellEditValidator / undefined | Cell editing in the columns that have an `editor`; see [Editing](#tree-grid-editing) |
+| spreadsheet, validateSheetEdit, maxSheetCells | boolean / false, TreeGridSheetEditValidator / undefined, number / 10000 | Range selection, copy, cut, paste, clear and fill down |
+| rowsEditable, validateRowCreate, validateRowDelete, validateRowMove | boolean / false, validators / undefined | Row create, delete and move proposals; see [Row structure](#tree-grid-row-structure) |
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| update:expandedIds | string[] | A toggle, ArrowRight or ArrowLeft proposes the new expanded IDs |
+| expand-request | rowId | A row whose `childStatus` is `unloaded` or `failed` was expanded, or Enter or a click was used on its status line: load its children and update `childStatus` |
+| update:activeCell | TreeGridPosition | The active cell moved, or followed its row to the nearest displayed ancestor after a collapse or a data change |
+| row-activate, cell-activate | TreeGridActivation | Click or Enter on a row header or a cell: `rowId`, `columnId` (cells only), `entities` (the cell's, else the row's) and `source` (`pointer` or `keyboard`). Enter on an editable cell starts editing instead |
+| cell-edit, cell-edit-rejected | TreeGridCellEdit, (change, reason) | A cell proposal and its rejection by `validateCellEdit` |
+| sheet-edit, sheet-edit-rejected | TreeGridSheetEdit, (change, reason) | A spreadsheet batch and its rejection (`validateSheetEdit`, a value its editor cannot read, or a paste that does not fit; a batch rejected before it was built has empty `edits`) |
+| edit-cancel | TreeGridEditCancel | An open editor (`kind: 'cell'`), a fill handle drag (`fill`) or a row drag (`row-move`) ended without a proposal: `reason` is `escape`, `source-changed` (new `rows`, `columns` or `cells`, or a change of `editable`, `spreadsheet` or `rowsEditable`), `hidden` (the edited row is no longer displayed), `blur` (the editor lost focus with a value that could not be proposed), `pointer-cancel` or `api` |
+| row-create, row-delete, row-move | TreeGridRowCreate, TreeGridRowDelete, TimelineRowMove | Row structure proposals, each with a `-rejected` event (change, reason) |
+| validation-error | Error | Invalid rows, columns or cells (the errors of `createTreeGridIndex`). The grid renders its empty state and the error is rethrown, as in the other components |
+
+Slots are `cell({ row, column, cell, text, active, highlighted })` with the resolved `TreeGridCellView`, `row-header({ row, line, active, highlighted, selected })` (after the expand toggle), `status({ row, status, text })` for the status line of children that are not loaded, and `empty()`. Keep slot content non-interactive: the cells take the focus. Methods are `focusCell(position)`, `revealRow(rowId, { focus?, columnId? })` (a `RevealResult`: `revealed`, `hidden-by-collapse` with the nearest displayed ancestor as `proxyId`, or `unknown`), `startEdit(position?)`, `cancelEdit()`, `copySelection()` (the range as tab-separated text) and `pasteText(text)`. The public component type is `TreeGridComponent`, and `TreeGridExposed<R>` types a template ref.
+
+**Cell states.** A resolved cell has a `state`: `value` (any value, including `0`, `false` and `''`), `empty` (blank), `none` (known to have no value), `unknown`, `not-applicable`, or the load states `unloaded`, `loading` and `failed`. A sparse cell with a `status` shows the status; a column accessor returns a value, a `TreeGridCellContent`, `null` for `none` or `undefined` for a missing cell. The default rendering shows a short mark (`labels.noneMark` "–", `unknownMark` "?", `notApplicableMark` "n/a", `unloadedMark` "·", `loadingMark` "…", `failedMark` "!") with the full word for screen readers, and the cell gets `vw-is-<state>`.
+
+**Lazy children.** `childStatus` `unloaded`, `loading` or `failed` makes a row expandable without child rows. While it is expanded, a status line follows its loaded children, with the status text (`labels.unloaded`, `loading`, `failed`) in a `role="status"` element, and the row has `aria-busy` while loading. `loaded` and `loaded-empty` without children make the row a leaf. Pair it with `useWindowedData` or your own loader.
+
+**Markup and keyboard.** The scroll viewport is the `treegrid`, named `labels.grid`, with `aria-rowcount` (displayed lines plus the header) and `aria-colcount`; each line is a `row` with `aria-rowindex`, `aria-level`, `aria-setsize`, `aria-posinset` and, on expandable rows, `aria-expanded`. The tree column cells are `rowheader`s named by the row label (with `detail` as `aria-description`), the other cells `gridcell`s. One cell holds the roving tab stop. The keys follow the ARIA treegrid pattern in cell focus mode: arrows move one cell; in the tree column the arrow towards the cells expands a collapsed row and otherwise moves into the row, and the other arrow collapses an expanded row and otherwise moves to the parent; Home and End go to the first and last cell of the line, Ctrl (or Cmd) with them to the first and last cell of the grid; PageUp and PageDown move by a page; Enter activates. Focus reaches every cell, also outside the rendered window: the grid scrolls to it.
+
+**Virtualization.** Only the lines in the viewport plus `overscan` and the columns in it plus `columnOverscan` are rendered, from fixed line heights and the cumulative column widths (a binary search per scroll). Elements are keyed by their slot in the window, so a scroll patches them in place. The active line and, inside it, the active column are rendered in elements of their own between the keyed lists of the window, so they stay rendered outside the window and are never moved or removed by a scroll, a keyboard move, an expansion or an edit: the focused element keeps the focus. Validation and indexing still process the whole input.
+
+### Tree grid editing
+
+With `editable`, the cells of columns that have an `editor` can be edited, unless the column's `editable` predicate or the cell's `editable: false` says otherwise. An editor is a `TimelineFieldSpec` without `id` and `get` (`TreeGridEditor`), so values are read and checked by the same `parseFieldValue` and `validateFieldValue` as GanttChart's typed fields: `text`, `number` (`min`, `max`, `integer`), `select` (`choices`; drawn as a `select`), `checkbox` (booleans: Enter, Space or F2 toggles at once) and `time` for dates and times (`utcOffsetMinutes`, `timeZone`, or a custom `parse` and `format` such as a date-only format). Multiple selection is not supported.
+
+- Start: Enter or F2 (the current text, selected), typing a character (replaces the text with it) or a double-click. Commit: Enter (then down; Shift+Enter up), Tab (then right; Shift+Tab left) or moving the focus elsewhere. Cancel: Escape, which returns the focus to the cell and reports `edit-cancel` with `escape`.
+- The editor is named "Edit <column> for <row>" (`labels.edit`, `labels.for`). A value its editor cannot read, and a proposal that `validateCellEdit` rejects (`cell-edit-rejected`), keep the editor open with the reason below it (`aria-invalid`, `aria-describedby`) and announced in the live region. An unchanged value proposes nothing.
+- While an IME composition is in progress (`compositionstart` to `compositionend`, or `isComposing`), Enter, Escape and Tab belong to the input method; the edit commits once, on the Enter after the composition.
+- A change of `rows`, `columns` or `cells` while an editor is open cancels it (`source-changed`); collapsing its row cancels it with `hidden`.
+- Apply a `cell-edit` with `applyTreeGridEdits({ rows, columns, cells }, [change])`: a field column's `update(row, after)` returns the new row, and a sparse cell gets the value (`after: null` removes it). It returns new `rows` and `cells` for one history entry.
+
+With `spreadsheet`, Shift with an arrow, Shift+click or a pointer drag over cells selects a rectangular range (`aria-selected` on its cells, `vw-is-in-range`); Escape or a plain arrow ends it. The range covers data columns only.
+
+- Copy (Ctrl+C, the native `copy` event) writes the range as tab-separated text (CRLF between lines) in the editors' formats; cut also proposes clearing it.
+- Paste (the native `paste` event, or `pasteText`) proposes the pasted values from the range's top-left cell; a single value fills the whole range. Every value is parsed by its column's editor, status lines are skipped, and cells that cannot be edited keep their value. A paste that reaches past the last line or column, or holds more than `maxSheetCells` cells, is rejected as a whole (`labels.pasteTooLarge`), as is one with a value its editor cannot read. The paste is computed from the model, so it reaches lines and columns that are not rendered.
+- Delete or Backspace proposes clearing the range (`after: null`), Ctrl+D (Cmd+D) fills the range down from its first line, and the fill handle at the range's corner (`vw-tree-grid-fill-handle`, pointer only) drags the range down and fills the new lines with the range's lines, repeated. Escape, `cancelEdit()` and a data change cancel a fill drag (`edit-cancel`, `kind: 'fill'`).
+- Each operation is one `sheet-edit` (`{ action: 'paste' | 'fill' | 'clear' | 'cut', edits, source }`), checked by `validateSheetEdit` as a whole; apply it with `applyTreeGridEdits({ rows, columns, cells }, change.edits)`. Unchanged cells are left out, and nothing is proposed when nothing changes.
+
+### Tree grid row structure
+
+With `rowsEditable`, the row headers propose structure changes. A row header describes the keys (`labels.rowMoveHint`), and the active row's header shows three buttons: "Add row below <row>", "Add child row to <row>" and "Delete <row>" (`labels.addBelow`, `addChild`, `deleteRow`).
+
+- **Create.** Ctrl+Enter (Cmd+Enter) proposes a sibling after the row, Ctrl+Shift+Enter a child (as its last child). `row-create` carries `parentId`, `index` (the sibling position), `referenceId`, `placement` (`before`, `after` or `child`) and `source`; the parent creates the row with its own ID: `insertTreeGridRow(rows, change, newRow)`. `treeGridRowCreate(rows, id, placement)` builds the same proposal.
+- **Delete.** Delete proposes `row-delete` with `ids` and `includeDescendants: true`. `deleteTreeGridRows({ rows, cells }, change)` removes the rows (with their descendants, or with `includeDescendants: false` moving the children up into the deleted row's place) and their sparse cells.
+- **Move.** The keys are GanttChart's row move keys: Alt+ArrowUp and Alt+ArrowDown move the row among its siblings, Alt+Shift with the arrow towards the cells indents it (it becomes the last child of its previous sibling) and the other arrow outdents it (after its parent); in right-to-left grids the arrows swap. A pointer drag of a row header (4 px threshold, auto-scroll at the viewport edges) shows a drop indicator: the upper quarter of a line places the row before it, the lower quarter after it (as the first child when its children are shown), and the middle inside it as its last child (`vw-is-drop-inside`); the live region announces the place ("Move Bolt into Frame"). Places in the dragged row's own subtree, and the row's own place, are never offered. `row-move` is a `TimelineRowMove`; apply it with `moveTimelineRow(rows, change.id, change.after)`. Escape, pointer cancellation and a data change cancel a drag (`edit-cancel`, `kind: 'row-move'`).
+- Each proposal is checked by its synchronous validator first (`validateRowCreate`, `validateRowDelete`, `validateRowMove`; true or nothing accepts, false or a reason rejects, a blank reason rejects with the default text). A rejection emits the `-rejected` event and announces the reason.
+
+```ts
+import { applyTreeGridEdits, deleteTreeGridRows, insertTreeGridRow, moveTimelineRow, useEditHistory } from '@eightkk/vue-weave'
+
+const history = useEditHistory({ rows: initialRows, cells: initialCells })
+const commit = (next: Partial<typeof history.state.value>) => history.commit({ ...history.state.value, ...next })
+const onCellEdit = (change: TreeGridCellEdit) => commit(applyTreeGridEdits({ ...history.state.value, columns }, [change]))
+const onSheetEdit = (change: TreeGridSheetEdit) => commit(applyTreeGridEdits({ ...history.state.value, columns }, change.edits))
+const onRowCreate = (change: TreeGridRowCreate) => commit({ rows: insertTreeGridRow(history.state.value.rows, change, { id: crypto.randomUUID(), label: 'New row' }) })
+const onRowDelete = (change: TreeGridRowDelete) => commit(deleteTreeGridRows(history.state.value, change))
+const onRowMove = (change: TimelineRowMove) => commit({ rows: moveTimelineRow(history.state.value.rows, change.id, change.after) })
+// <TreeGrid v-model:expanded-ids="expanded" :rows="history.state.value.rows" :cells="history.state.value.cells" :columns="columns"
+//   editable spreadsheet rows-editable @cell-edit="onCellEdit" @sheet-edit="onSheetEdit" @row-create="onRowCreate"
+//   @row-delete="onRowDelete" @row-move="onRowMove" />
+```
+
+### Tree grid helpers
+
+These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
+
+| Function | Result |
+| --- | --- |
+| createTreeGridIndex({ rows, columns, cells?, missingCell? }) | The validated `TreeGridIndex`. Throws like `createTimelineRowTree` with ` (tree grid rows)` appended (`Invalid row ID`, `Duplicate row ID`, `Unknown parent for row`, cycles), `Invalid column ID`, `Duplicate column ID`, a RangeError for a width that is not finite and positive or an unknown `missingCell` or `childStatus`, a TypeError for a `value`, `update` or `editable` of the wrong type, and for cells `Unknown row in tree grid cell: <id>`, `Unknown column in tree grid cell: <id>`, `Duplicate tree grid cell: <row> / <column>`, an Error for a cell in a field column or one with neither value nor status, a RangeError for a non-finite number or an unknown status and a TypeError for another value type. Entities need non-empty string kinds and IDs |
+| flattenTreeGrid(index, expandedIds) | `TreeGridLines`: the displayed `lines` (`kind` `row` or `status`, `row`, `level`, `expandable`, `expanded`, `posinset`, `setsize`, `parent`, `status`), and `rowLine` and `statusLine` maps. Iterative |
+| findTreeGridLine(index, lines, position), treeGridPositionAt(index, lines, cursor) | The line of a position (or of its nearest displayed ancestor, `exact: false`), and the position of a line and column |
+| treeGridColumnOffsets(columns), treeGridColumnAt(offsets, x), treeGridRowWindow(options), treeGridColumnWindow(offsets, options) | Cumulative widths, the column at an offset (binary search) and the `[start, end)` windows for a scroll position with overscan |
+| treeGridKeyAction(key, cursor, { lines, columnCount, pageSize, rtl? }) | What a treegrid key does: `move`, `expand`, `collapse` or `activate` |
+| resolveTreeGridCell(index, rowId, columnId), treeGridCellValue(...), isTreeGridCellEditable(...), treeGridFieldSpec(column) | The `TreeGridCellView` of a cell, its field value (`null` without a value), whether it can be edited, and the field spec of a column's editor |
+| matchTreeGridEntities(input or index, entities) | `{ rowIds, cells }`: every row and cell that lists one of the entities |
+| treeGridRangeBounds(range), treeGridRangeText(index, lines, range) | The bounds of a range and its tab-separated text |
+| buildTreeGridPaste(index, lines, range, text, { maxCells?, source? }), buildTreeGridClear(...), buildTreeGridFill(index, lines, range, { source?, origin? }) | The edits of a paste, clear or fill, or `{ ok: false, reason: 'too-large' or 'invalid', error, cell? }` |
+| applyTreeGridEdits({ rows, columns, cells? }, edits) | New `{ rows, cells }`; unchanged rows and cells keep their identity |
+| treeGridRowCreate(rows, id, placement), insertTreeGridRow(rows, change, row) | A create proposal, and the rows (in tree preorder) with the new row in place |
+| deleteTreeGridRows({ rows, cells? }, { ids, includeDescendants }) | New `{ rows, cells }` without the deleted rows |
+| treeGridRowMoveForKey(key, rows, id, rtl?), treeGridDropAt(index, lines, id, line, fraction) | The target of a row move key (`'ignore'` for other keys, undefined when the row cannot move) and the drop place of a row drag |
 
 ## Core entry point
 

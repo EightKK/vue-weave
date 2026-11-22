@@ -8,7 +8,7 @@
 
 Interactive network graphs and Gantt charts for Vue 3. Build relationship explorers, process flows, BPMN diagrams, production views, project schedules and resource timelines from two typed components, add a kanban board, an event calendar or diagram editor parts when you need them, and do the graph, scheduling, resource-load and earned value calculations in a headless core that also runs in Node.js, workers and on servers.
 
-- **Controlled components.** `NetworkGraph`, `GanttChart` and the opt-in `TaskBoard`, `EventCalendar`, `GraphPalette` and `PropertyInspector` never change your data. A user edit becomes a proposal event, and your code decides whether to apply it.
+- **Controlled components.** `NetworkGraph`, `GanttChart` and the opt-in `TaskBoard`, `TreeGrid`, `EventCalendar`, `GraphPalette` and `PropertyInspector` never change your data. A user edit becomes a proposal event, and your code decides whether to apply it.
 - **Planning built in.** Calendars, dependencies, critical path, resource load and leveling, recorded actuals, earned value and plan scenario comparison, with an explanation of every date.
 - **Opt-in features.** The defaults stay simple; everything else is a prop. No runtime dependencies besides Vue, server-side rendering, SVG and PNG export, Microsoft Project, iCalendar, CSV, Mermaid, GraphML and draw.io interchange, a dark theme and right-to-left layouts.
 
@@ -237,6 +237,10 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 ### TaskBoard
 
 - **Kanban board:** an opt-in controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit or under a WIP minimum; columns and lanes can collapse and a `filter` hides cards. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#taskboard).
+
+### TreeGrid
+
+- **Tree grid and matrix:** an opt-in controlled component for a row tree against columns, such as a product hierarchy against attributes or a bill of materials against plants. Cells come from column accessors or a sparse cell list, with distinct states for a value (including 0), known none, unknown, not applicable and not loaded. Rows and columns are virtualized together, the ARIA treegrid keys reach every cell, and children can load on demand (`expand-request`, with a status line). Opt-in editing proposes `cell-edit` with typed editors, spreadsheet ranges propose one `sheet-edit` per paste, fill, clear or cut, and row structure editing proposes `row-create`, `row-delete` and `row-move`; `applyTreeGridEdits`, `insertTreeGridRow`, `deleteTreeGridRows` and `moveTimelineRow` apply them. Rows link to other views through entities (`matchTreeGridEntities`, `useLinkedSelection().selectEntities`). See [TreeGrid](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#treegrid).
 
 ### EventCalendar
 

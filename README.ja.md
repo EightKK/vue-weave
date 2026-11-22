@@ -8,7 +8,7 @@
 
 Vue 3でネットワークグラフとガントチャートを実装するためのライブラリです。関係の探索、工程フロー、BPMN図、製造のロット系譜、プロジェクト工程、設備・担当者別の予定などを、型付きの2つのコンポーネントで作れます。必要に応じてカンバンボード、イベントカレンダー、ダイアグラムエディタ部品も追加できます。グラフ・日程計算・設備負荷・アーンドバリューの計算は、Node.js、Worker、サーバーでも動くヘッドレスのコアで行えます。
 
-- **制御されたコンポーネント。** `NetworkGraph`、`GanttChart` と、オプトインの `TaskBoard`、`EventCalendar`、`GraphPalette`、`PropertyInspector` は渡されたデータを書き換えません。利用者の編集は変更案のイベントになり、反映するかどうかはアプリ側で決めます。
+- **制御されたコンポーネント。** `NetworkGraph`、`GanttChart` と、オプトインの `TaskBoard`、`TreeGrid`、`EventCalendar`、`GraphPalette`、`PropertyInspector` は渡されたデータを書き換えません。利用者の編集は変更案のイベントになり、反映するかどうかはアプリ側で決めます。
 - **計画機能を内蔵。** 稼働カレンダー、依存関係、クリティカルパス、設備負荷と平準化、実績からの再計画、アーンドバリュー、計画シナリオの比較に対応し、各日程が決まった理由も説明できます。
 - **必要な機能だけを有効化。** 既定の動作はシンプルなまま、ほかの機能はpropsで有効にします。Vue以外の実行時依存はなく、サーバーサイドレンダリング、SVG・PNGの書き出し、Microsoft Project・iCalendar・CSV・Mermaid・GraphML・draw.ioとのデータ交換、ダークテーマ、右から左のレイアウトに対応します。
 
@@ -237,6 +237,10 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 ### TaskBoard
 
 - **カンバンボード：** オプトインの制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えるか WIP下限を下回ると警告します。列とレーンは折りたためて、`filter` でカードを絞り込めます。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChartと同じタスクと選択を共有できます。詳しくは[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#taskboard)を参照してください。
+
+### TreeGrid
+
+- **ツリーグリッドとマトリクス：** 行のツリーと列を組み合わせるオプトインの制御コンポーネント。製品階層と属性、部品表（BOM）と工場などに使えます。セルは列のアクセサーか疎なセル一覧から読み、値（0を含む）、値なし（確定）、不明、該当なし、未読み込みを区別して表示します。行と列を同時に仮想化し、ARIA treegrid のキー操作ですべてのセルに移動でき、子行は必要になった時点で読み込めます（`expand-request` と状態行）。オプトインの編集では型付きエディターで `cell-edit` を、スプレッドシート範囲では貼り付け・フィル・クリア・切り取りごとに1つの `sheet-edit` を、行構造の編集では `row-create`、`row-delete`、`row-move` を提案し、`applyTreeGridEdits`、`insertTreeGridRow`、`deleteTreeGridRows`、`moveTimelineRow` で適用できます。行はエンティティを通じて他のビューと連動します（`matchTreeGridEntities`、`useLinkedSelection().selectEntities`）。詳しくは[TreeGrid](https://github.com/EightKK/vue-weave/blob/v1.3.0/docs/api.md#treegrid)を参照してください。
 
 ### EventCalendar
 
