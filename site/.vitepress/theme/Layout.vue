@@ -3,8 +3,11 @@
 import DefaultTheme from 'vitepress/theme'
 import HomeDemo from './components/HomeDemo.vue'
 import { useSiteLocale } from './i18n'
+import { provideDemoLocale } from '../../../examples/i18n'
 
 const { locale } = useSiteLocale()
+// Every demo on the site (the home demo, example and showcase pages) shows the language of the page.
+provideDemoLocale(locale)
 </script>
 
 <template>
