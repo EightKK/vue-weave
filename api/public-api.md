@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (233)
+## Entry `.`: runtime exports (238)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -18,6 +18,7 @@ in public signatures, so changes to them can break consumers too.
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
+- `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
 - `assignLanes: function`
@@ -68,6 +69,8 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarRange: function`
 - `eventCalendarTimeAt: function`
 - `eventCalendarTimeOfDay: function`
+- `expandRecurrence: function`
+- `expandRecurringEvents: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `filterTimelineRows: function`
@@ -75,6 +78,7 @@ in public signatures, so changes to them can break consumers too.
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatRecurrenceRule: function`
 - `formatSheetText: function`
 - `fromDrawio: function`
 - `fromDrawioAsync: function`
@@ -148,6 +152,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseRecurrenceRule: function`
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
@@ -241,7 +246,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (556)
+## Entry `.`: type-only exports (569)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -265,6 +270,7 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarEventColumn`
 - `CalendarEventLane`
 - `CalendarEventLaneLayout`
+- `CalendarRecurrence`
 - `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
@@ -477,6 +483,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphVisibleIds`
 - `HistoryReset`
 - `ICalendarEvent`
+- `ICalendarExpandOptions`
 - `ICalendarImport`
 - `ICalendarImportEvent`
 - `ICalendarImportOptions`
@@ -590,6 +597,17 @@ in public signatures, so changes to them can break consumers too.
 - `PropertyInspectorExposed`
 - `PropertyInspectorFieldSlot`
 - `PropertyInspectorLabels`
+- `RecurrenceExpandOptions`
+- `RecurrenceFrequency`
+- `RecurrenceOccurrence`
+- `RecurrenceRule`
+- `RecurrenceSeries`
+- `RecurrenceWeekday`
+- `RecurrenceZoneOptions`
+- `RecurringEditChange`
+- `RecurringEditOptions`
+- `RecurringEditScope`
+- `RecurringEditTarget`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -800,13 +818,14 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (218)
+## Entry `./core`: runtime exports (223)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
 - `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
+- `applyRecurringEdit: function`
 - `applyTimelineConstraintEdit: function`
 - `applyTimelineSheetEdit: function`
 - `assignLanes: function`
@@ -857,6 +876,8 @@ in public signatures, so changes to them can break consumers too.
 - `eventCalendarRange: function`
 - `eventCalendarTimeAt: function`
 - `eventCalendarTimeOfDay: function`
+- `expandRecurrence: function`
+- `expandRecurringEvents: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `filterTimelineRows: function`
@@ -864,6 +885,7 @@ in public signatures, so changes to them can break consumers too.
 - `findOrthogonalRoute: function`
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
+- `formatRecurrenceRule: function`
 - `formatSheetText: function`
 - `fromDrawio: function`
 - `fromDrawioAsync: function`
@@ -936,6 +958,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
+- `parseRecurrenceRule: function`
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
@@ -1021,7 +1044,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (518)
+## Entry `./core`: type-only exports (531)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1039,6 +1062,7 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarEventColumn`
 - `CalendarEventLane`
 - `CalendarEventLaneLayout`
+- `CalendarRecurrence`
 - `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
@@ -1241,6 +1265,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphViewport`
 - `GraphVisibleIds`
 - `ICalendarEvent`
+- `ICalendarExpandOptions`
 - `ICalendarImport`
 - `ICalendarImportEvent`
 - `ICalendarImportOptions`
@@ -1343,6 +1368,17 @@ in public signatures, so changes to them can break consumers too.
 - `PropagateEditSuccess`
 - `PropertyInspectorFieldSlot`
 - `PropertyInspectorLabels`
+- `RecurrenceExpandOptions`
+- `RecurrenceFrequency`
+- `RecurrenceOccurrence`
+- `RecurrenceRule`
+- `RecurrenceSeries`
+- `RecurrenceWeekday`
+- `RecurrenceZoneOptions`
+- `RecurringEditChange`
+- `RecurringEditOptions`
+- `RecurringEditScope`
+- `RecurringEditTarget`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -2432,6 +2468,9 @@ interface CalendarEvent<D = unknown> {
     tone?: ChartTone;
     editable?: boolean;
     data?: D;
+    recurrence?: CalendarRecurrence;
+    seriesId?: string;
+    recurrenceId?: number;
 }
 ```
 
@@ -2466,6 +2505,16 @@ interface CalendarEventLane {
 interface CalendarEventLaneLayout {
     segments: CalendarEventLane[];
     lanes: number;
+}
+```
+
+### `CalendarRecurrence`
+
+```ts
+interface CalendarRecurrence extends RecurrenceZoneOptions {
+    rule?: RecurrenceRule | string;
+    exdates?: readonly number[];
+    rdates?: readonly number[];
 }
 ```
 
@@ -2818,6 +2867,10 @@ interface EventCalendarEdit {
         before: string;
         after: string;
     };
+    occurrence?: {
+        seriesId: string;
+        recurrenceId: number;
+    };
 }
 ```
 
@@ -2870,6 +2923,7 @@ interface EventCalendarLabels {
     resources: string;
     now: string;
     empty: string;
+    recurring?: string;
 }
 ```
 
@@ -4772,6 +4826,16 @@ interface ICalendarEvent {
     start: number;
     end: number;
     description?: string;
+    recurrence?: CalendarRecurrence;
+}
+```
+
+### `ICalendarExpandOptions`
+
+```ts
+interface ICalendarExpandOptions {
+    range: TimeRange;
+    maxOccurrences?: number;
 }
 ```
 
@@ -4791,6 +4855,11 @@ interface ICalendarImport {
 interface ICalendarImportEvent extends ICalendarEvent {
     allDay: boolean;
     recurrenceRule?: string;
+    recurrence?: CalendarRecurrence & {
+        rule?: RecurrenceRule;
+    };
+    seriesId?: string;
+    recurrenceId?: number;
 }
 ```
 
@@ -4799,6 +4868,7 @@ interface ICalendarImportEvent extends ICalendarEvent {
 ```ts
 interface ICalendarImportOptions {
     utcOffsetMinutes?: number;
+    recurrence?: 'first' | 'series' | ICalendarExpandOptions;
 }
 ```
 
@@ -5991,6 +6061,105 @@ interface PropertyInspectorLabels {
     addAssignment?: string;
     addDependency?: string;
     noRows?: string;
+}
+```
+
+### `RecurrenceExpandOptions`
+
+```ts
+interface RecurrenceExpandOptions {
+    timeZone?: string;
+    maxOccurrences?: number;
+}
+```
+
+### `RecurrenceFrequency`
+
+```ts
+type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+```
+
+### `RecurrenceOccurrence`
+
+```ts
+interface RecurrenceOccurrence extends TimeRange {
+    id: string;
+    seriesId: string;
+    recurrenceId: number;
+}
+```
+
+### `RecurrenceRule`
+
+```ts
+interface RecurrenceRule {
+    frequency: RecurrenceFrequency;
+    interval?: number;
+    count?: number;
+    until?: number;
+    byWeekday?: readonly RecurrenceWeekday[];
+    byMonthDay?: readonly number[];
+    byMonth?: readonly number[];
+    bySetPosition?: readonly number[];
+    weekStart?: number;
+}
+```
+
+### `RecurrenceSeries`
+
+```ts
+interface RecurrenceSeries extends CalendarRecurrence, TimeRange {
+    id: string;
+}
+```
+
+### `RecurrenceWeekday`
+
+```ts
+interface RecurrenceWeekday {
+    weekday: number;
+    ordinal?: number;
+}
+```
+
+### `RecurrenceZoneOptions`
+
+```ts
+interface RecurrenceZoneOptions {
+    timeZone?: string;
+    utcOffsetMinutes?: number;
+}
+```
+
+### `RecurringEditChange`
+
+```ts
+interface RecurringEditChange extends TimeRange {
+    resourceId?: string;
+}
+```
+
+### `RecurringEditOptions`
+
+```ts
+interface RecurringEditOptions {
+    timeZone?: string;
+    newSeriesId?: string;
+}
+```
+
+### `RecurringEditScope`
+
+```ts
+type RecurringEditScope = 'occurrence' | 'following' | 'series';
+```
+
+### `RecurringEditTarget`
+
+```ts
+interface RecurringEditTarget {
+    seriesId: string;
+    recurrenceId: number;
 }
 ```
 
@@ -8403,6 +8572,12 @@ function applyGraphPositions(layout: GraphLayout, edges: readonly GraphEdge[], p
 function applyGraphSizes(layout: GraphLayout, edges: readonly GraphEdge[], sizes: ReadonlyMap<string, GraphNodeSize>, direction?: GraphLayoutDirection): GraphLayout;
 ```
 
+### `applyRecurringEdit`
+
+```ts
+function applyRecurringEdit<E extends CalendarEvent>(events: readonly E[], target: RecurringEditTarget, change: RecurringEditChange | 'delete', scope: RecurringEditScope, options?: RecurringEditOptions): E[];
+```
+
 ### `applyTimelineConstraintEdit`
 
 ```ts
@@ -8722,6 +8897,18 @@ function eventCalendarTimeAt(day: number, timeOfDay: number, options?: Pick<Even
 function eventCalendarTimeOfDay(day: number, time: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
 ```
 
+### `expandRecurrence`
+
+```ts
+function expandRecurrence(series: RecurrenceSeries, range: TimeRange, options?: RecurrenceExpandOptions): RecurrenceOccurrence[];
+```
+
+### `expandRecurringEvents`
+
+```ts
+function expandRecurringEvents<E extends CalendarEvent>(events: readonly E[], range: TimeRange, options?: RecurrenceExpandOptions): E[];
+```
+
 ### `fieldValuesEqual`
 
 ```ts
@@ -8765,6 +8952,14 @@ function formatDependencyLag(lag: number): string;
 
 ```ts
 function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): string;
+```
+
+### `formatRecurrenceRule`
+
+```ts
+function formatRecurrenceRule(rule: RecurrenceRule, options?: RecurrenceZoneOptions & {
+    allDay?: boolean;
+}): string;
 ```
 
 ### `formatSheetText`
@@ -9241,6 +9436,12 @@ function parseFieldValue(spec: TimelineFieldSpec<any>, text: string): FieldParse
 
 ```ts
 function parseGraphLayoutMessage(value: unknown): GraphLayoutWorkerMessage;
+```
+
+### `parseRecurrenceRule`
+
+```ts
+function parseRecurrenceRule(text: string, options?: RecurrenceZoneOptions): RecurrenceRule;
 ```
 
 ### `parseSheetText`

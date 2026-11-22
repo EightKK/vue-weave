@@ -198,3 +198,29 @@ test('the month view does not resize a timed event by whole days, and events con
   await expect(event('Team offsite')).toBeFocused()
   expect(errors).toEqual([])
 })
+
+test('occurrences of a recurring series render, and an edit carries the occurrence to the chosen scope', async ({ page }) => {
+  const { errors, calendar, status, button } = await openCalendar(page)
+  const sync = (date: string, time: string) => calendar.getByRole('button', { name: `Weekly sync, Tue, Nov ${date} ${time}, Borealis, Recurring`, exact: true })
+  // The weekly sync repeats every Tuesday; other events keep their names.
+  await expect(sync('10', '16:00–16:30')).toBeVisible()
+  await expect(calendar.getByRole('button', { name: 'Customer call, Wed, Nov 11 10:30–12:00, Borealis', exact: true })).toBeVisible()
+
+  // "This event" moves one occurrence; the parent turns the proposal into an override, which keeps the focus.
+  await sync('10', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 10 16:15–16:45 (this event).')
+  await expect(sync('10', '16:15–16:45')).toBeFocused()
+  await button('Next').click()
+  await expect(sync('17', '16:00–16:30')).toBeVisible()
+
+  // "All events" moves the whole series, including the earlier override's original time.
+  await page.getByRole('combobox', { name: 'Recurring edits' }).selectOption('series')
+  await sync('17', '16:00–16:30').focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(status).toHaveText('Weekly sync → Tue, Nov 17 16:15–16:45 (all events).')
+  await expect(sync('17', '16:15–16:45')).toBeVisible()
+  await button('Next').click()
+  await expect(sync('24', '16:15–16:45')).toBeVisible()
+  expect(errors).toEqual([])
+})

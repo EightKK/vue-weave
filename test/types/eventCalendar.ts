@@ -1,7 +1,8 @@
 // Type-level checks for EventCalendar and its core helpers. Checked by `npm run typecheck`.
 import { h } from 'vue'
 import {
-  layoutCalendarDayEvents, packCalendarEventLanes, eventCalendarRange, type CalendarEvent, type EventCalendarEdit, type EventCalendarView, type TimeRange,
+  applyRecurringEdit, expandRecurringEvents, layoutCalendarDayEvents, packCalendarEventLanes, eventCalendarRange, parseRecurrenceRule,
+  type CalendarEvent, type EventCalendarEdit, type EventCalendarView, type RecurrenceRule, type TimeRange,
 } from '../../src/core/index'
 import { EventCalendar, type EventCalendarExposed } from '../../src/index'
 
@@ -33,3 +34,17 @@ const range: TimeRange = eventCalendarRange('week', 0, { timeZone: 'Europe/Berli
 const columns = layoutCalendarDayEvents([{ id: 'x', start: 0, end: 1 }], range)
 const lanes = packCalendarEventLanes(events, [range])
 void [columns[0]?.columns, lanes.lanes]
+
+// Recurring events keep the event type through expansion and edits, and edits carry the occurrence.
+const series: CalendarEvent<Booking>[] = [{ id: 's', label: 'S', start: 0, end: 1, data: { owner: 'Ada' }, recurrence: { rule: 'FREQ=WEEKLY;COUNT=3' } }]
+const occurrences = expandRecurringEvents(series, range, { timeZone: 'Europe/Berlin' })
+assertType<Equal<typeof occurrences, CalendarEvent<Booking>[]>>()
+const rule: RecurrenceRule = parseRecurrenceRule('FREQ=MONTHLY;BYDAY=-1FR')
+void rule.byWeekday?.[0]?.ordinal
+declare const edit: EventCalendarEdit
+if (edit.occurrence) {
+  const next = applyRecurringEdit(series, edit.occurrence, { ...edit.after, resourceId: edit.resource?.after }, 'following')
+  assertType<Equal<typeof next, CalendarEvent<Booking>[]>>()
+}
+// @ts-expect-error The scope is 'occurrence', 'following' or 'series'.
+applyRecurringEdit(series, { seriesId: 's', recurrenceId: 0 }, 'delete', 'all')

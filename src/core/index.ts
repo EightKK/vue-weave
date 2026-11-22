@@ -77,7 +77,7 @@ export type {
   MsProjectTask, MsProjectBaseline, MsProjectDependency, MsProjectInput, MsProjectXmlOptions, MsProjectImport, MsProjectImportTask,
   MsProjectImportWarning, MsProjectImportWarningCode, MsProjectTimelineOptions, MsProjectTimeline, MsProjectCalendar, MsProjectResource,
   MsProjectAssignment, MsProjectResourceLoadOptions, MsProjectResourceLoad, ICalendarEvent, ICalendarOptions, ICalendarImport,
-  ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline,
+  ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline, ICalendarExpandOptions,
   CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
 } from './interchange.js'
 export { toMermaid, fromMermaid, toGraphMl, fromGraphMl, toDrawio, fromDrawio, fromDrawioAsync } from './interchange.js'
@@ -161,6 +161,13 @@ export type {
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
 } from './eventCalendar.js'
+export {
+  parseRecurrenceRule, formatRecurrenceRule, expandRecurrence, expandRecurringEvents, applyRecurringEdit,
+} from './recurrence.js'
+export type {
+  RecurrenceFrequency, RecurrenceWeekday, RecurrenceRule, RecurrenceZoneOptions, CalendarRecurrence, RecurrenceSeries,
+  RecurrenceOccurrence, RecurrenceExpandOptions, RecurringEditScope, RecurringEditTarget, RecurringEditChange, RecurringEditOptions,
+} from './recurrence.js'
 export { graphPaletteMimeType, validateInspectorList } from './diagramEditor.js'
 export type {
   GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,

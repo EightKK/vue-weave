@@ -11,7 +11,7 @@ export type {
 export { toICalendar, fromICalendar, timelineFromICalendar } from './interchangeICalendar.js'
 export type {
   ICalendarEvent, ICalendarOptions, ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarningCode, ICalendarImportWarning,
-  ICalendarImport, ICalendarTimeline,
+  ICalendarImport, ICalendarTimeline, ICalendarExpandOptions,
 } from './interchangeICalendar.js'
 export { toCsv, timelineCsvTable, parseCsv, timelineFromCsvTable } from './interchangeCsv.js'
 export type {

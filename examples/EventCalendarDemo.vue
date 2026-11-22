@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  EventCalendar, eventCalendarRange, intlTimeFormatter, useEditHistory, type CalendarEvent, type CalendarResource, type EventCalendarCreate,
-  type EventCalendarEdit, type EventCalendarView, type TimeRange,
+  EventCalendar, applyRecurringEdit, eventCalendarRange, expandRecurringEvents, intlTimeFormatter, useEditHistory, type CalendarEvent,
+  type CalendarResource, type EventCalendarCreate, type EventCalendarEdit, type EventCalendarView, type RecurringEditScope, type TimeRange,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
@@ -10,7 +10,9 @@ import { unusedNumber } from './ids'
 
 // Room bookings in an event calendar: the parent owns the events and applies the proposals of the calendar (moves,
 // resizes, room changes and new bookings) as undoable steps. A room can hold one booking at a time, so `validateEdit`
-// and `validateCreate` reject double bookings. All times are UTC, so the demo never depends on the local zone.
+// and `validateCreate` reject double bookings. All times are UTC, so the demo never depends on the local zone. The weekly
+// sync is a recurring series (`recurrence`): the calendar shows its occurrences from `expandRecurringEvents`, and an edit
+// of one occurrence is applied with `applyRecurringEdit` to this event, this and following events, or all of them.
 const at = (date: string, time = '00:00') => Date.parse(`2026-11-${date}T${time}:00Z`)
 const rooms: CalendarResource[] = [
   { id: 'atlas', label: 'Atlas', detail: '12 seats' },
@@ -30,6 +32,10 @@ const initialEvents: Booking[] = [
   { id: 'offsite', label: 'Team offsite', start: at('17'), end: at('19'), allDay: true, tone: 'teal', data: { owner: 'All' } },
   { id: 'release', label: 'Release day', start: at('13'), end: at('14'), allDay: true, color: '#c23b22', data: { owner: 'Platform' } },
   { id: 'audit', label: 'Lab audit', start: at('10'), end: at('11'), allDay: true, resourceId: 'lab', tone: 'amber', editable: false, data: { owner: 'Facilities' } },
+  {
+    id: 'sync', label: 'Weekly sync', start: at('03', '16:00'), end: at('03', '16:30'), resourceId: 'borealis', tone: 'violet', data: { owner: 'Platform' },
+    recurrence: { rule: 'FREQ=WEEKLY;BYDAY=TU;COUNT=8' },
+  },
 ]
 // The demo clock is fixed, so the now line and Today never depend on when the demo runs.
 const now = at('11', '11:15')
@@ -44,10 +50,14 @@ const readonly = ref(false)
 const rtl = ref(false)
 const status = ref('Drag a booking to move it, drag its bottom edge to resize it, or drag over an empty slot to book a room.')
 const loaded = ref<TimeRange>(eventCalendarRange('week', now))
+const scope = ref<RecurringEditScope>('occurrence')
+const scopeNames: Record<RecurringEditScope, string> = { occurrence: 'this event', following: 'this and following events', series: 'all events' }
+/** The bookings the calendar shows: plain events and the occurrences of the series in the loaded range. */
+const shown = computed(() => expandRecurringEvents(events.value, loaded.value))
 
 const formatDay = intlTimeFormatter({ format: { weekday: 'short', month: 'short', day: 'numeric' } })
 const formatTime = intlTimeFormatter()
-const label = (id: string) => events.value.find(event => event.id === id)?.label ?? id
+const label = (id: string) => shown.value.find(event => event.id === id)?.label ?? id
 function describe(range: TimeRange, allDay?: boolean) {
   return allDay ? formatDay(range.start) : `${formatDay(range.start)} ${formatTime(range.start)}–${formatTime(range.end)}`
 }
@@ -55,10 +65,10 @@ function describe(range: TimeRange, allDay?: boolean) {
 /** The room booking that `range` would double-book in `resourceId`, if any. */
 function conflict(range: TimeRange, resourceId: string | undefined, ignoreId?: string) {
   if (resourceId === undefined) return undefined
-  return events.value.find(event => event.id !== ignoreId && event.resourceId === resourceId && event.start < range.end && range.start < event.end)
+  return shown.value.find(event => event.id !== ignoreId && event.resourceId === resourceId && event.start < range.end && range.start < event.end)
 }
 function validateEdit(change: EventCalendarEdit) {
-  const event = events.value.find(item => item.id === change.id)
+  const event = shown.value.find(item => item.id === change.id)
   const resourceId = change.resource?.after ?? event?.resourceId
   const other = conflict(change.after, resourceId, change.id)
   if (other) return `${roomLabel(resourceId)} is already booked for ${other.label}.`
@@ -68,6 +78,14 @@ function validateCreate(proposal: EventCalendarCreate) {
   if (other) return `${roomLabel(proposal.resourceId)} is already booked for ${other.label}.`
 }
 function applyEdit(change: EventCalendarEdit) {
+  if (change.occurrence) {
+    // An occurrence of the weekly sync: the scope decides which occurrences change.
+    const event = shown.value.find(item => item.id === change.id)!
+    history.commit(applyRecurringEdit(events.value, change.occurrence, { ...change.after, ...(change.resource ? { resourceId: change.resource.after } : {}) }, scope.value))
+    const room = change.resource ? ` in ${roomLabel(change.resource.after)}` : ''
+    status.value = `${event.label} → ${describe(change.after, event.allDay)}${room} (${scopeNames[scope.value]}).`
+    return
+  }
   history.commit(events.value.map(event => event.id === change.id
     ? { ...event, ...change.after, ...(change.resource ? { resourceId: change.resource.after } : {}) } : event))
   const event = events.value.find(item => item.id === change.id)!
@@ -87,7 +105,7 @@ function rejected(change: EventCalendarEdit | EventCalendarCreate, reason: strin
   status.value = 'Rejected: ' + reason
 }
 function activate(id: string) {
-  const event = events.value.find(item => item.id === id)
+  const event = shown.value.find(item => item.id === id)
   if (event) status.value = `Opened ${event.label} (${event.data?.owner ?? 'no owner'}), ${describe(event, event.allDay)}${event.resourceId ? ', ' + roomLabel(event.resourceId) : ''}.`
 }
 function select(id: string) {
@@ -115,17 +133,18 @@ function redo() {
       <label><input v-model="showRooms" type="checkbox"> Rooms in day view</label>
       <label><input v-model="readonly" type="checkbox"> Read-only</label>
       <label><input v-model="rtl" type="checkbox"> Right to left</label>
+      <label>Recurring edits <select v-model="scope"><option value="occurrence">This event</option><option value="following">This and following</option><option value="series">All events</option></select></label>
       <button type="button" :disabled="!history.canUndo.value" @click="undo">Undo</button>
       <button type="button" :disabled="!history.canRedo.value" @click="redo">Redo</button>
     </template>
     <EventCalendar
       v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
-      :events="events" :resources="showRooms ? rooms : undefined" :now="now" :day-start="7" :day-end="20" :height="440"
+      :events="shown" :resources="showRooms ? rooms : undefined" :now="now" :day-start="7" :day-end="20" :height="440"
       :readonly="readonly" creatable :labels="{ region: 'Room bookings' }" :dir="rtl ? 'rtl' : 'ltr'" :validate-edit="validateEdit" :validate-create="validateCreate"
       @edit="applyEdit" @edit-rejected="rejected" @create="create" @create-rejected="rejected" @select="select"
       @event-activate="activate" @range-change="rangeChange" @edit-cancel="status = 'Drag cancelled.'"
     />
     <StatusLine label="Calendar status">{{ status }}</StatusLine>
-    <p class="hint">Loaded range: {{ loadedText }}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room.</p>
+    <p class="hint">Loaded range: {{ loadedText }}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes.</p>
   </DemoPanel>
 </template>

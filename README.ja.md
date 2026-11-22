@@ -241,7 +241,8 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 ### EventCalendar
 
 - **表示：** オプトインの制御コンポーネントで、IANAタイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
-- **変更案としての編集：** ドラッグとキーボードによる移動・伸縮、リソース間の移動、ドラッグによる新規作成（`creatable`）。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。詳しくは[EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar)を参照してください。
+- **変更案としての編集：** ドラッグとキーボードによる移動・伸縮、リソース間の移動、ドラッグによる新規作成（`creatable`）。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。
+- **繰り返し予定：** オプトインのRFC 5545ルール（`expandRecurringEvents`。RRULE、EXDATE、RDATE、個別変更に対応し、IANAタイムゾーンで夏時間の切り替えをまたいでも現地時刻を保ちます）、この予定だけ・これ以降・すべての予定への編集（`applyRecurringEdit`）、繰り返し予定のiCalendar読み込みと書き出し。詳しくは[EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar)を参照してください。
 
 ### ヘッドレスコア（`@eightkk/vue-weave/core`）
 

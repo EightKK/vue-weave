@@ -241,7 +241,8 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 ### EventCalendar
 
 - **Views:** an opt-in controlled component with day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
-- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create (`creatable`), checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too. See [EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar).
+- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create (`creatable`), checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too.
+- **Recurring events:** opt-in RFC 5545 rules (`expandRecurringEvents`, with RRULE, EXDATE, RDATE and overrides, in an IANA time zone across daylight-saving changes), edits of one occurrence, the following ones or the whole series (`applyRecurringEdit`), and iCalendar import and export of recurring series. See [EventCalendar](https://github.com/EightKK/vue-weave/blob/v1.2.0/docs/api.md#eventcalendar).
 
 ### Headless core (`@eightkk/vue-weave/core`)
 

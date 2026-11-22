@@ -129,7 +129,7 @@ const messages = computed<EventCalendarLabels>(() => ({
   editHint: 'Up and Down arrows move the event, Shift resizes its end. Left and Right move it to another day or resource. Escape cancels a drag.',
   dayEditHint: 'Left and Right arrows move the event by a day, Shift resizes its end. Escape cancels a drag.',
   rejected: 'This change was rejected.', createRejected: 'This new event was rejected.',
-  resources: 'Resources', now: 'Now', empty: 'No events to display',
+  resources: 'Resources', now: 'Now', empty: 'No events to display', recurring: 'Recurring',
   ...props.labels,
 }))
 
@@ -187,6 +187,7 @@ const snapMs = computed(() => props.snap * minute)
 const createMs = computed(() => (props.createDuration ?? 4 * props.snap) * minute)
 const rangeOf = (event: E): TimeRange => ({ start: event.start, end: event.end })
 const editable = (event: E) => !props.readonly && event.editable !== false
+const isOccurrence = (event: E) => event.seriesId !== undefined && event.recurrenceId !== undefined
 const inAllDayRow = (event: E) => Boolean(event.allDay) || event.end - event.start >= dayMs
 const addDays = (time: number, days: number) => shiftEventCalendarDate('day', time, days, options.value)
 const timeOfDay = (day: number, time: number) => eventCalendarTimeOfDay(day, time, options.value)
@@ -225,6 +226,7 @@ function eventName(event: E) {
   }
   const resource = event.resourceId === undefined ? undefined : resourceById.value.get(event.resourceId)
   if (resource) parts.push(resource.label)
+  if (isOccurrence(event) && messages.value.recurring) parts.push(messages.value.recurring)
   return parts.join(', ')
 }
 
@@ -458,6 +460,7 @@ function editOf(event: E, after: TimeRange, mode: EventCalendarEdit['mode'], sou
   if (resourceId !== undefined && event.resourceId !== undefined && resourceId !== event.resourceId) {
     change.resource = { before: event.resourceId, after: resourceId }
   }
+  if (isOccurrence(event)) change.occurrence = { seriesId: event.seriesId!, recurrenceId: event.recurrenceId! }
   return change
 }
 
@@ -758,7 +761,7 @@ defineExpose({ cancelEdit, scrollToTime })
 function eventClasses(event: E, extra: Record<string, boolean>) {
   return [`vw-tone-${event.tone ?? 'blue'}`, {
     'vw-is-selected': localSelected.value === event.id, 'vw-is-editable': editable(event),
-    'vw-is-dragging': preview.value?.eventId === event.id, ...extra,
+    'vw-is-dragging': preview.value?.eventId === event.id, 'vw-is-recurring': isOccurrence(event), ...extra,
   }]
 }
 const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${area}-hint` : undefined

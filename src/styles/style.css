@@ -798,6 +798,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-calendar-event.vw-is-dragging { opacity: .45; }
 .vw-calendar-event-label, .vw-calendar-event-time { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .vw-calendar-event-label { font-weight: 650; }
+/* Occurrences of a recurring series: a double accent stripe. */
+.vw-calendar-event.vw-is-recurring { border-inline-start-style: double; border-inline-start-width: 4px; }
 .vw-calendar-event-time { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; opacity: .85; }
 .vw-calendar-timed.vw-is-short { flex-direction: row; align-items: center; gap: 5px; padding-block: 0; }
 .vw-calendar-segment { height: 20px; flex-direction: row; align-items: center; gap: 5px; padding-block: 0; }
