@@ -324,7 +324,7 @@ const bars = computed<TimelineBar[]>(() => alerts.value.flatMap(item => {
 const timelineRows = computed<TimelineRow[]>(() => {
   const withBars = new Set(bars.value.map(bar => bar.rowId))
   return services.filter(item => item.id === selectedId.value || (withBars.has(item.id) && (!chain.value || chain.value.has(item.id))))
-    .map(item => ({ id: item.id, label: item.label, detail: healthText[metricOf(item.id).health] }))
+    .map(item => ({ id: item.id, label: item.label, detail: plural(bars.value.filter(bar => bar.rowId === item.id).length, 'event') }))
 })
 const shownBars = computed(() => {
   const rows = new Set(timelineRows.value.map(row => row.id))
