@@ -2584,6 +2584,15 @@ const {
   filterableIds: () => filterableIds.value, error: () => validationError.value,
   proposeSort: sort => emit('update:sort', sort), proposeFilters: filters => emit('update:filters', filters),
 })
+/** The sort button around a header title (`sortableColumns`), or the title alone in a header that only filters. */
+function HeaderSort({ controls }: { controls: HeaderControls }, { slots }: { slots: Slots }) {
+  const title = slots.default?.() ?? []
+  if (!controls.sortable) return title.length === 1 ? title[0] : title
+  return h('button', {
+    type: 'button', class: ['vw-column-sort', { 'vw-is-sorted': controls.direction }], 'aria-label': sortButtonName(controls),
+    onPointerdown: (event: Event) => event.stopPropagation(), onClick: () => toggleSort(controls.id),
+  }, [...title, h('span', { class: 'vw-sort-indicator', 'aria-hidden': 'true' }, sortGlyph(controls.direction))])
+}
 const labelHeader = computed(() => validationError.value ? undefined : headerControls(timelineLabelColumnId, messages.value.rows))
 const labelHeaderKey = '\u0000header:' + timelineLabelColumnId
 /** `headerCells`, after the label column's own header when that has controls. */
@@ -3375,12 +3384,9 @@ onUnmounted(() => {
             <template v-else>
               <div v-for="cell in headerList" :key="cell.key" :class="cell.className" :style="cell.style" v-bind="cell.attrs" v-on="cell.on">
                 <template v-if="cell.controls">
-                  <button v-if="cell.controls.sortable" type="button" class="vw-column-sort" :class="{ 'vw-is-sorted': cell.controls.direction }"
-                    :aria-label="sortButtonName(cell.controls)" @pointerdown.stop @click="toggleSort(cell.controls.id)">
+                  <HeaderSort :controls="cell.controls">
                     <span class="vw-column-title"><slot v-if="cell.key === labelHeaderKey" name="row-heading">{{ messages.rows }}</slot><template v-else>{{ cell.text }}</template></span>
-                    <span class="vw-sort-indicator" aria-hidden="true">{{ sortGlyph(cell.controls.direction) }}</span>
-                  </button>
-                  <span v-else class="vw-column-title"><slot v-if="cell.key === labelHeaderKey" name="row-heading">{{ messages.rows }}</slot><template v-else>{{ cell.text }}</template></span>
+                  </HeaderSort>
                   <template v-if="cell.controls.filterable">
                     <button type="button" class="vw-column-filter" :class="{ 'vw-is-active': cell.controls.filtered }" data-vw-column-filter
                       aria-haspopup="dialog" :aria-expanded="openFilter === cell.controls.id" :aria-label="filterButtonName(cell.controls)"
