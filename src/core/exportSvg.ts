@@ -21,6 +21,9 @@ import type { TimelineConstraintKind } from './types.js'
 import { checkMarkerRanges, checkNonWorkingPeriods, lagLabelPoint, progressLinePoints, progressLineTime, segmentPieces } from './barSegments.js'
 import { baselineLayout, baselineSelection, baselineStrips, checkBandsAndMarkers, checkLoadRows, checkTimelineColumns } from './barSegments.js'
 import { checkId } from './ids.js'
+import { escapeXml } from './interchangeXml.js'
+
+export { escapeXml }
 
 /** Colours of one tone, matching the `--vw-<tone>-*` custom properties. */
 export interface SvgToneColors {
@@ -101,7 +104,10 @@ export const defaultSvgExportTheme: Readonly<Required<SvgExportTheme>> = Object.
 
 /** Options shared by the SVG exporters. */
 export interface SvgExportOptions {
-  /** Colours; omitted values use `defaultSvgExportTheme`. */
+  /**
+   * Colours; omitted values use `defaultSvgExportTheme`. Each is a CSS colour value (hex, a colour name or keyword, or
+   * one of the colour functions such as `rgb()`, `color-mix()` or `var()`); anything else throws a RangeError.
+   */
   theme?: SvgExportThemeInput
   /** CSS font-family list written on the root element. */
   fontFamily?: string
@@ -117,15 +123,6 @@ export interface SvgExportOptions {
 
 const tones: readonly ChartTone[] = ['teal', 'blue', 'amber', 'violet']
 const defaultFont = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
-// Characters that XML 1.0 forbids, and unpaired surrogates.
-const invalidXml = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
-const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&apos;' }
-
-/** Escape text for XML content and attribute values and drop characters that XML 1.0 does not allow. */
-export function escapeXml(value: string): string {
-  return String(value).replace(invalidXml, '').replace(/[&<>"']/g, char => entities[char]!)
-}
-
 function num(value: number) {
   if (!Number.isFinite(value)) throw new RangeError('SVG export produced a non-finite coordinate')
   const rounded = Math.round(value * 1000) / 1000
@@ -145,13 +142,41 @@ function tag(name: string, attributes: Attributes, content?: string) {
   return content === undefined ? out + '/>' : out + '>' + content + '</' + name + '>'
 }
 
+// Theme colours are CSS colour values: hex, named colours and keywords, and the colour functions below (with `var()`
+// and `calc()` inside them). Other functions, such as `url()`, `image()` or `expression()`, would let a theme reference
+// external resources from the exported SVG, so they are rejected.
+const colourFunctions = new Set([
+  'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch', 'oklab', 'oklch', 'color', 'color-mix', 'light-dark', 'var', 'calc',
+])
+const colourCharacters = /^[A-Za-z0-9#%.,()+\-/_ \t\n\r]+$/
+
+function checkColour(value: string, name: string) {
+  let depth = 0, valid = colourCharacters.test(value)
+  // Every `(` must open a known colour function: the identifier right before it is the function name.
+  if (valid) {
+    for (const [, fn] of value.matchAll(/([\w-]*)\(/g)) {
+      if (!colourFunctions.has(fn!.toLowerCase())) valid = false
+    }
+  }
+  for (let index = 0; valid && index < value.length; index++) {
+    if (value[index] === '(') depth++
+    else if (value[index] === ')' && --depth < 0) valid = false
+  }
+  if (!valid || depth !== 0) {
+    throw new RangeError(`Invalid export theme colour: ${name} must be a CSS colour (hex, a colour name or a colour function such as rgb())`)
+  }
+}
+
 function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme> {
   const { tones: toneInput, ...rest } = input
   const theme: Required<SvgExportTheme> = { ...defaultSvgExportTheme, tones: { ...defaultSvgExportTheme.tones } }
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined) continue
     if (typeof value !== 'string' || !Object.hasOwn(defaultSvgExportTheme, key)) throw new Error('Invalid export theme colour: ' + key)
-    if (value.trim()) (theme as unknown as Record<string, string>)[key] = value.trim()
+    const colour = value.trim()
+    if (!colour) continue
+    checkColour(colour, key)
+    Object.assign(theme, { [key]: colour })
   }
   for (const tone of tones) {
     const custom = toneInput?.[tone]
@@ -160,7 +185,9 @@ function resolveTheme(input: SvgExportThemeInput = {}): Required<SvgExportTheme>
     for (const part of ['ink', 'line', 'pale', 'solid'] as const) {
       const value = custom[part]
       if (value !== undefined && typeof value !== 'string') throw new Error('Invalid export theme colour: ' + tone + '.' + part)
-      if (value?.trim()) merged[part] = value.trim()
+      if (!value?.trim()) continue
+      checkColour(value.trim(), tone + '.' + part)
+      merged[part] = value.trim()
     }
     theme.tones[tone] = merged
   }

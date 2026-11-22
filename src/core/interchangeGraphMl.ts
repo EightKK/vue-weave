@@ -2,10 +2,10 @@
 // along with the graphics of yEd files. Uses the DOM-free XML reader of the interchange formats.
 import type { GraphEdge, GraphEdgeMarker, GraphPoint } from './graph.js'
 import type { NetworkGroup, NetworkNode } from './types.js'
-import { parseXml, type XmlElement } from './interchangeXml.js'
+import { parseXml, xmlAttribute, xmlText, type XmlElement } from './interchangeXml.js'
 import {
   checkGraphInterchangeInput, createGraphCollector, formatNumber, isChartTone, isGraphEdgeStyle, isGraphMarker,
-  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName, xmlAttribute, xmlText,
+  readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName,
   type GraphCollector, type GraphInterchangeImport, type GraphInterchangeImportOptions, type GraphInterchangeInput,
 } from './interchangeGraph.js'
 

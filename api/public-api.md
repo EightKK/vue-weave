@@ -246,7 +246,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (569)
+## Entry `.`: type-only exports (570)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -283,6 +283,7 @@ in public signatures, so changes to them can break consumers too.
 - `ConstraintEditValidator`
 - `CreateValidator`
 - `CsvCell`
+- `CsvOptions`
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
@@ -1044,7 +1045,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (531)
+## Entry `./core`: type-only exports (532)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1075,6 +1076,7 @@ in public signatures, so changes to them can break consumers too.
 - `ConstraintEditValidator`
 - `CreateValidator`
 - `CsvCell`
+- `CsvOptions`
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
@@ -2612,6 +2614,14 @@ type CreateValidator = (proposal: TimelineCreate) => boolean | string | void;
 
 ```ts
 type CsvCell = string | number | undefined;
+```
+
+### `CsvOptions`
+
+```ts
+interface CsvOptions {
+    escapeFormulas?: boolean;
+}
 ```
 
 ### `CsvParseOptions`
@@ -9889,7 +9899,7 @@ function timelineWbsCodes(rows: readonly TimelineRow[]): Map<string, string>;
 ### `toCsv`
 
 ```ts
-function toCsv(table: readonly (readonly CsvCell[])[]): string;
+function toCsv(table: readonly (readonly CsvCell[])[], options?: CsvOptions): string;
 ```
 
 ### `toDrawio`
