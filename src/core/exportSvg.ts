@@ -1,7 +1,11 @@
 import { indexGraph, type GraphEdge, type GraphEdgeMarker, type GraphLayout } from './graph.js'
 import { graphEdgeMarker, graphMarkerDrawing, graphOutlineElement, graphOutlineShape, graphOutlineText } from './graphShapes.js'
+import {
+  graphBelowLabelText, graphEndEventStroke, graphIntermediateEventGap, graphNodeEvent, graphNodeLabelBelow, graphNodeMarker, graphNodeMarkerParts,
+  graphOutlineDetail, isGraphTaskMarker, type GraphOutlineElement,
+} from './graphShapes.js'
 import { graphPathBounds } from './graphView.js'
-import { assertGraphSwimlaneBands, type GraphSwimlaneBand } from './graphSwimlanes.js'
+import { assertGraphSwimlaneBands, assertGraphSwimlanePools, type GraphSwimlaneBand, type GraphSwimlanePoolBand } from './graphSwimlanes.js'
 import { assertGraphEdgeBands, graphBandOrder, graphReferenceDash, type GraphEdgeBand } from './graphFlow.js'
 import {
   createTimelineRowTree, dependencyPath, dependencyTimes, formatDependencyLag, intersectsWindow, mirrorTimeScale, resourceLoadHistogram,
@@ -231,6 +235,13 @@ export interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends 
    * example the `lanes` of a `layoutSwimlaneGraph` result. Throws like NetworkGraph `lanes` for invalid lanes.
    */
   lanes?: readonly GraphSwimlaneBand[]
+  /**
+   * Pools (BPMN participants) drawn behind the lanes, for example the `pools` of a `layoutSwimlaneGraph` result: a
+   * `g class="vw-swimlane-pool"` with a `title`, a `surface` rectangle with a 1.5-unit `muted` border, a `surfaceMuted`
+   * title band and the title centred in the band, rotated to read from bottom to top when the band is taller than it
+   * is wide, clipped to the band. Throws like NetworkGraph `pools` for invalid pools.
+   */
+  pools?: readonly GraphSwimlanePoolBand[]
   /** Node IDs drawn in the selected style. */
   selectedIds?: Iterable<string>
   /** Node IDs whose box gets the highlight outline, like NetworkGraph `highlightedNodeIds`. Unknown IDs are ignored. */
@@ -285,6 +296,12 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       throw new RangeError('Missing or invalid layout box: ' + node.id)
     }
     include(box.x, box.y, box.width, box.height)
+    if (graphNodeLabelBelow(node)) {
+      // A label below the box, roughly as wide as its longest line.
+      const text = options.nodeLabel ? options.nodeLabel(node) : node.label, more = options.nodeDetail ? options.nodeDetail(node) : node.detail
+      const width = Math.max(box.width, 9 * Math.max(String(text ?? '').length, String(more ?? '').length * 0.8))
+      include(box.x + box.width / 2 - width / 2, box.y + box.height, width, more ? 38 : 24)
+    }
   }
   const edgeText = options.edgeLabel ?? ((edge: GraphEdge) => edge.label)
   const bands = options.edgeBands
@@ -309,6 +326,10 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   if (options.lanes !== undefined) {
     assertGraphSwimlaneBands(options.lanes, 'renderGraphSvg')
     for (const lane of options.lanes) include(lane.x, lane.y, lane.width, lane.height)
+  }
+  if (options.pools !== undefined) {
+    assertGraphSwimlanePools(options.pools, 'renderGraphSvg')
+    for (const pool of options.pools) include(pool.x, pool.y, pool.width, pool.height)
   }
   const width = right - left + 2 * padding, height = bottom - top + 2 * padding
   const selected = new Set(options.selectedIds ?? [])
@@ -354,6 +375,25 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
   const parts: string[] = []
   if (background) parts.push(tag('rect', { width, height, fill: theme.surfaceMuted }))
   const content: string[] = []
+  // Pools: a framed rectangle with a title band; a tall band turns its centred title to read upwards.
+  for (const pool of options.pools ?? []) {
+    const { header } = pool
+    let title = ''
+    if (header.width > 0 && header.height > 0) {
+      const vertical = header.height > header.width
+      const cx = header.width / 2, cy = header.height / 2
+      title = tag('rect', {
+        x: header.x, y: header.y, width: header.width, height: header.height, fill: theme.surfaceMuted, stroke: theme.muted, 'stroke-width': 1.5,
+      }) + tag('svg', { x: header.x, y: header.y, width: header.width, height: header.height, overflow: 'hidden' }, tag('text', {
+        x: cx, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 13, 'font-weight': 700, fill: theme.text,
+        transform: vertical ? `rotate(-90 ${num(cx)} ${num(cy)})` : undefined,
+        direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+      }, escapeXml(pool.label)))
+    }
+    content.push(tag('g', { class: 'vw-swimlane-pool' }, tag('title', {}, escapeXml(pool.label)) + tag('rect', {
+      x: pool.x, y: pool.y, width: pool.width, height: pool.height, fill: theme.surface, stroke: theme.muted, 'stroke-width': 1.5,
+    }) + title))
+  }
   // Lanes: alternating band fills, a header with a solid border and the title clipped to the header.
   options.lanes?.forEach((lane, index) => {
     const { header } = lane
@@ -387,7 +427,7 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
     const start = graphEdgeMarker(edge, 'start'), end = graphEdgeMarker(edge, 'end')
     content.push(tag('path', {
       d: layout.paths.get(edge.id)!, fill: 'none', stroke: strong ? highlight : theme.edge, 'stroke-width': strong ? 2.6 : 1.65,
-      'stroke-dasharray': edge.animated ? '6 4' : undefined,
+      'stroke-dasharray': edge.animated ? '6 4' : edge.dashed ? '5 4' : undefined,
       'marker-start': start === 'none' ? undefined : `url(#${markerId(start, 'start', strong)})`,
       'marker-end': end === 'none' ? undefined : `url(#${markerId(end, 'end', strong)})`,
     }))
@@ -413,29 +453,63 @@ export function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(
       fill: active ? colors.solid : colors.pale, stroke: strong ? highlight : active ? colors.ink : colors.line,
       'stroke-width': strong ? 3 : active ? 2.8 : 1.25,
     }
-    // Diamonds, ellipses and hexagons are drawn inside the box, with centred text.
+    // Outline shapes are drawn inside the box, with centred text.
     const outline = graphOutlineShape(node)
+    const event = graphNodeEvent(node), marker = graphNodeMarker(node), below = graphNodeLabelBelow(node)
+    if (event === 'end') paint['stroke-width'] = Math.max(paint['stroke-width'], graphEndEventStroke)
+    const outlineTag = (element: GraphOutlineElement, attributes: Record<string, string | number>) => element.tag === 'ellipse'
+      ? tag('ellipse', { cx: element.cx, cy: element.cy, rx: element.rx, ry: element.ry, ...attributes })
+      : element.tag === 'path'
+        ? tag('path', { d: element.d, ...attributes, 'stroke-linejoin': 'round' })
+        : tag('polygon', { points: element.points.map(point => num(point.x) + ',' + num(point.y)).join(' '), ...attributes, 'stroke-linejoin': 'round' })
     let shape: string, lines: { title: number; detail: number; inset: number; centred?: boolean }
+    const innerInset = 2 + graphIntermediateEventGap
     if (outline) {
       const element = graphOutlineElement(outline, box.width, box.height)
-      const anchors = graphOutlineText(box.width, box.height, Boolean(detail))
-      shape = element.tag === 'ellipse'
-        ? tag('ellipse', { cx: element.cx, cy: element.cy, rx: element.rx, ry: element.ry, ...paint })
-        : tag('polygon', { points: element.points.map(point => num(point.x) + ',' + num(point.y)).join(' '), ...paint, 'stroke-linejoin': 'round' })
+      const anchors = graphOutlineText(box.width, box.height, Boolean(detail), outline)
+      shape = outlineTag(element, paint)
+      const lines2 = graphOutlineDetail(outline, box.width, box.height)
+      if (lines2) shape += tag('path', { d: lines2, fill: 'none', stroke: paint.stroke, 'stroke-width': Math.min(paint['stroke-width'], 1.5) })
+      if (event === 'intermediate') shape += outlineTag(graphOutlineElement(outline, box.width, box.height, innerInset), paint)
       lines = { title: anchors.title, detail: anchors.detail, inset: 0, centred: true }
     } else {
+      const radius = node.shape === 'rounded' ? 19 : 8
       shape = tag('rect', {
-        x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: node.shape === 'rounded' ? 19 : 8, ...paint,
+        x: 2, y: 2, width: Math.max(0, box.width - 4), height: Math.max(0, box.height - 4), rx: radius, ...paint,
       })
-      lines = { title: detail ? 24 : 34, detail: 43, inset: 13 }
+      if (event === 'intermediate') {
+        shape += tag('rect', {
+          x: innerInset, y: innerInset, width: Math.max(0, box.width - 2 * innerInset), height: Math.max(0, box.height - 2 * innerInset),
+          rx: Math.max(0, radius - graphIntermediateEventGap), ...paint,
+        })
+      }
+      const inset = isGraphTaskMarker(marker) ? 30 : 13
+      lines = { title: detail ? 24 : 34, detail: 43, inset }
     }
-    const text = clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
+    if (marker) {
+      shape += tag('g', { fill: 'none', stroke: ink, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, graphNodeMarkerParts(marker, box.width, box.height, rtl)
+        .map(part => part.tag === 'circle'
+          ? tag('circle', { cx: part.cx, cy: part.cy, r: part.r, 'stroke-width': part.strokeWidth })
+          : tag('path', { d: part.d, 'stroke-width': part.strokeWidth })).join(''))
+    }
+    const text = below ? '' : clippedText({ x: 0, y: 0, width: box.width, height: box.height }, rtl, [
       { text: label, y: lines.title, size: 15.5, weight: 700, fill: ink, inset: lines.inset, centred: lines.centred },
       { text: detail ?? '', y: lines.detail, size: 12, weight: 550, fill: ink, inset: lines.inset, centred: lines.centred },
     ])
+    // A label below the box is drawn in the text colour on the stage background, with a halo like edge labels.
+    let outside = ''
+    if (below) {
+      const anchors = graphBelowLabelText(box.width, box.height)
+      const halo = {
+        'text-anchor': 'middle', stroke: theme.surfaceMuted, 'stroke-width': 4, 'stroke-linejoin': 'round', 'paint-order': 'stroke',
+        direction: rtl ? 'rtl' : undefined, 'unicode-bidi': rtl ? 'embed' : undefined,
+      }
+      outside = tag('text', { x: anchors.x, y: anchors.title, 'font-size': 15.5, 'font-weight': 700, fill: theme.text, ...halo }, escapeXml(label))
+        + (detail ? tag('text', { x: anchors.x, y: anchors.detail, 'font-size': 12, 'font-weight': 550, fill: theme.text, ...halo }, escapeXml(detail)) : '')
+    }
     content.push(tag('g', { transform: `translate(${num(box.x)} ${num(box.y)})` },
       tag('title', {}, escapeXml([label, detail].filter(Boolean).join(' ')))
-      + tag('svg', { width: box.width, height: box.height, overflow: 'hidden' }, shape + text)))
+      + tag('svg', { width: box.width, height: box.height, overflow: 'hidden' }, shape + text) + outside))
   }
   parts.push(tag('g', { transform: `translate(${num(padding - left)} ${num(padding - top)})` }, content.join('')))
   return svgDocument(width, height, options, font, defs, parts.join(''))

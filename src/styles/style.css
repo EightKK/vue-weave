@@ -568,3 +568,233 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   background: var(--vw-accent); border: 1px solid var(--vw-surface); cursor: crosshair; touch-action: none;
 }
 @media (pointer: coarse) { .vw-sheet-fill { width: 16px; height: 16px; } }
+/* Diagram editor parts: GraphPalette (vw-palette-*) and PropertyInspector (vw-inspector-*). Both follow the shared surface,
+   text, border and accent variables, so the dark themes apply to them; layout uses logical properties for RTL. */
+.vw-palette, .vw-inspector { box-sizing: border-box; color: var(--vw-text, #172c3b); font-family: inherit; font-size: 13px; }
+.vw-palette *, .vw-inspector * { box-sizing: border-box; }
+.vw-palette { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vw-palette-search, .vw-inspector-input { width: 100%; min-height: 30px; padding: 4px 8px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); color: inherit; font: inherit; }
+.vw-palette-search:focus-visible, .vw-inspector-input:focus-visible, .vw-inspector-check:focus-visible, .vw-inspector-swatch:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-list { display: flex; flex-direction: column; gap: 10px; }
+.vw-palette-section { display: flex; flex-direction: column; gap: 4px; }
+.vw-palette-heading { padding-inline-start: 2px; color: var(--vw-muted, #4f6574); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.vw-palette-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--vw-border, #dce6ed); border-radius: 7px; background: var(--vw-surface, #fff); cursor: grab; outline: none; user-select: none; }
+.vw-palette-item:hover { background: var(--vw-surface-hover, #e4ecf2); }
+.vw-palette-item:active { cursor: grabbing; }
+.vw-palette-item:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-palette-item.vw-is-disabled { cursor: default; opacity: .5; }
+.vw-palette-preview { flex: none; width: var(--vw-palette-preview-width, 48px); height: auto; overflow: visible; }
+.vw-palette-preview rect, .vw-palette-preview ellipse, .vw-palette-preview polygon, .vw-palette-preview path { fill: var(--vw-item-pale); stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-palette-text { display: flex; flex-direction: column; min-width: 0; }
+.vw-palette-label { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.vw-palette-detail { overflow: hidden; color: var(--vw-muted, #4f6574); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.vw-palette-empty, .vw-inspector-empty { margin: 0; color: var(--vw-muted, #4f6574); }
+.vw-inspector { display: flex; flex-direction: column; gap: 12px; margin: 0; min-width: 0; }
+.vw-inspector-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.vw-inspector-field.vw-is-checkbox { flex-flow: row wrap; align-items: center; }
+.vw-inspector-field.vw-is-checkbox .vw-inspector-label { order: 1; }
+.vw-inspector-field.vw-is-checkbox > :not(.vw-inspector-label):not(input) { flex-basis: 100%; order: 2; }
+.vw-inspector-label { color: var(--vw-muted, #4f6574); font-size: 12px; font-weight: 650; }
+.vw-inspector-field.vw-is-checkbox .vw-inspector-label { color: inherit; font-size: inherit; font-weight: 400; }
+.vw-inspector-input[readonly], .vw-inspector-input:disabled { background: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, #4f6574); }
+.vw-inspector-input[multiple] { min-height: 72px; }
+.vw-inspector-check { margin: 0; accent-color: var(--vw-accent, #245e96); }
+.vw-inspector-color { display: flex; align-items: center; gap: 8px; }
+.vw-inspector-swatch { width: 44px; height: 28px; padding: 2px; border: 1px solid var(--vw-border, #c9d6df); border-radius: 6px; background: var(--vw-surface, #fff); }
+.vw-inspector-color-text { color: var(--vw-muted, #4f6574); font-variant-numeric: tabular-nums; }
+.vw-inspector-description { margin: 0; color: var(--vw-muted, #4f6574); font-size: 11.5px; }
+.vw-inspector-error { margin: 0; color: var(--vw-inspector-error, #b3261e); font-size: 12px; font-weight: 600; }
+.vw-inspector-field.vw-is-invalid .vw-inspector-input, .vw-inspector-field.vw-is-invalid .vw-inspector-swatch { border-color: var(--vw-inspector-error, #b3261e); }
+.vw-theme-dark { --vw-inspector-error: #ff8a80; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-inspector-error: #ff8a80; }
+}
+@media (forced-colors: active) {
+  .vw-palette-item { border-color: CanvasText; }
+  .vw-palette-item:focus-visible, .vw-palette-item.vw-is-active:focus-visible { outline-color: Highlight; }
+  .vw-palette-preview rect, .vw-palette-preview ellipse, .vw-palette-preview polygon, .vw-palette-preview path { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; }
+  .vw-inspector-error { color: CanvasText; text-decoration: underline; }
+  .vw-inspector-field.vw-is-invalid .vw-inspector-input { border-style: dashed; }
+}
+@media print {
+  .vw-palette-search { display: none; }
+}
+
+/* TaskBoard (kanban): status columns × optional swimlanes in a CSS grid. Logical properties follow the text direction,
+   so `dir="rtl"` places the first column on the right without extra rules. */
+.vw-board { --vw-board-column-width: 232px; color: var(--vw-text, #172c3b); font-family: inherit; border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; background: var(--vw-surface-muted, #f6f9fb); }
+.vw-board * { box-sizing: border-box; }
+.vw-board button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-board-scroll { overflow: auto; scrollbar-width: thin; border-radius: inherit; }
+.vw-board-scroll:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: -2px; }
+.vw-board-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 13px; }
+.vw-board-grid { display: grid; grid-template-columns: repeat(var(--vw-board-column-count, 1), minmax(var(--vw-board-column-width), 1fr)); gap: 0 10px; padding: 0 10px 10px; min-width: min-content; }
+.vw-board-column-head { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 10px 4px 8px; background: var(--vw-surface-muted, #f6f9fb); border-bottom: 2px solid var(--vw-border, #d8e2e9); font-size: 12px; }
+.vw-board-column-title { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vw-board-column-title strong, .vw-board-column-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-board-column-title small, .vw-board-lane-title small { color: var(--vw-muted, #4c6371); font-size: 10.5px; font-weight: 500; }
+.vw-board-count { padding: 1px 7px; border-radius: 999px; background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vw-board-column-head.vw-is-at-limit .vw-board-count { border-color: var(--vw-board-wip-warning, #a8361f); }
+.vw-board-column-head.vw-is-over-limit { border-bottom-color: var(--vw-board-wip-warning, #a8361f); }
+.vw-board-column-head.vw-is-over-limit .vw-board-count { background: var(--vw-board-wip-warning, #a8361f); border-color: var(--vw-board-wip-warning, #a8361f); color: var(--vw-on-solid, #fff); }
+.vw-board-wip-warning { flex-basis: 100%; color: var(--vw-board-wip-warning, #a8361f); font-size: 10.5px; font-weight: 700; }
+.vw-board-wip-warning::before { content: "▲ "; }
+.vw-board-lane-head { grid-column: 1 / -1; padding: 12px 4px 4px; border-bottom: 1px dashed var(--vw-border, #d8e2e9); font-size: 12px; }
+.vw-board-lane-title { position: sticky; inset-inline-start: 4px; display: inline-flex; align-items: baseline; gap: 8px; }
+.vw-board-cell { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px 4px; min-height: var(--vw-board-cell-min-height, 64px); list-style: none; border-radius: 6px; }
+.vw-board-cell.vw-is-over-limit { background: color-mix(in srgb, var(--vw-board-wip-warning, #a8361f) 7%, transparent); }
+.vw-board-cell.vw-is-target { outline: 1px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: -1px; }
+.vw-board-card-item { display: block; }
+.vw-board-card { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: start; border: 1px solid var(--vw-item-line); border-inline-start-width: 4px; border-radius: 6px; background: var(--vw-surface, #fff); font-size: 12px; user-select: none; }
+.vw-board-card:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-board-card:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 2px; }
+.vw-board-card.vw-is-movable { cursor: grab; touch-action: none; }
+.vw-board-card.vw-is-selected { border-color: var(--vw-item-solid); box-shadow: 0 0 0 2px var(--vw-accent, #174878); }
+.vw-board-card.vw-is-dragging { position: relative; z-index: 3; cursor: grabbing; opacity: .92; box-shadow: 0 6px 18px rgb(0 0 0 / .22); }
+.vw-board-card.vw-is-picked { outline: 2px dashed var(--vw-board-drop, var(--vw-accent, #245e96)); outline-offset: 2px; }
+.vw-board-card-label { font-weight: 650; color: var(--vw-item-ink); overflow-wrap: anywhere; }
+.vw-board-card-detail { color: var(--vw-muted, #4c6371); font-size: 11px; }
+.vw-board-drop { height: 4px; margin-block: -1px; border-radius: 2px; background: var(--vw-board-drop, var(--vw-accent, #245e96)); }
+.vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, var(--vw-board-wip-warning, #a8361f) 0 6px, transparent 6px 9px); }
+.vw-board-cell-empty { padding: 10px 4px; text-align: center; color: var(--vw-muted, #4c6371); font-size: 11px; border: 1px dashed var(--vw-border, #d8e2e9); border-radius: 6px; }
+.vw-theme-dark { --vw-board-wip-warning: #ff8a80; --vw-board-drop: #82badf; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto { --vw-board-wip-warning: #ff8a80; --vw-board-drop: #82badf; }
+}
+@media (max-width: 700px) {
+  .vw-board { --vw-board-column-width: 196px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vw-board, .vw-board * { transition: none !important; animation: none !important; }
+}
+@media (forced-colors: active) {
+  .vw-board { border-color: CanvasText; }
+  .vw-board-card { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .vw-board-card-label, .vw-board-card-detail { color: CanvasText; }
+  .vw-board-card.vw-is-selected { outline: 3px solid Highlight; outline-offset: 2px; box-shadow: none; }
+  .vw-board-card:focus-visible, .vw-board-card.vw-is-picked { outline: 3px solid Highlight; }
+  .vw-board-drop { forced-color-adjust: none; background: Highlight; }
+  .vw-board-drop.vw-is-over-limit { background: repeating-linear-gradient(90deg, CanvasText 0 6px, transparent 6px 9px); }
+  .vw-board-column-head.vw-is-over-limit .vw-board-count { forced-color-adjust: none; background: CanvasText; color: Canvas; }
+  .vw-board-cell.vw-is-over-limit { background: none; outline: 1px dashed CanvasText; }
+}
+
+/* BPMN and flowchart nodes, pools and dashed edges (NetworkGraph). Opt in through the node fields, `pools` and `GraphEdge.dashed`. */
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { fill: none; stroke: var(--vw-item-line); stroke-width: 1.25px; }
+.vw-network-node:where(:hover, :focus-visible, .vw-is-selected, .vw-is-related):where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-item-ink); }
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-shape.vw-node-event-end, .vw-network-node:where(:not(.vw-is-unstyled)) rect.vw-node-event-end { stroke-width: 3.5px; }
+.vw-network-node:where(:not(.vw-is-unstyled)) .vw-node-marker { fill: none; stroke: var(--vw-item-ink); stroke-linecap: round; stroke-linejoin: round; }
+.vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-marker, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) .vw-node-shape-detail { stroke: var(--vw-on-solid, #fff); }
+.vw-node-marker { pointer-events: none; }
+.vw-network-node .vw-node-label-below { paint-order: stroke; stroke: var(--vw-surface-muted, #f6f9fb); stroke-width: 4px; stroke-linejoin: round; }
+.vw-network-node:where(:not(.vw-is-unstyled)) text.vw-node-label-below, .vw-network-node.vw-is-selected:where(:not(.vw-is-unstyled)) text.vw-node-label-below { fill: var(--vw-text, #172c3b); }
+.vw-network-edge.vw-is-dashed { stroke-dasharray: 5 4; }
+.vw-swimlane-pool rect, .vw-swimlane-pool text { pointer-events: none; }
+.vw-swimlane-pool-band { fill: var(--vw-pool-fill, var(--vw-surface, #ffffff)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
+.vw-swimlane-pool-header { fill: var(--vw-pool-header-fill, var(--vw-surface-hover, #e4ecf2)); stroke: var(--vw-pool-border, var(--vw-muted, #4c6371)); stroke-width: 1.5px; }
+.vw-swimlane-pool-title text { fill: var(--vw-lane-title, var(--vw-text, #172c3b)); font-size: 13px; font-weight: 700; user-select: none; }
+.vw-network.vw-rtl .vw-swimlane-pool-title text { direction: rtl; unicode-bidi: embed; }
+@media (forced-colors: active) {
+  .vw-network-node .vw-node-shape-detail, .vw-network-node .vw-node-marker { forced-color-adjust: none; fill: none; stroke: CanvasText; }
+  .vw-network-node.vw-is-selected .vw-node-shape-detail, .vw-network-node.vw-is-selected .vw-node-marker { stroke: HighlightText; }
+  .vw-network-node text.vw-node-label-below, .vw-network-node.vw-is-selected text.vw-node-label-below { fill: CanvasText; stroke: Canvas; }
+  .vw-swimlane-pool-band, .vw-swimlane-pool-header { forced-color-adjust: none; fill: Canvas; stroke: CanvasText; stroke-width: 2.5px; }
+  .vw-swimlane-pool-title text { forced-color-adjust: none; fill: CanvasText; }
+}
+
+/* EventCalendar: day and week time grid, all-day row and month grid. Positions use logical properties, so right-to-left
+   calendars (`dir`) mirror without extra rules; colours come from the shared theme variables and the event tones. */
+.vw-calendar { position: relative; display: flex; flex-direction: column; color: var(--vw-text, #172c3b); background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d8e2e9); border-radius: 8px; font-family: inherit; font-size: 12px; overflow: hidden; }
+.vw-calendar * { box-sizing: border-box; }
+.vw-calendar button { color: inherit; font-family: inherit; cursor: pointer; }
+.vw-calendar button:disabled { cursor: default; opacity: .5; }
+.vw-calendar button:focus-visible { outline: 2px solid var(--vw-accent, #245e96); outline-offset: 1px; }
+.vw-calendar-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 7px 12px; border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
+.vw-calendar-nav, .vw-calendar-views { display: flex; border: 1px solid var(--vw-border, #cbd9e2); border-radius: 6px; overflow: hidden; background: var(--vw-surface, #fff); }
+.vw-calendar-nav button, .vw-calendar-views button { min-width: 30px; height: 27px; padding: 0 9px; border: 0; background: transparent; font-size: 12px; font-weight: 650; }
+.vw-calendar-nav button + button, .vw-calendar-views button + button { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-nav button:not(:disabled):hover, .vw-calendar-views button:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-calendar-nav-icon { display: inline-block; font-size: 16px; line-height: 1; }
+.vw-calendar:dir(rtl) .vw-calendar-nav-icon { transform: scaleX(-1); }
+.vw-calendar-views button[aria-pressed="true"] { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
+.vw-calendar-title { flex: 1; min-width: 10em; font-size: 14px; font-weight: 700; }
+.vw-calendar-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, #4c6371); }
+.vw-calendar-head, .vw-calendar-all-day, .vw-calendar-body { display: grid; }
+.vw-calendar-head { border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
+.vw-calendar-head, .vw-calendar-all-day { padding-inline-end: var(--vw-calendar-scrollbar, 0px); }
+.vw-calendar-corner { display: flex; align-items: center; padding: 4px 6px; color: var(--vw-muted, #4c6371); font-size: 10px; font-weight: 700; }
+.vw-calendar-column-head { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; padding: 6px 8px; border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-column-head strong, .vw-calendar-column-head small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.vw-calendar-column-head small { color: var(--vw-muted, #4c6371); font-size: 10px; }
+.vw-calendar-column-head.vw-is-today { color: var(--vw-accent, #245e96); }
+.vw-calendar-all-day { border-bottom: 2px solid var(--vw-border, #d8e2e9); }
+.vw-calendar-all-day-cells { position: relative; display: grid; grid-column: 2 / -1; }
+.vw-calendar-all-day-cells > .vw-calendar-cell { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-scroll { overflow-y: scroll; overflow-x: hidden; scrollbar-width: thin; }
+.vw-calendar-body { position: relative; }
+.vw-calendar-gutter { position: relative; }
+.vw-calendar-hour { position: absolute; inset-inline-end: 6px; transform: translateY(-50%); color: var(--vw-muted, #4c6371); font-size: 10px; font-variant-numeric: tabular-nums; }
+.vw-calendar-hour:first-child { transform: none; }
+.vw-calendar-column { position: relative; min-width: 0; border-inline-start: 1px solid var(--vw-border, #e0e9ef); background-image: linear-gradient(var(--vw-grid, #e2e9ef) 1px, transparent 1px); background-size: 100% var(--vw-calendar-hour-height, 48px); }
+.vw-calendar-column.vw-is-today, .vw-calendar-month-day.vw-is-today { background-color: var(--vw-calendar-today, var(--vw-surface-hover, #edf5fa)); }
+.vw-calendar.vw-is-creatable .vw-calendar-column, .vw-calendar.vw-is-creatable .vw-calendar-cell { cursor: crosshair; }
+.vw-calendar-event { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; overflow: hidden; padding: 2px 5px; border: 1px solid var(--vw-item-line); border-inline-start: 3px solid var(--vw-calendar-event-accent, var(--vw-item-solid)); border-radius: 4px; background: var(--vw-item-pale); color: var(--vw-item-ink); text-align: start; font-size: 11px; line-height: 1.25; user-select: none; }
+.vw-calendar-event.vw-is-editable { cursor: grab; touch-action: none; }
+.vw-calendar-event.vw-is-selected { box-shadow: 0 0 0 2px var(--vw-accent, #174878); z-index: 3; }
+.vw-calendar-event.vw-is-dragging { opacity: .45; }
+.vw-calendar-event-label, .vw-calendar-event-time { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.vw-calendar-event-label { font-weight: 650; }
+.vw-calendar-event-time { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; opacity: .85; }
+.vw-calendar-timed.vw-is-short { flex-direction: row; align-items: center; gap: 5px; padding-block: 0; }
+.vw-calendar-segment { height: 20px; flex-direction: row; align-items: center; gap: 5px; padding-block: 0; }
+.vw-calendar-segment.vw-continues-before { border-start-start-radius: 0; border-end-start-radius: 0; }
+.vw-calendar-segment.vw-continues-after { border-start-end-radius: 0; border-end-end-radius: 0; }
+.vw-calendar-segment.vw-is-timed { border-color: transparent; border-inline-start-color: var(--vw-calendar-event-accent, var(--vw-item-solid)); background: transparent; color: var(--vw-text, #172c3b); }
+.vw-calendar-timed.vw-continues-before { border-top-style: dashed; border-start-start-radius: 0; border-start-end-radius: 0; }
+.vw-calendar-timed.vw-continues-after { border-bottom-style: dashed; border-end-start-radius: 0; border-end-end-radius: 0; }
+.vw-calendar-handle { position: absolute; inset-inline: 0; height: 6px; cursor: ns-resize; }
+.vw-calendar-handle.vw-is-start { top: 0; }
+.vw-calendar-handle.vw-is-end { bottom: 0; }
+.vw-calendar-handle.vw-is-horizontal { inset-block: 0; inset-inline: auto 0; width: 8px; height: auto; cursor: ew-resize; }
+.vw-calendar-preview { position: absolute; z-index: 4; inset-inline: 2px; overflow: hidden; padding: 2px 5px; border: 2px dashed var(--vw-accent, #245e96); border-radius: 4px; background: color-mix(in srgb, var(--vw-accent, #245e96) 14%, transparent); color: var(--vw-text, #172c3b); font-size: 11px; font-weight: 650; white-space: nowrap; pointer-events: none; }
+.vw-calendar-all-day-cells > .vw-calendar-preview, .vw-calendar-week-events > .vw-calendar-preview { inset-block: 0; inset-inline-end: auto; }
+.vw-calendar-now { position: absolute; z-index: 5; inset-inline: 0; height: 0; border-top: 2px solid var(--vw-now, #c23b22); pointer-events: none; }
+.vw-calendar-now::before { content: ""; position: absolute; top: -5px; inset-inline-start: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--vw-now, #c23b22); }
+.vw-calendar-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--vw-border, #d8e2e9); background: var(--vw-surface-muted, #f3f7fa); }
+.vw-calendar-weekdays span { padding: 6px 8px; color: var(--vw-muted, #4c6371); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.vw-calendar-week { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-month-day { position: relative; min-width: 0; padding: 3px 4px; }
+.vw-calendar-month-day + .vw-calendar-month-day { border-inline-start: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-month-day.vw-is-outside { background-color: var(--vw-surface-muted, #f6f9fb); color: var(--vw-muted, #4c6371); }
+.vw-calendar-day-number { min-width: 22px; height: 20px; padding: 0 4px; border: 0; border-radius: 10px; background: transparent; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vw-calendar-day-number:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-calendar-month-day.vw-is-today .vw-calendar-day-number { background: var(--vw-accent, #245e96); color: var(--vw-on-solid, #fff); }
+.vw-calendar-more { position: absolute; bottom: 2px; inset-inline-start: 4px; z-index: 3; padding: 0 4px; border: 0; border-radius: 3px; background: transparent; color: var(--vw-accent, #245e96); font-size: 10px; font-weight: 700; }
+.vw-calendar-more:hover { background: var(--vw-surface-hover, #edf5fa); }
+.vw-calendar-week-events { position: absolute; inset: 26px 0 0; pointer-events: none; }
+.vw-calendar-week-events > .vw-calendar-event { pointer-events: auto; }
+.vw-theme-dark.vw-calendar { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  .vw-theme-auto.vw-calendar { color-scheme: dark; }
+}
+@media (max-width: 700px) {
+  .vw-calendar { --vw-calendar-gutter: 42px; }
+  .vw-calendar-column-head { padding-inline: 4px; }
+}
+@media (forced-colors: active) {
+  .vw-calendar-event { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .vw-calendar-event.vw-is-selected { outline: 3px solid Highlight; outline-offset: 1px; box-shadow: none; }
+  .vw-calendar-event:focus-visible { outline: 3px solid Highlight; }
+  .vw-calendar-preview { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: Highlight; }
+  .vw-calendar-now, .vw-calendar-now::before { forced-color-adjust: none; border-top-color: Highlight; background: Highlight; }
+  .vw-calendar-column { forced-color-adjust: none; background-image: linear-gradient(GrayText 1px, transparent 1px); }
+  .vw-calendar-views button[aria-pressed="true"], .vw-calendar-month-day.vw-is-today .vw-calendar-day-number { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+@media print {
+  .vw-calendar-nav, .vw-calendar-views, .vw-calendar-handle, .vw-calendar-preview { display: none; }
+  .vw-calendar { print-color-adjust: exact; }
+  .vw-calendar-scroll { height: auto !important; overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vw-calendar, .vw-calendar * { transition: none !important; animation: none !important; }
+}

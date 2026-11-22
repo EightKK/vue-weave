@@ -17,6 +17,7 @@ export { layoutTreeGraph, layoutRadialGraph, layoutCircularGraph, layoutGridGrap
 export type { GraphTreeLayoutOptions, GraphRadialLayoutOptions, GraphCircularLayoutOptions, GraphGridLayoutOptions, GraphConcentricLayoutOptions } from './graphLayouts.js'
 export { layoutSwimlaneGraph, graphSwimlaneAt } from './graphSwimlanes.js'
 export type { GraphSwimlaneSpec, GraphSwimlaneBand, GraphSwimlane, GraphSwimlaneLayout, GraphSwimlaneLayoutOptions } from './graphSwimlanes.js'
+export type { GraphSwimlanePoolSpec, GraphSwimlanePoolBand, GraphSwimlanePool } from './graphSwimlanes.js'
 export { layoutForceGraph } from './graphForce.js'
 export type { GraphForceLayoutOptions } from './graphForce.js'
 export { layoutFlowGraph, graphFlowBands } from './graphFlow.js'
@@ -76,6 +77,11 @@ export type {
   MsProjectAssignment, MsProjectResourceLoadOptions, MsProjectResourceLoad, ICalendarEvent, ICalendarOptions, ICalendarImport,
   ICalendarImportEvent, ICalendarImportOptions, ICalendarImportWarning, ICalendarImportWarningCode, ICalendarTimeline,
   CsvCell, TimelineCsvColumn, TimelineCsvOptions, CsvParseOptions, TimelineCsvImportOptions, TimelineCsvImport,
+} from './interchange.js'
+export { toMermaid, fromMermaid, toGraphMl, fromGraphMl, toDrawio, fromDrawio, fromDrawioAsync } from './interchange.js'
+export type {
+  GraphInterchangeInput, GraphInterchangeImport, GraphInterchangeImportOptions, GraphInterchangeWarning, GraphInterchangeWarningCode,
+  MermaidDirection, MermaidOptions, GraphMlOptions, DrawioOptions, DrawioImportOptions, DrawioAsyncImportOptions,
 } from './interchange.js'
 export { scheduleToGraph } from './pert.js'
 export type { ScheduleGraph, ScheduleGraphOptions, ScheduleGraphNodeData, ScheduleGraphEdgeData } from './pert.js'
@@ -144,3 +150,27 @@ export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncre
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
 } from './graphIncremental.js'
+export {
+  eventCalendarRange, eventCalendarDays, eventCalendarMonthGrid, shiftEventCalendarDate, eventCalendarTimeOfDay, eventCalendarTimeAt,
+  layoutCalendarDayEvents, packCalendarEventLanes, validateCalendarEvents,
+} from './eventCalendar.js'
+export type {
+  EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
+  CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
+  EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
+} from './eventCalendar.js'
+export { graphPaletteMimeType } from './diagramEditor.js'
+export type {
+  GraphPaletteItem, GraphPaletteLabels, GraphPaletteDrop, InspectorFieldKind, InspectorItem, InspectorField, InspectorChange,
+  InspectorChangeValidator, PropertyInspectorLabels, PropertyInspectorFieldSlot,
+} from './diagramEditor.js'
+export { groupBoardCards, boardCardPosition, applyBoardCardMove } from './taskBoard.js'
+export type {
+  TaskBoardColumn, TaskBoardLane, TaskBoardCard, TaskBoardPosition, TaskBoardCardMove, TaskBoardCardMoveValidator,
+  TaskBoardMoveCancelReason, TaskBoardMoveCancel, TaskBoardCell, TaskBoardColumnStatus, TaskBoardGroups, TaskBoardLabels,
+} from './taskBoard.js'
+export { computeEarnedValue, rollupEarnedValue, maxEarnedValuePoints } from './earnedValue.js'
+export type {
+  EarnedValueRecord, EarnedValueTask, EarnedValueEacMethod, EarnedValueSeriesOptions, EarnedValueOptions, EarnedValueAmounts,
+  EarnedValueMetrics, EarnedValueTaskResult, EarnedValuePoint, EarnedValueResult,
+} from './earnedValue.js'

@@ -110,7 +110,7 @@ function pickRoute(port: string, select: HTMLSelectElement) { route(port, select
   <div class="production-layout">
     <section class="production-panel"><div class="production-heading"><h2>{{ t('承認経路', 'Approval routes') }}</h2></div>
       <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="flow.positions"
-        :options="{ direction: 'LR', nodeWidth: 145, nodeHeight: 64 }" :height="360" background="dots"
+        :options="{ direction: 'LR', nodeWidth: 165, nodeHeight: 64, columnGap: 135 }" :height="360" background="dots"
         draggable connectable reconnectable :validate-connection="validate" @node-move="move" @connect="connect"
         @reconnect="connect($event.after, $event.id)" @connect-rejected="(_change, reason) => warning = reason" />
     </section>

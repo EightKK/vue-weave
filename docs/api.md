@@ -55,6 +55,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)
   - [Label editing, lasso selection and item slots](#label-editing-lasso-selection-and-item-slots)
   - [Swimlanes](#swimlanes)
+  - [BPMN and flowchart shapes, markers and pools](#bpmn-and-flowchart-shapes-markers-and-pools)
   - [Quantity bands](#quantity-bands)
 - [GanttChart](#ganttchart)
   - [Editing contract](#editing-contract)
@@ -78,6 +79,10 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Row hierarchy moves, status date and progress line](#row-hierarchy-moves-status-date-and-progress-line)
   - [Scheduling constraints](#scheduling-constraints)
   - [Timeline editing helpers](#timeline-editing-helpers)
+- [EventCalendar](#eventcalendar)
+  - [Event calendar helpers](#event-calendar-helpers)
+- [TaskBoard](#taskboard)
+  - [Task board helpers](#task-board-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
   - [Layout defaults and option checks](#layout-defaults-and-option-checks)
@@ -90,9 +95,11 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Row trees and summaries](#row-trees-and-summaries)
   - [Calendars, scheduling and resource load](#calendars-scheduling-and-resource-load)
   - [Recorded actuals](#recorded-actuals)
+  - [Earned value management](#earned-value-management)
   - [Interchange exports](#interchange-exports)
   - [Microsoft Project import](#microsoft-project-import)
   - [iCalendar import](#icalendar-import)
+  - [Graph interchange](#graph-interchange)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
 - [Linked views](#linked-views)
   - [Time range exploration](#time-range-exploration)
@@ -108,6 +115,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [Export to SVG and PNG](#export-to-svg-and-png)
 - [Right-to-left layout](#right-to-left-layout)
 - [Typed data](#typed-data)
+- [Diagram editor parts](#diagram-editor-parts)
 
 ## NetworkGraph
 
@@ -417,6 +425,40 @@ function moveStep(change: GraphNodeMove) {
 ```
 
 Bands do not follow saved `positions`: a node placed through `positions` outside its band stays drawn where it is, and `graphSwimlaneAt` on its box tells the application. Lanes and groups are independent; a group frame is drawn above the bands. With `dir="rtl"` the lane titles are right-aligned in their header with `direction: rtl`; like the rest of the graph geometry, the bands and headers are not mirrored (use `direction: 'RL'` in the layout for a flow from right to left, which also puts the headers on the right).
+
+### BPMN and flowchart shapes, markers and pools
+
+Opt-in additions for BPMN processes and classic flowcharts. Without them the server markup, routes, exports and accessible names are unchanged.
+
+| API | Behavior |
+| --- | --- |
+| NetworkNode.shape (flowchart shapes) | `NetworkFlowchartShape`, part of `NetworkNodeShape`: `'circle'` (a true circle centred in the box with the radius of the shorter half side, a BPMN event), `'stadium'` (a terminator: a rectangle with half-circle ends), `'parallelogram'` (input or output; the sides slant by `min(0.36 × height, width / 4)`), `'document'` (a wavy bottom that dips at the inline start and rises at the end, within the box), `'cylinder'` (a data store or database, with the front rim of its top drawn as a separate line) and `'data-object'` (a page with a folded top-right corner, also drawn as a separate line). Like diamond, ellipse and hexagon they are drawn 2 units inside the node box (an `ellipse`, `polygon` or `path` with the class `vw-node-shape`; the rim and the fold are a `path` with the class `vw-node-shape-detail`), the text is centred (a cylinder moves it down by half its rim) and clipped to the box, and the minimap, connection handles, resize handles and the focus ring keep the box. Unknown values still draw a box. |
+| NetworkNode.event | `NetworkNodeEvent`: `'start'` (the normal thin border), `'intermediate'` (a second outline 4 units inside the first, class `vw-node-shape-inner` or, for the rectangle shapes, a `rect`) or `'end'` (a 3.5-unit border, class `vw-node-event-end`). The outline gets the class `vw-node-event-<event>`. Meant for `circle`, it works on every shape. Unknown values are ignored. |
+| NetworkNode.marker | `NetworkNodeMarker`, a decorative BPMN symbol in the node ink (a `g` with the class `vw-node-marker`, `aria-hidden="true"` and `data-vw-marker`): the gateway symbols `'exclusive'` (×), `'parallel'` (+), `'inclusive'` (a thick circle) and `'event-based'` (a pentagon in a double circle) and the event symbols `'message'` (an envelope) and `'timer'` (a clock), centred and sized to the shorter side of the box; and the task types `'user'`, `'service'` and `'manual'`, a 16-unit icon in the top inline-start corner (top right with `dir="rtl"`, the manual hand mirrored). With a task icon, the text of a rectangle starts 30 units from the inline-start edge instead of 13. Centred symbols do not move the text, so give events and gateways `labelPosition: 'below'`. Unknown values draw nothing. |
+| NetworkNode.labelPosition | `NetworkNodeLabelPosition`: `'inside'` (default) or `'below'`. Below draws the label and detail centred under the box (baselines 17 and 32 units below its bottom), outside the clipped node content (class `vw-node-label-below`), in `--vw-text` with a halo in `--vw-surface-muted`, also when the node is selected. The text is not clipped and not part of the layout box, so leave room for it (`rowGap`, `lanePadding`); `renderGraphSvg` widens its bounds for it. |
+| GraphEdge.dashed | Draws the default edge with a static dash pattern (class `vw-is-dashed`, `stroke-dasharray: 5 4`; `5 4` in `renderGraphSvg`), for BPMN message flows and data associations. `animated` wins when both are set. `collapseGraphGroups` keeps it on a merged edge only when every merged edge agrees. |
+| GraphEdgeMarker `'hollow-arrow'` | A triangle filled with the graph background (class `vw-edge-marker-hollow`, `surfaceMuted` in exports), the end of a BPMN message flow. A message flow is `{ dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' }`; a data association `{ dashed: true, markerEnd: 'open-arrow' }`. |
+| pools | readonly GraphSwimlanePoolBand[] / undefined. Opt-in. Pools (BPMN participants), usually the `pools` of a `layoutSwimlaneGraph` result, drawn in the lanes layer: each pool is an SVG group (role group, class `vw-swimlane-pool`, `data-vw-pool`) named by its label, with a frame (`vw-swimlane-pool-band`), a title band (`vw-swimlane-pool-header`) and the title centred in the band and clipped to it (`vw-swimlane-pool-title`), rotated by −90° to read from bottom to top when the band is taller than it is wide. The `lanes` whose IDs a pool lists in `laneIds` are drawn inside its group, after its frame; other lanes follow the pools. Pools are part of the fitted content, exportSvg and exportPng, and never take the pointer. An invalid or repeated ID (`Invalid swimlane pool ID: <value>`, `Duplicate swimlane pool ID: <id>`), a label that is not a string or `laneIds` that are not an array of IDs throw Error, and geometry that is not finite or has a negative size throws RangeError while rendering. A title band of zero size draws no band and no title. |
+
+Where edges meet flowchart shapes: straight edges, and curve or straight edges through waypoints or spread as parallel edges, end where the line from the node centre meets the outline (curves are followed to within about 0.1 units). Unlike diamond, ellipse and hexagon, a flowchart shape need not touch the middle of every box side (a circle in a wide box, the slanted sides of a parallelogram, the wave of a document), so the ends of orthogonal routes that are not at a named port slide along their first (or last) leg onto the outline. The layout's own curve paths, and the long-edge bypass lanes the orthogonal style keeps, still end on the box sides: give circles and diamonds square boxes (a custom `layout` that shrinks their boxes, `sizes`, or square `nodeWidth` and `nodeHeight`) or use the orthogonal or straight edge style. Named ports and connection handles stay on the box sides.
+
+`layoutSwimlaneGraph` takes the opt-in `pools` (`GraphSwimlanePoolSpec[]`: `{ id, label?, lanes }`), `poolHeaderSize` (default 32) and `poolGap` (default 24, in place of `laneGap` between lanes of different pools) options and then returns `pools` (`GraphSwimlanePool[]`, in display order: `{ id, label, index, laneIds, x, y, width, height, header }`). Every lane must belong to exactly one pool and the lanes of a pool must be consecutive in `lanes` (in any order in the pool); otherwise it throws Error (`Unknown swimlane in swimlane pool <id>: <lane>`, `Swimlane <lane> is in more than one pool`, `The lanes of swimlane pool <id> must be consecutive`, `Swimlane <lane> is in no pool`, `Swimlane pool needs at least one lane: <id>`, and the ID texts with the kind `swimlane pool`); a `poolHeaderSize` or `poolGap` that is not finite and nonnegative throws RangeError. Each pool's title band sits at the flow start before the lane headers, so every lane band starts `poolHeaderSize` later and the nodes `poolHeaderSize` further along the flow; the lane of a pool with a single lane gets a zero-size header, as a BPMN pool without lanes. TB and BT turn the pools with the lanes (the title band on top or at the bottom, read without rotation). Without `pools` the result is unchanged and has no `pools` field.
+
+```ts
+const swimlanes = computed(() => layoutSwimlaneGraph(nodes.value, edges.value, {
+  lanes: [{ id: 'customer', label: 'Customer' }, { id: 'sales', label: 'Sales' }, { id: 'warehouse', label: 'Warehouse' }],
+  pools: [{ id: 'buyer', label: 'Customer', lanes: ['customer'] }, { id: 'supplier', label: 'Supplier', lanes: ['sales', 'warehouse'] }],
+  laneOf: node => node.data.lane,
+}))
+```
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :layout="() => swimlanes" :lanes="swimlanes.lanes" :pools="swimlanes.pools" edge-style="orthogonal" />
+```
+
+`renderGraphSvg` takes the same `pools` (drawn before the lanes: a `g class="vw-swimlane-pool"` with a `title`, a `surface` frame and a `surfaceMuted` title band with 1.5-unit `muted` borders and the 13-unit bold title, validated like the prop) and draws flowchart shapes (`stroke-linejoin="round"` on paths and polygons, the rim and fold as unfilled lines at most 1.5 units wide), event borders (an `end` border at least 3.5 units, an `intermediate` second outline), markers (a `g` with `fill="none"` and the stroke in the tone's ink, or `onSolid` when selected), labels below (outside the node's nested `svg`, in `text` with a `surfaceMuted` halo) and dashed edges like NetworkGraph draws them; exportSvg and exportPng follow.
+
+Accessibility: the accessible name of a node stays its label and detail; shapes, event borders and markers are decorative and are not announced. Put the BPMN meaning that matters into the label or the `detail` (for example "Order received" with the detail "message start event"), or describe it in your own `tooltip`.
 
 ### Quantity bands
 
@@ -1031,6 +1073,143 @@ const headerBands = [
 ]
 ```
 
+## EventCalendar
+
+A third controlled component for appointment-style scheduling: a day or week time grid with an all-day row, a month grid, and an optional day view with one column per resource (rooms, machines, people). Like the other components it never changes its props: moves, resizes, resource changes and new events are emitted as proposals that the parent validates and applies. It is generic over the event type `E extends CalendarEvent`, inferred from `events`; its public type is `EventCalendarComponent` and its template ref type `EventCalendarExposed<E>`.
+
+```vue
+<EventCalendar
+  v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
+  :events="events" :resources="rooms" :now="now" time-zone="Europe/Berlin" locale="en-GB" creatable
+  :validate-edit="noDoubleBooking" @edit="apply" @create="add" @range-change="load"
+/>
+```
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| events | readonly E[] (E extends CalendarEvent) / required | Events with `id`, `label` and a half-open `[start, end)` interval in epoch milliseconds; see below |
+| date | number / required | Anchor date of the view. Supports `v-model:date`; without a listener the calendar still navigates with local state |
+| view | `'day' \| 'week' \| 'month'` / `'week'` | Supports `v-model:view`, with local state like `date` |
+| weekStartsOn | number / 1 | First day of a week, 0 = Sunday to 6 = Saturday |
+| timeZone | string / `'UTC'` | IANA time zone of the days, hours and labels. Days start at local midnight, also across daylight-saving changes |
+| locale | string or readonly string[] / `'en-US'` | Locale of the labels. The runtime's default locale and time zone are never used, so server and client render the same text |
+| dayStart, dayEnd | integer / 0, 24 | First and last-plus-one hour of the time grid (`0 <= dayStart < dayEnd <= 24`). Events outside are clipped |
+| hourHeight | number / 48 | Pixels per hour of the time grid |
+| height | number or CSS length / 480 | Height of the scrolling time grid |
+| snap | number / 15 | Step of pointer and keyboard edits of timed events, **in minutes** |
+| createDuration | number / 4 × snap | Minutes of an event created by a click without a drag |
+| resources | readonly CalendarResource[] / undefined | `{ id, label, detail? }`. The day view shows one column per resource; events of other resources, or without `resourceId`, are not shown there. Every `resourceId` must name a resource |
+| readonly | boolean / false | Disables editing and creating |
+| creatable | boolean / false | A drag (or click) on an empty part of the time grid, the all-day row or a month day proposes a new event through `create` |
+| validateEdit, validateCreate | EventCalendarEditValidator, EventCalendarCreateValidator / undefined | Synchronous checks; see below |
+| selectedId | string / undefined | Selected event; supports `v-model:selected-id` |
+| labels | Partial<EventCalendarLabels> / English | Toolbar, view names, "All day", "+N more", hints, rejection texts, `now` and `empty` |
+| showToolbar | boolean / true | The built-in toolbar: Previous, Today, Next, the title and the view switch (a group of `aria-pressed` buttons) |
+| now | number / undefined | Draws the now line (`labels.now`) in today's column and enables Today. Supply it for deterministic and server-rendered output; the calendar never reads the clock |
+| formatTime | (time: number) => string / `intlTimeFormatter({ locale, timeZone })` | Times in event labels and accessible names |
+| maxMonthLanes | integer / 3 | Event lanes per week of the month view; more events collapse into a "+N more" button that opens the day view |
+| dir | ChartDirection / `'ltr'` | `rtl` mirrors the grid (logical CSS properties) and swaps Left and Right of the keyboard edits |
+
+`CalendarEvent<D>` has `id`, `start`, `end`, `label` and the optional `allDay` (drawn in the all-day row and moved by whole days; give local midnights), `resourceId`, `color` (a CSS colour for the event's accent stripe, `--vw-calendar-event-accent`), `tone` (teal, blue, amber or violet; default blue), `editable` (default true; false keeps one event fixed) and `data` (D). Events of 24 hours or more are drawn in the all-day row too but keep their times. A zero-duration event is a point in time. Overlapping timed events are placed side by side by `layoutCalendarDayEvents`, multi-day events stacked by `packCalendarEventLanes`; both are deterministic, so the drawing does not depend on the order of `events`.
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| edit | EventCalendarEdit | `{ id, before, after, mode: 'move' \| 'start' \| 'end', source: 'pointer' \| 'keyboard', resource?: { before, after } }`, the GanttChart `TimelineEdit` shape with `resource` in place of `row`. The parent applies `after` (and `resource.after`) |
+| edit-rejected | change, reason | `validateEdit` returned false (reason `labels.rejected`) or a string |
+| create | EventCalendarCreate | `{ start, end, allDay, resourceId?, source: 'pointer' }`. The parent assigns an ID and adds the event |
+| create-rejected | proposal, reason | `validateCreate` returned false (`labels.createRejected`) or a string |
+| select, update:selectedId | id | Click or Space on an event |
+| event-activate | id, source | Double click or Enter |
+| update:date, update:view | date, view | Toolbar navigation and the month day buttons ("Show day …"), which open the day view |
+| range-change | range, view | The visible range (`eventCalendarRange` of the view and date) after mounting and whenever it changes: load the events that overlap it |
+| edit-cancel | EventCalendarEditCancel | `{ reason: 'escape' \| 'source-changed' \| 'pointer-cancel' \| 'api', eventIds }` when a pointer gesture in flight ends without a proposal |
+| validation-error | Error | Invalid events (`Invalid event ID`, `Duplicate event ID`, `RangeError: Event <id> must have finite start <= end`), resources (`Unknown resource in event <id>: <resourceId>`), view, date, weekStartsOn, time zone, hours, hourHeight, snap, createDuration, maxMonthLanes or now. The calendar then shows its empty state and rethrows the error, like GanttChart |
+
+The validators follow the GanttChart contract: return true or nothing to accept, false for the default message, or a string for a specific message. A rejection emits the `-rejected` event and announces the reason in a polite live region, which also announces the new title after navigation. Validators are synchronous; persist in the `edit` or `create` listener.
+
+Editing. A pointer drag moves an event (to another day or, in the resource view, another resource column); the top and bottom edges of a timed event resize its start and end in `snap` steps, measured as displacement so an off-grid start keeps its offset; the end edge of an all-day event resizes it by days. In the month view and the all-day row, events move by whole days, keeping their local times. A dashed preview follows the pointer; the proposal is emitted on release, and the click that ends a drag does not select. Keyboard edits are proposed one step per key press: on a timed event Up and Down move by `snap` and Shift+Up/Down resize the end; Left and Right move by a day, or in the resource view to the previous or next resource; in the month view and the all-day row Left and Right move by a day, Up and Down by a week (month view) and Shift+Left/Right resize the end of an all-day event. The focus follows the event after the parent applies the edit. Escape, pointer cancellation and loss of capture discard a drag; new `events`, `resources`, view, date, time zone, week start, hours, `hourHeight`, `snap` or `readonly` cancel it with reason `source-changed`. Each event is one button whose name is its label, date and time (or "All day") and resource, such as `Design review, Wed, Nov 11 10:00–11:00, Atlas`; an event drawn in several columns or weeks is focusable once.
+
+Slots: `event({ event, range, selected, allDay, view })` replaces the content of an event button (use non-interactive content), `toolbar({ title, view, date, previous, next, today, setView })` replaces the toolbar content, and `empty()`. Methods: `cancelEdit()` cancels a gesture in flight (reason `api`); `scrollToTime(time)` scrolls the time grid to the time of day of `time`.
+
+The component renders on the server: it reads the DOM only in event handlers and after mounting, and it creates its hint IDs with `useId()`.
+
+### Event calendar helpers
+
+The core entry exports the calendar arithmetic and layout that EventCalendar uses, so a server or worker can compute the same ranges. Days follow local dates in `timeZone` (IANA, default UTC) with `weekStartsOn` (default 1); invalid views, dates, week starts and zones throw RangeError.
+
+| Function | Result |
+| --- | --- |
+| `eventCalendarRange(view, date, options?)` | The half-open range a view shows: the local day, the week from `weekStartsOn`, or the whole weeks of the month grid |
+| `eventCalendarDays(view, date, options?)` | The `EventCalendarDay`s of that range (`start`, `end`, `year`, `month` 1–12, `day`, `weekday`, `inMonth`) |
+| `eventCalendarMonthGrid(date, options?)` | The month grid as four to six weeks of seven days |
+| `shiftEventCalendarDate(view, date, steps, options?)` | The anchor `steps` days, weeks or months away, keeping the local time; months clamp the day (January 31 + 1 month is the end of February) |
+| `eventCalendarTimeOfDay(day, time, options?)`, `eventCalendarTimeAt(day, timeOfDay, options?)` | Local wall-clock milliseconds since the midnight of `day`, and back. A time grid stays 24 hours tall on 23- and 25-hour days |
+| `layoutCalendarDayEvents(events, range, { minDuration? })` | `CalendarEventColumn[]`: events clipped to the day, with `column` and `columns` of their overlap group. `minDuration` extends short events for the overlap test only |
+| `packCalendarEventLanes(events, days)` | `{ segments, lanes }`: per event the lowest free `lane`, the covered `startIndex`/`endIndex` and `continuesBefore`/`continuesAfter` |
+| `validateCalendarEvents(events, resources?)` | Throws for invalid or duplicate IDs, bad intervals and unknown resources, with the texts above |
+
+Related exported types: `EventCalendarView`, `CalendarEvent`, `CalendarResource`, `EventCalendarOptions`, `EventCalendarDay`, `CalendarEventColumn`, `CalendarEventLane`, `CalendarEventLaneLayout`, `EventCalendarEdit`, `EventCalendarCreate`, `EventCalendarEditValidator`, `EventCalendarCreateValidator`, `EventCalendarEditCancel`, `EventCalendarEditCancelReason`, `EventCalendarLabels`, `EventCalendarComponent` and `EventCalendarExposed`.
+
+## TaskBoard
+
+An opt-in third controlled component: a kanban board that shows cards in status columns, optionally split into horizontal swimlanes. It never changes its data. A drag or keyboard move becomes a `card-move` proposal, and the parent applies it, for example with `applyBoardCardMove`. It is designed to sit next to a GanttChart on the same tasks: give the bars and the cards the same IDs and share one selected ID (see the "Task board" demo).
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| columns | readonly TaskBoardColumn[] / required | Status columns in display order: unique ID, label, optional detail and optional `wipLimit` (a non-negative integer) |
+| cards | readonly C[] (C extends TaskBoardCard) / required | ID, `columnId`, `laneId` (required on a board with lanes), label, optional detail, tone, `draggable` (false keeps the card in place) and data (`TaskBoardCard<D>`). The array order is the order inside every cell. C is inferred |
+| lanes | readonly TaskBoardLane[] / undefined | Horizontal swimlanes in display order: unique ID, label and optional detail. Without lanes (or with an empty array) the board has one row of cells and card `laneId`s are ignored |
+| selectedId | string / undefined | Controlled selected card, drawn with `vw-is-selected` and `aria-pressed="true"`; supports `v-model:selected-id` |
+| readonly | boolean / false | Disables moves; cards can still be selected and activated |
+| validateCardMove | TaskBoardCardMoveValidator / undefined | Synchronous check of a proposal: true or undefined accepts, false (default message `labels.moveRejected`, "This card move was rejected.") or a reason string rejects |
+| labels | Partial<TaskBoardLabels> / English | region ("Task board"), empty, emptyCell, card, cards, wipLimit, overLimit, moveHint, moveRejected, pickedUp, moved, moveCancelled, position, of and lane |
+| dir | ChartDirection / ltr | `rtl` places the first column on the right and swaps Left and Right; with `auto` the board follows the inherited direction |
+| height | number or CSS string / undefined | Height of the scroll viewport; by default the board is as tall as its content |
+| autoScroll | boolean / true | Scrolls the viewport while a pointer drag is held within 36 px of one of its edges |
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| card-move | TaskBoardCardMove | Proposal: `id`, `before` and `after` positions (`columnId`, `laneId` on a board with lanes, `index`) and `source` (`pointer` or `keyboard`). `after.index` counts the cards of the target cell without the moved card. Apply it with `applyBoardCardMove(cards, change)`. A drop on the card's own position proposes nothing |
+| card-move-rejected | (change, reason) | `validateCardMove` rejected the proposal; the reason is announced in the live region |
+| card-move-cancel | TaskBoardMoveCancel | A pick-up or drag ended without a proposal: `id`, `before`, `source` and `reason`: `escape` (Escape or the exposed `cancelMove()`), `pointer-cancel` (pointer cancellation or lost capture), `no-target` (released outside every cell), `blur` (the picked-up card lost focus) or `data-change` (`cards`, `columns`, `lanes` or `readonly` changed) |
+| card-activate | id | A card was activated by click or Enter, or by Space on a card that cannot move |
+| update:selectedId | id | The same activation, for `v-model:selected-id`; not emitted when the card is already selected |
+| validation-error | Error | Invalid columns, lanes or cards (the errors of `groupBoardCards`). The board renders its empty state and the error is rethrown, as in GanttChart |
+
+Slots are `card({ card, selected, moving, column, lane })` (inside the card button, so keep it non-interactive), `column-header({ column, status })` with the `TaskBoardColumnStatus` of the column, and `empty({ column, lane })` for a cell without cards (without `column` for a board without columns). Methods are `focusCard(id)` and `cancelMove()`. The public component type is `TaskBoardComponent`, and `TaskBoardExposed<C>` types a template ref.
+
+**Markup and accessibility.** The scroll viewport is a focusable `region` named `labels.region`. Each cell is a `list` named after its column, or "column · lane" on a board with lanes (for example "Doing · Web team"), and described by the column's count, WIP limit and over-limit state ("4 cards, WIP limit 3, Over WIP limit"). A card is a `button` named by its label, with `aria-pressed` for the selection; a movable card is described by `labels.moveHint`. Column headers show the count as "count / limit"; a column over its limit gets `vw-is-over-limit` and the visible `labels.overLimit` warning, and one at its limit `vw-is-at-limit`. A WIP limit never blocks a move by itself: reject such moves in `validateCardMove` if they must not happen.
+
+**Pointer.** A press on a movable card and a move of 4 px start a drag with the mouse, a pen or touch (movable cards have `touch-action: none`). The card follows the pointer (`vw-is-dragging`), and a drop indicator (`vw-board-drop`, with `vw-is-over-limit` when the drop would take another column over its limit) shows the place between the cards of the cell under the pointer (`vw-is-target`). Release proposes the move; Escape, pointer cancellation and data changes cancel it. A click without a drag selects and activates the card. `cards`, `columns` and `lanes` are watched by reference: pass new arrays instead of mutating them, and keep `columns` and `lanes` out of inline template literals, which are new arrays on every render of the parent and would cancel a move in progress.
+
+**Keyboard.** Space picks a movable card up (`vw-is-picked`) and announces its place ("Picked up Billing API. To do, lane API team, position 1 of 1."). Up and Down move the drop indicator through the cell and on into the previous or next lane, Left and Right to the neighbouring column in the visual direction, Home and End to the first and last place of the cell; each step is announced ("Doing, lane API team, position 1 of 3, Over WIP limit."). Space or Enter drops, Escape or moving the focus away cancels. The card keeps the focus, also after the parent applies the move and the card is drawn in its new cell. Without a pick-up, Enter activates the card and the arrow keys move the focus to the neighbouring card.
+
+```ts
+import { applyBoardCardMove, type TaskBoardCardMove } from '@eightkk/vue-weave'
+
+function validateCardMove(change: TaskBoardCardMove) {
+  const task = cards.value.find(card => card.id === change.id)
+  return change.after.columnId !== 'done' || (task?.data?.progress ?? 0) >= 1 || 'Finish the work first.'
+}
+function moveCard(change: TaskBoardCardMove) {
+  cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
+}
+// <TaskBoard v-model:selected-id="selectedId" :columns="columns" :lanes="lanes" :cards="cards"
+//   :validate-card-move="validateCardMove" @card-move="moveCard" />
+// <GanttChart :rows="rows" :bars="bars" :range="range" :selected-ids="new Set(selectedId ? [selectedId] : [])"
+//   @select="id => selectedId = id" />
+```
+
+### Task board helpers
+
+These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
+
+| Function | Result |
+| --- | --- |
+| groupBoardCards(cards, columns, lanes?) | `TaskBoardGroups`: `rows` (one per lane in lane order, or one without `laneId` when there are no lanes), each with one `TaskBoardCell` per column holding its cards in `cards` order; `columns`, one `TaskBoardColumnStatus` per column with `count` over all lanes, `wipLimit`, `atLimit` (`count >= wipLimit`) and `overLimit` (`count > wipLimit`); and `positions`, every card's `TaskBoardPosition` by ID. Throws `Invalid column ID`, `Duplicate card ID` and the like for IDs (kinds `column`, `lane` and `card`), `Unknown column in card <id>: <value>` and `Unknown lane in card <id>: <value>` (also for a missing `laneId` on a board with lanes), and a RangeError for a WIP limit that is not a non-negative integer |
+| boardCardPosition(cards, id, { lanes }?) | The `TaskBoardPosition` of one card; with `lanes: true` the index counts only the cards of the same lane. Throws `Unknown card in board: <id>` |
+| applyBoardCardMove(cards, move, { columns, lanes }?) | A new array in which the card has the target column (and lane when `after.laneId` is set) and sits before the card that had `after.index` in the target cell, or after the cell's last card. Other cards are kept as they are; the moved card is a shallow copy. A move whose positions have no `laneId` treats each column as one cell and keeps the card's `laneId`. With `columns` or `lanes`, the target must name one (`Unknown column in card move <id>: <value>`, `Unknown lane in card move <id>: <value>`). Throws an Error for an unknown card, a move that names a lane in only one position, and a stale move whose `before` is not the card's current position (`Stale card move for <id>: …`), and a RangeError for an index that is not an integer from 0 to the size of the target cell |
+
 ## Core entry point
 
 Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry also re-exports them. Core has no Vue or DOM runtime dependency and does not mutate input data.
@@ -1077,6 +1256,8 @@ Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry al
 | fromMsProjectXml(xml, options?), timelineFromMsProject(project, options?) | Microsoft Project XML import: an `MsProjectImport` with tasks, links, calendars, resources, assignments and warnings, then GanttChart rows, bars and links; see [Microsoft Project import](#microsoft-project-import) |
 | workCalendarsFromMsProject(project, range), resourceLoadFromMsProject(project, options?) | Imported calendars as `WorkCalendar[]`, and imported resources and assignments as the shapes of `calculateResourceLoad`, `levelResources` and `projectResourceTimeline`; see [Microsoft Project import](#microsoft-project-import) |
 | fromICalendar(text, options?), timelineFromICalendar(events) | iCalendar import: an `ICalendarImport` with events and warnings, then GanttChart rows and bars; see [iCalendar import](#icalendar-import) |
+| toMermaid(graph, options?), toGraphMl(graph, options?), toDrawio(graph, options?) | NetworkGraph nodes, edges, nested groups, positions and sizes as a Mermaid flowchart, GraphML or an uncompressed draw.io file; see [Graph interchange](#graph-interchange) |
+| fromMermaid(text, options?), fromGraphMl(xml, options?), fromDrawio(xml, options?), fromDrawioAsync(xml, options?) | Diagram import: a `GraphInterchangeImport` with the NetworkGraph props and warnings; `fromDrawioAsync` also reads compressed draw.io pages; see [Graph interchange](#graph-interchange) |
 | calculateResourceLoad(range, tasks, resources, assignments, options?) | Compare scheduled work with capacity over half-open intervals. Segments with the same tasks may share one `taskIds` array. `options.inactiveTaskIds` ignores the assignments of inactive tasks |
 | assignmentWorkPeriods(work, assignment) | The elapsed periods of a task's `work` that an assignment covers: all of it, or the part given by `workOffset` and `workDuration`, clipped to the work |
 | levelResources(input) | Delay tasks with a deterministic priority heuristic so that assigned load stays within capacity |
@@ -1191,6 +1372,7 @@ Same-rank edges (inside a cycle) and self-loops of the layered, tree and swimlan
 | headerSize | Thickness of the header along the flow. Default 120 for LR and RL, 32 for TB and BT; 0 draws no header. |
 | padding | Margin around the bands. Default 20. |
 | crossingReduction, crossingSweeps | `barycenter` (default) or `none`; positive integer sweep limit, default 8. |
+| pools, poolHeaderSize, poolGap | Opt-in pools (BPMN participants) around consecutive lanes, the thickness of their title band (default 32) and the space between pools (default 24); see [BPMN and flowchart shapes, markers and pools](#bpmn-and-flowchart-shapes-markers-and-pools). |
 
 `GraphSwimlaneLayoutOptions` extends `GraphLayoutOptions`. Sizes that are not finite or are negative (and node sizes of 0) throw `RangeError` (see [Layout defaults and option checks](#layout-defaults-and-option-checks)), as do an unknown direction or crossing method; the graph errors of `indexGraph` (duplicate IDs, unknown endpoints) throw `Error`.
 
@@ -1422,6 +1604,56 @@ An `ActualsDiagnostic` has the shape of a `PlanningDiagnostic` (`id`, `code`, `s
 
 Related exported types: `RescheduleFromActualsFields`.
 
+### Earned value management
+
+`computeEarnedValue(tasks, options)` calculates earned value management (EVM) figures for a plan at a status date. It does not schedule anything: pass each task's budget and baseline dates, for example from a `scheduleTasks` result or a `TimelineBar` baseline, and its progress and cost so far. See [Earned value management](scheduling.md#earned-value-management) for the formulas and assumptions.
+
+`EarnedValueTask`:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Task ID; an invalid or duplicate ID throws an Error (`Invalid task ID: …`, `Duplicate task ID: …`) |
+| `budget` | Budget at completion (BAC), a finite number ≥ 0 in any currency or effort unit |
+| `start`, `end` | Planned (baseline) dates, half-open `[start, end)`, finite with `end ≥ start`; `end === start` is a milestone |
+| `progress` | Optional completed share at the status date, 0 to 1 like `TimelineBar.progress`. Default: the last `history` record's progress, else 0 |
+| `actualCost` | Optional actual cost (AC) up to the status date, finite and ≥ 0. Default: the last `history` record's cost, else 0 |
+| `calendarId` | Optional calendar of `options.calendars`; planned value then accrues over its working time only |
+| `history` | Optional `EarnedValueRecord[]` (`{ time, progress, actualCost? }`) before the status date, by strictly increasing `time`, for the EV and AC curves. A record without `actualCost` keeps the previous cost |
+
+`EarnedValueOptions`:
+
+| Option | Meaning |
+| --- | --- |
+| `statusDate` | Required finite time. PV counts the planned work in `[start, statusDate)` |
+| `calendars`, `defaultCalendarId` | `WorkCalendar[]` as for `scheduleTasks` (only `id` and `periods` are read; periods need finite endpoints and positive length, in any unit) and the calendar of tasks without `calendarId`. Without a calendar, PV accrues linearly over elapsed time |
+| `eacMethod` | `EarnedValueEacMethod`: `'cpi'` (default), `'cpi-spi'` or `'budget'` |
+| `series` | `EarnedValueSeriesOptions` `{ step, start?, end? }`: calculate the cumulative series every `step` from `start` (default: the earliest planned start) to `end` (default: the latest planned end or the status date). At most `maxEarnedValuePoints` (100,000) points |
+
+`EarnedValueResult` has `statusDate`, `eacMethod`, `tasks` (an `EarnedValueTaskResult` with `id` per task, in input order), `totals` and `series`. Each task and the totals are `EarnedValueMetrics`:
+
+| Field | Formula | Undefined when |
+| --- | --- | --- |
+| `bac` | `budget` | |
+| `pv` | `bac ×` planned share before the status date | |
+| `ev` | `progress × bac` | |
+| `ac` | `actualCost` | |
+| `sv`, `cv` | `ev − pv`, `ev − ac` | |
+| `spi` | `ev / pv` | `pv` is 0 |
+| `cpi` | `ev / ac` | `ac` is 0 |
+| `etc` | `(bac − ev) / index`; 0 when `ev = bac`. The index is `cpi` (`'cpi'`), `cpi × spi` (`'cpi-spi'`) or 1 (`'budget'`), where an undefined CPI or SPI counts as 1 | work remains and the index is 0 |
+| `eac` | `ac + etc` | `etc` is undefined |
+| `vac` | `bac − eac` | `eac` is undefined |
+| `tcpi` | `(bac − ev) / (bac − ac)` | `bac − ac ≤ 0` (the budget is spent) |
+| `percentComplete` | `ev / bac` | `bac` is 0 |
+
+An undefined ratio is left out of the object; no field is ever NaN or Infinity. `totals` is `rollupEarnedValue(tasks, { eacMethod })`. Each `EarnedValuePoint` of `series` has `time` and `pv`, and, at points up to the status date, `ev` and `ac`; the status date is always a point inside the series range.
+
+`rollupEarnedValue(items, options?)` sums `bac`, `pv`, `ev` and `ac` of any `EarnedValueAmounts[]` (such as some task results) and derives the indicators from the sums, for a summary row or any group. An empty list gives zeros. Values that are not finite numbers ≥ 0 throw a RangeError (`ev of earned value item 0 must be a finite number ≥ 0 (got -1)`).
+
+Errors of `computeEarnedValue`: RangeError for `statusDate must be a finite number (got …)`, `Budget of task <id> must be a finite number ≥ 0 (got …)`, `Planned dates of task <id> must be finite with end ≥ start (got …)`, `Progress must be between zero and one: <id>` (with ` (history)` for a record), `Actual cost must be a finite number ≥ 0: <id> (got …)`, `History times of task <id> must be finite, strictly increasing and not after the status date (got …)`, `Working periods must have finite endpoints and positive length (calendar <id>)`, `series.step must be a finite number > 0 (got …)`, `series.start`/`series.end` that are not finite or end before the start, and a series with too many points; Error for tasks that are not an array, missing options, an invalid or duplicate task or calendar ID, `Unknown calendar: <id>` (with ` (task <id>)` for a task's calendar), `History must be an array: <id>`, `Invalid history record: <id>` and `Unknown EAC method: …`. The arguments are not modified.
+
+GanttChart needs no new prop to show EVM figures: return them from `TimelineColumn.value(row)`, using `rollupEarnedValue` over a summary row's tasks, and pass the status date as `statusDate`. Related exported types: `EarnedValueTask`, `EarnedValueRecord`, `EarnedValueOptions`, `EarnedValueSeriesOptions`, `EarnedValueEacMethod`, `EarnedValueAmounts`, `EarnedValueMetrics`, `EarnedValueTaskResult`, `EarnedValuePoint`, `EarnedValueResult`.
+
 ### Interchange exports
 
 The core entry builds three interchange formats as strings, and reads CSV, Microsoft Project XML and iCalendar back, without a DOM or dependencies. Save them with a `Blob` (`application/xml`, `text/calendar` or `text/csv`) or send them from a server.
@@ -1549,6 +1781,72 @@ const { rows, bars } = timelineFromICalendar(events)
 ```
 
 Related exported types: `ICalendarImportWarningCode`.
+
+### Graph interchange
+
+The core entry writes and reads NetworkGraph diagrams in three diagram formats, as strings, without a DOM or dependencies: Mermaid flowcharts, GraphML (including yEd files) and draw.io (diagrams.net). The writers take a `GraphInterchangeInput` (`nodes`, `edges`, optional `groups`, and `positions` with top-left corners and `sizes`, as the NetworkGraph props) and check it as NetworkGraph does, with the same Errors and RangeErrors; they never change it. The readers return a `GraphInterchangeImport`: `nodes`, `edges`, `groups` (nested with `parentId`, parents first, only groups with nodes), `positions` and `sizes` (Maps, empty for Mermaid), `direction` (Mermaid only, `TD` read as `TB`) and `warnings`. An import is itself a `GraphInterchangeInput`, so it can be written again, and its fields go straight into NetworkGraph:
+
+```ts
+import { fromDrawioAsync, toMermaid } from '@eightkk/vue-weave/core'
+
+const diagram = await fromDrawioAsync(await file.text())
+for (const warning of diagram.warnings) console.warn(warning.code, warning.message)
+// <NetworkGraph :nodes="diagram.nodes" :edges="diagram.edges" :groups="diagram.groups"
+//   :positions="diagram.positions" :sizes="diagram.sizes" />
+const mermaid = toMermaid(diagram, { direction: 'TD' })
+```
+
+| Export | Behavior |
+| --- | --- |
+| toMermaid(graph, options?) | A `flowchart` (`MermaidOptions.direction` `TD`, `TB`, `LR`, `RL` or `BT`, default `LR`). Nodes are declared once with their shape and quoted label (then `<br>` and the detail when there is one); groups become nested `subgraph id["label"] … end` blocks with their direct members; edges follow, with labels as `\|"label"\|`. `MermaidOptions.edgeIds` writes edge IDs as `a e1@--> b` (Mermaid 11.6 and later; default false). Positions, sizes, tones, ports, waypoints and edge styles have no Mermaid form |
+| fromMermaid(text, options?) | Reads the subset of the flowchart syntax described under **Mermaid reading** |
+| toGraphMl(graph, options?) | GraphML with `<key>` definitions for the node `label`, `detail`, `shape`, `tone`, `x`, `y`, `width` and `height` and the edge `label`, `markerStart`, `markerEnd`, `edgeStyle`, `animated` and `points` (`x,y x,y …`). Groups are nodes with a nested `<graph>` (ID `<group>:`) that holds their members and nested groups; edges are in the top-level graph. `GraphMlOptions.directed` (default true) sets `edgedefault` |
+| fromGraphMl(xml, options?) | Reads those keys (matched by `attr.name`; `name` is also read as the label; `<default>` values apply; other keys are ignored) and yEd graphics: the first `y:NodeLabel` (its first line as label, the rest as detail), `y:Geometry`, the `y:Shape` type or `y:GenericNode` configuration, and the `y:EdgeLabel`, `y:Arrows` and `y:Path` points of edges. A node with a nested graph is a group. In an undirected graph (`edgedefault="undirected"`, or `directed="false"` on the edge) an edge without a marker gets `markerEnd: 'none'` |
+| toDrawio(graph, options?) | An uncompressed `mxfile` with one page (`DrawioOptions.pageName`, default `Page-1`). Nodes are vertex cells with the label (and a line break and the detail) as value, a shape style, the tone as draw.io fill and stroke colours plus `vwTone`, and their geometry (default size 144 by 58; nodes without a position are placed with `layoutLayeredGraph` (with slots as large as the largest node size, so wide nodes do not overlap), or around the saved boxes and their sizes with `layoutGraphIncrementally` when some nodes have positions, in `DrawioOptions.direction`, default `LR`). Groups are container cells around their members, whose geometry is relative to the container. Edges carry `endArrow` and `startArrow`, the edge style, `flowAnimation=1` and their waypoints |
+| fromDrawio(xml, options?) | Reads an uncompressed `mxfile` (the first page, or `DrawioImportOptions.page` by zero-based index or by name) or a bare `mxGraphModel`. HTML labels (`html=1`) lose their markup and keep their line breaks; the first line is the label and the rest the detail. A vertex that contains vertices is a group (containers, swimlanes and `group` cells), and child geometry is made absolute. `UserObject` and `object` wrappers and text cells on edges (edge labels) are read. A compressed page throws an Error that points to `fromDrawioAsync` |
+| fromDrawioAsync(xml, options?) | `fromDrawio` that also inflates compressed pages (base64, raw deflate and URI encoding), the default of draw.io files, with the standard `DecompressionStream('deflate-raw')` of browsers, workers and Node.js (an Error where the runtime has none). `DrawioAsyncImportOptions.maxInflatedLength` (default 20,000,000 characters) bounds the inflated page; beyond it the promise rejects with a RangeError |
+
+**Shapes and markers.** Each format maps the NetworkGraph shapes through one table, so a new shape is a new row:
+
+| `shape` | Mermaid | draw.io style | Also read from |
+| --- | --- | --- | --- |
+| `box` (default) | `id["…"]` | `rounded=0` | Mermaid `rect`, `proc`; yEd `rectangle`; draw.io `text`, `label` |
+| `rounded` | `id("…")` | `rounded=1` | Mermaid `rounded`, `event`; yEd `roundrectangle` |
+| `diamond` | `id{"…"}` | `rhombus` | Mermaid `diam`, `decision`; yEd `diamond` and the flowchart `decision` |
+| `ellipse` | `id(("…"))` (read back as `circle`) | `ellipse` | yEd `ellipse`, `oval` |
+| `hexagon` | `id{{"…"}}` | `shape=hexagon` | Mermaid `hex`, `prepare`; yEd `hexagon` |
+| `circle` | `id(("…"))` | `ellipse;aspect=fixed;vwShape=circle` | Mermaid `circle`, `circ`, `sm-circ`, `start`, `stop`; draw.io flowchart `on-page_reference` |
+| `stadium` | `id(["…"])` | `rounded=1;arcSize=50;vwShape=stadium` | Mermaid `terminal`, `pill`; draw.io flowchart `terminator` |
+| `parallelogram` | `id[/"…"/]` | `shape=parallelogram` | Mermaid `lean-r`, `lean-l`, `in-out`; yEd `parallelogram`; draw.io flowchart `data` |
+| `document` | `id["…"]` (a box) | `shape=document` | Mermaid `doc`; draw.io flowchart `document` |
+| `cylinder` | `id[("…")]` | `shape=cylinder3` | Mermaid `cyl`, `db`, `database`; draw.io flowchart `database`, `stored_data` |
+| `data-object` | `id["…"]` (a box) | `shape=note` | `dataobject`, `card` |
+
+Other shapes in a file (Mermaid subroutines and trapezoids, yEd octagons, …) are read as boxes with an `unsupported-shape` warning, and a shape the writers do not know is written as a box. The readers leave `shape` unset for boxes, except for GraphML's own `shape` key. Markers: Mermaid has `-->` for an arrow end (also for `open-arrow`, `hollow-arrow` and `diamond`, which have no Mermaid form), `---` for `markerEnd: 'none'`, `--o` for `circle` and `--x` for `bar`, with a matching start (`<-->`, `o--o`, `x--x`) when `markerStart` has the same form; draw.io uses `classic`, `open`, `block` without fill (`hollow-arrow`), `oval`, `diamond`, `dash` and `none`, and `dashed=1` for `GraphEdge.dashed` (GraphML has a `dashed` key; Mermaid does not keep it); the yEd arrow types `standard`, `delta`, `plain`, `white_delta` (as `hollow-arrow`), `circle`, `transparent_circle`, `diamond`, `white_diamond`, `dash` and `skewed_dash` are read, and other ends become arrows with an `unsupported-style` warning.
+
+**Mermaid reading.** The text starts with `flowchart` or `graph` (leading spaces are allowed) (leading spaces are allowed) (also `flowchart-elk`) and an optional direction; `%%` comment lines, `%%{…}%%` directives and front matter are skipped, `maxItems` is checked as nodes and subgraphs are met and before `&` lists are expanded into edges, and statements end at a line break or `;` (an ignored statement such as `style a fill:red;` and a `subgraph` line end at their `;` outside quotes, so `subgraph g; a --> b; end` is read as one line). Read: node declarations with every Mermaid delimiter (`[ ]`, `( )`, `{ }`, `(( ))`, `{{ }}`, `([ ])`, `[[ ]]`, `[( )]`, `[/ /]`, `> ]`, …), quoted or unquoted text and `@{ shape: …, label: … }`; chains (`a --> b --> c`) and `&` lists (`a & b --> c`, every pair); the links `-->`, `---`, `-.->`, `-.-`, `==>`, `===` and their longer forms, with `o` and `x` ends, `<` starts, `|label|` or `-- label -->` text and `id@` edge IDs; and nested `subgraph id[title] … end` blocks as groups (`subgraph title` uses the title as ID, `subgraph "title"` gets `subGraph<n>`). Entity codes (`#35;`, `#quot;`) are decoded. A node belongs to the first subgraph it is mentioned in, or to a subgraph nested in that one; a mention in another subgraph is reported as `group-member`. The line style of dotted and thick links is not kept. Edges get the IDs `e1`, `e2`, … unless they have an `id@`. Ignored with an `unsupported-statement` warning (with its `line`): `classDef`, `class`, `:::class`, `style`, `click`, `linkStyle`, `direction` inside a subgraph, `accTitle`, `accDescr`, front matter and invisible `~~~` links. Another diagram type (`sequenceDiagram`, `classDiagram`, …) throws `Unsupported Mermaid diagram type: <type>`, and syntax the reader cannot follow throws `Invalid Mermaid flowchart at line <n>, column <n>: <reason>`.
+
+**IDs.** Mermaid IDs cannot be quoted, so `toMermaid` writes an ID that is not ASCII letters, digits and underscores, is a Mermaid keyword (`end`, `graph`, `subgraph`, `style`, `class`, …) or starts with `vw_` as `vw_` followed by its letters and digits, with every other character as `_<hex code point>_`: `a b` becomes `vw_a_20_b` and `end` becomes `vw_end`. When it encodes an ID it writes the comment line `%% vue-weave: encoded-ids` after the header, and `fromMermaid` decodes IDs of that form only in text with that line, so IDs round-trip and the IDs of other Mermaid files are kept as written (`order` and `vw_order` stay two nodes). Nodes and groups share one ID space in Mermaid and GraphML, and all cells share one in draw.io: a group (or draw.io edge) whose ID another item already has is written with a suffix (`_g` in Mermaid, `-2` in GraphML and draw.io). GraphML and draw.io edges without an ID get `e1`, `e2`, … (skipping IDs in use).
+
+**Round trips.** `fromGraphMl(toGraphMl(graph))` gives back every node, edge and group field listed above, and the positions and sizes exactly. `fromDrawio(toDrawio(graph))` does too, except that `box` shapes come back unset and every node gets a size. `fromMermaid(toMermaid(graph))` keeps IDs, labels, details, shapes, groups, edge labels and the markers that have a Mermaid form; nodes come back in declaration order (ungrouped nodes first). No format writes ports, `data`, `draggable`, `deletable`, `resizable` or the ports of edges.
+
+**Warnings** (`GraphInterchangeWarning`: `code`, optional `id` of the node, edge or group, `line` for Mermaid, an English `message`):
+
+| code | Cause and handling |
+| --- | --- |
+| `unsupported-statement` | A Mermaid statement that is read but ignored (see **Mermaid reading**) |
+| `unsupported-shape` | A shape NetworkGraph does not draw: read as a box |
+| `unsupported-style` | An edge end NetworkGraph does not draw: read as an arrow |
+| `unsupported-element` | GraphML hyperedges, ports and further top-level graphs; draw.io elements and cells that are neither a vertex nor an edge: left out |
+| `skipped-node`, `skipped-group` | A node or group without an ID or with an ID used before, and a group without any node (also through nested groups): left out |
+| `skipped-edge` | An edge with an ID used before, without both ends, or with an end that is not an imported node (a group or a missing node): left out |
+| `group-member` | A Mermaid node mentioned in a second subgraph: it stays in the first |
+| `invalid-value` | An unreadable or non-positive coordinate, size or waypoint, or an unknown tone or edge style: left out |
+| `shifted-positions` | Coordinates below 0 (yEd and draw.io allow them, NetworkGraph does not): every position and waypoint moves by the same amount |
+
+**Untrusted files.** The GraphML and draw.io readers use the XML reader of `fromMsProjectXml` (see **Reading** under [Microsoft Project import](#microsoft-project-import)): a `DOCTYPE` is skipped, declared entities are never expanded and nothing outside the text is loaded. All readers walk nested groups and chains with loops, and `GraphInterchangeImportOptions.maxItems` (default 100,000) bounds the nodes, edges and groups together; past it the reader throws a RangeError. The readers throw an Error for malformed XML (with the line and column), a document of another kind (`Not a GraphML document`, `Not a draw.io document`, `Not a Mermaid flowchart`), a draw.io page that does not exist and a value that is not a string.
+
+Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `MermaidOptions`, `GraphMlOptions`, `DrawioOptions`, `DrawioImportOptions`, `DrawioAsyncImportOptions`.
 
 ### Network diagram from a schedule
 
@@ -2007,3 +2305,63 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 ```
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
+
+## Diagram editor parts
+
+Two small controlled components for building a diagram editor around NetworkGraph: `GraphPalette`, a list of node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector`, a form generated from typed field definitions for the selected item. Both are exported from the Vue entry with their public component types (`GraphPaletteComponent`, `PropertyInspectorComponent`) and template ref types (`GraphPaletteExposed`, `PropertyInspectorExposed`); their data types and `graphPaletteMimeType` are also in `@eightkk/vue-weave/core`. Neither changes the graph or the item: the application applies what they report, for example as one `useEditHistory` entry. Both render on the server, take `dir` (`ltr`, `rtl` or `auto`, as for the charts; `rtl` writes `dir="rtl"` and adds `vw-rtl`, `auto` writes nothing and follows the inherited direction) and follow the dark themes.
+
+### GraphPalette
+
+| API | Behavior |
+| --- | --- |
+| items | readonly GraphPaletteItem<D>[] / required. `id` (unique, the ID rule of [Validation and errors](#validation-and-errors) with the kind `palette item`), `label`, optional `detail`, `shape` (`NetworkNodeShape`, drawn in a 48 by 30 preview with the node outlines of NetworkGraph; default `box`), `tone` (default `blue`), `section`, `keywords`, `disabled` and `data`. D is inferred and reaches the `item` slot and `insert`. |
+| searchable | boolean / false. Shows a filter box (`type="search"`) above the list. Every word of the text must occur, ignoring case, in the label, detail, section or keywords of an item. ArrowDown in the box focuses the first shown item; Escape clears a non-empty filter. When nothing matches, a `role="status"` paragraph says so (`labels.noMatches`). |
+| labels | Partial<GraphPaletteLabels> / English. `region` (accessible name of the list, default `Shape palette`), `search` (`Filter shapes`) and `noMatches`. |
+| dir | ChartDirection / `ltr`. |
+| insert(item) | Enter or Space on a focused, enabled item: the keyboard alternative to dragging it, because HTML drag and drop needs a pointer. Held keys do not repeat it. Add the node at `getViewportCenter()` of the graph. |
+| item slot | `{ item, active }`. Replaces the preview, label and detail of an item; the option element, its keyboard handling and its drag stay. |
+| focusItem(id?) | Exposed method. Focuses an item (default: the one with the tab stop) and resolves to false when it is not shown. |
+
+The list is a `listbox` of `option` elements; items with a `section` are grouped under a heading in a `group` named by it, in the order of each section's first item, and items without one are listed without a heading. One option takes the tab stop (`tabindex="0"`, `aria-selected="true"`, class `vw-is-active`): the last focused item while it is shown, else the first shown one. ArrowUp, ArrowDown, Home and End move focus between the shown items. A `disabled` item is listed with `aria-disabled="true"`, is not draggable and does not emit `insert`.
+
+Each enabled item is `draggable`. On `dragstart` it puts the JSON text `{ "id": ..., "data": ... }` under `graphPaletteMimeType` (`application/x-vue-weave-palette+json`; `data` is left out when it cannot be serialised) and its label under `text/plain`, with `effectAllowed = 'copy'`. `readPaletteDrop(source)` (Vue entry; it reads a `DataTransfer`) takes the `node-drop` event of a `droppable` NetworkGraph, the `bar-drop` event of GanttChart or a `DataTransfer` and returns `{ id, data? }`, or undefined for a drop without a palette payload, with malformed JSON or without a non-empty string `id`. Any page can start a drag with this type, so look the ID up in your own items rather than trusting `data`.
+
+```vue
+<GraphPalette :items="templates" searchable @insert="item => addNode(item, graph!.getViewportCenter())" />
+<NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :positions="positions" droppable
+  @node-drop="drop => { const hit = readPaletteDrop(drop); const item = templates.find(t => t.id === hit?.id); if (item) addNode(item, graph!.toGraphPoint(drop.clientX, drop.clientY)) }" />
+```
+
+Related exported types: `GraphPaletteItem`, `GraphPaletteLabels`, `GraphPaletteDrop`, `PaletteDropSource`.
+
+### PropertyInspector
+
+| API | Behavior |
+| --- | --- |
+| item | T / null / undefined (T extends `InspectorItem`, `{ id: string }`). The inspected item; without one the form shows `labels.empty` or the `empty` slot. T is inferred from `item` and `fields`. |
+| fields | readonly InspectorField<T>[] / required. A [typed field](#typed-fields-and-timeline-views) (`TimelineFieldSpec`: `required`, `choices`, `multiple`, `min`, `max`, `integer`, `parse`, `format`, `timeZone`, and so on) whose `get(item)` returns the raw value, plus `label`, `kind`, optional `readonly`, `description` and `placeholder`. IDs follow the ID rule with the kind `inspector field`; an unknown kind is a RangeError and a `select` without `choices` an Error, thrown while rendering. |
+| validateChange | (change, item) => boolean / string / void. Synchronous. False or a reason rejects the change: the reason (or `labels.rejected`) is shown under the field and `change-rejected` is emitted. |
+| labels | Partial<PropertyInspectorLabels> / English. `region` (accessible name of the form, default `Properties`), `empty`, `rejected` and `none` (the empty choice of an optional select, `(none)`). |
+| dir | ChartDirection / `ltr`. |
+| change(change) | InspectorChange: `id` (the item), `field` (the field ID), `before` and `after` (`FieldValue`). Emitted for a committed value that passes the field checks and `validateChange` and differs from `before` (`fieldValuesEqual`). The parent updates the item to accept. |
+| change-rejected(change, reason) | A change refused by `validateChange`. |
+| field-<id> slot | PropertyInspectorFieldSlot<T>: `field`, `item`, `value`, `text`, `error`, `readonly`, `inputId` (the ID the label points to), `describedBy`, and `commit(value)`, `commitText(text)` and `cancel()`, which run the same checks as the built-in controls. Replaces the control of one field; its label, description and message stay. |
+| empty slot | Replaces the empty-state text. |
+| focusField(id) | Exposed method. Focuses the control of a field; returns false when it is not shown. |
+| cancelEdits() | Exposed method. Drops every draft and message without a proposal. |
+
+Controls by `kind`: `text`, `number`, `time` and `duration` are text inputs (`inputmode="decimal"` for numbers and durations) parsed with `parseFieldValue` and shown with `formatFieldValue`; `select` is a `select` (a multiple one with `multiple`), `checkbox` a checkbox and `color` a colour input whose value is lowercase `#rrggbb` text (the built-in parser of a `color` field accepts `#rgb` and `#rrggbb`). A `readonly` text field is a `readonly` input; other read-only controls are disabled. Every control is named by its `label` element and described by the field's `description` and message (`aria-describedby`); an invalid field has `aria-invalid="true"` and its message is a `role="alert"` paragraph.
+
+Text is a draft until it is committed with Enter or on blur; Escape drops the draft and its message; when there was one, the key does not propagate further. A parse or check failure (`required`, `range`, the colour format, a custom parser) keeps the draft and shows the message without emitting anything; a rejected draft is not proposed again on blur. Selects, checkboxes and colour inputs commit on `change`, and the control returns to the current value until the parent applies the change, so a rejected or ignored change leaves the old value. The form never shows a value the item does not have once a draft is gone.
+
+Stale source data cancels an edit: when `item` changes to another ID, every draft and message is dropped; when the value under a draft or message changes (an undo, a collaborator, another view), that draft or message is dropped without a proposal. Drafts of fields whose value did not change are kept.
+
+```ts
+const fields: InspectorField<MyNode>[] = [
+  { id: 'label', kind: 'text', label: 'Label', get: node => node.label, required: true },
+  { id: 'shape', kind: 'select', label: 'Shape', get: node => node.shape ?? 'box', required: true, choices: [{ value: 'box' }, { value: 'diamond' }] },
+  { id: 'accent', kind: 'color', label: 'Accent', get: node => node.data?.accent ?? null },
+]
+```
+
+Related exported types: `InspectorItem`, `InspectorField`, `InspectorFieldKind`, `InspectorChange`, `InspectorChangeValidator`, `PropertyInspectorLabels`, `PropertyInspectorFieldSlot`.

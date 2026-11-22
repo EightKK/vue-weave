@@ -6,7 +6,7 @@ The package has three boundaries.
 - src/components owns measurement, SVG/HTML rendering, local camera/scroll state and transient pointer previews. Persistent selection and accepted schedule data belong to the parent.
 - examples contains business data and validation. Components do not import examples.
 
-Planning screens around the components (an unplanned-task backlog, an inspector, a diagnostics list, a context toolbar, typed cell editors, save-status and conflict messages) are reference implementations in `examples/components/` and the planning demos. They are not part of the package: the library adds only core functions, composables and the props, events, slots and methods of the two components that such screens need, and the stylesheet styles only states the components draw themselves (highlights and selected load segments).
+Planning screens around the components (an unplanned-task backlog, an inspector, a diagnostics list, a context toolbar, typed cell editors, save-status and conflict messages) are reference implementations in `examples/components/` and the planning demos. They are not part of the package: the library adds only core functions, composables and the props, events, slots and methods of the components that such screens need, and the stylesheet styles only states the components draw themselves (highlights and selected load segments).
 
 ## Three models
 
@@ -35,6 +35,10 @@ This is a deterministic layout baseline. Dense edge sets and cycles can produce 
 `layoutSwimlaneGraph` reuses the layered ranks (the condensation of the strongly connected components) for the position along the flow and puts each node in a cell of its rank and its lane. Lane bands stack in the caller's order and are never reordered; each band is as thick as its largest cell (at least one node, or `minLaneSize`), so an empty lane keeps its band. Crossing reduction only reorders nodes inside one cell (barycenter sweeps, keeping the best order by adjacent-rank crossings). The layout is computed left to right and turned into the other directions with the same orientation helper as the tree layout, lanes included, so the header always sits at the flow start.
 
 Lanes are a separate, display-only input of NetworkGraph (`lanes`) rather than groups: a group frame follows its member nodes, cannot be empty and moves its members when dragged, while a lane band has geometry of its own that spans the whole flow, exists without nodes and never moves anything. The bands are one layer below the group frames, part of the fitted content, the minimap and the export, and never take the pointer. The component does not interpret lane membership; `graphSwimlaneAt` lets the application map a `node-move` proposal to a lane and apply its own rules. Lane headers are not obstacles for `avoidNodes`; they lie before the first rank, outside the routes between nodes.
+
+### Flowchart shapes and pools
+
+The flowchart and BPMN shapes share one internal geometry module with the earlier outline shapes (`graphShapes.ts`), used by the default renderer, edge routing and `renderGraphSvg`, so all three draw and clip the same outline. Straight-line clipping and the orthogonal end correction intersect the outline as a polygon (curves sampled finely, circles exactly), because these shapes need not touch the middle of every box side. Event borders, markers and labels below the box are decoration of the default renderer only: they change neither the box nor the routes, and markers are `aria-hidden`. Pools are, like lanes, display-only geometry from `layoutSwimlaneGraph`: the layout adds a title band per pool before the lane headers and a gap between pools, and NetworkGraph draws each pool as a group around its own lanes.
 
 ### Asynchronous layouts
 
@@ -88,7 +92,7 @@ Scheduling constraints on bars are display data with an editing contract like th
 
 ## Component internals
 
-The two components keep rendering, measurement and gesture handling in their single-file components. Pure arithmetic lives in plain TypeScript modules beside them, which the package does not export, so it can be read and tested without the component.
+The components keep rendering, measurement and gesture handling in their single-file components. Pure arithmetic lives in plain TypeScript modules beside them, which the package does not export, so it can be read and tested without the component.
 
 - `src/components/networkGraph/`: the drag-preview layout (`previewLayout(context, change)` layers the changed boxes, paths and labels over the saved layout and records which nodes and edges changed, so only those items update), the `avoidNodes` preview rerouting index, group frame geometry, port keys, the move, snap and resize arithmetic, and the default node and marker drawings.
 - `src/components/ganttChart/`: geometry and windowing, prop validation, the edit arithmetic for keys, drag to create and `cascade`, row hierarchy moves and the tooltip composable. One `Gesture` record holds the pointer gesture in flight; previews stay in their own reactive refs.

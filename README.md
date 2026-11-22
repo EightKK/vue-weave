@@ -192,10 +192,12 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 
 - **Layouts:** a built-in layered layout (`LR`, `TB`, `RL` or `BT`, with `crossingReduction: 'barycenter'`) that handles branches, merges, cycles and self-loops. Through the `layout` prop: tree, radial, circular, grid, concentric and deterministic force layouts (`layoutTreeGraph`, `layoutRadialGraph`, `layoutCircularGraph`, `layoutGridGraph`, `layoutConcentricGraph`, `layoutForceGraph`), or [ELK.js](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#use-elkjs-for-layout) installed by your application.
 - **Process lanes:** `layoutSwimlaneGraph` gives each department or work centre a lane in your order; the `lanes` prop draws the bands, also in the minimap and exports, and `graphSwimlaneAt` finds the lane a node was dragged to. See [Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#swimlanes-for-process-flows).
+- **BPMN processes and flowcharts:** circle, stadium, parallelogram, document, cylinder and data-object nodes, BPMN event borders, gateway, event and task-type markers, labels below small shapes, dashed message flows, and pools around swimlanes (`pools`), also in exports. See [BPMN processes and flowcharts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#bpmn-processes-and-flowcharts).
 - **Quantity flows (Sankey diagrams):** `layoutFlowGraph` sizes each edge by its quantity on one scale, reports inflow, outflow and their difference per node as given, never adds different units, and draws rework loops as dashed reference bands; the `edgeBands` prop renders them with names such as "Cut → Inspect: 60 pcs". See [Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#quantity-flows-sankey-diagrams).
 - **Drawing:** `node`, `edge`, `group` and `minimap-node` slots for your own SVG, `tooltip`, `node-toolbar` and `edge-toolbar` slots for HTML; diamond, ellipse and hexagon nodes; orthogonal or straight edges (`edgeStyle`), routes around nodes (`avoidNodes`), waypoints, end markers, animated edges and spread parallel edges.
 - **Editing as proposals:** node moves, connections checked against typed port rules (`connectionRules`) with valid-target hints, inline label editing, box or lasso selection, nested and collapsible groups, node resizing, snap to grid with alignment guides, palette drops, clipboard, and keyboard deletion.
 - **Navigation:** minimap, viewport culling and level of detail for large graphs, pinch zoom, search highlighting (`matchIds`), `focusNode(id)` and `fit({ ids })`.
+- **Diagram editor parts:** `GraphPalette` lists node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector` edits the selected node through typed fields; both emit proposals. See [Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#diagram-editor-parts).
 
 ### GanttChart
 
@@ -204,6 +206,13 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Spreadsheet editing (`spreadsheet`):** select cell ranges, copy, cut and paste with Excel or Google Sheets, clear, fill down with Ctrl/Cmd+D or the corner handle, and type to edit; each operation is one `sheet-edit` proposal that `validateSheetEdit` can reject as a whole and `applyTimelineSheetEdit` applies. The demo homepage has a schedule sheet whose bars, arrows and critical path the scheduler derives from the grid, and a purchase approval workflow editor.
 - **Time scales:** zoom presets, ready calendar presets in an IANA time zone and locale (`calendarZoomPresets`, `intlTimeFormatter`), a scale that compresses non-working time (`createWorkingTimeScale`), Ctrl+wheel and pinch zoom, a now marker and `fitToBars()`.
 - **Scale:** row and time-window virtualization, and `visible-window-change` to load only the visible weeks and rows.
+### EventCalendar
+- **Views:** day, week and month views of appointments in an IANA time zone and locale, an all-day row for multi-day events, a "+N more" overflow in the month grid, a now line and a built-in toolbar (or your own through a slot). With `resources`, the day view shows one column per room, machine or person.
+- **Editing as proposals:** drag and keyboard moves and resizes, moves between resources and drag to create, checked by synchronous `validateEdit` and `validateCreate`. `range-change` reports the visible range for loading, and the core helpers (`eventCalendarRange`, `layoutCalendarDayEvents`, `packCalendarEventLanes`) run on servers too.
+
+### TaskBoard
+
+- **Kanban board:** an opt-in third controlled component. Cards sit in status columns, optionally split into swimlanes; columns show their card count and warn when they are over a WIP limit. Pointer and touch drags (with a drop indicator and auto-scroll) and the keyboard (Space, arrows, Enter, Escape, with live announcements) propose `card-move`, which `validateCardMove` can reject and `applyBoardCardMove` applies. Use the same tasks and selection as a GanttChart. See [TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/api.md#taskboard).
 
 ### Headless core (`@eightkk/vue-weave/core`)
 
@@ -211,7 +220,9 @@ Everything beyond the basics is opt-in. This is an overview; the full list of pr
 - **Scheduling:** `scheduleTasks` on calendars from `buildWorkPeriods`, including IANA time zones, as-late-as-possible, manual, inactive and summary tasks, constraints, pauses and cycle and infeasibility diagnostics. `scheduleTasks(input, { explain: true })` traces why each task starts when it does, and `toPlanningDiagnostics` lists the problems.
 - **Resources:** `calculateResourceLoad` and `levelResources`, with capacity that changes over time (`capacityPeriods`) and assignments that cover only part of a task (`workOffset`, `workDuration`); `projectResourceTimeline` shows a plan by resource, and `buildPlacementInput` keeps unplanned tasks out of the calculation.
 - **Plan updates:** `propagateEdit`, `rescheduleFromStatusDate`, `rescheduleFromActuals` (keeps recorded actuals and forecasts the rest), and `comparePlans`, which separates what you changed from what moved as a result. See [Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#compare-plan-scenarios).
+- **Earned value:** `computeEarnedValue` calculates PV, EV and AC at a status date with SV, CV, SPI, CPI, EAC, ETC, VAC and TCPI per task and in total, accrues planned value on a work calendar, and returns a cumulative series for an S-curve; `rollupEarnedValue` sums summary rows. See [Earned value management](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#earned-value-management).
 - **Interchange:** Microsoft Project XML (including calendars, resources and assignments), iCalendar and CSV import and export (`fromMsProjectXml`, `toMsProjectXml`, `fromICalendar`, `toICalendar`, `parseCsv`, `toCsv`), and `scheduleToGraph` for a PERT network diagram.
+- **Diagram files:** Mermaid flowcharts, GraphML (including yEd) and draw.io import and export for NetworkGraph diagrams, with nested groups, shapes, positions and sizes (`fromMermaid`, `toMermaid`, `fromGraphMl`, `toGraphMl`, `fromDrawio`, `fromDrawioAsync` for compressed files, `toDrawio`).
 
 ### Linked views, large data and saving
 

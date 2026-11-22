@@ -92,6 +92,8 @@ Turn on `snapGrid` (with `background="dots"` to show the grid), `alignmentGuides
 
 A palette can add nodes in two ways. Drag and drop: make the palette items `draggable`, put an identifier in `dataTransfer`, set `droppable` on the graph and read it back in the `node-drop` event. Keyboard: let the same item be a button that adds the node at `getViewportCenter()`, because HTML drag and drop needs a pointer.
 
+`GraphPalette` packages both ways (drag payload, `readPaletteDrop` and an `insert` event for Enter and Space), and `PropertyInspector` edits the selected node; see [Diagram editor parts](#diagram-editor-parts).
+
 ```vue
 <button type="button" draggable="true" @dragstart="$event.dataTransfer?.setData('application/x-node', 'task')"
   @click="addTask(graph!.getViewportCenter())">Add task</button>
@@ -166,6 +168,50 @@ const layout: GraphLayoutFunction = () => swimlanes.value
 - The component never reassigns a lane. On `node-move`, call `graphSwimlaneAt(swimlanes.value.lanes, { ...change.after, width, height })` and apply your domain rule: change the step's department and lay out again, or refuse the move. `undefined` means the box would be outside every lane. The demo's Process lanes example (`examples/SwimlaneDemo.vue`) does this.
 - Use `edgeStyle: 'orthogonal'` with `avoidNodes` when edges skip ranks, so they go around the steps in between. Lane headers are not obstacles for `avoidNodes`; they sit before the first rank, so routes and edge labels between steps stay out of them.
 - `exportSvg`, `exportPng` and `renderGraphSvg({ lanes })` draw the bands and titles. Long titles are clipped to the header; the full title is the lane's accessible name and, in exports, its `<title>`.
+
+## BPMN processes and flowcharts
+
+The default renderer can draw a BPMN process or a classic flowchart without slots. Node fields choose the shape (`circle`, `stadium`, `parallelogram`, `document`, `cylinder`, `data-object`, plus the earlier `diamond`, `ellipse` and `hexagon`), a BPMN event border (`event: 'start' | 'intermediate' | 'end'`), a decorative symbol (`marker`: gateway, event or task type) and where the label goes (`labelPosition: 'below'` for small events and gateways). Edges add `dashed` and the `hollow-arrow` marker for message flows. Pools (BPMN participants) come from the `pools` option of `layoutSwimlaneGraph` and the `pools` prop.
+
+```ts
+const event = (id: string, label: string, kind: NetworkNodeEvent, lane: string): NetworkNode<{ lane: string }> =>
+  ({ id, label, shape: 'circle', event: kind, labelPosition: 'below', data: { lane } })
+const nodes = [
+  event('received', 'Order received', 'start', 'sales'),
+  { id: 'check', label: 'Check order', shape: 'rounded', marker: 'user', data: { lane: 'sales' } },
+  { id: 'accept', label: 'Accept?', shape: 'diamond', marker: 'exclusive', labelPosition: 'below', data: { lane: 'sales' } },
+  { id: 'orders', label: 'Orders', shape: 'cylinder', data: { lane: 'sales' } },
+  event('closed', 'Order closed', 'end', 'customer'),
+]
+// Sequence flows keep the default arrow; message flows cross pools.
+const messageFlow = (id: string, from: string, to: string): GraphEdge =>
+  ({ id, from, to, dashed: true, markerStart: 'circle', markerEnd: 'hollow-arrow' })
+const swimlanes = computed(() => layoutSwimlaneGraph(nodes, edges, {
+  lanes: ['customer', 'sales', 'warehouse'],
+  pools: [{ id: 'buyer', label: 'Customer', lanes: ['customer'] }, { id: 'supplier', label: 'Supplier', lanes: ['sales', 'warehouse'] }],
+  laneOf: node => node.data?.lane,
+}))
+```
+
+```vue
+<NetworkGraph :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :pools="swimlanes.pools"
+  edge-style="orthogonal" connectable @connect="addFlow" />
+```
+
+- Layouts give every node the same box. Circles and diamonds look right in square boxes, so a custom `layout` function can shrink the boxes of events and gateways around their centres and keep the rest of `layoutSwimlaneGraph`'s result. Use `edge-style="orthogonal"` or `"straight"` then: those styles route every edge from the boxes and end it on the shape's outline, while the layout's own curve paths still end on the old box sides. The demo's BPMN process example (`examples/BpmnDemo.vue`) does this.
+- Labels below a shape are not part of its box. Leave room with `rowGap` and `lanePadding`; long labels can overlap neighbours or edges, and the halo keeps them readable.
+- Markers, event borders and shapes are decorative: the accessible name is the label (plus `detail`). If assistive technology users need the BPMN type, put it into `detail` or a tooltip.
+- Connecting, selecting, dragging and deleting work as for every node; whether a new connection is a sequence flow or a message flow (for example, by comparing the pools of its ends) is the application's decision in `validateConnection` and `@connect`.
+- Ports and connection handles stay on the node box, as for the other shapes.
+- `exportSvg`, `exportPng` and `renderGraphSvg({ lanes, pools })` draw the same shapes, markers, labels, dashed edges and pools.
+
+The pools add three variables, the other new parts reuse the node and edge colours. Event borders, the cylinder rim and the data object fold (`vw-node-shape-detail`) use the node's `--vw-<tone>-line` (`--vw-<tone>-ink` when hovered, focused, selected or related), markers (`vw-node-marker`) the node ink (`--vw-on-solid` when selected), labels below (`vw-node-label-below`) `--vw-text` on a `--vw-surface-muted` halo, and dashed edges (`vw-network-edge vw-is-dashed`) the edge colour. In forced-colors mode markers and lines are `CanvasText` (`HighlightText` on a selected node), labels below `CanvasText` on a `Canvas` halo, and pools `Canvas` outlined in `CanvasText` with `CanvasText` titles.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-pool-fill` | `--vw-surface` (`#ffffff`) | Fill of a pool frame (`vw-swimlane-pool-band`) |
+| `--vw-pool-header-fill` | `--vw-surface-hover` (`#e4ecf2`) | Fill of a pool title band (`vw-swimlane-pool-header`) |
+| `--vw-pool-border` | `--vw-muted` (`#4c6371`) | Outline of pool frames and title bands; titles use `--vw-lane-title` |
 
 ## Quantity flows (Sankey diagrams)
 
@@ -270,6 +316,15 @@ The opt-in quantity bands of NetworkGraph (`edgeBands`) stroke each band's edge 
 | `--vw-flow-reference-opacity` | `.35` | Opacity of a reference (loop) band |
 | `--vw-flow-reference-dash` | `10 6`, scaled with the band width | Dash pattern of a reference band; setting it uses one pattern for every width. NetworkGraph writes the width-scaled default to an internal inline `--vw-band-dash` on each reference band; do not set that one yourself |
 
+The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-border`, `--vw-text`, `--vw-muted`, `--vw-accent` and the tone families through `vw-tone-*` on each card), so the built-in dark theme and your own theme apply to it. It adds four variables; the built-in dark themes set `--vw-board-wip-warning` to `#ff8a80` and `--vw-board-drop` to `#82badf`. The board lays its columns out in a CSS grid with logical properties, so `dir="rtl"` (or an inherited right-to-left direction) places the first column on the right without extra rules. In forced-colors mode cards are outlined in `CanvasText`, the selection and focus in `Highlight`, and the drop indicator is `Highlight` (dashed `CanvasText` when the drop would exceed a WIP limit).
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-board-column-width` | `232px` (`196px` below 700 px) | Minimum width of a column; columns share any extra width |
+| `--vw-board-cell-min-height` | `64px` | Minimum height of a cell, so an empty cell stays a drop target |
+| `--vw-board-wip-warning` | `#a8361f` (dark `#ff8a80`) | Over-limit warning text, the count badge of a column at or over its limit and the tint of its cells |
+| `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
+
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
 GanttChart editing and load overlays add `--vw-now` (now marker), `--vw-load` (load within capacity), `--vw-load-overload` (load above capacity) and `--vw-load-capacity` (dashed capacity line). Dependency lag labels (`vw-gantt-lag`) use `--vw-text` on a `--vw-surface` halo, or `--vw-dependency-highlight` for highlighted dependencies. Link handles, the dependency selection outline and the connection preview use `--vw-accent`; zoom preset buttons use `--vw-accent` and `--vw-on-solid` for the active preset.
@@ -340,6 +395,14 @@ Column resizing (`columnsResizable`) draws its separators (`vw-column-resize`) w
 | `--vw-grid-step` | pixels | Width of one tick step. Kept for custom stylesheets; the built-in styles no longer use it |
 
 `--vw-item-ink`, `--vw-item-line`, `--vw-item-pale` and `--vw-item-solid` are internal. The `vw-tone-*` classes set them from the tone families above, and nodes, bars and segments read them. They are not a theming API: change the tone variables (for example `--vw-blue-solid`) instead.
+
+EventCalendar uses the shared theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-text`, `--vw-muted`, `--vw-border`, `--vw-grid`, `--vw-accent`, `--vw-on-solid` and `--vw-now`) and the tone families for event backgrounds, so the built-in dark themes apply to it unchanged. Its classes start with `vw-calendar-` (for example `vw-calendar-event`, `vw-calendar-column`, `vw-calendar-month-day`, `vw-calendar-preview` and `vw-calendar-now`), with the shared `vw-is-*` modifiers (`vw-is-selected`, `vw-is-editable`, `vw-is-dragging`, `vw-is-today`, `vw-is-outside` for days of another month) and `vw-continues-before` and `vw-continues-after` on events cut by a day or week boundary. Positions use logical properties, so `dir="rtl"` mirrors it without extra rules. It adds three variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-calendar-gutter` | `56px` (`42px` below 700 px wide) | Width of the hour labels and the corner of the all-day row |
+| `--vw-calendar-today` | `--vw-surface-hover` | Background of today's column and month day (with the `now` prop) |
+| `--vw-calendar-event-accent` | the tone's `--vw-item-solid` | Accent stripe at the inline start of an event; `CalendarEvent.color` sets it per event |
 
 ### Class names
 
@@ -707,6 +770,28 @@ async function layoutWithElk(request: GraphLayoutRequest) {
 - In the `shown` request of a collapsed view, `fixedIds` and `addedIds` are passed as given; IDs of members hidden in a collapsed group are not nodes of that request and are ignored.
 - Without an engine, `layoutGraphIncrementally` from `@eightkk/vue-weave/core` does the same synchronously: it keeps every positioned node exactly and places only the new ones (see [Incremental placement](api.md#incremental-placement)). Use it as the adapter, or as a fallback when the engine fails.
 
+## Diagram files: Mermaid, GraphML and draw.io
+
+To open a diagram drawn elsewhere, read the file as text and pass it to `fromMermaid`, `fromGraphMl` or `fromDrawioAsync` (which also reads the compressed pages draw.io saves by default). The result holds the NetworkGraph props, so commit `nodes`, `edges`, `groups`, `positions` and `sizes` as one history entry and show `warnings` to the user: they say what the file contained that NetworkGraph cannot draw (styling, other shapes, ports) and what was left out.
+
+```ts
+import { fromDrawioAsync, fromGraphMl, fromMermaid, toDrawio } from '@eightkk/vue-weave/core'
+
+async function openDiagram(file: File) {
+  const text = await file.text()
+  const diagram = file.name.endsWith('.graphml') ? fromGraphMl(text)
+    : file.name.endsWith('.drawio') ? await fromDrawioAsync(text)
+      : fromMermaid(text)
+  history.commit({ nodes: diagram.nodes, edges: diagram.edges, groups: diagram.groups, positions: diagram.positions, sizes: diagram.sizes })
+  return diagram.warnings
+}
+
+// Save the current state for draw.io; nodes the user never moved are placed with the layered layout.
+const xml = toDrawio({ nodes, edges, groups, positions, sizes }, { pageName: 'Process', direction: 'LR' })
+```
+
+A Mermaid file has no coordinates, so NetworkGraph lays it out; use the returned `direction` in `options`. GraphML and draw.io keep the positions and sizes of every node. Keep accepted `node-move`, `nodes-move` and `node-resize` proposals in `positions` and `sizes` so the next export carries them. The readers walk groups and chains with loops, bound their work with `maxItems`, and never expand XML entities; bound the size of uploaded files yourself as well. See [Graph interchange](api.md#graph-interchange) for the mapping of shapes, markers and IDs.
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
@@ -962,3 +1047,65 @@ const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 
 ```
 
 The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.
+
+## Diagram editor parts
+
+`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change`, and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
+
+```vue
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import {
+  GraphPalette, NetworkGraph, PropertyInspector, readPaletteDrop, useEditHistory,
+  type GraphDrop, type GraphPaletteItem, type GraphPoint, type InspectorChange, type InspectorField, type NetworkNode,
+} from '@eightkk/vue-weave'
+
+const templates: GraphPaletteItem[] = [
+  { id: 'step', label: 'Step', shape: 'box', section: 'Flow' },
+  { id: 'decision', label: 'Decision', shape: 'diamond', tone: 'violet', section: 'Flow' },
+]
+const history = useEditHistory({ nodes: [] as NetworkNode[], positions: new Map<string, GraphPoint>() })
+const graph = ref<InstanceType<typeof NetworkGraph>>()
+const selectedId = ref<string>()
+const selected = computed(() => history.state.value.nodes.find(node => node.id === selectedId.value) ?? null)
+
+function add(template: GraphPaletteItem, center: GraphPoint) {
+  const { nodes, positions } = history.state.value
+  const id = template.id + '-' + (nodes.length + 1)
+  history.commit({
+    nodes: [...nodes, { id, label: template.label, shape: template.shape, tone: template.tone }],
+    positions: new Map(positions).set(id, { x: Math.max(0, center.x - 72), y: Math.max(0, center.y - 29) }),
+  })
+  selectedId.value = id
+}
+function drop(event: GraphDrop) {
+  const template = templates.find(item => item.id === readPaletteDrop(event)?.id)
+  if (template) add(template, graph.value!.toGraphPoint(event.clientX, event.clientY))
+}
+const fields: InspectorField<NetworkNode>[] = [
+  { id: 'label', kind: 'text', label: 'Label', get: node => node.label, required: true },
+]
+function apply(change: InspectorChange) {
+  const state = history.state.value
+  history.commit({ ...state, nodes: state.nodes.map(node => node.id === change.id ? { ...node, label: String(change.after) } : node) })
+}
+</script>
+
+<template>
+  <GraphPalette :items="templates" searchable @insert="item => add(item, graph!.getViewportCenter())" />
+  <NetworkGraph ref="graph" v-model:selected-id="selectedId" :nodes="history.state.value.nodes" :edges="[]"
+    :positions="history.state.value.positions" droppable @node-drop="drop" />
+  <PropertyInspector :item="selected" :fields="fields" @change="apply" />
+</template>
+```
+
+Inspector fields are typed fields, so a field definition written for a GanttChart column (`TimelineColumn.field`) needs only a `label` and a getter for the inspected item. Put validation that depends on other items, such as unique labels, in `validateChange`; its reason is shown under the field. When the selection changes, or an undo changes a value that is being edited, the inspector drops the draft instead of proposing a stale change.
+
+Both components use the shared variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-text`, `--vw-muted`, `--vw-border` and `--vw-accent`, and the tone families for the palette previews), so `vw-theme-dark` and `vw-theme-auto` apply to them. They add two variables:
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-palette-preview-width` | `48px` | Width of the shape preview of a palette item (`vw-palette-preview`); the height follows the 48 by 30 aspect ratio |
+| `--vw-inspector-error` | `#b3261e` (`#ff8a80` in the dark themes) | Messages under inspector fields (`vw-inspector-error`) and the border of an invalid control |
+
+Classes: `vw-palette`, `vw-palette-search`, `vw-palette-list`, `vw-palette-section`, `vw-palette-heading`, `vw-palette-item` (with `vw-is-active` and `vw-is-disabled`), `vw-palette-preview`, `vw-palette-label`, `vw-palette-detail`, `vw-palette-empty`; `vw-inspector`, `vw-inspector-field` (with `vw-is-<kind>`, `vw-is-readonly` and `vw-is-invalid`), `vw-inspector-label`, `vw-inspector-input`, `vw-inspector-check`, `vw-inspector-color`, `vw-inspector-swatch`, `vw-inspector-description`, `vw-inspector-error` and `vw-inspector-empty`. Layout uses logical properties, so `dir="rtl"` (or an inherited right-to-left direction with `dir="auto"`) mirrors both. In forced-colors mode palette previews are drawn in `CanvasText` on `Canvas` and messages are underlined; the filter box is not printed.

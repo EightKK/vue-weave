@@ -5,12 +5,17 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (201)
+## Entry `.`: runtime exports (229)
 
+- `EventCalendar: object`
 - `GanttChart: object`
+- `GraphPalette: object`
 - `NetworkGraph: object`
+- `PropertyInspector: object`
+- `TaskBoard: object`
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
@@ -20,6 +25,7 @@ in public signatures, so changes to them can break consumers too.
 - `baselineVariance: function`
 - `beginGraphExpansion: function`
 - `beginTransaction: function`
+- `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
 - `buildViewBindingIndex: function`
@@ -36,6 +42,7 @@ in public signatures, so changes to them can break consumers too.
 - `collectScheduleReasons: function`
 - `comparePlans: function`
 - `completeGraphLayout: function`
+- `computeEarnedValue: function`
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
@@ -56,6 +63,11 @@ in public signatures, so changes to them can break consumers too.
 - `detectGraphCommunities: function`
 - `editTimeRange: function`
 - `escapeXml: function`
+- `eventCalendarDays: function`
+- `eventCalendarMonthGrid: function`
+- `eventCalendarRange: function`
+- `eventCalendarTimeAt: function`
+- `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `findGraphCycles: function`
@@ -63,7 +75,11 @@ in public signatures, so changes to them can break consumers too.
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatSheetText: function`
+- `fromDrawio: function`
+- `fromDrawioAsync: function`
+- `fromGraphMl: function`
 - `fromICalendar: function`
+- `fromMermaid: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
 - `graphBetweennessCentrality: function`
@@ -89,6 +105,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphNeighborhood: function`
 - `graphNodesInPolygon: function`
 - `graphPageRank: function`
+- `graphPaletteMimeType: string`
 - `graphPathBounds: function`
 - `graphPathEndpoints: function`
 - `graphPointInPolygon: function`
@@ -98,6 +115,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
 - `graphViewportRect: function`
+- `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
 - `intersectsWindow: function`
@@ -105,6 +123,7 @@ in public signatures, so changes to them can break consumers too.
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
 - `layoutFlowGraph: function`
@@ -116,12 +135,14 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
+- `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
@@ -134,6 +155,7 @@ in public signatures, so changes to them can break consumers too.
 - `projectTimelineView: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
+- `readPaletteDrop: function`
 - `reconcileTimelineViewColumns: function`
 - `refreshTransactionState: function`
 - `rejectWindowedRequest: function`
@@ -160,6 +182,7 @@ in public signatures, so changes to them can break consumers too.
 - `restoreWeaveSnapshot: function`
 - `retryWindowedData: function`
 - `revealLinkedTarget: function`
+- `rollupEarnedValue: function`
 - `routeGraphEdges: function`
 - `routeGraphPorts: function`
 - `scheduleTasks: function`
@@ -169,6 +192,7 @@ in public signatures, so changes to them can break consumers too.
 - `serializeWeaveSnapshot: function`
 - `setWindowedView: function`
 - `settleTransaction: function`
+- `shiftEventCalendarDate: function`
 - `shortestGraphPath: function`
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
@@ -190,7 +214,10 @@ in public signatures, so changes to them can break consumers too.
 - `timelineRowPosition: function`
 - `timelineWbsCodes: function`
 - `toCsv: function`
+- `toDrawio: function`
+- `toGraphMl: function`
 - `toICalendar: function`
+- `toMermaid: function`
 - `toMsProjectXml: function`
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
@@ -201,6 +228,7 @@ in public signatures, so changes to them can break consumers too.
 - `useLinkedSelection: function`
 - `useTimelineView: function`
 - `useWindowedData: function`
+- `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
 - `validateTimelineData: function`
@@ -209,7 +237,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (469)
+## Entry `.`: type-only exports (543)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -229,6 +257,11 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
+- `CalendarEvent`
+- `CalendarEventColumn`
+- `CalendarEventLane`
+- `CalendarEventLaneLayout`
+- `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
 - `CalendarZoomPresetOptions`
@@ -243,10 +276,35 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `DrawioAsyncImportOptions`
+- `DrawioImportOptions`
+- `DrawioOptions`
+- `EarnedValueAmounts`
+- `EarnedValueEacMethod`
+- `EarnedValueMetrics`
+- `EarnedValueOptions`
+- `EarnedValuePoint`
+- `EarnedValueRecord`
+- `EarnedValueResult`
+- `EarnedValueSeriesOptions`
+- `EarnedValueTask`
+- `EarnedValueTaskResult`
 - `EditMode`
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarComponent`
+- `EventCalendarCreate`
+- `EventCalendarCreateValidator`
+- `EventCalendarDay`
+- `EventCalendarEdit`
+- `EventCalendarEditCancel`
+- `EventCalendarEditCancelReason`
+- `EventCalendarEditValidator`
+- `EventCalendarExposed`
+- `EventCalendarLabels`
+- `EventCalendarOptions`
+- `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -324,6 +382,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphIncrementalLayout`
 - `GraphIncrementalLayoutOptions`
 - `GraphIndex`
+- `GraphInterchangeImport`
+- `GraphInterchangeImportOptions`
+- `GraphInterchangeInput`
+- `GraphInterchangeWarning`
+- `GraphInterchangeWarningCode`
 - `GraphKnownPosition`
 - `GraphLabelEdit`
 - `GraphLabels`
@@ -353,6 +416,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphLayoutWorkerJsonMessage`
 - `GraphLayoutWorkerMessage`
 - `GraphLayoutWorkerPort`
+- `GraphMlOptions`
 - `GraphNodeMatch`
 - `GraphNodeMove`
 - `GraphNodeResize`
@@ -360,6 +424,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphObstacleAvoidance`
 - `GraphPageRankOptions`
 - `GraphPageRankResult`
+- `GraphPaletteComponent`
+- `GraphPaletteDrop`
+- `GraphPaletteExposed`
+- `GraphPaletteItem`
+- `GraphPaletteLabels`
 - `GraphPaste`
 - `GraphPathResult`
 - `GraphPngExportOptions`
@@ -388,6 +457,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlaneBand`
 - `GraphSwimlaneLayout`
 - `GraphSwimlaneLayoutOptions`
+- `GraphSwimlanePool`
+- `GraphSwimlanePoolBand`
+- `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
@@ -406,6 +478,11 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorChange`
+- `InspectorChangeValidator`
+- `InspectorField`
+- `InspectorFieldKind`
+- `InspectorItem`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -419,6 +496,8 @@ in public signatures, so changes to them can break consumers too.
 - `LinkedViewName`
 - `LoadSegmentLike`
 - `LoadViewTarget`
+- `MermaidDirection`
+- `MermaidOptions`
 - `MsProjectAssignment`
 - `MsProjectBaseline`
 - `MsProjectCalendar`
@@ -437,6 +516,7 @@ in public signatures, so changes to them can break consumers too.
 - `MsProjectXmlOptions`
 - `NetworkEdgeSlot`
 - `NetworkEdgeToolbarSlot`
+- `NetworkFlowchartShape`
 - `NetworkFocusOptions`
 - `NetworkGraphComponent`
 - `NetworkGraphExposed`
@@ -444,10 +524,14 @@ in public signatures, so changes to them can break consumers too.
 - `NetworkGroupSlot`
 - `NetworkMinimapNodeSlot`
 - `NetworkNode`
+- `NetworkNodeEvent`
+- `NetworkNodeLabelPosition`
+- `NetworkNodeMarker`
 - `NetworkNodeShape`
 - `NetworkNodeSlot`
 - `NetworkNodeToolbarSlot`
 - `NetworkTooltipSlot`
+- `PaletteDropSource`
 - `ParseWeaveSnapshotOptions`
 - `ParseWeaveSnapshotResult`
 - `PendingTransaction`
@@ -486,6 +570,10 @@ in public signatures, so changes to them can break consumers too.
 - `ProgressEditValidator`
 - `PropagateEditResult`
 - `PropagateEditSuccess`
+- `PropertyInspectorComponent`
+- `PropertyInspectorExposed`
+- `PropertyInspectorFieldSlot`
+- `PropertyInspectorLabels`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -572,6 +660,20 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardCard`
+- `TaskBoardCardMove`
+- `TaskBoardCardMoveValidator`
+- `TaskBoardCell`
+- `TaskBoardColumn`
+- `TaskBoardColumnStatus`
+- `TaskBoardComponent`
+- `TaskBoardExposed`
+- `TaskBoardGroups`
+- `TaskBoardLabels`
+- `TaskBoardLane`
+- `TaskBoardMoveCancel`
+- `TaskBoardMoveCancelReason`
+- `TaskBoardPosition`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -681,10 +783,11 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (191)
+## Entry `./core`: runtime exports (214)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
+- `applyBoardCardMove: function`
 - `applyGraphPositions: function`
 - `applyGraphSizes: function`
 - `applyTimelineConstraintEdit: function`
@@ -694,6 +797,7 @@ in public signatures, so changes to them can break consumers too.
 - `baselineVariance: function`
 - `beginGraphExpansion: function`
 - `beginTransaction: function`
+- `boardCardPosition: function`
 - `buildGraphLayoutRequests: function`
 - `buildPlacementInput: function`
 - `buildViewBindingIndex: function`
@@ -710,6 +814,7 @@ in public signatures, so changes to them can break consumers too.
 - `collectScheduleReasons: function`
 - `comparePlans: function`
 - `completeGraphLayout: function`
+- `computeEarnedValue: function`
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
@@ -730,6 +835,11 @@ in public signatures, so changes to them can break consumers too.
 - `detectGraphCommunities: function`
 - `editTimeRange: function`
 - `escapeXml: function`
+- `eventCalendarDays: function`
+- `eventCalendarMonthGrid: function`
+- `eventCalendarRange: function`
+- `eventCalendarTimeAt: function`
+- `eventCalendarTimeOfDay: function`
 - `fieldValuesEqual: function`
 - `filterGraph: function`
 - `findGraphCycles: function`
@@ -737,7 +847,11 @@ in public signatures, so changes to them can break consumers too.
 - `formatDependencyLag: function`
 - `formatFieldValue: function`
 - `formatSheetText: function`
+- `fromDrawio: function`
+- `fromDrawioAsync: function`
+- `fromGraphMl: function`
 - `fromICalendar: function`
+- `fromMermaid: function`
 - `fromMsProjectXml: function`
 - `graphAlignmentGuides: function`
 - `graphBetweennessCentrality: function`
@@ -762,6 +876,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphNeighborhood: function`
 - `graphNodesInPolygon: function`
 - `graphPageRank: function`
+- `graphPaletteMimeType: string`
 - `graphPathBounds: function`
 - `graphPathEndpoints: function`
 - `graphPointInPolygon: function`
@@ -771,6 +886,7 @@ in public signatures, so changes to them can break consumers too.
 - `graphSmoothPath: function`
 - `graphSwimlaneAt: function`
 - `graphViewportRect: function`
+- `groupBoardCards: function`
 - `indentTimelineRow: function`
 - `indexGraph: function`
 - `intersectsWindow: function`
@@ -778,6 +894,7 @@ in public signatures, so changes to them can break consumers too.
 - `invalidateWindowedData: function`
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
+- `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
 - `layoutFlowGraph: function`
@@ -789,12 +906,14 @@ in public signatures, so changes to them can break consumers too.
 - `layoutSwimlaneGraph: function`
 - `layoutTreeGraph: function`
 - `levelResources: function`
+- `maxEarnedValuePoints: number`
 - `mergeGraphExpansionPage: function`
 - `mirrorTimeScale: function`
 - `moveTimeRanges: function`
 - `moveTimelineRow: function`
 - `normalizeWorkPeriods: function`
 - `outdentTimelineRow: function`
+- `packCalendarEventLanes: function`
 - `parseCsv: function`
 - `parseFieldValue: function`
 - `parseGraphLayoutMessage: function`
@@ -832,6 +951,7 @@ in public signatures, so changes to them can break consumers too.
 - `resourceTimelineCascade: function`
 - `restoreWeaveSnapshot: function`
 - `retryWindowedData: function`
+- `rollupEarnedValue: function`
 - `routeGraphEdges: function`
 - `routeGraphPorts: function`
 - `scheduleTasks: function`
@@ -841,6 +961,7 @@ in public signatures, so changes to them can break consumers too.
 - `serializeWeaveSnapshot: function`
 - `setWindowedView: function`
 - `settleTransaction: function`
+- `shiftEventCalendarDate: function`
 - `shortestGraphPath: function`
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
@@ -862,11 +983,15 @@ in public signatures, so changes to them can break consumers too.
 - `timelineRowPosition: function`
 - `timelineWbsCodes: function`
 - `toCsv: function`
+- `toDrawio: function`
+- `toGraphMl: function`
 - `toICalendar: function`
+- `toMermaid: function`
 - `toMsProjectXml: function`
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `validateCalendarEvents: function`
 - `validateFieldValue: function`
 - `validateGraphLayoutResponse: function`
 - `validateTimelineData: function`
@@ -875,7 +1000,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (440)
+## Entry `./core`: type-only exports (505)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -889,6 +1014,11 @@ in public signatures, so changes to them can break consumers too.
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
+- `CalendarEvent`
+- `CalendarEventColumn`
+- `CalendarEventLane`
+- `CalendarEventLaneLayout`
+- `CalendarResource`
 - `CalendarZoomLevel`
 - `CalendarZoomPreset`
 - `CalendarZoomPresetOptions`
@@ -903,10 +1033,33 @@ in public signatures, so changes to them can break consumers too.
 - `CsvParseOptions`
 - `DanglingLink`
 - `DependencyPathStyle`
+- `DrawioAsyncImportOptions`
+- `DrawioImportOptions`
+- `DrawioOptions`
+- `EarnedValueAmounts`
+- `EarnedValueEacMethod`
+- `EarnedValueMetrics`
+- `EarnedValueOptions`
+- `EarnedValuePoint`
+- `EarnedValueRecord`
+- `EarnedValueResult`
+- `EarnedValueSeriesOptions`
+- `EarnedValueTask`
+- `EarnedValueTaskResult`
 - `EditMode`
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarCreate`
+- `EventCalendarCreateValidator`
+- `EventCalendarDay`
+- `EventCalendarEdit`
+- `EventCalendarEditCancel`
+- `EventCalendarEditCancelReason`
+- `EventCalendarEditValidator`
+- `EventCalendarLabels`
+- `EventCalendarOptions`
+- `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -981,6 +1134,11 @@ in public signatures, so changes to them can break consumers too.
 - `GraphIncrementalLayout`
 - `GraphIncrementalLayoutOptions`
 - `GraphIndex`
+- `GraphInterchangeImport`
+- `GraphInterchangeImportOptions`
+- `GraphInterchangeInput`
+- `GraphInterchangeWarning`
+- `GraphInterchangeWarningCode`
 - `GraphKnownPosition`
 - `GraphLabelEdit`
 - `GraphLabels`
@@ -1008,6 +1166,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphLayoutSuccessMessage`
 - `GraphLayoutWorkerJsonMessage`
 - `GraphLayoutWorkerMessage`
+- `GraphMlOptions`
 - `GraphNodeMatch`
 - `GraphNodeMove`
 - `GraphNodeResize`
@@ -1015,6 +1174,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphObstacleAvoidance`
 - `GraphPageRankOptions`
 - `GraphPageRankResult`
+- `GraphPaletteDrop`
+- `GraphPaletteItem`
+- `GraphPaletteLabels`
 - `GraphPaste`
 - `GraphPathResult`
 - `GraphPngExportOptions`
@@ -1043,6 +1205,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphSwimlaneBand`
 - `GraphSwimlaneLayout`
 - `GraphSwimlaneLayoutOptions`
+- `GraphSwimlanePool`
+- `GraphSwimlanePoolBand`
+- `GraphSwimlanePoolSpec`
 - `GraphSwimlaneSpec`
 - `GraphTraversalDirection`
 - `GraphTraversalOptions`
@@ -1060,6 +1225,11 @@ in public signatures, so changes to them can break consumers too.
 - `ICalendarOptions`
 - `ICalendarTimeline`
 - `IdentifiedNode`
+- `InspectorChange`
+- `InspectorChangeValidator`
+- `InspectorField`
+- `InspectorFieldKind`
+- `InspectorItem`
 - `IntlTimeFormatterOptions`
 - `JsonValue`
 - `LevelResourcesInput`
@@ -1067,6 +1237,8 @@ in public signatures, so changes to them can break consumers too.
 - `LevelResourcesSuccess`
 - `LoadSegmentLike`
 - `LoadViewTarget`
+- `MermaidDirection`
+- `MermaidOptions`
 - `MsProjectAssignment`
 - `MsProjectBaseline`
 - `MsProjectCalendar`
@@ -1085,11 +1257,15 @@ in public signatures, so changes to them can break consumers too.
 - `MsProjectXmlOptions`
 - `NetworkEdgeSlot`
 - `NetworkEdgeToolbarSlot`
+- `NetworkFlowchartShape`
 - `NetworkFocusOptions`
 - `NetworkGroup`
 - `NetworkGroupSlot`
 - `NetworkMinimapNodeSlot`
 - `NetworkNode`
+- `NetworkNodeEvent`
+- `NetworkNodeLabelPosition`
+- `NetworkNodeMarker`
 - `NetworkNodeShape`
 - `NetworkNodeSlot`
 - `NetworkNodeToolbarSlot`
@@ -1132,6 +1308,8 @@ in public signatures, so changes to them can break consumers too.
 - `ProgressEditValidator`
 - `PropagateEditResult`
 - `PropagateEditSuccess`
+- `PropertyInspectorFieldSlot`
+- `PropertyInspectorLabels`
 - `RescheduleFromActualsFields`
 - `RescheduleFromActualsResult`
 - `ResolvedEntityRefs`
@@ -1217,6 +1395,18 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardCard`
+- `TaskBoardCardMove`
+- `TaskBoardCardMoveValidator`
+- `TaskBoardCell`
+- `TaskBoardColumn`
+- `TaskBoardColumnStatus`
+- `TaskBoardGroups`
+- `TaskBoardLabels`
+- `TaskBoardLane`
+- `TaskBoardMoveCancel`
+- `TaskBoardMoveCancelReason`
+- `TaskBoardPosition`
 - `TimeRange`
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
@@ -1360,6 +1550,7 @@ minNodeSize?: GraphNodeSize;
 nodes: readonly N[];
 options?: GraphLayeredLayoutOptions;
 parallelEdgeSpacing?: number;
+pools?: readonly GraphSwimlanePoolBand[];
 positions?: ReadonlyMap<string, GraphPoint>;
 reconnectable?: boolean;
 relatedIds?: ReadonlySet<string>;
@@ -1667,6 +1858,195 @@ scrollToRow: (id: string) => void;
 scrollToTime: (time: number) => void;
 ```
 
+## Component `GraphPalette`: props
+
+```ts
+dir?: ChartDirection;
+items: readonly GraphPaletteItem<D>[];
+labels?: Partial<GraphPaletteLabels>;
+searchable?: boolean;
+```
+
+## Component `GraphPalette`: emits
+
+```ts
+(evt: "insert", item: GraphPaletteItem<D>) => void
+```
+
+## Component `GraphPalette`: slots
+
+```ts
+item?(props: {
+    item: GraphPaletteItem<D>;
+    active: boolean;
+}): unknown;
+```
+
+## Component `GraphPalette`: exposed
+
+```ts
+focusItem: (id?: string) => Promise<boolean>;
+```
+
+## Component `PropertyInspector`: props
+
+```ts
+dir?: ChartDirection;
+fields: readonly InspectorField<T>[];
+item?: T | null;
+labels?: Partial<PropertyInspectorLabels>;
+validateChange?: InspectorChangeValidator<T>;
+```
+
+## Component `PropertyInspector`: emits
+
+```ts
+(evt: "change", change: InspectorChange) => void
+(evt: "change-rejected", change: InspectorChange, reason: string) => void
+```
+
+## Component `PropertyInspector`: slots
+
+```ts
+[name: `field-${string}`]: ((props: PropertyInspectorFieldSlot<T>) => unknown) | undefined;
+empty?(): unknown;
+```
+
+## Component `PropertyInspector`: exposed
+
+```ts
+cancelEdits(): void;
+focusField(id: string): boolean;
+```
+
+## Component `TaskBoard`: props
+
+```ts
+autoScroll?: boolean;
+cards: readonly C[];
+columns: readonly TaskBoardColumn[];
+dir?: ChartDirection;
+height?: number | string;
+labels?: Partial<TaskBoardLabels>;
+lanes?: readonly TaskBoardLane[];
+readonly?: boolean;
+selectedId?: string;
+validateCardMove?: TaskBoardCardMoveValidator;
+```
+
+## Component `TaskBoard`: emits
+
+```ts
+(evt: "card-activate", id: string) => void
+(evt: "card-move", change: TaskBoardCardMove) => void
+(evt: "card-move-cancel", event: TaskBoardMoveCancel) => void
+(evt: "card-move-rejected", change: TaskBoardCardMove, reason: string) => void
+(evt: "update:selectedId", id: string) => void
+(evt: "validation-error", error: Error) => void
+```
+
+## Component `TaskBoard`: slots
+
+```ts
+'column-header'(props: {
+    column: TaskBoardColumn;
+    status: TaskBoardColumnStatus;
+}): unknown;
+card(props: {
+    card: C;
+    selected: boolean;
+    moving: boolean;
+    column: TaskBoardColumn;
+    lane?: TaskBoardLane;
+}): unknown;
+empty(props: {
+    column?: TaskBoardColumn;
+    lane?: TaskBoardLane;
+}): unknown;
+```
+
+## Component `TaskBoard`: exposed
+
+```ts
+cancelMove: () => void;
+focusCard: (id: string) => boolean;
+```
+
+## Component `EventCalendar`: props
+
+```ts
+creatable?: boolean;
+createDuration?: number;
+date: number;
+dayEnd?: number;
+dayStart?: number;
+dir?: ChartDirection;
+events: readonly E[];
+formatTime?: (time: number) => string;
+height?: number | string;
+hourHeight?: number;
+labels?: Partial<EventCalendarLabels>;
+locale?: string | readonly string[];
+maxMonthLanes?: number;
+now?: number;
+readonly?: boolean;
+resources?: readonly CalendarResource[];
+selectedId?: string;
+showToolbar?: boolean;
+snap?: number;
+timeZone?: string;
+validateCreate?: EventCalendarCreateValidator;
+validateEdit?: EventCalendarEditValidator;
+view?: EventCalendarView;
+weekStartsOn?: number;
+```
+
+## Component `EventCalendar`: emits
+
+```ts
+(evt: "create", proposal: EventCalendarCreate) => void
+(evt: "create-rejected", proposal: EventCalendarCreate, reason: string) => void
+(evt: "edit", change: EventCalendarEdit) => void
+(evt: "edit-cancel", event: EventCalendarEditCancel) => void
+(evt: "edit-rejected", change: EventCalendarEdit, reason: string) => void
+(evt: "event-activate", id: string, source: "pointer" | "keyboard") => void
+(evt: "range-change", range: TimeRange, view: EventCalendarView) => void
+(evt: "select", id: string) => void
+(evt: "update:date", date: number) => void
+(evt: "update:selectedId", id: string) => void
+(evt: "update:view", view: EventCalendarView) => void
+(evt: "validation-error", error: Error) => void
+```
+
+## Component `EventCalendar`: slots
+
+```ts
+empty(): unknown;
+event(props: {
+    event: E;
+    range: TimeRange;
+    selected: boolean;
+    allDay: boolean;
+    view: EventCalendarView;
+}): unknown;
+toolbar(props: {
+    title: string;
+    view: EventCalendarView;
+    date: number;
+    previous: () => void;
+    next: () => void;
+    today: () => void;
+    setView: (view: EventCalendarView) => void;
+}): unknown;
+```
+
+## Component `EventCalendar`: exposed
+
+```ts
+cancelEdit: () => void;
+scrollToTime: (time: number) => void;
+```
+
 ## CSS custom properties: defined
 
 - `--vw-accent`
@@ -1682,7 +2062,11 @@ scrollToTime: (time: number) => void;
 - `--vw-blue-line`
 - `--vw-blue-pale`
 - `--vw-blue-solid`
+- `--vw-board-column-width`
+- `--vw-board-drop`
+- `--vw-board-wip-warning`
 - `--vw-border`
+- `--vw-calendar-gutter`
 - `--vw-cascade`
 - `--vw-connect-invalid`
 - `--vw-connect-valid`
@@ -1696,6 +2080,7 @@ scrollToTime: (time: number) => void;
 - `--vw-float`
 - `--vw-grid`
 - `--vw-guide`
+- `--vw-inspector-error`
 - `--vw-item-ink`
 - `--vw-item-line`
 - `--vw-item-pale`
@@ -1732,6 +2117,12 @@ scrollToTime: (time: number) => void;
 - `--vw-axis-width`
 - `--vw-band-dash`
 - `--vw-bar-highlight`
+- `--vw-board-cell-min-height`
+- `--vw-board-column-count`
+- `--vw-calendar-event-accent`
+- `--vw-calendar-hour-height`
+- `--vw-calendar-scrollbar`
+- `--vw-calendar-today`
 - `--vw-constraint-reach`
 - `--vw-edge-animation-duration`
 - `--vw-edge-selected`
@@ -1752,6 +2143,10 @@ scrollToTime: (time: number) => void;
 - `--vw-load-focus`
 - `--vw-load-highlight`
 - `--vw-load-selected`
+- `--vw-palette-preview-width`
+- `--vw-pool-border`
+- `--vw-pool-fill`
+- `--vw-pool-header-fill`
 - `--vw-range-opacity`
 - `--vw-row-depth`
 - `--vw-toolbar-offset`
@@ -1970,6 +2365,67 @@ interface CalendarBandOptions {
 type CalendarBandUnit = 'hour' | 'day' | 'week' | 'month' | 'year';
 ```
 
+### `CalendarEvent`
+
+```ts
+interface CalendarEvent<D = unknown> {
+    id: string;
+    start: number;
+    end: number;
+    label: string;
+    allDay?: boolean;
+    resourceId?: string;
+    color?: string;
+    tone?: ChartTone;
+    editable?: boolean;
+    data?: D;
+}
+```
+
+### `CalendarEventColumn`
+
+```ts
+interface CalendarEventColumn {
+    id: string;
+    start: number;
+    end: number;
+    column: number;
+    columns: number;
+}
+```
+
+### `CalendarEventLane`
+
+```ts
+interface CalendarEventLane {
+    id: string;
+    lane: number;
+    startIndex: number;
+    endIndex: number;
+    continuesBefore: boolean;
+    continuesAfter: boolean;
+}
+```
+
+### `CalendarEventLaneLayout`
+
+```ts
+interface CalendarEventLaneLayout {
+    segments: CalendarEventLane[];
+    lanes: number;
+}
+```
+
+### `CalendarResource`
+
+```ts
+interface CalendarResource {
+    id: string;
+    label: string;
+    detail?: string;
+}
+```
+
 ### `CalendarZoomLevel`
 
 ```ts
@@ -2079,6 +2535,142 @@ interface DanglingLink<L> {
 type DependencyPathStyle = 'orthogonal' | 'rounded' | 'curve';
 ```
 
+### `DrawioAsyncImportOptions`
+
+```ts
+interface DrawioAsyncImportOptions extends DrawioImportOptions {
+    maxInflatedLength?: number;
+}
+```
+
+### `DrawioImportOptions`
+
+```ts
+interface DrawioImportOptions extends GraphInterchangeImportOptions {
+    page?: number | string;
+}
+```
+
+### `DrawioOptions`
+
+```ts
+interface DrawioOptions {
+    pageName?: string;
+    direction?: GraphLayoutDirection;
+}
+```
+
+### `EarnedValueAmounts`
+
+```ts
+interface EarnedValueAmounts {
+    bac: number;
+    pv: number;
+    ev: number;
+    ac: number;
+}
+```
+
+### `EarnedValueEacMethod`
+
+```ts
+type EarnedValueEacMethod = 'cpi' | 'cpi-spi' | 'budget';
+```
+
+### `EarnedValueMetrics`
+
+```ts
+interface EarnedValueMetrics extends EarnedValueAmounts {
+    sv: number;
+    cv: number;
+    spi?: number;
+    cpi?: number;
+    eac?: number;
+    etc?: number;
+    vac?: number;
+    tcpi?: number;
+    percentComplete?: number;
+}
+```
+
+### `EarnedValueOptions`
+
+```ts
+interface EarnedValueOptions {
+    statusDate: number;
+    calendars?: readonly WorkCalendar[];
+    defaultCalendarId?: string;
+    eacMethod?: EarnedValueEacMethod;
+    series?: EarnedValueSeriesOptions;
+}
+```
+
+### `EarnedValuePoint`
+
+```ts
+interface EarnedValuePoint {
+    time: number;
+    pv: number;
+    ev?: number;
+    ac?: number;
+}
+```
+
+### `EarnedValueRecord`
+
+```ts
+interface EarnedValueRecord {
+    time: number;
+    progress: number;
+    actualCost?: number;
+}
+```
+
+### `EarnedValueResult`
+
+```ts
+interface EarnedValueResult {
+    statusDate: number;
+    eacMethod: EarnedValueEacMethod;
+    tasks: readonly EarnedValueTaskResult[];
+    totals: EarnedValueMetrics;
+    series: readonly EarnedValuePoint[];
+}
+```
+
+### `EarnedValueSeriesOptions`
+
+```ts
+interface EarnedValueSeriesOptions {
+    step: number;
+    start?: number;
+    end?: number;
+}
+```
+
+### `EarnedValueTask`
+
+```ts
+interface EarnedValueTask {
+    id: string;
+    budget: number;
+    start: number;
+    end: number;
+    progress?: number;
+    actualCost?: number;
+    calendarId?: string;
+    history?: readonly EarnedValueRecord[];
+}
+```
+
+### `EarnedValueTaskResult`
+
+```ts
+interface EarnedValueTaskResult extends EarnedValueMetrics {
+    id: string;
+}
+```
+
 ### `EditMode`
 
 ```ts
@@ -2115,6 +2707,132 @@ interface EntityRef {
     kind: string;
     id: string;
 }
+```
+
+### `EventCalendar`
+
+```ts
+const EventCalendar: EventCalendarComponent;
+```
+
+### `EventCalendarComponent`
+
+```ts
+type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent>(props: {
+    events: readonly E[];
+    date: number;
+} & Record<string, unknown>) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>) & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>;
+```
+
+### `EventCalendarCreate`
+
+```ts
+interface EventCalendarCreate extends TimeRange {
+    allDay: boolean;
+    resourceId?: string;
+    source: 'pointer';
+}
+```
+
+### `EventCalendarCreateValidator`
+
+```ts
+type EventCalendarCreateValidator = (proposal: EventCalendarCreate) => boolean | string | void;
+```
+
+### `EventCalendarDay`
+
+```ts
+interface EventCalendarDay extends TimeRange {
+    year: number;
+    month: number;
+    day: number;
+    weekday: number;
+    inMonth: boolean;
+}
+```
+
+### `EventCalendarEdit`
+
+```ts
+interface EventCalendarEdit {
+    id: string;
+    before: TimeRange;
+    after: TimeRange;
+    mode: 'move' | 'start' | 'end';
+    source: 'pointer' | 'keyboard';
+    resource?: {
+        before: string;
+        after: string;
+    };
+}
+```
+
+### `EventCalendarEditCancel`
+
+```ts
+interface EventCalendarEditCancel {
+    reason: EventCalendarEditCancelReason;
+    eventIds: readonly string[];
+}
+```
+
+### `EventCalendarEditCancelReason`
+
+```ts
+type EventCalendarEditCancelReason = 'escape' | 'source-changed' | 'pointer-cancel' | 'api';
+```
+
+### `EventCalendarEditValidator`
+
+```ts
+type EventCalendarEditValidator = (change: EventCalendarEdit) => boolean | string | void;
+```
+
+### `EventCalendarExposed`
+
+```ts
+type EventCalendarExposed<E extends CalendarEvent = CalendarEvent> = SfcExposed<EventCalendarSfc<E>>;
+```
+
+### `EventCalendarLabels`
+
+```ts
+interface EventCalendarLabels {
+    region: string;
+    previous: string;
+    today: string;
+    next: string;
+    views: string;
+    day: string;
+    week: string;
+    month: string;
+    allDay: string;
+    more: string;
+    showDay: string;
+    editHint: string;
+    dayEditHint: string;
+    rejected: string;
+    createRejected: string;
+    resources: string;
+    now: string;
+    empty: string;
+}
+```
+
+### `EventCalendarOptions`
+
+```ts
+interface EventCalendarOptions {
+    timeZone?: string;
+    weekStartsOn?: number;
+}
+```
+
+### `EventCalendarView`
+
+```ts
+type EventCalendarView = 'day' | 'week' | 'month';
 ```
 
 ### `ExplainedLevelResourcesResult`
@@ -2679,6 +3397,7 @@ interface GraphEdge<D = unknown> extends GraphConnection {
     markerEnd?: GraphEdgeMarker;
     markerStart?: GraphEdgeMarker;
     animated?: boolean;
+    dashed?: boolean;
 }
 ```
 
@@ -2695,7 +3414,7 @@ interface GraphEdgeBand {
 ### `GraphEdgeMarker`
 
 ```ts
-type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'circle' | 'diamond' | 'bar' | 'none';
+type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'hollow-arrow' | 'circle' | 'diamond' | 'bar' | 'none';
 ```
 
 ### `GraphEdgeReshape`
@@ -2993,6 +3712,57 @@ interface GraphIndex {
     incoming: Map<string, string[]>;
     outgoing: Map<string, string[]>;
 }
+```
+
+### `GraphInterchangeImport`
+
+```ts
+interface GraphInterchangeImport {
+    nodes: NetworkNode[];
+    edges: GraphEdge[];
+    groups: NetworkGroup[];
+    positions: Map<string, GraphPoint>;
+    sizes: Map<string, GraphNodeSize>;
+    direction?: GraphLayoutDirection;
+    warnings: GraphInterchangeWarning[];
+}
+```
+
+### `GraphInterchangeImportOptions`
+
+```ts
+interface GraphInterchangeImportOptions {
+    maxItems?: number;
+}
+```
+
+### `GraphInterchangeInput`
+
+```ts
+interface GraphInterchangeInput {
+    nodes: readonly NetworkNode[];
+    edges: readonly GraphEdge[];
+    groups?: readonly NetworkGroup[];
+    positions?: ReadonlyMap<string, GraphPoint>;
+    sizes?: ReadonlyMap<string, GraphNodeSize>;
+}
+```
+
+### `GraphInterchangeWarning`
+
+```ts
+interface GraphInterchangeWarning {
+    code: GraphInterchangeWarningCode;
+    id?: string;
+    line?: number;
+    message: string;
+}
+```
+
+### `GraphInterchangeWarningCode`
+
+```ts
+type GraphInterchangeWarningCode = 'unsupported-statement' | 'unsupported-shape' | 'unsupported-style' | 'unsupported-element' | 'skipped-node' | 'skipped-edge' | 'skipped-group' | 'group-member' | 'invalid-value' | 'shifted-positions';
 ```
 
 ### `GraphKnownPosition`
@@ -3362,6 +4132,14 @@ interface GraphLayoutWorkerPort {
 }
 ```
 
+### `GraphMlOptions`
+
+```ts
+interface GraphMlOptions {
+    directed?: boolean;
+}
+```
+
 ### `GraphNodeMatch`
 
 ```ts
@@ -3424,6 +4202,61 @@ interface GraphPageRankResult {
     scores: Map<string, number>;
     iterations: number;
     converged: boolean;
+}
+```
+
+### `GraphPalette`
+
+```ts
+const GraphPalette: GraphPaletteComponent;
+```
+
+### `GraphPaletteComponent`
+
+```ts
+type GraphPaletteComponent = (new <D = unknown>(props: {
+    items: readonly GraphPaletteItem<D>[];
+} & Record<string, unknown>) => SfcInstance<GraphPaletteSfc<D>>) & SfcDefaultComponent<GraphPaletteSfc<unknown>>;
+```
+
+### `GraphPaletteDrop`
+
+```ts
+interface GraphPaletteDrop {
+    id: string;
+    data?: unknown;
+}
+```
+
+### `GraphPaletteExposed`
+
+```ts
+type GraphPaletteExposed<D = unknown> = SfcExposed<GraphPaletteSfc<D>>;
+```
+
+### `GraphPaletteItem`
+
+```ts
+interface GraphPaletteItem<D = unknown> {
+    id: string;
+    label: string;
+    detail?: string;
+    shape?: NetworkNodeShape;
+    tone?: ChartTone;
+    section?: string;
+    keywords?: readonly string[];
+    disabled?: boolean;
+    data?: D;
+}
+```
+
+### `GraphPaletteLabels`
+
+```ts
+interface GraphPaletteLabels {
+    region: string;
+    search: string;
+    noMatches: string;
 }
 ```
 
@@ -3673,6 +4506,7 @@ interface GraphSvgGroup {
 interface GraphSvgOptions<N extends NetworkNode = NetworkNode, E extends GraphEdge = GraphEdge> extends SvgExportOptions {
     groups?: readonly GraphSvgGroup[];
     lanes?: readonly GraphSwimlaneBand[];
+    pools?: readonly GraphSwimlanePoolBand[];
     selectedIds?: Iterable<string>;
     highlightedNodeIds?: Iterable<string>;
     highlightedEdgeIds?: Iterable<string>;
@@ -3709,6 +4543,7 @@ interface GraphSwimlaneBand extends GraphRect {
 ```ts
 interface GraphSwimlaneLayout extends GraphLayout {
     lanes: GraphSwimlane[];
+    pools?: GraphSwimlanePool[];
 }
 ```
 
@@ -3724,6 +4559,39 @@ interface GraphSwimlaneLayoutOptions<N extends IdentifiedNode = IdentifiedNode> 
     headerSize?: number;
     crossingReduction?: 'none' | 'barycenter';
     crossingSweeps?: number;
+    pools?: readonly GraphSwimlanePoolSpec[];
+    poolHeaderSize?: number;
+    poolGap?: number;
+}
+```
+
+### `GraphSwimlanePool`
+
+```ts
+interface GraphSwimlanePool extends GraphSwimlanePoolBand {
+    index: number;
+    laneIds: string[];
+}
+```
+
+### `GraphSwimlanePoolBand`
+
+```ts
+interface GraphSwimlanePoolBand extends GraphRect {
+    id: string;
+    label: string;
+    header: GraphRect;
+    laneIds: readonly string[];
+}
+```
+
+### `GraphSwimlanePoolSpec`
+
+```ts
+interface GraphSwimlanePoolSpec {
+    id: string;
+    label?: string;
+    lanes: readonly string[];
 }
 ```
 
@@ -3889,6 +4757,50 @@ interface IdentifiedNode {
 }
 ```
 
+### `InspectorChange`
+
+```ts
+interface InspectorChange {
+    id: string;
+    field: string;
+    before: FieldValue;
+    after: FieldValue;
+}
+```
+
+### `InspectorChangeValidator`
+
+```ts
+type InspectorChangeValidator<T extends InspectorItem = InspectorItem> = (change: InspectorChange, item: T) => boolean | string | void;
+```
+
+### `InspectorField`
+
+```ts
+interface InspectorField<T extends InspectorItem = InspectorItem> extends Omit<TimelineFieldSpec, 'kind' | 'get'> {
+    kind: InspectorFieldKind;
+    label: string;
+    get: (item: T) => FieldValue;
+    readonly?: boolean;
+    description?: string;
+    placeholder?: string;
+}
+```
+
+### `InspectorFieldKind`
+
+```ts
+type InspectorFieldKind = TimelineFieldKind | 'color';
+```
+
+### `InspectorItem`
+
+```ts
+interface InspectorItem {
+    id: string;
+}
+```
+
 ### `IntlTimeFormatterOptions`
 
 ```ts
@@ -4013,6 +4925,21 @@ interface LoadSegmentLike {
 type LoadViewTarget = Extract<ViewTarget, {
     view: 'load';
 }>;
+```
+
+### `MermaidDirection`
+
+```ts
+type MermaidDirection = 'TD' | 'TB' | 'LR' | 'RL' | 'BT';
+```
+
+### `MermaidOptions`
+
+```ts
+interface MermaidOptions {
+    direction?: MermaidDirection;
+    edgeIds?: boolean;
+}
 ```
 
 ### `MsProjectAssignment`
@@ -4225,6 +5152,12 @@ interface NetworkEdgeToolbarSlot<E extends GraphEdge = GraphEdge> {
 }
 ```
 
+### `NetworkFlowchartShape`
+
+```ts
+type NetworkFlowchartShape = 'circle' | 'stadium' | 'parallelogram' | 'document' | 'cylinder' | 'data-object';
+```
+
 ### `NetworkFocusOptions`
 
 ```ts
@@ -4294,14 +5227,35 @@ interface NetworkNode<D = unknown> extends IdentifiedNode {
     deletable?: boolean;
     shape?: NetworkNodeShape;
     resizable?: boolean;
+    marker?: NetworkNodeMarker;
+    event?: NetworkNodeEvent;
+    labelPosition?: NetworkNodeLabelPosition;
     data?: D;
 }
+```
+
+### `NetworkNodeEvent`
+
+```ts
+type NetworkNodeEvent = 'start' | 'intermediate' | 'end';
+```
+
+### `NetworkNodeLabelPosition`
+
+```ts
+type NetworkNodeLabelPosition = 'inside' | 'below';
+```
+
+### `NetworkNodeMarker`
+
+```ts
+type NetworkNodeMarker = 'exclusive' | 'parallel' | 'inclusive' | 'event-based' | 'message' | 'timer' | 'user' | 'service' | 'manual';
 ```
 
 ### `NetworkNodeShape`
 
 ```ts
-type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon';
+type NetworkNodeShape = 'box' | 'rounded' | 'diamond' | 'ellipse' | 'hexagon' | NetworkFlowchartShape;
 ```
 
 ### `NetworkNodeSlot`
@@ -4340,6 +5294,14 @@ interface NetworkTooltipSlot<N extends NetworkNode = NetworkNode, E extends Grap
         edge: E;
     };
 }
+```
+
+### `PaletteDropSource`
+
+```ts
+type PaletteDropSource = {
+    readonly dataTransfer: Pick<DataTransfer, 'getData'> | null;
+} | Pick<DataTransfer, 'getData'>;
 ```
 
 ### `ParseWeaveSnapshotOptions`
@@ -4793,6 +5755,56 @@ interface PropagateEditSuccess {
     ok: true;
     schedule: ScheduleSuccess;
     changes: ScheduleChange[];
+}
+```
+
+### `PropertyInspector`
+
+```ts
+const PropertyInspector: PropertyInspectorComponent;
+```
+
+### `PropertyInspectorComponent`
+
+```ts
+type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(props: {
+    item?: T | null;
+    fields: readonly InspectorField<T>[];
+} & Record<string, unknown>) => SfcInstance<PropertyInspectorSfc<T>>) & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>;
+```
+
+### `PropertyInspectorExposed`
+
+```ts
+type PropertyInspectorExposed<T extends InspectorItem = InspectorItem> = SfcExposed<PropertyInspectorSfc<T>>;
+```
+
+### `PropertyInspectorFieldSlot`
+
+```ts
+interface PropertyInspectorFieldSlot<T extends InspectorItem = InspectorItem> {
+    field: InspectorField<T>;
+    item: T;
+    value: FieldValue;
+    text: string;
+    error?: string;
+    readonly: boolean;
+    inputId: string;
+    describedBy?: string;
+    commit: (value: FieldValue) => boolean;
+    commitText: (text: string) => boolean;
+    cancel: () => void;
+}
+```
+
+### `PropertyInspectorLabels`
+
+```ts
+interface PropertyInspectorLabels {
+    region: string;
+    empty: string;
+    rejected: string;
+    none: string;
 }
 ```
 
@@ -5757,6 +6769,164 @@ interface TaskActuals {
     intervals: readonly TimeRange[];
     remainingWork?: number;
     finished?: boolean;
+}
+```
+
+### `TaskBoard`
+
+```ts
+const TaskBoard: TaskBoardComponent;
+```
+
+### `TaskBoardCard`
+
+```ts
+interface TaskBoardCard<D = unknown> {
+    id: string;
+    columnId: string;
+    laneId?: string;
+    label: string;
+    detail?: string;
+    tone?: ChartTone;
+    draggable?: boolean;
+    data?: D;
+}
+```
+
+### `TaskBoardCardMove`
+
+```ts
+interface TaskBoardCardMove {
+    id: string;
+    before: TaskBoardPosition;
+    after: TaskBoardPosition;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TaskBoardCardMoveValidator`
+
+```ts
+type TaskBoardCardMoveValidator = (change: TaskBoardCardMove) => boolean | string | void;
+```
+
+### `TaskBoardCell`
+
+```ts
+interface TaskBoardCell<C extends TaskBoardCard = TaskBoardCard> {
+    columnId: string;
+    laneId?: string;
+    cards: C[];
+}
+```
+
+### `TaskBoardColumn`
+
+```ts
+interface TaskBoardColumn {
+    id: string;
+    label: string;
+    detail?: string;
+    wipLimit?: number;
+}
+```
+
+### `TaskBoardColumnStatus`
+
+```ts
+interface TaskBoardColumnStatus {
+    id: string;
+    count: number;
+    wipLimit?: number;
+    atLimit: boolean;
+    overLimit: boolean;
+}
+```
+
+### `TaskBoardComponent`
+
+```ts
+type TaskBoardComponent = (new <C extends TaskBoardCard = TaskBoardCard>(props: {
+    columns: readonly TaskBoardColumn[];
+    cards: readonly C[];
+} & Record<string, unknown>) => SfcInstance<TaskBoardSfc<C & TaskBoardCard>>) & SfcDefaultComponent<TaskBoardSfc<TaskBoardCard>>;
+```
+
+### `TaskBoardExposed`
+
+```ts
+type TaskBoardExposed<C extends TaskBoardCard = TaskBoardCard> = SfcExposed<TaskBoardSfc<C>>;
+```
+
+### `TaskBoardGroups`
+
+```ts
+interface TaskBoardGroups<C extends TaskBoardCard = TaskBoardCard> {
+    rows: {
+        laneId?: string;
+        cells: TaskBoardCell<C>[];
+    }[];
+    columns: TaskBoardColumnStatus[];
+    positions: Map<string, TaskBoardPosition>;
+}
+```
+
+### `TaskBoardLabels`
+
+```ts
+interface TaskBoardLabels {
+    region: string;
+    empty: string;
+    emptyCell: string;
+    card: string;
+    cards: string;
+    wipLimit: string;
+    overLimit: string;
+    moveHint: string;
+    moveRejected: string;
+    pickedUp: string;
+    moved: string;
+    moveCancelled: string;
+    position: string;
+    of: string;
+    lane: string;
+}
+```
+
+### `TaskBoardLane`
+
+```ts
+interface TaskBoardLane {
+    id: string;
+    label: string;
+    detail?: string;
+}
+```
+
+### `TaskBoardMoveCancel`
+
+```ts
+interface TaskBoardMoveCancel {
+    id: string;
+    before: TaskBoardPosition;
+    reason: TaskBoardMoveCancelReason;
+    source: 'pointer' | 'keyboard';
+}
+```
+
+### `TaskBoardMoveCancelReason`
+
+```ts
+type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change';
+```
+
+### `TaskBoardPosition`
+
+```ts
+interface TaskBoardPosition {
+    columnId: string;
+    laneId?: string;
+    index: number;
 }
 ```
 
@@ -7005,6 +8175,15 @@ interface WorkWeek {
 function actualsTimelineBars(result: RescheduleFromActualsResult, options?: ActualsTimelineBarOptions): TimelineBar[];
 ```
 
+### `applyBoardCardMove`
+
+```ts
+function applyBoardCardMove<C extends TaskBoardCard>(cards: readonly C[], move: TaskBoardCardMove, board?: {
+    columns?: readonly TaskBoardColumn[];
+    lanes?: readonly TaskBoardLane[];
+}): C[];
+```
+
 ### `applyGraphPositions`
 
 ```ts
@@ -7059,6 +8238,14 @@ function beginGraphExpansion<N extends {
 
 ```ts
 function beginTransaction<S>(state: TransactionCoreState<S>, pending: Omit<PendingTransaction, 'epoch' | 'baseVersion'>, candidate: S): TransactionCoreState<S> | undefined;
+```
+
+### `boardCardPosition`
+
+```ts
+function boardCardPosition(cards: readonly TaskBoardCard[], id: string, options?: {
+    lanes?: boolean;
+}): TaskBoardPosition;
 ```
 
 ### `buildGraphLayoutRequests`
@@ -7157,6 +8344,12 @@ function comparePlans(current: PlanScenario, candidate: PlanScenario): PlanCompa
 
 ```ts
 function completeGraphLayout(layout: GraphLayout, nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options?: GraphLayoutCompletionOptions): GraphLayoutCompletion;
+```
+
+### `computeEarnedValue`
+
+```ts
+function computeEarnedValue(tasks: readonly EarnedValueTask[], options: EarnedValueOptions): EarnedValueResult;
 ```
 
 ### `countGraphCrossings`
@@ -7292,6 +8485,36 @@ function editTimeRange(range: TimeRange, mode: EditMode, delta: number, step: nu
 function escapeXml(value: string): string;
 ```
 
+### `eventCalendarDays`
+
+```ts
+function eventCalendarDays(view: EventCalendarView, date: number, options?: EventCalendarOptions): EventCalendarDay[];
+```
+
+### `eventCalendarMonthGrid`
+
+```ts
+function eventCalendarMonthGrid(date: number, options?: EventCalendarOptions): EventCalendarDay[][];
+```
+
+### `eventCalendarRange`
+
+```ts
+function eventCalendarRange(view: EventCalendarView, date: number, options?: EventCalendarOptions): TimeRange;
+```
+
+### `eventCalendarTimeAt`
+
+```ts
+function eventCalendarTimeAt(day: number, timeOfDay: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
+```
+
+### `eventCalendarTimeOfDay`
+
+```ts
+function eventCalendarTimeOfDay(day: number, time: number, options?: Pick<EventCalendarOptions, 'timeZone'>): number;
+```
+
 ### `fieldValuesEqual`
 
 ```ts
@@ -7337,10 +8560,34 @@ function formatFieldValue(spec: TimelineFieldSpec<any>, value: FieldValue): stri
 function formatSheetText(records: readonly (readonly string[])[]): string;
 ```
 
+### `fromDrawio`
+
+```ts
+function fromDrawio(xml: string, options?: DrawioImportOptions): GraphInterchangeImport;
+```
+
+### `fromDrawioAsync`
+
+```ts
+function fromDrawioAsync(xml: string, options?: DrawioAsyncImportOptions): Promise<GraphInterchangeImport>;
+```
+
+### `fromGraphMl`
+
+```ts
+function fromGraphMl(xml: string, options?: GraphInterchangeImportOptions): GraphInterchangeImport;
+```
+
 ### `fromICalendar`
 
 ```ts
 function fromICalendar(text: string, options?: ICalendarImportOptions): ICalendarImport;
+```
+
+### `fromMermaid`
+
+```ts
+function fromMermaid(text: string, options?: GraphInterchangeImportOptions): GraphInterchangeImport;
 ```
 
 ### `fromMsProjectXml`
@@ -7505,6 +8752,12 @@ function graphNodesInPolygon(boxes: ReadonlyMap<string, GraphRect>, polygon: rea
 function graphPageRank(nodes: readonly IdentifiedNode[], edges: readonly GraphEdge[], options?: GraphPageRankOptions): GraphPageRankResult;
 ```
 
+### `graphPaletteMimeType`
+
+```ts
+const graphPaletteMimeType = "application/x-vue-weave-palette+json";
+```
+
 ### `graphPathBounds`
 
 ```ts
@@ -7565,6 +8818,12 @@ function graphViewportRect(camera: GraphViewport, size: {
 }, overscan?: number): GraphRect;
 ```
 
+### `groupBoardCards`
+
+```ts
+function groupBoardCards<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], lanes?: readonly TaskBoardLane[]): TaskBoardGroups<C>;
+```
+
 ### `indentTimelineRow`
 
 ```ts
@@ -7605,6 +8864,18 @@ function invertWorkPeriods(periods: readonly TimeRange[], range: TimeRange): Tim
 
 ```ts
 function isGraphRouteValid(layout: GraphLayout, nodes: ReadonlyMap<string, IdentifiedNode>, edge: GraphEdge): boolean;
+```
+
+### `layoutCalendarDayEvents`
+
+```ts
+function layoutCalendarDayEvents(events: readonly {
+    id: string;
+    start: number;
+    end: number;
+}[], range: TimeRange, options?: {
+    minDuration?: number;
+}): CalendarEventColumn[];
 ```
 
 ### `layoutCircularGraph`
@@ -7679,6 +8950,12 @@ function levelResources(input: LevelResourcesInput, options: ScheduleOptions & {
 function levelResources(input: LevelResourcesInput, options?: ScheduleOptions): LevelResourcesResult | ExplainedLevelResourcesResult;
 ```
 
+### `maxEarnedValuePoints`
+
+```ts
+const maxEarnedValuePoints = 100000;
+```
+
 ### `mergeGraphExpansionPage`
 
 ```ts
@@ -7715,6 +8992,16 @@ function normalizeWorkPeriods(periods: readonly TimeRange[], range: TimeRange): 
 
 ```ts
 function outdentTimelineRow<R extends TimelineRow>(rows: readonly R[], id: string): R[];
+```
+
+### `packCalendarEventLanes`
+
+```ts
+function packCalendarEventLanes(events: readonly {
+    id: string;
+    start: number;
+    end: number;
+}[], days: readonly TimeRange[]): CalendarEventLaneLayout;
 ```
 
 ### `parseCsv`
@@ -7787,6 +9074,12 @@ function propagateEdit(input: ScheduleInput, edit: ScheduleEdit): PropagateEditR
 
 ```ts
 function proposeResourceAssignment(state: ResourceAssignmentState, request: ResourceAssignmentRequest): ResourceAssignmentProposal;
+```
+
+### `readPaletteDrop`
+
+```ts
+function readPaletteDrop(source: PaletteDropSource | null | undefined): GraphPaletteDrop | undefined;
 ```
 
 ### `reconcileTimelineViewColumns`
@@ -7960,6 +9253,14 @@ function retryWindowedData<T, L = never>(state: WindowedDataState<T, L>, window?
 function revealLinkedTarget(options: RevealLinkedTargetOptions): Promise<LinkedRevealResult>;
 ```
 
+### `rollupEarnedValue`
+
+```ts
+function rollupEarnedValue(items: readonly EarnedValueAmounts[], options?: {
+    eacMethod?: EarnedValueEacMethod;
+}): EarnedValueMetrics;
+```
+
 ### `routeGraphEdges`
 
 ```ts
@@ -8018,6 +9319,12 @@ function setWindowedView<T, L = never>(state: WindowedDataState<T, L>, view: Win
 
 ```ts
 function settleTransaction<S>(state: TransactionCoreState<S>, operationId: string, epoch: number, result: SaveResult<S>, allowUncertain?: boolean): SettleResult<S>;
+```
+
+### `shiftEventCalendarDate`
+
+```ts
+function shiftEventCalendarDate(view: EventCalendarView, date: number, steps: number, options?: EventCalendarOptions): number;
 ```
 
 ### `shortestGraphPath`
@@ -8154,10 +9461,28 @@ function timelineWbsCodes(rows: readonly TimelineRow[]): Map<string, string>;
 function toCsv(table: readonly (readonly CsvCell[])[]): string;
 ```
 
+### `toDrawio`
+
+```ts
+function toDrawio(graph: GraphInterchangeInput, options?: DrawioOptions): string;
+```
+
+### `toGraphMl`
+
+```ts
+function toGraphMl(graph: GraphInterchangeInput, options?: GraphMlOptions): string;
+```
+
 ### `toICalendar`
 
 ```ts
 function toICalendar(events: readonly ICalendarEvent[], options?: ICalendarOptions): string;
+```
+
+### `toMermaid`
+
+```ts
+function toMermaid(graph: GraphInterchangeInput, options?: MermaidOptions): string;
 ```
 
 ### `toMsProjectXml`
@@ -8289,6 +9614,12 @@ function useTimelineView<R extends TimelineRow = TimelineRow, B extends Timeline
 function useWindowedData<T, L = never>(options: UseWindowedDataOptions<T, L>): WindowedData<T, L>;
 ```
 
+### `validateCalendarEvents`
+
+```ts
+function validateCalendarEvents(events: readonly CalendarEvent[], resources?: readonly CalendarResource[]): void;
+```
+
 ### `validateFieldValue`
 
 ```ts
@@ -8336,16 +9667,34 @@ function workCalendarsFromMsProject(project: {
 }, range: TimeRange): WorkCalendar[];
 ```
 
+### Internal `EventCalendarSfc (dist/types/index.d.ts)`
+
+```ts
+type EventCalendarSfc<E extends CalendarEvent> = typeof EventCalendarVue<E>;
+```
+
 ### Internal `GanttChartSfc (dist/types/index.d.ts)`
 
 ```ts
 type GanttChartSfc<R extends TimelineRow, B extends TimelineBar> = typeof GanttChartVue<R, B>;
 ```
 
+### Internal `GraphPaletteSfc (dist/types/index.d.ts)`
+
+```ts
+type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>;
+```
+
 ### Internal `NetworkGraphSfc (dist/types/index.d.ts)`
 
 ```ts
 type NetworkGraphSfc<N extends NetworkNode, E extends GraphEdge, G extends NetworkGroup> = typeof NetworkGraphVue<N, E, G>;
+```
+
+### Internal `PropertyInspectorSfc (dist/types/index.d.ts)`
+
+```ts
+type PropertyInspectorSfc<T extends InspectorItem> = typeof PropertyInspectorVue<T>;
 ```
 
 ### Internal `RestoredBase (dist/types/core/snapshot.d.ts)`
@@ -8407,4 +9756,10 @@ interface SnapshotBase {
         readonly [namespace: string]: JsonValue;
     };
 }
+```
+
+### Internal `TaskBoardSfc (dist/types/index.d.ts)`
+
+```ts
+type TaskBoardSfc<C extends TaskBoardCard> = typeof TaskBoardVue<C>;
 ```

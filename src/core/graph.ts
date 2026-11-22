@@ -47,14 +47,19 @@ export interface GraphEdge<D = unknown> extends GraphConnection {
    * still under `prefers-reduced-motion: reduce` and in print. `renderGraphSvg` draws it dashed without motion.
    */
   animated?: boolean
+  /**
+   * Draws the edge with a static dash pattern (class `vw-is-dashed`, `stroke-dasharray="5 4"` in `renderGraphSvg`), for
+   * example a BPMN message flow. `animated` wins when both are set.
+   */
+  dashed?: boolean
 }
 
 /**
  * A decoration at one end of an edge. `arrow` is the filled arrowhead NetworkGraph has always drawn, `open-arrow` a
  * line arrowhead, `circle` and `diamond` hollow shapes filled with the graph background, `bar` a line across the edge
- * and `none` no decoration.
+ * and `none` no decoration. `hollow-arrow` is a triangle filled with the graph background, the end of a BPMN message flow.
  */
-export type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'circle' | 'diamond' | 'bar' | 'none'
+export type GraphEdgeMarker = 'arrow' | 'open-arrow' | 'hollow-arrow' | 'circle' | 'diamond' | 'bar' | 'none'
 
 export interface GraphIndex {
   incoming: Map<string, string[]>

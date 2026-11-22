@@ -149,3 +149,18 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await expect(cell('Requirements · Duration 5d')).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test.describe('with a Japanese browser locale', () => {
+  test.use({ locale: 'ja-JP' })
+
+  test('the homepage opens in English unless the URL asks for Japanese', async ({ page }) => {
+    const errors = pageErrors(page)
+    await page.goto('/')
+    await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    await page.goto('/?lang=ja')
+    await expect(page.getByRole('button', { name: '日本語' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+})

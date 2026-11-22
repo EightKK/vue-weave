@@ -192,10 +192,12 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 - **レイアウト：** 分岐・合流、閉路、自己ループに対応した標準の階層レイアウト（`LR`・`TB`・`RL`・`BT`。`crossingReduction: 'barycenter'` で交差を削減）。`layout` propでは、木、放射状、円形、格子、同心円、決定的な力学モデルの各配置（`layoutTreeGraph`、`layoutRadialGraph`、`layoutCircularGraph`、`layoutGridGraph`、`layoutConcentricGraph`、`layoutForceGraph`）や、アプリケーションで導入した[ELK.js](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#use-elkjs-for-layout)の結果を使えます。
 - **工程レーン：** `layoutSwimlaneGraph` は部門や作業区ごとのレーンを指定した順に並べます。`lanes` propで帯を描き、ミニマップと書き出しにも反映されます。ドラッグしたノードが入るレーンは `graphSwimlaneAt` で判定できます。詳しくは[Swimlanes for process flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#swimlanes-for-process-flows)を参照してください。
+- **BPMNとフローチャート：** 円・スタジアム・平行四辺形・書類・円柱・データオブジェクトのノード、BPMNのイベント枠線、ゲートウェイ・イベント・タスク種別の記号、小さな図形の下に置くラベル、破線のメッセージフロー、スイムレーンを囲むプール（`pools`）。書き出しにも反映されます。詳しくは[BPMN processes and flowcharts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#bpmn-processes-and-flowcharts)を参照してください。
 - **数量フロー（サンキー図）：** `layoutFlowGraph` は各辺を数量に応じた太さにして図全体で同じ縮尺で描き、ノードごとの流入量・流出量とその差を補正せずに報告します。単位の異なる数量は合算せず、手戻りのループは破線の参照帯にします。`edgeBands` propは「Cut → Inspect: 60 pcs」のような名前付きで帯を描きます。詳しくは[Quantity flows](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#quantity-flows-sankey-diagrams)を参照してください。
 - **描画：** 独自のSVGを描く `node`・`edge`・`group`・`minimap-node` スロット、HTMLを表示する `tooltip`・`node-toolbar`・`edge-toolbar` スロット。ひし形・楕円・六角形のノード、直角・直線の辺（`edgeStyle`）、ノードを避ける経路（`avoidNodes`）、経由点、端の記号、アニメーションする辺、平行な辺の振り分け。
 - **変更案としての編集：** ノードの移動、型付きのポートルール（`connectionRules`）で検査する接続と接続先のヒント、ラベルのその場編集、矩形・投げ縄による選択、入れ子で折りたためるグループ、ノードのサイズ変更、グリッドへの吸着と整列ガイド、パレットからのドロップ、クリップボード、キーボードによる削除。
 - **表示範囲の操作：** ミニマップ、大規模グラフ向けの表示範囲外の描画省略と縮小時の簡略表示、ピンチズーム、検索結果の強調（`matchIds`）、`focusNode(id)`、`fit({ ids })`。
+- **ダイアグラムエディタ部品：** `GraphPalette` はノードのテンプレートを並べ、グラフへのドラッグとキーボードでの追加を提供します。`PropertyInspector` は選択中のノードを型付きフィールドで編集します。どちらも変更案をイベントで通知します。詳しくは[Diagram editor parts](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/integration.md#diagram-editor-parts)を参照してください。
 
 ### GanttChart
 
@@ -204,6 +206,13 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **スプレッドシート編集（`spreadsheet`）：** セル範囲の選択、Excel や Google スプレッドシートとのコピー・切り取り・貼り付け、Delete による消去、Ctrl/⌘+D や右下のハンドルによる下方向のコピー、文字入力による編集。操作ごとに一つの `sheet-edit` 変更案として届き、`validateSheetEdit` で一括で却下でき、`applyTimelineSheetEdit` で反映できます。デモには、表からスケジューラーがバー・矢印・クリティカルパスを計算する工程表と、購買申請の承認フローの編集画面があります。
 - **時間軸：** ズームプリセット、IANAタイムゾーンとロケールに沿ったカレンダー用プリセット（`calendarZoomPresets`、`intlTimeFormatter`）、非稼働時間を圧縮する時間軸（`createWorkingTimeScale`）、Ctrl+ホイールとピンチによるズーム、現在時刻マーカー、`fitToBars()`。
 - **大規模データ：** 行と表示時間範囲の仮想化。表示中の週と行だけを読み込むための `visible-window-change`。
+### EventCalendar
+- **表示：** IANA タイムゾーンとロケールに従う日・週・月ビュー、複数日にまたがる予定のための終日行、月表示の「+N more」、現在時刻の線、組み込みツールバー（スロットで置き換え可能）。`resources` を渡すと、日ビューに会議室・設備・担当者ごとの列を表示します。
+- **提案としての編集：** ドラッグとキーボードによる移動とリサイズ、リソース間の移動、ドラッグでの新規作成。同期の `validateEdit` と `validateCreate` で検証できます。`range-change` が表示範囲を通知するので必要な範囲だけ読み込めます。コアのヘルパー（`eventCalendarRange`、`layoutCalendarDayEvents`、`packCalendarEventLanes`）はサーバーでも動きます。
+
+### TaskBoard
+
+- **カンバンボード：** オプトインの3つ目の制御コンポーネント。カードをステータス列に並べ、必要ならスイムレーンで分けます。列にはカード数を表示し、WIP制限を超えると警告します。ポインターとタッチのドラッグ（ドロップ位置の表示と自動スクロール付き）とキーボード（Space、矢印キー、Enter、Escape、ライブリージョンでの読み上げ付き）で `card-move` を提案し、`validateCardMove` で却下でき、`applyBoardCardMove` で適用できます。GanttChart と同じタスクと選択を共有できます。[TaskBoard](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/api.md#taskboard) を参照してください。
 
 ### ヘッドレスコア（`@eightkk/vue-weave/core`）
 
@@ -211,7 +220,9 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **日程計算：** `buildWorkPeriods` で作るカレンダー（IANAタイムゾーンを含む）上での `scheduleTasks`。最遅開始、手動・非アクティブ・サマリーのタスク、制約、中断区間、循環や実行不能の診断に対応します。`scheduleTasks(input, { explain: true })` は各タスクの開始が決まった理由をトレースし、`toPlanningDiagnostics` は問題を一覧にします。
 - **リソース：** `calculateResourceLoad` と `levelResources`。時間とともに変わる能力（`capacityPeriods`）や、タスクの一部だけを占める割り当て（`workOffset`、`workDuration`）にも対応します。`projectResourceTimeline` はリソース別に計画を表示し、`buildPlacementInput` は未計画タスクを計算から除きます。
 - **計画の更新：** `propagateEdit`、`rescheduleFromStatusDate`、`rescheduleFromActuals`（記録した実績を保ち、残りを予測）、そして編集した内容と結果として動いた内容を分けて示す `comparePlans`。詳しくは[Compare plan scenarios](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#compare-plan-scenarios)を参照してください。
+- **アーンドバリュー：** `computeEarnedValue` はステータス日時点のPV・EV・ACと、SV・CV・SPI・CPI・EAC・ETC・VAC・TCPIをタスク別と合計で計算します。計画価値は稼働カレンダー上で積み上げ、Sカーブ用の累積系列も返します。`rollupEarnedValue` はサマリー行を集計します。詳しくは[Earned value management](https://github.com/EightKK/vue-weave/blob/v1.1.0/docs/scheduling.md#earned-value-management)を参照してください。
 - **データ交換：** Microsoft Project XML（カレンダー、リソース、割り当てを含む）、iCalendar、CSVの読み込みと書き出し（`fromMsProjectXml`、`toMsProjectXml`、`fromICalendar`、`toICalendar`、`parseCsv`、`toCsv`）。日程をPERT図にする `scheduleToGraph`。
+- **ダイアグラムファイル：** NetworkGraphの図を、Mermaidフローチャート、GraphML（yEdを含む）、draw.ioで読み込み・書き出し。入れ子のグループ、形状、位置、サイズに対応（`fromMermaid`、`toMermaid`、`fromGraphMl`、`toGraphMl`、`fromDrawio`、圧縮ファイル用の `fromDrawioAsync`、`toDrawio`）。
 
 ### ビューの連動・大規模データ・保存
 

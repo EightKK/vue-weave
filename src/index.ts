@@ -2,6 +2,8 @@ import './styles/style.css'
 import type { ComponentPublicInstance, DefineComponent } from 'vue'
 import NetworkGraphVue from './components/NetworkGraph.vue'
 import GanttChartVue from './components/GanttChart.vue'
+import TaskBoardVue from './components/TaskBoard.vue'
+import type { TaskBoardCard, TaskBoardColumn } from './core/taskBoard.js'
 import type { GraphEdge } from './core/graph.js'
 import type { NetworkGroup, NetworkNode, TimelineBar, TimelineRow } from './core/types.js'
 
@@ -74,3 +76,56 @@ export type {
 } from './composables/useAsyncGraphLayout.js'
 export { useWindowedData } from './composables/useWindowedData.js'
 export type { UseWindowedDataOptions, WindowedData, WindowedDataLoader, WindowedDataError } from './composables/useWindowedData.js'
+
+// TaskBoard: a third controlled component, generic over its card type like the two above.
+type TaskBoardSfc<C extends TaskBoardCard> = typeof TaskBoardVue<C>
+/** Methods that TaskBoard exposes on its template ref. `C` is the card type of the board. */
+export type TaskBoardExposed<C extends TaskBoardCard = TaskBoardCard> = SfcExposed<TaskBoardSfc<C>>
+/** The type of the `TaskBoard` component. In a template, the card type is inferred from `cards`. */
+export type TaskBoardComponent = (new <C extends TaskBoardCard = TaskBoardCard>(
+  props: { columns: readonly TaskBoardColumn[]; cards: readonly C[] } & Record<string, unknown>,
+) => SfcInstance<TaskBoardSfc<C & TaskBoardCard>>)
+  & SfcDefaultComponent<TaskBoardSfc<TaskBoardCard>>
+export const TaskBoard = TaskBoardVue as unknown as TaskBoardComponent
+
+// Diagram editor parts: a shape palette and a property inspector. Both are generic SFCs typed like the components above.
+import GraphPaletteVue from './components/GraphPalette.vue'
+import PropertyInspectorVue from './components/PropertyInspector.vue'
+import type { GraphPaletteItem, InspectorField, InspectorItem } from './core/diagramEditor.js'
+
+type GraphPaletteSfc<D> = typeof GraphPaletteVue<D>
+type PropertyInspectorSfc<T extends InspectorItem> = typeof PropertyInspectorVue<T>
+
+/** Methods that GraphPalette exposes on its template ref. */
+export type GraphPaletteExposed<D = unknown> = SfcExposed<GraphPaletteSfc<D>>
+/** Methods that PropertyInspector exposes on its template ref. */
+export type PropertyInspectorExposed<T extends InspectorItem = InspectorItem> = SfcExposed<PropertyInspectorSfc<T>>
+
+/** The type of the `GraphPalette` component. In a template, the item data type is inferred from `items`. */
+export type GraphPaletteComponent = (new <D = unknown>(props: { items: readonly GraphPaletteItem<D>[] } & Record<string, unknown>) =>
+  SfcInstance<GraphPaletteSfc<D>>)
+  & SfcDefaultComponent<GraphPaletteSfc<unknown>>
+
+/** The type of the `PropertyInspector` component. In a template, the item type is inferred from `item` and `fields`. */
+export type PropertyInspectorComponent = (new <T extends InspectorItem = InspectorItem>(
+  props: { item?: T | null; fields: readonly InspectorField<T>[] } & Record<string, unknown>,
+) => SfcInstance<PropertyInspectorSfc<T>>)
+  & SfcDefaultComponent<PropertyInspectorSfc<InspectorItem>>
+
+export const GraphPalette = GraphPaletteVue as unknown as GraphPaletteComponent
+export const PropertyInspector = PropertyInspectorVue as unknown as PropertyInspectorComponent
+export { readPaletteDrop } from './components/graphPalette.js'
+export type { PaletteDropSource } from './components/graphPalette.js'
+
+// EventCalendar: a controlled day, week and month calendar, generic over its event type like the other components.
+import EventCalendarVue from './components/EventCalendar.vue'
+import type { CalendarEvent } from './core/eventCalendar.js'
+type EventCalendarSfc<E extends CalendarEvent> = typeof EventCalendarVue<E>
+/** Methods that EventCalendar exposes on its template ref. `E` is the event type of the calendar. */
+export type EventCalendarExposed<E extends CalendarEvent = CalendarEvent> = SfcExposed<EventCalendarSfc<E>>
+/** The type of the `EventCalendar` component. In a template, the event type is inferred from `events`. */
+export type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent>(
+  props: { events: readonly E[]; date: number } & Record<string, unknown>,
+) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>)
+  & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>
+export const EventCalendar = EventCalendarVue as unknown as EventCalendarComponent
