@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (273)
+## Entry `.`: runtime exports (275)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -250,7 +250,9 @@ in public signatures, so changes to them can break consumers too.
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `treeGridCellContentFromTimeBucket: function`
 - `treeGridCellValue: function`
+- `treeGridCellsFromTimeBuckets: function`
 - `treeGridColumnAt: function`
 - `treeGridColumnOffsets: function`
 - `treeGridColumnWindow: function`
@@ -922,7 +924,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (257)
+## Entry `./core`: runtime exports (259)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -1157,7 +1159,9 @@ in public signatures, so changes to them can break consumers too.
 - `toPlanningDiagnostics: function`
 - `topologicalOrder: function`
 - `traverseGraph: function`
+- `treeGridCellContentFromTimeBucket: function`
 - `treeGridCellValue: function`
+- `treeGridCellsFromTimeBuckets: function`
 - `treeGridColumnAt: function`
 - `treeGridColumnOffsets: function`
 - `treeGridColumnWindow: function`
@@ -11019,10 +11023,22 @@ function traverseGraph<E extends GraphEdge = GraphEdge>(graph: {
 }, startIds: Iterable<string>, options?: GraphTraversalOptions<E>): GraphTraversalResult;
 ```
 
+### `treeGridCellContentFromTimeBucket`
+
+```ts
+function treeGridCellContentFromTimeBucket(cell: TimeBucketCell, extra?: Omit<TreeGridCellContent, 'value' | 'status'>): TreeGridCellContent;
+```
+
 ### `treeGridCellValue`
 
 ```ts
 function treeGridCellValue(index: TreeGridIndex<any>, rowId: string, columnId: string): FieldValue;
+```
+
+### `treeGridCellsFromTimeBuckets`
+
+```ts
+function treeGridCellsFromTimeBuckets(cells: readonly TimeBucketCell[]): TreeGridCell[];
 ```
 
 ### `treeGridColumnAt`

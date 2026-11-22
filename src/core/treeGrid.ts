@@ -7,6 +7,7 @@ import { checkId, duplicateIdError, invalidIdError, isId, uniqueIds, unknownRefe
 import { formatSheetText, parseSheetText } from './sheetEditing.js'
 import { createTimelineRowTree } from './timeline.js'
 import type { ChartTone, TimelineRow, TimelineRowMove, TimelineRowPosition } from './types.js'
+import type { TimeBucketCell } from './timeBuckets.js'
 import type { EntityRef } from './viewBindings.js'
 import type { WindowedCellStatus } from './windowedData.js'
 
@@ -1104,4 +1105,27 @@ export function treeGridDropAt(index: TreeGridIndex<any>, flat: TreeGridLines<an
   const currentIndex = (children.get(current.parentId) ?? []).indexOf(id)
   if (parentId === current.parentId && position === currentIndex) return undefined
   return { line: at, placement, target: parentId === undefined ? { index: position } : { parentId, index: position } }
+}
+
+/**
+ * The TreeGrid content of one `aggregateTimeBuckets` cell. A loaded bucket with a value shows the value (a `sum` of no
+ * items is `0`), a loaded bucket without a value (for example `last` with no items) is `none`, and a bucket that is
+ * not loaded keeps its `unloaded`, `loading` or `failed` status, so it never shows as 0. `extra` (label, tone,
+ * entities, editable) is added to cells with a value. Throws TypeError for something that is not a bucket cell.
+ */
+export function treeGridCellContentFromTimeBucket(cell: TimeBucketCell, extra: Omit<TreeGridCellContent, 'value' | 'status'> = {}): TreeGridCellContent {
+  if (!cell || typeof cell !== 'object') throw new TypeError('A time bucket cell must be an object')
+  if (cell.status === 'loaded' || cell.status === 'loaded-empty') {
+    return cell.value === null ? { status: 'none' } : { ...extra, value: cell.value }
+  }
+  if (cell.status === 'unloaded' || cell.status === 'loading' || cell.status === 'failed') return { status: cell.status }
+  throw new TypeError('Unknown time bucket cell status: ' + String((cell as { status?: unknown }).status))
+}
+
+/** `treeGridCellContentFromTimeBucket` for a list of cells, keeping their positions: input for the TreeGrid `cells` prop. */
+export function treeGridCellsFromTimeBuckets(cells: readonly TimeBucketCell[]): TreeGridCell[] {
+  if (!Array.isArray(cells)) throw new TypeError('Time bucket cells must be an array')
+  const result: TreeGridCell[] = []
+  for (const cell of cells) result.push({ rowId: cell?.rowId, columnId: cell?.columnId, ...treeGridCellContentFromTimeBucket(cell) })
+  return result
 }

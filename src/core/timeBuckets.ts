@@ -114,7 +114,10 @@ export interface TimeBucketAggregateOptions<T = TimeBucketItem> {
   maxCells?: number
 }
 
-/** One cell of a period table: compatible with sparse grid cells `{ rowId, columnId, value, status }`. */
+/**
+ * One cell of a period table. Its `status` uses the loading states of `windowedData`, not TreeGrid statuses: convert it
+ * with `treeGridCellsFromTimeBuckets` (or `treeGridCellContentFromTimeBucket`) before passing it to TreeGrid.
+ */
 export interface TimeBucketCell {
   rowId: string
   /** The bucket's `id`. */

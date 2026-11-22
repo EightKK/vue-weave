@@ -10,7 +10,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import {
   GanttChart, TreeGrid, aggregateTimeBuckets, calendarBands, calendarZoomPresets, createTimeBucketColumns, intlTimeFormatter,
-  matchTreeGridEntities, timeBucketIndexRange, useEditHistory, useLinkedSelection, useWindowedData,
+  matchTreeGridEntities, treeGridCellContentFromTimeBucket, timeBucketIndexRange, useEditHistory, useLinkedSelection, useWindowedData,
   type EntityRef, type TimeBucketCell, type TimeBucketColumn, type TimeBucketItem, type TimelineVisibleWindow, type TreeGridActivation,
   type TreeGridCell, type TreeGridCellContent, type TreeGridCellEdit, type TreeGridColumn, type TreeGridEditCancel, type TreeGridRow,
   type TreeGridSheetEdit, type ViewBinding, type ViewTargetEvent, type WindowedCellStatus,
@@ -154,9 +154,10 @@ const aggregated = computed(() => {
 
 const number = new Intl.NumberFormat('en-US')
 const loadedState = (cell: TimeBucketCell) => cell.status === 'loaded' || cell.status === 'loaded-empty'
+// Loaded values, known none and the load states, never 0 for a day that is not loaded.
 const content = (cell: TimeBucketCell | undefined, extra: TreeGridCellContent = {}): TreeGridCellContent => {
-  if (!cell || !loadedState(cell)) return { status: (cell?.status ?? 'unloaded') as 'unloaded' | 'loading' | 'failed', editable: false }
-  return cell.value === null ? { status: 'none', editable: false } : { value: cell.value, ...extra }
+  const shown = cell ? treeGridCellContentFromTimeBucket(cell, extra) : { status: 'unloaded' as const }
+  return shown.status ? { ...shown, editable: false } : shown
 }
 const order = (id: string): EntityRef => ({ kind: 'order', id })
 const cells = computed<TreeGridCell[]>(() => {

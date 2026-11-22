@@ -1384,6 +1384,7 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | treeGridKeyAction(key, cursor, { lines, columnCount, pageSize, rtl? }) | What a treegrid key does: `move`, `expand`, `collapse` or `activate` |
 | resolveTreeGridCell(index, rowId, columnId), treeGridCellValue(...), isTreeGridCellEditable(...), treeGridFieldSpec(column) | The `TreeGridCellView` of a cell, its field value (`null` without a value), whether it can be edited, and the field spec of a column's editor |
 | matchTreeGridEntities(input or index, entities) | `{ rowIds, cells }`: every row and cell that lists one of the entities |
+| treeGridCellsFromTimeBuckets(cells) / treeGridCellContentFromTimeBucket(cell, extra?) | TreeGrid cells from `aggregateTimeBuckets` cells: a loaded value stays a value (a `sum` of nothing is 0), a loaded bucket without a value is `none`, and `unloaded`, `loading` and `failed` keep their status. `extra` (label, tone, entities, editable) is added to cells with a value |
 | treeGridRangeBounds(range), treeGridRangeText(index, lines, range) | The bounds of a range and its tab-separated text |
 | buildTreeGridPaste(index, lines, range, text, { maxCells?, source? }), buildTreeGridClear(...), buildTreeGridFill(index, lines, range, { source?, origin? }) | The edits of a paste, clear or fill, or `{ ok: false, reason: 'too-large' or 'invalid', error, cell? }` |
 | applyTreeGridEdits({ rows, columns, cells? }, edits) | New `{ rows, cells }`; unchanged rows and cells keep their identity |
@@ -2395,6 +2396,10 @@ Ratios (yield, utilisation, on-time rate) must be aggregated from their parts: p
 `carryForward` (only for `last` rows) is for running balances such as stock levels or backlog: a loaded bucket without items shows the last value before it, with `carried: true` and status `loaded-empty`. The carry is seeded by the last item before the bucket, including one before the first bucket or in a gap, so pass the reading before the first shown period to get an opening balance. A bucket that is not loaded has no value and breaks the carry until the next item.
 
 Throws TypeError for inputs of the wrong type, RangeError for invalid buckets, a non-finite time, value or denominator (a denominator is read only for `ratio` rows), an interval or loaded range with `end < start`, an unknown rule (`Unknown time bucket rule: <rule>`, `Unknown time bucket rule of row <id>: <rule>`), placement or loaded state, a custom result that is neither a finite number nor null, and more cells than `maxCells`, and Error for an invalid or duplicate bucket or row ID (`Invalid time bucket row ID: <value>`, `Duplicate time bucket row ID: <id>`) and a repeated precomputed value. Whatever an accessor, reducer or `loaded` function throws passes through.
+
+Windowed data chunks are fixed lengths in time units from their origin, so day-sized chunks drift from local day buckets across a daylight-saving change; compute `loaded` per bucket (the function form) or use chunks no longer than the shortest bucket.
+
+`TimeBucketCell.status` uses the loading states of [partial data loading](#partial-data-loading), not TreeGrid statuses, so convert cells with `treeGridCellsFromTimeBuckets` (or `treeGridCellContentFromTimeBucket` inside a column accessor) before passing them to TreeGrid.
 
 Types: `TimeBucketPeriod`, `TimeBucket`, `TimeBucketColumn`, `TimeBucketColumnOptions`, `TimeBucketRuleName`, `TimeBucketRule`, `TimeBucketReducer`, `TimeBucketReducerContext`, `TimeBucketPlacement`, `TimeBucketLoaded`, `TimeBucketItem`, `TimeBucketAggregateOptions`, `TimeBucketCell`.
 

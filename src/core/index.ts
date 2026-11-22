@@ -199,7 +199,7 @@ export {
   treeGridColumnOffsets, treeGridRowWindow, treeGridColumnAt, treeGridColumnWindow, treeGridKeyAction, resolveTreeGridCell,
   treeGridCellValue, isTreeGridCellEditable, treeGridFieldSpec, matchTreeGridEntities, treeGridRangeBounds, treeGridRangeText,
   buildTreeGridPaste, buildTreeGridClear, buildTreeGridFill, applyTreeGridEdits, treeGridRowCreate, insertTreeGridRow,
-  deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt,
+  deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt, treeGridCellContentFromTimeBucket, treeGridCellsFromTimeBuckets,
 } from './treeGrid.js'
 export type {
   TreeGridValue, TreeGridRow, TreeGridCellStatus, TreeGridMissingCell, TreeGridCellState, TreeGridCellContent, TreeGridCell,
