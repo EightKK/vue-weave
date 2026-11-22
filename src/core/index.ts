@@ -56,6 +56,8 @@ export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRout
 export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
 export { findOrthogonalRoute } from './graphObstacleRouting.js'
 export type { GraphObstacleAvoidance, GraphRouteEnd } from './graphObstacleRouting.js'
+export { placeGraphEdgeLabels } from './graphLabelPlacement.js'
+export type { GraphEdgeLabelPlacement, GraphEdgeLabelPlacementOptions, GraphEdgeLabelSize } from './graphLabelPlacement.js'
 export * from './leveling.js'
 export * from './exportSvg.js'
 export {

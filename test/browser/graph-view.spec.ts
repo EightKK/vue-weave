@@ -750,6 +750,83 @@ test('the diagram demo routes orthogonal edges around the nodes with Avoid nodes
   expect(errors).toEqual([])
 })
 
+type ScreenBox = { name: string; x: number; y: number; width: number; height: number }
+// The on-screen boxes of the edge labels and nodes, and the pairs that overlap by more than half a pixel.
+async function labelOverlaps(page: Page) {
+  const { labels, nodes } = await page.evaluate(() => {
+    const box = (element: Element) => {
+      const rect = element.getBoundingClientRect()
+      return { name: element.textContent ?? '', x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    }
+    return {
+      labels: [...document.querySelectorAll('.vw-edge-label')].map(box),
+      nodes: [...document.querySelectorAll('.vw-network-node')].map(box),
+    }
+  })
+  const meet = (a: ScreenBox, b: ScreenBox) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.5
+    && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.5
+  return {
+    labels,
+    onNodes: labels.flatMap(label => nodes.filter(node => meet(label, node)).map(node => label.name + ' / ' + node.name)),
+    onLabels: labels.flatMap((label, i) => labels.slice(i + 1).filter(other => meet(label, other)).map(other => label.name + ' / ' + other.name)),
+  }
+}
+
+test('the diagram demo places edge labels clear of nodes and each other, on screen and in the SVG export', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openDemo(page, 'Diagram styles')
+  const place = page.getByLabel('Place labels clear')
+  await expect(place).not.toBeChecked()
+  await page.getByLabel('Edge style').selectOption('orthogonal')
+  const anchors = () => page.locator('.vw-edge-label').evaluateAll(items => items.map(item => [item.textContent, item.getAttribute('x'), item.getAttribute('y')]))
+  const midpoint = await anchors()
+  // At the midpoints, the labels of the request to Inventory and of the reservation share one channel.
+  expect((await labelOverlaps(page)).onLabels).toEqual(['ask / reserve'])
+
+  await place.check()
+  const placed = await labelOverlaps(page)
+  expect(placed.labels).toHaveLength(8)
+  expect(placed.onLabels).toEqual([])
+  expect(placed.onNodes).toEqual([])
+  const moved = await anchors()
+  expect(moved).not.toEqual(midpoint)
+
+  // The export draws each label at its placed anchor.
+  const { readFile } = await import('node:fs/promises')
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export SVG', exact: true }).click()
+  const text = (await readFile((await (await pending).path())!)).toString('utf8')
+  const round = (value: string | null) => String(Math.round(Number(value) * 1000) / 1000)
+  for (const [, x, y] of moved) expect(text).toContain(`<text x="${round(x)}" y="${round(y)}"`)
+  expect(text).toContain('>ask<')
+
+  await place.uncheck()
+  expect(await anchors()).toEqual(midpoint)
+  await page.getByLabel('Edge style').selectOption('curve')
+  expect(errors).toEqual([])
+})
+
+test('placed edge labels follow a node drag and stay clear of the nodes', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&draggable=1&edgelabels=1&labelplacement=avoid&style=orthogonal')
+  const label = (name: string) => page.locator('.vw-edge-label', { hasText: name })
+  const anchor = async (name: string) => [await label(name).getAttribute('x'), await label(name).getAttribute('y')]
+  const before = await anchor('link 2')
+  expect((await labelOverlaps(page)).onNodes).toEqual([])
+  await dragBy(page, chainNode(page, 'N0003'), 20, 140, async () => {
+    // The preview places the labels of the rerouted edges again.
+    expect(await anchor('link 2')).not.toEqual(before)
+    const preview = await labelOverlaps(page)
+    expect(preview.onNodes).toEqual([])
+    expect(preview.onLabels).toEqual([])
+  })
+  await expect(label('link 2')).not.toHaveAttribute('y', before[1]!)
+  const saved = await labelOverlaps(page)
+  expect(saved.onNodes).toEqual([])
+  expect(saved.onLabels).toEqual([])
+  expect(errors).toEqual([])
+})
+
 test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
   const errors = pageErrors(page)
   await openDemo(page, 'Graph analysis')

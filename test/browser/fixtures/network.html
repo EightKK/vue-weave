@@ -22,7 +22,8 @@
       // highlight and highlightedges (comma-separated highlighted IDs), targets (logging target-* events), collapse
       // (comma-separated controlled collapsed group IDs), preset=ports (A to D with named ports on A and B and an
       // external route for edge ab), policy (routingPolicy), style (edgeStyle), gestures (logging gesture-* events),
-      // boxselect, editableedges, resizable and labels (editableLabels, logging label-edit proposals).
+      // boxselect, editableedges, resizable, labels (editableLabels, logging label-edit proposals), edgelabels (a label
+      // on every edge) and labelplacement (edgeLabelPlacement).
       const query = new URLSearchParams(location.search)
       const preset = query.get('preset')
       const ids = preset === 'groups' || preset === 'ports'
@@ -32,7 +33,7 @@
       const nodes = ids.map(id => query.get('reads') === '1'
         ? new Proxy({ id, label: id }, { get: (target, key) => { reads.count++; return target[key] } })
         : { id, label: id })
-      const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id }))
+      const edges = ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id, ...query.get('edgelabels') === '1' && { label: 'link ' + i } }))
       if (preset === 'ports') {
         nodes[0].ports = [{ id: 'out', side: 'right', offset: 0.25 }]
         nodes[1].ports = [{ id: 'in', side: 'left' }]
@@ -155,6 +156,7 @@
           h(NetworkGraph, {
             highlightedNodeIds: list('highlight'), highlightedEdgeIds: list('highlightedges'), collapsedGroupIds: list('collapse'),
             routingPolicy: query.get('policy') ?? undefined, edgeStyle: query.get('style') ?? undefined,
+            edgeLabelPlacement: query.get('labelplacement') ?? undefined,
             layout: preset === 'ports' ? portLayout : undefined,
             ...query.get('targets') === '1' ? {
               onTargetEnter: logTarget('enter'), onTargetLeave: logTarget('leave'), onTargetActivate: logTarget('activate'),

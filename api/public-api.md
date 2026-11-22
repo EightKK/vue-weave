@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (229)
+## Entry `.`: runtime exports (230)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -149,6 +149,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
+- `placeGraphEdgeLabels: function`
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
@@ -237,7 +238,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (543)
+## Entry `.`: type-only exports (546)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -357,6 +358,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphDrop`
 - `GraphEdge`
 - `GraphEdgeBand`
+- `GraphEdgeLabelPlacement`
+- `GraphEdgeLabelPlacementOptions`
+- `GraphEdgeLabelSize`
 - `GraphEdgeMarker`
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
@@ -783,7 +787,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (214)
+## Entry `./core`: runtime exports (215)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -920,6 +924,7 @@ in public signatures, so changes to them can break consumers too.
 - `parseSheetText: function`
 - `parseTimelineViewState: function`
 - `parseWeaveSnapshot: function`
+- `placeGraphEdgeLabels: function`
 - `planBaselines: function`
 - `planComparisonTargets: function`
 - `projectResourceTimeline: function`
@@ -1000,7 +1005,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (505)
+## Entry `./core`: type-only exports (508)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1109,6 +1114,9 @@ in public signatures, so changes to them can break consumers too.
 - `GraphDeletion`
 - `GraphEdge`
 - `GraphEdgeBand`
+- `GraphEdgeLabelPlacement`
+- `GraphEdgeLabelPlacementOptions`
+- `GraphEdgeLabelSize`
 - `GraphEdgeMarker`
 - `GraphEdgeReshape`
 - `GraphEdgeRouteOptions`
@@ -1531,6 +1539,7 @@ dir?: ChartDirection;
 draggable?: boolean;
 droppable?: boolean;
 edgeBands?: ReadonlyMap<string, GraphEdgeBand>;
+edgeLabelPlacement?: GraphEdgeLabelPlacement<GraphShownEdge<E, G>>;
 edgeStyle?: GraphEdgeStyle;
 edges: readonly E[];
 edgesSelectable?: boolean;
@@ -3417,6 +3426,37 @@ interface GraphEdgeBand {
     width: number;
     reference?: boolean;
     label?: string;
+}
+```
+
+### `GraphEdgeLabelPlacement`
+
+```ts
+type GraphEdgeLabelPlacement<E extends GraphEdge = GraphEdge> = 'midpoint' | 'avoid' | Omit<GraphEdgeLabelPlacementOptions<E>, 'edgeIds' | 'labelText'>;
+```
+
+### `GraphEdgeLabelPlacementOptions`
+
+```ts
+interface GraphEdgeLabelPlacementOptions<E extends GraphEdge = GraphEdge> {
+    fontSize?: number;
+    glyphWidth?: number;
+    labelSize?: (edge: E, text: string) => GraphEdgeLabelSize | undefined;
+    labelText?: (edge: E) => string | undefined;
+    gap?: number;
+    margin?: number;
+    samples?: number;
+    edgeIds?: Iterable<string>;
+    obstacles?: readonly GraphRect[];
+}
+```
+
+### `GraphEdgeLabelSize`
+
+```ts
+interface GraphEdgeLabelSize {
+    width: number;
+    height: number;
 }
 ```
 
@@ -9059,6 +9099,12 @@ function parseTimelineViewState(value: unknown): TimelineViewState;
 
 ```ts
 function parseWeaveSnapshot(text: string, options?: ParseWeaveSnapshotOptions): ParseWeaveSnapshotResult;
+```
+
+### `placeGraphEdgeLabels`
+
+```ts
+function placeGraphEdgeLabels<L extends GraphLayout, E extends GraphEdge = GraphEdge>(layout: L, edges: readonly E[], options?: GraphEdgeLabelPlacementOptions<E>): L;
 ```
 
 ### `planBaselines`

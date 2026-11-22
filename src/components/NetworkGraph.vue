@@ -14,6 +14,7 @@ import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
 import { graphParallelSlots, routeGraphEdgesWithSlots, type GraphEdgeStyle } from '../core/graphRouting.js'
 import { resolveObstacleAvoidance, type GraphObstacleAvoidance } from '../core/graphObstacleRouting.js'
+import { placeGraphEdgeLabels, type GraphEdgeLabelPlacement } from '../core/graphLabelPlacement.js'
 import { graphPolygonPoints } from '../core/graphShapes.js'
 import { isGraphRouteValid, type GraphRoutingPolicy } from '../core/graphGeometry.js'
 import { completeGraphLayout } from '../core/graphLayoutRequests.js'
@@ -35,6 +36,7 @@ import { keep, keepIds, sameGeometry, sameRecord } from './networkGraph/equality
 import { placeBox, sortExtents, type Extent } from './networkGraph/previewGeometry.js'
 import { hasPorts, previewLayout, type ParallelSlots, type PreviewContext } from './networkGraph/previewLayout.js'
 import { indexAvoidedRoutes, obstructedEdges } from './networkGraph/obstructedEdges.js'
+import { edgePathBounds, placePreviewLabels, resolveEdgeLabelPlacement } from './networkGraph/labelPlacement.js'
 import {
   addGroupChain, groupBounds, groupRect, groupShapes, groupTree as buildGroupTree, type GroupBounds, type GroupRect, type GroupShape,
 } from './networkGraph/groupFrames.js'
@@ -161,6 +163,12 @@ const props = withDefaults(defineProps<{
   routingPolicy?: GraphRoutingPolicy
   /** Routes orthogonal edges without waypoints around the node boxes: `true` for an 8-unit clearance, or `{ clearance, bendPenalty }`. Opt-in. Default: false. */
   avoidNodes?: boolean | GraphObstacleAvoidance
+  /**
+   * Where edge labels go: `midpoint` keeps them just above the middle of each route; `avoid` moves them along and beside
+   * their routes away from nodes, other labels and other edges (see `placeGraphEdgeLabels`), and an options object
+   * does so with those options, such as `fontSize` or measured `labelSize`. Opt-in. Default: `midpoint`.
+   */
+  edgeLabelPlacement?: GraphEdgeLabelPlacement<GraphShownEdge<E, G>>
   /** Lets a double-click or F2 on a node or edge open an in-place editor for its label, proposed through `label-edit`. Gives edges their focusable hit area. Opt-in. Default: false. */
   editableLabels?: boolean
   /** Synchronous check of a label proposal. Return `true` or nothing to accept, `false` or a reason string to reject. */
@@ -472,6 +480,14 @@ const savedPorted = computed(() => routeGraphPorts(savedLayout.value, nodesById.
 const savedRouted = computed(() => routeGraphEdgesWithSlots(
   savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value, true,
 ))
+// Opt-in label placement over the routed layout; without it the saved geometry is the routed layout itself.
+const labelPlacement = computed(() => resolveEdgeLabelPlacement(props.edgeLabelPlacement))
+const savedGeometry = computed(() => {
+  const placement = labelPlacement.value
+  return placement ? placeGraphEdgeLabels(savedRouted.value, viewEdges.value, placement) : savedRouted.value
+})
+// The path bounds of the saved layout, computed once a preview places labels.
+const savedPathBounds = computed(() => edgePathBounds(savedGeometry.value, viewEdges.value))
 
 // Drag previews (see ./networkGraph/previewLayout.ts) and the indexes of the saved layout they read.
 const savedExtents = computed(() => {
@@ -558,7 +574,7 @@ function previewObstructions(changed: ReadonlyMap<string, GraphBox>, before: Rea
 const previewContext: PreviewContext = {
   get base() { return baseLayout.value },
   get arranged() { return savedLayout.value },
-  get saved() { return savedRouted.value },
+  get saved() { return savedGeometry.value },
   get positions() { return viewPositions.value },
   get sizes() { return props.sizes },
   get direction() { return direction.value },
@@ -579,10 +595,16 @@ const previewContext: PreviewContext = {
 const previewSources = new WeakMap<GraphLayout, { saved: GraphLayout; nodes: readonly string[]; edges: readonly string[] }>()
 const layout = computed(() => {
   const moving = dragPreview.value, resizing = resizePreview.value, reshaping = reshapePreview.value
-  if (!moving && !resizing && !reshaping) return savedRouted.value
+  if (!moving && !resizing && !reshaping) return savedGeometry.value
   const { layout: preview, ...source } = previewLayout(previewContext, { moving, resizing, reshaping })
-  previewSources.set(preview, source)
-  return preview
+  const placement = labelPlacement.value
+  if (!placement) {
+    previewSources.set(preview, source)
+    return preview
+  }
+  const placed = placePreviewLabels(preview, viewEdges.value, edgesById.value, savedPathBounds.value, source.nodes, source.edges, placement)
+  previewSources.set(placed.layout, { ...source, edges: placed.edges })
+  return placed.layout
 })
 // The checked group hierarchy in paint order, and its lookups.
 const groupMembership = computed<GroupShape[]>(() => groupShapes(viewGroups.value ?? [], id => nodesById.value.has(id)))
@@ -590,7 +612,7 @@ const groupTree = computed(() => buildGroupTree(groupMembership.value))
 type ShownGroup = GroupShape & GroupRect
 // Group frames of the saved layout, with the bounds of each group's own nodes so a preview can tell which frames change.
 const savedGroups = computed(() => {
-  const geometry = savedRouted.value, list = groupMembership.value, tree = groupTree.value
+  const geometry = savedGeometry.value, list = groupMembership.value, tree = groupTree.value
   const bounds = new Map<string, GroupBounds>(), rects = new Map<string, GroupRect>()
   // Children come after their parent in the list, so walking backwards sizes children first.
   for (let i = list.length - 1; i >= 0; i--) {
@@ -1813,7 +1835,7 @@ function leaveWithFocus() {
 }
 // Bounds come from the saved layout, so a drag preview does not re-parse every edge path. Dragged nodes and
 // the edges attached to them are kept rendered separately instead (see `visible`).
-const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedRouted.value) : undefined)
+const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedGeometry.value) : undefined)
 const incidentEdges = computed(() => {
   const index = new Map<string, string[]>()
   for (const edge of viewEdges.value) {
@@ -2493,12 +2515,12 @@ watch(layout, (next, previous) => {
 // creates the refs of changed items), so the saved layout gives its value.
 function boxRef(id: string) {
   let entry = boxRefs.get(id)
-  if (!entry) boxRefs.set(id, entry = shallowRef(savedRouted.value.boxes.get(id)!))
+  if (!entry) boxRefs.set(id, entry = shallowRef(savedGeometry.value.boxes.get(id)!))
   return entry
 }
 function edgeRef(id: string) {
   let entry = edgeRefs.get(id)
-  if (!entry) edgeRefs.set(id, entry = shallowRef(edgeGeometry(savedRouted.value, id)!))
+  if (!entry) edgeRefs.set(id, entry = shallowRef(edgeGeometry(savedGeometry.value, id)!))
   return entry
 }
 type NodeItemProps = {
