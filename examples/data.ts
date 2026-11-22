@@ -16,6 +16,14 @@ export interface ExampleData {
   dependencies: TimelineDependency[]
 }
 
+/** The data sets of `makeExample`, with the text of their buttons in English and Japanese. */
+export const datasets: readonly { id: string; label: string; labelJa: string }[] = [
+  { id: 'manufacturing', label: 'Manufacturing', labelJa: '製造' },
+  { id: 'project', label: 'Project delivery', labelJa: 'プロジェクト納品' },
+  { id: 'scale', label: '1,000 resources', labelJa: '1,000 リソース' },
+  { id: 'large', label: 'Large graph', labelJa: '大規模グラフ' },
+]
+
 export function makeExample(name: string): ExampleData {
   if (name === 'large') {
     // 150 ranks of 25 nodes: 3,750 nodes and about 7,400 edges, far wider than one viewport.

@@ -18,13 +18,14 @@ async function recordWheelDefaults(page: Page) {
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  const demo = await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Direction').selectOption('TB')
   await expect(graphStage(page)).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
   await expect(page.locator('.vw-network-node > rect')).toHaveCount(6)
-  await page.getByLabel('Dark theme').check()
-  await expect(page.locator('.demo')).toHaveClass(/dark/)
+  // The site's dark mode switch also switches the demo.
+  await page.getByRole('switch', { name: 'Appearance' }).first().click()
+  await expect(demo.locator('.vw-site-demo-body')).toHaveClass(/dark/)
   await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
   await expect(page.locator('.vw-gantt-bar.vw-is-milestone')).toHaveCount(1)
   await page.getByRole('button', { name: 'Release 15:00–15:00', exact: true }).press('ArrowRight')
@@ -40,10 +41,10 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  const demo = await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Planning overlays').check()
-  await expect(page.getByText('Operating window · UTC')).toBeVisible()
-  await expect(page.getByText('Shift review', { exact: true })).toBeVisible()
+  await expect(demo.getByText('Operating window · UTC')).toBeVisible()
+  await expect(demo.getByText('Shift review', { exact: true })).toBeVisible()
   await expect(page.locator('.vw-gantt-row')).toHaveCount(3)
   await expect(page.locator('.vw-gantt-baseline')).toHaveCount(4)
   const baseline = page.locator('.vw-gantt-baseline').first()
@@ -989,5 +990,15 @@ test('gantt sorting or filtering during a drag cancels the gesture as a source c
   await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')
   await page.mouse.up()
   await expect(chart.getByRole('button', { name: /^Bar Gamma/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the 1,000 resources example scrolls to its last resource on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-scale', { locale: 'ja' })
+  await expect(demo.getByText('1,000 行 · 3,000 区間 · UTC')).toBeVisible()
+  await demo.getByRole('button', { name: '最後のリソース', exact: true }).click()
+  await expect(demo.getByText('リソース 1000', { exact: true })).toBeVisible()
+  expect(await demo.locator('.vw-gantt-row').count()).toBeLessThan(15)
   expect(errors).toEqual([])
 })

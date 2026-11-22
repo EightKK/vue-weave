@@ -11,33 +11,36 @@ import { download, imageSize } from './download'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
 import { unusedNumber } from './ids'
+import { useDemoLocale } from './i18n'
+
+const { t, labels: componentLabels } = useDemoLocale()
 
 const range = { start: origin, end: origin + 10 * hour }
 const quarter = hour / 4
 // The web team reports to the platform team, so indenting and outdenting rows changes the WBS codes.
 const initialRows: TimelineRow[] = [
-  { id: 'product', label: 'Product team', detail: 'Design pool' },
-  { id: 'platform', label: 'Platform team', detail: 'Engineering pool' },
-  { id: 'web', label: 'Web team', detail: 'Engineering pool', parentId: 'platform' },
-  { id: 'quality', label: 'Quality', detail: 'Acceptance only' },
+  { id: 'product', label: t({ en: 'Product team', ja: '製品チーム' }), detail: t({ en: 'Design pool', ja: 'デザインの要員' }) },
+  { id: 'platform', label: t({ en: 'Platform team', ja: '基盤チーム' }), detail: t({ en: 'Engineering pool', ja: '開発の要員' }) },
+  { id: 'web', label: t({ en: 'Web team', ja: 'Web チーム' }), detail: t({ en: 'Engineering pool', ja: '開発の要員' }), parentId: 'platform' },
+  { id: 'quality', label: t({ en: 'Quality', ja: '品質' }), detail: t({ en: 'Acceptance only', ja: '受け入れのみ' }) },
 ]
 const initialBars: TimelineBar[] = [
-  { id: 'wireframes', rowId: 'product', label: 'Wireframes', start: origin, end: origin + 2 * hour, editable: true, tone: 'violet', progress: 0.6 },
-  { id: 'api', rowId: 'platform', label: 'Billing API', start: origin + 2 * hour, end: origin + 5 * hour, editable: true, progress: 0.3 },
-  { id: 'ui', rowId: 'web', label: 'Checkout UI', start: origin + 2 * hour, end: origin + 6 * hour, editable: true, progress: 0.1 },
-  { id: 'tests', rowId: 'quality', label: 'Acceptance tests', start: origin + 6 * hour, end: origin + 8 * hour, editable: true, tone: 'teal' },
+  { id: 'wireframes', rowId: 'product', label: t({ en: 'Wireframes', ja: 'ワイヤーフレーム' }), start: origin, end: origin + 2 * hour, editable: true, tone: 'violet', progress: 0.6 },
+  { id: 'api', rowId: 'platform', label: t({ en: 'Billing API', ja: '請求 API' }), start: origin + 2 * hour, end: origin + 5 * hour, editable: true, progress: 0.3 },
+  { id: 'ui', rowId: 'web', label: t({ en: 'Checkout UI', ja: '購入画面' }), start: origin + 2 * hour, end: origin + 6 * hour, editable: true, progress: 0.1 },
+  { id: 'tests', rowId: 'quality', label: t({ en: 'Acceptance tests', ja: '受け入れテスト' }), start: origin + 6 * hour, end: origin + 8 * hour, editable: true, tone: 'teal' },
 ]
 const initialDependencies: TimelineDependency[] = [{ id: 'wireframes-api', from: 'wireframes', to: 'api' }]
 const resources = [
-  { id: 'design', label: 'Design pool', capacity: 1 },
-  { id: 'engineering', label: 'Engineering pool', capacity: 1 },
+  { id: 'design', label: t({ en: 'Design pool', ja: 'デザインの要員' }), capacity: 1 },
+  { id: 'engineering', label: t({ en: 'Engineering pool', ja: '開発の要員' }), capacity: 1 },
 ]
 const initialAssignments = new Map([['wireframes', 'design'], ['api', 'engineering'], ['ui', 'engineering'], ['tests', 'engineering']])
 // Tasks added from the context menu draw on the pool of their row.
 const rowResources = new Map([['product', 'design'], ['platform', 'engineering'], ['web', 'engineering']])
 const zoomPresets: TimelineZoomPreset[] = [
-  { id: 'hours', label: 'Hours', pixelsPerUnit: 115 / hour, tickSteps: [hour], headerBands: [calendarBands(range, 'day', { label: start => 'Day ' + new Date(start).toISOString().slice(0, 10) })] },
-  { id: 'shifts', label: 'Shifts', pixelsPerUnit: 45 / hour, tickSteps: [4 * hour], headerBands: [calendarBands(range, 'hour', { step: 4, label: start => 'Shift from ' + formatTime(start) })] },
+  { id: 'hours', label: t({ en: 'Hours', ja: '時間' }), pixelsPerUnit: 115 / hour, tickSteps: [hour], headerBands: [calendarBands(range, 'day', { label: start => t({ en: 'Day ', ja: '日付 ' }) + new Date(start).toISOString().slice(0, 10) })] },
+  { id: 'shifts', label: t({ en: 'Shifts', ja: 'シフト' }), pixelsPerUnit: 45 / hour, tickSteps: [4 * hour], headerBands: [calendarBands(range, 'hour', { step: 4, label: start => t({ en: 'Shift from ' + formatTime(start), ja: formatTime(start) + ' からのシフト' }) })] },
 ]
 
 // Accepted changes are committed as immutable snapshots, so Undo restores deleted bars and their dependencies. Column
@@ -47,8 +50,8 @@ const { state: model, canUndo, canRedo } = history
 const selection = ref(new Set<string>())
 const selectedDependency = ref<string>()
 const preset = ref('hours')
-const zoomState = ref('100% · hours')
-const status = ref('Select bars with Ctrl, Meta or Shift. Use link handles to add dependencies.')
+const zoomState = ref(t({ en: '100% · hours', ja: '100% · 時間' }))
+const status = ref(t({ en: 'Select bars with Ctrl, Meta or Shift. Use link handles to add dependencies.', ja: 'Ctrl、Meta、Shift でバーを複数選択できます。リンクのハンドルで依存関係を追加します。' }))
 const labels = computed(() => new Map(model.value.bars.map(bar => [bar.id, bar.label])))
 const rows = computed(() => model.value.rows)
 const rowLabel = (id: string) => model.value.rows.find(row => row.id === id)?.label
@@ -77,37 +80,40 @@ function reset() {
   history.reset({ rows: [...initialRows], bars: [...initialBars], dependencies: [...initialDependencies], widths: {} })
   selection.value = new Set()
   selectedDependency.value = undefined
-  status.value = 'Timeline editing example reset.'
+  status.value = t({ en: 'Timeline editing example reset.', ja: 'タイムライン編集の例を初期状態に戻しました。' })
 }
 function undo() {
   history.undo()
-  status.value = 'Undid the last timeline change.'
+  status.value = t({ en: 'Undid the last timeline change.', ja: '直前のタイムラインの変更を元に戻しました。' })
 }
 function redo() {
   history.redo()
-  status.value = 'Redid the timeline change.'
+  status.value = t({ en: 'Redid the timeline change.', ja: 'タイムラインの変更をやり直しました。' })
 }
 function validateConnection(connection: TimelineConnection, replacing?: string) {
   if (model.value.dependencies.some(dep => dep.id !== replacing && dep.from === connection.from && dep.to === connection.to)) {
-    return 'These bars are already linked.'
+    return t({ en: 'These bars are already linked.', ja: 'これらのバーはすでにつながっています。' })
   }
 }
 function connect(connection: TimelineConnection) {
   const number = unusedNumber(model.value.dependencies, 'link-', model.value.dependencies.length + 1)
   commit(model.value.bars, [...model.value.dependencies, { id: 'link-' + number, ...connection }])
-  status.value = `Added ${connection.type} dependency from ${labels.value.get(connection.from)} to ${labels.value.get(connection.to)}.`
+  status.value = t({
+    en: `Added ${connection.type} dependency from ${labels.value.get(connection.from)} to ${labels.value.get(connection.to)}.`,
+    ja: `${labels.value.get(connection.from)} から ${labels.value.get(connection.to)} への ${connection.type} 依存関係を追加しました。`,
+  })
 }
 function reconnect(change: TimelineReconnect) {
   commit(model.value.bars, model.value.dependencies.map(dep => dep.id === change.id ? { ...dep, ...change.after } : dep))
-  status.value = `Reconnected ${change.id} as ${change.after.type} to ${labels.value.get(change.after.to)}.`
+  status.value = t({ en: `Reconnected ${change.id} as ${change.after.type} to ${labels.value.get(change.after.to)}.`, ja: `${change.id} を ${labels.value.get(change.after.to)} への ${change.after.type} につなぎ替えました。` })
 }
 function removeDependency(id: string) {
   commit(model.value.bars, model.value.dependencies.filter(dep => dep.id !== id))
   selectedDependency.value = undefined
-  status.value = 'Deleted dependency ' + id + '.'
+  status.value = t({ en: 'Deleted dependency ' + id + '.', ja: '依存関係 ' + id + ' を削除しました。' })
 }
 function validateEdit(change: TimelineEdit) {
-  if (change.row?.after === 'quality' && change.id !== 'tests') return 'Only acceptance work can move to Quality.'
+  if (change.row?.after === 'quality' && change.id !== 'tests') return t({ en: 'Only acceptance work can move to Quality.', ja: '品質に移せるのは受け入れの作業だけです。' })
 }
 function validateEdits(changes: readonly TimelineEdit[]) {
   for (const change of changes) {
@@ -122,19 +128,19 @@ function apply(changes: readonly TimelineEdit[]) {
     return change ? { ...bar, ...change.after, rowId: change.row?.after ?? bar.rowId } : bar
   }))
   const [first] = changes
-  status.value = changes.length > 1 ? `Moved ${changes.length} bars.`
-    : first?.row ? `Moved ${labels.value.get(first.id)} to ${rowLabel(first.row.after)}.`
-      : `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}.`
+  status.value = changes.length > 1 ? t({ en: `Moved ${changes.length} bars.`, ja: `${changes.length} 本のバーを移動しました。` })
+    : first?.row ? t({ en: `Moved ${labels.value.get(first.id)} to ${rowLabel(first.row.after)}.`, ja: `${labels.value.get(first.id)} を ${rowLabel(first.row.after)} に移動しました。` })
+      : t({ en: `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}.`, ja: `${labels.value.get(first!.id)} → ${formatTime(first!.after.start)}–${formatTime(first!.after.end)}。` })
 }
 function setProgress(id: string, progress: number) {
   commit(model.value.bars.map(bar => bar.id === id ? { ...bar, progress } : bar))
-  status.value = `${labels.value.get(id)} progress ${Math.round(progress * 100)}%.`
+  status.value = t({ en: `${labels.value.get(id)} progress ${Math.round(progress * 100)}%.`, ja: `${labels.value.get(id)} の進捗 ${Math.round(progress * 100)}%。` })
 }
 function applyProgress(change: TimelineProgressEdit) {
   setProgress(change.id, change.after)
 }
 function validateBarsDelete(ids: readonly string[]) {
-  if (ids.length >= model.value.bars.length) return 'Keep at least one task in the plan.'
+  if (ids.length >= model.value.bars.length) return t({ en: 'Keep at least one task in the plan.', ja: '計画には少なくとも1つのタスクを残してください。' })
 }
 function deleteBars(ids: readonly string[]) {
   const names = ids.map(id => labels.value.get(id))
@@ -142,15 +148,15 @@ function deleteBars(ids: readonly string[]) {
   const next = removeTimelineBars(model.value.bars, model.value.dependencies, ids)
   commit(next.bars, next.dependencies)
   selection.value = new Set([...selection.value].filter(id => !ids.includes(id)))
-  status.value = ids.length > 1 ? `Deleted ${ids.length} bars.` : `Deleted ${names[0]}.`
+  status.value = ids.length > 1 ? t({ en: `Deleted ${ids.length} bars.`, ja: `${ids.length} 本のバーを削除しました。` }) : t({ en: `Deleted ${names[0]}.`, ja: `${names[0]} を削除しました。` })
 }
 /** Add a new task with a fresh ID and label as one undoable step. */
 function addBar(rowId: string, start: number, end: number, lane?: number) {
   const number = unusedNumber(model.value.bars, 'task-')
-  const bar: TimelineBar = { id: 'task-' + number, rowId, label: 'New task ' + number, start, end, editable: true, tone: 'amber', progress: 0 }
+  const bar: TimelineBar = { id: 'task-' + number, rowId, label: t({ en: 'New task ', ja: '新しいタスク ' }) + number, start, end, editable: true, tone: 'amber', progress: 0 }
   if (lane) bar.lane = lane
   commit([...model.value.bars, bar])
-  status.value = `Added ${bar.label} at ${formatTime(bar.start)}–${formatTime(bar.end)} to ${rowLabel(rowId)}.`
+  status.value = t({ en: `Added ${bar.label} at ${formatTime(bar.start)}–${formatTime(bar.end)} to ${rowLabel(rowId)}.`, ja: `${rowLabel(rowId)} の ${formatTime(bar.start)}–${formatTime(bar.end)} に ${bar.label} を追加しました。` })
 }
 function addTask(rowId: string, time: number) {
   const start = Math.min(range.end - hour, Math.max(range.start, Math.round(time / quarter) * quarter))
@@ -161,27 +167,27 @@ function addTask(rowId: string, time: number) {
 // "Reorder rows" shows a move handle on each team: drag it, or use Alt+Up/Down and Alt+Shift+Left/Right. Accepted
 // moves are committed to the same history as bar edits, so Undo restores the previous hierarchy.
 function validateRowMove(change: TimelineRowMove) {
-  if (change.after.parentId === 'quality') return 'Quality cannot contain other teams.'
+  if (change.after.parentId === 'quality') return t({ en: 'Quality cannot contain other teams.', ja: '品質の下に他のチームは置けません。' })
 }
 function moveRow(change: TimelineRowMove) {
   const next = moveTimelineRow(model.value.rows, change.id, change.after)
   history.commit({ ...model.value, rows: next })
-  const parent = change.after.parentId === undefined ? 'the top level' : rowLabel(change.after.parentId)
-  status.value = `Moved ${rowLabel(change.id)} to ${parent} as WBS ${timelineWbsCodes(next).get(change.id)}.`
+  const parent = change.after.parentId === undefined ? t({ en: 'the top level', ja: '最上位' }) : rowLabel(change.after.parentId)
+  status.value = t({ en: `Moved ${rowLabel(change.id)} to ${parent} as WBS ${timelineWbsCodes(next).get(change.id)}.`, ja: `${rowLabel(change.id)} を ${parent} に移動しました(WBS ${timelineWbsCodes(next).get(change.id)})。` })
 }
 function validateCreate(proposal: TimelineCreate) {
-  if (proposal.rowId === 'quality') return 'New tasks cannot be added to Quality.'
+  if (proposal.rowId === 'quality') return t({ en: 'New tasks cannot be added to Quality.', ja: '品質には新しいタスクを追加できません。' })
 }
 function create(proposal: TimelineCreate) {
   addBar(proposal.rowId, proposal.start, proposal.end, arrange.value ? proposal.lane : undefined)
 }
-const columnName = (id: string) => id === timelineLabelColumnId ? 'Team' : columns.value?.find(column => column.id === id)?.label ?? id
+const columnName = (id: string) => id === timelineLabelColumnId ? t({ en: 'Team', ja: 'チーム' }) : columns.value?.find(column => column.id === id)?.label ?? id
 function validateColumnResize(change: TimelineColumnResize) {
-  if (change.id === timelineLabelColumnId && change.after < 110) return 'The team column needs at least 110 px.'
+  if (change.id === timelineLabelColumnId && change.after < 110) return t({ en: 'The team column needs at least 110 px.', ja: 'チームの列には 110 px 以上の幅が必要です。' })
 }
 function resizeColumn(change: TimelineColumnResize) {
   history.commit({ ...model.value, widths: { ...model.value.widths, [change.id]: change.after } })
-  status.value = `Resized the ${columnName(change.id)} column to ${change.after} px.`
+  status.value = t({ en: `Resized the ${columnName(change.id)} column to ${change.after} px.`, ja: `${columnName(change.id)}の列の幅を ${change.after} px にしました。` })
 }
 // "Import CSV" reads a file in the layout of `timelineCsvTable` (Row, WBS, Bar, Start, End, Progress, with times as
 // ISO 8601 or as HH:MM on the demo day) and replaces the rows and bars as one undoable step.
@@ -196,7 +202,7 @@ async function importCsv(event: Event) {
   if (!file) return
   try {
     const imported = timelineFromCsvTable(parseCsv(await file.text()), { parseTime: parseDemoTime })
-    if (!imported.bars.length) throw new Error('The file has no bars.')
+    if (!imported.bars.length) throw new Error(t({ en: 'The file has no bars.', ja: 'ファイルにバーがありません。' }))
     history.commit({
       ...model.value,
       rows: imported.rows,
@@ -205,9 +211,9 @@ async function importCsv(event: Event) {
     })
     selection.value = new Set()
     selectedDependency.value = undefined
-    status.value = `Imported ${imported.bars.length} bars in ${imported.rows.length} rows from ${file.name}.`
+    status.value = t({ en: `Imported ${imported.bars.length} bars in ${imported.rows.length} rows from ${file.name}.`, ja: `${file.name} から ${imported.rows.length} 行・${imported.bars.length} 本のバーを読み込みました。` })
   } catch (error) {
-    status.value = 'Import failed: ' + (error instanceof Error ? error.message : String(error))
+    status.value = t({ en: 'Import failed: ', ja: '読み込みに失敗しました: ' }) + (error instanceof Error ? error.message : String(error))
   }
 }
 // "Import MS Project XML" reads a Microsoft Project XML (MSPDI) file whose wall-clock dates are UTC, like this demo, and
@@ -221,7 +227,7 @@ async function importMsProject(event: Event) {
   try {
     const project = fromMsProjectXml(await file.text())
     const timeline = timelineFromMsProject(project)
-    if (!timeline.bars.length) throw new Error('The file has no tasks.')
+    if (!timeline.bars.length) throw new Error(t({ en: 'The file has no tasks.', ja: 'ファイルにタスクがありません。' }))
     history.commit({
       ...model.value,
       rows: timeline.rows,
@@ -231,9 +237,12 @@ async function importMsProject(event: Event) {
     selection.value = new Set()
     selectedDependency.value = undefined
     const warnings = project.warnings.length === 1 ? ' with 1 warning' : project.warnings.length ? ` with ${project.warnings.length} warnings` : ''
-    status.value = `Imported ${timeline.bars.length} tasks and ${timeline.dependencies.length} dependencies from ${file.name}${warnings}.`
+    status.value = t({
+      en: `Imported ${timeline.bars.length} tasks and ${timeline.dependencies.length} dependencies from ${file.name}${warnings}.`,
+      ja: `${file.name} からタスク ${timeline.bars.length} 件と依存関係 ${timeline.dependencies.length} 件を読み込みました${project.warnings.length ? `(警告 ${project.warnings.length} 件)` : ''}。`,
+    })
   } catch (error) {
-    status.value = 'Import failed: ' + (error instanceof Error ? error.message : String(error))
+    status.value = t({ en: 'Import failed: ', ja: '読み込みに失敗しました: ' }) + (error instanceof Error ? error.message : String(error))
   }
 }
 // "Auto-arrange lanes" stacks overlapping bars of a row. keepLanes keeps every bar that fits in its lane, so only a
@@ -248,27 +257,31 @@ const rowHeight = computed(() => Math.max(66, 8 + laneCount.value * 26))
 const chart = ref<InstanceType<typeof GanttChart>>()
 const rtl = ref(false)
 function exportSvg() {
-  const svg = chart.value?.exportSvg({ title: 'Timeline editing', rowHeading: 'Team' })
+  const svg = chart.value?.exportSvg({ title: t({ en: 'Timeline editing', ja: 'タイムライン編集' }), rowHeading: t({ en: 'Team', ja: 'チーム' }) })
   if (!svg) return
   download(svg, 'timeline.svg')
-  status.value = 'Exported SVG (' + svg.length + ' characters).'
+  status.value = t({ en: 'Exported SVG (' + svg.length + ' characters).', ja: 'SVG を出力しました(' + svg.length + ' 文字)。' })
 }
 async function exportPng() {
   try {
-    const blob = await chart.value?.exportPng({ scale: 2, rowHeading: 'Team' })
+    const blob = await chart.value?.exportPng({ scale: 2, rowHeading: t({ en: 'Team', ja: 'チーム' }) })
     if (!blob) return
     download(blob, 'timeline.png')
-    status.value = 'Exported PNG ' + await imageSize(blob) + '.'
+    const size = await imageSize(blob)
+    status.value = t({ en: 'Exported PNG ' + size + '.', ja: 'PNG を出力しました(' + size + ')。' })
   } catch (error) {
     status.value = error instanceof Error ? error.message : String(error)
   }
 }
 function onZoom(state: TimelineZoomState) {
-  zoomState.value = Math.round(state.zoom * 100) + '% · ' + (state.preset ?? 'custom')
+  const preset = zoomPresets.find(item => item.id === state.preset)
+  zoomState.value = Math.round(state.zoom * 100) + '% · ' + t({ en: state.preset ?? 'custom', ja: preset?.label ?? 'カスタム' })
 }
 async function fit(ids?: readonly string[]) {
   await chart.value?.fitToBars(ids)
-  status.value = ids ? `Fitted ${ids.length === 1 ? labels.value.get(ids[0]!) : ids.length + ' bars'} into view.` : 'Fitted all bars into view.'
+  status.value = ids
+    ? t({ en: `Fitted ${ids.length === 1 ? labels.value.get(ids[0]!) : ids.length + ' bars'} into view.`, ja: `${ids.length === 1 ? labels.value.get(ids[0]!) : ids.length + ' 本のバー'}に合わせて表示しました。` })
+    : t({ en: 'Fitted all bars into view.', ja: 'すべてのバーが見えるように表示しました。' })
 }
 
 // A demo-rendered context menu. The chart only reports the target, time and row; the menu, its items and focus
@@ -280,23 +293,23 @@ let returnFocus: HTMLElement | undefined
 function openMenu(event: TimelineContextMenu) {
   const { target } = event
   const items: MenuItem[] = []
-  let title = 'Timeline actions'
+  let title = t({ en: 'Timeline actions', ja: 'タイムラインの操作' })
   if (target.kind === 'bar') {
     const bar = model.value.bars.find(item => item.id === target.id)!
-    title = 'Actions for ' + bar.label
-    items.push({ label: 'Delete', run: () => removeFromMenu([bar.id]) })
-    items.push({ label: 'Set progress to 100%', run: () => setProgress(bar.id, 1) })
-    items.push({ label: 'Fit to bar', run: () => void fit([bar.id]) })
+    title = t({ en: 'Actions for ' + bar.label, ja: bar.label + ' の操作' })
+    items.push({ label: t({ en: 'Delete', ja: '削除' }), run: () => removeFromMenu([bar.id]) })
+    items.push({ label: t({ en: 'Set progress to 100%', ja: '進捗を 100% にする' }), run: () => setProgress(bar.id, 1) })
+    items.push({ label: t({ en: 'Fit to bar', ja: 'バーに合わせる' }), run: () => void fit([bar.id]) })
   } else if (target.kind === 'dependency') {
-    title = 'Actions for dependency ' + target.id
-    items.push({ label: 'Delete dependency', run: () => removeDependency(target.id) })
+    title = t({ en: 'Actions for dependency ' + target.id, ja: '依存関係 ' + target.id + ' の操作' })
+    items.push({ label: t({ en: 'Delete dependency', ja: '依存関係を削除' }), run: () => removeDependency(target.id) })
   } else {
     if (event.rowId !== undefined && event.time !== undefined) {
       const { rowId, time } = event
-      title = 'Actions for ' + rowLabel(rowId)
-      items.push({ label: 'Add task here', run: () => addTask(rowId, time) })
+      title = t({ en: 'Actions for ' + rowLabel(rowId), ja: rowLabel(rowId) + ' の操作' })
+      items.push({ label: t({ en: 'Add task here', ja: 'ここにタスクを追加' }), run: () => addTask(rowId, time) })
     }
-    items.push({ label: 'Fit all bars', run: () => void fit() })
+    items.push({ label: t({ en: 'Fit all bars', ja: 'すべてのバーを表示' }), run: () => void fit() })
   }
   returnFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : undefined
   menu.value = { x: event.clientX, y: event.clientY, title, items }
@@ -350,15 +363,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 </script>
 
 <template>
-  <DemoPanel title-id="editing-title" title="Timeline editing" subtitle="Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC">
-    <template #options><output aria-label="Zoom state">{{ zoomState }}</output><button type="button" @click="reset">Reset timeline</button><label><input v-model="rtl" type="checkbox"> Right-to-left timeline</label><label><input v-model="arrange" type="checkbox"> Auto-arrange lanes</label><label><input v-model="reorder" type="checkbox"> Reorder rows</label><label><input v-model="resizable" type="checkbox"> Resize columns</label><label><input v-model="wheel" type="checkbox"> Ctrl+wheel zoom</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">Scroll to 12:00</button><button type="button" @click="exportSvg">Export SVG</button><button type="button" @click="exportPng">Export PNG</button></template>
-    <div class="options editing-actions" role="group" aria-label="History and fit">
-      <button type="button" :disabled="!canUndo" @click="undo">Undo timeline change</button>
-      <button type="button" :disabled="!canRedo" @click="redo">Redo timeline change</button>
-      <button type="button" @click="fit()">Fit all bars</button>
-      <button type="button" :disabled="!selection.size" @click="fit([...selection])">Fit selection</button>
-      <label class="import-file">Import CSV <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
-      <label class="import-file">Import MS Project XML <input type="file" accept=".xml,application/xml,text/xml" @change="importMsProject"></label>
+  <DemoPanel title-id="editing-title" :title="t({ en: 'Timeline editing', ja: 'タイムライン編集' })" :subtitle="t({ en: 'Dependencies, drag to create, batch moves, row moves, progress, deletion, zoom presets and resource load · UTC', ja: '依存関係、ドラッグでの作成、一括移動、行の移動、進捗、削除、ズームプリセット、リソース負荷 · UTC' })">
+    <template #options><output :aria-label="t({ en: 'Zoom state', ja: 'ズームの状態' })">{{ zoomState }}</output><button type="button" @click="reset">{{ t({ en: 'Reset timeline', ja: 'タイムラインをリセット' }) }}</button><label><input v-model="rtl" type="checkbox"> {{ t({ en: 'Right-to-left timeline', ja: '右から左のタイムライン' }) }}</label><label><input v-model="arrange" type="checkbox"> {{ t({ en: 'Auto-arrange lanes', ja: 'レーンを自動配置' }) }}</label><label><input v-model="reorder" type="checkbox"> {{ t({ en: 'Reorder rows', ja: '行を並べ替え' }) }}</label><label><input v-model="resizable" type="checkbox"> {{ t({ en: 'Resize columns', ja: '列幅を変更' }) }}</label><label><input v-model="wheel" type="checkbox"> {{ t({ en: 'Ctrl+wheel zoom', ja: 'Ctrl+ホイールで拡大縮小' }) }}</label><button type="button" @click="chart?.scrollToTime(origin + 4 * hour)">{{ t({ en: 'Scroll to 12:00', ja: '12:00 へスクロール' }) }}</button><button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button><button type="button" @click="exportPng">{{ t({ en: 'Export PNG', ja: 'PNG で出力' }) }}</button></template>
+    <div class="options editing-actions" role="group" :aria-label="t({ en: 'History and fit', ja: '履歴と表示範囲' })">
+      <button type="button" :disabled="!canUndo" @click="undo">{{ t({ en: 'Undo timeline change', ja: 'タイムラインの変更を元に戻す' }) }}</button>
+      <button type="button" :disabled="!canRedo" @click="redo">{{ t({ en: 'Redo timeline change', ja: 'タイムラインの変更をやり直す' }) }}</button>
+      <button type="button" @click="fit()">{{ t({ en: 'Fit all bars', ja: 'すべてのバーを表示' }) }}</button>
+      <button type="button" :disabled="!selection.size" @click="fit([...selection])">{{ t({ en: 'Fit selection', ja: '選択に合わせる' }) }}</button>
+      <label class="import-file">{{ t({ en: 'Import CSV', ja: 'CSV を読み込む' }) }} <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
+      <label class="import-file">{{ t({ en: 'Import MS Project XML', ja: 'MS Project XML を読み込む' }) }} <input type="file" accept=".xml,application/xml,text/xml" @change="importMsProject"></label>
     </div>
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom :wheel-zoom="wheel" show-now :now="origin + 3.5 * hour"
@@ -369,17 +382,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       v-model:selected-ids="selection" v-model:selected-dependency-id="selectedDependency" v-model:zoom-preset="preset"
       :zoom-presets="zoomPresets" :validate-connection="validateConnection" :validate-edit="validateEdit" :validate-edits="validateEdits"
       :validate-bars-delete="validateBarsDelete"
-      :load-rows="resources" :load-segments="load" :labels="{ region: 'Editable timeline', rows: 'Team' }"
+      :load-rows="resources" :load-segments="load" :labels="{ ...componentLabels.gantt, region: t({ en: 'Editable timeline', ja: '編集できるタイムライン' }), rows: t({ en: 'Team', ja: 'チーム' }) }"
       @connect="connect" @reconnect="reconnect" @connect-rejected="(_connection, reason) => status = reason"
-      @dependency-select="id => status = 'Selected dependency ' + id + '. Press Delete to remove it.'"
+      @dependency-select="id => status = t({ en: 'Selected dependency ' + id + '. Press Delete to remove it.', ja: '依存関係 ' + id + ' を選択しました。Delete で削除します。' })"
       @dependency-delete="removeDependency" @edit="apply([$event])" @edits="apply" @zoom-change="onZoom"
       @edit-rejected="(_change, reason) => status = reason" @edits-rejected="(_changes, reason) => status = reason"
       @progress-edit="applyProgress" @bars-delete="deleteBars" @bars-delete-rejected="(_ids, reason) => status = reason"
       @create="create" @create-rejected="(_proposal, reason) => status = reason" @context-menu="openMenu">
-      <template #row-heading>Team</template>
-      <template #legend><span class="hint">Drag across an empty row or press + to add a task · Ctrl/Shift-click selects several bars · Up/Down moves rows · Delete removes · Right-click or Shift+F10 for actions · Pinch to zoom on touch</span></template>
+      <template #row-heading>{{ t({ en: 'Team', ja: 'チーム' }) }}</template>
+      <template #legend><span class="hint">{{ t({ en: 'Drag across an empty row or press + to add a task · Ctrl/Shift-click selects several bars · Up/Down moves rows · Delete removes · Right-click or Shift+F10 for actions · Pinch to zoom on touch', ja: '空いている行をドラッグするか + でタスクを追加 · Ctrl/Shift+クリックで複数選択 · 上下キーで行を移動 · Delete で削除 · 右クリックか Shift+F10 で操作 · タッチではピンチで拡大縮小' }) }}</span></template>
       <template #tooltip="{ bar, range: shown }">
-        <strong>{{ bar.label }}</strong><br>{{ formatTime(shown.start) }}–{{ formatTime(shown.end) }} · {{ Math.round((bar.progress ?? 0) * 100) }}% complete
+        <strong>{{ bar.label }}</strong><br>{{ formatTime(shown.start) }}–{{ formatTime(shown.end) }} · {{ Math.round((bar.progress ?? 0) * 100) }}{{ t({ en: '% complete', ja: '% 完了' }) }}
       </template>
     </GanttChart>
     <StatusLine>{{ status }}</StatusLine>

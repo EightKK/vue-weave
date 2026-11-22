@@ -1,13 +1,13 @@
 // NetworkGraph editing: node and group moves, drag previews under culling, routing during drags, snapping, alignment
 // guides, auto-pan, waypoints and resizing.
 import {
-  expect, test, animationFrames, boxCenter, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, openDemo, openGraphEditor,
+  expect, test, animationFrames, boxCenter, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, openExample, openGraphEditor,
   openNetworkFixture, pageErrors, pressAndMove, pressAndMoveTo, readCamera, readJson, type Point,
 } from './support'
 
 test('range selection and group movement commit an atomic batch', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   const lots = graphNode(page, /^Lot A123-/)
   const boxes = await Promise.all([lots.first().boundingBox(), lots.last().boundingBox()])
@@ -421,7 +421,7 @@ test('demo nodes resize by pointer and keyboard with undo', async ({ page }) => 
 
 test('process lanes: with Route around steps, dragging a step across an unrelated orthogonal route reroutes it during the drag', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Process lanes')
+  await openExample(page, 'process-lanes')
   const stage = page.getByLabel('Process lane graph', { exact: true })
   await stage.scrollIntoViewIfNeeded()
   await page.getByLabel('Process edge style').selectOption('orthogonal')
@@ -446,5 +446,14 @@ test('process lanes: with Route around steps, dragging a step across an unrelate
   await expect.poll(() => edge.getAttribute('d')).toBe(before)
   await page.mouse.up()
   await expect(edge).toHaveAttribute('d', before!)
+  expect(errors).toEqual([])
+})
+
+test('the process lanes example adds a step to a lane and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'process-lanes', { locale: 'ja' })
+  await expect(demo.getByLabel('スイムレーンのグラフ', { exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: '工程を追加', exact: true }).click()
+  await expect(demo.getByRole('status', { name: 'スイムレーンの状態' })).toHaveText('工程 1 を出荷に追加しました。')
   expect(errors).toEqual([])
 })

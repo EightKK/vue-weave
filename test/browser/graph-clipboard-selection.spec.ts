@@ -2,7 +2,7 @@
 // and toolbar, group and minimap slots.
 import {
   expect, test, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, graphZoom, openGraphEditor, openNetworkFixture, pageErrors, readJson,
-  snapped,
+  snapped, openExample,
 } from './support'
 
 test('culling keeps selected edges rendered; Delete proposes the edge selection', async ({ page }) => {
@@ -229,7 +229,7 @@ test('demo edge style switches between curves, orthogonal routes and straight li
 
 test('lasso selection selects the nodes whose centre the outline encloses, keeps modifiers and cancels on Escape', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Lasso selection').check()
   const lots = graphNode(page, /^Lot A123-/)
@@ -286,7 +286,7 @@ test('lasso selection selects the nodes whose centre the outline encloses, keeps
 
 test('toolbar slots follow the selected node and edge, and group and minimap slots restyle the graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Item toolbars').check()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -353,5 +353,17 @@ test('toolbar slots follow the selected node and edge, and group and minimap slo
   await page.getByLabel('Item toolbars').uncheck()
   await expect(page.locator('.vw-has-slot')).toHaveCount(0)
   await expect(graphMinimap(page).locator('.demo-minimap-node')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the graph palette adds a node and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await demo.getByRole('checkbox', { name: 'グラフを編集', exact: true }).check()
+  const palette = demo.getByRole('group', { name: 'ノードのパレット' })
+  await palette.getByRole('button', { name: '工程を追加', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '工程 1 を追加しました。' })).toBeVisible()
+  await demo.getByRole('button', { name: '元に戻す', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '直前の編集を元に戻しました。' })).toBeVisible()
   expect(errors).toEqual([])
 })

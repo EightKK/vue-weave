@@ -2,11 +2,11 @@
 // aggregateTimeBuckets) that follow a GanttChart's visible window. Covers load states that are never shown as 0, a
 // mid-week shortage inside a positive week, demand edits that recompute balances with undo, the chart window driving the
 // table's periods, linked order highlights and the day/week toggle.
-import { expect, test, openDemo, pageErrors, type Page } from './support'
+import { expect, test, openExample, pageErrors, type Page } from './support'
 
 async function openPeriodTable(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Period table')
+  await openExample(page, 'period-table')
   const demo = page.locator('section[aria-labelledby="period-table-title"]')
   const grid = demo.getByRole('treegrid', { name: 'Period table', exact: true })
   const chart = demo.getByRole('region', { name: 'Supply orders', exact: true })
@@ -179,5 +179,15 @@ test('period table: the day/week toggle rebuilds the columns, and week cells are
   await demo.getByRole('radio', { name: 'Days', exact: true }).check()
   await expect(firstColumn()).toHaveText('Mon, Jun 1')
   await expect(await cell('Bracket demand', 'Mon, Jun 1')).not.toHaveAttribute('aria-readonly', 'true')
+  expect(errors).toEqual([])
+})
+
+test('the period table example shows its periods and measures in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'period-table', { locale: 'ja' })
+  await expect(demo.getByRole('treegrid', { name: '期間別テーブル' })).toBeVisible()
+  await expect(demo.getByText('北工場', { exact: true }).first()).toBeVisible()
+  await demo.getByRole('radio', { name: '週', exact: true }).check()
+  await expect(demo.getByRole('columnheader', { name: /の週$/ }).first()).toBeVisible()
   expect(errors).toEqual([])
 })

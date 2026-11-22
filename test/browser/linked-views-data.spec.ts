@@ -1,9 +1,9 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openExample, openDemo, pageErrors, pressAndMove, type Page } from './support'
+import { expect, test, openExample, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Saved editing')
+  await openExample(page, 'saved-editing')
   const chart = page.getByRole('region', { name: 'Saved timeline', exact: true })
   await expect(chart).toBeVisible()
   return {
@@ -29,7 +29,7 @@ async function openLinkedDemo(page: Page) {
 
 async function openAsyncDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Async layout')
+  await openExample(page, 'async-layout')
   const demo = page.locator('section[aria-labelledby="async-title"]')
   await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
   return {
@@ -42,7 +42,7 @@ async function openAsyncDemo(page: Page) {
 
 async function openLargePlanDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Large plan')
+  await openExample(page, 'large-plan')
   const demo = page.locator('section[aria-labelledby="large-plan-title"]')
   const status = demo.getByRole('status', { name: 'Window status' })
   const loaded = demo.getByLabel('Loaded bars', { exact: true })
@@ -815,5 +815,14 @@ test('large plan: with Keep positions when expanding, the parts already shown st
     expect(after[i]!.y).toBeCloseTo(before[i]!.y, 1)
     expect(after[i]!.width).toBeCloseTo(before[i]!.width, 1)
   }
+  expect(errors).toEqual([])
+})
+
+test('the saved editing example saves JSON and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'saved-editing', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: '保存するタイムライン', exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: 'JSON を保存', exact: true }).click()
+  await expect(demo.getByRole('status', { name: 'JSON の状態' })).toContainText('タスク 5 件と表示状態を JSON で保存しました')
   expect(errors).toEqual([])
 })

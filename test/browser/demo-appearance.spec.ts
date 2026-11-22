@@ -4,8 +4,8 @@ import { examplesOfKind } from '../../site/examples/registry'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
-  const demo = page.locator('.demo')
+  const frame = await openExample(page, 'graph-and-gantt')
+  const demo = frame.locator('.graph-gantt-demo')
   const surface = () => page.locator('.vw-network').first().evaluate(el => getComputedStyle(el).getPropertyValue('--vw-surface').trim())
   expect(await surface()).toBe('')
   await page.getByLabel('Built-in theme').selectOption('vw-theme-dark')
@@ -22,7 +22,7 @@ test('demo built-in theme switch applies the stylesheet theme classes', async ({
 test('mobile layout and horizontal scrolling', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
   const viewport = ganttRegion(page)
   expect(await viewport.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
@@ -155,7 +155,7 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
   expect(pngSize(png.bytes)).toEqual({ width: 2576, height: 836 })
   await expect(status('Exported PNG 2576 × 836 px.')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await openExample(page, 'graph-and-gantt')
   const graphSvg = await save('Export graph SVG')
   const graphText = graphSvg.bytes.toString('utf8')
   expect(graphSvg.name).toBe('network.svg')
@@ -178,15 +178,15 @@ test('export controls download a whole-chart SVG and a scaled PNG for both compo
 
 test('the graph Undo and Redo buttons are hidden in the scheduling and timeline editing demos', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const undo = page.getByRole('button', { name: 'Undo', exact: true }), redo = page.getByRole('button', { name: 'Redo', exact: true })
   await expect(undo).toBeVisible()
-  for (const name of ['Scheduling', 'Timeline editing']) {
-    await page.getByRole('button', { name, exact: true }).click()
+  for (const id of ['scheduling', 'timeline-editing']) {
+    await openExample(page, id)
     await expect(undo).toHaveCount(0)
     await expect(redo).toHaveCount(0)
   }
-  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await openExample(page, 'graph-and-gantt')
   await expect(undo).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -444,5 +444,21 @@ test('on Japanese pages the roadmap, sprint, booking and calendar showcases use 
   await expect(showcase.getByLabel('言語')).toHaveValue('ja-JP')
   await expect(showcase.getByRole('group', { name: 'ズームレベル', exact: true }).or(showcase.getByRole('group', { name: '表示単位', exact: true }))).toBeVisible()
   await expect(showcase.getByRole('img', { name: /^コードフリーズ / })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the graph and Gantt example shows its controls, sections and data in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await expect(demo.getByRole('navigation', { name: 'データセット' }).getByRole('button', { name: '製造', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo.getByRole('button', { name: 'グラフを SVG で出力', exact: true })).toBeVisible()
+  await expect(demo.getByLabel('組み込みテーマ')).toBeVisible()
+  await expect(demo.getByRole('heading', { name: 'ネットワーク', exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: 'タイムライン', exact: true })).toBeVisible()
+  await expect(demo.getByLabel('ネットワーク図', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('status').filter({ hasText: 'ノードかバーを選んでください。' })).toBeVisible()
+  await demo.getByRole('button', { name: 'プロジェクト納品', exact: true }).click()
+  await expect(demo.getByRole('status').filter({ hasText: '例を初期状態に戻しました。' })).toBeVisible()
+  await expect(demo.getByText('基盤チーム', { exact: true }).first()).toBeVisible()
   expect(errors).toEqual([])
 })

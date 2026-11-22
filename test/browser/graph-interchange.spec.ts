@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { deflateRawSync } from 'node:zlib'
-import { expect, test, dragBy, openDemo, pageErrors, type Page } from './support'
+import { expect, test, dragBy, openExample, pageErrors, type Page } from './support'
 
 async function openInterchange(page: Page) {
-  await openDemo(page, 'Diagram import/export')
+  await openExample(page, 'diagram-interchange')
   const demo = page.locator('section[aria-labelledby="interchange-title"]')
   await expect(demo.getByRole('heading', { name: 'Diagram import/export' })).toBeVisible()
   return {
@@ -93,5 +93,14 @@ test('the diagram demo reads compressed draw.io pages and keeps the graph when t
   await button('Reset example').click()
   await expect(graph.getByRole('button', { name: 'Order received', exact: true })).toBeVisible()
   await expect(text).toHaveValue(/^<\?xml version="1\.0" encoding="UTF-8"\?>\n<graphml /)
+  expect(errors).toEqual([])
+})
+
+test('the diagram interchange example exports and reports in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'diagram-interchange', { locale: 'ja' })
+  await demo.getByRole('button', { name: '書き出す', exact: true }).click()
+  await expect(demo.getByRole('status', { name: '入出力の状態' })).toHaveText('ノード 6 個と辺 6 本を Mermaid で書き出しました。')
+  await expect(demo.getByRole('textbox', { name: '図のテキスト' })).toHaveValue(/注文受付/)
   expect(errors).toEqual([])
 })

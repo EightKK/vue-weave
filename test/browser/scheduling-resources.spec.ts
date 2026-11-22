@@ -1,9 +1,9 @@
 // The scheduling demo (calendars, constraints, status date, exports, network view, manual tasks, summary links, actuals, scenarios) and resource planning.
-import { expect, test, dragBy, dragTo, openExample, openDemo, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
+import { expect, test, dragBy, dragTo, openExample, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
 
 async function openResourcePlanning(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Resource planning')
+  await openExample(page, 'resource-planning')
   const chart = page.getByRole('region', { name: 'Resource plan', exact: true })
   await expect(chart).toBeVisible()
   return { errors, chart, notice: page.getByRole('status', { name: 'Planning notice', exact: true }), summary: page.getByRole('status', { name: 'Plan summary', exact: true }) }
@@ -1003,5 +1003,16 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
   await expect(chart.getByRole('button', { name: /^Weld frame · forecast/ })).toHaveCount(0)
   await expect(page.getByTestId('actuals-finish')).toHaveText('10:40')
   expect(await actualNames()).toEqual(before)
+  expect(errors).toEqual([])
+})
+
+test('the resource planning example previews a change in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-planning', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: 'リソースの計画', exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '計画の変更を元に戻す', exact: true })).toBeDisabled()
+  await expect(demo.getByRole('status', { name: '計画の概要' })).toContainText('scheduleTasks で計算。')
+  await expect(demo.getByRole('heading', { name: '未計画のタスク', exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: '計画の診断', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

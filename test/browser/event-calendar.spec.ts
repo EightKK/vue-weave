@@ -1,10 +1,10 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, animationFrames, dragBy, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
+import { expect, test, animationFrames, dragBy, openExample, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Event calendar')
+  await openExample(page, 'event-calendar')
   const calendar = page.getByRole('region', { name: 'Room bookings', exact: true })
   await expect(calendar).toBeVisible()
   // Pointer drags use page coordinates, so keep the time grid in the viewport whatever the height of the demo navigation.
@@ -377,5 +377,18 @@ test('a blank rejection reason from validateEdit rejects with the default text',
   await page.keyboard.press('ArrowDown')
   await expect(log).toHaveText('rejected standup: This change was rejected.')
   await expect(announcement).toHaveText('This change was rejected.')
+  expect(errors).toEqual([])
+})
+
+test('the event calendar demo uses Japanese labels on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'event-calendar', { locale: 'ja' })
+  const calendar = demo.getByRole('region', { name: '会議室の予約', exact: true })
+  await expect(calendar).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '今日', exact: true })).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '週', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
+  await calendar.getByRole('button', { name: '月', exact: true }).click()
+  await expect(calendar.getByRole('button', { name: '月', exact: true })).toHaveAttribute('aria-pressed', 'true')
   expect(errors).toEqual([])
 })
