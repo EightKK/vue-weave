@@ -130,6 +130,10 @@ export type {
   GraphLayoutFailureMessage, GraphLayoutWorkerMessage, GraphLayoutJson, GraphLayoutRequestJson, GraphLayoutWorkerJsonMessage,
 } from './graphLayoutRequests.js'
 export { comparePlans, planComparisonTargets, planBaselines } from './planComparison.js'
+export { diffStructure } from './structureDiff.js'
+export type {
+  StructureKeyAccessor, StructureDiffOptions, StructureFieldChange, StructureChange, StructureMove, StructureDiff,
+} from './structureDiff.js'
 export type {
   PlanComparisonTask, PlanComparisonInput, PlanScenario, PlanScheduleState, PlanTaskSide, PlanFieldChange, PlanCollectionDiff,
   PlanAssignmentChange, PlanAssignmentDiff, PlanInputDiff, PlanViolation, PlanTaskComparison, PlanResourceOverload, PlanResultDiff,
