@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { h } from 'vue'
+import { createSSRApp, h } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import { TaskBoard } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
@@ -96,4 +97,26 @@ test('TaskBoard renders collapsed columns and lanes, the filter counts and the W
   assert.doesNotMatch(html, /aria-label="Doing · /)
   assert.doesNotMatch(html, /aria-label="[^"]* · API"/)
   assert.doesNotMatch(html, /undefined|NaN/)
+})
+
+test('TaskBoard reports invalid input through validation-error, rethrows it and renders its empty state', async () => {
+  const render = async props => {
+    const reported = [], handled = []
+    const app = createSSRApp({ render: () => h(TaskBoard, { columns, lanes, cards, ...props, onValidationError: error => reported.push(error) }) })
+    app.config.errorHandler = error => handled.push(error)
+    return { html: await renderToString(app), reported, handled }
+  }
+  const duplicate = await render({ cards: [cards[0], cards[0]] })
+  assert.equal(duplicate.reported.length, 1)
+  assert.equal(duplicate.reported[0].message, 'Duplicate card ID: a')
+  assert.deepEqual(duplicate.handled, duplicate.reported)
+  assert.match(duplicate.html, /No columns to display/)
+  assert.doesNotMatch(duplicate.html, /vw-board-card/)
+  // A thrown value that is not an Error is reported wrapped in one and rethrown as it was.
+  const thrown = await render({ filter: () => { throw 'filter failed' } })
+  assert.equal(thrown.reported.length, 1)
+  assert.ok(thrown.reported[0] instanceof Error)
+  assert.equal(thrown.reported[0].message, 'filter failed')
+  assert.deepEqual(thrown.handled, ['filter failed'])
+  assert.match(thrown.html, /No columns to display/)
 })
