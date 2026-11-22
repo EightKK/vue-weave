@@ -1,13 +1,14 @@
 import { subtractPeriods, uniteRanges, uniteSorted } from './intervals.js'
 import { withContext } from './ids.js'
 import {
-  buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, withStartedSubtasks, type ScheduleModel,
+  buildScheduleModel, checkScheduleInterval, checkStatusDate, isMapLike, sourceFinish, targetFinish, type ScheduleModel,
 } from './scheduleModel.js'
 import {
   scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleLink, type ScheduleResult, type ScheduleSuccess, type ScheduleTask,
   type ScheduledTask,
 } from './scheduling.js'
 import { toPlanningDiagnostics, type PlanningDiagnostic, type PlanningDiagnosticSeverity } from './scheduleDiagnostics.js'
+import { scheduleWithModel } from './schedulePasses.js'
 import { timelineBaselineId, type TimeRange } from './timeline.js'
 import type { ChartTone, TimelineBar } from './types.js'
 import type { EntityRef } from './viewBindings.js'
@@ -251,7 +252,8 @@ export function rescheduleFromActuals(
     dependencies.push(standIn ? { ...link, from: standIn } : link)
   }
   const started = new Set([...finished, ...startStandIns.keys(), ...startStandIns.values()])
-  const raw = scheduleTasks(withStartedSubtasks({ ...input, tasks, dependencies }, started))
+  const remainingInput = { ...input, tasks, dependencies }
+  const raw = scheduleWithModel(remainingInput, buildScheduleModel(remainingInput, false, started), false)
   const plan = scheduleTasks(input)
 
   const owner = new Map([...startStandIns].map(([id, standIn]) => [standIn, id]))
