@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- NetworkGraph emits `background-click` with the point in graph coordinates when the empty canvas is clicked without panning, so applications can clear a controlled selection. The bill of materials showcase clears its selection on a canvas click or Escape.
+
+### Fixed
+
+- The zoom-in and zoom-out buttons of NetworkGraph and GanttChart draw their plus and minus as SVG icons, so they stay centered and aligned when an application restyles button fonts. Their accessible names are unchanged.
+
 ## 1.4.0 - 2026-11-22
 
 Adds `TreeGrid`, an editable tree grid and matrix, and core helpers for relation-aware graph walks, keyed graph expansion, structure diffs, row-tree projections and time bucket tables, plus entity-initiated linked selection for views of your own. The examples, showcases and API reference move to a new bilingual documentation site (English and Japanese) at https://eightkk.github.io/vue-weave/. Every change is backward compatible.

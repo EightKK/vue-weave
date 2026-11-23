@@ -2788,9 +2788,9 @@ onUnmounted(() => {
           @click="choosePreset(preset.id)">{{ preset.label }}</button>
       </div>
       <div v-if="showControls !== false" class="vw-gantt-zoom" role="group" :aria-label="messages.zoom">
-        <button type="button" :aria-label="messages.zoomOut" :disabled="zoom <= minZoom" @click="setZoom(1 / 1.35)">−</button>
+        <button type="button" :aria-label="messages.zoomOut" :disabled="zoom <= minZoom" @click="setZoom(1 / 1.35)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8" /></svg></button>
         <output>{{ Math.round(zoom * 100) }}%</output>
-        <button type="button" :aria-label="messages.zoomIn" :disabled="zoom >= maxZoom" @click="setZoom(1.35)">＋</button>
+        <button type="button" :aria-label="messages.zoomIn" :disabled="zoom >= maxZoom" @click="setZoom(1.35)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8M6 2v8" /></svg></button>
       </div>
     </div>
     <div
