@@ -239,7 +239,9 @@ test('gantt create drag follows the visual direction in right-to-left charts and
   await page.mouse.move(corner.x + corner.width + 115, y)
   await page.mouse.down()
   await page.mouse.move(area.x + area.width - 10, y, { steps: 8 })
-  await expect.poll(() => chart.evaluate(el => el.scrollLeft)).toBeGreaterThan(50)
+  // Wait for enough scrolling to carry the interval past 13:00: releasing just after the first 50 pixels ended at 12:30
+  // on a slow CI runner.
+  await expect.poll(() => chart.evaluate(el => el.scrollLeft)).toBeGreaterThan(240)
   await page.mouse.up()
   await expect(page.getByRole('status').filter({ hasText: /^Added New task 2 at 09:00–1[3-8]:\d\d to Web team\.$/ })).toBeVisible()
   expect(errors).toEqual([])
