@@ -493,8 +493,9 @@ export function addSummaryUpper(
 ): Bounds {
   if (task.parent === undefined) return bounds
   const limits = inherited.get(task.parent)!
-  bounds.endUpper.push(...limits.end)
-  if (earliest.get(task.id)!.start === earliest.get(task.parent)!.start) bounds.startUpper.push(...limits.start)
+  // Loops, not `push(...limits)`: a summary can have more links than a call takes arguments.
+  for (const limit of limits.end) bounds.endUpper.push(limit)
+  if (earliest.get(task.id)!.start === earliest.get(task.parent)!.start) for (const limit of limits.start) bounds.startUpper.push(limit)
   return bounds
 }
 

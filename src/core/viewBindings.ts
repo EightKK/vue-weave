@@ -336,8 +336,9 @@ export function taskViewBindings(input: TaskViewBindingsInput): ViewBinding[] {
       { entity: { kind: taskKind, id }, target: { view: 'graph', kind: 'node', id } },
       { entity: { kind: taskKind, id }, target: { view: 'timeline', kind: 'bar', id } },
       { entity: { kind: taskKind, id }, target: { view: 'timeline', kind: 'row', id } },
-      ...loads.get(id) ?? [],
     )
+    // A loop, not `push(...loads)`: a task with many work periods and resources has more bindings than a call takes arguments.
+    for (const binding of loads.get(id) ?? []) bindings.push(binding)
   }
   const dependencies = new Set<string>()
   for (const dependency of input.dependencies ?? []) {

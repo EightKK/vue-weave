@@ -126,3 +126,14 @@ test('taskViewBindings validates IDs, references, kinds, work segments and assig
   assert.equal(taskViewBindings({ tasks: [{ id: 'M', work: [] }], assignments: [{ taskId: 'M', resourceId: 'crew' }] }).length, 3)
   assert.equal(taskViewBindings({ tasks: [], assignments: [{ taskId: 'gone', resourceId: 'crew' }], inactiveTaskIds: new Set(['gone']) }).length, 0)
 })
+
+test('taskViewBindings binds more load periods than a call takes arguments', () => {
+  // One task with 1,400 separate work periods on 100 resources: 140,000 load bindings.
+  const work = Array.from({ length: 1400 }, (_, i) => ({ start: i * 2, end: i * 2 + 1 }))
+  const assignments = Array.from({ length: 100 }, (_, r) => ({ taskId: 'A', resourceId: 'R' + r }))
+  const bindings = taskViewBindings({ tasks: [{ id: 'A', work }, { id: 'B' }], assignments, dependencies: [{ id: 'd' }] })
+  assert.equal(bindings.length, 3 + 140_000 + 3 + 2)
+  assert.deepEqual(bindings[3].target, { view: 'load', resourceId: 'R0', start: 0, end: 1 })
+  assert.deepEqual(bindings[3 + 139_999].target, { view: 'load', resourceId: 'R99', start: 2798, end: 2799 })
+  assert.deepEqual(bindings.at(-3).target, { view: 'timeline', kind: 'row', id: 'B' })
+})
