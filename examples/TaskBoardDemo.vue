@@ -58,7 +58,7 @@ const filter = computed(() => {
   const text = query.value.trim().toLowerCase()
   return text ? (card: Task) => card.label.toLowerCase().includes(text) : undefined
 })
-const status = ref(t({ en: 'Drag a card, or focus it and press Space, to move it. Raise progress in the chart to finish a task.', ja: 'カードをドラッグするか、フォーカスして Space を押すと移動できます。タスクを完了にするには、チャートで進捗を上げてください。' }))
+const status = ref(t({ en: 'Drag a card, or focus it and press Space, to move it. Raise progress in the chart to finish a task. Click empty board space or press Escape to clear the selection.', ja: 'カードをドラッグするか、フォーカスして Space を押すと移動できます。タスクを完了にするには、チャートで進捗を上げてください。ボードの空いている所をクリックするか Escape を押すと、選択を解除します。' }))
 const sourceText = (source: string) => t({ en: source, ja: source === 'keyboard' ? 'キーボード' : source === 'pointer' ? 'ポインター' : source })
 
 const byId = computed(() => new Map(cards.value.map(card => [card.id, card])))
@@ -119,6 +119,14 @@ function editBar(change: TimelineEdit) {
   const label = byId.value.get(change.id)!.label, time = `${formatTime(change.after.start)}–${formatTime(change.after.end)}`
   status.value = t({ en: `${label} rescheduled to ${time}.`, ja: `${label} を ${time} に変更しました。` })
 }
+// The board keeps no selection of its own: a click on empty board space, or Escape that did not cancel a move (the board
+// calls preventDefault for that one), clears the shared selection.
+function clearSelection() {
+  selectedId.value = undefined
+}
+function escapeSelection(event: KeyboardEvent) {
+  if (event.key === 'Escape' && !event.defaultPrevented) clearSelection()
+}
 function reset() {
   cards.value = initialCards
   selectedId.value = undefined
@@ -139,7 +147,8 @@ function reset() {
     <TaskBoard v-model:selected-id="selectedId" v-model:collapsed-column-ids="collapsedColumnIds"
       v-model:collapsed-lane-ids="collapsedLaneIds" collapsible :filter="filter" :columns="columns" :lanes="useLanes ? lanes : undefined" :cards="boardCards"
       :validate-card-move="validateCardMove" :labels="{ ...labels.taskBoard, region: t({ en: 'Sprint board', ja: 'スプリントのボード' }) }"
-      @card-move="moveCard" @card-move-rejected="rejectMove" @card-move-cancel="cancelMove" />
+      @card-move="moveCard" @card-move-rejected="rejectMove" @card-move-cancel="cancelMove" @background-click="clearSelection"
+      @keydown="escapeSelection" />
     <StatusLine :label="t({ en: 'Task board status', ja: 'タスクボードの状態' })">{{ status }}</StatusLine>
     <StatusLine :label="t({ en: 'Board selection', ja: 'ボードの選択' })">{{ selectionText }}</StatusLine>
     <GanttChart :rows="rows" :bars="bars" :range="range" :format-time="formatTime" :selected-ids="selectedIds" :height="300"

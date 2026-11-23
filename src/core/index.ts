@@ -168,7 +168,7 @@ export {
 export type {
   EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
-  EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarLabels,
+  EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarBackgroundClick, EventCalendarLabels,
 } from './eventCalendar.js'
 export {
   parseRecurrenceRule, formatRecurrenceRule, expandRecurrence, expandRecurringEvents, applyRecurringEdit,
@@ -187,7 +187,7 @@ export type {
 export { groupBoardCards, boardCardPosition, applyBoardCardMove } from './taskBoard.js'
 export type {
   TaskBoardColumn, TaskBoardLane, TaskBoardCard, TaskBoardPosition, TaskBoardCardMove, TaskBoardCardMoveValidator,
-  TaskBoardMoveCancelReason, TaskBoardMoveCancel, TaskBoardCell, TaskBoardColumnStatus, TaskBoardGroups, TaskBoardLabels,
+  TaskBoardMoveCancelReason, TaskBoardMoveCancel, TaskBoardBackgroundClick, TaskBoardCell, TaskBoardColumnStatus, TaskBoardGroups, TaskBoardLabels,
 } from './taskBoard.js'
 export { computeEarnedValue, rollupEarnedValue, maxEarnedValuePoints } from './earnedValue.js'
 export type {

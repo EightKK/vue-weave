@@ -84,6 +84,16 @@ export interface TaskBoardMoveCancel {
 }
 
 /**
+ * Payload of the TaskBoard `background-click` event: where a primary click on empty board space landed. `columnId` is
+ * set for a click in a cell (a column body, also a collapsed column's strip), `laneId` for a cell of a board with lanes;
+ * both are undefined for the board background between and around the cells.
+ */
+export interface TaskBoardBackgroundClick {
+  columnId?: string
+  laneId?: string
+}
+
+/**
  * The cards of one column in one lane (`laneId` is undefined on a board without lanes), in `cards` order. With a
  * `filter`, `cards` holds only the cards that pass it.
  */

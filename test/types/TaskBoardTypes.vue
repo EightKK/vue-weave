@@ -6,7 +6,7 @@ import { h, ref, useTemplateRef } from 'vue'
 import {
   TaskBoard, applyBoardCardMove, boardCardPosition, groupBoardCards,
   type TaskBoardCard, type TaskBoardCardMove, type TaskBoardColumn, type TaskBoardExposed, type TaskBoardLane, type TaskBoardMoveCancel,
-  type TaskBoardPosition,
+  type TaskBoardPosition, type TaskBoardBackgroundClick,
 } from '../../src'
 import { groupBoardCards as coreGroup, type TaskBoardGroups } from '../../src/core'
 
@@ -36,6 +36,7 @@ function epic(value: string) { return value }
 function move(change: TaskBoardCardMove) { cards.value = applyBoardCardMove(cards.value, change) }
 function rejected(change: TaskBoardCardMove, reason: string) { return change.id + reason }
 function cancelled(event: TaskBoardMoveCancel) { return event.reason === 'data-change' }
+function background(event: TaskBoardBackgroundClick): string | undefined { selectedId.value = undefined; return event.columnId ?? event.laneId }
 function validate(change: TaskBoardCardMove) { return change.after.columnId !== 'done' || 'Not yet' }
 
 const board = useTemplateRef<TaskBoardExposed<Story>>('board')
@@ -46,6 +47,7 @@ void [firstCell, sameFunction, moved, incomplete, badColumn, board.value?.focusC
 <template>
   <TaskBoard ref="board" v-model:selected-id="selectedId" :columns="columns" :lanes="lanes" :cards="cards" :validate-card-move="validate"
     dir="rtl" :labels="{ region: 'Board' }" @card-move="move" @card-move-rejected="rejected" @card-move-cancel="cancelled"
+    @background-click="background"
     @card-activate="id => epic(id)">
     <template #card="{ card, selected, column, lane }">
       {{ points(card.data) }} {{ epic(card.epic) }} {{ selected }} {{ column.wipLimit }} {{ lane?.label }}

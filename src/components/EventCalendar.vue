@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import {
   eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarDayEvents, packCalendarEventLanes,
-  shiftEventCalendarDate, validateCalendarEvents, type CalendarEvent, type CalendarResource, type EventCalendarCreate,
+  shiftEventCalendarDate, validateCalendarEvents, type CalendarEvent, type EventCalendarBackgroundClick, type CalendarResource, type EventCalendarCreate,
   type EventCalendarCreateValidator, type EventCalendarDay, type EventCalendarEdit, type EventCalendarEditCancel,
   type EventCalendarEditCancelReason, type EventCalendarEditValidator, type EventCalendarLabels, type EventCalendarView,
 } from '../core/eventCalendar.js'
@@ -113,6 +113,12 @@ const emit = defineEmits<{
   'create-rejected': [proposal: EventCalendarCreate, reason: string]
   /** An in-flight pointer gesture was cancelled. */
   'edit-cancel': [event: EventCalendarEditCancel]
+  /**
+   * A primary click landed on empty calendar space (a time grid column, an all-day cell or a month day, not an event,
+   * button or header), the pointer did not move past the drag threshold and the press proposed no `create`. Carries the
+   * time and day at the pointer. Use it to clear the selection.
+   */
+  'background-click': [event: EventCalendarBackgroundClick]
   /** Invalid events, resources or props; the calendar then shows its empty state. */
   'validation-error': [error: Error]
 }>()
@@ -572,6 +578,32 @@ function startCreate(pointer: PointerEvent, area: Area, origin: number) {
   preview.value = createPreview(gesture)
 }
 
+/**
+ * A press on empty space of a grid column (`grid`) or a day cell (`days`): it starts a create gesture when the calendar
+ * is creatable, and is otherwise remembered as a possible `background-click`, reported when the same pointer is released
+ * before the drag threshold.
+ */
+let backgroundPress: { pointerId: number; x: number; y: number; click: EventCalendarBackgroundClick } | undefined
+function pressEmpty(pointer: PointerEvent, area: Area, index: number) {
+  backgroundPress = undefined
+  if (gesture) return
+  startCreate(pointer, area, index)
+  if (gesture || !pointer.isPrimary || pointer.button !== 0 || !valid.value || (pointer.target as Element).closest('button')) return
+  const cell = area === 'grid' ? columns.value[index] : dayCells.value[index]
+  if (!cell) return
+  const click: EventCalendarBackgroundClick = area === 'grid'
+    ? { time: timeAt(cell.day.start, Math.max(0, floorSnap(offsetAt(index, pointer.clientY)))), allDay: false }
+    : { time: cell.day.start, allDay: true }
+  if (cell.resourceId !== undefined) click.resourceId = cell.resourceId
+  backgroundPress = { pointerId: pointer.pointerId, x: pointer.clientX, y: pointer.clientY, click }
+}
+function releaseBackground(pointer: PointerEvent) {
+  const press = backgroundPress
+  if (!press || pointer.pointerId !== press.pointerId) return
+  backgroundPress = undefined
+  if (pointer.type === 'pointerup' && !pastThreshold(press, pointer)) emit('background-click', press.click)
+}
+
 /** The interval and target of the gesture at the pointer, or undefined when nothing would change. */
 function gestureResult(active: Gesture, x: number, y: number): { range: TimeRange; index: number; resourceId?: string } {
   const event = active.event
@@ -674,9 +706,11 @@ function finishPointer(pointer: PointerEvent) {
 /** `pointerup` on the calendar: finish the gesture, and forget a suppressed click once the click has been dispatched. */
 function pointerUp(pointer: PointerEvent) {
   finishPointer(pointer)
+  releaseBackground(pointer)
   if (suppressClick) setTimeout(() => { suppressClick = false })
 }
 function cancelPointer(pointer: PointerEvent) {
+  if (backgroundPress?.pointerId === pointer.pointerId) backgroundPress = undefined
   if (gesture && pointer.pointerId === gesture.pointerId) cancelGesture('pointer-cancel')
 }
 /** End the gesture in flight without a proposal and report it through `edit-cancel`. */
@@ -701,7 +735,10 @@ function cancelEdit() {
 watch([
   () => props.events, () => props.resources, view, localDate, () => props.timeZone, () => props.weekStartsOn, () => props.dayStart,
   () => props.dayEnd, () => props.hourHeight, () => props.snap, () => props.readonly,
-], () => { cancelGesture('source-changed') })
+], () => {
+  backgroundPress = undefined
+  cancelGesture('source-changed')
+})
 
 const previewBoxes = computed(() => {
   const current = preview.value
@@ -740,6 +777,7 @@ function isRtl() {
 }
 /** Escape anywhere in the calendar cancels the gesture in flight. */
 function escapeKey(key: KeyboardEvent) {
+  backgroundPress = undefined
   if (cancelGesture('escape')) key.preventDefault()
 }
 /** A new press starts afresh: a click suppressed for a release that never came must not swallow the next one. */
@@ -852,7 +890,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
       <div class="vw-calendar-all-day" :style="gridStyle">
         <div class="vw-calendar-corner">{{ messages.allDay }}</div>
         <div class="vw-calendar-all-day-cells" :style="{ height: allDayHeight + 'px', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }">
-          <div v-for="(column, index) in columns" :key="column.key" class="vw-calendar-cell" :data-vw-cell="index" @pointerdown="startCreate($event, 'days', index)" />
+          <div v-for="(column, index) in columns" :key="column.key" class="vw-calendar-cell" :data-vw-cell="index" @pointerdown="pressEmpty($event, 'days', index)" />
           <button
             v-for="segment in allDayRow.segments" :key="segment.key" type="button" class="vw-calendar-event vw-calendar-segment"
             :class="eventClasses(segment.event, { 'vw-continues-before': segment.continuesBefore, 'vw-continues-after': segment.continuesAfter })"
@@ -880,7 +918,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
           </div>
           <div
             v-for="(column, index) in columns" :key="column.key" class="vw-calendar-column" :class="{ 'vw-is-today': !resourceMode && isToday(column.day) }"
-            :data-vw-column="index" :style="{ '--vw-calendar-hour-height': hourHeight + 'px' }" @pointerdown="startCreate($event, 'grid', index)"
+            :data-vw-column="index" :style="{ '--vw-calendar-hour-height': hourHeight + 'px' }" @pointerdown="pressEmpty($event, 'grid', index)"
           >
             <button
               v-for="box in timedBoxes[index]" :key="box.key" type="button" class="vw-calendar-event vw-calendar-timed"
@@ -918,7 +956,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
         <div
           v-for="cell in week.days" :key="cell.day.start" class="vw-calendar-cell vw-calendar-month-day"
           :class="{ 'vw-is-outside': !cell.day.inMonth, 'vw-is-today': isToday(cell.day) }" :data-vw-cell="cell.index"
-          @pointerdown="startCreate($event, 'days', cell.index)"
+          @pointerdown="pressEmpty($event, 'days', cell.index)"
         >
           <button type="button" class="vw-calendar-day-number" :aria-label="`${messages.showDay} ${longDate.format(cell.day.start)}`" @click="openDay(cell.day)">
             {{ cell.day.day }}

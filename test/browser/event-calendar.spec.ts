@@ -77,6 +77,60 @@ test('pointer drags move and resize events, and Escape cancels a drag', async ({
   expect(errors).toEqual([])
 })
 
+test('a click on empty space clears the selection only when it books nothing, Escape clears it, and a drag keeps it', async ({ page }) => {
+  const { errors, calendar, status, event, button } = await openCalendar(page)
+  const review = event('Design review')
+  const demo = (await event('Sprint demo').boundingBox())!
+  // Thursday at 10:00 and 12:00, five and three hours above the sprint demo at 15:00: empty slots.
+  const empty = { x: demo.x + demo.width / 2, y: demo.y - 5 * 48 + 10 }
+  const later = { x: empty.x, y: empty.y + 2 * 48 }
+  // The demo calendar is creatable: a click on an empty slot books it, and the selection stays.
+  await review.click()
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+  await page.mouse.click(empty.x, empty.y)
+  await expect(status).toHaveText(/^Booked New booking 1,/)
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+
+  // Read-only, the same click proposes nothing and clears the selection.
+  await page.getByLabel('Read-only', { exact: true }).check()
+  await page.mouse.click(later.x, later.y)
+  await expect(review).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+  // A drag over empty space is no click.
+  await review.click()
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+  await dragBy(page, later, 0, 40, { steps: 4 })
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+  // In the month view, a click on an empty part of a day clears it too.
+  await button('Month').click()
+  const release = event('Release day')
+  await release.click()
+  await expect(release).toHaveAttribute('aria-pressed', 'true')
+  const thursday = (await calendar.locator('[data-vw-cell="24"]').boundingBox())!
+  await page.mouse.click(thursday.x + thursday.width / 2, thursday.y + thursday.height - 12)
+  await expect(release).toHaveAttribute('aria-pressed', 'false')
+  await expect(calendar.locator('.vw-calendar-event.vw-is-selected')).toHaveCount(0)
+
+  // Escape that cancels a drag keeps the selection; Escape without a drag clears it.
+  await page.getByLabel('Read-only', { exact: true }).uncheck()
+  await button('Week').click()
+  await review.click()
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+  const box = (await event('Sprint demo').boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + 20)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2, box.y + 120, { steps: 6 })
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(status).toHaveText('Drag cancelled.')
+  await expect(review).toHaveAttribute('aria-pressed', 'true')
+  await review.focus()
+  await page.keyboard.press('Escape')
+  await expect(review).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+  expect(errors).toEqual([])
+})
+
 test('arrow keys move and resize the focused event, which keeps the focus', async ({ page }) => {
   const { errors, calendar, status, event, button } = await openCalendar(page)
   await event('Lab safety').focus()

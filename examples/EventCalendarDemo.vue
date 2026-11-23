@@ -125,6 +125,17 @@ function activate(id: string) {
 function select(id: string) {
   status.value = t({ en: 'Selected ' + label(id) + '.', ja: label(id) + ' を選択しました。' })
 }
+// The calendar's selection follows `selectedId`: a click on empty calendar space that books nothing (the calendar is
+// creatable, so only in read-only mode) and Escape that did not cancel a drag (the calendar calls preventDefault for
+// that one) clear it.
+function clearSelection() {
+  if (selectedId.value === undefined) return
+  selectedId.value = undefined
+  status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+function escapeSelection(event: KeyboardEvent) {
+  if (event.key === 'Escape' && !event.defaultPrevented) clearSelection()
+}
 function rangeChange(range: TimeRange, current: EventCalendarView) {
   // A real application would load the bookings that overlap this range here.
   loaded.value = range
@@ -157,11 +168,12 @@ function redo() {
       :readonly="readonly" creatable :labels="{ ...labels.eventCalendar, region: t({ en: 'Room bookings', ja: '会議室の予約' }) }" :locale="intlLocale" :dir="rtl ? 'rtl' : 'ltr'" :validate-edit="validateEdit" :validate-create="validateCreate"
       @edit="applyEdit" @edit-rejected="rejected" @create="create" @create-rejected="rejected" @select="select"
       @event-activate="activate" @range-change="rangeChange" @edit-cancel="status = 'Drag cancelled.'"
+      @background-click="clearSelection" @keydown="escapeSelection"
     />
     <StatusLine :label="t({ en: 'Calendar status', ja: 'カレンダーの状態' })">{{ status }}</StatusLine>
     <p class="hint">{{ t({
-      en: `Loaded range: ${loadedText}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes.`,
-      ja: `読み込んだ範囲: ${loadedText}。フォーカスした予約は矢印キーで移動、Shift+矢印で伸縮し、日表示では左右キーで別の部屋へ移動します。週次定例は毎週火曜日に繰り返し、「繰り返し予定の編集」で編集の対象を選びます。`,
+      en: `Loaded range: ${loadedText}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes. Escape clears the selection, and so does a click on empty space in read-only mode.`,
+      ja: `読み込んだ範囲: ${loadedText}。フォーカスした予約は矢印キーで移動、Shift+矢印で伸縮し、日表示では左右キーで別の部屋へ移動します。週次定例は毎週火曜日に繰り返し、「繰り返し予定の編集」で編集の対象を選びます。Escape で選択を解除します。読み取り専用では空いている所をクリックしても解除します。`,
     }) }}</p>
   </DemoPanel>
 </template>
