@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.5.0 - 2026-11-23
+
+Adds an opt-in `background-click` event to NetworkGraph, GanttChart, TaskBoard and EventCalendar, so applications can clear a controlled selection when empty space is clicked, and the examples and showcases now clear their selection on such a click or Escape. Glyph buttons inside the components (zoom, row toggles, add and remove buttons) are drawn as SVG icons and stay centered whatever font an application gives buttons. Every change is backward compatible.
+
 ### Added
 
 - NetworkGraph, GanttChart, TaskBoard and EventCalendar emit an opt-in `background-click` when empty space is clicked without dragging, so applications can clear a controlled selection (the components keep none of their own). NetworkGraph reports the point in graph coordinates; GanttChart a `TimelineBackgroundClick` `{ time, rowId? }` for an empty part of the time area (not in rows where the click creates a bar); TaskBoard a `TaskBoardBackgroundClick` `{ columnId?, laneId? }`; EventCalendar an `EventCalendarBackgroundClick` `{ time, allDay, resourceId? }` when the click proposes no `create`. Nothing else changes for applications that do not listen.
