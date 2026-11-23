@@ -159,7 +159,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 - **Vue：** 3.x の3.5以降（peer dependency `^3.5.0`）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `@eightkk/vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
-- **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
+- **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストは、変更のたびにChromiumで実行します。同じテストをFirefoxとWebKitでもCIで実行しますが、このジョブはまだマージの必須条件ではありません。実機のマルチタッチ入力が必要なテストはChromiumのみで実行します。
 - **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
 
 ## Webサイトをローカルで起動する

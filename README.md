@@ -159,7 +159,7 @@ See the [Examples](https://eightkk.github.io/vue-weave/examples/) for every feat
 - **Vue:** 3.5 or later in 3.x (peer dependency `^3.5.0`).
 - **Modules and TypeScript:** ESM only. Declarations support `Bundler` and `NodeNext` resolution. Item `data` can be typed (`NetworkNode<MyData>`, `TimelineBar<MyData>`), and that type reaches slot props and callbacks without casts.
 - **Node.js:** 22.18 or later for the headless `@eightkk/vue-weave/core` entry, server-side rendering and development.
-- **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium only, so the other browsers are not covered by CI.
+- **Browsers:** current evergreen browsers (Chrome, Edge, Firefox and Safari). Automated browser tests run in Chromium on every change. The same tests also run in Firefox and WebKit in a CI job that does not block merging yet; the tests that need real multi-touch input run in Chromium only.
 - **Accessibility:** keyboard operation and ARIA names are included. Dedicated screen-reader testing has not been done yet (see [Architecture, performance and scope](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)), so do not assume full conformance.
 
 ## Run the website locally
