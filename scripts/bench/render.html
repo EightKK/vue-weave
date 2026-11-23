@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Render benchmark page</title>
+    <link rel="stylesheet" href="/lib/style.css">
+    <style>body { margin: 0; padding: 8px; font: 14px system-ui, sans-serif }</style>
+    <script type="importmap">
+      { "imports": { "vue": "/lib/vue.js", "library": "/lib/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      // Used only by scripts/bench-render.mjs, which serves this page with the built library. It is not part of the
+      // published package or of the browser test run. `window.bench` is driven from Playwright.
+      import { createApp, h, ref, shallowRef, nextTick } from 'vue'
+      import * as lib from 'library'
+
+      // Resolves after the next frame has been produced: the rAF callback runs before paint, the message after it.
+      const afterPaint = () => new Promise(resolve => requestAnimationFrame(() => {
+        const channel = new MessageChannel()
+        channel.port1.onmessage = () => resolve(performance.now())
+        channel.port2.postMessage(0)
+      }))
+      const percentile = (values, p) => {
+        const sorted = [...values].sort((a, b) => a - b)
+        return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0
+      }
+      const stats = values => ({ n: values.length, p50: percentile(values, 0.5), p95: percentile(values, 0.95), max: Math.max(0, ...values) })
+
+      // ---- generated data (fixed formulas, so every run mounts the same thing) -----------------------------------
+      function ganttData(size) {
+        const rows = [], bars = [], dependencies = []
+        for (let i = 0; i < size; i++) {
+          rows.push({ id: 'r' + i, label: 'Row ' + i })
+          const start = (i * 3) % 400
+          bars.push({ id: 'b' + i, rowId: 'r' + i, label: 'Task ' + i, start, end: start + 4 + (i % 5), editable: true })
+          if (i > 0) dependencies.push({ id: 'd' + i, from: 'b' + (i - 1), to: 'b' + i })
+        }
+        return { rows, bars, dependencies }
+      }
+      function graphData(size) {
+        const nodes = [], edges = []
+        for (let i = 0; i < size; i++) {
+          nodes.push({ id: 'n' + i, label: 'Node ' + i })
+          if (i > 0) edges.push({ id: 'e' + i, from: 'n' + Math.max(0, i - 1 - (i * 7) % 5), to: 'n' + i })
+        }
+        return { nodes, edges }
+      }
+      function treeRows(size) {
+        const rows = []
+        for (let i = 0; i < size; i++) rows.push({ id: 'row' + i, label: 'Row ' + i, ...(i % 6 ? { parentId: 'row' + (i - (i % 6)) } : {}) })
+        return rows
+      }
+
+      // ---- one mounted scenario at a time --------------------------------------------------------------------------
+      const state = { kind: '', handle: null, scroller: null, interaction: null }
+
+      async function mount({ kind, size, columns: columnCount = 8 }) {
+        state.kind = kind
+        const holder = ref()
+        const record = { proposalAt: 0, appliedAt: 0 }
+        state.interaction = { record, moves: [] }
+        let root
+        if (kind === 'gantt') {
+          const data = ganttData(size)
+          const bars = shallowRef(data.bars)
+          root = {
+            render: () => h(lib.GanttChart, {
+              ref: holder, rows: data.rows, bars: bars.value, dependencies: data.dependencies, range: { start: 0, end: 420 },
+              pixelsPerUnit: 20, tickSteps: [10], snap: 1, height: 600, formatTime: String,
+              onEdit: change => {
+                record.proposalAt = performance.now()
+                bars.value = bars.value.map(bar => bar.id === change.id ? { ...bar, ...change.after } : bar)
+                afterPaint().then(at => { record.appliedAt = at })
+              },
+            }),
+          }
+        } else if (kind === 'graph' || kind === 'graph-culled') {
+          const data = graphData(size)
+          const positions = shallowRef(new Map())
+          root = {
+            render: () => h('div', { style: 'height:600px' }, [h(lib.NetworkGraph, {
+              ref: holder, nodes: data.nodes, edges: data.edges, positions: positions.value, draggable: true, height: 600, cullOffscreen: kind === 'graph-culled',
+              onNodeMove: change => {
+                record.proposalAt = performance.now()
+                const next = new Map(positions.value)
+                next.set(change.id, change.after)
+                positions.value = next
+                afterPaint().then(at => { record.appliedAt = at })
+              },
+            })]),
+          }
+        } else if (kind === 'treegrid') {
+          if (!lib.TreeGrid) throw new Error('This build has no TreeGrid')
+          const rows = treeRows(size)
+          const expandedIds = rows.filter(row => !row.parentId).map(row => row.id)
+          const columns = Array.from({ length: columnCount }, (_, i) => ({ id: 'c' + i, label: 'Column ' + i, width: 120, value: row => row.id.length + i }))
+          root = { render: () => h(lib.TreeGrid, { ref: holder, rows, columns, expandedIds, height: 600 }) }
+        } else throw new Error('Unknown kind ' + kind)
+
+        const started = performance.now()
+        const app = createApp(root)
+        app.mount('#app')
+        await nextTick()
+        await afterPaint()
+        const firstRenderMs = performance.now() - started
+        state.handle = holder
+        return { firstRenderMs, domNodes: document.getElementsByTagName('*').length }
+      }
+
+      function findScroller() {
+        if (state.kind === 'gantt') return document.querySelector('.vw-gantt-scroll')
+        // TreeGrid: the first scrollable element inside the grid.
+        return [...document.querySelectorAll('#app *')].find(el => el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY))
+      }
+
+      // Frame durations over `frames` animation frames while the view is moved a little each frame.
+      async function scroll(frames = 120) {
+        const instance = state.handle.value
+        let move
+        if (state.kind.startsWith('graph')) {
+          instance.setViewport({ x: 0, y: 0, scale: 1 })
+          await afterPaint()
+          move = i => instance.setViewport({ x: -i * 25, y: -i * 6, scale: 1 })
+        } else {
+          const scroller = findScroller()
+          if (!scroller) throw new Error('No scrollable element found')
+          scroller.scrollTop = 0
+          scroller.scrollLeft = 0
+          move = i => { scroller.scrollTop = i * 40; scroller.scrollLeft = i * 6 }
+        }
+        const durations = []
+        let last = await new Promise(resolve => requestAnimationFrame(resolve))
+        for (let i = 1; i <= frames; i++) {
+          move(i)
+          const now = await new Promise(resolve => requestAnimationFrame(resolve))
+          durations.push(now - last)
+          last = now
+        }
+        return stats(durations)
+      }
+
+      // Pointer latency of one drag: for each pointermove, the time to the end of the next frame. Playwright performs the
+      // drag with the real mouse; the page timestamps the events.
+      function armInteraction() {
+        const { record, moves } = state.interaction
+        moves.length = 0
+        record.proposalAt = record.appliedAt = 0
+        window.addEventListener('pointermove', () => {
+          const at = performance.now()
+          afterPaint().then(done => moves.push(done - at))
+        }, { capture: true })
+        window.addEventListener('pointerup', () => { record.releasedAt = performance.now() }, { capture: true, once: true })
+      }
+      async function readInteraction() {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        const { record, moves } = state.interaction
+        return {
+          moves: stats(moves),
+          proposalMs: record.proposalAt ? record.proposalAt - record.releasedAt : null,
+          appliedMs: record.appliedAt ? record.appliedAt - record.releasedAt : null,
+        }
+      }
+
+      window.bench = {
+        mount, scroll, armInteraction, readInteraction,
+        has: name => name in lib,
+        placeGraph: async () => { state.handle.value.setViewport({ x: 0, y: 0, scale: 1 }); await afterPaint() },
+      }
+      window.benchReady = true
+    </script>
+  </body>
+</html>

@@ -8,6 +8,31 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 const ci = Boolean(process.env.CI)
 
+// Chromium is the default and the only engine the blocking CI job runs. Firefox and WebKit are opt-in:
+// VW_BROWSERS=chromium,firefox,webkit (any comma-separated subset; see `npm run test:e2e:all`).
+const engines = ['chromium', 'firefox', 'webkit'] as const
+const requested = (process.env.VW_BROWSERS || 'chromium').split(',').map(name => name.trim()).filter(Boolean)
+const unknown = requested.filter(name => !(engines as readonly string[]).includes(name))
+if (unknown.length > 0 || requested.length === 0) {
+  throw new Error(`VW_BROWSERS must list browsers from ${engines.join(', ')} separated by commas, got "${process.env.VW_BROWSERS}"${unknown.length ? ` (unknown: ${unknown.join(', ')})` : ''}`)
+}
+
+const projectFor = {
+  // CHROMIUM_PATH selects an existing executable; these launch options apply to this project only.
+  chromium: {
+    name: 'chromium',
+    use: {
+      browserName: 'chromium' as const,
+      launchOptions: process.env.CHROMIUM_PATH ? {
+        executablePath: process.env.CHROMIUM_PATH,
+        args: ['--no-sandbox', '--no-zygote', '--disable-gpu'],
+      } : {},
+    },
+  },
+  firefox: { name: 'firefox', use: { browserName: 'firefox' as const } },
+  webkit: { name: 'webkit', use: { browserName: 'webkit' as const } },
+}
+
 export default defineConfig({
   testDir: './test/browser',
   fullyParallel: false,
@@ -25,11 +50,8 @@ export default defineConfig({
     // Traces (kept for failed tests only) go to test-results/ and are uploaded by the CI browser job.
     trace: ci ? 'retain-on-failure' : 'off',
     viewport: { width: 1440, height: 1000 },
-    launchOptions: process.env.CHROMIUM_PATH ? {
-      executablePath: process.env.CHROMIUM_PATH,
-      args: ['--no-sandbox', '--no-zygote', '--disable-gpu'],
-    } : {},
   },
+  projects: engines.filter(name => requested.includes(name)).map(name => projectFor[name]),
   webServer: {
     command: 'node scripts/serve.mjs --strict-port',
     url: `http://127.0.0.1:${port}/vue-weave/`,

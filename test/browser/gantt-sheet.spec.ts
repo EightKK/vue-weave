@@ -12,8 +12,9 @@ function only(events: unknown[][], kind: string) {
   return events.filter(entry => entry[0] === kind)
 }
 
-test.beforeEach(async ({ context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+test.beforeEach(async ({ context, browserName }) => {
+  // The clipboard permission names exist in Chromium only; Firefox and WebKit reject them.
+  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 })
 
 test('paste proposes plain and typed cells as one batch, and copy writes tab-separated text', async ({ page }) => {
