@@ -904,6 +904,11 @@ function revealRow(rowId: string, options: { focus?: boolean; columnId?: string 
   else scrollIntoView(at)
   return { status: 'revealed' }
 }
+// The row action buttons draw their symbols as SVG, so they stay centred whatever font an application gives buttons.
+const actionPaths = { after: 'M6 2.5v7M2.5 6h7', child: 'M3 2v4.5h6.5M7.5 4.5l2 2-2 2', delete: 'M3 3l6 6M9 3 3 9' } as const
+function actionIcon(action: keyof typeof actionPaths) {
+  return h('svg', { class: 'vw-tree-grid-action-icon', viewBox: '0 0 12 12', 'aria-hidden': 'true', focusable: 'false' }, [h('path', { d: actionPaths[action] })])
+}
 function readDirection() {
   rtl.value = props.dir === 'rtl' || (props.dir === 'auto' && mounted && Boolean(root.value) && getComputedStyle(root.value!).direction === 'rtl')
 }
@@ -1018,9 +1023,9 @@ const GridBody: FunctionalComponent<BodyProps> = ({ cellSlot, headerSlot, status
     else content = [h('span', { class: 'vw-tree-grid-label' }, row.label), row.detail ? h('small', { class: 'vw-tree-grid-detail' }, row.detail) : null]
     const actions = isActive && props.rowsEditable && line.kind === 'row'
       ? h('span', { class: 'vw-tree-grid-row-actions', role: 'group', 'aria-label': `${m.rowActions} ${row.label}`, onClick: rowAction }, [
-        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'after', 'aria-label': `${m.addBelow} ${row.label}`, title: `${m.addBelow} ${row.label}` }, '+'),
-        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'child', 'aria-label': `${m.addChild} ${row.label}`, title: `${m.addChild} ${row.label}` }, '↳'),
-        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'delete', 'aria-label': `${m.deleteRow} ${row.label}`, title: `${m.deleteRow} ${row.label}` }, '×'),
+        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'after', 'aria-label': `${m.addBelow} ${row.label}`, title: `${m.addBelow} ${row.label}` }, actionIcon('after')),
+        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'child', 'aria-label': `${m.addChild} ${row.label}`, title: `${m.addChild} ${row.label}` }, actionIcon('child')),
+        h('button', { type: 'button', tabindex: -1, 'data-vw-action': 'delete', 'aria-label': `${m.deleteRow} ${row.label}`, title: `${m.deleteRow} ${row.label}` }, actionIcon('delete')),
       ])
       : null
     return h('div', {

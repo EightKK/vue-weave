@@ -582,3 +582,28 @@ test('the timeline editing demo edits a bar and reports it in Japanese', async (
   await expect(demo.getByRole('button', { name: 'タイムラインの変更を元に戻す', exact: true })).toBeEnabled()
   expect(errors).toEqual([])
 })
+
+test('background-click reports a click on an empty row or below the rows, but not bars, drags or the heading column', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '')
+  const clicks = out('Background clicks')
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  const box = (await barA.boundingBox())!
+  // 50 pixels per unit from the start of Task A at time 0.
+  const at = (time: number) => box.x + time * 50
+  await page.mouse.click(at(10), box.y + box.height / 2)
+  await expect(clicks).toHaveText('{"time":10,"rowId":"r1"}')
+  // A bar click selects without a background click; a drag on the background is not a click.
+  await barA.click()
+  await page.mouse.move(at(9), box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(at(11), box.y + box.height / 2, { steps: 4 })
+  await page.mouse.up()
+  await chart.getByText('Row 1', { exact: true }).click()
+  await expect(clicks).toHaveText('{"time":10,"rowId":"r1"}')
+  // Below the last row there is no row.
+  const rowB = (await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox())!
+  await page.mouse.click(at(10), rowB.y + rowB.height + 40)
+  await expect(clicks).toHaveText('{"time":10,"rowId":"r1"};{"time":10}')
+  expect(errors).toEqual([])
+})
