@@ -1,35 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { NetworkGraph, findGraphCycles, useEditHistory, type GraphConnection, type GraphEdge, type GraphNodeMove, type GraphPoint, type NetworkNode } from '../../src'
+import { computed, ref, watch } from 'vue'
+import { NetworkGraph, findGraphCycles, type GraphConnection, type GraphNodeMove, type NetworkNode } from '../../src'
 import { componentLabels } from '../i18n'
+import { outputs, type Flow, type Step } from './approval'
+import { useProductionWorkspace } from './workspace'
 
 const props = defineProps<{ ja: boolean }>()
 const t = (ja: string, en: string) => props.ja ? ja : en
-type Step = { id: string; kind: 'start' | 'decision' | 'approval' | 'end'; name: [string, string]; assignee?: string; threshold?: number }
-interface Flow { steps: Step[]; edges: GraphEdge[]; positions: Map<string, GraphPoint> }
-function edge(id: string, from: string, port: string, to: string): GraphEdge {
-  return { id, from, fromPort: port, to, toPort: 'in' }
-}
-const initial: Flow = {
-  steps: [
-    { id: 'request', kind: 'start', name: ['購買申請', 'Purchase request'] },
-    { id: 'amount', kind: 'decision', threshold: 100000, name: ['申請金額', 'Request amount'] },
-    { id: 'lead', kind: 'approval', name: ['課長承認', 'Manager review'], assignee: 'Team lead' },
-    { id: 'director', kind: 'approval', name: ['部長承認', 'Director review'], assignee: 'Director' },
-    { id: 'done', kind: 'end', name: ['完了', 'Complete'] },
-  ],
-  edges: [edge('a', 'request', 'out', 'amount'), edge('b', 'amount', 'low', 'lead'),
-    edge('c', 'amount', 'high', 'director'), edge('d', 'lead', 'out', 'done'), edge('e', 'director', 'out', 'done')],
-  positions: new Map(),
-}
-const history = useEditHistory(initial)
-const flow = history.state
+// The workflow is part of the app's saved document; its selection is its own, because no other tab shows these steps.
+const workspace = useProductionWorkspace()
+const flow = computed(() => workspace.document.value.approval)
 const selected = ref('amount')
 const step = computed(() => flow.value.steps.find(s => s.id === selected.value))
 const warning = ref('')
 let serial = 0
 function label(s: Step) { return s.name[props.ja ? 0 : 1] }
-function outputs(s: Step) { return s.kind === 'decision' ? ['low', 'high'] : s.kind === 'end' ? [] : ['out'] }
 function portName(port: string, from: string) {
   const amount = flow.value.steps.find(s => s.id === from)?.threshold ?? 0
   const limit = '¥' + amount.toLocaleString('en-US')
@@ -45,8 +30,8 @@ const nodes = computed<NetworkNode[]>(() => flow.value.steps.map(s => ({
 })))
 const edges = computed(() => flow.value.edges.map(e => ({ ...e, label: e.fromPort === 'out' ? undefined : portName(e.fromPort!, e.from) })))
 function commit(patch: Partial<Flow>) {
-  history.commit({ ...flow.value, ...patch })
   warning.value = ''
+  void workspace.submit({ area: 'approval', flow: { ...flow.value, ...patch } })
 }
 function validate(c: GraphConnection, replacing?: string) {
   const source = flow.value.steps.find(s => s.id === c.from)
@@ -96,11 +81,8 @@ const gesture = { count: 0, cancelling: false }
 function clearSelection() {
   selected.value = ''
 }
-function undo() {
-  history.undo()
-  if (selected.value && !step.value) selected.value = 'request'
-  warning.value = ''
-}
+// An app-wide undo can remove the selected step.
+watch(step, value => { if (selected.value && !value) selected.value = 'request' })
 function threshold(input: HTMLInputElement) {
   if (input.value && Number.isSafeInteger(input.valueAsNumber) && input.valueAsNumber >= 0) updateStep({ threshold: input.valueAsNumber })
   else input.value = String(step.value?.threshold ?? 0)
@@ -113,8 +95,7 @@ function pickRoute(port: string, select: HTMLSelectElement) { route(port, select
   <div class="production-title"><div><h1>{{ t('承認フロー', 'Approval workflow') }}</h1>
     <p>{{ t('購買申請の承認者と、金額に応じた経路を編集できます。', 'Edit approvers and route purchase requests by amount.') }}</p></div>
     <div class="production-actions"><button @click="add('approval')">{{ t('承認ステップを追加', 'Add approval step') }}</button>
-      <button @click="add('decision')">{{ t('条件分岐を追加', 'Add decision') }}</button>
-      <button :disabled="!history.canUndo.value" @click="undo">{{ t('元に戻す', 'Undo') }}</button></div></div>
+      <button @click="add('decision')">{{ t('条件分岐を追加', 'Add decision') }}</button></div></div>
   <div class="production-layout">
     <section class="production-panel"><div class="production-heading"><h2>{{ t('承認経路', 'Approval routes') }}</h2></div>
       <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">

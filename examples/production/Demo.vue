@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue'
+import { provideDemoLocale } from '../i18n'
 import { copy, type Language } from './copy'
-import ApprovalFlow from './ApprovalFlow.vue'
-import WorkSheet from './WorkSheet.vue'
-import LotFlow from './LotFlow.vue'
-import ProductionPlan from './ProductionPlan.vue'
+import ProductionWorkspace from './ProductionWorkspace.vue'
 
 const view = ref<'planning' | 'lot' | 'approval' | 'sheet'>('planning')
 // English by default; `?lang=ja` opens the Japanese copy.
@@ -12,6 +10,8 @@ const language = ref<Language>(new URLSearchParams(location.search).get('lang') 
 const theme = ref<'light' | 'dark'>()
 const text = computed(() => copy[language.value])
 watchEffect(() => { document.documentElement.lang = language.value })
+// The shared example parts (the save status) read the language from here.
+provideDemoLocale(language)
 
 function toggleTheme() {
   const active = theme.value ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -42,12 +42,7 @@ function toggleTheme() {
       </div>
     </header>
     <main class="production-page">
-      <KeepAlive>
-        <ProductionPlan v-if="view === 'planning'" :text="text" />
-        <LotFlow v-else-if="view === 'lot'" :text="text" :is-japanese="language === 'ja'" />
-        <ApprovalFlow v-else-if="view === 'approval'" :ja="language === 'ja'" />
-        <WorkSheet v-else :ja="language === 'ja'" />
-      </KeepAlive>
+      <ProductionWorkspace :text="text" :ja="language === 'ja'" :view="view" />
     </main>
   </div>
 </template>

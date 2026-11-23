@@ -134,6 +134,7 @@ body { margin: 0; }
 .production-node-frame { fill: var(--node); stroke: var(--node-border); stroke-width: 1.1; }
 .production-node.active .production-node-frame { stroke: var(--accent); stroke-width: 2.5; }
 .production-node.shifted:not(.active) .production-node-frame { stroke: var(--warning); stroke-width: 2; }
+.production-node.linked:not(.active) .production-node-frame { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 3; }
 .production-node-icon { fill: var(--accent-bg); }
 .production-node-symbol { fill: var(--accent); text-anchor: middle; font-size: 16px; font-weight: 650; }
 .production-node-name { fill: var(--text); font-size: 16px; font-weight: 700; }
@@ -162,3 +163,7 @@ body { margin: 0; }
 .workflow-fields p:empty { display: none; }
 .production-nav { overflow-x: auto; }
 .production-app .sheet-status { color: var(--warning); min-height: 2.4em; }
+.production-savebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 14px; }
+.production-savebar .save-status { flex: 1 1 320px; background: var(--surface); }
+.production-savebar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.production-savebar select { padding: 4px 6px; background: var(--surface); color: var(--text); border: 1px solid var(--strong-border); border-radius: 4px; font: inherit; }

@@ -10,30 +10,34 @@ const props = defineProps<{
   edges: readonly GraphEdge[]
   positions: ReadonlyMap<string, GraphPoint>
   symbols: Record<string, string>
+  /** The node this graph selected; an empty string when the selection is elsewhere or empty. */
+  selectedId: string
+  /** Nodes linked to a selection made in another view: outlined, not selected. */
+  linkedIds?: ReadonlySet<string>
+  /** Nodes the open proposal moved. */
   highlighted?: ReadonlySet<string>
   height: number
 }>()
-const selected = defineModel<string>('selected', { required: true })
+const emit = defineEmits<{ select: [id: string]; clear: [] }>()
 const options = { direction: 'LR' as const, nodeWidth: 154, nodeHeight: 54 }
-// A click on the empty canvas or Escape in the graph clears the selection (an empty string). Escape first cancels a
-// gesture in flight (a pan); the graph reports every gesture as a start and an end, and the capture listener reads the
-// count before the graph's own Escape handler ends it.
+// A click on the empty canvas or Escape in the graph clears the selection. Escape first cancels a gesture in flight (a
+// pan); the graph reports every gesture as a start and an end, and the capture listener reads the count before the
+// graph's own Escape handler ends it.
 const gesture = { count: 0, cancelling: false }
-function clearSelection() {
-  selected.value = ''
-}
-const highlightedEdges = computed(() => new Set(props.edges.filter(edge => edge.from === selected.value || edge.to === selected.value).map(edge => edge.id)))
+const focus = computed(() => props.selectedId || [...props.linkedIds ?? []].find(id => props.nodes.some(node => node.id === id)))
+const highlightedEdges = computed(() => new Set(props.edges.filter(edge => edge.from === focus.value || edge.to === focus.value).map(edge => edge.id)))
 </script>
 
 <template>
-  <div class="production-graph" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-    <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="positions"
+  <div class="production-graph" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || emit('clear')">
+    <NetworkGraph :selected-id="selectedId" :nodes="nodes" :edges="edges" :positions="positions"
       :options="options" :height="height" edge-style="straight" background="dots" unstyled-node-slots
       :highlighted-node-ids="highlighted" :highlighted-edge-ids="highlightedEdges"
       :labels="{ ...text.labels.graph, region: label, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut, fit: text.fitting }"
-      @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--">
+      @update:selected-id="id => id ? emit('select', id) : emit('clear')"
+      @background-click="emit('clear')" @gesture-start="gesture.count++" @gesture-end="gesture.count--">
       <template #node="{ node, box, selected: active, highlighted: shifted }">
-        <g class="production-node" :class="{ active, shifted }">
+        <g class="production-node" :class="{ active, shifted, linked: linkedIds?.has(node.id) }">
           <rect class="production-node-frame" :width="box.width" :height="box.height" rx="8" />
           <rect class="production-node-icon" x="10" :y="node.detail ? 12 : 13" width="28" height="28" rx="6" />
           <text class="production-node-symbol" x="24" :y="node.detail ? 31 : 32">{{ symbols[node.id] }}</text>

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- The production demo (`/demo/` and the production showcase) is now one linked, saving app built only on existing public APIs. The planning and lot flow views share one `useLinkedSelection`: an operation selected in the graph, the Gantt chart or the load chart is the matching lot step in the lot flow, and a step selected there is the operation in planning, across tab switches. The approval workflow and the schedule sheet have unrelated data and keep their own selection. Every tab saves through one app-wide `useEditTransaction` against the mock server, with a save bar that shows saving, rejected, conflicting and unanswered saves, app-wide undo and redo, and a choice of the server's next answer.
+
 ## 1.5.0 - 2026-11-23
 
 Adds an opt-in `background-click` event to NetworkGraph, GanttChart, TaskBoard and EventCalendar, so applications can clear a controlled selection when empty space is clicked, and the examples and showcases now clear their selection on such a click or Escape. Glyph buttons inside the components (zoom, row toggles, add and remove buttons) are drawn as SVG icons and stay centered whatever font an application gives buttons. Every change is backward compatible.

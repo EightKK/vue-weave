@@ -1,4 +1,9 @@
-import { expect, test, dragBy, openExample, pageErrors } from './support'
+import { expect, test, dragBy, openExample, pageErrors, type Page } from './support'
+
+// The demo saves every edit through one useEditTransaction against a mock server, and each accepted save gets the next
+// version. Waiting for a version keeps a test from editing while the previous save is still in flight.
+const saved = (page: Page, version: string, ja = false) =>
+  expect(page.getByRole('status', { name: ja ? '保存の状態' : 'Save status' })).toContainText(ja ? '版 ' + version + ' を受理しました。' : 'Accepted version ' + version + '.')
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
@@ -18,8 +23,11 @@ test('production demo edits the schedule, graph and load from the homepage', asy
 
   await page.getByRole('button', { name: 'この案を採用' }).click()
   await expect(page.getByRole('status').filter({ hasText: '変更案を採用しました。' })).toBeVisible()
-  await page.getByRole('button', { name: '採用を取り消す' }).click()
+  await saved(page, 'v2', true)
+  // Undo is app-wide: it restores the previous document through the same transaction.
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click()
   await expect(page.getByRole('row', { name: /出荷できる時刻/ })).toContainText('17:00')
+  await saved(page, 'v3', true)
   expect(errors).toEqual([])
 })
 
@@ -91,19 +99,24 @@ test('approval routes support new steps, cycle rejection and undo', async ({ pag
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Approval workflow' }).click()
   await page.getByRole('button', { name: 'Add approval step' }).click()
+  await saved(page, 'v2')
   const selected = page.getByLabel('Selected step')
   await page.getByLabel('Step name').fill('Finance review')
   await page.getByLabel('Step name').press('Tab')
+  await saved(page, 'v3')
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption('done')
+  await saved(page, 'v4')
   await selected.selectOption('director')
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption({ label: 'Finance review' })
+  await saved(page, 'v5')
   await selected.selectOption({ label: 'Finance review' })
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption('director')
   await expect(page.getByRole('status').filter({ hasText: 'cycle' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Next step', exact: true })).toHaveValue('done')
   await page.getByRole('button', { name: 'Delete step' }).click()
   await expect(selected.locator('option', { hasText: 'Finance review' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await saved(page, 'v6')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await selected.selectOption('director')
   await expect(page.getByRole('combobox', { name: 'Next step', exact: true }).locator('option:checked')).toHaveText('Finance review')
   expect(errors).toEqual([])
@@ -128,6 +141,7 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await expect(cell('Requirements · Duration 5d')).toBeVisible()
   await expect(cell('Requirements 3/1–3/6')).toBeVisible()
   await expect(cell('Layout design · Start 3/8')).toBeVisible()
+  await saved(page, 'v2')
 
   // Text the field cannot read is rejected with a visible reason.
   await cell('Requirements · Duration 5d').click()
@@ -156,14 +170,17 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await cell('Build frame · Resource Machining').press('Control+d')
   await expect(cell('Build frame · Resource Purchasing')).toBeVisible()
   await expect(status).toBeEmpty()
+  await saved(page, 'v3')
 
-  await page.getByRole('button', { name: 'Undo' }).click()
+  // Undo and redo are disabled while a save is in flight, so each click waits for the previous one.
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(cell('Build frame · Resource Machining')).toBeVisible()
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(cell('Requirements 3/1–3/4')).toBeVisible()
   await expect(cell('Layout design · Start 3/4')).toBeVisible()
-  await page.getByRole('button', { name: 'Redo' }).click()
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await saved(page, 'v6')
   expect(errors).toEqual([])
 })
 
@@ -197,5 +214,97 @@ test('the production showcase page embeds the demo and follows the page language
   await expect(demo.getByRole('button', { name: '全体表示', exact: true }).first()).toBeVisible()
   await demo.getByRole('navigation', { name: 'デモ' }).getByRole('button', { name: 'ロットの流れ', exact: true }).click()
   await expect(demo.getByRole('heading', { name: 'ロットの流れ', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a selection made in planning shows in the lot flow, and one made in the lot flow shows in planning', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  const gantt = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await gantt.getByRole('button', { name: /^Cut B / }).click()
+  await expect(page.getByRole('button', { name: 'Move one hour earlier', exact: true })).toBeVisible()
+
+  // Cut B is the lot's line B: the lot flow opens with its quantities and its table row pressed.
+  await page.getByRole('button', { name: 'Lot flow', exact: true }).click()
+  const details = page.locator('.production-content[aria-live]')
+  await expect(details).toContainText('Line B')
+  await expect(details).toContainText('-4 pcs')
+  const table = page.locator('.production-table')
+  await expect(table.getByRole('button', { name: 'Line B' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.production-node.linked')).toHaveCount(1)
+
+  // Inspection is one step in both views. Choosing it in the lot table selects it in planning too.
+  await table.getByRole('button', { name: 'Inspect' }).click()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByRole('complementary').getByText('Inspect', { exact: true })).toBeVisible()
+  const inspect = gantt.getByRole('button', { name: /^Inspect / })
+  await expect(inspect).toHaveClass(/vw-is-highlighted/)
+  await expect(inspect).toHaveAttribute('aria-pressed', 'false')
+  // Rework has no planning operation: selecting it leaves planning without an operation.
+  await page.getByRole('button', { name: 'Lot flow', exact: true }).click()
+  await table.getByRole('button', { name: 'Rework' }).click()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByText('Select an operation in the graph or the chart to see its details.', { exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the save bar reports rejected, conflicting and unanswered saves and undo stays app-wide', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  const cell = (name: string) => page.getByRole('button', { name, exact: true })
+  const paste = (value: string) => page.evaluate(text => {
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  }, value)
+  const saveStatus = page.getByRole('status', { name: 'Save status' })
+  const server = page.getByLabel('Server answer')
+
+  await cell('Requirements · Duration 3d').click()
+  await paste('5')
+  await saved(page, 'v2')
+
+  // A rejected save changes nothing: the sheet shows the accepted document again.
+  await server.selectOption({ label: 'Reject' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('6')
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss save message' }).click()
+
+  // Another planner saved first: nothing is written, and loading the latest version shows their change.
+  await server.selectOption({ label: 'Conflict' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('7')
+  await expect(saveStatus).toContainText('Version conflict')
+  await expect(cell('Trial run · Duration 2d')).toBeVisible()
+  await page.getByRole('button', { name: 'Load latest version' }).click()
+  await expect(cell('Trial run · Duration 3d')).toBeVisible()
+  await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+
+  // No answer: the save may have been applied; asking the server settles it.
+  await server.selectOption({ label: 'No answer' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('4')
+  await expect(saveStatus).toContainText('Result unknown')
+  await page.getByRole('button', { name: 'Check with server' }).click()
+  await saved(page, 'v4')
+  await expect(cell('Requirements · Duration 4d')).toBeVisible()
+
+  // Undo covers every tab: an adopted plan is undone from the sheet's save bar too.
+  await server.selectOption({ label: 'Accept' })
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await saved(page, 'v5')
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['19:00'])
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await saved(page, 'v6')
+  await expect(cell('Requirements · Duration 4d')).toBeVisible()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['17:00'])
   expect(errors).toEqual([])
 })
