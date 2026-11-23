@@ -74,10 +74,19 @@ function bindings(schedule: Schedule): ViewBinding[] {
 // demo:end
 
 export function createProductionWorkspace() {
-  // In conflict mode another planner lengthens the trial run of the schedule sheet first, so the reload shows it.
+  // In conflict mode another planner changes the trial run of the schedule sheet first, so the reload shows it. Like
+  // any save, theirs must schedule: they lengthen the trial run by a day, or shorten it when it would no longer fit in
+  // the project window, and change nothing when neither schedules.
   const server = createTransactionStore<ProductionDocument>(initialDocument, {
     delay: 200,
-    remoteEdit: document => ({ ...document, sheet: document.sheet.map(item => item.id === 'trial' ? { ...item, duration: item.duration + 1 } : item) }),
+    remoteEdit: document => {
+      const trial = document.sheet.find(item => item.id === 'trial')!
+      for (const duration of [trial.duration + 1, trial.duration - 1]) {
+        const sheet = document.sheet.map(item => item === trial ? { ...item, duration } : item)
+        if (duration > 0 && scheduleSheet(sheet).ok) return { ...document, sheet }
+      }
+      return document
+    },
   })
   const transaction = useEditTransaction<ProductionDocument, ProductionChange>({
     documentId: 'production', initialState: initialDocument, initialVersion: server.info.version,

@@ -697,6 +697,8 @@ Each view derives what it draws from `document` and proposes changes with `trans
 
 Local state that depends on the document, such as an open proposal or a selected step, must follow undo, redo and refresh: the demo closes the plan proposal in its undo, redo and reload functions, and the approval tab moves its selection when an undo removes the selected step.
 
+Only `submit` runs your adapter's `validate`. A document that `refresh` loads, and the `state` of an accepted (or reconciled) result, come from the server as they are, so a view derived from them must handle documents your own edits would never produce: the demo's schedule sheet checks `ok` of its `ScheduleResult` and, for a stored sheet that no longer schedules, keeps the grid editable and says why, instead of reading the tasks of a failed result. The mock server checks the other planner's change with the same `scheduleSheet` before it stores it, as a real server would validate every write.
+
 **3. One linked selection.** Create one `useLinkedSelection` next to the transaction and give every view of the same entities its bindings. The planning operations are the steps of the lot in the lot flow, so the demo binds each operation to its planning node, bar, row and load (`taskViewBindings`) and to its lot flow node:
 
 ```ts

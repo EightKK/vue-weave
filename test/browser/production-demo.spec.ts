@@ -296,3 +296,34 @@ test('the save bar reports rejected, conflicting and unanswered saves and undo s
   await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['17:00'])
   expect(errors).toEqual([])
 })
+
+test('loading the latest version after a conflict keeps the schedule sheet working when the trial run ends the window', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  const cell = (name: string) => page.getByRole('button', { name, exact: true })
+  const sheet = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  /** Types `value` into a cell through its editor and commits it with Enter. */
+  async function edit(name: string | RegExp, field: string, value: string) {
+    await page.getByRole('button', { name }).dblclick()
+    const input = sheet.getByRole('textbox', { name: field, exact: true })
+    await input.fill(value)
+    await input.press('Enter')
+  }
+  // The trial run moves to Thursday 6 May and takes 2 working days, the last ones in the window. That schedules.
+  await edit(/^Trial run · Start /, 'Trial run · Start', '5/6')
+  await expect(cell('Trial run · Start 5/6')).toBeVisible()
+  await saved(page, 'v2')
+
+  // Another planner saves first. Lengthening the trial run by a day would push it past the window, which the server
+  // refuses too, so the change it stores still schedules; loading it shows it instead of breaking the sheet.
+  await page.getByLabel('Server answer').selectOption({ label: 'Conflict' })
+  await edit('Requirements · Duration 3d', 'Requirements · Duration', '4')
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Version conflict')
+  await page.getByRole('button', { name: 'Load latest version' }).click()
+  await expect(cell('Trial run · Duration 1d')).toBeVisible()
+  await expect(cell('Trial run · Start 5/6')).toBeVisible()
+  await expect(cell('Requirements · Duration 3d')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
