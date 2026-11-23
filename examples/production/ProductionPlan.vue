@@ -16,7 +16,14 @@ const initial: Plan = { strategy: 'original', starts: {} }
 const workspace = useProductionWorkspace()
 const { linked, proposal, schedule } = workspace
 const codeOpen = ref(false)
-const status = ref<'rejected' | 'adopted'>()
+const rejected = ref(false)
+// "Plan adopted." follows the workspace, which closes a proposal when its save is accepted, also after a reconcile.
+const status = computed(() => rejected.value ? 'rejected' : workspace.adoptionNotice.value ? 'adopted' : undefined)
+/** A new or closed proposal clears the messages about the previous one. */
+function clearStatus() {
+  rejected.value = false
+  workspace.adoptionNotice.value = false
+}
 const draft = computed(() => proposal.value?.plan)
 const strategy = computed(() => draft.value ?? workspace.document.value.plan)
 const current = workspace.adopted
@@ -61,7 +68,7 @@ function openScenario(value: Exclude<Strategy, 'original'>) {
   const plan = { strategy: value, starts: value === base.strategy ? base.starts : {} }
   const next = calculatePlan(plan)!
   proposal.value = { plan, changed: taskIds.filter(id => current.value.byId.get(id)!.start !== next.byId.get(id)!.start) }
-  status.value = undefined
+  clearStatus()
 }
 
 function validate(change: TimelineEdit) {
@@ -76,11 +83,11 @@ function cascade(change: TimelineEdit) {
 
 function move(id: TaskId, start: number) {
   const next = proposeStart(strategy.value, id, start)
-  if (!next) { status.value = 'rejected'; return }
+  if (!next) { rejected.value = true; return }
   // Compare with the adopted plan, like the baseline bars, so earlier moves of the same proposal stay highlighted.
   const moved = taskIds.filter(other => other !== id && current.value.byId.get(other)!.start !== next.computed.byId.get(other)!.start)
   proposal.value = { plan: next.next, changed: moved }
-  status.value = undefined
+  clearStatus()
 }
 
 function commitEdits(changes: TimelineEdit[]) {
@@ -90,19 +97,8 @@ function commitEdits(changes: TimelineEdit[]) {
 
 function dismiss() {
   proposal.value = undefined
-  status.value = undefined
+  clearStatus()
 }
-
-// demo:adopt
-// Adopting saves the proposal through the app-wide transaction; the save bar shows the result and offers undo.
-async function adopt() {
-  if (!draft.value) return
-  const outcome = await workspace.submit({ area: 'plan', plan: draft.value })
-  if (outcome.status !== 'accepted') return
-  dismiss()
-  status.value = 'adopted'
-}
-// demo:end
 
 function reset() {
   dismiss()
@@ -113,7 +109,7 @@ function reset() {
 const examples = computed(() => [
   { label: props.text.codeLink, code: excerpt(viewSource, 'link') + '\n\n' + excerpt(workspaceSource, 'link'), path: 'ProductionPlan.vue' },
   { label: props.text.codeReplan, code: excerpt(planSource, 'edit'), path: 'plan.ts' },
-  { label: props.text.codeAdopt, code: excerpt(viewSource, 'adopt'), path: 'ProductionPlan.vue' },
+  { label: props.text.codeAdopt, code: excerpt(workspaceSource, 'adopt'), path: 'workspace.ts' },
   { label: props.text.codeSave, code: excerpt(workspaceSource, 'save'), path: 'workspace.ts' },
 ])
 </script>
@@ -147,7 +143,7 @@ const examples = computed(() => [
           :labels="{ ...text.labels.gantt, region: text.gantt, editHint: text.planHelp, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
           :cascade="cascade" :validate-edit="validate" :validate-edits="changes => validate(changes[0]!)" @select="selectBar"
           @edit="change => commitEdits([change])" @edits="commitEdits"
-          @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'" @background-click="clearSelection" @idle-escape="clearSelection">
+          @edit-rejected="rejected = true" @edits-rejected="rejected = true" @background-click="clearSelection" @idle-escape="clearSelection">
           <template #row-heading>{{ text.task }}</template>
         </GanttChart>
         <p class="production-caption">{{ text.planHelp }} {{ local('Click empty chart space or press Escape to clear the selection.', '何もない所をクリックするか Escape で選択を解除します。') }}</p>
@@ -184,7 +180,7 @@ const examples = computed(() => [
             </tbody>
           </table>
           <div class="production-actions">
-            <button v-if="draft" class="primary" type="button" :disabled="workspace.saving.value" @click="adopt">{{ text.adopt }}</button>
+            <button v-if="draft" class="primary" type="button" :disabled="workspace.saving.value" @click="workspace.adopt">{{ text.adopt }}</button>
             <button v-if="draft" type="button" @click="dismiss">{{ text.dismiss }}</button>
           </div>
         </div>

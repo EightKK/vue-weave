@@ -73,6 +73,9 @@ function bindings(schedule: Schedule): ViewBinding[] {
 }
 // demo:end
 
+/** A plan proposal of the planning tab: the plan and the operations it moved relative to the adopted plan. */
+export interface PlanProposal { plan: Plan; changed: readonly TaskId[] }
+
 export function createProductionWorkspace() {
   // In conflict mode another planner changes the trial run of the schedule sheet first, so the reload shows it. Like
   // any save, theirs must schedule: they lengthen the trial run by a day, or shorten it when it would no longer fit in
@@ -99,7 +102,9 @@ export function createProductionWorkspace() {
   const busy = ref(false)
 
   // The open plan proposal of the planning tab. It is not saved until it is adopted.
-  const proposal = shallowRef<{ plan: Plan; changed: readonly TaskId[] }>()
+  const proposal = shallowRef<PlanProposal>()
+  /** Set when a save adopted the open proposal and closed it. The planning tab clears it when it opens another. */
+  const adoptionNotice = ref(false)
   const adopted = computed(() => calculatePlan(document.value.plan)!)
   const schedule = computed(() => proposal.value ? calculatePlan(proposal.value.plan)! : adopted.value)
 
@@ -127,20 +132,48 @@ export function createProductionWorkspace() {
   function reload() {
     const latest = server.fetch()
     proposal.value = undefined
+    unanswered = undefined
     transaction.refresh(latest.state, latest.version)
+  }
+
+  // demo:adopt
+  // Adopting saves the open proposal through the app-wide transaction. A save settles either with its own answer or,
+  // when that answer was lost, later through `reconcile`; both close the proposal that was saved, and only that one:
+  // a proposal opened while the save was in flight stays open. The lost save is remembered by its operation ID.
+  let unanswered: { operationId: string; proposal: PlanProposal } | undefined
+  function closeAdopted(saved: PlanProposal) {
+    if (proposal.value !== saved) return
+    proposal.value = undefined
+    adoptionNotice.value = true
+  }
+  async function adopt() {
+    const saved = proposal.value
+    if (!saved) return
+    const outcome = await submit({ area: 'plan', plan: saved.plan })
+    if (outcome.status === 'accepted') closeAdopted(saved)
+    else if (outcome.status === 'uncertain') unanswered = { operationId: outcome.operationId, proposal: saved }
   }
   function reconcile() {
     const operationId = transaction.pendingTransaction.value?.operationId
     if (!operationId) return
     const stored: SaveResult<ProductionDocument> = server.lookup(operationId) ?? { status: 'rejected', operationId, code: 'not-applied' }
-    transaction.reconcile(stored)
+    const outcome = transaction.reconcile(stored)
+    if (unanswered?.operationId !== operationId || outcome.status === 'uncertain') return
+    const saved = unanswered.proposal
+    unanswered = undefined
+    if (outcome.status === 'accepted') closeAdopted(saved)
   }
+  // demo:end
   function dismiss() {
     busy.value = false
+    // A dismissed unknown result is never reconciled: adopting again is a new save, which the server checks afresh.
+    if (transaction.status.value === 'uncertain') unanswered = undefined
     transaction.clearResult()
   }
 
-  return { server, transaction, document, saving, busy, proposal, adopted, schedule, linked, submit, undo, redo, reload, reconcile, dismiss }
+  return {
+    server, transaction, document, saving, busy, proposal, adoptionNotice, adopted, schedule, linked, submit, adopt, undo, redo, reload, reconcile, dismiss,
+  }
 }
 
 export type ProductionWorkspace = ReturnType<typeof createProductionWorkspace>

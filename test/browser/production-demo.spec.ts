@@ -327,3 +327,50 @@ test('loading the latest version after a conflict keeps the schedule sheet worki
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('a proposal opened while the previous one is being adopted stays open after that save', async ({ page }) => {
+  const errors = pageErrors(page)
+  // A fake clock holds the mock server's answer until the test lets it through.
+  await page.clock.install()
+  await page.goto('demo/')
+  await page.getByRole('button', { name: /Wait for maintenance/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Saving')
+  // The next proposal is opened before the server answers the first one.
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await expect(page.getByRole('button', { name: /Move cut A to backup/ })).toHaveAttribute('aria-pressed', 'true')
+  await page.clock.runFor(1000)
+  await saved(page, 'v2')
+  // The adopted plan is the first proposal; the second one is still open with its own figures, ready to adopt.
+  const shipping = page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')
+  await expect(page.getByRole('button', { name: /Move cut A to backup/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toBeVisible()
+  await expect(shipping).toHaveCount(2)
+  await expect(page.getByText('Plan adopted.', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await page.clock.runFor(1000)
+  await saved(page, 'v3')
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toHaveCount(0)
+  await expect(shipping).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('a proposal whose unanswered save the server confirms is closed and cannot be adopted twice', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByLabel('Server answer').selectOption({ label: 'No answer' })
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  const saveStatus = page.getByRole('status', { name: 'Save status' })
+  await expect(saveStatus).toContainText('Result unknown')
+  // Until the result is known the proposal stays open, since the save may have been lost.
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toBeVisible()
+  await page.getByRole('button', { name: 'Check with server' }).click()
+  await saved(page, 'v2')
+  // The server applied it: the proposal is the adopted plan now, so it is closed like after a direct answer.
+  await expect(page.getByRole('button', { name: 'Adopt plan' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toHaveCount(0)
+  await expect(page.getByText('Plan adopted.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['19:00'])
+  expect(errors).toEqual([])
+})
