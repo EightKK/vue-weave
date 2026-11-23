@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- GanttChart: in right-to-left charts, Safari (WebKit) drew dependency lag labels far from their dependency, beyond the start of the time axis. Each label was turned back inside the mirrored dependency layer by a CSS `scaleX(-1)` about its own centre, which needs `transform-box: fill-box` on SVG text, and WebKit flipped it about the layer's origin instead. The label now turns back through its own `transform` attribute (a flip about its anchor, with a start anchor written as `text-anchor="end"`), so it covers the same span in every engine. The stylesheet no longer sets `transform` on `.vw-gantt-lag`.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.

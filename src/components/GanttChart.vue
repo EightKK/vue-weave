@@ -1191,8 +1191,13 @@ function DependencyLayers(_props: Record<string, never>, { slots }: { slots: Slo
 }
 // Lag labels have their own layer, stacked above the marker, now and status-date lines (and the bars, whose gaps they
 // sit in), so a line crossing a label does not cover its text. A chart without lags renders no layer.
+// In a right-to-left chart the stylesheet mirrors the layer as a whole, and each label is turned back by its own
+// transform attribute: a flip about its anchor, with a start anchor drawn as an end anchor, so the text covers the same
+// span as before and reads normally. (A CSS flip about the label's centre needs `transform-box: fill-box` on SVG text,
+// which WebKit does not apply: it flipped the labels about the layer's origin, away from their dependencies.)
 const lagShapes = computed(() => {
   const shapes: (LinkShapeProps & { key: string })[] = []
+  const mirrored = rtl.value
   for (const line of shownLines.value) {
     const label = line.lag
     if (!label) continue
@@ -1201,7 +1206,8 @@ const lagShapes = computed(() => {
       tag: 'text',
       attrs: {
         id: label.id, class: { 'vw-gantt-lag': true, 'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id) },
-        x: label.x, y: label.y, 'text-anchor': label.anchor, 'aria-label': label.description,
+        x: label.x, y: label.y, 'text-anchor': mirrored && label.anchor === 'start' ? 'end' : label.anchor,
+        transform: mirrored ? `matrix(-1 0 0 1 ${2 * label.x} 0)` : undefined, 'aria-label': label.description,
       },
       text: label.text,
     })
