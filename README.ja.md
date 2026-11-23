@@ -1,10 +1,10 @@
 # Vue Weave
 
-[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@eightkk/vue-weave.svg)](https://www.npmjs.com/package/@eightkk/vue-weave) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.5.0/LICENSE)
+[![CI](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml/badge.svg)](https://github.com/EightKK/vue-weave/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/@eightkk/vue-weave.svg)](https://www.npmjs.com/package/@eightkk/vue-weave) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/EightKK/vue-weave/blob/v1.6.0/LICENSE)
 
-[English](https://github.com/EightKK/vue-weave/blob/v1.5.0/README.md)
+[English](https://github.com/EightKK/vue-weave/blob/v1.6.0/README.md)
 
-**[Webサイト](https://eightkk.github.io/vue-weave/ja/)** · [はじめに](https://eightkk.github.io/vue-weave/ja/learn/) · [作例](https://eightkk.github.io/vue-weave/ja/examples/) · [ショーケース](https://eightkk.github.io/vue-weave/ja/showcase/) · [APIリファレンス](https://eightkk.github.io/vue-weave/ja/api/) · [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.5.0/CHANGELOG.md)
+**[Webサイト](https://eightkk.github.io/vue-weave/ja/)** · [はじめに](https://eightkk.github.io/vue-weave/ja/learn/) · [作例](https://eightkk.github.io/vue-weave/ja/examples/) · [ショーケース](https://eightkk.github.io/vue-weave/ja/showcase/) · [APIリファレンス](https://eightkk.github.io/vue-weave/ja/api/) · [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md)
 
 Vue 3でネットワークグラフ、ガントチャート、ツリーグリッドを実装するためのライブラリです。レイアウト・日程計算・資源計画のためのヘッドレスなコアを備えています。関係の探索、工程フロー、プロジェクト工程、設備・担当者別の予定、部品表（BOM）エディタなどを、型付きの制御されたコンポーネントで作れます。グラフ・日程計算・設備負荷・アーンドバリューの計算は、Node.js、Worker、サーバーでも動きます。
 
@@ -34,17 +34,17 @@ Vue `^3.5.0` をpeer dependencyとしています。npm 7以降では、アプ�
 import '@eightkk/vue-weave/style.css'
 ```
 
-Viteではこのままimportできます。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合や、CSSを扱えないビルド環境の場合は、[The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/integration.md#the-stylesheet-and-typescript)を参照してください。
+Viteではこのままimportできます。`tsconfig.json` で `noUncheckedSideEffectImports` を有効にしている場合や、CSSを扱えないビルド環境の場合は、[The stylesheet and TypeScript](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md#the-stylesheet-and-typescript)を参照してください。
 
-**コアだけを使う場合（サーバー・Worker）。** `@eightkk/vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install @eightkk/vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
+**コアだけを使う場合（サーバー・Worker）。** `@eightkk/vue-weave/core` は実行時にVueを必要とせず、Node.js 22.18以降、Worker、サーバーで動作します。ただしVueは必須のpeer dependencyで、optionalなpeerとしては設定していないため、`npm install @eightkk/vue-weave` でVueもインストールされます。コアだけを配備する環境でVueを除くには `--omit=peer` を付けてインストールします。詳しくは[Core only: servers and Workers](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md#core-only-servers-and-workers)を参照してください。
 
-**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`eightkk-vue-weave-1.5.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
+**オフラインでのインストール。** 各[GitHub Release](https://github.com/EightKK/vue-weave/releases)には、npmに公開したものと同じパッケージのtarballも添付しています。`eightkk-vue-weave-1.6.0.tgz` をダウンロードし、利用するアプリケーションのフォルダーからインストールします。次のパスは実際のファイルのパスに置き換えます。
 
 ```sh
-npm install ./eightkk-vue-weave-1.5.0.tgz
+npm install ./eightkk-vue-weave-1.6.0.tgz
 ```
 
-チェックアウトから[ローカルパッケージを作成](https://github.com/EightKK/vue-weave/blob/v1.5.0/CONTRIBUTING.md#build-a-local-package)することもできます。
+チェックアウトから[ローカルパッケージを作成](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md#build-a-local-package)することもできます。
 
 ## クイックスタート
 
@@ -155,12 +155,12 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 
 ## 対応状況
 
-- **1.0以降は安定版です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.5.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/api.md#compatibility-and-versioning)に記載しています。
+- **1.0以降は安定版です。** [セマンティックバージョニング](https://semver.org/lang/ja/)に従い、破壊的変更はメジャーリリースだけで行い、[変更履歴](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md)の「Breaking changes」に記載します。対象となるもの（エクスポートされた名前と型、props、イベント、スロット、ドキュメントに記載した `--vw-*` 変数、スナップショットの形式）と対象外のもの（エラーメッセージの文言、コンポーネントが出力する `vw-` クラス、DOM構造、サーバーレンダリングのマークアップ）は[Compatibility and versioning](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/api.md#compatibility-and-versioning)に記載しています。
 - **Vue：** 3.x の3.5以降（peer dependency `^3.5.0`）。
 - **モジュールとTypeScript：** ESMのみ。型定義は `Bundler` と `NodeNext` の型解決に対応しています。項目の `data` に型を付けられ（`NetworkNode<MyData>`、`TimelineBar<MyData>`）、その型がキャストなしでスロットのpropsやコールバックに渡ります。
 - **Node.js：** ヘッドレスの `@eightkk/vue-weave/core`、サーバーサイドレンダリング、開発には22.18以降が必要です。
 - **ブラウザー：** 最新の主要ブラウザー（Chrome、Edge、Firefox、Safari）。自動ブラウザーテストはChromiumのみで実行するため、ほかのブラウザーはCIの対象外です。
-- **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
+- **アクセシビリティ：** キーボード操作とARIA名を備えています。専用のスクリーンリーダーでの検証はまだ行っていません（[構成、性能上の扱い、対応範囲](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)を参照）。十分に対応していると想定しないでください。
 
 ## Webサイトをローカルで起動する
 
@@ -172,21 +172,21 @@ npm run build:demo
 npm start
 ```
 
-`npm start` はビルド済みのサイトを `http://127.0.0.1:4173/vue-weave/` で配信します（日本語は `/vue-weave/ja/`）。Windows では `Start.cmd` をダブルクリックしても起動でき、ソースが変わっていれば先にサイトを再構築します。リリースに添付されたビルド済みサイトのアーカイブは、依存関係をインストールせずに `npm start` で動きます。生産計画の単独アプリは `/vue-weave/demo/` にあります。開発と検証のコマンドは [Contributing](https://github.com/EightKK/vue-weave/blob/v1.5.0/CONTRIBUTING.md) を参照してください。
+`npm start` はビルド済みのサイトを `http://127.0.0.1:4173/vue-weave/` で配信します（日本語は `/vue-weave/ja/`）。Windows では `Start.cmd` をダブルクリックしても起動でき、ソースが変わっていれば先にサイトを再構築します。リリースに添付されたビルド済みサイトのアーカイブは、依存関係をインストールせずに `npm start` で動きます。生産計画の単独アプリは `/vue-weave/demo/` にあります。開発と検証のコマンドは [Contributing](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md) を参照してください。
 
 ## ドキュメント
 
-Webサイトの[APIリファレンス](https://eightkk.github.io/vue-weave/ja/api/)と[ガイド](https://eightkk.github.io/vue-weave/ja/learn/)は、npmパッケージにも含まれる [`docs/`](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/) のMarkdownから作られています（詳細な表は英語です）。
+Webサイトの[APIリファレンス](https://eightkk.github.io/vue-weave/ja/api/)と[ガイド](https://eightkk.github.io/vue-weave/ja/learn/)は、npmパッケージにも含まれる [`docs/`](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/) のMarkdownから作られています（詳細な表は英語です）。
 
-- [公開APIと入力の約束事](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/api.md)
-- [Vue・Nuxt・独自描画・時間軸・保存](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/integration.md)
-- [アーキテクチャ・性能・対象範囲](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/architecture.md)
-- [日程計算と資源負荷](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/scheduling.md)
-- [コントリビュートとリリース手順](https://github.com/EightKK/vue-weave/blob/v1.5.0/CONTRIBUTING.md)
-- [セキュリティと非公開の脆弱性報告](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/security.md)
-- [行動規範](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/code-of-conduct.md)
-- [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.5.0/CHANGELOG.md)
+- [公開APIと入力の約束事](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/api.md)
+- [Vue・Nuxt・独自描画・時間軸・保存](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/integration.md)
+- [アーキテクチャ・性能・対象範囲](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/architecture.md)
+- [日程計算と資源負荷](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/scheduling.md)
+- [コントリビュートとリリース手順](https://github.com/EightKK/vue-weave/blob/v1.6.0/CONTRIBUTING.md)
+- [セキュリティと非公開の脆弱性報告](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/security.md)
+- [行動規範](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/code-of-conduct.md)
+- [変更履歴](https://github.com/EightKK/vue-weave/blob/v1.6.0/CHANGELOG.md)
 
 ## ライセンス
 
-MIT。[LICENSE](https://github.com/EightKK/vue-weave/blob/v1.5.0/LICENSE) を参照してください。ビルド済みサイトに含まれる第三者のライセンス表示は [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.5.0/THIRD_PARTY_NOTICES.md) と[第三者ライセンス](https://github.com/EightKK/vue-weave/blob/v1.5.0/docs/third-party-licenses.md)にあります。
+MIT。[LICENSE](https://github.com/EightKK/vue-weave/blob/v1.6.0/LICENSE) を参照してください。ビルド済みサイトに含まれる第三者のライセンス表示は [THIRD_PARTY_NOTICES.md](https://github.com/EightKK/vue-weave/blob/v1.6.0/THIRD_PARTY_NOTICES.md) と[第三者ライセンス](https://github.com/EightKK/vue-weave/blob/v1.6.0/docs/third-party-licenses.md)にあります。

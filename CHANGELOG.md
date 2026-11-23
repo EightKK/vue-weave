@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.6.0 - 2026-11-23
+
+Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.
+
 ### Added
 
 - NetworkGraph and GanttChart report an opt-in `idle-escape` (`@idle-escape` in templates, declared as the listener prop `onIdleEscape`) with the `KeyboardEvent` when Escape is pressed in them and cancels nothing of their own: no gesture, armed connection or open cell editor (so no `gesture-end` or `edit-cancel` for it), not in a text field, not handled by the label editor, a filter dialog or a spreadsheet range, and not part of an input method composition. Applications clear their selection on it as on `background-click`, instead of counting `gesture-start` and `gesture-end` or watching `edit-cancel` around a wrapper element. The examples and showcases use it and no longer carry that bookkeeping.
