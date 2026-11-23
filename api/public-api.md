@@ -7687,16 +7687,13 @@ interface TaskBoardPosition {
 interface TaskViewBindingsInput {
     tasks: readonly {
         id: string;
-        start?: number;
-        end?: number;
+        work?: readonly TimeRange[];
     }[];
-    assignments?: readonly {
-        taskId: string;
-        resourceId: string;
-    }[];
+    assignments?: readonly Pick<ResourceAssignment, 'taskId' | 'resourceId' | 'workOffset' | 'workDuration'>[];
     dependencies?: readonly {
         id: string;
     }[];
+    inactiveTaskIds?: Iterable<string>;
     taskKind?: string;
     dependencyKind?: string;
 }

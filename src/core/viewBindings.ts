@@ -1,4 +1,6 @@
 import { checkId, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
+import { assignmentWorkPeriods, type ResourceAssignment } from './resourceLoad.js'
+import type { TimeRange } from './timeline.js'
 
 /** An application-defined entity. `kind` keeps equal IDs of different kinds apart. */
 export interface EntityRef {
@@ -257,14 +259,25 @@ export function resolveLoadTargets<S extends LoadSegmentLike>(
 /** Input of `taskViewBindings`. */
 export interface TaskViewBindingsInput {
   /**
-   * The tasks. Each becomes the entity `{ kind: taskKind, id }`, bound to the graph node, the timeline bar and the
-   * timeline row with its ID. `start` and `end` are read only for tasks that have assignments.
+   * The tasks, for example a schedule's `tasks`. Each becomes the entity `{ kind: taskKind, id }`, bound to the graph
+   * node, the timeline bar and the timeline row with its ID. `work` (the elapsed periods in which the task is worked on,
+   * as in `ScheduledTask.work`) is read only for tasks that have assignments.
    */
-  tasks: readonly { id: string; start?: number; end?: number }[]
-  /** Each binds its task to the load target `[start, end)` of its resource, so load segments link to the task. Default: none. */
-  assignments?: readonly { taskId: string; resourceId: string }[]
+  tasks: readonly { id: string; work?: readonly TimeRange[] }[]
+  /**
+   * The resource assignments, as passed to `calculateResourceLoad`. Each binds its task to a load target of its resource
+   * for every period in which the assignment uses the resource (`assignmentWorkPeriods`: the task's `work`, or with
+   * `workOffset` or `workDuration` only that part of it), so a load segment links to the tasks that
+   * `calculateResourceLoad` counts in it. Default: none.
+   */
+  assignments?: readonly Pick<ResourceAssignment, 'taskId' | 'resourceId' | 'workOffset' | 'workDuration'>[]
   /** Each becomes the entity `{ kind: dependencyKind, id }`, bound to the graph edge and the timeline dependency with its ID. Default: none. */
   dependencies?: readonly { id: string }[]
+  /**
+   * Tasks whose assignments are skipped, as in `calculateResourceLoad`, for example a schedule's `inactiveTaskIds`, so a
+   * plan's full assignment list can be passed unchanged. They must not be in `tasks`. Default: none.
+   */
+  inactiveTaskIds?: Iterable<string>
   /** The entity kind of tasks. Default `'task'`. */
   taskKind?: string
   /** The entity kind of dependencies. Default `'dependency'`. */
@@ -275,10 +288,13 @@ export interface TaskViewBindingsInput {
  * The bindings of a plan whose views show tasks and dependencies under their own IDs: `scheduleToGraph` nodes and edges,
  * GanttChart bars, rows and dependencies, and resource load. Pass the result to `useLinkedSelection` or
  * `buildViewBindingIndex`, and add bindings of your own for anything else. Per task, in input order: its node, bar and
- * row, then a load target per assignment, in assignment order; then per dependency its edge and timeline dependency.
- * Throws Error for an invalid or duplicate task or dependency ID, an empty entity kind, an assignment of an unknown task
- * or with an invalid resource ID, and RangeError for an assigned task whose `start` and `end` are not finite or whose
- * end is before its start. The input is not modified.
+ * row, then per assignment, in assignment order, a load target for each period in which the assignment uses its
+ * resource; then per dependency its edge and timeline dependency. The load targets agree with `calculateResourceLoad`
+ * for the same tasks and assignments: pauses, calendar breaks and the parts of the work outside an assignment's
+ * `workOffset` and `workDuration` bind nothing. Throws Error for an invalid or duplicate task or dependency ID, an
+ * empty entity kind, an assignment of an unknown task or with an invalid resource ID, an inactive task that is also in
+ * `tasks`, and an assigned task without a `work` array; RangeError for invalid work segments (safe integer endpoints,
+ * positive length) or an invalid `workOffset` or `workDuration`. The input is not modified.
  */
 export function taskViewBindings(input: TaskViewBindingsInput): ViewBinding[] {
   const taskKind = input.taskKind ?? 'task'
@@ -286,21 +302,32 @@ export function taskViewBindings(input: TaskViewBindingsInput): ViewBinding[] {
   for (const kind of [taskKind, dependencyKind]) {
     if (typeof kind !== 'string' || !kind) throw new Error('Invalid entity kind: kind must be a non-empty string')
   }
-  const tasks = new Map<string, { start?: number; end?: number }>()
+  const tasks = new Map<string, { work?: readonly TimeRange[] }>()
   const seen = new Set<string>()
   for (const task of input.tasks) tasks.set(checkId('task', task?.id, seen), task)
+  const inactive = new Set<string>()
+  for (const id of input.inactiveTaskIds ?? []) {
+    if (tasks.has(id)) throw new Error('An inactive task cannot have workload: ' + id)
+    inactive.add(id)
+  }
   const loads = new Map<string, ViewBinding[]>()
   for (const assignment of input.assignments ?? []) {
     const taskId = assignment?.taskId, resourceId = assignment?.resourceId
+    if (isId(taskId) && inactive.has(taskId)) continue
     const task = isId(taskId) ? tasks.get(taskId) : undefined
     if (!task) throw unknownReferenceError('task', 'assignment', taskId)
     if (!isId(resourceId)) throw inContext(invalidIdError('resource', resourceId), 'assignment of task ' + taskId)
-    const { start, end } = task
-    if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
-      throw new RangeError('Assigned task ' + taskId + ' needs a finite start and an end that is not before it')
+    if (!Array.isArray(task.work)) throw new Error('Assigned task ' + taskId + ' needs its work segments (work)')
+    for (const period of task.work) {
+      if (!period || !Number.isSafeInteger(period.start) || !Number.isSafeInteger(period.end) || period.end <= period.start) {
+        throw new RangeError('Work segments need safe integer endpoints and positive length: task ' + taskId)
+      }
     }
+    const periods = assignmentWorkPeriods(task.work, assignment)
     const list = loads.get(taskId!) ?? []
-    list.push({ entity: { kind: taskKind, id: taskId! }, target: { view: 'load', resourceId, start, end } })
+    for (const { start, end } of periods) {
+      list.push({ entity: { kind: taskKind, id: taskId! }, target: { view: 'load', resourceId, start, end } })
+    }
     loads.set(taskId!, list)
   }
   const bindings: ViewBinding[] = []
