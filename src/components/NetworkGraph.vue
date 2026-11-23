@@ -209,6 +209,13 @@ const props = withDefaults(defineProps<{
    * other edges. Widths must be finite and at least 0; unknown IDs are ignored. Opt-in. Default: undefined.
    */
   edgeBands?: ReadonlyMap<string, GraphEdgeBand>
+  /**
+   * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the graph and cancelled
+   * nothing of the graph's own (no gesture in flight, so no `gesture-end` for it), outside text fields and the label
+   * editor; it receives the keyboard event. Applications typically clear their selection, as on `background-click`. A
+   * declared listener prop rather than an emit, like GanttChart's. Opt-in. Default: undefined.
+   */
+  onIdleEscape?: (event: KeyboardEvent) => void
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -273,12 +280,6 @@ const emit = defineEmits<{
   'label-edit': [change: GraphLabelEdit]
   /** A label proposal was rejected by `validateLabelEdit`; carries the proposal and the reason. */
   'label-edit-rejected': [change: GraphLabelEdit, reason: string]
-  /**
-   * Escape was pressed in the graph and cancelled nothing of the graph's own (no gesture in flight, so no `gesture-end`
-   * for it), outside text fields and the label editor; carries the keyboard event. Applications typically clear their
-   * selection, as on `background-click`.
-   */
-  'idle-escape': [event: KeyboardEvent]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot<ShownNode>): unknown
@@ -814,7 +815,7 @@ function endGesture(slot: GestureSlot, outcome: GraphGestureEnd['outcome']) {
   emit('gesture-end', { ...gesture, outcome })
 }
 // Escape on the stage cancels the gestures in flight; one that finds none is reported as `idle-escape`.
-const idleEscape = createIdleEscape(event => emit('idle-escape', event))
+const idleEscape = createIdleEscape(event => props.onIdleEscape?.(event))
 function escapeStage() {
   if (gestures.pointer || gestures.connection) idleEscape.cancelled()
   cancelInteraction()

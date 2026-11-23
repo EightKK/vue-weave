@@ -300,6 +300,14 @@ const props = withDefaults(defineProps<{
    * `false` or a reason string to reject.
    */
   validateFieldEdit?: (change: TimelineFieldEdit<R>) => boolean | string | void
+  /**
+   * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the chart and cancelled
+   * nothing of the chart's own (no drag, armed connection or open cell editor, so no `edit-cancel`), outside text fields
+   * and closed popups; it receives the keyboard event. Applications typically clear their selection, as on
+   * `background-click`. A declared listener prop rather than an emit, so the chart's typed listener props stay within
+   * what vue-tsc can derive from its emits. Opt-in. Default: undefined.
+   */
+  onIdleEscape?: (event: KeyboardEvent) => void
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -424,12 +432,6 @@ const emit = defineEmits<{
   'field-edit-rejected': [change: TimelineFieldEdit<R>, reason: string]
   /** An in-flight edit was cancelled; carries the reason, the bars of the gesture and the cell of a cancelled `cell-editor`. */
   'edit-cancel': [event: TimelineEditCancel]
-  /**
-   * Escape was pressed in the chart and cancelled nothing of the chart's own (no drag, armed connection or open cell
-   * editor, so no `edit-cancel`), outside text fields and closed popups; carries the keyboard event. Applications
-   * typically clear their selection, as on `background-click`.
-   */
-  'idle-escape': [event: KeyboardEvent]
 }>()
 
 const slots = defineSlots<{
@@ -1348,7 +1350,7 @@ function cancelGestures(reason: TimelineEditCancelReason, keepFill = false) {
   if (info) reportCancel({ reason, barIds: info.barIds })
 }
 // Every `edit-cancel` marks the Escape being handled as used, so it is not also reported as `idle-escape`.
-const idleEscape = createIdleEscape(event => emit('idle-escape', event))
+const idleEscape = createIdleEscape(event => props.onIdleEscape?.(event))
 function reportCancel(cancel: TimelineEditCancel) {
   idleEscape.cancelled()
   emit('edit-cancel', cancel)
