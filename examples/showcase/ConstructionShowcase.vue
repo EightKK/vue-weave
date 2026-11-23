@@ -11,6 +11,7 @@ import {
   assignments, baselineDurations, contractCompletion, crewLabel, crews, day, dependencies, holidays, on, phases, range,
   reportedProgress, scheduleTasksOf, statusDate, steelDeliveryId, tasks as program,
 } from './constructionData'
+import { useDemoLocale } from '../i18n'
 
 // An executive master schedule for an office tower. Every date comes from the core scheduler: a weekday calendar with
 // holidays, FS and SS links with lags, requested starts, a status date with reported progress, and resource leveling.
@@ -18,13 +19,22 @@ import {
 interface RowData { kind: 'phase' | 'task' | 'milestone'; wbs: string }
 interface ProgramRow extends TimelineRow<RowData> { data: RowData }
 
+// Task, phase and crew names are data and stay in English; the interface follows the page language.
+const { t, labels, isJapanese } = useDemoLocale()
+
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const formatTime = (time: number) => { const date = new Date(time); return `${date.getUTCDate()} ${months[date.getUTCMonth()]}` }
-const formatDate = (time: number) => `${formatTime(time)} ${new Date(time).getUTCFullYear()}`
+const formatTime = (time: number) => {
+  const date = new Date(time)
+  return isJapanese.value ? `${date.getUTCMonth() + 1}月${date.getUTCDate()}日` : `${date.getUTCDate()} ${months[date.getUTCMonth()]}`
+}
+const formatDate = (time: number) => isJapanese.value ? `${new Date(time).getUTCFullYear()}年${formatTime(time)}` : `${formatTime(time)} ${new Date(time).getUTCFullYear()}`
+/** Working days: "wd" in English. */
+const wd = t({ en: 'wd', ja: '稼働日' })
+const doneText = t({ en: 'done', ja: '完了' })
 const money = (thousands: number | undefined) => thousands === undefined ? 'n/a' : `$${(thousands / 1000).toFixed(1)}M`
 const signedMoney = (thousands: number) => (thousands < 0 ? '−' : '+') + money(Math.abs(thousands))
 const ratio = (value: number | undefined) => value === undefined ? 'n/a' : value.toFixed(2)
-const signedDays = (days: number) => days === 0 ? '±0 wd' : `${days > 0 ? '+' : '−'}${Math.abs(days)} wd`
+const signedDays = (days: number) => days === 0 ? `±0 ${wd}` : `${days > 0 ? '+' : '−'}${Math.abs(days)} ${wd}`
 
 // ---- calendar: weekdays, with holidays and the winter shutdown closed ----
 const exceptions = Object.fromEntries(holidays.map(date => [date, []]))
@@ -81,7 +91,10 @@ const planTasks = shallowRef<ScheduleTask[]>(initialTasks)
 const whatIf = ref(false)
 const showAllLinks = ref(false)
 const leveled = ref(false)
-const status = ref('Status date 14 Sep 2026. Drag or use the arrow keys on an unstarted bar to reschedule it; the plan is recalculated.')
+const status = ref(t({
+  en: 'Status date 14 Sep 2026. Drag or use the arrow keys on an unstarted bar to reschedule it; the plan is recalculated.',
+  ja: '基準日は 2026年9月14日です。未着手のバーをドラッグするか矢印キーで動かすと、計画を再計算します。',
+}))
 const scenario = (steelDelay: boolean) => {
   const list = statusTasks(planTasks.value, steelDelay)
   return { tasks: list, plan: mustSchedule(scheduleTasks(input(list))) }
@@ -146,8 +159,12 @@ const forecastAc = computed(() => line([[statusDate, totals.ac], [plan.value.fin
 const yTicks = Array.from({ length: yMax / 10_000 + 1 }, (_, index) => index * 10_000)
 const xTicks = [on(2026, 4, 1), on(2026, 7, 1), on(2026, 10, 1), on(2027, 1, 1), on(2027, 4, 1)]
 const curveId = useId()
-const curveSummary = computed(() => `Planned value reaches ${money(totals.bac)} on ${formatDate(baselinePlan.finish)}. At the status date PV is `
-  + `${money(totals.pv)}, EV ${money(totals.ev)} and AC ${money(totals.ac)}; the forecast reaches ${money(totals.eac)} on ${formatDate(plan.value.finish)}.`)
+const curveSummary = computed(() => t({
+  en: `Planned value reaches ${money(totals.bac)} on ${formatDate(baselinePlan.finish)}. At the status date PV is `
+    + `${money(totals.pv)}, EV ${money(totals.ev)} and AC ${money(totals.ac)}; the forecast reaches ${money(totals.eac)} on ${formatDate(plan.value.finish)}.`,
+  ja: `計画価値は ${formatDate(baselinePlan.finish)} に ${money(totals.bac)} に達します。基準日の PV は ${money(totals.pv)}、EV は ${money(totals.ev)}、`
+    + `AC は ${money(totals.ac)} で、予測は ${formatDate(plan.value.finish)} に ${money(totals.eac)} に達します。`,
+}))
 
 // ---- chart ----
 const wbs = new Map<string, string>()
@@ -169,15 +186,15 @@ const chartHeight = computed(() => 40 + 2 * 26 + rows.filter(row => !row.parentI
 const quarters: TimelineBand[] = []
 for (let year = 2026, quarter = 0; on(year, quarter * 3 + 1, 1) < range.end; quarter === 3 ? (year++, quarter = 0) : quarter++) {
   const start = Math.max(range.start, on(year, quarter * 3 + 1, 1)), end = Math.min(range.end, on(year, quarter * 3 + 4, 1))
-  if (end > start) quarters.push({ start, end, label: end - start > 40 * day ? `Q${quarter + 1} ${year}` : `Q${quarter + 1}` })
+  if (end > start) quarters.push({ start, end, label: end - start > 40 * day ? t({ en: `Q${quarter + 1} ${year}`, ja: `${year}年 Q${quarter + 1}` }) : `Q${quarter + 1}` })
 }
 const monthBands: TimelineBand[] = []
 for (let time = range.start; time < range.end;) {
   const date = new Date(time), next = Math.min(range.end, on(date.getUTCFullYear(), date.getUTCMonth() + 2, 1))
-  monthBands.push({ start: time, end: next, label: months[date.getUTCMonth()]! })
+  monthBands.push({ start: time, end: next, label: t({ en: months[date.getUTCMonth()]!, ja: `${date.getUTCMonth() + 1}月` }) })
   time = next
 }
-const markers = [{ id: 'contract', time: contractCompletion, label: 'Contract' }]
+const markers = [{ id: 'contract', time: contractCompletion, label: t({ en: 'Contract', ja: '契約' }) }]
 /** Work pieces split by more than calendar time off: the reported work and its resumption after the status date. */
 function splitWork(task: ScheduledTask): TimeRange[] | undefined {
   const pieces: TimeRange[] = []
@@ -202,11 +219,11 @@ const bars = computed<TimelineBar[]>(() => program.map(task => {
     ...(task.id === 'handover' ? { deadline: contractCompletion } : {}),
     ...(started(task.id) || requested === undefined ? {} : { constraints: timelineConstraints({ startNoEarlierThan: requested }) }),
     editable: !done && task.days > 0,
-    description: crewLabel(task.id) ?? (task.days ? 'Subcontract package' : 'Milestone'),
+    description: crewLabel(task.id) ?? (task.days ? t({ en: 'Subcontract package', ja: '下請け工事' }) : t({ en: 'Milestone', ja: 'マイルストーン' })),
   }
 }))
 const chartLinks = computed(() => showAllLinks.value ? dependencies : dependencies.filter(link => criticalLinks.value.has(link.id)))
-const loadRows = crews.map(crew => ({ id: crew.id, label: crew.label, detail: `${crew.capacity} ${crew.capacity === 1 ? 'crew' : 'crews'}` }))
+const loadRows = crews.map(crew => ({ id: crew.id, label: crew.label, detail: t({ en: `${crew.capacity} ${crew.capacity === 1 ? 'crew' : 'crews'}`, ja: `${crew.capacity} 班` }) }))
 /** The last working day of a task or summary (its end is the exclusive midnight after it); a milestone's own day. */
 function lastWorkDay(task: TimeRange) {
   if (task.end === task.start) return task.start
@@ -215,15 +232,16 @@ function lastWorkDay(task: TimeRange) {
   return last
 }
 const columns: TimelineColumn<ProgramRow>[] = [
-  { id: 'finish', label: 'Finish', width: 58, value: row => formatTime(lastWorkDay(byId.value.get(row.id)!)) },
-  { id: 'float', label: 'Float', width: 46, value: row => {
+  { id: 'finish', label: t({ en: 'Finish', ja: '終了' }), width: 58, value: row => formatTime(lastWorkDay(byId.value.get(row.id)!)) },
+  { id: 'float', label: t({ en: 'Float', ja: '余裕' }), width: 46, value: row => {
     const task = byId.value.get(row.id)!
-    return reportedProgress.get(row.id) === 1 ? 'done' : `${Math.round(task.workFloat / day)}d`
+    return reportedProgress.get(row.id) === 1 ? doneText : `${Math.round(task.workFloat / day)}${t({ en: 'd', ja: '日' })}`
   } },
-  { id: 'variance', label: 'Var', width: 48, value: row => {
+  { id: 'variance', label: t({ en: 'Var', ja: '差異' }), width: 48, value: row => {
     const task = byId.value.get(row.id)!, base = baselineById.get(row.id)!
     const days = workDaysBetween(lastWorkDay(base), lastWorkDay(task))
-    return days ? (days > 0 ? '+' : '−') + Math.abs(days) + 'd' : '0d'
+    const unit = t({ en: 'd', ja: '日' })
+    return days ? (days > 0 ? '+' : '−') + Math.abs(days) + unit : '0' + unit
   } },
 ]
 const milestones = ['sub-done', 'topping', 'watertight', 'handover'].map(id => ({ id, label: labelOf(id) }))
@@ -239,11 +257,14 @@ function animate() {
 onBeforeUnmount(() => clearTimeout(animationTimer))
 function handoverNote(before: number) {
   const shift = workDaysBetween(before, handover.value)
-  return `Practical completion ${formatDate(handover.value)} (${shift ? signedDays(shift) : 'no change'}).`
+  return t({
+    en: `Practical completion ${formatDate(handover.value)} (${shift ? signedDays(shift) : 'no change'}).`,
+    ja: `実質的完成は ${formatDate(handover.value)}(${shift ? signedDays(shift) : '変更なし'})。`,
+  })
 }
 function validateEdit(change: TimelineEdit) {
-  if (started(change.id)) return `${labelOf(change.id)} has started; report progress instead of moving it.`
-  if (change.mode === 'start') return 'Drag the bar to move it, or its right edge to change its duration.'
+  if (started(change.id)) return t({ en: `${labelOf(change.id)} has started; report progress instead of moving it.`, ja: `${labelOf(change.id)} は着手済みです。移動せずに進捗を報告してください。` })
+  if (change.mode === 'start') return t({ en: 'Drag the bar to move it, or its right edge to change its duration.', ja: 'バーをドラッグして移動するか、右端をドラッグして期間を変えてください。' })
 }
 function onEdit(change: TimelineEdit) {
   const before = handover.value
@@ -254,15 +275,24 @@ function onEdit(change: TimelineEdit) {
     statusTasks(next, whatIf.value)
     mustSchedule(scheduleTasks(input(statusTasks(next, whatIf.value))))
   } catch {
-    status.value = `${labelOf(change.id)} cannot go there: the program would run past ${formatDate(range.end)}.`
+    status.value = t({
+      en: `${labelOf(change.id)} cannot go there: the program would run past ${formatDate(range.end)}.`,
+      ja: `${labelOf(change.id)} はそこへ動かせません。工程が ${formatDate(range.end)} を超えてしまいます。`,
+    })
     return
   }
   planTasks.value = next
   const task = byId.value.get(change.id)!
   const held = change.mode === 'move' && task.start > change.after.start
   status.value = (change.mode === 'move'
-    ? `${labelOf(change.id)} starts ${formatTime(task.start)}${held ? ', held by its predecessors' : ''}. `
-    : `${labelOf(change.id)} now takes ${task.work.reduce((sum, piece) => sum + piece.end - piece.start, 0) / day} working days. `) + handoverNote(before)
+    ? t({
+      en: `${labelOf(change.id)} starts ${formatTime(task.start)}${held ? ', held by its predecessors' : ''}. `,
+      ja: `${labelOf(change.id)} は ${formatTime(task.start)} に開始します${held ? '(先行作業の制約による)' : ''}。`,
+    })
+    : t({
+      en: `${labelOf(change.id)} now takes ${task.work.reduce((sum, piece) => sum + piece.end - piece.start, 0) / day} working days. `,
+      ja: `${labelOf(change.id)} の期間は ${task.work.reduce((sum, piece) => sum + piece.end - piece.start, 0) / day} 稼働日になりました。`,
+    })) + handoverNote(before)
 }
 function onRejected(_change: TimelineEdit, reason: string) {
   status.value = reason
@@ -272,8 +302,11 @@ function toggleWhatIf() {
   whatIf.value = !whatIf.value
   animate()
   status.value = whatIf.value
-    ? `What-if: steel package B arrives 10 working days late; ${comparison.value?.result.consequenceTaskIds.length ?? 0} tasks move. ${handoverNote(before)}`
-    : `Steel delivery back on its forecast. ${handoverNote(before)}`
+    ? t({
+      en: `What-if: steel package B arrives 10 working days late; ${comparison.value?.result.consequenceTaskIds.length ?? 0} tasks move. ${handoverNote(before)}`,
+      ja: `試算: 鉄骨パッケージ B が 10 稼働日遅れて到着し、${comparison.value?.result.consequenceTaskIds.length ?? 0} 件の作業が動きます。${handoverNote(before)}`,
+    })
+    : t({ en: `Steel delivery back on its forecast. ${handoverNote(before)}`, ja: `鉄骨の納入を予測どおりに戻しました。${handoverNote(before)}` })
 }
 function level() {
   const before = handover.value
@@ -284,15 +317,17 @@ function level() {
   planTasks.value = planTasks.value.map(task => delays.has(task.id) ? { ...task, startNoEarlierThan: delays.get(task.id)! } : task)
   leveled.value = true
   animate()
-  const names = [...delays.keys()].map(labelOf).join(' and ')
-  status.value = delays.size ? `Levelled: ${names} wait for free crews. ${handoverNote(before)}` : 'No crew is over-allocated.'
+  const names = [...delays.keys()].map(labelOf).join(t({ en: ' and ', ja: '、' }))
+  status.value = delays.size
+    ? t({ en: `Levelled: ${names} wait for free crews. ${handoverNote(before)}`, ja: `平準化しました: ${names} は空いた作業班を待ちます。${handoverNote(before)}` })
+    : t({ en: 'No crew is over-allocated.', ja: '能力を超えた作業班はありません。' })
 }
 function reset() {
   planTasks.value = initialTasks
   whatIf.value = false
   leveled.value = false
   animate()
-  status.value = 'Plan reset to the reported status.'
+  status.value = t({ en: 'Plan reset to the reported status.', ja: '計画を報告時点の状態に戻しました。' })
 }
 
 // ---- exports ----
@@ -313,69 +348,76 @@ function exportMsProject() {
     resources: crews.map(crew => ({ id: crew.id, name: crew.label, maxUnits: crew.capacity })), assignments,
   })
   download(new Blob([xml], { type: 'application/xml' }), 'office-tower.xml')
-  status.value = `Exported Microsoft Project XML with ${tasks.length} tasks and ${dependencies.length} links.`
+  status.value = t({
+    en: `Exported Microsoft Project XML with ${tasks.length} tasks and ${dependencies.length} links.`,
+    ja: `${tasks.length} 件の作業と ${dependencies.length} 件の依存関係を Microsoft Project XML に書き出しました。`,
+  })
 }
 function exportCsv() {
   const csv = toCsv(timelineCsvTable(rows, bars.value, { formatTime: time => new Date(time).toISOString().slice(0, 10) }))
   download(new Blob([csv], { type: 'text/csv' }), 'office-tower.csv')
-  status.value = `Exported CSV with ${bars.value.length} work packages.`
+  status.value = t({ en: `Exported CSV with ${bars.value.length} work packages.`, ja: `${bars.value.length} 件の作業パッケージを CSV に書き出しました。` })
 }
 function exportSvg() {
-  const svg = chart.value?.exportSvg({ title: 'Office tower · master schedule', rowHeading: 'Work breakdown' })
+  const svg = chart.value?.exportSvg({
+    title: t({ en: 'Office tower · master schedule', ja: 'オフィスビル · 全体工程表' }), rowHeading: t({ en: 'Work breakdown', ja: '作業分解' }),
+  })
   if (!svg) return
   download(svg, 'office-tower.svg')
-  status.value = 'Exported the schedule as SVG.'
+  status.value = t({ en: 'Exported the schedule as SVG.', ja: '工程表を SVG に書き出しました。' })
 }
 </script>
 
 <template>
-  <section class="sc-build" :class="{ 'sc-build-animating': animating }" aria-label="Construction program">
+  <section class="sc-build" :class="{ 'sc-build-animating': animating }" :aria-label="t({ en: 'Construction program', ja: '建設工程表' })">
     <div class="sc-build-head">
       <div>
-        <p class="sc-build-eyebrow">Harbour Point · 9-storey office tower</p>
-        <h2>Construction program</h2>
-        <p class="sc-build-intro">
-          A master schedule computed by the core scheduler on a site calendar with holidays: critical path, float, baseline
-          strips, the status date with reported progress, crew load with leveling, earned value and a steel-delay what-if.
-        </p>
+        <p class="sc-build-eyebrow">{{ t({ en: 'Harbour Point · 9-storey office tower', ja: 'Harbour Point · 9階建てオフィスビル' }) }}</p>
+        <h2>{{ t({ en: 'Construction program', ja: '建設工程表' }) }}</h2>
+        <p class="sc-build-intro">{{ t({
+          en: 'A master schedule computed by the core scheduler on a site calendar with holidays: critical path, float, baseline strips, the status date with reported progress, crew load with leveling, earned value and a steel-delay what-if.',
+          ja: '休日を含む現場カレンダーでコアのスケジューラーが計算した全体工程表です。クリティカルパス、余裕、ベースライン、報告済み進捗のある基準日、平準化付きの作業班負荷、アーンドバリュー、鉄骨遅延の試算を表示します。',
+        }) }}</p>
       </div>
       <div class="sc-build-actions">
-        <label class="sc-build-switch"><input type="checkbox" :checked="whatIf" @change="toggleWhatIf"><span aria-hidden="true"></span>What-if: delay steel delivery +10 working days</label>
-        <button type="button" class="sc-build-primary" :disabled="overCrewDays === 0" @click="level">{{ overCrewDays === 0 && leveled ? 'Resources levelled' : 'Level resources' }}</button>
-        <button type="button" @click="reset">Reset</button>
+        <label class="sc-build-switch"><input type="checkbox" :checked="whatIf" @change="toggleWhatIf"><span aria-hidden="true"></span>{{ t({ en: 'What-if: delay steel delivery +10 working days', ja: '試算: 鉄骨の納入を 10 稼働日遅らせる' }) }}</label>
+        <button type="button" class="sc-build-primary" :disabled="overCrewDays === 0" @click="level">{{ overCrewDays === 0 && leveled ? t({ en: 'Resources levelled', ja: '平準化済み' }) : t({ en: 'Level resources', ja: '資源を平準化' }) }}</button>
+        <button type="button" @click="reset">{{ t({ en: 'Reset', ja: 'リセット' }) }}</button>
       </div>
     </div>
 
-    <div class="sc-build-kpis" aria-label="Key indicators">
-      <div class="sc-build-kpi sc-build-kpi-hero" role="group" aria-label="Forecast handover" :class="{ 'sc-build-late': contractMargin < 0 }">
-        <span class="sc-build-kpi-label">Forecast handover</span>
+    <div class="sc-build-kpis" :aria-label="t({ en: 'Key indicators', ja: '主要指標' })">
+      <div class="sc-build-kpi sc-build-kpi-hero" role="group" :aria-label="t({ en: 'Forecast handover', ja: '引き渡しの予測' })" :class="{ 'sc-build-late': contractMargin < 0 }">
+        <span class="sc-build-kpi-label">{{ t({ en: 'Forecast handover', ja: '引き渡しの予測' }) }}</span>
         <strong>{{ formatDate(handover) }}</strong>
         <span class="sc-build-badges">
-          <span class="sc-build-badge" :class="baselineSlip > 0 ? 'sc-build-badge-warn' : 'sc-build-badge-ok'">{{ signedDays(baselineSlip) }} vs baseline</span>
-          <span v-if="whatIf" class="sc-build-badge sc-build-badge-bad">what-if {{ signedDays(whatIfSlip) }}</span>
+          <span class="sc-build-badge" :class="baselineSlip > 0 ? 'sc-build-badge-warn' : 'sc-build-badge-ok'">{{ t({ en: `${signedDays(baselineSlip)} vs baseline`, ja: `ベースライン比 ${signedDays(baselineSlip)}` }) }}</span>
+          <span v-if="whatIf" class="sc-build-badge sc-build-badge-bad">{{ t({ en: 'what-if', ja: '試算' }) }} {{ signedDays(whatIfSlip) }}</span>
         </span>
-        <small>{{ contractMargin >= 0 ? `${contractMargin} wd margin to contract ${formatTime(contractCompletion)}` : `${-contractMargin} wd past contract ${formatTime(contractCompletion)}` }}</small>
+        <small>{{ contractMargin >= 0
+          ? t({ en: `${contractMargin} wd margin to contract ${formatTime(contractCompletion)}`, ja: `契約期限 ${formatTime(contractCompletion)} まで余裕 ${contractMargin} 稼働日` })
+          : t({ en: `${-contractMargin} wd past contract ${formatTime(contractCompletion)}`, ja: `契約期限 ${formatTime(contractCompletion)} を ${-contractMargin} 稼働日超過` }) }}</small>
       </div>
-      <div class="sc-build-kpi" role="group" aria-label="Schedule performance">
+      <div class="sc-build-kpi" role="group" :aria-label="t({ en: 'Schedule performance', ja: 'スケジュール効率' })">
         <span class="sc-build-kpi-label">SPI</span><strong :class="{ 'sc-build-neg': (totals.spi ?? 1) < 1 }">{{ ratio(totals.spi) }}</strong>
         <small>SV {{ signedMoney(totals.sv) }}</small>
       </div>
-      <div class="sc-build-kpi" role="group" aria-label="Cost performance">
+      <div class="sc-build-kpi" role="group" :aria-label="t({ en: 'Cost performance', ja: 'コスト効率' })">
         <span class="sc-build-kpi-label">CPI</span><strong :class="{ 'sc-build-neg': (totals.cpi ?? 1) < 1 }">{{ ratio(totals.cpi) }}</strong>
         <small>CV {{ signedMoney(totals.cv) }}</small>
       </div>
-      <div class="sc-build-kpi" role="group" aria-label="Estimate at completion">
+      <div class="sc-build-kpi" role="group" :aria-label="t({ en: 'Estimate at completion', ja: '完成時総コスト見積もり' })">
         <span class="sc-build-kpi-label">EAC</span><strong>{{ money(totals.eac) }}</strong>
         <small>BAC {{ money(totals.bac) }} · VAC {{ signedMoney(totals.vac ?? 0) }}</small>
       </div>
-      <div class="sc-build-kpi" role="group" aria-label="Percent complete">
-        <span class="sc-build-kpi-label">Complete</span><strong>{{ Math.round(totals.ev / totals.bac * 100) }}%</strong>
+      <div class="sc-build-kpi" role="group" :aria-label="t({ en: 'Percent complete', ja: '完了率' })">
+        <span class="sc-build-kpi-label">{{ t({ en: 'Complete', ja: '完了率' }) }}</span><strong>{{ Math.round(totals.ev / totals.bac * 100) }}%</strong>
         <span class="sc-build-meter" aria-hidden="true"><span :style="{ width: totals.ev / totals.bac * 100 + '%' }"></span><i :style="{ left: totals.pv / totals.bac * 100 + '%' }"></i></span>
-        <small>planned {{ Math.round(totals.pv / totals.bac * 100) }}%</small>
+        <small>{{ t({ en: 'planned', ja: '計画' }) }} {{ Math.round(totals.pv / totals.bac * 100) }}%</small>
       </div>
-      <div class="sc-build-kpi" role="group" aria-label="Crew over-allocation">
-        <span class="sc-build-kpi-label">Over-allocation</span><strong :class="{ 'sc-build-neg': overCrewDays > 0 }">{{ overCrewDays }}</strong>
-        <small>crew-days over capacity</small>
+      <div class="sc-build-kpi" role="group" :aria-label="t({ en: 'Crew over-allocation', ja: '作業班の過負荷' })">
+        <span class="sc-build-kpi-label">{{ t({ en: 'Over-allocation', ja: '過負荷' }) }}</span><strong :class="{ 'sc-build-neg': overCrewDays > 0 }">{{ overCrewDays }}</strong>
+        <small>{{ t({ en: 'crew-days over capacity', ja: '能力超過の班・日数' }) }}</small>
       </div>
     </div>
 
@@ -384,21 +426,25 @@ function exportSvg() {
       :tick-steps="[28 * day, 56 * day]" :snap="day" :min-duration="day" :format-time="formatTime" :header-bands="[quarters, monthBands]"
       :non-working-periods="closures" :row-height="rowHeight" :height="chartHeight" :columns="columns" show-summaries :collapsed-ids="collapsed"
       :highlighted-dependency-ids="criticalLinks" :status-date="statusDate" show-progress-line :markers="markers"
-      :load-rows="loadRows" :load-segments="loadView" :load-row-height="loadRowHeight" :baseline-ids="['baseline']" :baseline-label="() => 'Baseline'"
-      :format-variance="value => `${value >= 0 ? '+' : '−'}${Math.abs(Math.round(value / day))} d`" :format-lag="value => `+${value / day} d`"
+      :load-rows="loadRows" :load-segments="loadView" :load-row-height="loadRowHeight" :baseline-ids="['baseline']" :baseline-label="() => t({ en: 'Baseline', ja: 'ベースライン' })"
+      :format-variance="value => `${value >= 0 ? '+' : '−'}${Math.abs(Math.round(value / day))} ${t({ en: 'd', ja: '日' })}`" :format-lag="value => `+${value / day} ${t({ en: 'd', ja: '日' })}`"
       :validate-edit="validateEdit" dependency-style="rounded" sticky-band-labels
-      :labels="{ region: 'Construction master schedule', rows: 'Work breakdown', statusDate: 'Status', loadRegion: 'Crew load', critical: 'Critical path', deadline: 'Contract completion', late: 'Late against contract' }"
+      :labels="{
+        ...labels.gantt, region: t({ en: 'Construction master schedule', ja: '建設の全体工程表' }), rows: t({ en: 'Work breakdown', ja: '作業分解' }),
+        statusDate: t({ en: 'Status', ja: '基準日' }), loadRegion: t({ en: 'Crew load', ja: '作業班の負荷' }), critical: t({ en: 'Critical path', ja: 'クリティカルパス' }),
+        deadline: t({ en: 'Contract completion', ja: '契約上の完成' }), late: t({ en: 'Late against contract', ja: '契約に対して遅延' }),
+      }"
       @update:collapsed-ids="collapsed = $event" @edit="onEdit" @edit-rejected="onRejected"
     >
       <template #legend>
-        <ul class="sc-build-legend" aria-label="Legend">
-          <li><span class="sc-build-key sc-build-key-critical"></span>Critical path</li>
-          <li><span class="sc-build-key sc-build-key-normal"></span>Float</li>
-          <li><span class="sc-build-key sc-build-key-done"></span>Complete</li>
-          <li><span class="sc-build-key sc-build-key-baseline"></span>Baseline</li>
-          <li><span class="sc-build-key sc-build-key-status"></span>Status date</li>
-          <li><span class="sc-build-key sc-build-key-over"></span>Over-allocated</li>
-          <li><label><input v-model="showAllLinks" type="checkbox"> Show all links</label></li>
+        <ul class="sc-build-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
+          <li><span class="sc-build-key sc-build-key-critical"></span>{{ t({ en: 'Critical path', ja: 'クリティカルパス' }) }}</li>
+          <li><span class="sc-build-key sc-build-key-normal"></span>{{ t({ en: 'Float', ja: '余裕あり' }) }}</li>
+          <li><span class="sc-build-key sc-build-key-done"></span>{{ t({ en: 'Complete', ja: '完了' }) }}</li>
+          <li><span class="sc-build-key sc-build-key-baseline"></span>{{ t({ en: 'Baseline', ja: 'ベースライン' }) }}</li>
+          <li><span class="sc-build-key sc-build-key-status"></span>{{ t({ en: 'Status date', ja: '基準日' }) }}</li>
+          <li><span class="sc-build-key sc-build-key-over"></span>{{ t({ en: 'Over-allocated', ja: '過負荷' }) }}</li>
+          <li><label><input v-model="showAllLinks" type="checkbox"> {{ t({ en: 'Show all links', ja: 'すべての依存関係を表示' }) }}</label></li>
         </ul>
       </template>
       <template #row="{ row }">
@@ -410,32 +456,32 @@ function exportSvg() {
       </template>
       <template #cell="{ row, column, value }">
         <span class="sc-build-cell" :class="{
-          'sc-build-cell-phase': row.data.kind === 'phase', 'sc-build-cell-zero': column.id === 'float' && value === '0d',
-          'sc-build-cell-late': column.id === 'variance' && String(value).startsWith('+'), 'sc-build-cell-done': value === 'done' }">{{ value }}</span>
+          'sc-build-cell-phase': row.data.kind === 'phase', 'sc-build-cell-zero': column.id === 'float' && value === '0' + t({ en: 'd', ja: '日' }),
+          'sc-build-cell-late': column.id === 'variance' && String(value).startsWith('+'), 'sc-build-cell-done': value === doneText }">{{ value }}</span>
       </template>
-      <template #tick="{ time }"><span class="sc-build-tick">Wk {{ Math.round((time - range.start) / (7 * day)) + 1 }}</span></template>
+      <template #tick="{ time }"><span class="sc-build-tick">{{ t({ en: 'Wk', ja: '週' }) }} {{ Math.round((time - range.start) / (7 * day)) + 1 }}</span></template>
       <template #bar="{ bar }">
         <span v-if="bar.start === bar.end" class="sc-build-milestone" :class="{ 'sc-build-milestone-end': bar.start > range.end - 60 * day }">{{ bar.label }} · {{ formatTime(bar.start) }}</span>
         <span v-else class="sc-build-bar"></span>
       </template>
       <template #load-row="{ row, peak }">
-        <span class="sc-build-crew"><span>{{ row.label }}</span><small>{{ row.detail }} · peak {{ peak }}</small></span>
+        <span class="sc-build-crew"><span>{{ row.label }}</span><small>{{ row.detail }} · {{ t({ en: 'peak', ja: 'ピーク' }) }} {{ peak }}</small></span>
       </template>
     </GanttChart>
 
     <div class="sc-build-panels">
       <figure class="sc-build-panel sc-build-curve">
         <figcaption>
-          <h3>Earned value · S-curve</h3>
-          <ul class="sc-build-legend" aria-label="S-curve legend">
-            <li><span class="sc-build-line sc-build-pv"></span>Planned (PV)</li>
-            <li><span class="sc-build-line sc-build-ev"></span>Earned (EV)</li>
-            <li><span class="sc-build-line sc-build-ac"></span>Actual cost (AC)</li>
-            <li><span class="sc-build-line sc-build-fc"></span>Forecast</li>
+          <h3>{{ t({ en: 'Earned value · S-curve', ja: 'アーンドバリュー · S カーブ' }) }}</h3>
+          <ul class="sc-build-legend" :aria-label="t({ en: 'S-curve legend', ja: 'S カーブの凡例' })">
+            <li><span class="sc-build-line sc-build-pv"></span>{{ t({ en: 'Planned (PV)', ja: '計画 (PV)' }) }}</li>
+            <li><span class="sc-build-line sc-build-ev"></span>{{ t({ en: 'Earned (EV)', ja: '出来高 (EV)' }) }}</li>
+            <li><span class="sc-build-line sc-build-ac"></span>{{ t({ en: 'Actual cost (AC)', ja: '実コスト (AC)' }) }}</li>
+            <li><span class="sc-build-line sc-build-fc"></span>{{ t({ en: 'Forecast', ja: '予測' }) }}</li>
           </ul>
         </figcaption>
         <svg :viewBox="`0 0 ${curve.width} ${curve.height}`" role="img" :aria-labelledby="curveId + '-title'" :aria-describedby="curveId + '-desc'">
-          <title :id="curveId + '-title'">Cumulative cost S-curve</title>
+          <title :id="curveId + '-title'">{{ t({ en: 'Cumulative cost S-curve', ja: '累積コストの S カーブ' }) }}</title>
           <desc :id="curveId + '-desc'">{{ curveSummary }}</desc>
           <defs>
             <linearGradient :id="curveId + '-fill'" x1="0" x2="0" y1="0" y2="1">
@@ -447,11 +493,11 @@ function exportSvg() {
               <line :x1="curve.left" :x2="curve.width - curve.right" :y1="cy(tick)" :y2="cy(tick)" />
               <text :x="curve.left - 8" :y="cy(tick)" text-anchor="end" dominant-baseline="middle">{{ money(tick) }}</text>
             </g>
-            <text v-for="tick in xTicks" :key="tick" :x="cx(tick)" :y="curve.height - 6" text-anchor="middle">{{ months[new Date(tick).getUTCMonth()] }} {{ String(new Date(tick).getUTCFullYear()).slice(2) }}</text>
+            <text v-for="tick in xTicks" :key="tick" :x="cx(tick)" :y="curve.height - 6" text-anchor="middle">{{ t({ en: `${months[new Date(tick).getUTCMonth()]} ${String(new Date(tick).getUTCFullYear()).slice(2)}`, ja: `${String(new Date(tick).getUTCFullYear()).slice(2)}年${new Date(tick).getUTCMonth() + 1}月` }) }}</text>
           </g>
           <path :d="pvArea" :fill="`url(#${curveId}-fill)`" />
           <line class="sc-build-curve-status" :x1="cx(statusDate)" :x2="cx(statusDate)" :y1="curve.top" :y2="curve.height - curve.bottom" />
-          <text class="sc-build-curve-tag" :x="cx(statusDate) + 5" :y="curve.top + 8">Status</text>
+          <text class="sc-build-curve-tag" :x="cx(statusDate) + 5" :y="curve.top + 8">{{ t({ en: 'Status', ja: '基準日' }) }}</text>
           <path class="sc-build-path sc-build-pv" :d="pvLine" />
           <path class="sc-build-path sc-build-fc sc-build-fc-ev" :d="forecastEv" />
           <path class="sc-build-path sc-build-fc" :d="forecastAc" />
@@ -461,10 +507,15 @@ function exportSvg() {
           <circle class="sc-build-dot sc-build-ac" :cx="cx(statusDate)" :cy="cy(totals.ac)" r="3.5" />
         </svg>
       </figure>
-      <section class="sc-build-panel sc-build-milestones" aria-label="Key milestones">
-        <h3>Key milestones</h3>
+      <section class="sc-build-panel sc-build-milestones" :aria-label="t({ en: 'Key milestones', ja: '主要マイルストーン' })">
+        <h3>{{ t({ en: 'Key milestones', ja: '主要マイルストーン' }) }}</h3>
         <table>
-          <thead><tr><th scope="col">Milestone</th><th scope="col">Baseline</th><th scope="col">Forecast</th><th scope="col">Var</th></tr></thead>
+          <thead>
+            <tr>
+              <th scope="col">{{ t({ en: 'Milestone', ja: 'マイルストーン' }) }}</th><th scope="col">{{ t({ en: 'Baseline', ja: 'ベースライン' }) }}</th>
+              <th scope="col">{{ t({ en: 'Forecast', ja: '予測' }) }}</th><th scope="col">{{ t({ en: 'Var', ja: '差異' }) }}</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="item in milestones" :key="item.id">
               <th scope="row">{{ item.label }}</th>
@@ -474,14 +525,14 @@ function exportSvg() {
             </tr>
           </tbody>
         </table>
-        <h3>Next on the critical path</h3>
+        <h3>{{ t({ en: 'Next on the critical path', ja: 'クリティカルパス上の次の作業' }) }}</h3>
         <ol class="sc-build-ahead">
           <li v-for="task in criticalAhead" :key="task.id">
             <span>{{ labelOf(task.id) }}</span><small>{{ formatTime(task.start) }} – {{ formatTime(lastWorkDay(task)) }}</small>
           </li>
         </ol>
-        <div class="sc-build-exports" role="group" aria-label="Export">
-          <span>Export</span>
+        <div class="sc-build-exports" role="group" :aria-label="t({ en: 'Export', ja: '書き出し' })">
+          <span>{{ t({ en: 'Export', ja: '書き出し' }) }}</span>
           <button type="button" @click="exportMsProject">MS Project XML</button>
           <button type="button" @click="exportCsv">CSV</button>
           <button type="button" @click="exportSvg">SVG</button>

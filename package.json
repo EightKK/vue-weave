@@ -1,6 +1,6 @@
 {
   "name": "@eightkk/vue-weave",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Composable network graphs and interactive timelines for Vue 3.",
   "type": "module",
   "license": "MIT",
@@ -44,9 +44,10 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "dev": "vite --config vite.demo.config.ts --host 127.0.0.1",
+    "dev": "node scripts/api-reference.mjs && node --max-old-space-size=6144 node_modules/vitepress/bin/vitepress.js dev site",
+    "dev:demo": "vite --config vite.demo.config.ts --host 127.0.0.1",
     "build": "vite build && vue-tsc -p tsconfig.build.json && node scripts/finalize-declarations.mjs",
-    "build:demo": "vite build --config vite.demo.config.ts",
+    "build:demo": "node scripts/api-reference.mjs && node --max-old-space-size=6144 node_modules/vitepress/bin/vitepress.js build site && vite build --config vite.demo.config.ts && node scripts/check-site-links.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:e2e": "playwright test",
@@ -63,8 +64,12 @@
     "@playwright/test": "^1.57.0",
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "6.0.10",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.14.1",
+    "typedoc-vitepress-theme": "^1.1.4",
     "typescript": "~6.0.3",
     "vite": "8.3.7",
+    "vitepress": "^2.0.0-alpha.21",
     "vue": "3.5.45",
     "vue-tsc": "^3.2.0"
   },
@@ -77,5 +82,10 @@
     "gantt",
     "timeline",
     "typescript"
-  ]
+  ],
+  "overrides": {
+    "typedoc": {
+      "minimatch": "^11.0.9"
+    }
+  }
 }

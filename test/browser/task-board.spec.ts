@@ -1,9 +1,9 @@
 // TaskBoard: pointer and keyboard card moves, validation, cancellation and the selection shared with GanttChart.
-import { expect, test, boxCenter, dragTo, openDemo, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
+import { expect, test, boxCenter, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
 
 async function openTaskBoard(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Task board')
+  await openExample(page, 'task-board')
   const demo = page.locator('section[aria-labelledby="task-board-title"]')
   const board = demo.getByRole('region', { name: 'Sprint board', exact: true })
   await expect(board).toBeVisible()
@@ -386,5 +386,15 @@ test('a blank rejection reason from validateCardMove rejects with the default te
   await page.keyboard.press('Enter')
   await expect(log).toHaveText('rejected bravo: This card move was rejected.')
   await expect(board.locator('xpath=..').locator('[aria-live="polite"]')).toHaveText('This card move was rejected.')
+  expect(errors).toEqual([])
+})
+
+test('the task board example names its columns and status in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'task-board', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: 'スプリントのボード', exact: true })).toBeVisible()
+  await expect(demo.getByText('未着手', { exact: true }).first()).toBeVisible()
+  await expect(demo.getByRole('status', { name: 'ボードの選択' })).toHaveText('何も選択されていません。')
+  await expect(demo.getByRole('region', { name: 'スプリントのタイムライン', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

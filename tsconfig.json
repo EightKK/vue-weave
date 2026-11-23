@@ -20,6 +20,9 @@
     "src/**/*.vue",
     "examples/**/*.ts",
     "examples/**/*.vue",
+    "site/**/*.ts",
+    "site/.vitepress/**/*.ts",
+    "site/.vitepress/**/*.vue",
     "test/types/**/*.ts",
     "test/types/**/*.vue"
   ]

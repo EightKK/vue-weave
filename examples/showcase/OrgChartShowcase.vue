@@ -4,8 +4,11 @@ import {
   NetworkGraph, layoutTreeGraph, type GraphBox, type GraphEdge, type GraphLayoutFunction, type GraphNodeSize, type GraphPoint,
   type NetworkNode,
 } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 type DepartmentId = 'exec' | 'eng' | 'design' | 'sales' | 'people'
+
+const { t, labels, isJapanese } = useDemoLocale()
 interface Person {
   id: string
   name: string
@@ -18,29 +21,29 @@ interface Person {
 
 // Department colours are set in the stylesheet below (`sc-org-dept-*`); this table holds names only.
 const departments: Record<DepartmentId, { label: string; chip: string }> = {
-  exec: { label: 'Executive', chip: 'Executive' },
-  eng: { label: 'Engineering', chip: 'Engineering' },
-  design: { label: 'Product & Design', chip: 'Design' },
-  sales: { label: 'Sales & Marketing', chip: 'Sales' },
-  people: { label: 'People & Ops', chip: 'People' },
+  exec: { label: t({ en: 'Executive', ja: '経営' }), chip: t({ en: 'Executive', ja: '経営' }) },
+  eng: { label: t({ en: 'Engineering', ja: 'エンジニアリング' }), chip: t({ en: 'Engineering', ja: '開発' }) },
+  design: { label: t({ en: 'Product & Design', ja: 'プロダクト・デザイン' }), chip: t({ en: 'Design', ja: 'デザイン' }) },
+  sales: { label: t({ en: 'Sales & Marketing', ja: '営業・マーケティング' }), chip: t({ en: 'Sales', ja: '営業' }) },
+  people: { label: t({ en: 'People & Ops', ja: '人事・総務' }), chip: t({ en: 'People', ja: '人事' }) },
 }
 
 const people: Person[] = [
-  { id: 'ceo', name: 'Amara Okafor', title: 'Chief Executive Officer', department: 'exec', location: 'Lisbon', since: 2016 },
-  { id: 'cto', name: 'Lukas Brenner', title: 'VP Engineering', department: 'eng', manager: 'ceo', location: 'Berlin', since: 2017 },
-  { id: 'vp-design', name: 'Elena Petrova', title: 'VP Product & Design', department: 'design', manager: 'ceo', location: 'Lisbon', since: 2018 },
-  { id: 'vp-sales', name: 'Marcus Webb', title: 'VP Sales & Marketing', department: 'sales', manager: 'ceo', location: 'London', since: 2019 },
-  { id: 'head-people', name: 'Chloé Martin', title: 'Head of People', department: 'people', manager: 'ceo', location: 'Paris', since: 2020 },
-  { id: 'em-platform', name: 'Priya Raman', title: 'Platform Eng. Manager', department: 'eng', manager: 'cto', location: 'Berlin', since: 2019 },
-  { id: 'em-apps', name: 'Diego Alvarez', title: 'Apps Eng. Manager', department: 'eng', manager: 'cto', location: 'Madrid', since: 2020 },
-  { id: 'backend', name: 'Hana Sato', title: 'Backend Engineer', department: 'eng', manager: 'em-platform', location: 'Remote', since: 2021 },
-  { id: 'sre', name: 'Tomás Rivera', title: 'Reliability Engineer', department: 'eng', manager: 'em-platform', location: 'Madrid', since: 2022 },
-  { id: 'mobile', name: 'Grace Mensah', title: 'Mobile Engineer', department: 'eng', manager: 'em-apps', location: 'Remote', since: 2023 },
-  { id: 'designer', name: 'Noah Kim', title: 'Product Designer', department: 'design', manager: 'vp-design', location: 'Lisbon', since: 2021 },
-  { id: 'research', name: 'Fatima Haddad', title: 'UX Researcher', department: 'design', manager: 'vp-design', location: 'Remote', since: 2022 },
-  { id: 'account', name: 'Sofia Rossi', title: 'Account Executive', department: 'sales', manager: 'vp-sales', location: 'Milan', since: 2021 },
-  { id: 'growth', name: 'Ravi Patel', title: 'Growth Marketer', department: 'sales', manager: 'vp-sales', location: 'London', since: 2022 },
-  { id: 'talent', name: 'Kwame Asante', title: 'Talent Partner', department: 'people', manager: 'head-people', location: 'Paris', since: 2023 },
+  { id: 'ceo', name: 'Amara Okafor', title: t({ en: 'Chief Executive Officer', ja: '最高経営責任者' }), department: 'exec', location: 'Lisbon', since: 2016 },
+  { id: 'cto', name: 'Lukas Brenner', title: t({ en: 'VP Engineering', ja: 'エンジニアリング担当VP' }), department: 'eng', manager: 'ceo', location: 'Berlin', since: 2017 },
+  { id: 'vp-design', name: 'Elena Petrova', title: t({ en: 'VP Product & Design', ja: 'プロダクト・デザイン担当VP' }), department: 'design', manager: 'ceo', location: 'Lisbon', since: 2018 },
+  { id: 'vp-sales', name: 'Marcus Webb', title: t({ en: 'VP Sales & Marketing', ja: '営業・マーケティング担当VP' }), department: 'sales', manager: 'ceo', location: 'London', since: 2019 },
+  { id: 'head-people', name: 'Chloé Martin', title: t({ en: 'Head of People', ja: '人事責任者' }), department: 'people', manager: 'ceo', location: 'Paris', since: 2020 },
+  { id: 'em-platform', name: 'Priya Raman', title: t({ en: 'Platform Eng. Manager', ja: '基盤開発マネージャー' }), department: 'eng', manager: 'cto', location: 'Berlin', since: 2019 },
+  { id: 'em-apps', name: 'Diego Alvarez', title: t({ en: 'Apps Eng. Manager', ja: 'アプリ開発マネージャー' }), department: 'eng', manager: 'cto', location: 'Madrid', since: 2020 },
+  { id: 'backend', name: 'Hana Sato', title: t({ en: 'Backend Engineer', ja: 'バックエンドエンジニア' }), department: 'eng', manager: 'em-platform', location: 'Remote', since: 2021 },
+  { id: 'sre', name: 'Tomás Rivera', title: t({ en: 'Reliability Engineer', ja: '信頼性エンジニア' }), department: 'eng', manager: 'em-platform', location: 'Madrid', since: 2022 },
+  { id: 'mobile', name: 'Grace Mensah', title: t({ en: 'Mobile Engineer', ja: 'モバイルエンジニア' }), department: 'eng', manager: 'em-apps', location: 'Remote', since: 2023 },
+  { id: 'designer', name: 'Noah Kim', title: t({ en: 'Product Designer', ja: 'プロダクトデザイナー' }), department: 'design', manager: 'vp-design', location: 'Lisbon', since: 2021 },
+  { id: 'research', name: 'Fatima Haddad', title: t({ en: 'UX Researcher', ja: 'UXリサーチャー' }), department: 'design', manager: 'vp-design', location: 'Remote', since: 2022 },
+  { id: 'account', name: 'Sofia Rossi', title: t({ en: 'Account Executive', ja: '営業担当' }), department: 'sales', manager: 'vp-sales', location: 'Milan', since: 2021 },
+  { id: 'growth', name: 'Ravi Patel', title: t({ en: 'Growth Marketer', ja: 'グロースマーケター' }), department: 'sales', manager: 'vp-sales', location: 'London', since: 2022 },
+  { id: 'talent', name: 'Kwame Asante', title: t({ en: 'Talent Partner', ja: '採用担当' }), department: 'people', manager: 'head-people', location: 'Paris', since: 2023 },
 ]
 const byId = new Map(people.map(person => [person.id, person]))
 const directReports = new Map<string, Person[]>(people.map(person => [person.id, []]))
@@ -63,6 +66,8 @@ function chainOf(id: string) {
 }
 const initials = (name: string) => name.split(' ').map(part => part[0]).join('').slice(0, 2)
 const count = (value: number, one: string, many = one + 's') => `${value} ${value === 1 ? one : many}`
+// Japanese counts take a counter word and no plural.
+const people_ = (value: number) => t({ en: count(value, 'person', 'people'), ja: `${value} 人` })
 
 // One toggle per department head collapses the team below that head. The graph only ever sees the filtered arrays.
 const heads = people.filter(person => person.manager === 'ceo')
@@ -106,9 +111,13 @@ function describe(id: string) {
   const person = byId.get(id)!
   const reports = directReports.get(id)!.length
   const chain = chainOf(id)
-  const line = chain.length ? ` · reports to ${chain.map(manager => manager.name).join(' → ')}` : ''
-  const team = reports ? ` · ${count(reports, 'direct report')}` : ''
-  return `${person.name}, ${person.title} (${departments[person.department].label})${line}${team}.`
+  const managers = chain.map(manager => manager.name).join(' → ')
+  const line = chain.length ? t({ en: ` · reports to ${managers}`, ja: ` · 報告先 ${managers}` }) : ''
+  const team = reports ? t({ en: ` · ${count(reports, 'direct report')}`, ja: ` · 直属の部下 ${reports} 人` }) : ''
+  return t({
+    en: `${person.name}, ${person.title} (${departments[person.department].label})${line}${team}.`,
+    ja: `${person.name}、${person.title}(${departments[person.department].label})${line}${team}。`,
+  })
 }
 const status = ref(describe('ceo'))
 function select(id: string) {
@@ -118,10 +127,18 @@ function toggleTeam(head: Person) {
   const next = new Set(collapsed.value)
   const size = teamOf(head.id).length
   const name = departments[head.department].label
-  if (next.delete(head.id)) status.value = `${name} expanded: ${count(size, 'person', 'people')} below ${head.name} shown again.`
+  if (next.delete(head.id)) {
+    status.value = t({
+      en: `${name} expanded: ${people_(size)} below ${head.name} shown again.`,
+      ja: `${name}を展開しました。${head.name} の下の ${people_(size)}を再び表示しています。`,
+    })
+  }
   else {
     next.add(head.id)
-    status.value = `${name} collapsed: ${count(size, 'person', 'people')} below ${head.name} hidden.`
+    status.value = t({
+      en: `${name} collapsed: ${people_(size)} below ${head.name} hidden.`,
+      ja: `${name}を折りたたみました。${head.name} の下の ${people_(size)}を隠しています。`,
+    })
     // A selected card that disappears hands the selection to its department head.
     if (selectedId.value && teamOf(head.id).some(person => person.id === selectedId.value)) selectedId.value = head.id
   }
@@ -129,13 +146,13 @@ function toggleTeam(head: Person) {
 }
 function expandAll() {
   collapsed.value = new Set()
-  status.value = `All teams expanded: ${count(people.length, 'person', 'people')} shown.`
+  status.value = t({ en: `All teams expanded: ${people_(people.length)} shown.`, ja: `すべてのチームを展開しました。${people_(people.length)}を表示しています。` })
 }
 const headcount = (department: DepartmentId) => people.filter(person => person.department === department).length
 
 // Card geometry in node-local coordinates. The avatar overlaps the top edge of the card, and a manager's team badge
 // sits on its bottom edge where the connector leaves. Chips hold short fixed words, so a text width estimate sizes them.
-const pillWidth = (text: string, size: number) => Math.round(text.length * size * 0.62 + 18)
+const pillWidth = (text: string, size: number) => Math.round(text.length * size * (isJapanese.value ? 1.02 : 0.62) + 18)
 const uid = useId()
 function cardView(id: string, box: GraphBox) {
   const person = byId.get(id)!
@@ -146,7 +163,9 @@ function cardView(id: string, box: GraphBox) {
   const nameY = top + (lead ? 57 : 50)
   const reports = directReports.get(id)!.length
   const folded = collapsed.value.has(id)
-  const badge = !reports ? '' : folded ? `+${teamOf(id).length} hidden` : count(reports, 'report')
+  const badge = !reports ? ''
+    : folded ? t({ en: `+${teamOf(id).length} hidden`, ja: `+${teamOf(id).length} 人を非表示` })
+    : t({ en: count(reports, 'report'), ja: `部下 ${reports} 人` })
   const chip = departments[person.department].chip
   return {
     person, lead, radius, avatarY, top, nameY, folded, badge, chip,
@@ -161,24 +180,27 @@ function cardView(id: string, box: GraphBox) {
 <template>
   <section class="showcase sc-org" aria-labelledby="sc-org-title" :class="`sc-org-focus-${focusDepartment}`">
     <div class="sc-org-intro">
-      <h2 id="sc-org-title">Org chart</h2>
-      <p>A top-down tree with right-angle connectors, person cards and hover cards drawn in slots, a larger CEO card and team folding done by the app.</p>
+      <h2 id="sc-org-title">{{ t({ en: 'Org chart', ja: '組織図' }) }}</h2>
+      <p>{{ t({
+        en: 'A top-down tree with right-angle connectors, person cards and hover cards drawn in slots, a larger CEO card and team folding done by the app.',
+        ja: '直角の接続線でつないだ上から下へのツリーです。人物カードとホバーカードはスロットで描き、CEO のカードを大きくし、チームの折りたたみはアプリ側で行います。',
+      }) }}</p>
     </div>
-    <div class="sc-org-toolbar" role="group" aria-label="Teams">
+    <div class="sc-org-toolbar" role="group" :aria-label="t({ en: 'Teams', ja: 'チーム' })">
       <button v-for="head in heads" :key="head.id" type="button" class="sc-org-team" :class="`sc-org-dept-${head.department}`"
         :aria-expanded="!collapsed.has(head.id)" @click="toggleTeam(head)">
         <svg class="sc-org-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" /></svg>
         <span class="sc-org-swatch" aria-hidden="true"></span>
         {{ departments[head.department].label }} · {{ headcount(head.department) }}
       </button>
-      <button type="button" class="sc-org-expand" :disabled="!collapsed.size" @click="expandAll">Expand all</button>
+      <button type="button" class="sc-org-expand" :disabled="!collapsed.size" @click="expandAll">{{ t({ en: 'Expand all', ja: 'すべて展開' }) }}</button>
     </div>
 
     <NetworkGraph
       v-model:selected-id="selectedId" unstyled-node-slots :nodes="nodes" :edges="edges" :layout="layoutOrg" :sizes="sizes"
       :positions="positions" :related-ids="related" :options="{ direction: 'TB' }" edge-style="orthogonal"
       height="clamp(440px, 54vw, 700px)"
-      :labels="{ region: 'Organisation chart' }" @select="select"
+      :labels="{ ...labels.graph, region: t({ en: 'Organisation chart', ja: '組織図' }) }" @select="select"
     >
       <template #edge="{ path, related }">
         <path class="sc-org-link" :class="{ 'sc-org-link-on': related }" :d="path" />
@@ -223,9 +245,9 @@ function cardView(id: string, box: GraphBox) {
           <strong>{{ target.node.label }}</strong>
           <span>{{ byId.get(target.node.id)?.title }}</span>
           <dl>
-            <dt>Team</dt><dd>{{ departments[byId.get(target.node.id)?.department ?? 'exec'].label }}</dd>
-            <dt>Office</dt><dd>{{ byId.get(target.node.id)?.location }}</dd>
-            <dt>Joined</dt><dd>{{ byId.get(target.node.id)?.since }}</dd>
+            <dt>{{ t({ en: 'Team', ja: 'チーム' }) }}</dt><dd>{{ departments[byId.get(target.node.id)?.department ?? 'exec'].label }}</dd>
+            <dt>{{ t({ en: 'Office', ja: '拠点' }) }}</dt><dd>{{ byId.get(target.node.id)?.location }}</dd>
+            <dt>{{ t({ en: 'Joined', ja: '入社' }) }}</dt><dd>{{ byId.get(target.node.id)?.since }}</dd>
           </dl>
         </div>
       </template>

@@ -1,10 +1,10 @@
 // The construction program showcase: scheduler-driven KPIs, the steel-delay what-if, resource leveling and controlled
 // bar edits that are rescheduled.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('construction program showcase reports the plan, the steel what-if and leveling', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Construction program')
+  await openExample(page, 'construction', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Construction program', exact: true })
   // The zoom percentage is an <output>, which also has the status role; the showcase status line comes last.
   const status = showcase.getByRole('status').last()
@@ -47,7 +47,7 @@ test('construction program showcase reports the plan, the steel what-if and leve
 
 test('construction program showcase reschedules a keyboard bar move and refuses a started task', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Construction program')
+  await openExample(page, 'construction', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Construction program', exact: true })
   const status = showcase.getByRole('status').last()
 
@@ -62,5 +62,19 @@ test('construction program showcase reschedules a keyboard bar move and refuses 
   await showcase.getByRole('button', { name: /^Level 3 frame & deck 21 Aug–/ }).press('ArrowRight')
   await expect(status).toHaveText('Level 3 frame & deck has started; report progress instead of moving it.')
   await expect(showcase.getByRole('button', { name: /^Level 3 frame & deck 21 Aug–/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('on the Japanese page the construction program shows Japanese indicators, dates and status text', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'construction', { kind: 'showcase', locale: 'ja' })
+  const showcase = demo.getByRole('region', { name: '建設工程表', exact: true })
+  const status = showcase.getByRole('status').last()
+  await expect(status).toHaveText(/^基準日は 2026年9月14日です。/)
+  await expect(showcase.getByRole('group', { name: '引き渡しの予測', exact: true })).toContainText(/\d{4}年\d+月\d+日/)
+  await expect(showcase.getByRole('region', { name: '建設の全体工程表', exact: true })).toBeVisible()
+  await showcase.getByRole('checkbox', { name: '試算: 鉄骨の納入を 10 稼働日遅らせる' }).check()
+  await expect(status).toHaveText(/^試算: 鉄骨パッケージ B が 10 稼働日遅れて到着し、\d+ 件の作業が動きます。実質的完成は /)
+  await expect(showcase.getByRole('button', { name: '資源を平準化', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

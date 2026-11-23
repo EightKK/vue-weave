@@ -1,5 +1,7 @@
 # Integration
 
+<!-- #region setup -->
+
 ## Node.js and TypeScript
 
 The package exports ES modules. Use `@eightkk/vue-weave/core` for calculations on a server or in a worker; that entry runs without Vue or browser globals. Both public entries support `module: NodeNext` with `moduleResolution: NodeNext`, as well as bundler-based TypeScript applications. Relative imports in the emitted declarations use explicit `.js` paths so NodeNext can resolve them. The build also finalizes Vue component re-exports to resolve the generated `.vue.d.ts` files in that mode. Vue applications should import the components from the root and load `@eightkk/vue-weave/style.css` once.
@@ -48,6 +50,10 @@ const edges: GraphEdge[] = []
 ```
 
 The library accesses DOM measurement and ResizeObserver after mounting. Initial server rendering uses deterministic fallback viewport dimensions, then measures the actual container. Vue useId supplies instance-specific SVG marker IDs. Keep server/client data and formatTime output consistent. For timezone-specific labels, use Intl.DateTimeFormat with an explicit timeZone and locale.
+
+<!-- #endregion setup -->
+
+<!-- #region graph-guides -->
 
 ## Large graphs, touch and search
 
@@ -242,6 +248,10 @@ const bands = computed(() => graphFlowBands(flow.value))
 - Band names come from `label`, for example "Cut → Inspect: 60 pcs"; pass `nodeLabel` and `formatQuantity` to localize them. Thin node boxes leave little room for text: draw labels next to the boxes in a `node` slot, as the demo does, and remember that exports use the default node drawing.
 - `exportSvg`, `exportPng` and `renderGraphSvg(flow, nodes, shown, { edgeBands: bands })` draw the same bands, each with its label as `<title>`. The demo's Quantity flow example (`examples/QuantityFlowDemo.vue`) shows a split, a merge, a yield loss, a rework loop and a unit switch.
 
+<!-- #endregion graph-guides -->
+
+<!-- #region custom-content -->
+
 ## Custom content
 
 The graph node slot receives its node, measured layout box, the camera `scale` and its `selected`, `related`, `highlighted` and `dimmed` states. It is inside a translated, keyboard-accessible SVG group. Render SVG children in local coordinates. The stylesheet paints node `rect` and `text` elements, including those in a slot, and elements with the class `vw-node-shape` (the outline of the default diamond, ellipse and hexagon nodes), and CSS wins over presentation attributes such as `fill`; add `unstyled-node-slots` so the slot's own attributes and classes decide the paint.
@@ -259,6 +269,10 @@ The graph node slot receives its node, measured layout box, the camera `scale` a
 Return a custom GraphLayout to use stored node positions or another layout algorithm. The layout callback is pure. It returns boxes, paths and label positions in the same world coordinate space.
 
 Gantt row/bar/tick slots accept ordinary HTML. The bar slot is already inside a focusable button, so avoid nested buttons or links. Use the select event to open a detail panel elsewhere.
+
+<!-- #endregion custom-content -->
+
+<!-- #region themes -->
 
 ## Themes and localization
 
@@ -327,6 +341,20 @@ The opt-in TaskBoard component (`vw-board`) reuses the theme variables (`--vw-su
 | `--vw-board-collapsed-width` | `44px` | Width of a collapsed column strip |
 | `--vw-board-collapsed-fill` | border colour at 35% | Fill of the cells below a collapsed column |
 | `--vw-board-drop` | `--vw-accent` (`#245e96`, dark `#82badf`) | Drop indicator, outline of the target cell and of a picked-up card |
+
+The opt-in TreeGrid component (`vw-tree-grid`) reuses the theme variables (`--vw-surface`, `--vw-surface-muted`, `--vw-surface-hover`, `--vw-border`, `--vw-grid`, `--vw-text`, `--vw-muted`, `--vw-accent`, `--vw-on-solid` and the tone families through `vw-tone-*` on cells with a `tone`), so the built-in dark themes and your own theme apply to it. Rows and cells are positioned with logical properties, so `dir="rtl"` puts the tree column on the right without extra rules. Its classes start with `vw-tree-grid-` (`vw-tree-grid-row`, `vw-tree-grid-header-cell`, `vw-tree-grid-cell`, `vw-tree-grid-editor`, `vw-tree-grid-fill-handle`, `vw-tree-grid-drop`), with the shared modifiers `vw-is-selected`, `vw-is-highlighted`, `vw-is-active`, `vw-is-editing`, `vw-is-in-range`, `vw-is-status` (a status line) and `vw-is-<state>` on cells without a value (`vw-is-none`, `vw-is-unknown`, `vw-is-not-applicable`, `vw-is-loading`, ...). In forced-colors mode the focus and range use `Highlight`, selected rows `Highlight` with `HighlightText`, and highlights a dashed `CanvasText` outline. In print the scroller grows to its content, but only the rendered window of lines and columns is in the DOM; use a dedicated export for complete output. It adds these variables; the built-in dark themes set `--vw-tree-grid-highlight` to `#f0a060`, `--vw-tree-grid-selected` to `#243e58` and `--vw-tree-grid-error` to `#ff8a80`.
+
+| Variable | Default | Used for |
+| --- | --- | --- |
+| `--vw-tree-grid-indent` | `16px` | Indent per tree level in the row headers |
+| `--vw-tree-grid-header` | `--vw-surface-muted` (`#f3f7fa`) | Background of the header row |
+| `--vw-tree-grid-line` | `--vw-grid` (`#e8eef2`) | Row and cell rules |
+| `--vw-tree-grid-selected` | `#e3eefa` (dark `#243e58`) | Background of the rows in `selectedRowIds` |
+| `--vw-tree-grid-highlight` | `--vw-dependency-highlight` (`#a74f08`, dark `#f0a060`) | Bar and label of highlighted rows and the outline of highlighted cells |
+| `--vw-tree-grid-error` | `#a8361f` (dark `#ff8a80`) | Editor error messages, the border of an invalid editor and the mark of a `failed` cell |
+| `--vw-tree-grid-drop` | `--vw-accent` | Drop indicator and outline of a row drag |
+
+The component also sets `--vw-tree-grid-row-height`, `--vw-tree-grid-header-height`, `--vw-tree-grid-tree-width` (from its props) and `--vw-tree-grid-level` (on each row header) inline; they are internal, set the props instead.
 
 With the `group` slot, the stylesheet does not paint the slot content (the group gets `vw-has-slot`), and the transparent move handle (`vw-group-handle`) shows an `--vw-accent` outline while focused. The `minimap-node` slot content sits in a `vw-minimap-custom` group, which the minimap's rectangle fill does not reach.
 
@@ -439,7 +467,7 @@ The tone classes (`vw-tone-*`), the theme classes (`vw-theme-dark`, `vw-theme-au
 
 ### Built-in dark theme
 
-Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, `--vw-range`, `--vw-range-line`, `--vw-range-ink`, the tone families and `--vw-marker-ink`. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
+Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to every `--vw-*` variable, including `--vw-dimmed-opacity`, `--vw-now`, `--vw-load`, `--vw-load-overload`, `--vw-load-capacity`, `--vw-non-working`, `--vw-critical`, `--vw-float`, `--vw-deadline`, `--vw-cascade`, `--vw-background-pattern`, `--vw-guide`, `--vw-status`, `--vw-constraint`, `--vw-constraint-violated`, `--vw-range`, `--vw-range-line`, `--vw-range-ink`, the tone families, `--vw-marker-ink` and the component variables of TaskBoard and TreeGrid. Add `vw-theme-auto` instead to apply the same values only while `prefers-color-scheme: dark` matches. Both are opt-in, so the default appearance is unchanged. Variables you set on a descendant still win, and the demo's own `.dark` class keeps working. On a `GanttChart` root the class also paints the surface background and sets `color-scheme: dark`. The dark palette keeps text/surface contrast above 7:1 (4.5:1 minimum for every text pair).
 
 `--vw-marker-ink` (default `#fff`) is the text colour on marker and now-marker labels, including in SVG and PNG exports (the `markerInk` export theme colour). In the dark theme the solid tones are light and `--vw-on-solid` is dark.
 
@@ -450,6 +478,10 @@ Add `vw-theme-dark` to a component root or any ancestor to apply a dark value to
 - `@media print`: zoom and preset controls, the minimap, bar and connection handles, progress sliders, the graph and Gantt tooltips, link hit targets and previews, the row add buttons, the row move handles and drop indicator, the column resize separators, the create and cascade previews, alignment guides, group toggles, waypoint and resize handles, and the Gantt toolbar are hidden; the status-date and progress lines, marker ranges and the scheduling constraint markers (also those drawn as handles) are printed, animated graph edges print dashed without motion, and the graph background pattern is printed like the default backdrop. Backgrounds, including non-working shading, are kept with `print-color-adjust: exact`, the Gantt scroller expands (`height: auto`, `overflow: visible`) and rows avoid page breaks. CSS alone cannot print content outside the DOM: virtualized rows and time windows, graph elements culled with `cullOffscreen`, and the part of a graph outside the current camera are not rendered, so a very large chart prints only what is mounted. Use a dedicated export for complete output.
 
 Supply partial labels objects to translate controls and accessible names. The row-heading and empty slots provide full control over those regions. Data labels and formatTime belong to the caller.
+
+<!-- #endregion themes -->
+
+<!-- #region persistence -->
 
 ## Persistence
 
@@ -564,6 +596,10 @@ Use the core entry in a worker or server to compute layouts, transform times or 
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
 
+<!-- #endregion persistence -->
+
+<!-- #region linking-views -->
+
 ## Linking views
 
 To show one plan as a graph, a Gantt chart and load rows that follow each other, bind your entities to what each view draws and let `useLinkedSelection` work out what every view shows. The view the user acts in keeps the selection; the others only highlight, so a linked bar is never deleted, moved or used to cancel a drag in another view.
@@ -613,17 +649,23 @@ async function showInGraph(nodeId: string) {
 - IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities.
 - Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
-- For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached, and `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
+- For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached. Opt-in `edgeFilter` follows only some relations (it is told the walk direction, so upstream and downstream can follow different ones), `maxNodes` caps the result nearest first and `truncated` lists where a limit stopped the walk (the places to offer "show more"), and `paths: true` lets `graphTracePath(result, id)` rebuild the edges from a start to a node (why it is affected) and lists in `multiplyReachedIds` the nodes reached by more than one path; see [Traversal filters, limits and paths](api.md#traversal-filters-limits-and-paths). `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
 - To explore a time range (what ran on machine X between 14:00 and 16:00), pass `timeRange: { range, bars, rowIds, graph, traversal }` to `useLinkedSelection`. Bars are tested by their work `segments` when they have them, so a pause covering the range does not count. Active tasks join the highlight sets and related tasks the `related*` sets, for example `:related-ids="linked.graph.value.relatedNodeIds"` on NetworkGraph. Nothing is selected, so Delete never removes them. `timelineBarsInRange` and `resolveTimeRangeTargets` do the same in core; see [Time range exploration](api.md#time-range-exploration).
+- TreeGrid links the same way; see [Tree grids, matrices and bills of materials](#tree-grids-matrices-and-bills-of-materials).
+- A view of your own (a task table, a list, a diagnostics panel) links through entities instead of a view name: call `linked.selectEntities([{ kind: 'task', id }], { source: 'task-table' })` when the user selects in it, and render its own selected rows from `linked.selectedEntities`, which also follows selections made in the graph or the timeline. No view owns such a selection, so the graph and the Gantt chart only highlight the bound items and never receive them as `selectedIds`. Reporting the same entities with the same `source` again changes nothing and does not call `onSelect`, so a table that echoes its selection back cannot loop; an empty list clears the selection. `linked.selectionSource` tells which of your views made the current selection.
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
 
 ## Search, sort and saved views
 
-Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Column filters (`TimelineViewState.filters`) keep the ancestors of matching rows like the search. GanttChart can offer both in its header: pass `sortable-columns` and `filterable-columns`, bind `sort` and `filters` to the view state and apply `update:sort` and `update:filters` with `setSort` and `setFilters` (see [Header sorting and filtering](api.md#header-sorting-and-filtering)); the chart never sorts or filters by itself. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input.
+Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Column filters (`TimelineViewState.filters`) keep the ancestors of matching rows like the search. GanttChart can offer both in its header: pass `sortable-columns` and `filterable-columns`, bind `sort` and `filters` to the view state and apply `update:sort` and `update:filters` with `setSort` and `setFilters` (see [Header sorting and filtering](api.md#header-sorting-and-filtering)); the chart never sorts or filters by itself. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input. An application that shows the rows in its own tree table, without a chart, can call `projectTimelineRows` with the same view state: it applies the same search, filters, sort and collapsed-ID checks to the rows alone.
 
 To save a view, store `snapshot()` (or any `TimelineViewState`) as JSON, for example in the application's snapshot. Register sort rules and zoom presets in code and save only their IDs. When restoring, call `parseTimelineViewState`, then read `diagnostics` for dropped columns or rules and for columns added since the save. Pass `projection.collapsedIds` and `projection.window` to the chart yourself; the view state does not change the chart.
 
 For typed editing, give a column a `field` spec. A `time` field needs an explicit `timeZone`, `utcOffsetMinutes` or caller-supplied `parse` and `format`, and a `duration` field states whether it is elapsed or working time and its `unitSize`. Pass the text from an editor to `parseFieldValue` and propose the resulting value to the parent. Do not store an empty or invalid input as text. In GanttChart, a column with `field` emits `field-edit` instead of `cell-edit`: listen to `field-edit`, check it in `validateFieldEdit` and apply `change.after` to your row. Provide your own editor through the `cell-editor` slot (call `commit(value)` or `commitText(text)` and `cancel()`), or leave the slot out to use the built-in text input, which parses with the field. A `cell` slot still owns the whole cell. An editor that commits on Enter should skip keys with `event.isComposing` (or keyCode 229), so that confirming an input method conversion does not commit; the built-in inputs already do.
+
+<!-- #endregion linking-views -->
+
+<!-- #region elk -->
 
 ## Use ELK.js for layout
 
@@ -795,6 +837,10 @@ const xml = toDrawio({ nodes, edges, groups, positions, sizes }, { pageName: 'Pr
 
 A Mermaid file has no coordinates, so NetworkGraph lays it out; use the returned `direction` in `options`. GraphML and draw.io keep the positions and sizes of every node. Keep accepted `node-move`, `nodes-move` and `node-resize` proposals in `positions` and `sizes` so the next export carries them. The readers walk groups and chains with loops, bound their work with `maxItems`, and never expand XML entities; bound the size of uploaded files yourself as well. See [Graph interchange](api.md#graph-interchange) for the mapping of shapes, markers and IDs.
 
+<!-- #endregion elk -->
+
+<!-- #region export -->
+
 ## Export to SVG and PNG
 
 Call `exportSvg` or `exportPng` on a component ref to save the whole chart, independent of scrolling, zoom or culling. The SVG is a standalone document string; the PNG is rasterized in the browser at the `scale` you pass.
@@ -811,6 +857,10 @@ The export reads the `--vw-*` colours and the font in effect on the component, s
 
 To render on a server or in a worker, call `renderGraphSvg` or `renderTimelineSvg` from `@eightkk/vue-weave/core` with the same data, a layout or `TimeScale` and an explicit theme. Large charts produce large SVG strings. For PNG, `width × scale` and `height × scale` must stay within 16,384 pixels per side and 268,435,456 pixels in total; export a `timeRange` or `rowRange` slice, or lower `scale`, for bigger charts.
 
+<!-- #endregion export -->
+
+<!-- #region rtl -->
+
 ## Right-to-left languages
 
 Set `dir="rtl"` on a component for a right-to-left interface, or `dir="auto"` to follow the direction inherited from the page (for example `<html dir="rtl">`). The default `ltr` leaves rendering unchanged; in a right-to-left page it keeps the inherited direction, which the timeline does not support, so pass `rtl` or `auto` there.
@@ -824,6 +874,10 @@ The timeline then runs from right to left and its row headings sit on the right.
 `auto` reads the inherited direction at mount, when the `dir` prop changes and when the `dir` attribute of an ancestor changes, for example when the user switches language at runtime and the application sets `<html dir>`. A `MutationObserver` on the ancestors' `dir` attributes does this while `dir` is `auto` and is disconnected on unmount. A change of direction cancels a gesture in flight; GanttChart also keeps the time at the inline-start edge in view. A direction set only through the CSS `direction` property, a class or a stylesheet change is not observed: bind `dir` to your language state, or re-key the component (`:key="locale"`), in that case.
 
 The right-to-left rules are scoped to the `vw-rtl` class and use CSS logical properties. Custom slot content inherits `direction: rtl`. For NetworkGraph, `dir` only moves the controls and right-aligns labels (swimlane titles included); choose `options.direction: 'RL'` to lay out ranks from right to left.
+
+<!-- #endregion rtl -->
+
+<!-- #region saved-view -->
 
 ## Saving and restoring a view
 
@@ -865,6 +919,10 @@ if (camera) graph.value?.setViewportCenter(camera.center, camera.scale)
 Functions are never stored. Columns, layouts, sort comparators, editors and renderers are saved by name and resolved on restore from the registry you pass to `restoreWeaveSnapshot`: `{ codecs, layouts, columns, editors, renderers, comparators, onMissing }`. `columns` maps a column ID (or the saved `registryId`) to its label, `value` and other functions, `layouts` maps a layout ID to a factory that receives the saved options. A name that is not registered fails the restore, unless `onMissing: 'fallback'` turns it into a warning and the default display; a missing codec always fails. Keep registries in code and version them with your application, and record a codec `version` when its encoding changes.
 
 For a timeline or planning snapshot, pass `restored.rows` and `restored.bars` (or `restored.input` and `restored.schedule`) to your state first, then apply `view.window`, `view.collapsedRowIds` and the resolved `view.columns`. Reading a file never saves to a server by itself. To apply it to server data, fetch the server's current version and save the restored data as one change; `metadata.sourceVersion` is not that version.
+
+<!-- #endregion saved-view -->
+
+<!-- #region async-layouts -->
 
 ## Asynchronous layouts and preserved routes
 
@@ -926,6 +984,10 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+<!-- #endregion async-layouts -->
+
+<!-- #region windowed-loading -->
 
 ## Loading only what is visible
 
@@ -1018,6 +1080,53 @@ watch(shown, ({ nodes, edges }) => {
 
 Every node that was on display keeps its box exactly; each new node goes next to its loaded neighbours on the flow side (after a predecessor, before a successor) in free space, and pages without a loaded neighbour go below the graph (for LR). A predecessor of a node at the left edge is placed beside it instead, because new boxes stay at nonnegative coordinates unless `allowNegative` is set. The camera re-fits to a larger graph while it is fitted automatically; to keep the visible nodes in place on screen too, pin it before merging a page, for example `graph.value.setViewport(graph.value.getViewport())`. The Large plan demo has this as the "Keep positions when expanding" option and shows the largest move of a shown part (0).
 
+To expand one direction or relation at a time ("show callers" and "show callees" as separate actions), pass a `key` to the same functions. Each key has its own frontier, so a node expanded downstream still offers its upstream expansion:
+
+```ts
+async function expandDirection(id: string, key: 'forward' | 'backward') {
+  graph.value = beginGraphExpansion(graph.value, [id], { key })
+  try {
+    const page = await api.neighbours(id, key) // only the successors or only the predecessors of id
+    graph.value = mergeGraphExpansionPage(graph.value, page, [id], { key })
+  } catch (error) {
+    graph.value = cancelGraphExpansion(graph.value, [id], { key })
+  }
+}
+const canExpandBackward = (id: string) => graphExpansionView(graph.value, { key: 'backward' }).frontierIds.includes(id)
+```
+
+A page merged without a key still marks its nodes expanded for every key, and a node expanded for some keys only stays in the unkeyed `frontierIds`. See [Partial data loading](api.md#partial-data-loading) for every rule.
+
+### Period tables from time buckets
+
+A period table shows rows (items or metrics) by time columns (days, weeks, shifts). `createTimeBucketColumns` turns half-open periods into column descriptors with stable IDs, and `aggregateTimeBuckets` turns time-stamped quantities into one sparse cell `{ rowId, columnId, value, status }` per row and column. The periods are yours: `calendarBands` gives local days or weeks in an IANA zone (23- and 25-hour days included), and gaps such as nights or weekends are allowed.
+
+```ts
+import { aggregateTimeBuckets, calendarBands, createTimeBucketColumns, timeBucketIndexRange, windowedCoverage } from '@eightkk/vue-weave/core'
+
+const columns = createTimeBucketColumns(calendarBands(range, 'day', { timeZone: 'Europe/Berlin' }), { width: 72 })
+const cells = aggregateTimeBuckets(records, columns, {
+  rowIds: ['output', 'yield', 'stock'],
+  rules: { output: 'sum', yield: 'ratio', stock: 'last' }, // yield: value = good units, denominator = all units
+  carryForward: rowId => rowId === 'stock',                // a stock level stays until the next reading
+  loaded: (rowId, bucket) => windowedCoverage(state, { start: bucket.start, end: bucket.end, rowIds: [rowId] }).status,
+})
+// Follow the chart: show only the columns of its visible window.
+const { start, end } = timeBucketIndexRange(columns, visibleWindow)
+const shownColumns = columns.slice(start, end)
+```
+
+- **Not loaded is not zero.** A column outside `loaded` has status `unloaded` (or `loading`, `failed`) and value null. A loaded column without items is `loaded-empty`: 0 for `sum` and `count`, null for the other rules. Show the three differently.
+- **Ratios from their parts.** Aggregate a rate from numerator and denominator with the `ratio` rule; never average the percentages of the columns. Totals and parent rows sum the cells' `numerator` and `denominator`.
+- **Precomputed values.** When the server already aggregates per period, use `precomputed`: one value per row and column, passed through unchanged.
+- **In a TreeGrid.** Map each cell to a `TreeGridCell`: a loaded value to `{ value }`, a loaded null to `{ status: 'none' }` and `unloaded`, `loading` or `failed` to that `status`. TreeGrid does not accept the `loaded` statuses or a null value. The "Period table" demo does this, with the columns following a GanttChart's visible window.
+
+See [Time bucket tables](api.md#time-bucket-tables) for every rule and error.
+
+<!-- #endregion windowed-loading -->
+
+<!-- #region sheet-editing -->
+
 ## Spreadsheet editing in a schedule
 
 Turn on `spreadsheet` on a Gantt chart with editable `columns`, and the cells work like a spreadsheet: select a rectangle with Shift+click, a mouse drag or Shift+arrows, copy, cut and paste tab-separated text with other spreadsheet applications, clear with Delete, fill down with Ctrl/Cmd+D or the corner handle, and type to edit a cell. Each operation arrives as one `sheet-edit` proposal (see [Spreadsheet editing](api.md#spreadsheet-editing) for every key and rule).
@@ -1051,9 +1160,13 @@ const checkSheet = (change: TimelineSheetChanges<Row>) => totalHours(change) <= 
 
 The parent derives the bars from its rows, so the chart follows every applied change. A rejected operation changes nothing; the chart announces the reason to screen readers, and the page should show it too, as above. In the [schedule sheet demo](../examples/production/WorkSheet.vue), the grid holds start constraints, durations, predecessors, resources and progress; the bars, arrows and critical path come from `scheduleTasks`, and `validateSheetEdit` rejects a paste that would create a dependency cycle.
 
+<!-- #endregion sheet-editing -->
+
+<!-- #region diagram-editor -->
+
 ## Diagram editor parts
 
-`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change` (or a `list-change` for its `assignments` and `dependencies` tables, see [Inspector list fields](api.md#inspector-list-fields)), and the application commits each as one history entry. The gallery demo "Diagram editor" puts them together.
+`GraphPalette` and `PropertyInspector` (see [Diagram editor parts](api.md#diagram-editor-parts)) turn a `droppable` NetworkGraph into a small diagram editor. Both are controlled: the palette reports a drop or an `insert`, and the inspector a `change` (or a `list-change` for its `assignments` and `dependencies` tables, see [Inspector list fields](api.md#inspector-list-fields)), and the application commits each as one history entry. The "Diagram editor" example of the documentation site puts them together.
 
 ```vue
 <script setup lang="ts">
@@ -1112,3 +1225,35 @@ Both components use the shared variables (`--vw-surface`, `--vw-surface-muted`, 
 | `--vw-inspector-error` | `#b3261e` (`#ff8a80` in the dark themes) | Messages under inspector fields (`vw-inspector-error`) and the border of an invalid control |
 
 Classes: `vw-palette`, `vw-palette-search`, `vw-palette-list`, `vw-palette-section`, `vw-palette-heading`, `vw-palette-item` (with `vw-is-active` and `vw-is-disabled`), `vw-palette-preview`, `vw-palette-label`, `vw-palette-detail`, `vw-palette-empty`; `vw-inspector`, `vw-inspector-field` (with `vw-is-<kind>`, `vw-is-readonly` and `vw-is-invalid`), `vw-inspector-label`, `vw-inspector-input`, `vw-inspector-check`, `vw-inspector-color`, `vw-inspector-swatch`, `vw-inspector-description`, `vw-inspector-error` and `vw-inspector-empty`. Layout uses logical properties, so `dir="rtl"` (or an inherited right-to-left direction with `dir="auto"`) mirrors both. In forced-colors mode palette previews are drawn in `CanvasText` on `Canvas` and messages are underlined; the filter box is not printed.
+
+<!-- #endregion diagram-editor -->
+
+<!-- #region tree-grids -->
+
+## Tree grids, matrices and bills of materials
+
+TreeGrid shows a row tree against columns. Keep three things apart in your data:
+
+- **Rows are positions.** A row ID names one place in the tree, such as "the second use of bolt M6 in frame F1". The parent decides IDs, and a row move or delete changes positions only.
+- **Entities are what rows and cells stand for.** Put them in `entities`; the same part may be used in many rows. `matchTreeGridEntities({ rows, columns, cells }, entities)` returns every row and cell that lists one, so a highlight shows all usages.
+- **Cells say what they know.** A listed 0 is a value; `status: 'none'` says the value is known to be absent, `unknown` that it is not known, `not-applicable` that the row has no such attribute, and `unloaded`, `loading` and `failed` that it is not loaded. `missingCell` (on the grid or a column) states what an unlisted cell means.
+
+**Linking.** TreeGrid is not a `LinkedViewName`, so it links through entities, and `ViewTarget` stays as it is. Report its activations with `selectEntities`, and draw the linked state from `selectedEntities`:
+
+```ts
+const linked = useLinkedSelection({ bindings })
+const matches = computed(() => matchTreeGridEntities({ rows: rows.value, columns, cells: cells.value }, linked.selectedEntities.value))
+function activate(activation: TreeGridActivation) {
+  linked.selectEntities(activation.entities, { source: 'tree-grid' })
+}
+// <TreeGrid :rows="rows" :columns="columns" :cells="cells" :highlighted-row-ids="matches.rowIds"
+//   :highlighted-cells="matches.cells" @row-activate="activate" @cell-activate="activate" />
+```
+
+A graph or Gantt chart bound to the same entities then highlights its items, and a selection made there highlights the grid's rows and cells. To show a row that a collapsed ancestor hides, call `revealRow(rowId)`: it reports `hidden-by-collapse` with the displayed ancestor, and expanding is your decision (add the ancestors to `expandedIds`).
+
+**Loading children on demand.** Give a row `childStatus: 'unloaded'`. Expanding it emits `expand-request`; set `childStatus` to `loading`, fetch, then add the child rows with `childStatus: 'loaded'` (or `failed`, which a status line shows; Enter on it asks again). Keep loaded rows out of the undo history, or replace the current history entry, since loading is not an edit.
+
+**Editing.** Every change is a proposal, and validators are synchronous. Accept a `cell-edit` or a `sheet-edit` with `applyTreeGridEdits`, a `row-create` with `insertTreeGridRow` (you choose the new ID), a `row-delete` with `deleteTreeGridRows` and a `row-move` with `moveTimelineRow`, and commit each result as one history entry (`useEditHistory`) or one save (`useEditTransaction`). A paste, fill, clear or cut is one batch, so it undoes in one step. Changes to `rows`, `columns` or `cells` cancel an open editor, a fill drag or a row drag (`edit-cancel` with `source-changed`), so a server update never lands in a stale edit. For a server-backed grid, send the batch with the version it was made against, as for the other components (see [Saving through a server](#saving-through-a-server)).
+
+<!-- #endregion tree-grids -->

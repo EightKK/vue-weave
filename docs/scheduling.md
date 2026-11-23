@@ -1,5 +1,7 @@
 # Scheduling and equipment load
 
+<!-- #region plan -->
+
 The scheduling functions are available from `@eightkk/vue-weave/core` and the Vue package entry. The Gantt chart still renders the intervals supplied by its parent. Call the solver when an edit proposes a new constraint, then publish the accepted bars, links, and load data together.
 
 ## Calendar contract
@@ -254,6 +256,10 @@ To show the figures in GanttChart, return them from `columns` (`TimelineColumn.v
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful result into a PERT (activity-on-node) diagram for NetworkGraph: each node shows the task's early start, early finish and total float, critical tasks get the amber tone and `criticalNodeIds`, and the controlling links are returned in `criticalEdgeIds`. Edges are labelled with the link type when it is not FS and with a non-zero `lag`, formatted by `formatLag` (default `formatDependencyLag`, such as `SS +2 h`). Pass `criticalNodeIds` as NetworkGraph `relatedIds` to highlight them. See the [API reference](api.md#network-diagram-from-a-schedule).
 
+<!-- #endregion plan -->
+
+<!-- #region capacity -->
+
 ## Compare demand with capacity
 
 Resources have integer capacity and optional half-open availability periods. Omit periods for continuous availability, or use an empty array to close the resource throughout the horizon. Capacity is constant while available, unless the resource has `capacityPeriods` (see [Capacity that changes over time](#capacity-that-changes-over-time)). Each assignment requests positive integer units and applies to every work segment of the task, unless it covers only part of the work (see [Assignments for part of a task](#assignments-for-part-of-a-task)). Duplicate assignments for the same task and resource are rejected. To use fractions, choose a shared unit such as percentage points for both capacity and demand.
@@ -311,6 +317,10 @@ Leveling remains the heuristic described in [Level resources](#level-resources):
 | `projectResourceTimeline`, `proposeResourceAssignment` | Accept partial assignments; one bar per assignment for the whole task; a replacement keeps the part |
 | `parseWeaveSnapshot`, `restoreWeaveSnapshot` | A planning snapshot keeps both and reports invalid values as `structure` diagnostics |
 | `resourceLoadFromMsProject`, `timelineFromMsProject` | Never produce them: the Microsoft Project import does not read resource availability tables or assignment contours |
+
+<!-- #endregion capacity -->
+
+<!-- #region calendars-and-modes -->
 
 ## Time-zone calendars
 
@@ -460,6 +470,10 @@ const bars = plan.tasks.filter(task => !task.summary).map(task => ({ id: task.id
 Work on a calendar is already split at non-working time. The result's `work` array lists each worked segment, while `start` and `end` cover the elapsed span. To interrupt a single task, give it `pauses`: elapsed half-open intervals in which that task does no work. Pauses are removed from the task's working time on its calendar. They must align with the quantum, can overlap breaks or one another, and are clipped to the horizon. A task with `duration: 4` and a pause `[2, 3)` works `[0, 2)` and `[3, 5)`. Its FS successors start at 5. A fixed start inside a pause is infeasible.
 
 `splittable: true` lets `levelResources` add pauses to a task. `scheduleTasks` ignores `splittable` and `priority`.
+
+<!-- #endregion calendars-and-modes -->
+
+<!-- #region leveling-and-analysis -->
 
 ## Level resources
 
@@ -617,3 +631,7 @@ The library leaves the decision to the application. The contract the demo follow
 5. When a plan is only partly loaded (for example a windowed load of a large plan), set `partial: true` on that side. `comparison.complete` is then false; show the comparison as incomplete and do not adopt from it.
 
 Try it in the demo: open **Linked views** and check **Compare plan scenarios**.
+
+To compare other revisions that are not scheduler input, such as two versions of a bill of materials, a WBS or a product hierarchy, use `diffStructure(before, after, { key, parentKey?, fields?, equals? })`. It reports added and removed keys, the changed fields with their values in both versions and, with `parentKey`, the items that moved to another parent. Resolve effective dates first and diff the two resolved snapshots. See [Structure comparison](api.md#structure-comparison).
+
+<!-- #endregion leveling-and-analysis -->

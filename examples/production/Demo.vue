@@ -23,13 +23,13 @@ function toggleTheme() {
   <div class="production-app" :data-theme="theme">
     <header class="production-header">
       <div class="production-header-inner">
-        <a class="production-brand" href="./"><span class="production-mark" aria-hidden="true"><i></i><i></i><i></i></span>Vue Weave</a>
+        <a class="production-brand" href="../"><span class="production-mark" aria-hidden="true"><i></i><i></i><i></i></span>Vue Weave</a>
         <nav class="production-nav" :aria-label="language === 'ja' ? 'デモ' : 'Demos'">
           <button v-for="item in (['planning', 'lot', 'approval', 'sheet'] as const)" :key="item" type="button"
             :aria-current="view === item ? 'page' : undefined" @click="view = item">{{ text[item] }}</button>
         </nav>
         <div class="production-header-actions">
-          <a href="./gallery.html">{{ text.gallery }}</a>
+          <a :href="language === 'ja' ? '../ja/examples/' : '../examples/'">{{ text.gallery }}</a>
           <a href="https://github.com/EightKK/vue-weave">GitHub ↗</a>
           <div class="production-switch" role="group" :aria-label="text.language">
             <button type="button" lang="ja" :aria-pressed="language === 'ja'" @click="language = 'ja'">日本語</button>

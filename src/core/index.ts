@@ -130,6 +130,10 @@ export type {
   GraphLayoutFailureMessage, GraphLayoutWorkerMessage, GraphLayoutJson, GraphLayoutRequestJson, GraphLayoutWorkerJsonMessage,
 } from './graphLayoutRequests.js'
 export { comparePlans, planComparisonTargets, planBaselines } from './planComparison.js'
+export { diffStructure } from './structureDiff.js'
+export type {
+  StructureKeyAccessor, StructureDiffOptions, StructureFieldChange, StructureChange, StructureMove, StructureDiff,
+} from './structureDiff.js'
 export type {
   PlanComparisonTask, PlanComparisonInput, PlanScenario, PlanScheduleState, PlanTaskSide, PlanFieldChange, PlanCollectionDiff,
   PlanAssignmentChange, PlanAssignmentDiff, PlanInputDiff, PlanViolation, PlanTaskComparison, PlanResourceOverload, PlanResultDiff,
@@ -144,10 +148,15 @@ export type {
   WindowedDataNormalizedOptions, WindowedInFlightRequest, WindowedDataState, WindowedDataTransition, WindowedDataSettlement, WindowedCoverage,
   DanglingLink, SplitDanglingLinksOptions, SplitDanglingLinks,
 } from './windowedData.js'
+export { createTimeBucketColumns, timeBucketIndex, timeBucketIndexRange, aggregateTimeBuckets } from './timeBuckets.js'
+export type {
+  TimeBucketPeriod, TimeBucket, TimeBucketColumn, TimeBucketColumnOptions, TimeBucketRuleName, TimeBucketReducerContext,
+  TimeBucketReducer, TimeBucketRule, TimeBucketPlacement, TimeBucketLoaded, TimeBucketItem, TimeBucketAggregateOptions, TimeBucketCell,
+} from './timeBuckets.js'
 export {
   createGraphExpansion, beginGraphExpansion, cancelGraphExpansion, mergeGraphExpansionPage, graphExpansionView,
 } from './graphExpansion.js'
-export type { GraphExpansionState, GraphExpansionPage, GraphExpansionView } from './graphExpansion.js'
+export type { GraphExpansionState, GraphExpansionPage, GraphExpansionView, GraphExpansionKeyOptions } from './graphExpansion.js'
 export { layoutGraphIncrementally, graphLayoutChangeMetrics } from './graphIncremental.js'
 export type {
   GraphKnownPosition, GraphIncrementalLayoutOptions, GraphIncrementalLayout, GraphLayoutChangeOptions, GraphLayoutChangeMetrics,
@@ -185,3 +194,18 @@ export type {
   EarnedValueRecord, EarnedValueTask, EarnedValueEacMethod, EarnedValueSeriesOptions, EarnedValueOptions, EarnedValueAmounts,
   EarnedValueMetrics, EarnedValueTaskResult, EarnedValuePoint, EarnedValueResult,
 } from './earnedValue.js'
+export {
+  treeGridDefaultLabels, createTreeGridIndex, treeGridRowExpandable, flattenTreeGrid, findTreeGridLine, treeGridPositionAt,
+  treeGridColumnOffsets, treeGridRowWindow, treeGridColumnAt, treeGridColumnWindow, treeGridKeyAction, resolveTreeGridCell,
+  treeGridCellValue, isTreeGridCellEditable, treeGridFieldSpec, matchTreeGridEntities, treeGridRangeBounds, treeGridRangeText,
+  buildTreeGridPaste, buildTreeGridClear, buildTreeGridFill, applyTreeGridEdits, treeGridRowCreate, insertTreeGridRow,
+  deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt, treeGridCellContentFromTimeBucket, treeGridCellsFromTimeBuckets,
+} from './treeGrid.js'
+export type {
+  TreeGridValue, TreeGridRow, TreeGridCellStatus, TreeGridMissingCell, TreeGridCellState, TreeGridCellContent, TreeGridCell,
+  TreeGridCellRef, TreeGridEditor, TreeGridColumn, TreeGridInput, TreeGridIndex, TreeGridLine, TreeGridLines, TreeGridPosition,
+  TreeGridCursor, TreeGridRange, TreeGridSpan, TreeGridCellView, TreeGridKeyInput, TreeGridKeyContext, TreeGridKeyAction,
+  TreeGridActivation, TreeGridCellEdit, TreeGridSheetEdit, TreeGridRowCreate, TreeGridRowDelete, TreeGridEditCancelReason,
+  TreeGridEditCancel, TreeGridValidatorResult, TreeGridCellEditValidator, TreeGridSheetEditValidator, TreeGridRowCreateValidator,
+  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild,
+} from './treeGrid.js'

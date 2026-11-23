@@ -23,7 +23,7 @@ const highlightedEdges = computed(() => new Set(props.edges.filter(edge => edge.
     <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="positions"
       :options="options" :height="height" edge-style="straight" background="dots" unstyled-node-slots
       :highlighted-node-ids="highlighted" :highlighted-edge-ids="highlightedEdges"
-      :labels="{ region: label, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut, fit: text.fitting }">
+      :labels="{ ...text.labels.graph, region: label, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut, fit: text.fitting }">
       <template #node="{ node, box, selected: active, highlighted: shifted }">
         <g class="production-node" :class="{ active, shifted }">
           <rect class="production-node-frame" :width="box.width" :height="box.height" rx="8" />

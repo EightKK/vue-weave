@@ -1,10 +1,10 @@
 // The service map showcase of the design gallery: a simulated service topology with nested collapsible groups, an
 // incident scenario whose blast radius comes from traverseGraph, a service panel and a linked incident timeline.
 import type { Page } from '@playwright/test'
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 async function openServiceMap(page: Page) {
-  await openDemo(page, 'Service map')
+  await openExample(page, 'service-map', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Service map', exact: true })
   await expect(showcase.getByRole('heading', { name: 'Service map', exact: true })).toBeVisible()
   // The zoom percentage is an <output>, which also has the status role.
@@ -115,5 +115,20 @@ test('collapsing a namespace group of the service map replaces its services with
   await expect(status('Expanded data: 5 services shown.')).toBeVisible()
   await expect(service('Payments DB Healthy')).toBeVisible()
   await expect(showcase.locator('.vw-network-node')).toHaveCount(22)
+  expect(errors).toEqual([])
+})
+
+test('on the Japanese page the service map shows Japanese health, controls and incident text', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'service-map', { kind: 'showcase', locale: 'ja' })
+  const showcase = demo.getByRole('region', { name: 'サービスマップ', exact: true })
+  const map = showcase.getByLabel('サービス構成', { exact: true })
+  await expect(map.getByRole('button', { name: 'Recommender 低下', exact: true })).toBeVisible()
+  const status = showcase.getByRole('status').last()
+  await expect(status).toHaveText(/^14:30:00 UTC で一時停止中/)
+  await expect(showcase.getByRole('complementary', { name: 'サービスの詳細' }).getByRole('heading', { name: '要対応' })).toBeVisible()
+  await showcase.getByRole('button', { name: 'インシデント: Payments DB の遅延', exact: true }).click()
+  await expect(status).toHaveText(/^インシデント: Payments DB の p95 が [\d.]+ ms。影響範囲: 上流の \d+ サービスが低下/)
+  await expect(showcase.getByRole('region', { name: 'インシデントのタイムライン', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

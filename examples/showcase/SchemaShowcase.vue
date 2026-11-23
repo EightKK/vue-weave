@@ -5,11 +5,14 @@ import {
   type GraphBox, type GraphEdge, type GraphLayout, type GraphNodeMove, type GraphPoint, type GraphPort, type NetworkNode, type ViewTargetEvent,
   type GraphViewTarget,
 } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 // A database schema diagram: one table card per node with a named port per column on both sides, so relationship
 // edges join column to column. The edges pick the facing sides of their tables and draw crow's-foot marks.
 type Column = { name: string; type: string; pk?: boolean; fk?: boolean; nullable?: boolean }
 type TableData = { color: string; note: string; columns: readonly Column[] }
+
+const { t, labels, locale } = useDemoLocale()
 type Table = NetworkNode<TableData> & { data: TableData }
 type Relation = { table: string; column: string; refTable: string; refColumn: string; optional: boolean }
 type Link = GraphEdge<Relation> & { data: Relation; fromPort: string; toPort: string }
@@ -32,29 +35,29 @@ function table(id: string, color: string, note: string, columns: Column[]): Tabl
       { id: column.name + ':right', side: 'right', offset, label: column.name },
     ]
   })
-  return { id, label: id, detail: columns.length + ' columns', ports, data: { color, note, columns } }
+  return { id, label: id, detail: t({ en: columns.length + ' columns', ja: columns.length + ' 列' }), ports, data: { color, note, columns } }
 }
 const tables: readonly Table[] = [
-  table('organizations', '#e9a23b', 'Workspaces that own users and projects.', [
+  table('organizations', '#e9a23b', t({ en: 'Workspaces that own users and projects.', ja: 'ユーザーとプロジェクトを持つワークスペース。' }), [
     pk('id'), col('name', 'text'), col('slug', 'text'), col('plan', 'text'), col('created_at', 'timestamptz'),
   ]),
-  table('users', '#4ea6ee', 'People who sign in; each belongs to one organization.', [
+  table('users', '#4ea6ee', t({ en: 'People who sign in; each belongs to one organization.', ja: 'サインインする人。それぞれ1つの組織に属します。' }), [
     pk('id'), fk('org_id'), col('email', 'text'), col('full_name', 'text'), col('role', 'text'), col('created_at', 'timestamptz'),
   ]),
-  table('projects', '#a17cf0', 'Projects of an organization, each with an owner.', [
+  table('projects', '#a17cf0', t({ en: 'Projects of an organization, each with an owner.', ja: '組織のプロジェクト。それぞれに所有者がいます。' }), [
     pk('id'), fk('org_id'), fk('owner_id'), col('name', 'text'), col('status', 'text'), col('created_at', 'timestamptz'),
   ]),
-  table('tasks', '#3ec48b', 'Work items of a project; the assignee is optional.', [
+  table('tasks', '#3ec48b', t({ en: 'Work items of a project; the assignee is optional.', ja: 'プロジェクトの作業項目。担当者は任意です。' }), [
     pk('id'), fk('project_id'), fk('assignee_id', true), col('title', 'text'), col('status', 'text'), col('priority', 'int2'),
     col('due_on', 'date', true),
   ]),
-  table('comments', '#ea6799', 'Discussion on a task.', [
+  table('comments', '#ea6799', t({ en: 'Discussion on a task.', ja: 'タスクについてのやり取り。' }), [
     pk('id'), fk('task_id'), fk('author_id'), col('body', 'text'), col('created_at', 'timestamptz'),
   ]),
-  table('task_tags', '#8b97ae', 'Join table between tasks and tags.', [
+  table('task_tags', '#8b97ae', t({ en: 'Join table between tasks and tags.', ja: 'タスクとタグをつなぐ中間テーブル。' }), [
     { ...fk('task_id'), pk: true }, { ...fk('tag_id'), pk: true },
   ]),
-  table('tags', '#ef8a4c', 'Labels that can be attached to many tasks.', [
+  table('tags', '#ef8a4c', t({ en: 'Labels that can be attached to many tasks.', ja: '多くのタスクに付けられるラベル。' }), [
     pk('id'), col('name', 'text'), col('color', 'text'),
   ]),
 ]
@@ -103,7 +106,10 @@ function layoutTables(nodes: readonly Table[], links: readonly Link[]): GraphLay
 const positions = ref<ReadonlyMap<string, GraphPoint>>(new Map())
 const selectedId = ref<string>()
 const hoveredId = ref<string>()
-const status = ref('Select or hover a table to trace its relationships. Drag a table and its relationships switch sides.')
+const status = ref(t({
+  en: 'Select or hover a table to trace its relationships. Drag a table and its relationships switch sides.',
+  ja: 'テーブルを選ぶかポインターを重ねると関係をたどります。テーブルをドラッグすると関係線の向きが変わります。',
+}))
 
 function boxOf(id: string) {
   const item = tablesById.get(id)!
@@ -160,10 +166,14 @@ watch(selectedId, id => {
   const references = edges.value.filter(edge => edge.from === id).map(edge => edge.to)
   const referencedBy = edges.value.filter(edge => edge.to === id).map(edge => edge.from)
   const parts = [
-    references.length ? 'references ' + [...new Set(references)].join(', ') : 'references no table',
-    referencedBy.length ? 'referenced by ' + [...new Set(referencedBy)].join(', ') : 'not referenced',
+    references.length
+      ? t({ en: 'references ', ja: '参照先 ' }) + [...new Set(references)].join(', ')
+      : t({ en: 'references no table', ja: '参照先なし' }),
+    referencedBy.length
+      ? t({ en: 'referenced by ', ja: '参照元 ' }) + [...new Set(referencedBy)].join(', ')
+      : t({ en: 'not referenced', ja: '参照元なし' }),
   ]
-  status.value = `${id}: ${parts.join(' · ')}.`
+  status.value = t({ en: `${id}: ${parts.join(' · ')}.`, ja: `${id}: ${parts.join(' · ')}。` })
 })
 function enter(event: ViewTargetEvent<GraphViewTarget>) {
   if (event.target.kind === 'node') hoveredId.value = event.target.id
@@ -177,7 +187,9 @@ function commitMoves(changes: readonly GraphNodeMove[]) {
   const before = edges.value
   positions.value = next
   const names = changes.map(change => change.id).join(', ')
-  status.value = edges.value === before ? `Moved ${names}.` : `Moved ${names}; relationships switched sides.`
+  status.value = edges.value === before
+    ? t({ en: `Moved ${names}.`, ja: `${names} を移動しました。` })
+    : t({ en: `Moved ${names}; relationships switched sides.`, ja: `${names} を移動しました。関係線の向きが変わりました。` })
 }
 
 // Cardinality marks at both ends of an orthogonal route. The route leaves and enters perpendicular to the port side,
@@ -205,7 +217,7 @@ function topEdge(width: number) {
 }
 function relationText(edge: Link) {
   const { table, column, refTable, refColumn, optional } = edge.data
-  return { from: `${table}.${column}`, to: `${refTable}.${refColumn}`, kind: optional ? 'many to zero or one' : 'many to one' }
+  return { from: `${table}.${column}`, to: `${refTable}.${refColumn}`, kind: optional ? t({ en: 'many to zero or one', ja: '多対0または1' }) : t({ en: 'many to one', ja: '多対1' }) }
 }
 </script>
 
@@ -213,25 +225,26 @@ function relationText(edge: Link) {
   <section class="showcase sc-schema" aria-labelledby="sc-schema-title">
     <div class="sc-schema-head">
       <div class="sc-schema-intro">
-        <h2 id="sc-schema-title">Database schema</h2>
-        <p>The node and edge slots draw the table cards and crow's-foot relationships, every column is a named port on both sides, and <code>--vw-*</code> variables set the dark canvas.</p>
+        <h2 id="sc-schema-title">{{ t({ en: 'Database schema', ja: 'データベーススキーマ' }) }}</h2>
+        <p v-if="locale === 'ja'">テーブルカードと鳥の足記法の関係線はノードと辺のスロットで描き、各列は左右両側の名前付きポートです。ダークなキャンバスは <code>--vw-*</code> 変数で設定しています。</p>
+        <p v-else>The node and edge slots draw the table cards and crow's-foot relationships, every column is a named port on both sides, and <code>--vw-*</code> variables set the dark canvas.</p>
       </div>
-      <ul class="sc-schema-legend" aria-label="Legend">
+      <ul class="sc-schema-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
         <li>
           <svg viewBox="0 0 14 14" aria-hidden="true"><g class="sc-schema-key"><circle cx="4.6" cy="9.4" r="2.6" /><path d="M6.5 7.5 11.5 2.5M9.6 4.4l1.5 1.5M8.2 5.8l1.2 1.2" /></g></svg>
-          Primary key
+          {{ t({ en: 'Primary key', ja: '主キー' }) }}
         </li>
         <li>
           <svg viewBox="0 0 14 14" aria-hidden="true"><g class="sc-schema-link"><path d="M5.8 8.2 8.2 5.8M6.3 4.3l1-1a2.3 2.3 0 0 1 3.3 3.3l-1 1M7.7 9.7l-1 1a2.3 2.3 0 0 1-3.3-3.3l1-1" /></g></svg>
-          Foreign key
+          {{ t({ en: 'Foreign key', ja: '外部キー' }) }}
         </li>
         <li>
           <svg viewBox="0 0 28 14" aria-hidden="true"><path class="sc-schema-legend-line" d="M2 7H26M13 7 2 1M13 7 2 13" /></svg>
-          Many
+          {{ t({ en: 'Many', ja: '多' }) }}
         </li>
         <li>
           <svg viewBox="0 0 28 14" aria-hidden="true"><path class="sc-schema-legend-line" d="M2 7H26M16 2V12M20 2V12" /></svg>
-          One
+          {{ t({ en: 'One', ja: '1' }) }}
         </li>
       </ul>
     </div>
@@ -239,7 +252,7 @@ function relationText(edge: Link) {
       v-model:selected-id="selectedId" unstyled-node-slots class="sc-schema-graph" :nodes="tables" :edges="edges" :layout="layoutTables" :positions="positions"
       :height="'clamp(440px, 44vw, 560px)'" edge-style="orthogonal" background="lines" :background-gap="24" draggable show-minimap
       :highlighted-edge-ids="focusEdges" :highlighted-node-ids="neighbourIds" :dimmed-ids="dimmedIds" :tooltip-delay="250"
-      :labels="{ region: 'Schema diagram' }"
+      :labels="{ ...labels.graph, region: t({ en: 'Schema diagram', ja: 'スキーマ図' }) }"
       @node-move="commitMoves([$event])" @nodes-move="commitMoves" @target-enter="enter" @target-leave="leave"
     >
       <template #node="{ node, box, selected }">
@@ -251,7 +264,7 @@ function relationText(edge: Link) {
           <rect width="13" height="12" rx="2" /><path d="M0 4.5H13M4.5 4.5V12" />
         </g>
         <text class="sc-schema-name" x="33" y="24">{{ node.label }}</text>
-        <text class="sc-schema-count" :x="box.width - 12" y="24">{{ node.data.columns.length }} cols</text>
+        <text class="sc-schema-count" :x="box.width - 12" y="24">{{ node.data.columns.length }} {{ t({ en: 'cols', ja: '列' }) }}</text>
         <g v-for="(column, index) in node.data.columns" :key="column.name" class="sc-schema-row"
           :class="{ 'sc-schema-row-alt': index % 2 === 1, 'sc-schema-row-hot': hotColumns.has(node.id + '.' + column.name) }"
           :transform="`translate(0 ${headerHeight + index * rowHeight})`">

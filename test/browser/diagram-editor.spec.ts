@@ -1,10 +1,10 @@
 // Diagram editor parts: GraphPalette drags and keyboard inserts onto NetworkGraph, and PropertyInspector edits of the
 // selected node (accepted, refused by the field checks, rejected by validateChange and cancelled by stale data), and its list fields.
-import { expect, test, fixtureStatus, openDemo, pageErrors, serveFixture, type Page } from './support'
+import { expect, test, fixtureStatus, openExample, pageErrors, serveFixture, type Page } from './support'
 
 async function openEditor(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Diagram editor')
+  await openExample(page, 'diagram-editor')
   const demo = page.locator('section[aria-labelledby="diagram-editor-title"]')
   const palette = demo.getByRole('listbox', { name: 'Shapes', exact: true })
   const canvas = demo.getByLabel('Diagram canvas', { exact: true })
@@ -346,5 +346,16 @@ test('inspector list fields stay controlled and work right to left in the dark t
   const select = (await resources.getByRole('combobox', { name: 'Resource for Crane' }).boundingBox())!
   const box = (await resources.getByRole('textbox', { name: 'Units for Crane' }).boundingBox())!
   expect(box.x).toBeLessThan(select.x)
+  expect(errors).toEqual([])
+})
+
+test('the diagram editor speaks Japanese on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'diagram-editor', { locale: 'ja' })
+  await expect(demo.getByRole('heading', { name: '図形', exact: true })).toBeVisible()
+  await expect(demo.getByRole('form', { name: 'ノードのプロパティ', exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
+  await expect(demo.getByLabel('ラベル', { exact: true })).toHaveValue('申請を確認')
+  await expect(demo.getByRole('status', { name: 'エディターの状態' })).toHaveText('図形を図へドラッグするか、フォーカスして Enter を押してください。')
   expect(errors).toEqual([])
 })

@@ -1,10 +1,16 @@
 # Public API
 
+<!-- #region intro -->
+
 Identifiers are nonempty strings and must be unique within their corresponding collection. Named port IDs are scoped to each node. Labels are rendered as Vue text. Escape/sanitize any HTML you supply in custom slots according to your application's trust boundaries.
 
 The package is ESM-only. Import Vue components and shared types from `@eightkk/vue-weave`, headless calculations from `@eightkk/vue-weave/core`, and the stylesheet from `@eightkk/vue-weave/style.css`. Declarations support TypeScript's `Bundler` and `NodeNext` resolution. The core entry does not require Vue or browser globals at runtime. Node.js 22.18+ is the declared runtime baseline; Vue components require the Vue 3.5+ peer dependency. The package also exports `@eightkk/vue-weave/package.json`, so tools can read the installed version.
 
 The stylesheet also ships opt-in `vw-theme-dark` and `vw-theme-auto` classes and forced-colors, reduced-motion and print rules; see docs/integration.md.
+
+<!-- #endregion intro -->
+
+<!-- #region compatibility -->
 
 ## Compatibility and versioning
 
@@ -23,6 +29,10 @@ Not covered, and allowed to change in a minor or patch release (noted in the cha
 - The `vw-` classes that the components emit, the generated DOM and SVG structure, and the exact bytes of server-rendered markup and of SVG export (`exportSvg`, `renderGraphSvg`, `renderTimelineSvg`). Output is deterministic for the same input and version, and server rendering hydrates cleanly with the same version on the client, but markup can change between releases. Custom stylesheets and tests that rely on these classes or that structure may need updates; prefer slots, `--vw-*` properties, and roles and accessible names in tests.
 - Undocumented modules and files inside `dist/`; import only the published entries.
 
+<!-- #endregion compatibility -->
+
+<!-- #region validation -->
+
 ## Validation and errors
 
 The planning, timeline and data functions of `@eightkk/vue-weave/core` (scheduling, leveling and resource load, status-date and actuals rescheduling, plan comparison, placement, resource timelines, timeline data and row trees, `renderTimelineSvg`, snapshots, windowed data and the MS Project, iCalendar and CSV interchange), its graph functions (`indexGraph` and everything that validates a graph through it: every layout, the algorithms and analysis, editing, port rules and `renderGraphSvg`; group collapse, swimlanes, traversal, layout requests and the view bindings) and the prop checks of GanttChart and NetworkGraph share one ID rule: an ID is a non-empty string, and IDs are unique within their collection. Any other value (a number such as `0` or `5`, `''`, `null`, `undefined`, an object) is invalid. Each failure kind currently has one message format, thrown as an `Error`. The texts help people read logs; they are not part of the [compatibility promise](#compatibility-and-versioning), so code should check the class:
@@ -35,9 +45,11 @@ The planning, timeline and data functions of `@eightkk/vue-weave/core` (scheduli
 | Unknown reference | `Unknown <kind> in <owner>: <value>`, where the owner is what holds the reference: `Unknown resource in assignment: <id>` or `Unknown task in assignment: <id>`; on the graph side `Unknown node in graph edge <edge ID>: <node>` (an edge `from` or `to`), `Unknown port in graph edge <edge ID>: <port>`, `Unknown node in graph group <group ID>: <node>`, `Unknown parent group in graph group <group ID>: <parentId>`, `Unknown swimlane in graph node <node ID>: <lane>` (`laneOf`), `Unknown group in collapsedIds: <id>`, `Unknown node in roots: <id>`, `Unknown node in fixedIds: <id>`, `Unknown node in fromId: <id>` and `… in toId: <id>` (`shortestGraphPath`), `Unknown node in graph deletion: <id>`, `Unknown edge in graph deletion: <id>`, `Unknown node in graph clone: <id>`, `Unknown node in graph port rules: <id>`, `Unknown port in graph port rules: <port> (graph node <node ID>)` and `Unknown edge in graph connection check: <id>` |
 | Repeated assignment | `Duplicate assignment of task <task ID> to resource <resource ID>` |
 
-The kinds are `task`, `dependency`, `calendar`, `resource`, `row`, `bar`, `baseline set`, `marker`, `marker range`, `load row`, `event`, `unplanned task`, `windowed data item`, `windowed data link`, `view row` (the `rowIds` of a `WindowedView`), `graph page node`, `graph page edge`, `column` (`renderTimelineSvg` and GanttChart `columns`), `graph node`, `graph edge`, `port` (named ports, unique per node), `graph group`, `group member` (a node listed by two groups, or twice by one), `swimlane` (lanes of `layoutSwimlaneGraph`, `renderGraphSvg` and the NetworkGraph `lanes` prop), `export group` (`renderGraphSvg` `groups`), `graph layout request` (the `requestId` of `buildGraphLayoutRequests`), `entity` and `view target` (view bindings; a load target's `resourceId` uses `resource`) (snapshot diagnostics also use `node`, `edge`, `group` and `column`). Where the same check runs in a context that the message would not show, the context is appended in parentheses: `(current plan)` or `(candidate plan)` for `comparePlans`, `(actual interval of task <id>)` for `rescheduleFromActuals`, `(bar <id>)` for `TimelineBar.baselines`, `(baselineIds)`, `(baseline <number>)` for the `timelineFromMsProject` `baselineId` option, `(in one response)` for windowed data, `(in one page)` for graph expansion pages, `(graph node <id>)` for port IDs, `(graph group <id>)` for a repeated group member, `(createId for <source ID>)` for the IDs `cloneGraphElements` gets from `createId` (an ID already used in the input is a duplicate) and `(load target)` for the `resourceId` of a load view target. The context never changes the class: invalid numbers and geometry stay `RangeError`, references, duplicates and cycles `Error`. Snapshot diagnostics carry the same texts as their `message`.
+The kinds are `task`, `dependency`, `calendar`, `resource`, `row`, `bar`, `baseline set`, `marker`, `marker range`, `load row`, `event`, `unplanned task`, `windowed data item`, `windowed data link`, `view row` (the `rowIds` of a `WindowedView`), `graph page node`, `graph page edge`, `column` (`renderTimelineSvg` and GanttChart `columns`), `graph node`, `graph edge`, `port` (named ports, unique per node), `graph group`, `group member` (a node listed by two groups, or twice by one), `swimlane` (lanes of `layoutSwimlaneGraph`, `renderGraphSvg` and the NetworkGraph `lanes` prop), `export group` (`renderGraphSvg` `groups`), `graph layout request` (the `requestId` of `buildGraphLayoutRequests`), `entity` and `view target` (view bindings; a load target's `resourceId` uses `resource`), `item` and `parent` (`diffStructure` keys and parent keys) (snapshot diagnostics also use `node`, `edge`, `group` and `column`). Where the same check runs in a context that the message would not show, the context is appended in parentheses: `(current plan)` or `(candidate plan)` for `comparePlans`, `(before)` or `(after)` for `diffStructure`, `(actual interval of task <id>)` for `rescheduleFromActuals`, `(bar <id>)` for `TimelineBar.baselines`, `(baselineIds)`, `(baseline <number>)` for the `timelineFromMsProject` `baselineId` option, `(in one response)` for windowed data, `(in one page)` for graph expansion pages, `(graph node <id>)` for port IDs, `(graph group <id>)` for a repeated group member, `(createId for <source ID>)` for the IDs `cloneGraphElements` gets from `createId` (an ID already used in the input is a duplicate) and `(load target)` for the `resourceId` of a load view target. The context never changes the class: invalid numbers and geometry stay `RangeError`, references, duplicates and cycles `Error`. Snapshot diagnostics carry the same texts as their `message`.
 
 The prop checks of GanttChart and NetworkGraph follow the same class rule: a RangeError for invalid numbers and geometry (non-finite times, sizes that are not positive, inverted ranges, out-of-range options) and for an unknown value of a string option such as `selectionMode`, `background`, `edgeStyle`, `routingPolicy` or `dependencyStyle` (as the core does for an unknown layout `direction`), and an Error for bad references, invalid or duplicate IDs and cycles. GanttChart's own ID checks use the strict rule and the texts above, with the kinds `marker`, `load row`, `zoom preset` and `column` (for example `Invalid marker ID: 3`, `Duplicate column ID: c`); its checks of columns, load rows, header bands and markers are the ones `renderTimelineSvg` runs, so both report the same class and text for the same input. NetworkGraph's node, edge, port, group and lane checks use the same rule and texts (for example `Invalid graph node ID: 5`, `Duplicate graph group ID: g`, `Unknown node in graph group g: zz`); its group checks and `collapseGraphGroups` share one implementation. Checks of data that a core function validates (rows, bars, dependencies, ranges, marker ranges, baselines, non-working periods, layout options, lanes, edge bands, positions and sizes) report the core's error. Numeric prop messages keep their own clear texts that name the prop, such as `tooltipDelay must be finite and nonnegative`, `snap must be finite and positive`, `minDuration must be finite and positive` or `snapGrid must be a positive finite number of chart units`.
+
+<!-- #endregion validation -->
 
 ## Contents
 
@@ -85,6 +97,10 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Recurring events](#recurring-events)
 - [TaskBoard](#taskboard)
   - [Task board helpers](#task-board-helpers)
+- [TreeGrid](#treegrid)
+  - [Tree grid editing](#tree-grid-editing)
+  - [Tree grid row structure](#tree-grid-row-structure)
+  - [Tree grid helpers](#tree-grid-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
   - [Layout defaults and option checks](#layout-defaults-and-option-checks)
@@ -104,12 +120,15 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
   - [Graph interchange](#graph-interchange)
   - [Network diagram from a schedule](#network-diagram-from-a-schedule)
 - [Linked views](#linked-views)
+  - [Traversal filters, limits and paths](#traversal-filters-limits-and-paths)
   - [Time range exploration](#time-range-exploration)
 - [Resource timelines and unplanned tasks](#resource-timelines-and-unplanned-tasks)
 - [Planning diagnostics and schedule traces](#planning-diagnostics-and-schedule-traces)
 - [Plan scenario comparison](#plan-scenario-comparison)
+- [Structure comparison](#structure-comparison)
 - [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)
 - [Partial data loading](#partial-data-loading)
+- [Time bucket tables](#time-bucket-tables)
 - [Typed fields and timeline views](#typed-fields-and-timeline-views)
 - [Application undo and redo](#application-undo-and-redo)
   - [Edit transactions and asynchronous saving](#edit-transactions-and-asynchronous-saving)
@@ -119,6 +138,8 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [Typed data](#typed-data)
 - [Diagram editor parts](#diagram-editor-parts)
 
+<!-- #region network-graph -->
+
 ## NetworkGraph
 
 | Prop | Type / default | Meaning |
@@ -126,17 +147,17 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 | nodes | readonly N[] (N extends NetworkNode) / required | ID, label, optional detail, tone, shape and opaque data. N is inferred; see [Typed data](#typed-data) |
 | edges | readonly E[] (E extends GraphEdge) / required | ID, from/to node IDs, optional label, data, waypoints, edge style, markers and animation. E is inferred |
 | selectedId | string / undefined | Controlled selection; also supports v-model:selected-id |
-| relatedIds | ReadonlySet<string> / undefined | Emphasizes included nodes and edges joining two included nodes |
+| relatedIds | `ReadonlySet<string>` / undefined | Emphasizes included nodes and edges joining two included nodes |
 | options | GraphLayeredLayoutOptions / defaults below | Built-in layout configuration |
-| layout | GraphLayoutFunction<GraphShownNode<N, G>, GraphShownEdge<E, G>> / undefined | Overrides built-in layout. Without `groups` it receives N and E; see [Typed data](#typed-data). While rendering, a result without positive finite dimensions throws RangeError, a node without a box `Missing layout box: <id>` (Error), a box without finite coordinates and a positive size `Invalid layout box: <id>` (RangeError), and an edge without a path `Missing layout path: <id>` (Error; with `routingPolicy: 'preserve'` such an edge gets a built-in route instead) |
-| labels | Partial<GraphLabels> / English | Region, empty, zoom, zoomIn, zoomOut and fit |
+| layout | `GraphLayoutFunction<GraphShownNode<N, G>, GraphShownEdge<E, G>>` / undefined | Overrides built-in layout. Without `groups` it receives N and E; see [Typed data](#typed-data). While rendering, a result without positive finite dimensions throws RangeError, a node without a box `Missing layout box: <id>` (Error), a box without finite coordinates and a positive size `Invalid layout box: <id>` (RangeError), and an edge without a path `Missing layout path: <id>` (Error; with `routingPolicy: 'preserve'` such an edge gets a built-in route instead) |
+| labels | `Partial<GraphLabels>` / English | Region, empty, zoom, zoomIn, zoomOut and fit |
 | height | number or CSS string / 220px | SVG viewport height |
 | showControls | boolean / true | Zoom/fit buttons |
 | dir | ChartDirection / ltr | `rtl` or `auto` mirrors the zoom tools, minimap and label alignment; see [Right-to-left layout](#right-to-left-layout) |
 
 GraphLayoutOptions defaults are direction LR, nodeWidth 144, nodeHeight 58, columnGap 50, rowGap 24 and padding 20. Sizes must be finite numbers > 0; spacing must be finite numbers ≥ 0 (see [Layout defaults and option checks](#layout-defaults-and-option-checks)). Empty graphs keep positive layout dimensions even with zero padding. TB changes the layout direction while preserving each node's physical width and height.
 
-NetworkNode<D> has id, label, optional detail, tone (teal/blue/amber/violet), shape (`NetworkNodeShape`: box, rounded, diamond, ellipse or hexagon; see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)), resizable and data (D, default unknown). GraphEdge<D> has id, from, to, optional label, data (D, default unknown) and points (waypoints, see [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)), and the optional edgeStyle, markerStart, markerEnd and animated (see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)). The default renderer clips long text to the node box; its title exposes the full label. Node slots own their clipping and sizing.
+`NetworkNode<D>` has id, label, optional detail, tone (teal/blue/amber/violet), shape (`NetworkNodeShape`: box, rounded, diamond, ellipse or hexagon; see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)), resizable and data (D, default unknown). `GraphEdge<D>` has id, from, to, optional label, data (D, default unknown) and points (waypoints, see [Group collapse, edge styles and waypoints, level of detail and node resizing](#group-collapse-edge-styles-and-waypoints-level-of-detail-and-node-resizing)), and the optional edgeStyle, markerStart, markerEnd and animated (see [Node shapes, edge markers, animated and parallel edges](#node-shapes-edge-markers-animated-and-parallel-edges)). The default renderer clips long text to the node box; its title exposes the full label. Node slots own their clipping and sizing.
 
 A custom layout returns GraphLayout containing boxes, paths and edgeLabels Maps plus positive finite width and height. Each node box has x, y, width, height and rank. Each edge needs an SVG path. Labels are optional map entries. Coordinates are chart-local pixels. Keep paths and boxes within the supplied bounds for accurate fit-to-view.
 
@@ -219,13 +240,13 @@ The core functions below implement the rules; the component uses `createGraphCon
 | --- | --- |
 | cullOffscreen | boolean / false. Renders only the nodes, edges, edge labels, connection handles and groups whose bounds intersect the viewport plus cullOverscan. Layout, box selection, keyboard panning and the minimap still use every node, so the minimap shows the whole graph. |
 | cullOverscan | number / 200. Margin in screen pixels around the viewport that stays rendered, so a short pan does not reveal blank space. |
-| matchIds | ReadonlySet<string> / undefined. When supplied, nodes outside the set are dimmed. An empty set dims every node. |
-| dimmedIds | ReadonlySet<string> / undefined. Nodes to dim explicitly. Combines with matchIds. |
+| matchIds | `ReadonlySet<string>` / undefined. When supplied, nodes outside the set are dimmed. An empty set dims every node. |
+| dimmedIds | `ReadonlySet<string>` / undefined. Nodes to dim explicitly. Combines with matchIds. |
 | focusNode(id, options?) | Exposed method. Centers the camera on the node and keeps the current scale, or applies options.scale (0.1 to 3, or down to the fit scale for a graph that only fits below 0.1). Throws Error for an unknown ID and RangeError for a bad scale. Emits viewport-change. It works with culling because culling follows the camera. |
-| highlightedNodeIds / highlightedEdgeIds | ReadonlySet<string> / undefined. Display-only highlight: the node group or the edge group gets the class vw-is-highlighted (stroke --vw-graph-highlight). See below. |
-| revealNode(id, options?) | Exposed method. Returns Promise<RevealResult>. For a shown node (a proxy included) it centers the camera like focusNode (options.scale, else the current scale), waits for the next render so culling has rendered the node, then moves keyboard focus to it when options.focus is true, and resolves { status: 'revealed' }. For a node hidden in a collapsed group it resolves { status: 'hidden-by-collapse', proxyId } and for an unknown ID { status: 'unknown' }, in both cases without moving the camera. It never throws for an ID; a bad scale rejects with RangeError. focusNode is unchanged. |
+| highlightedNodeIds / highlightedEdgeIds | `ReadonlySet<string>` / undefined. Display-only highlight: the node group or the edge group gets the class vw-is-highlighted (stroke --vw-graph-highlight). See below. |
+| revealNode(id, options?) | Exposed method. Returns `Promise<RevealResult>`. For a shown node (a proxy included) it centers the camera like focusNode (options.scale, else the current scale), waits for the next render so culling has rendered the node, then moves keyboard focus to it when options.focus is true, and resolves { status: 'revealed' }. For a node hidden in a collapsed group it resolves { status: 'hidden-by-collapse', proxyId } and for an unknown ID { status: 'unknown' }, in both cases without moving the camera. It never throws for an ID; a bad scale rejects with RangeError. focusNode is unchanged. |
 | getTargetClientRect(target) | Exposed method. The DOMRect a ViewTarget of the graph view occupies on screen, in CSS pixels relative to the viewport like getBoundingClientRect: a node box, the bounding box of an edge path, or a group frame (a collapsed group is its proxy box). Undefined before mount, for targets of other views and for unknown or hidden nodes, edges and groups. The rectangle may lie outside the stage and does not depend on culling. Use it to place a toolbar or inspector next to an item. |
-| target-enter / target-leave / target-activate | Events with ViewTargetEvent<GraphViewTarget>: { target: { view: 'graph', kind: 'node' \| 'edge' \| 'group', id }, source: 'pointer' \| 'keyboard' }. Enter and leave fire when the pointer enters or leaves a node, an edge or a group frame, and when keyboard focus (focus-visible, not focus moved by a press) enters or leaves a node, an edge hit area or a group label. Activate fires on click, Enter or Space on a node (after select), an edge hit area (after edge-select) or a group label; a click that ends a drag does not activate. A proxy of a collapsed group is reported as kind 'group' with the group ID. Hovering never moves the camera. |
+| target-enter / target-leave / target-activate | Events with `ViewTargetEvent<GraphViewTarget>`: { target: { view: 'graph', kind: 'node' \| 'edge' \| 'group', id }, source: 'pointer' \| 'keyboard' }. Enter and leave fire when the pointer enters or leaves a node, an edge or a group frame, and when keyboard focus (focus-visible, not focus moved by a press) enters or leaves a node, an edge hit area or a group label. Activate fires on click, Enter or Space on a node (after select), an edge hit area (after edge-select) or a group label; a click that ends a drag does not activate. A proxy of a collapsed group is reported as kind 'group' with the group ID. Hovering never moves the camera. |
 | NetworkGroup.parentId | Optional ID of another group. The group is painted inside its parent and the parent bounds enclose it. |
 
 Culling keeps these elements rendered even when they are off screen: selected nodes, the node or edge that has keyboard focus (and the node that owns a focused connection handle), nodes involved in a pointer drag or group drag, the source of a pending connection, the edge being reconnected and the groups that contain moved nodes. Elements that are culled are not in the DOM, so Tab skips them and they cannot be found by accessible name. Call focusNode(id) to bring one into view. Before mount there is no measured viewport. Server rendering and the first client render use the 1150 x 270 default viewport with the initial fit camera, so the output is deterministic and hydrates cleanly. The measured size replaces it after mount. Culling is based on bounding boxes: a path is bounded by its control points, and edge labels are included with a fixed reach, so culling errs on the side of rendering. Custom node and edge slots are not rendered for culled elements.
@@ -254,7 +275,7 @@ Related exported types: `NetworkFocusOptions`.
 | API | Behavior |
 | --- | --- |
 | edgesSelectable | boolean / false. Gives every edge the focusable hit area that reconnectable uses (role button, named "Select edge" plus the edge label or ID). Click, Enter or Space selects the edge; Ctrl, Meta or Shift toggles it in or out of the selection. When reconnectable is also set, the selected edge shows its reconnect handles. |
-| selectedEdgeIds / update:selectedEdgeIds | ReadonlySet<string> / undefined. Controlled edge selection; supports v-model:selected-edge-ids. Without it the component keeps the last selected edge itself and still emits update:selectedEdgeIds. Unknown IDs are ignored. |
+| selectedEdgeIds / update:selectedEdgeIds | `ReadonlySet<string>` / undefined. Controlled edge selection; supports v-model:selected-edge-ids. Without it the component keeps the last selected edge itself and still emits update:selectedEdgeIds. Unknown IDs are ignored. |
 | edge-select(id) | Emitted for every edge activation, including a toggle that removes it. |
 | deletable | boolean / false. Delete or Backspace on the focused stage, node, edge or group label proposes a deletion. A focused node or edge that is not selected is deleted alone; otherwise the current selection is: selectedIds (or selectedId) plus the edge selection. |
 | NetworkNode.deletable | false keeps the node out of every deletion proposal, like draggable false. Its edges are only deleted when they are selected or focused themselves. |
@@ -319,7 +340,7 @@ Related exported types: `GraphCloneOptions`.
 | API | Behavior |
 | --- | --- |
 | collapsibleGroups | boolean / false. Draws a toggle button at the end of every group label strip (named "Collapse group" plus the group label, aria-expanded true) and on every proxy node ("Expand group" plus the label, aria-expanded false). The proxy toggle sits in the bottom corner at the text end, so it never covers the connection handle in the top corner; a proxy lower than 40 units gets it in the top corner opposite the handle. Click, Enter or Space toggles. Without collapsedGroupIds the component keeps the collapsed set itself. |
-| collapsedGroupIds / update:collapsedGroupIds | ReadonlySet<string> / undefined. Controlled collapsed groups; supports v-model:collapsed-group-ids. It applies even without collapsibleGroups (then no toggles are drawn). IDs of groups that are not in groups are ignored. update:collapsedGroupIds is emitted with a new Set for every toggle. |
+| collapsedGroupIds / update:collapsedGroupIds | `ReadonlySet<string>` / undefined. Controlled collapsed groups; supports v-model:collapsed-group-ids. It applies even without collapsibleGroups (then no toggles are drawn). IDs of groups that are not in groups are ignored. update:collapsedGroupIds is emitted with a new Set for every toggle. |
 | edgeStyle | 'curve' \| 'orthogonal' \| 'straight' / 'curve'. curve keeps today's routes. orthogonal draws right-angle routes with 6-unit rounded corners, straight draws straight lines clipped to the box borders (or to the outline of a diamond, ellipse or hexagon node). An edge's own GraphEdge.edgeStyle overrides it for that edge. Any other value throws RangeError while rendering. |
 | GraphEdge.points | Optional waypoints in chart coordinates. The edge is drawn through them in every style: a polyline in straight and orthogonal, a smooth curve through the points in curve. |
 | avoidNodes | boolean \| GraphObstacleAvoidance / false. Opt-in: orthogonal edges (the edgeStyle prop or an edge's own edgeStyle) without points are routed around every node box, collapsed-group proxies included, keeping `clearance` chart units away (default 8) and leaving and entering on the same sides as without the option. `true` uses the defaults; an object sets `clearance` and `bendPenalty` (default 24, the extra cost of a bend in units of length). Waypoints keep their precedence, self-loops keep their bracket, and a long-edge bypass lane is kept while it crosses no other box. An edge without a route around the boxes (an end boxed in) keeps the plain orthogonal route. Drag and resize previews reroute the edges of the changed nodes this way, and also the orthogonal edges without waypoints whose saved route meets the clearance area of a changed box at its old or new place, so a route moves out of the way of a box dragged across it during the drag. When more than 32 such edges meet the changed boxes in one preview frame, that frame reroutes none of them and they follow once the new position is in `positions`; routes that only detoured around the old place without touching its clearance area also straighten then. Edges with waypoints are never rerouted. exportSvg and exportPng draw the same routes. Curve and straight edges are not affected. A negative or non-finite clearance or bend penalty, or a value of another type, throws RangeError while rendering. An object is compared by value, so an inline literal such as `:avoid-nodes="{ clearance: 12 }"` does not route the edges again or cancel a gesture each time the parent renders. See findOrthogonalRoute for the algorithm and its cost. |
@@ -330,7 +351,7 @@ Related exported types: `GraphCloneOptions`.
 | validateEdgeReshape / edge-reshape-rejected(change, reason) | Synchronous check; false rejects with labels.reshapeRejected, a string rejects with that reason, announced in the live region. |
 | lodThreshold | number / undefined. Level of detail: while the camera scale is below it, the root gets vw-lod-low and the default renderer hides node detail text and edge labels. Must be greater than 0 and at most 3, otherwise rendering throws RangeError. Accessible names are unchanged. |
 | node and edge slot scale | The node slot ({node, box, selected, dimmed, related, highlighted, scale}) and the edge slot ({edge, path, selected, related, highlighted, dimmed, scale}) receive the current camera scale for custom level-of-detail rendering. |
-| sizes | ReadonlyMap<string, GraphNodeSize> / undefined. Width and height per node ID, applied on top of the layout boxes after positions, keeping each box's top-left corner; incident edges are rerouted. Sizes must be finite and positive (RangeError); unknown IDs are ignored. |
+| sizes | `ReadonlyMap<string, GraphNodeSize>` / undefined. Width and height per node ID, applied on top of the layout boxes after positions, keeping each box's top-left corner; incident edges are rerouted. Sizes must be finite and positive (RangeError); unknown IDs are ignored. |
 | resizable | boolean / false. Shows four corner handles on the node when exactly one node is selected (selectedId, or a selectedIds set of one), named "Resize" plus the node label and the corner ("Resize Split · bottom right"). NetworkNode.resizable false opts a node out; proxies of collapsed groups are not resizable. |
 | minNodeSize | GraphNodeSize / { width: 40, height: 24 }. Smallest size a resize proposes; finite and positive, otherwise RangeError. |
 | node-resize(change) | GraphNodeResize with id, before and after boxes ({ x, y, width, height }). Store after.width and after.height in sizes and, when after.x or after.y changed (a left or top corner), after.x and after.y in positions. |
@@ -467,7 +488,7 @@ Accessibility: the accessible name of a node stays its label and detail; shapes,
 
 | API | Behavior |
 | --- | --- |
-| edgeBands | ReadonlyMap<string, GraphEdgeBand> / undefined. Opt-in. Draws each listed edge as a band with real width: `GraphEdgeBand` is `{ width, reference?, label? }`, usually built by `graphFlowBands` from a [`layoutFlowGraph`](#quantity-flow-projection) result. The default edge path gets the classes vw-network-edge and vw-network-band (plus vw-is-reference for a reference band, drawn dashed), an inline `stroke-width` of `width` chart units, and no markers or animation. The hit area (with edgesSelectable, editableEdges, editableLabels or reconnectable) gets vw-is-band and a stroke width of `width`, never below the usual 14, so the whole band takes the pointer; its accessible name is labels.selectEdge plus `label` when set (for example "Select edge Cut → Inspect: 60 pcs"), else the edge label or ID. Bands keep the hover (active), selected, related, highlighted and dimmed states of other edges. Edges are drawn widest band first, then the edges without a band, so thin bands stay above thick ones. The edge slot receives the band as `band`. exportSvg and exportPng draw the same bands (see renderGraphSvg `edgeBands`). A width that is not a finite number of at least 0 throws RangeError while rendering; unknown IDs are ignored. |
+| edgeBands | `ReadonlyMap<string, GraphEdgeBand>` / undefined. Opt-in. Draws each listed edge as a band with real width: `GraphEdgeBand` is `{ width, reference?, label? }`, usually built by `graphFlowBands` from a [`layoutFlowGraph`](#quantity-flow-projection) result. The default edge path gets the classes vw-network-edge and vw-network-band (plus vw-is-reference for a reference band, drawn dashed), an inline `stroke-width` of `width` chart units, and no markers or animation. The hit area (with edgesSelectable, editableEdges, editableLabels or reconnectable) gets vw-is-band and a stroke width of `width`, never below the usual 14, so the whole band takes the pointer; its accessible name is labels.selectEdge plus `label` when set (for example "Select edge Cut → Inspect: 60 pcs"), else the edge label or ID. Bands keep the hover (active), selected, related, highlighted and dimmed states of other edges. Edges are drawn widest band first, then the edges without a band, so thin bands stay above thick ones. The edge slot receives the band as `band`. exportSvg and exportPng draw the same bands (see renderGraphSvg `edgeBands`). A width that is not a finite number of at least 0 throws RangeError while rendering; unknown IDs are ignored. |
 
 Without edgeBands, or with an empty map, no band markup is rendered, and keys, events and accessible names are not affected.
 
@@ -488,6 +509,10 @@ const bands = computed(() => graphFlowBands(flow.value))
 
 A band is a stroke along the edge path, not a filled outline, so every edge feature that reads the path (hit areas, toolbars, culling, exports) works unchanged. Where a curve turns steeply its stroke looks slightly thinner than at its ends; keep `rankGap` large compared with the band widths. Saved `positions`, node drags and edge styles reroute bands like other edges, as curves between box centres, so keep flow pictures non-draggable. The theme variables are `--vw-flow-band-opacity` (default .5), `--vw-flow-band-active-opacity` (hover, selected and highlighted, default .78), `--vw-flow-reference-opacity` (default .35) and `--vw-flow-reference-dash` (default `10 6`, lengthened for wide bands to a dash of twice and a gap of at least three quarters of the band width, with the gaps of a straight-segment loop route evened out so it starts and ends with a dash; the export draws the same); in forced colors bands use CanvasText, reference bands GrayText with the dash, and selected bands Highlight.
 
+<!-- #endregion network-graph -->
+
+<!-- #region gantt-chart -->
+
 ## GanttChart
 
 | Prop | Type / default | Meaning |
@@ -496,8 +521,8 @@ A band is a stroke along the edge path, not a filled outline, so every edge feat
 | bars | readonly B[] (B extends TimelineBar) / required | ID, rowId, label, numeric start/end and optional attributes. B is inferred |
 | range | TimeRange / required | Visible axis bounds; finite start < end |
 | dependencies | readonly TimelineDependency[] / [] | ID, from/to bar IDs, optional FS/SS/FF/SF type and optional `lag` (see [Dependency lag](#dependency-lag)) |
-| highlightedDependencyIds | ReadonlySet<string> / undefined | Highlight link IDs using --vw-dependency-highlight |
-| selectedIds | ReadonlySet<string> / undefined | Controlled highlighted bars |
+| highlightedDependencyIds | `ReadonlySet<string>` / undefined | Highlight link IDs using --vw-dependency-highlight |
+| selectedIds | `ReadonlySet<string>` / undefined | Controlled highlighted bars |
 | pixelsPerUnit | number / 80 per hour in milliseconds | Base linear time scale |
 | scale | TimeScale / undefined | Custom mapping before component zoom |
 | tickSteps | readonly number[] / 30m, 1h, 2h, 4h, 24h | Positive ascending intervals in the same units as data. The chart uses the first step whose narrowest visible tick spacing is at least 76 px, and draws one grid line at each tick's scale position, as the SVG export does. A tick label is shown only when the next tick is at least 76 px further on (the closing label: the previous tick 76 px back), so where no step fits everywhere, for example in the squeezed non-working time of a `createWorkingTimeScale` axis, those labels are left out instead of overlapping; their grid lines stay, and the SVG export leaves out the same labels |
@@ -512,7 +537,7 @@ A band is a stroke along the edge path, not a filled outline, so every edge feat
 | height | number or CSS string / 316px | Scroll viewport height |
 | readonly | boolean / false | Disables editing |
 | validateEdit | EditValidator / undefined | Synchronous hook accepting or rejecting a proposal: true or undefined accepts, false (default `labels.rejected`) or a reason string rejects; a blank or whitespace-only string rejects with the default message. Every GanttChart validator follows this convention with its own default message |
-| labels | Partial<GanttLabels> / English | region, rows, empty, zoom, zoomIn, zoomOut, editHint, rejected, plus the optional fields described in the sections below (for example progressOf and deleteHint) |
+| labels | `Partial<GanttLabels>` / English | region, rows, empty, zoom, zoomIn, zoomOut, editHint, rejected, plus the optional fields described in the sections below (for example progressOf and deleteHint) |
 | showControls | boolean / true | Zoom buttons |
 | autoScroll | boolean / true | Scrolls the timeline horizontally while a pointer drag is held near the left or right edge of the viewport. Set false to disable |
 | dir | ChartDirection / ltr | `rtl` or `auto` places row headings on the right and runs time from right to left; see [Right-to-left layout](#right-to-left-layout) |
@@ -532,14 +557,14 @@ A band is a stroke along the edge path, not a filled outline, so every edge feat
 | columnsResizable, labelWidth, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / undefined (the `--vw-row-label-width` theme value), number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the row label column and each extra column propose new widths by pointer drag or arrow keys; see [Column resizing](#column-resizing) |
 | sortableColumns, sort | boolean or readonly string[] / false, readonly TimelineViewSort[] / undefined | Header sort buttons that propose the next sort through `update:sort` (`v-model:sort`); see [Header sorting and filtering](#header-sorting-and-filtering) |
 | filterableColumns, filters | boolean or readonly string[] / false, readonly TimelineViewFilter[] / undefined | Header filter buttons with a small dialog that propose column filters through `update:filters` (`v-model:filters`); see the same section |
-| highlightedBarIds | ReadonlySet<string> / undefined | Display-only highlight of bars (`vw-is-highlighted`, `--vw-bar-highlight`), separate from `selectedIds`; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops) |
+| highlightedBarIds | `ReadonlySet<string>` / undefined | Display-only highlight of bars (`vw-is-highlighted`, `--vw-bar-highlight`), separate from `selectedIds`; see [Linked views, reveal and external drops](#linked-views-reveal-and-external-drops) |
 | loadSelectable | boolean / false | Makes load segments focusable buttons that report target events; see the same section |
 | highlightedLoadTargets, selectedLoadTargets | readonly LoadViewTarget[] / undefined | Display-only highlight (`vw-is-highlighted`) and selected state (`vw-is-selected`) of the load segments that overlap these resource time ranges; see the same section |
 | droppable | boolean / false | Accepts HTML drag and drop and emits `bar-drop(TimelineDrop)`; see the same section |
-| validateFieldEdit | (change: TimelineFieldEdit<R>) => boolean \| string \| void / undefined | Synchronous check of a typed field proposal from a column with `field`; see [Timeline columns and rollups](#timeline-columns-and-rollups) |
+| validateFieldEdit | `(change: TimelineFieldEdit<R>) => boolean \| string \| void` / undefined | Synchronous check of a typed field proposal from a column with `field`; see [Timeline columns and rollups](#timeline-columns-and-rollups) |
 | visibleWindowDelay | number / 100 | Milliseconds the `visible-window-change` event waits for the window to settle; see [Partial data loading](#partial-data-loading) |
 
-TimelineRow<D> has id, optional parentId, label, optional detail and data (D, default unknown). TimelineBar<D> adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (D, default unknown), plus baseline and baselines (see [Timeline planning overlays](#timeline-planning-overlays) and [Baseline sets](#baseline-sets)), the optional critical, latestEnd, deadline, segments and description fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments), constraints, described in [Scheduling constraints](#scheduling-constraints), and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone, drawn as a diamond. With a `bar` slot, a milestone gets `vw-has-slot` and draws the diamond behind the slot content (a `::before` layer) instead of clipping the button, so the slot can place text or icons beside it; without a slot the milestone is drawn as a plain diamond. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
+`TimelineRow<D>` has id, optional parentId, label, optional detail and data (D, default unknown). `TimelineBar<D>` adds lane (zero-based, default 0), tone, appearance (solid/outline), editable (default false), progress (0–1) and data (D, default unknown), plus baseline and baselines (see [Timeline planning overlays](#timeline-planning-overlays) and [Baseline sets](#baseline-sets)), the optional critical, latestEnd, deadline, segments and description fields described in [Calendar shading, critical path, float and segments](#calendar-shading-critical-path-float-and-segments), constraints, described in [Scheduling constraints](#scheduling-constraints), and deletable (default editable), described in [Progress editing, deletion, tooltips, context menu and fit](#progress-editing-deletion-tooltips-context-menu-and-fit). A zero-duration bar is a milestone, drawn as a diamond. With a `bar` slot, a milestone gets `vw-has-slot` and draws the diamond behind the slot content (a `::before` layer) instead of clipping the button, so the slot can place text or icons beside it; without a slot the milestone is drawn as a plain diamond. Equal start/end intervals can move; resize handles require duration >= minDuration. Intervals use half-open [start,end) visibility; a milestone exactly at the axis end is outside the displayed window.
 
 Display bars may extend beyond the axis. Editing is enabled only for intervals contained in editBounds. With custom numeric units, supply matching pixelsPerUnit, tickSteps, snap and formatTime.
 
@@ -806,7 +831,7 @@ Three core helpers save hand-composing calendar views in epoch milliseconds. The
 | Export | Behavior |
 | --- | --- |
 | calendarZoomPresets(range, options?) | `CalendarZoomPreset[]`, ready for `zoomPresets`: one complete `TimelineZoomPreset` per level (`id` is the level) with `pixelsPerUnit`, ascending `tickSteps`, `snap` and `headerBands` built with `calendarBands` for `range`, plus a `formatTime` for that level. See below |
-| intlTimeFormatter(options?) | A `formatTime`-compatible `(time: number) => string` from `IntlTimeFormatterOptions`: `locale` (string or list, default `en-US`), `timeZone` (IANA, default UTC) or `utcOffsetMinutes` (integer from -1080 to 1080, not both), and `format` (`Intl.DateTimeFormatOptions`, default `{ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }`, so the defaults give the same `09:00` text as the component default). A `timeZone` inside `format` is ignored. An invalid zone, offset or locale throws RangeError when the formatter is created, and a non-finite time when it is called |
+| intlTimeFormatter(options?) | A `formatTime`-compatible `(time: number) => string` from `IntlTimeFormatterOptions`: `locale` (string or list, default `en-US`), `timeZone` (IANA, default UTC) or `utcOffsetMinutes` (integer from -1080 to 1080, not both), and `format` (`Intl.DateTimeFormatOptions`, default `{ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }`, so the defaults give the same `09:00` text as the component default). A `timeZone` inside `format` is ignored. Thin, narrow no-break and no-break spaces (U+2009, U+202F, U+00A0), which ICU versions write differently, come out as plain spaces, so server and browser render the same text. An invalid zone, offset or locale throws RangeError when the formatter is created, and a non-finite time when it is called |
 | calendarBands(range, unit, { locale, labelFormat }) | Locale-aware band labels: with `locale` or `labelFormat`, each label is the band start's local date and time (in `timeZone` or `utcOffsetMinutes`) formatted with `Intl.DateTimeFormat`. `labelFormat` defaults by unit: hour `{ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }`, day and week `{ year: 'numeric', month: 'short', day: 'numeric' }`, month `{ year: 'numeric', month: 'long' }`, year `{ year: 'numeric' }`; `locale` defaults to `en-US`. A `label` function wins over both. Without them, labels stay ISO-like |
 
 `CalendarZoomPresetOptions` are `locale`, `timeZone` or `utcOffsetMinutes` (as for `intlTimeFormatter`), `weekStartsOn` (0 Sunday to 6 Saturday, default 1, for week bands), `levels` (a subset of `CalendarZoomLevel` in the order of the buttons, default all six) and `labels` (button text by level; defaults Hours, Days, Weeks, Months, Quarters, Years). `levels` that is not an array or names an unknown level throws RangeError and a repeated level Error; an invalid range, zone or offset throws RangeError. Each call returns fresh arrays (`tickSteps`, `headerBands`), so changing a returned preset does not affect later calls.
@@ -1054,6 +1079,10 @@ function onConstraintEdit(change: TimelineConstraintEdit) {
 
 `exportSvg`, `exportPng` and `renderTimelineSvg` draw the same glyphs with the colours of `--vw-constraint` and `--vw-constraint-violated`, each in a `<g>` with the same classes and a `<title>` such as "Finish no later than · Pack order A 09 Nov 17:00 · violated" (options `constraintLabels` and `constraintViolatedLabel`; the component passes its labels). `toMsProjectXml` writes a task's single constraint (or the finish pair at one time as Must Finish On); see [Interchange exports](#interchange-exports). To schedule with the constraints, spread them into the tasks and pass the results back with `scheduledBarFields`; see [Scheduling constraints from the chart](scheduling.md#scheduling-constraints-from-the-chart).
 
+<!-- #endregion gantt-chart -->
+
+<!-- #region timeline-editing-helpers -->
+
 ### Timeline editing helpers
 
 | Export | Purpose |
@@ -1099,6 +1128,10 @@ const headerBands = [
 ]
 ```
 
+<!-- #endregion timeline-editing-helpers -->
+
+<!-- #region event-calendar -->
+
 ## EventCalendar
 
 A third controlled component for appointment-style scheduling: a day or week time grid with an all-day row, a month grid, and an optional day view with one column per resource (rooms, machines, people). Like the other components it never changes its props: moves, resizes, resource changes and new events are emitted as proposals that the parent validates and applies. It is generic over the event type `E extends CalendarEvent`, inferred from `events`; its public type is `EventCalendarComponent` and its template ref type `EventCalendarExposed<E>`.
@@ -1129,7 +1162,7 @@ A third controlled component for appointment-style scheduling: a day or week tim
 | creatable | boolean / false | A drag (or click) on an empty part of the time grid, the all-day row or a month day proposes a new event through `create` |
 | validateEdit, validateCreate | EventCalendarEditValidator, EventCalendarCreateValidator / undefined | Synchronous checks; see below |
 | selectedId | string / undefined | Selected event; supports `v-model:selected-id` |
-| labels | Partial<EventCalendarLabels> / English | Toolbar, view names, "All day", "+N more", hints (`editHint` for the time grid, `dayEditHint` for the all-day row and the optional `monthEditHint` for the month view, which defaults to an English hint naming Up and Down, or to `dayEditHint` when only that is given), rejection texts, `now`, `empty` and `recurring` (default "Recurring", the last part of the accessible name of an occurrence of a recurring series) |
+| labels | `Partial<EventCalendarLabels>` / English | Toolbar, view names, "All day", "+N more", hints (`editHint` for the time grid, `dayEditHint` for the all-day row and the optional `monthEditHint` for the month view, which defaults to an English hint naming Up and Down, or to `dayEditHint` when only that is given), rejection texts, `now`, `empty` and `recurring` (default "Recurring", the last part of the accessible name of an occurrence of a recurring series) |
 | showToolbar | boolean / true | The built-in toolbar: Previous, Today, Next, the title and the view switch (a group of `aria-pressed` buttons) |
 | now | number / undefined | Draws the now line (`labels.now`) in today's column and enables Today. Supply it for deterministic and server-rendered output; the calendar never reads the clock |
 | formatTime | (time: number) => string / `intlTimeFormatter({ locale, timeZone })` | Times in event labels and accessible names, and the hours of the time grid's gutter (each hour on the first column's day). Without it the gutter shows `HH:mm` |
@@ -1206,6 +1239,10 @@ function apply(change: EventCalendarEdit) {
 
 Related exported types: `RecurrenceFrequency`, `RecurrenceWeekday`, `RecurrenceRule`, `RecurrenceZoneOptions`, `CalendarRecurrence`, `RecurrenceSeries`, `RecurrenceOccurrence`, `RecurrenceExpandOptions`, `RecurringEditScope`, `RecurringEditTarget`, `RecurringEditChange` and `RecurringEditOptions`.
 
+<!-- #endregion event-calendar -->
+
+<!-- #region task-board -->
+
 ## TaskBoard
 
 An opt-in third controlled component: a kanban board that shows cards in status columns, optionally split into horizontal swimlanes. It never changes its data. A drag or keyboard move becomes a `card-move` proposal, and the parent applies it, for example with `applyBoardCardMove`. It is designed to sit next to a GanttChart on the same tasks: give the bars and the cards the same IDs and share one selected ID (see the "Task board" demo).
@@ -1222,7 +1259,7 @@ An opt-in third controlled component: a kanban board that shows cards in status 
 | selectedId | string / undefined | Controlled selected card, drawn with `vw-is-selected` and `aria-pressed="true"`; supports `v-model:selected-id` |
 | readonly | boolean / false | Disables moves; cards can still be selected and activated |
 | validateCardMove | TaskBoardCardMoveValidator / undefined | Synchronous check of a proposal: true or undefined accepts, false (default message `labels.moveRejected`, "This card move was rejected.") or a reason string rejects; a blank string rejects with the default message |
-| labels | Partial<TaskBoardLabels> / English | region ("Task board"), empty, emptyCell, card, cards, wipLimit, overLimit, wipMin, underMinimum, collapse, expand, moveHint, moveRejected, pickedUp, moved, moveCancelled, position, of and lane |
+| labels | `Partial<TaskBoardLabels>` / English | region ("Task board"), empty, emptyCell, card, cards, wipLimit, overLimit, wipMin, underMinimum, collapse, expand, moveHint, moveRejected, pickedUp, moved, moveCancelled, position, of and lane |
 | dir | ChartDirection / ltr | `rtl` places the first column on the right and swaps Left and Right; with `auto` the board follows the inherited direction |
 | height | number or CSS string / undefined | Height of the scroll viewport; by default the board is as tall as its content |
 | autoScroll | boolean / true | Scrolls the viewport while a pointer drag is held within 36 px of one of its edges |
@@ -1273,6 +1310,125 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | groupBoardCards(cards, columns, lanes?, { filter }?) | `TaskBoardGroups`: `rows` (one per lane in lane order, or one without `laneId` when there are no lanes), each with one `TaskBoardCell` per column holding its cards in `cards` order (with `filter`, only the accepted ones, plus `indices`, their indexes among all cards of the cell, and `total`); `columns`, one `TaskBoardColumnStatus` per column with `count` (shown cards over all lanes), `total` (all cards), `wipLimit`, `wipMin`, `atLimit` (`total >= wipLimit`), `overLimit` (`total > wipLimit`) and `underMinimum` (`total < wipMin`); and `positions`, every card's `TaskBoardPosition` by ID, counting hidden cards. Throws `Invalid column ID`, `Duplicate card ID` and the like for IDs (kinds `column`, `lane` and `card`), `Unknown column in card <id>: <value>` and `Unknown lane in card <id>: <value>` (also for a missing `laneId` on a board with lanes), a RangeError for a WIP limit or minimum that is not a non-negative integer, or a minimum above the limit, and a TypeError for a `filter` that is not a function (`The board filter must be a function: <type>`) |
 | boardCardPosition(cards, id, { lanes }?) | The `TaskBoardPosition` of one card; with `lanes: true` the index counts only the cards of the same lane. Throws `Unknown card in board: <id>` |
 | applyBoardCardMove(cards, move, { columns, lanes }?) | A new array in which the card has the target column (and lane when `after.laneId` is set) and sits before the card that had `after.index` in the target cell, or after the cell's last card. Other cards are kept as they are; the moved card is a shallow copy. A move whose positions have no `laneId` treats each column as one cell and keeps the card's `laneId`. With `columns` or `lanes`, the target must name one (`Unknown column in card move <id>: <value>`, `Unknown lane in card move <id>: <value>`). Throws an Error for an unknown card, a move that names a lane in only one position, and a stale move whose `before` is not the card's current position (`Stale card move for <id>: …`), and a RangeError for an index that is not an integer from 0 to the size of the target cell |
+
+<!-- #endregion task-board -->
+
+<!-- #region tree-grid -->
+
+## TreeGrid
+
+An opt-in controlled component that unifies a tree grid and a matrix: a tree of rows against columns, for example a product hierarchy against attributes and warehouses, or a bill of materials against plants. The tree column is the sticky row header; the other columns are field columns, which read each row through `value(row)`, or sparse columns, which read the `cells` list. Rows and columns are virtualized together. The grid never changes its data: expansion, the active cell, cell edits, spreadsheet batches and row structure changes are events, and the parent applies them (see the "Tree grid" demo).
+
+**Rows are positions, entities are what they show.** A row's `id` identifies one position in the tree. What it stands for goes in `entities` (`EntityRef[]`, as in [Linked views](#linked-views)), and the same entity may appear in several rows, such as one part used in two assemblies. Activation reports entities, and `matchTreeGridEntities` marks every row and cell that lists one of the given entities, so an entity highlight shows all of its usages.
+
+| Prop | Type / default | Meaning |
+| --- | --- | --- |
+| rows | readonly R[] (R extends TreeGridRow) / required | ID, optional `parentId`, label, optional `detail`, `entities`, `childStatus` (`WindowedCellStatus`) and `data`. Array order is sibling order. R is inferred |
+| columns | readonly TreeGridColumn&lt;R&gt;[] / required | ID, label, `width` (pixels, finite and positive) and optionally `value(row)` (a field column), `missingCell`, `align` (`start`, `center`, `end`; numbers default to `end`), `editor`, `editable` (boolean or `(row) => boolean`, default true) and `update(row, value)` |
+| cells | readonly TreeGridCell[] / undefined | Sparse cells of the columns without `value`: `rowId`, `columnId`, and `value` (string, number or boolean) or `status`, plus optional `label`, `tone`, `entities` and `editable: false` |
+| missingCell | `empty`, `none`, `unknown` or `not-applicable` / `empty` | What a cell that the data does not list means; a column's own `missingCell` wins |
+| expandedIds | readonly string[] / undefined | Controlled expanded rows; supports `v-model:expanded-ids`. Compared by value |
+| activeCell | TreeGridPosition / undefined | Controlled active cell (`{ rowId, columnId?, status? }`: no `columnId` is the row header, `status: true` the status line under the row); supports `v-model:active-cell`. The grid moves it itself and reports each move; setting it moves the focus stop |
+| selectedRowIds | readonly string[] or ReadonlySet / undefined | Selected rows (`aria-selected`, `vw-is-selected`). Display only |
+| highlightedRowIds, highlightedCells | readonly string[] or ReadonlySet, readonly TreeGridCellRef[] / undefined | Display-only highlights for linked views (`vw-is-highlighted`) |
+| formatValue | (value, { row, column }) => string / undefined | Cell text. Default: the cell `label`, booleans as `labels.yes` and `labels.no`, the editor's format, else the value as text |
+| rowHeight, headerHeight, treeColumnWidth | number / 32, 36, 240 | Fixed line height, header height and tree column width in pixels |
+| height | number or CSS length / 400 | Height of the scroll viewport |
+| initialWidth | number / 960 | Viewport width assumed before mounting, so server rendering emits a bounded column window |
+| overscan, columnOverscan | number / 6, 2 | Lines and columns rendered beyond each edge of the viewport |
+| labels | Partial&lt;TreeGridLabels&gt; / English | Every user-visible string and accessible name (`treeGridDefaultLabels` lists them) |
+| dir | ChartDirection / ltr | `rtl` puts the tree column on the right and swaps ArrowLeft and ArrowRight; `auto` follows the inherited direction |
+| editable, validateCellEdit | boolean / false, TreeGridCellEditValidator / undefined | Cell editing in the columns that have an `editor`; see [Editing](#tree-grid-editing) |
+| spreadsheet, validateSheetEdit, maxSheetCells | boolean / false, TreeGridSheetEditValidator / undefined, number / 10000 | Range selection, copy, cut, paste, clear and fill down |
+| rowsEditable, validateRowCreate, validateRowDelete, validateRowMove | boolean / false, validators / undefined | Row create, delete and move proposals; see [Row structure](#tree-grid-row-structure) |
+
+| Event | Payload | Meaning |
+| --- | --- | --- |
+| update:expandedIds | string[] | A toggle, ArrowRight or ArrowLeft proposes the new expanded IDs |
+| expand-request | rowId | A row whose `childStatus` is `unloaded` or `failed` was expanded, or Enter or a click was used on its status line: load its children and update `childStatus` |
+| update:activeCell | TreeGridPosition | The active cell moved, or followed its row to the nearest displayed ancestor after a collapse or a data change |
+| row-activate, cell-activate | TreeGridActivation | Click or Enter on a row header or a cell: `rowId`, `columnId` (cells only), `entities` (the cell's, else the row's) and `source` (`pointer` or `keyboard`). Enter on an editable cell starts editing instead |
+| cell-edit, cell-edit-rejected | TreeGridCellEdit, (change, reason) | A cell proposal and its rejection by `validateCellEdit` |
+| sheet-edit, sheet-edit-rejected | TreeGridSheetEdit, (change, reason) | A spreadsheet batch and its rejection (`validateSheetEdit`, a value its editor cannot read, or a paste that does not fit; a batch rejected before it was built has empty `edits`) |
+| edit-cancel | TreeGridEditCancel | An open editor (`kind: 'cell'`), a fill handle drag (`fill`) or a row drag (`row-move`) ended without a proposal: `reason` is `escape`, `source-changed` (new `rows`, `columns` or `cells`, or a change of `editable`, `spreadsheet` or `rowsEditable`), `hidden` (the edited row is no longer displayed), `blur` (the editor lost focus with a value that could not be proposed), `pointer-cancel` or `api` |
+| row-create, row-delete, row-move | TreeGridRowCreate, TreeGridRowDelete, TimelineRowMove | Row structure proposals, each with a `-rejected` event (change, reason) |
+| validation-error | Error | Invalid rows, columns or cells (the errors of `createTreeGridIndex`). The grid renders its empty state and the error is rethrown, as in the other components |
+
+Slots are `cell({ row, column, cell, text, active, highlighted })` with the resolved `TreeGridCellView`, `row-header({ row, line, active, highlighted, selected })` (after the expand toggle), `status({ row, status, text })` for the status line of children that are not loaded, and `empty()`. Keep slot content non-interactive: the cells take the focus. Methods are `focusCell(position)`, `revealRow(rowId, { focus?, columnId? })` (a `RevealResult`: `revealed`, `hidden-by-collapse` with the nearest displayed ancestor as `proxyId`, or `unknown`), `startEdit(position?)`, `cancelEdit()`, `copySelection()` (the range as tab-separated text) and `pasteText(text)`. The public component type is `TreeGridComponent`, and `TreeGridExposed<R>` types a template ref.
+
+**Cell states.** A resolved cell has a `state`: `value` (any value, including `0`, `false` and `''`), `empty` (blank), `none` (known to have no value), `unknown`, `not-applicable`, or the load states `unloaded`, `loading` and `failed`. A sparse cell with a `status` shows the status; a column accessor returns a value, a `TreeGridCellContent`, `null` for `none` or `undefined` for a missing cell. The default rendering shows a short mark (`labels.noneMark` "–", `unknownMark` "?", `notApplicableMark` "n/a", `unloadedMark` "·", `loadingMark` "…", `failedMark` "!") with the full word for screen readers, and the cell gets `vw-is-<state>`.
+
+**Lazy children.** `childStatus` `unloaded`, `loading` or `failed` makes a row expandable without child rows. While it is expanded, a status line follows its loaded children, with the status text (`labels.unloaded`, `loading`, `failed`) in a `role="status"` element, and the row has `aria-busy` while loading. `loaded` and `loaded-empty` without children make the row a leaf. Pair it with `useWindowedData` or your own loader.
+
+**Markup and keyboard.** The scroll viewport is the `treegrid`, named `labels.grid`, with `aria-rowcount` (displayed lines plus the header) and `aria-colcount`; each line is a `row` with `aria-rowindex`, `aria-level`, `aria-setsize`, `aria-posinset` and, on expandable rows, `aria-expanded`. The tree column cells are `rowheader`s named by the row label (with `detail` as `aria-description`), the other cells `gridcell`s. One cell holds the roving tab stop. The keys follow the ARIA treegrid pattern in cell focus mode: arrows move one cell; in the tree column the arrow towards the cells expands a collapsed row and otherwise moves into the row, and the other arrow collapses an expanded row and otherwise moves to the parent; Home and End go to the first and last cell of the line, Ctrl (or Cmd) with them to the first and last cell of the grid; PageUp and PageDown move by a page; Enter activates. Focus reaches every cell, also outside the rendered window: the grid scrolls to it.
+
+**Virtualization.** Only the lines in the viewport plus `overscan` and the columns in it plus `columnOverscan` are rendered, from fixed line heights and the cumulative column widths (a binary search per scroll). Elements are keyed by their slot in the window, so a scroll patches them in place. The active line and, inside it, the active column are rendered in elements of their own between the keyed lists of the window, so they stay rendered outside the window and are never moved or removed by a scroll, a keyboard move, an expansion or an edit: the focused element keeps the focus. Validation and indexing still process the whole input.
+
+### Tree grid editing
+
+With `editable`, the cells of columns that have an `editor` can be edited, unless the column's `editable` predicate or the cell's `editable: false` says otherwise. An editor is a `TimelineFieldSpec` without `id` and `get` (`TreeGridEditor`), so values are read and checked by the same `parseFieldValue` and `validateFieldValue` as GanttChart's typed fields: `text`, `number` (`min`, `max`, `integer`), `select` (`choices`; drawn as a `select`), `checkbox` (booleans: Enter, Space or F2 toggles at once) and `time` for dates and times (`utcOffsetMinutes`, `timeZone`, or a custom `parse` and `format` such as a date-only format). Multiple selection is not supported.
+
+- Start: Enter or F2 (the current text, selected), typing a character (replaces the text with it) or a double-click. Commit: Enter (then down; Shift+Enter up), Tab (then right; Shift+Tab left) or moving the focus elsewhere. Cancel: Escape, which returns the focus to the cell and reports `edit-cancel` with `escape`.
+- The editor is named `Edit <column> for <row>` (`labels.edit`, `labels.for`). A value its editor cannot read, and a proposal that `validateCellEdit` rejects (`cell-edit-rejected`), keep the editor open with the reason below it (`aria-invalid`, `aria-describedby`) and announced in the live region. An unchanged value proposes nothing.
+- While an IME composition is in progress (`compositionstart` to `compositionend`, or `isComposing`), Enter, Escape and Tab belong to the input method; the edit commits once, on the Enter after the composition.
+- A change of `rows`, `columns` or `cells` while an editor is open cancels it (`source-changed`); collapsing its row cancels it with `hidden`.
+- Apply a `cell-edit` with `applyTreeGridEdits({ rows, columns, cells }, [change])`: a field column's `update(row, after)` returns the new row, and a sparse cell gets the value (`after: null` removes it). It returns new `rows` and `cells` for one history entry.
+
+With `spreadsheet`, Shift with an arrow, Shift+click or a pointer drag over cells selects a rectangular range (`aria-selected` on its cells, `vw-is-in-range`); Escape or a plain arrow ends it. The range covers data columns only.
+
+- Copy (Ctrl+C, the native `copy` event) writes the range as tab-separated text (CRLF between lines) in the editors' formats; cut also proposes clearing it.
+- Paste (the native `paste` event, or `pasteText`) proposes the pasted values from the range's top-left cell; a single value fills the whole range. Every value is parsed by its column's editor, status lines are skipped, and cells that cannot be edited keep their value. A paste that reaches past the last line or column, or holds more than `maxSheetCells` cells, is rejected as a whole (`labels.pasteTooLarge`), as is one with a value its editor cannot read. The paste is computed from the model, so it reaches lines and columns that are not rendered.
+- Delete or Backspace proposes clearing the range (`after: null`), Ctrl+D (Cmd+D) fills the range down from its first line, and the fill handle at the range's corner (`vw-tree-grid-fill-handle`, pointer only) drags the range down and fills the new lines with the range's lines, repeated. Escape, `cancelEdit()` and a data change cancel a fill drag (`edit-cancel`, `kind: 'fill'`).
+- Each operation is one `sheet-edit` (`{ action: 'paste' | 'fill' | 'clear' | 'cut', edits, source }`), checked by `validateSheetEdit` as a whole; apply it with `applyTreeGridEdits({ rows, columns, cells }, change.edits)`. Unchanged cells are left out, and nothing is proposed when nothing changes.
+
+### Tree grid row structure
+
+With `rowsEditable`, the row headers propose structure changes. A row header describes the keys (`labels.rowMoveHint`), and the active row's header shows three buttons: `Add row below <row>`, `Add child row to <row>` and `Delete <row>` (`labels.addBelow`, `addChild`, `deleteRow`).
+
+- **Create.** Ctrl+Enter (Cmd+Enter) proposes a sibling after the row, Ctrl+Shift+Enter a child (as its last child). `row-create` carries `parentId`, `index` (the sibling position), `referenceId`, `placement` (`before`, `after` or `child`) and `source`; the parent creates the row with its own ID: `insertTreeGridRow(rows, change, newRow)`. `treeGridRowCreate(rows, id, placement)` builds the same proposal.
+- **Delete.** Delete proposes `row-delete` with `ids` and `includeDescendants: true`. `deleteTreeGridRows({ rows, cells }, change)` removes the rows (with their descendants, or with `includeDescendants: false` moving the children up into the deleted row's place) and their sparse cells.
+- **Move.** The keys are GanttChart's row move keys: Alt+ArrowUp and Alt+ArrowDown move the row among its siblings, Alt+Shift with the arrow towards the cells indents it (it becomes the last child of its previous sibling) and the other arrow outdents it (after its parent); in right-to-left grids the arrows swap. A pointer drag of a row header (4 px threshold, auto-scroll at the viewport edges) shows a drop indicator: the upper quarter of a line places the row before it, the lower quarter after it (as the first child when its children are shown), and the middle inside it as its last child (`vw-is-drop-inside`); the live region announces the place ("Move Bolt into Frame"). Places in the dragged row's own subtree, and the row's own place, are never offered. `row-move` is a `TimelineRowMove`; apply it with `moveTimelineRow(rows, change.id, change.after)`. Escape, pointer cancellation and a data change cancel a drag (`edit-cancel`, `kind: 'row-move'`).
+- Each proposal is checked by its synchronous validator first (`validateRowCreate`, `validateRowDelete`, `validateRowMove`; true or nothing accepts, false or a reason rejects, a blank reason rejects with the default text). A rejection emits the `-rejected` event and announces the reason.
+
+```ts
+import { applyTreeGridEdits, deleteTreeGridRows, insertTreeGridRow, moveTimelineRow, useEditHistory } from '@eightkk/vue-weave'
+
+const history = useEditHistory({ rows: initialRows, cells: initialCells })
+const commit = (next: Partial<typeof history.state.value>) => history.commit({ ...history.state.value, ...next })
+const onCellEdit = (change: TreeGridCellEdit) => commit(applyTreeGridEdits({ ...history.state.value, columns }, [change]))
+const onSheetEdit = (change: TreeGridSheetEdit) => commit(applyTreeGridEdits({ ...history.state.value, columns }, change.edits))
+const onRowCreate = (change: TreeGridRowCreate) => commit({ rows: insertTreeGridRow(history.state.value.rows, change, { id: crypto.randomUUID(), label: 'New row' }) })
+const onRowDelete = (change: TreeGridRowDelete) => commit(deleteTreeGridRows(history.state.value, change))
+const onRowMove = (change: TimelineRowMove) => commit({ rows: moveTimelineRow(history.state.value.rows, change.id, change.after) })
+// <TreeGrid v-model:expanded-ids="expanded" :rows="history.state.value.rows" :cells="history.state.value.cells" :columns="columns"
+//   editable spreadsheet rows-editable @cell-edit="onCellEdit" @sheet-edit="onSheetEdit" @row-create="onRowCreate"
+//   @row-delete="onRowDelete" @row-move="onRowMove" />
+```
+
+### Tree grid helpers
+
+These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
+
+| Function | Result |
+| --- | --- |
+| createTreeGridIndex({ rows, columns, cells?, missingCell? }) | The validated `TreeGridIndex`. Throws like `createTimelineRowTree` with ` (tree grid rows)` appended (`Invalid row ID`, `Duplicate row ID`, `Unknown parent for row`, cycles), `Invalid column ID`, `Duplicate column ID`, a RangeError for a width that is not finite and positive or an unknown `missingCell` or `childStatus`, a TypeError for a `value`, `update` or `editable` of the wrong type, and for cells `Unknown row in tree grid cell: <id>`, `Unknown column in tree grid cell: <id>`, `Duplicate tree grid cell: <row> / <column>`, an Error for a cell in a field column or one with neither value nor status, a RangeError for a non-finite number or an unknown status and a TypeError for another value type. Entities need non-empty string kinds and IDs |
+| flattenTreeGrid(index, expandedIds) | `TreeGridLines`: the displayed `lines` (`kind` `row` or `status`, `row`, `level`, `expandable`, `expanded`, `posinset`, `setsize`, `parent`, `status`), and `rowLine` and `statusLine` maps. Iterative |
+| findTreeGridLine(index, lines, position), treeGridPositionAt(index, lines, cursor) | The line of a position (or of its nearest displayed ancestor, `exact: false`), and the position of a line and column |
+| treeGridColumnOffsets(columns), treeGridColumnAt(offsets, x), treeGridRowWindow(options), treeGridColumnWindow(offsets, options) | Cumulative widths, the column at an offset (binary search) and the `[start, end)` windows for a scroll position with overscan |
+| treeGridKeyAction(key, cursor, { lines, columnCount, pageSize, rtl? }) | What a treegrid key does: `move`, `expand`, `collapse` or `activate` |
+| resolveTreeGridCell(index, rowId, columnId), treeGridCellValue(...), isTreeGridCellEditable(...), treeGridFieldSpec(column) | The `TreeGridCellView` of a cell, its field value (`null` without a value), whether it can be edited, and the field spec of a column's editor |
+| matchTreeGridEntities(input or index, entities) | `{ rowIds, cells }`: every row and cell that lists one of the entities |
+| treeGridCellsFromTimeBuckets(cells) / treeGridCellContentFromTimeBucket(cell, extra?) | TreeGrid cells from `aggregateTimeBuckets` cells: a loaded value stays a value (a `sum` of nothing is 0), a loaded bucket without a value is `none`, and `unloaded`, `loading` and `failed` keep their status. `extra` (label, tone, entities, editable) is added to cells with a value |
+| treeGridRangeBounds(range), treeGridRangeText(index, lines, range) | The bounds of a range and its tab-separated text |
+| buildTreeGridPaste(index, lines, range, text, { maxCells?, source? }), buildTreeGridClear(...), buildTreeGridFill(index, lines, range, { source?, origin?, maxCells? }) | The edits of a paste, clear or fill, or `{ ok: false, reason: 'too-large' or 'invalid', error, cell? }` |
+| applyTreeGridEdits({ rows, columns, cells? }, edits) | New `{ rows, cells }`; unchanged rows and cells keep their identity |
+| treeGridRowCreate(rows, id, placement), insertTreeGridRow(rows, change, row) | A create proposal, and the rows (in tree preorder) with the new row in place |
+| deleteTreeGridRows({ rows, cells? }, { ids, includeDescendants }) | New `{ rows, cells }` without the deleted rows |
+| treeGridRowMoveForKey(key, rows, id, rtl?), treeGridDropAt(index, lines, id, line, fraction) | The target of a row move key (`'ignore'` for other keys, undefined when the row cannot move) and the drop place of a row drag |
+
+<!-- #endregion tree-grid -->
+
+<!-- #region core-entry -->
 
 ## Core entry point
 
@@ -1343,6 +1499,10 @@ Import pure functions and types from `@eightkk/vue-weave/core`. The Vue entry al
 | snapGraphPoint(point, grid) | The point with both coordinates rounded to the nearest multiple of a positive finite `grid` (RangeError otherwise, and for non-finite coordinates); never returns -0 |
 
 All exported interfaces and component props are included in the declaration files. Validation functions reject invalid references and numeric geometry with descriptive errors. Scheduling failures such as cycles and infeasible plans are returned as results; malformed scheduling inputs throw. Routing helpers assume validated graph data as described below.
+
+<!-- #endregion core-entry -->
+
+<!-- #region graph-layout -->
 
 ### Graph routing
 
@@ -1535,6 +1695,10 @@ Sizes that are not finite or are negative (and a node thickness, minimum node si
 
 Related exported types: `GraphFlowOptions`, `GraphFlowScale`.
 
+<!-- #endregion graph-layout -->
+
+<!-- #region graph-algorithms -->
+
 ### Graph algorithms
 
 All helpers validate input with `indexGraph` (unknown endpoints, duplicate IDs and bad ports throw `Error`) and never mutate their arguments.
@@ -1571,6 +1735,10 @@ const groups = graphCommunityGroups(communities, { label: members => `${members.
 
 Related exported types: `GraphDegreeCentralityOptions`, `GraphBetweennessOptions`, `GraphPageRankOptions`, `GraphPageRankResult`, `GraphCommunityOptions`, `GraphCommunityResult`, `GraphCommunityGroupsOptions`.
 
+<!-- #endregion graph-algorithms -->
+
+<!-- #region viewport-helpers -->
+
 ### Viewport helpers
 
 The helpers behind `cullOffscreen` are exported for custom renderers and workers. Rectangles are `GraphRect` values (`x`, `y`, `width`, `height`) in chart coordinates.
@@ -1587,11 +1755,19 @@ The helpers behind `cullOffscreen` are exported for custom renderers and workers
 | graphPointInPolygon(point, polygon) | Whether a point is inside a polygon of vertices in order (closed implicitly), by the even-odd rule; a point on the outline counts as inside, and a polygon with fewer than three vertices contains nothing. Throws `RangeError` for a non-finite coordinate |
 | graphNodesInPolygon(boxes, polygon) | IDs of the boxes (for example `layout.boxes`) whose centre is inside the polygon, in map order; the lasso of `selectionMode` uses it. Throws `RangeError` for non-finite polygon points or box geometry |
 
+<!-- #endregion viewport-helpers -->
+
+<!-- #region row-trees -->
+
 ### Row trees and summaries
 
 `createTimelineRowTree(rows)` validates unique nonempty IDs, parent references and cycles. Each preorder entry contains `row`, `depth`, `hasChildren` and `afterSubtree`, the exclusive index after that row and its descendants. Root and sibling order follows input order.
 
 `summarizeTimelineRows(tree, bars)` expects the tree returned by `createTimelineRowTree` and valid bars for those rows. It aggregates leaf-row bars into their ancestors and returns a Map keyed by row ID, including leaves with bars. Each summary reports the earliest start, latest end and interval count. Progress is weighted by duration across bars with known progress. Bars without progress and zero-duration milestones do not contribute to the progress denominator. Explicit parent bars are excluded from descendant aggregation.
+
+<!-- #endregion row-trees -->
+
+<!-- #region scheduling -->
 
 ### Calendars, scheduling and resource load
 
@@ -1720,6 +1896,10 @@ An undefined ratio is left out of the object; no field is ever NaN or Infinity. 
 Errors of `computeEarnedValue`: RangeError for `statusDate must be a finite number (got …)`, `Budget of task <id> must be a finite number ≥ 0 (got …)`, `Planned dates of task <id> must be finite with end ≥ start (got …)`, `Progress must be between zero and one: <id>` (with ` (history)` for a record), `Actual cost must be a finite number ≥ 0: <id> (got …)`, `History times of task <id> must be finite, strictly increasing and not after the status date (got …)`, `Working periods must have finite endpoints and positive length (calendar <id>)`, `series.step must be a finite number > 0 (got …)`, `series.start`/`series.end` that are not finite or end before the start, and a series with too many points; Error for tasks that are not an array, missing options, an invalid or duplicate task or calendar ID, `Unknown calendar: <id>` (with ` (task <id>)` for a task's calendar), `History must be an array: <id>`, `Invalid history record: <id>` and `Unknown EAC method: …`. The arguments are not modified.
 
 GanttChart needs no new prop to show EVM figures: return them from `TimelineColumn.value(row)`, using `rollupEarnedValue` over a summary row's tasks, and pass the status date as `statusDate`. Related exported types: `EarnedValueTask`, `EarnedValueRecord`, `EarnedValueOptions`, `EarnedValueSeriesOptions`, `EarnedValueEacMethod`, `EarnedValueAmounts`, `EarnedValueMetrics`, `EarnedValueTaskResult`, `EarnedValuePoint`, `EarnedValueResult`.
+
+<!-- #endregion scheduling -->
+
+<!-- #region interchange -->
 
 ### Interchange exports
 
@@ -1917,6 +2097,10 @@ Other shapes in a file (Mermaid subroutines and trapezoids, yEd octagons, …) a
 
 Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `MermaidOptions`, `GraphMlOptions`, `DrawioOptions`, `DrawioImportOptions`, `DrawioAsyncImportOptions`.
 
+<!-- #endregion interchange -->
+
+<!-- #region schedule-network -->
+
 ### Network diagram from a schedule
 
 `scheduleToGraph(result, dependencies, options?)` turns a successful `scheduleTasks` (or `propagateEdit`, `rescheduleFromStatusDate`) result into an activity-on-node diagram for NetworkGraph. It returns a `ScheduleGraph`: `nodes` (one `NetworkNode<ScheduleGraphNodeData>` per task in result order, with ID, label, a detail with the early start, early finish and total float, and `data` of type `ScheduleGraphNodeData`: `task`, `earlyStart`, `earlyFinish` and `critical`), `edges` (one `GraphEdge<ScheduleGraphEdgeData>` per dependency with the dependency's ID, a label and `data` of type `ScheduleGraphEdgeData`: `type`, `critical` and, only for a non-zero lag, `lag`), `criticalNodeIds` and `criticalEdgeIds` (the result's `criticalDependencyIds`). Because the arrays carry these data types, `graph.nodes[0].data?.critical` and `graph.edges[0].data?.lag` are typed without casts, and NetworkGraph slots and events infer the same data types. Critical tasks get the `criticalTone` (default amber) and the others the `tone` (default blue). For an ALAP task the early dates are `earliestStart` and `earliestEnd`. An edge label shows the dependency type when it is not FS and a non-zero `lag` formatted by `formatLag`, separated by a space: `SS`, `+2 h`, `SS +2 h` or `FF −0.5 h` (a lead). An FS dependency without lag, or with a lag of 0, has no label. A dependency that touches a task listed in the result's `inactiveTaskIds` is left out, so the plan's full dependency list can be passed; a manual task is a node like any other, with zero float.
@@ -1928,6 +2112,10 @@ Related exported types: `GraphInterchangeWarningCode`, `MermaidDirection`, `Merm
 ```
 
 `relatedIds` highlights the critical tasks and the edges between them; use `criticalEdgeIds` with an `edge` slot to style exactly the controlling links.
+
+<!-- #endregion schedule-network -->
+
+<!-- #region linked-views -->
 
 ## Linked views
 
@@ -1950,13 +2138,25 @@ resolveEntityRefs(index, [{ view: 'timeline', kind: 'bar', id: 'b1' }]) // { ent
 | `resolveViewTargets(index, entities)` | `{ targets, unknown }`: targets without repeats; entities with no binding are listed in `unknown`. |
 | `resolveEntityRefs(index, targets)` | `{ entities, unknown }`. A load target matches bound load targets of the same resource whose half-open range overlaps it. |
 | `resolveLoadTargets(segments, targets)` | `{ segments, unknown }`: current segments that overlap a load target. A load segment has no ID and its boundaries change when load is recalculated, so a target that overlaps no current segment is reported in `unknown` and never replaced by another segment. |
-| `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. A duplicate or empty node or edge ID and an edge with an unknown end throw an Error. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. |
+| `traverseGraph({ nodes, edges }, startIds, { direction, maxHops })` | Iterative walk (`'forward'`, `'backward'` or `'both'`, default `'both'`; `maxHops` default `Infinity`). Returns `{ nodeIds, edgeIds, unknownIds }`; unknown start IDs are reported, not thrown. A duplicate or empty node or edge ID and an edge with an unknown end throw an Error. `'both'` walks each direction independently, like `graphNeighborhood`. Safe on cycles and long chains. Opt-in options: see [Traversal filters, limits and paths](#traversal-filters-limits-and-paths). |
+| `graphTracePath(result, nodeId, { direction }?)` | Rebuilds a path from a start to `nodeId` from a `traverseGraph` result made with `paths: true`. Returns `GraphTracedPath` (`{ direction?, nodeIds, edgeIds }`) or undefined. See [Traversal filters, limits and paths](#traversal-filters-limits-and-paths). |
 | `resolveCollapsedTargets(collapse, { nodeIds, edgeIds }, edges)` | Resolves IDs of the full graph against a `collapseGraphGroups` result: hidden nodes to their proxy, edges merged into a re-attached edge to the merged edge, and edges dropped inside one collapsed group to that group's proxy node. `edges` are the edges given to `collapseGraphGroups`. Returns `{ nodeIds, edgeIds, unknownNodeIds, unknownEdgeIds }`. |
 | `timelineBarsInRange(bars, range, { rowIds }?)` | The bars worked on in the half-open range `[range.start, range.end)`, in input order, with their own type (`B extends TimelineBarActivity`: `id`, `rowId`, `start`, `end`, `segments`). See [Time range exploration](#time-range-exploration). |
 | `resolveTimeRangeTargets(index, barIds, { graph, traversal }?)` | `TimeRangeTargets`: `{ activeBarIds, activeEntities, activeTargets, relatedEntities, relatedTargets, unknownBarIds }`. See [Time range exploration](#time-range-exploration). |
 | `useLinkedSelection({ bindings, onSelect, timeRange })` | See below. |
 
-`useLinkedSelection` returns `select(view, targets)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them. The optional `timeRange` adds display-only highlights for a time range; see [Time range exploration](#time-range-exploration).
+`useLinkedSelection` returns `select(view, targets)`, `selectEntities(entities, { source }?)`, `clearSelection()`, `hoverEnter(view, target)`, `hoverLeave(view, target?)`, `owner`, `selectedEntities`, `selectionSource`, `hoveredEntities` and the per-view sets `graph`, `timeline` and `load`. The view the user acted in owns the selection: its `selected*` sets contain what it selected, and every view gets `highlighted*` sets for the other linked targets, so a linked view never receives targets it did not select. Selecting the same targets again is a no-op and does not call `onSelect`, so connecting a view's events back to `select` does not loop. A new selection replaces the previous one, whichever view made it. Hover only produces highlights, and `hoverLeave` clears them. The optional `timeRange` adds display-only highlights for a time range; see [Time range exploration](#time-range-exploration).
+
+`onSelect(entities, owner)` is called after a `select`, `selectEntities` or `clearSelection` that changed the selection; `owner` is undefined after `selectEntities` and after clearing.
+
+Views that are not `graph`, `timeline` or `load` (your own table or list) select through entity references:
+
+| Member | Description |
+| --- | --- |
+| `selectEntities(entities: Iterable<EntityRef>, options?: { source?: string }): { changed: boolean; unknown: EntityRef[] }` | Replaces the selection of any view with `entities`. The selection has no owner: `owner` stays undefined, no view gets `selected*` sets or `load.selected`, and every view gets `highlighted*` sets and `load.highlighted` for the targets bound to the entities, re-resolved when `bindings` change. `selectedEntities` returns the given entities without repeats, in input order, unbound ones included; `unknown` lists those no binding reaches now. An empty input clears the selection like `clearSelection()`. Selecting the same entities (in any order) with the same `source` again returns `changed: false` and does not call `onSelect`, so wiring a table's selection events back cannot loop; otherwise `onSelect(entities, undefined)` is called. A later `select(view, …)` replaces it and it replaces a view's selection. Throws `Error` for an entity whose `kind` or `id` is not a valid non-empty string, or a `source` that is not a string; a throwing call changes nothing. |
+| `selectionSource` | `ComputedRef<string \| undefined>`: the `source` given to `selectEntities` for the current selection; undefined for a view's selection, no selection, or `selectEntities` without `source`. |
+
+An external view renders its own selection from `selectedEntities` (which also reflects a selection made in another view) and its hover from `hoveredEntities`. Hover starts only from the linked views; there is no entity-based hover.
 
 | View | Pass to the component |
 | --- | --- |
@@ -1968,7 +2168,50 @@ Each set object also has `related*` sets (`relatedNodeIds`, `relatedEdgeIds`, `r
 
 `revealLinkedTarget({ reveal, expand?, maxExpansions? })` (Vue entry) goes to a linked item that may be inside a collapsed group or row. It calls `reveal()` (for example `() => graph.value?.revealNode(id, { focus: true })`); when the result is `hidden-by-collapse` it asks `expand(proxyId, result)`, which expands that proxy in the controlled `collapsedGroupIds` or `collapsedIds` and returns true, or returns false to decline. After an accepted expansion it waits for the render (two `nextTick`s) and reveals again, up to `maxExpansions` (default 16) nested collapses. It resolves a `LinkedRevealResult`: the last `RevealResult` plus `expandedIds`, and `declined: true` when `expand` declined or accepted without the item becoming visible. It never expands anything itself, and it resolves `revealed` only when the last reveal did, so a refused expansion is never reported as a completed move. Without `expand` it returns the first result.
 
-Related exported types: `ViewBinding`, `ViewBindingIndex`, `LoadSegmentLike`, `ResolvedEntityRefs`, `ResolvedViewTargets`, `ResolvedLoadTargets`, `GraphTraversalDirection`, `GraphTraversalResult`, `CollapsedTargetsResult`, `LinkedViewName`, `UseLinkedSelectionOptions`, `RevealLinkedTargetOptions`.
+Related exported types: `ViewBinding`, `ViewBindingIndex`, `LoadSegmentLike`, `ResolvedEntityRefs`, `ResolvedViewTargets`, `ResolvedLoadTargets`, `GraphTraversalDirection`, `GraphTraversalOptions`, `GraphTraversalResult`, `GraphWalkDirection`, `GraphTraversalTruncation`, `GraphTraversalStep`, `GraphTraversalVia`, `GraphTracedPath`, `CollapsedTargetsResult`, `LinkedViewName`, `UseLinkedSelectionOptions`, `RevealLinkedTargetOptions`.
+
+<!-- #endregion linked-views -->
+
+<!-- #region traversal -->
+
+### Traversal filters, limits and paths
+
+`traverseGraph` takes three opt-in options next to `direction` and `maxHops`. Without them the result is exactly `{ nodeIds, edgeIds, unknownIds }`, as before.
+
+```ts
+import { graphTracePath, traverseGraph } from '@eightkk/vue-weave/core'
+
+const impact = traverseGraph(graph, [failedId], {
+  direction: 'forward',
+  edgeFilter: (edge, direction) => edge.relation === 'feeds', // follow one relation only
+  maxNodes: 200,
+  paths: true,
+})
+impact.truncated // nodes where a limit stopped the walk: offer "show more" there
+graphTracePath(impact, someId)?.edgeIds // why someId is affected: the edges from the failed node to it
+```
+
+| Option | Contract |
+| --- | --- |
+| `edgeFilter(edge, direction)` | Follows only the edges for which it returns true. `edge` has the edge type of the graph; `direction` is the walk that meets the edge (`'forward'` or `'backward'`, so a filter can follow different relations upstream and downstream). Called at most once per edge and walk, in discovery order, also for the edges of nodes at the hop limit (to find truncated nodes). Errors it throws propagate. Throws TypeError when it is not a function (`edgeFilter must be a function: <type>`). |
+| `maxNodes` | Largest length of `nodeIds`: a positive integer or Infinity (default), else RangeError (`maxNodes must be a positive integer or Infinity`). The known starts count and are always kept, even when there are more of them than `maxNodes`; unknown start IDs do not count. A node counts once, however many walks reach it, so a node admitted by one walk costs nothing when the other reaches it. Nodes are admitted nearest first: with `'both'`, the two walks advance together one hop at a time (all nodes `k` hops away in the backward walk, then in the forward walk, then hop `k + 1`), so one direction cannot use up the cap before the other starts. Edges to nodes that were left out are not followed. `nodeIds` keeps its order (starts, then the backward walk, then the forward walk, each in discovery order). |
+| `paths` | `true` records `via` and `multiplyReachedIds`. Throws TypeError when it is not a boolean (`paths must be a boolean: <type>`). |
+
+Optional result fields, present only when `edgeFilter`, `maxNodes` or `paths: true` is given (pass `maxNodes: Infinity` to get `truncated` for the hop limit alone):
+
+| Field | Contract |
+| --- | --- |
+| `truncated: GraphTraversalTruncation[]` | `{ nodeId, direction, reason }`, once per node and walk, in the order the walks met them: the reached nodes with accepted edges that a walk did not follow because a limit stopped it. `reason` is `'max-hops'` for a node `maxHops` edges from a start that has accepted edges to nodes the walk has not reached, `'max-nodes'` for a node with an edge to a node that `maxNodes` left out. Empty when the walk was complete. A node whose only edges the filter rejects is never truncated. |
+| `via: GraphTraversalVia` | With `paths: true`: `{ forward?, backward? }`, one `Map` per walk that ran, from each node that walk reached (starts excepted) to its first step `{ edgeId, previousId }`. Walks are breadth-first, so the step lies on a path with the fewest hops within that walk. There is one map per walk because a node can be reached upstream and downstream; following one map back always gives a path in one direction. |
+| `multiplyReachedIds: string[]` | With `paths: true`: the reached nodes, starts excepted, into which more than one followed edge leads (in any walk), so that more than one path reaches them, in `nodeIds` order. |
+
+Maps keyed by node ID follow `collapseGraphGroups` (`owners`, `mergedEdges`) and the graph expansion state; lists of IDs follow `nodeIds` and `unknownIds`.
+
+`graphTracePath(result, nodeId, { direction }?)` follows `via` back from `nodeId` to a start and returns `{ direction, nodeIds, edgeIds }` from the start to the node (`edgeIds` has one entry fewer than `nodeIds`). Without `direction` it uses the walk with the shorter path, the backward walk on a tie. A start gives `{ nodeIds: [nodeId], edgeIds: [] }` without `direction`. It returns undefined for a node the walk did not reach, throws Error for a result without `via` (`graphTracePath needs a traverseGraph result made with paths: true`) or with steps that form a cycle, and RangeError for a direction other than `'forward'` or `'backward'`. It loops, so a path of any length is fine.
+
+<!-- #endregion traversal -->
+
+<!-- #region time-range-exploration -->
 
 ### Time range exploration
 
@@ -1995,13 +2238,17 @@ result.relatedTargets // what the walk reached, without the active targets
 
 It throws `RangeError` for a range or bar time that is not finite or ends before it starts, and for empty, non-finite or zero-length segments or segments on a milestone. It returns the input bar objects in input order and does not modify them.
 
-`resolveTimeRangeTargets(index, barIds, options?)` resolves the active bars through a `buildViewBindingIndex` index. `activeEntities` are the entities bound to the bars; `activeTargets` are the bars themselves plus every target bound to those entities, so an active task's node, load range and other bars are active too. Bar IDs that no binding reaches stay in `activeTargets` and are listed in `unknownBarIds`. With `graph` and `traversal` (`GraphTraversalOptions`), it walks the graph with `traverseGraph` from the graph nodes of the active entities: `{ direction: 'forward' }` for all successors, `'backward'` for all predecessors, `'both'` for both, `{ direction: 'both', maxHops: 1 }` for direct neighbours, and `maxHops` to limit the depth. The walk is iterative and terminates on cycles. `relatedEntities` are the reached entities that are not active, and `relatedTargets` the reached graph nodes and edges and the targets bound to related entities, without any active target. Invalid traversal options or graph edges throw as in `traverseGraph`.
+`resolveTimeRangeTargets(index, barIds, options?)` resolves the active bars through a `buildViewBindingIndex` index. `activeEntities` are the entities bound to the bars; `activeTargets` are the bars themselves plus every target bound to those entities, so an active task's node, load range and other bars are active too. Bar IDs that no binding reaches stay in `activeTargets` and are listed in `unknownBarIds`. With `graph` and `traversal` (`GraphTraversalOptions`), it walks the graph with `traverseGraph` from the graph nodes of the active entities: `{ direction: 'forward' }` for all successors, `'backward'` for all predecessors, `'both'` for both, `{ direction: 'both', maxHops: 1 }` for direct neighbours, and `maxHops` to limit the depth; `edgeFilter` and `maxNodes` limit it to some relations or a number of nodes as in `traverseGraph` (`paths` is accepted but its result is not used). The walk is iterative and terminates on cycles. `relatedEntities` are the reached entities that are not active, and `relatedTargets` the reached graph nodes and edges and the targets bound to related entities, without any active target. Invalid traversal options or graph edges throw as in `traverseGraph`.
 
 `useLinkedSelection({ bindings, timeRange })` does both reactively. `timeRange` is a `LinkedTimeRange` (`{ range, bars, rowIds?, graph?, traversal? }`), a ref or getter, or undefined. Active targets join the `highlighted*` sets and `load.highlighted`, and related targets fill the `related*` sets, both without targets the owning view selected and without repeats; the returned `timeRange` computed holds the `TimeRangeTargets`. The range is display only: it never changes `owner`, `selectedEntities`, the `selected*` sets or calls `onSelect`, so Delete in a view never removes range-highlighted items. An invalid range throws `RangeError` when the sets are read; validate user input first. Without `timeRange`, no range targets are added and the `related*` sets are empty.
 
 Pass `graph.relatedNodeIds` to NetworkGraph `relatedIds` to draw related nodes, and the edges between them, apart from active ones (`vw-is-related` instead of `vw-is-highlighted`). GanttChart has no related-bar prop; merge `relatedBarIds` into `highlightedBarIds` or style them yourself, for example through `appearance` or `tone` on derived bars.
 
 Related exported types: `TimelineBarsInRangeOptions`, `TimeRangeTargetsOptions`.
+
+<!-- #endregion time-range-exploration -->
+
+<!-- #region plan-analysis -->
 
 ## Resource timelines and unplanned tasks
 
@@ -2100,6 +2347,46 @@ Core helpers that compare a candidate plan with the current plan. They are pure,
 
 The exported types are `PlanComparisonTask`, `PlanComparisonInput`, `PlanScenario`, `PlanScheduleState`, `PlanTaskSide`, `PlanFieldChange`, `PlanCollectionDiff`, `PlanAssignmentChange`, `PlanAssignmentDiff`, `PlanInputDiff`, `PlanViolation`, `PlanTaskComparison`, `PlanResourceOverload`, `PlanResultDiff`, `PlanComparison`, `PlanComparisonTargetOptions` and `PlanComparisonTargets`.
 
+<!-- #endregion plan-analysis -->
+
+<!-- #region structure-comparison -->
+
+## Structure comparison
+
+`diffStructure(before, after, options)` (core) compares two versions of a flat or tree-shaped keyed collection, for example two revisions of a bill of materials, a WBS or a product hierarchy. Unlike the `PlanCollectionDiff` parts of `comparePlans`, which name changed fields only, it returns the values of both versions. It is pure, uses loops only (a 12,000-item chain is fine), never changes its arguments and runs in linear time apart from the field comparisons. Resolve effective dates, variants and the like before the call: it compares two already resolved snapshots.
+
+| Option | Meaning |
+| --- | --- |
+| `key` | Required. A property name or a function `(item) => string` that returns the key matching the two versions: a non-empty string, unique within each version. |
+| `fields` | Optional. A list of property names, compared in list order; or a function `(item) => Record<string, unknown>` that returns the compared values of an item (computed or normalized fields), compared in order of first appearance, the before item's fields first. Default: the own enumerable properties of both items in order of first appearance, without the properties that `key` and `parentKey` name when they are property names. A property that is `undefined` on one side and absent on the other is equal. |
+| `parentKey` | Optional. A property name or a function that returns the parent key of a tree-shaped collection; `undefined` or `null` for a root. A parent must be a key of the same version, and the hierarchy must have no cycle. Omit it for a flat collection. |
+| `equals` | Optional `(before, after, field) => boolean`, called for every compared field of every item that is in both versions. Default: `Object.is`, so objects and arrays are equal only when they are the same reference, `NaN` equals `NaN`, and `0` and `-0` differ. |
+
+`StructureDiff`:
+
+| Field | Meaning |
+| --- | --- |
+| `added` | Keys only in `after`, in `after` order |
+| `removed` | Keys only in `before`, in `before` order |
+| `changed` | `StructureChange` `{ key, fields }` for every key in both versions with a differing field, in `before` order; `fields` holds `StructureFieldChange` `{ name, before, after }` in field order. The values are the inputs' own, not copies |
+| `moved` | With `parentKey`: `StructureMove` `{ key, beforeParent?, afterParent? }` for every key in both versions whose parent differs, in `before` order; a missing parent is a root. Always empty without `parentKey`. A new position among the same siblings is not a move |
+
+A parent field that the default field set leaves out (because `parentKey` names it) appears only in `moved`; with a `parentKey` function or a `fields` function that returns the parent, a parent change is reported in both lists. Each version is checked on its own, and the message of a failed check ends with ` (before)` or ` (after)`: an Error for an invalid or duplicate key (`Invalid item ID: "" (after)`, `Duplicate item ID: a (before)`), an invalid parent key (`Invalid parent ID: …`), an unknown parent (`Unknown parent for item: <key>`) or a cycle (`The item hierarchy contains a cycle: <key>`); a TypeError for a version that is not an array, an item that is not an object when properties are read, a `key` or `parentKey` that is neither a property name nor a function, `fields` that is neither a list of strings nor a function (or a function that returns no object) and an `equals` that is not a function; an Error for a field name listed twice. Errors thrown by your accessors pass through.
+
+```ts
+import { diffStructure } from '@eightkk/vue-weave/core'
+
+const diff = diffStructure(bomRevisionA, bomRevisionB, { key: 'partId', parentKey: 'parentPartId', fields: ['quantity', 'material'] })
+diff.changed // [{ key: 'spoke', fields: [{ name: 'quantity', before: 32, after: 28 }] }]
+diff.moved   // [{ key: 'spoke', beforeParent: 'wheel', afterParent: 'hub' }]
+```
+
+The exported types are `StructureDiffOptions`, `StructureKeyAccessor`, `StructureDiff`, `StructureChange`, `StructureFieldChange` and `StructureMove`.
+
+<!-- #endregion structure-comparison -->
+
+<!-- #region async-layouts -->
+
 ## Asynchronous layouts and preserved routes
 
 Core (`@eightkk/vue-weave/core`):
@@ -2122,6 +2409,10 @@ Vue (`@eightkk/vue-weave`):
 - Types: `AsyncGraphLayoutAdapter`, `AsyncGraphFrame`, `AsyncGraphDisplayFrame`, `AsyncGraphLayoutError`, `UseAsyncGraphLayoutOptions`, `AsyncGraphLayout`, `AsyncGraphGestureListeners`, `GraphLayoutWorkerPort`, `GraphLayoutWorkerAdapterOptions`.
 
 Related exported types: `GraphLayoutRequestMessage`, `GraphLayoutCancelMessage`, `GraphLayoutSuccessMessage`, `GraphLayoutFailureMessage`.
+
+<!-- #endregion async-layouts -->
+
+<!-- #region partial-data-loading -->
 
 ## Partial data loading
 
@@ -2146,8 +2437,8 @@ Core (`@eightkk/vue-weave/core`), all pure (no Vue, DOM or timers) and iterative
 - `windowedCellStatus(state, time, rowId?)` and `windowedCoverage(state, window = state.view): WindowedCoverage`: `status`, `complete`, `total`, `unloaded`, `loading`, `empty`, `loaded` and `failed` cell counts of a window, without padding. `status` is `failed` if any cell failed, else `loading`, else `unloaded`, else `loaded` if any cell has items, else `loaded-empty`. `complete` is true only when every cell of the window has loaded. `windowedCoverage` is not limited by `maxCells`, so it can check the whole extent of a plan: `total` is computed from the chunk and row counts and `unloaded` from the cells recorded in the state, so the work is bounded by the smaller of the window's cell count and the number of recorded cells, not by the width of the window. It throws like `setWindowedView` for an invalid window, and RangeError when the window's chunk indices are not safe integers or its cell count exceeds `Number.MAX_SAFE_INTEGER`. `retryWindowedData` throws the same errors for its window.
 - `WindowedCellStatus`: `'unloaded' | 'loading' | 'loaded-empty' | 'loaded' | 'failed'`.
 - `splitDanglingLinks(links, present, options?: { from?, to? }): { resolved, dangling }` splits links into those whose both ends are in `present` (a Set, a Map by ID, anything with `has`, or an iterable of IDs), in input order, and `DanglingLink`s (`{ link, missingIds }`). GanttChart and NetworkGraph throw for links to unknown items, so pass only `resolved`; call it again when more items load and the dangling links whose ends arrived move to `resolved`. Without `from`/`to` accessors, links need `from` and `to` fields.
-- Graph neighbourhood expansion: `createGraphExpansion(seed?: GraphExpansionPage)`, `beginGraphExpansion(state, ids)`, `cancelGraphExpansion(state, ids)`, `mergeGraphExpansionPage(state, page: { nodes?, edges? }, expandedIds?)` and `graphExpansionView(state): { nodes, edges, dangling, frontierIds }`. Pages are merged by node and edge ID (cycles and shared neighbours never duplicate), `expandedIds` are marked expanded, `pendingIds` tracks expansions in flight, `edges` holds only edges whose both ends are loaded and `frontierIds` the loaded nodes that are neither expanded nor pending. Throws Error for an invalid or duplicate ID within one page (`Invalid graph page node ID: <value>`, `Duplicate graph page edge ID: <id> (in one page)`). The helpers do not place anything: NetworkGraph lays the larger graph out again, unless each page is placed with `layoutGraphIncrementally` around the shown boxes (see [Incremental placement](#incremental-placement)).
-- Types: `WindowedView`, `TimelineVisibleWindow`, `WindowedDataOptions`, `WindowedDataNormalizedOptions`, `WindowedDataRequest`, `WindowedDataPage`, `WindowedCell`, `WindowedInFlightRequest`, `WindowedDataState`, `WindowedDataTransition`, `WindowedDataSettlement`, `WindowedCoverage`, `WindowedCellStatus`, `DanglingLink`, `SplitDanglingLinks`, `SplitDanglingLinksOptions`, `GraphExpansionState`, `GraphExpansionPage`, `GraphExpansionView`.
+- Graph neighbourhood expansion: `createGraphExpansion(seed?: GraphExpansionPage)`, `beginGraphExpansion(state, ids, { key }?)`, `cancelGraphExpansion(state, ids, { key }?)`, `mergeGraphExpansionPage(state, page: { nodes?, edges? }, expandedIds?, { key }?)` and `graphExpansionView(state, { key }?): { nodes, edges, dangling, frontierIds }`. Pages are merged by node and edge ID (cycles and shared neighbours never duplicate), `expandedIds` are marked expanded, `pendingIds` tracks expansions in flight, `edges` holds only edges whose both ends are loaded and `frontierIds` the loaded nodes that are neither expanded nor pending. Throws Error for an invalid or duplicate ID within one page (`Invalid graph page node ID: <value>`, `Duplicate graph page edge ID: <id> (in one page)`). The helpers do not place anything: NetworkGraph lays the larger graph out again, unless each page is placed with `layoutGraphIncrementally` around the shown boxes (see [Incremental placement](#incremental-placement)).
+- Keyed expansion (`GraphExpansionKeyOptions`, `{ key?: string }`) records what was expanded per node, for example `'forward'` and `'backward'` or a relation name. A keyed `beginGraphExpansion` adds the nodes to `pendingIdsByKey` (skipping nodes expanded entirely or for that key), a keyed `cancelGraphExpansion` removes them from it, and a keyed `mergeGraphExpansionPage` adds `expandedIds` to `expandedIdsByKey` and removes them from `pendingIdsByKey`. Both state fields are optional `ReadonlyMap<string, ReadonlySet<string>>` from key to node IDs; they appear after the first keyed call, a key whose set becomes empty is removed, and a state without them (created before, or by hand) stays valid. `graphExpansionView(state, { key })` gives the frontier of that key: loaded nodes not in `expandedIds` or `pendingIds` and not expanded or pending for the key. How keyed and unkeyed calls interact: an unkeyed merge marks a node expanded for every key (it leaves every keyed frontier); an unkeyed expansion in flight takes a node out of every keyed frontier; a node expanded or pending for a key only stays in the unkeyed frontier; unkeyed and keyed cancels each remove only their own pending entry. Calls without a key behave as before and leave the keyed fields as they are. A key must be a non-empty string (`Invalid graph expansion key: <value>`, Error); options that are not an object throw TypeError., `TimelineVisibleWindow`, `WindowedDataOptions`, `WindowedDataNormalizedOptions`, `WindowedDataRequest`, `WindowedDataPage`, `WindowedCell`, `WindowedInFlightRequest`, `WindowedDataState`, `WindowedDataTransition`, `WindowedDataSettlement`, `WindowedCoverage`, `WindowedCellStatus`, `DanglingLink`, `SplitDanglingLinks`, `SplitDanglingLinksOptions`, `GraphExpansionState`, `GraphExpansionPage`, `GraphExpansionView`, `GraphExpansionKeyOptions`.
 
 Vue (`@eightkk/vue-weave`):
 
@@ -2155,6 +2446,64 @@ Vue (`@eightkk/vue-weave`):
 - Types: `UseWindowedDataOptions`, `WindowedData`, `WindowedDataLoader`, `WindowedDataError`.
 
 Partial data cannot answer questions about the whole: `complete` describes the loaded part of the current view, not the plan. Run scheduling, leveling, resource load, critical paths, deadlines and plan comparisons on complete inputs (on the server or over the full data set) and show their results as data, or label any figure computed over the loaded part as partial. A total or aggregate must not change when the visible subset changes.
+
+<!-- #endregion partial-data-loading -->
+
+<!-- #region time-buckets -->
+
+## Time bucket tables
+
+Pure helpers (`@eightkk/vue-weave/core`) for period tables: rows (items or metrics) by columns (days, weeks, shifts) with sparse cells `{ rowId, columnId, value, status }`. They do not depend on any component. See [Period tables from time buckets](integration.md#period-tables-from-time-buckets).
+
+Buckets are caller-defined half-open periods `[start, end)` in the caller's time units, sorted by time without overlaps. Gaps between them (nights, weekends, breaks between shifts) are allowed. The library does not define calendar periods here: generate days, weeks, months or hours in an IANA `timeZone` or fixed offset with `calendarBands` (a local day can last 23 or 25 hours; its bands carry labels), working periods with `buildWorkPeriods`, or pass your own. `calendarBands` clips the first and last band to its range, so pass a range on period boundaries to get whole periods.
+
+- `createTimeBucketColumns<P extends TimeBucketPeriod>(periods: readonly P[], options?: TimeBucketColumnOptions<P>): TimeBucketColumn[]` gives `{ id, label, width, start, end }` per period, in order. `id` is `options.id(period, index)`, else `period.id`, else `idPrefix + start` (`idPrefix` default `'bucket:'`), so a column keeps its ID when the shown periods move. `label` is `options.label(period, index)`, else `period.label`, else `String(start)`. `width` (pixels, a number or a function of the period, default 80) must be positive and finite. Throws TypeError for a non-array or a period that is not an object, RangeError for a non-finite period, `end <= start`, a period that starts before the previous one ends (out of order or overlapping) and an invalid width, and Error for an invalid or duplicate ID (`Invalid time bucket ID: <value>`, `Duplicate time bucket ID: <id>`).
+- `timeBucketIndex(buckets, time): number`: the index of the bucket with `start <= time < end`, or -1 when `time` is before, after or between the buckets. `timeBucketIndexRange(buckets, range): { start, end }`: the half-open index range of the buckets that overlap `[range.start, range.end)`; `buckets.slice(start, end)` are the columns to show for a GanttChart `TimelineVisibleWindow`, so a period table can follow the chart's visible range. An empty range or one between buckets gives `start === end`. Both are binary searches and do not validate the buckets again; both throw RangeError for a non-finite time or range and `end < start`.
+- `aggregateTimeBuckets<T = TimeBucketItem>(items: readonly T[], buckets: readonly TimeBucket[], options?: TimeBucketAggregateOptions<T>): TimeBucketCell[]` aggregates quantities into one cell per row and bucket (rows in order, then buckets in time order). `buckets` need IDs (`TimeBucketColumn` has them) and are validated like `createTimeBucketColumns`. Runs in O((items + cells) · log buckets) plus the buckets each interval item overlaps; the inputs are not modified.
+
+`TimeBucketItem`: `{ rowId, time?, start?, end?, value, denominator? }`. An item with `time` is an instant, placed in the bucket that contains it. An item with `start` and `end` is a half-open interval, placed by `placement`: `'start'` (default) in the bucket containing its start; `'overlap'` with its whole value in every bucket it overlaps (counts of active orders, peaks); `'prorate'` split over the buckets it overlaps in proportion to the overlapped time (additive quantities: hours, output), where the parts in gaps or outside every bucket are dropped. A zero-length interval is an instant. Items outside every bucket are ignored. Accessors `itemRow`, `itemTime` (a number or a `TimeRange`), `itemValue` and `itemDenominator` read other item shapes.
+
+Options:
+
+| Option | Meaning |
+| --- | --- |
+| rule | `TimeBucketRule<T>`, default `'sum'`: the rule of rows without an entry in `rules`. |
+| rules | Rules by row ID, a `Map` or a plain object, for tables that mix metrics. |
+| rowIds | The rows to emit, in order; items of other rows are ignored. Default: the rows of the items in first-appearance order. |
+| loaded | `TimeBucketLoaded`: what is loaded, as half-open ranges whose union is loaded for every row, or a function `(rowId, bucket) => boolean \| WindowedCellStatus`. Default: everything. |
+| placement | `'start' \| 'overlap' \| 'prorate'`, default `'start'`: placement of interval items. |
+| carryForward | `boolean \| (rowId) => boolean`, default false: carry the value of `last` rows into later loaded buckets without items. |
+| maxCells | Most cells (rows × buckets) per call, default 1000000; more throws RangeError. |
+
+Rules, with the value of a loaded bucket that has items and of one that has none:
+
+| Rule | With items | Without items |
+| --- | --- | --- |
+| `sum` | total of the values | 0 |
+| `count` | number of items | 0 |
+| `min`, `max` | the smallest or largest value | null |
+| `first`, `last` | the value of the earliest or latest item (by time, intervals by start; ties in input order) | null, or the carried value |
+| `ratio` | sum of values ÷ sum of denominators (null when that sum is 0), with `numerator` and `denominator` on the cell | null, with `numerator` and `denominator` 0 |
+| `precomputed` | the value of the one item, as-is (server-side aggregates); a second item of the row in the bucket throws Error | null |
+| `(values, { rowId, bucket, items }) => number \| null` | the result; `values` and `items` in time order (ties in input order) | the result for `[]` |
+
+`TimeBucketCell`: `{ rowId, columnId, value: number | null, status: WindowedCellStatus, count, numerator?, denominator?, carried? }`. `status` is `loaded` when items were placed in a loaded bucket and `loaded-empty` when none were, so a known zero (`sum`, `count`) and a known absence (null for the other rules) are both distinguished from missing data. A bucket that `loaded` does not cover has status `unloaded` (or the `loading` or `failed` state the function returns) and value null, never 0, even when some items fall in it; `count` still reports them. With ranges, a bucket counts as loaded only when their union covers all of it, since a partly loaded sum would be wrong. The function form can return `windowedCoverage(state, { start: bucket.start, end: bucket.end, rowIds: [rowId] }).status` to follow a windowed data state; `true`, `'loaded'` and `'loaded-empty'` mean loaded, `false` means unloaded.
+
+Ratios (yield, utilisation, on-time rate) must be aggregated from their parts: pass the numerator as `value` and the denominator as `denominator` (or by accessors) and use `ratio`. Averaging the percentages of the buckets weights a day of 10 units like a day of 1000. To roll a ratio up further (a total column, a parent row), sum the cells' `numerator` and `denominator`, or call `aggregateTimeBuckets` again with one bucket that spans the total. The same goes for any total: aggregate the items, not the displayed cells, except for `sum` and `count`.
+
+`carryForward` (only for `last` rows) is for running balances such as stock levels or backlog: a loaded bucket without items shows the last value before it, with `carried: true` and status `loaded-empty`. The carry is seeded by the last item before the bucket, including one before the first bucket or in a gap, so pass the reading before the first shown period to get an opening balance. A bucket that is not loaded has no value and breaks the carry until the next item.
+
+Throws TypeError for inputs of the wrong type, RangeError for invalid buckets, a non-finite time, value or denominator (a denominator is read only for `ratio` rows), an interval or loaded range with `end < start`, an unknown rule (`Unknown time bucket rule: <rule>`, `Unknown time bucket rule of row <id>: <rule>`), placement or loaded state, a custom result that is neither a finite number nor null, and more cells than `maxCells`, and Error for an invalid or duplicate bucket or row ID (`Invalid time bucket row ID: <value>`, `Duplicate time bucket row ID: <id>`) and a repeated precomputed value. Whatever an accessor, reducer or `loaded` function throws passes through.
+
+Windowed data chunks are fixed lengths in time units from their origin, so day-sized chunks drift from local day buckets across a daylight-saving change; compute `loaded` per bucket (the function form) or use chunks no longer than the shortest bucket.
+
+`TimeBucketCell.status` uses the loading states of [partial data loading](#partial-data-loading), not TreeGrid statuses, so convert cells with `treeGridCellsFromTimeBuckets` (or `treeGridCellContentFromTimeBucket` inside a column accessor) before passing them to TreeGrid.
+
+Types: `TimeBucketPeriod`, `TimeBucket`, `TimeBucketColumn`, `TimeBucketColumnOptions`, `TimeBucketRuleName`, `TimeBucketRule`, `TimeBucketReducer`, `TimeBucketReducerContext`, `TimeBucketPlacement`, `TimeBucketLoaded`, `TimeBucketItem`, `TimeBucketAggregateOptions`, `TimeBucketCell`.
+
+<!-- #endregion time-buckets -->
+
+<!-- #region timeline-views -->
 
 ## Typed fields and timeline views
 
@@ -2175,13 +2524,18 @@ Timeline view state (`TimelineViewState`, version 1) is JSON-safe: column order,
 - `createTimelineViewState(columns?, patch?)`, `parseTimelineViewState(json)` (throws on a malformed value), `reconcileTimelineViewColumns(state, columns)` and `resolveTimelineColumns(state, columns)`. Unknown column IDs are dropped with an `unknown-column` diagnostic. Columns the state has not seen are appended after the known ones, visible, in declared order (`new-column`).
 - `projectTimelineView(input, state)` takes `{ rows, bars, dependencies?, columns?, sortRules?, laneCount? }` and returns display copies plus `matchedRowIds`, `removedDependencyIds`, `removedDependencyCount`, `hiddenTargets` (hidden bars that a shown bar still depends on or feeds), `wbs`, `collapsedIds`, `window`, `zoom` and `diagnostics`. Matching rows keep their ancestors; siblings are sorted stably, with ties in the original order; dependencies to hidden bars are removed. The output passes `validateTimelineData`. The input is not changed. A sort `ruleId` is a registered compare rule or a column ID.
 - `projectTimelineView` computes `wbs` with `timelineWbsCodes` from the original, unfiltered rows.
+- `projectTimelineRows(input, state)` is the row part of `projectTimelineView`, for applications that show the rows in their own tree table. It takes `TimelineRowsInput` `{ rows, columns?, sortRules?, bars? }` and the search, sort, filters and collapsed IDs of a view state (`TimelineRowViewState`; a whole `TimelineViewState` fits) and returns `TimelineRowsProjection` `{ rows, matchedRowIds, wbs, collapsedIds, diagnostics }`, with the same search, filter and sort rules. `rows` are the input's row objects. With `bars`, the unrestricted search also matches bar labels and columns receive row summaries, exactly as in `projectTimelineView`; without them, columns receive no summary. The diagnostics are `unknown-row` (a collapsed ID that names no row, dropped from `collapsedIds`), `unknown-column` (a filter or search column) and `unknown-sort-rule`; the column diagnostics of `reconcileTimelineViewColumns` are left out. `projectTimelineView` uses it, so its `rows`, `matchedRowIds`, `wbs` and `collapsedIds` are the same, and its `diagnostics` are the column diagnostics followed by these. It throws like `createTimelineRowTree` for invalid or duplicate row IDs, unknown parents and cycles, and an Error for a bar whose row is unknown (`Unknown row for bar: <id>`). Inputs are not changed. Use `createTimelineRowTree(result.rows)` for depths.
 - Filters combine with each other and with the search: a row matches when it passes all of them, and `matchedRowIds` lists those rows. An unknown filter column is ignored with an `unknown-column` diagnostic. A sort or filter on `timelineLabelColumnId` reads the row label unless a column or sort rule has that ID.
 - `filterTimelineRows(rows, predicate)` returns the rows that match, each with its ancestors, in the original order (a loop, so deep hierarchies are fine). It throws like `createTimelineRowTree` for duplicate IDs, unknown parents and cycles, and does not change `rows`.
 - `nextTimelineSort(sort, columnId)` returns the sort after a header sort button. Only the column's own rule changes and the other rules keep their order and direction: a column without a rule is added as the first rule, ascending; an ascending rule turns descending in place; a descending rule is removed. It returns new objects and never changes `sort`.
 
 `useTimelineView(source, initial?)` (Vue entry) wraps this reactively. It returns `state` (a writable `ShallowRef<TimelineViewState>`), `projection` (pass its `rows`, `bars` and `dependencies` to GanttChart), `columns` (the visible `TimelineColumn<R>` array in saved order with saved widths, ready for the `columns` prop), `diagnostics` (saved-view problems, column problems included), `setSearch`, `setSort`, `setFilters` (an empty list removes `filters`), `setColumnVisible`, `setColumnWidth`, `moveColumn`, `toggleCollapsed`, `setWindow`, `restore(json)`, `reset()` and `snapshot()`. Compute schedules, loads and diagnostics from the full input, not from the projection.
 
-Related exported types: `TimelineFieldKind`, `FieldPrimitive`, `FieldChoice`, `FieldDurationBasis`, `FieldErrorCode`, `FieldParseResult`, `TimelineViewInput`, `TimelineViewColumn`, `TimelineViewSort`, `TimelineViewSearch`, `TimelineViewFilter`, `TimelineRowCompare`, `TimelineHiddenTarget`, `TimelineViewProjection`, `TimelineViewDiagnostic`, `TimelineViewDiagnosticCode`.
+Related exported types: `TimelineFieldKind`, `FieldPrimitive`, `FieldChoice`, `FieldDurationBasis`, `FieldErrorCode`, `FieldParseResult`, `TimelineViewInput`, `TimelineViewColumn`, `TimelineViewSort`, `TimelineViewSearch`, `TimelineViewFilter`, `TimelineRowCompare`, `TimelineHiddenTarget`, `TimelineViewProjection`, `TimelineViewDiagnostic`, `TimelineViewDiagnosticCode`, `TimelineRowsInput`, `TimelineRowViewState`, `TimelineRowsProjection`.
+
+<!-- #endregion timeline-views -->
+
+<!-- #region undo-redo -->
 
 ## Application undo and redo
 
@@ -2222,6 +2576,10 @@ The server must apply each save as a conditional update on `baseVersion`, dedupl
 
 Related exported types: `TransactionSource`, `TransactionStatus`, `TransactionCoreState`, `PendingTransaction`, `TransactionFailure`, `SettleResult`, `UseEditTransactionOptions`, `HistoryReset`.
 
+<!-- #endregion undo-redo -->
+
+<!-- #region snapshots -->
+
 ## Versioned JSON snapshots
 
 `@eightkk/vue-weave/core` stores and restores a chart's data and saved view as a versioned JSON document (`schemaVersion: 1`). It is pure TypeScript and does not touch the DOM or the network. Nothing is written for you: you decide where the text goes.
@@ -2255,6 +2613,10 @@ Rules the functions enforce:
 
 Related exported types: `JsonValue`, `SnapshotKind`, `SnapshotMetadata`, `SnapshotColumnDefinition`, `SnapshotColumnState`, `SnapshotSortRule`, `SnapshotDiagnosticCode`, `SnapshotDiagnosticSeverity`, `SnapshotLayoutFactory`, `SnapshotMigration`, `GraphCameraTarget`, `GraphSnapshotView`, `GraphSnapshotData`, `GraphSnapshotInput`, `GraphSnapshotV1`, `TimelineSnapshotView`, `TimelineSnapshotData`, `TimelineSnapshotInput`, `TimelineSnapshotV1`, `PlanningTaskDisplay`, `PlanningPlacement`, `PlanningSnapshotData`, `PlanningSnapshotInput`, `PlanningSnapshotV1`, `SerializeWeaveSnapshotOptions`, `ParseWeaveSnapshotOptions`, `ParseWeaveSnapshotResult`, `WeaveSnapshotRegistry`, `RestoreWeaveSnapshotResult`, `RestoredWeaveSnapshot`, `RestoredGraphSnapshot`, `RestoredGraphView`, `RestoredTimelineSnapshot`, `RestoredTimelineView`, `RestoredPlanningSnapshot`, `RestoredColumn`, `RestoredSortRule`.
 
+<!-- #endregion snapshots -->
+
+<!-- #region export -->
+
 ## Export to SVG and PNG
 
 Both components expose two export methods on their template ref. They need no dependencies and never change props or component state.
@@ -2262,7 +2624,7 @@ Both components expose two export methods on their template ref. They need no de
 | Method | Returns | Behavior |
 | --- | --- | --- |
 | exportSvg(options?) | string | A standalone SVG document (`xmlns`, explicit `width`, `height` and `viewBox`) of the whole chart |
-| exportPng(options?) | Promise<Blob> | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
+| exportPng(options?) | `Promise<Blob>` | `exportSvg(options)` rasterized in the browser to an `image/png` blob |
 
 The export always covers the whole content, not the viewport. NetworkGraph exports every node, edge, edge label, group and swimlane (`lanes`), whatever the camera position and with or without `cullOffscreen`; nodes in `selectedIds` (or `selectedId`) use the selected style, and the nodes and edges of `highlightedNodeIds` and `highlightedEdgeIds` the highlight colour (`--vw-graph-highlight`). GanttChart exports every displayed row (descendants of collapsed rows are omitted, as on screen), the row heading column and `columns`, header bands and ticks, `nonWorkingPeriods` shading, bars with progress, segments, critical outlines, float lines, deadline indicators and late outlines, milestones, baselines (the sets selected by `baselineIds`, with their titles), scheduling constraint markers, summaries, dependencies (including `highlightedDependencyIds` and, with `summaryDependencies`, links to summary rows) and their lag labels, the `highlightedBarIds` outlines, markers, `markerRanges` bands and header labels, the now line, the status-date and progress lines and the load histogram rows, over the whole `range` at the current zoom and zoom preset. Colours are read from the `--vw-*` custom properties in effect on the component, and the font from its computed `font-family`.
 
@@ -2293,6 +2655,10 @@ Shared `SvgExportOptions` are `theme` (`SvgExportThemeInput`: any of `surface`, 
 
 Related exported types: `GraphPngExportOptions`, `GanttPngExportOptions`, `SvgToneColors`.
 
+<!-- #endregion export -->
+
+<!-- #region rtl -->
+
 ## Right-to-left layout
 
 Both components take an opt-in `dir` prop of type `ChartDirection`.
@@ -2310,6 +2676,10 @@ Keyboard editing follows the visual direction. In RTL, ArrowLeft moves a focused
 In a right-to-left NetworkGraph only the chrome changes: the zoom tools and the minimap move to the bottom-left corner, node titles and details, group labels, swimlane titles and edge labels are right-aligned with `direction: rtl`, and the default node text is anchored at the box's right edge. Layout geometry, edge routes, camera, panning keys and saved positions are unchanged; use `options.direction: 'RL'` to mirror the layout itself. Custom node slots own their own text alignment.
 
 `exportSvg` and `exportPng` follow the component's direction. In the core, `renderTimelineSvg` and `renderGraphSvg` take `direction: 'rtl'`, and `mirrorTimeScale(scale)` returns a scale with `toX(range.start) = width` and `toX(range.end) = 0`; its round trips are exact whenever those of `scale` are and the pixel values are exactly representable.
+
+<!-- #endregion rtl -->
+
+<!-- #region typed-data -->
 
 ## Typed data
 
@@ -2378,6 +2748,10 @@ chart.value?.exportSvg({ barLabel: bar => `${bar.label} ${bar.data?.cost}` })
 
 The public component types are `NetworkGraphComponent` and `GanttChartComponent`. Core helpers that return the items they receive keep their types as well: `moveTimelineRow`, `indentTimelineRow`, `outdentTimelineRow`, `removeTimelineBars`, `assignLanes`, `createTimelineRowTree`, `collapseGraphGroups`, `removeGraphElements`, `cloneGraphElements`, `searchGraphNodes` and `filterGraph`, and the label callbacks of `renderGraphSvg` and `renderTimelineSvg`.
 
+<!-- #endregion typed-data -->
+
+<!-- #region diagram-editor -->
+
 ## Diagram editor parts
 
 Two small controlled components for building a diagram editor around NetworkGraph: `GraphPalette`, a list of node templates to drag onto the graph or insert from the keyboard, and `PropertyInspector`, a form generated from typed field definitions for the selected item. Both are exported from the Vue entry with their public component types (`GraphPaletteComponent`, `PropertyInspectorComponent`) and template ref types (`GraphPaletteExposed`, `PropertyInspectorExposed`); their data types and `graphPaletteMimeType` are also in `@eightkk/vue-weave/core`. Neither changes the graph or the item: the application applies what they report, for example as one `useEditHistory` entry. Both render on the server, take `dir` (`ltr`, `rtl` or `auto`, as for the charts; `rtl` writes `dir="rtl"` and adds `vw-rtl`, `auto` writes nothing and follows the inherited direction) and follow the dark themes.
@@ -2386,9 +2760,9 @@ Two small controlled components for building a diagram editor around NetworkGrap
 
 | API | Behavior |
 | --- | --- |
-| items | readonly GraphPaletteItem<D>[] / required. `id` (unique, the ID rule of [Validation and errors](#validation-and-errors) with the kind `palette item`), `label`, optional `detail`, `shape` (`NetworkNodeShape`, drawn in a 48 by 30 preview with the node outlines of NetworkGraph; default `box`), `tone` (default `blue`), `section`, `keywords`, `disabled` and `data`. D is inferred and reaches the `item` slot and `insert`. |
+| items | `readonly GraphPaletteItem<D>[]` / required. `id` (unique, the ID rule of [Validation and errors](#validation-and-errors) with the kind `palette item`), `label`, optional `detail`, `shape` (`NetworkNodeShape`, drawn in a 48 by 30 preview with the node outlines of NetworkGraph; default `box`), `tone` (default `blue`), `section`, `keywords`, `disabled` and `data`. D is inferred and reaches the `item` slot and `insert`. |
 | searchable | boolean / false. Shows a filter box (`type="search"`) above the list. Every word of the text must occur, ignoring case, in the label, detail, section or keywords of an item. ArrowDown in the box focuses the first shown item; Escape clears a non-empty filter. When nothing matches, a `role="status"` paragraph says so (`labels.noMatches`). |
-| labels | Partial<GraphPaletteLabels> / English. `region` (accessible name of the list, default `Shape palette`), `search` (`Filter shapes`) and `noMatches`. |
+| labels | `Partial<GraphPaletteLabels>` / English. `region` (accessible name of the list, default `Shape palette`), `search` (`Filter shapes`) and `noMatches`. |
 | dir | ChartDirection / `ltr`. |
 | insert(item) | Enter or Space on a focused, enabled item: the keyboard alternative to dragging it, because HTML drag and drop needs a pointer. Held keys do not repeat it. Add the node at `getViewportCenter()` of the graph. |
 | item slot | `{ item, active }`. Replaces the preview, label and detail of an item; the option element, its keyboard handling and its drag stay. |
@@ -2411,16 +2785,16 @@ Related exported types: `GraphPaletteItem`, `GraphPaletteLabels`, `GraphPaletteD
 | API | Behavior |
 | --- | --- |
 | item | T / null / undefined (T extends `InspectorItem`, `{ id: string }`). The inspected item; without one the form shows `labels.empty` or the `empty` slot. T is inferred from `item` and `fields`. |
-| fields | readonly (InspectorField<T> \| InspectorListField<T>)[] / required. Value fields and [list fields](#inspector-list-fields), in display order. A [typed field](#typed-fields-and-timeline-views) (`TimelineFieldSpec`: `required`, `choices`, `multiple`, `min`, `max`, `integer`, `parse`, `format`, `timeZone`, and so on) whose `get(item)` returns the raw value, plus `label`, `kind`, optional `readonly`, `description` and `placeholder`. IDs follow the ID rule with the kind `inspector field`; an unknown kind is a RangeError and a `select` without `choices` an Error, thrown while rendering. |
+| fields | `readonly (InspectorField<T> \| InspectorListField<T>)[]` / required. Value fields and [list fields](#inspector-list-fields), in display order. A [typed field](#typed-fields-and-timeline-views) (`TimelineFieldSpec`: `required`, `choices`, `multiple`, `min`, `max`, `integer`, `parse`, `format`, `timeZone`, and so on) whose `get(item)` returns the raw value, plus `label`, `kind`, optional `readonly`, `description` and `placeholder`. IDs follow the ID rule with the kind `inspector field`; an unknown kind is a RangeError and a `select` without `choices` an Error, thrown while rendering. |
 | validateChange | (change, item) => boolean / string / void. Synchronous. False or a reason rejects the change: the reason (or `labels.rejected`) is shown under the field and `change-rejected` is emitted. |
 | validateListChange | (change, item) => boolean / string / void. Synchronous check of a list field change after `validateInspectorList`; false or a reason rejects it like `validateChange` and emits `list-change-rejected`. |
-| labels | Partial<PropertyInspectorLabels> / English. `region` (accessible name of the form, default `Properties`), `empty`, `rejected` and `none` (the empty choice of an optional select, `(none)`); for list fields `resource`, `units`, `predecessor`, `type`, `lag` (column headings), `for` (between a heading and the row name in accessible names), `remove`, `addAssignment`, `addDependency` and `noRows` (default `None`). |
+| labels | `Partial<PropertyInspectorLabels>` / English. `region` (accessible name of the form, default `Properties`), `empty`, `rejected` and `none` (the empty choice of an optional select, `(none)`); for list fields `resource`, `units`, `predecessor`, `type`, `lag` (column headings), `for` (between a heading and the row name in accessible names), `remove`, `addAssignment`, `addDependency` and `noRows` (default `None`). |
 | dir | ChartDirection / `ltr`. |
 | change(change) | InspectorChange: `id` (the item), `field` (the field ID), `before` and `after` (`FieldValue`). Emitted for a committed value that passes the field checks and `validateChange` and differs from `before` (`fieldValuesEqual`). The parent updates the item to accept. |
 | change-rejected(change, reason) | A change refused by `validateChange`. |
 | list-change(change) | InspectorListChange: `id`, `field`, `kind` and the whole `before` and `after` row lists of a list field. The parent replaces the rows to accept. Value fields never emit it, and list fields never emit `change`. |
 | list-change-rejected(change, reason) | A list change refused by `validateListChange`. |
-| field-<id> slot | PropertyInspectorFieldSlot<T>: `field`, `item`, `value`, `text`, `error`, `readonly`, `inputId` (the ID the label points to), `describedBy`, and `commit(value)`, `commitText(text)` and `cancel()`, which run the same checks as the built-in controls. Replaces the control of one field; its label, description and message stay. |
+| `field-<id>` slot | `PropertyInspectorFieldSlot<T>`: `field`, `item`, `value`, `text`, `error`, `readonly`, `inputId` (the ID the label points to), `describedBy`, and `commit(value)`, `commitText(text)` and `cancel()`, which run the same checks as the built-in controls. Replaces the control of one field; its label, description and message stay. |
 | empty slot | Replaces the empty-state text. |
 | focusField(id) | Exposed method. Focuses the control of a field; returns false when it is not shown. |
 | cancelEdits() | Exposed method. Drops every draft and message without a proposal. |
@@ -2457,3 +2831,5 @@ const fields: InspectorListField<Task>[] = [
 Map assignment rows to `ResourceAssignment` with the task ID, and dependency rows to `ScheduleLink` or `TimelineDependency` (`from: predecessorId`, `to` the item).
 
 Related exported types: `InspectorItem`, `InspectorField`, `InspectorFieldKind`, `InspectorChange`, `InspectorChangeValidator`, `PropertyInspectorLabels`, `PropertyInspectorFieldSlot`, `InspectorListFieldKind`, `InspectorOption`, `InspectorAssignment`, `InspectorDependency`, `InspectorAssignmentsField`, `InspectorDependenciesField`, `InspectorListField`, `InspectorListChange`, `InspectorListChangeValidator`.
+
+<!-- #endregion diagram-editor -->

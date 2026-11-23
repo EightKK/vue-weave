@@ -2,10 +2,7 @@
 body { margin: 0; font-family: Inter, "Segoe UI", sans-serif; }
 button, select, input { font: inherit; }
 button, select { cursor: pointer; }
-.demo { min-height: 100vh; background: #f0f4f7; color: #162e40; }
 header { background: #132c3d; color: #ecf4f7; padding: 18px max(24px, calc((100vw - 1300px) / 2)); display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-.wordmark { color: inherit; text-decoration: none; font-size: 17px; font-weight: 700; }
-.wordmark span { font-size: 11px; color: #a5d9cf; margin-left: 7px; }
 main { max-width: 1348px; padding: 26px 24px 18px; margin: auto; }
 .eyebrow { font-size: 10px; letter-spacing: .16em; color: #17736c; font-weight: 700; }
 h1 { font-size: clamp(27px, 5vw, 38px); letter-spacing: -.04em; margin: 8px 0; }
@@ -13,9 +10,6 @@ h1 { font-size: clamp(27px, 5vw, 38px); letter-spacing: -.04em; margin: 8px 0; }
 nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 16px; }
 button { border: 1px solid #c6d7e2; background: #fff; color: #24465b; padding: 7px 11px; border-radius: 6px; font-size: 12px; }
 nav button[aria-pressed=true] { background: #1d5169; color: #fff; border-color: #1d5169; }
-.gallery-nav { align-items: center; margin-top: -8px; }
-.gallery-label { margin-inline-end: 4px; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #17736c; }
-.dark .gallery-label { color: #b1c7d7; }
 section { background: var(--vw-surface, #fff); border: 1px solid var(--vw-border, #d9e4ec); border-radius: 10px; margin-bottom: 16px; padding: 15px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 h2 { font-size: 17px; margin: 0 0 4px; }
@@ -62,8 +56,9 @@ footer { padding-block: 6px; }
   .load-table th, .load-table td { padding: 4px 3px; }
 }
 
-.export-actions { display: flex; gap: 6px; margin-inline: auto 16px; }
-.export-actions button { padding: 2px 8px; font-size: 11px; line-height: 1.4; }
+.graph-gantt-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; }
+.graph-gantt-bar nav { margin: 0; }
+.graph-gantt-actions { flex-wrap: wrap; gap: 6px 8px; margin-inline-start: auto; }
 
 .graph-menu { position: fixed; z-index: 20; min-width: 168px; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--vw-border, #c6d7e2); border-radius: 8px; background: var(--vw-surface, #fff); color: var(--vw-text, #162e40); box-shadow: 0 8px 24px rgb(15 35 50 / 18%); }
 .graph-menu button { border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; padding: 7px 10px; }

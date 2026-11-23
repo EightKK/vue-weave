@@ -5,6 +5,7 @@ import {
   traverseGraph,
   type GraphBox, type GraphEdge, type GraphLayout, type GraphPathResult, type GraphPoint, type NetworkGraphExposed, type NetworkNode,
 } from '../../src'
+import { useDemoLocale } from '../i18n'
 
 // An explorable map of computer science: 160-odd topics, each linked to the topics it builds on. The force-directed
 // layout places them, PageRank sizes them, Louvain communities colour them, and search, neighbourhood focus and
@@ -15,6 +16,9 @@ type TopicData = {
 }
 type Topic = NetworkNode<TopicData> & { data: TopicData }
 type Link = GraphEdge & { cross: boolean }
+
+// Topic and field names are proper names of the data and stay in English; the interface follows the page language.
+const { t, labels, isJapanese } = useDemoLocale()
 
 // One line per topic: "Topic < the topics it builds on". Forward references across fields are allowed.
 const fields: readonly { name: string; topics: string }[] = [
@@ -276,7 +280,10 @@ const hidden = ref<ReadonlySet<number>>(new Set())
 const pathFrom = ref('')
 const pathTo = ref('')
 const path = ref<GraphPathResult | null>(null)
-const status = ref(`${topics.length} topics, ${links.length} links and ${communities.length} communities (modularity ${modularity.toFixed(2)}). Select a topic to explore it.`)
+const status = ref(t({
+  en: `${topics.length} topics, ${links.length} links and ${communities.length} communities (modularity ${modularity.toFixed(2)}). Select a topic to explore it.`,
+  ja: `${topics.length} 件の話題、${links.length} 本のリンク、${communities.length} 個のコミュニティ(モジュラリティ ${modularity.toFixed(2)})。話題を選んで探索してください。`,
+}))
 
 const shownTopics = computed(() => topics.filter(topic => !hidden.value.has(topic.data.community)))
 const shownIds = computed(() => new Set(shownTopics.value.map(topic => topic.id)))
@@ -334,16 +341,22 @@ const uid = useId()
 const gradient = (kind: 'halo' | 'core', community: number) => `url(#${uid}-${kind}-${community})`
 const colorOf = (id: string) => communities[communityOf.get(id)!]!.color
 const label = (id: string) => topicsById.get(id)?.label ?? id
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+const counters: Record<string, string> = { topic: '件', link: 'リンク', hop: 'ホップ' }
+const plural = (count: number, word: string) => isJapanese.value ? `${count} ${counters[word]}` : `${count} ${word}${count === 1 ? '' : 's'}`
 
 function describe(topic: Topic) {
-  const before = topic.data.buildsOn.length ? `builds on ${plural(topic.data.buildsOn.length, 'topic')}` : 'a foundation'
-  return `${topic.label} · ${topic.data.field} · ${before}, leads to ${plural(topic.data.leadsTo.length, 'topic')}.`
+  const before = topic.data.buildsOn.length
+    ? t({ en: `builds on ${plural(topic.data.buildsOn.length, 'topic')}`, ja: `土台 ${plural(topic.data.buildsOn.length, 'topic')}` })
+    : t({ en: 'a foundation', ja: '基礎の話題' })
+  return t({
+    en: `${topic.label} · ${topic.data.field} · ${before}, leads to ${plural(topic.data.leadsTo.length, 'topic')}.`,
+    ja: `${topic.label} · ${topic.data.field} · ${before}、発展先 ${plural(topic.data.leadsTo.length, 'topic')}。`,
+  })
 }
 function select(id: string | undefined, centre = false) {
   selectedId.value = id
   if (!id) {
-    status.value = 'Selection cleared.'
+    status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
     return
   }
   status.value = describe(topicsById.get(id)!)
@@ -355,30 +368,42 @@ function onSearchEnter() {
 }
 function onQuery() {
   const count = matches.value?.size
-  status.value = count === undefined ? 'Search cleared.' : `${plural(count, 'topic')} match “${query.value.trim()}”.`
+  status.value = count === undefined ? t({ en: 'Search cleared.', ja: '検索を解除しました。' })
+    : t({ en: `${plural(count, 'topic')} match “${query.value.trim()}”.`, ja: `「${query.value.trim()}」に一致する話題は ${plural(count, 'topic')}です。` })
 }
 function findPath() {
   if (!pathFrom.value || !pathTo.value) {
-    status.value = 'Choose a start and an end topic to find a path.'
+    status.value = t({ en: 'Choose a start and an end topic to find a path.', ja: '経路を探すには始点と終点の話題を選んでください。' })
     return
   }
   path.value = shortestGraphPath(shownTopics.value, shownLinks.value, pathFrom.value, pathTo.value, { directed: false })
   if (!path.value) {
-    status.value = `No path between ${label(pathFrom.value)} and ${label(pathTo.value)} through the shown communities.`
+    status.value = t({
+      en: `No path between ${label(pathFrom.value)} and ${label(pathTo.value)} through the shown communities.`,
+      ja: `表示中のコミュニティには ${label(pathFrom.value)} と ${label(pathTo.value)} を結ぶ経路がありません。`,
+    })
     return
   }
-  status.value = `Shortest path, ${plural(path.value.edgeIds.length, 'link')}: ${path.value.nodeIds.map(label).join(' → ')}.`
+  status.value = t({
+    en: `Shortest path, ${plural(path.value.edgeIds.length, 'link')}: ${path.value.nodeIds.map(label).join(' → ')}.`,
+    ja: `最短経路(${plural(path.value.edgeIds.length, 'link')}): ${path.value.nodeIds.map(label).join(' → ')}。`,
+  })
   graph.value?.fit({ ids: path.value.nodeIds, padding: 72 })
 }
 function setPathEnd(end: 'from' | 'to', id: string) {
   ;(end === 'from' ? pathFrom : pathTo).value = id
   if (pathFrom.value && pathTo.value) findPath()
-  else status.value = `Path ${end === 'from' ? 'starts' : 'ends'} at ${label(id)}; now choose the other end.`
+  else {
+    status.value = t({
+      en: `Path ${end === 'from' ? 'starts' : 'ends'} at ${label(id)}; now choose the other end.`,
+      ja: `経路の${end === 'from' ? '始点' : '終点'}を ${label(id)} にしました。もう一方を選んでください。`,
+    })
+  }
 }
 function clearPath() {
   path.value = null
   pathFrom.value = pathTo.value = ''
-  status.value = 'Path cleared.'
+  status.value = t({ en: 'Path cleared.', ja: '経路を解除しました。' })
 }
 function toggleCommunity(index: number) {
   const next = new Set(hidden.value)
@@ -391,12 +416,15 @@ function toggleCommunity(index: number) {
   if (pathFrom.value && !shown.has(pathFrom.value)) pathFrom.value = ''
   if (pathTo.value && !shown.has(pathTo.value)) pathTo.value = ''
   if (path.value && path.value.nodeIds.some(id => !shown.has(id))) path.value = null
-  status.value = `${next.has(index) ? 'Hid' : 'Showed'} the ${community.label} community (${plural(community.size, 'topic')}).`
+  status.value = t({
+    en: `${next.has(index) ? 'Hid' : 'Showed'} the ${community.label} community (${plural(community.size, 'topic')}).`,
+    ja: `${community.label} のコミュニティ(${plural(community.size, 'topic')})を${next.has(index) ? '隠しました' : '表示しました'}。`,
+  })
 }
 </script>
 
 <template>
-  <section class="showcase sc-kg" aria-label="Knowledge graph">
+  <section class="showcase sc-kg" :aria-label="t({ en: 'Knowledge graph', ja: 'ナレッジグラフ' })">
     <svg class="sc-kg-defs" aria-hidden="true" focusable="false" width="0" height="0">
       <defs>
         <template v-for="community in communities" :key="community.index">
@@ -415,42 +443,47 @@ function toggleCommunity(index: number) {
     </svg>
     <div class="sc-kg-head">
       <div>
-        <h2>Knowledge graph</h2>
-        <p>
+        <h2>{{ t({ en: 'Knowledge graph', ja: 'ナレッジグラフ' }) }}</h2>
+        <p v-if="isJapanese">
+          {{ topics.length }} 件のコンピューターサイエンスの話題を、その土台となる話題と結んでいます。<code>layoutForceGraph</code> で配置し、
+          <code>graphPageRank</code> で大きさを、<code>detectGraphCommunities</code> で色を決め、検索、近傍へのフォーカス、
+          <code>shortestGraphPath</code> で減光と強調表示を切り替えます。
+        </p>
+        <p v-else>
           {{ topics.length }} computer-science topics linked to what they build on. <code>layoutForceGraph</code> places them,
           <code>graphPageRank</code> sizes them and <code>detectGraphCommunities</code> colours them; search, neighbourhood focus and
           <code>shortestGraphPath</code> drive the dimming and highlight props.
         </p>
       </div>
       <dl class="sc-kg-stats">
-        <div><dt>Topics</dt><dd>{{ shownTopics.length }}</dd></div>
-        <div><dt>Links</dt><dd>{{ shownLinks.length }}</dd></div>
-        <div><dt>Communities</dt><dd>{{ communities.length - hidden.size }}</dd></div>
-        <div><dt>Modularity</dt><dd>{{ modularity.toFixed(2) }}</dd></div>
+        <div><dt>{{ t({ en: 'Topics', ja: '話題' }) }}</dt><dd>{{ shownTopics.length }}</dd></div>
+        <div><dt>{{ t({ en: 'Links', ja: 'リンク' }) }}</dt><dd>{{ shownLinks.length }}</dd></div>
+        <div><dt>{{ t({ en: 'Communities', ja: 'コミュニティ' }) }}</dt><dd>{{ communities.length - hidden.size }}</dd></div>
+        <div><dt>{{ t({ en: 'Modularity', ja: 'モジュラリティ' }) }}</dt><dd>{{ modularity.toFixed(2) }}</dd></div>
       </dl>
     </div>
     <div class="sc-kg-toolbar">
       <label class="sc-kg-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
-        <input v-model="query" type="search" aria-label="Search topics" placeholder="Search topics…" @input="onQuery" @keydown.enter.prevent="onSearchEnter">
+        <input v-model="query" type="search" :aria-label="t({ en: 'Search topics', ja: '話題を検索' })" :placeholder="t({ en: 'Search topics…', ja: '話題を検索…' })" @input="onQuery" @keydown.enter.prevent="onSearchEnter">
       </label>
-      <div class="sc-kg-segmented" role="group" aria-label="Neighbourhood focus">
+      <div class="sc-kg-segmented" role="group" :aria-label="t({ en: 'Neighbourhood focus', ja: '近傍へのフォーカス' })">
         <button v-for="hops in ([0, 1, 2] as const)" :key="hops" type="button" :aria-pressed="focusHops === hops" @click="focusHops = hops">
-          {{ hops ? plural(hops, 'hop') : 'All' }}
+          {{ hops ? plural(hops, 'hop') : t({ en: 'All', ja: 'すべて' }) }}
         </button>
       </div>
-      <div class="sc-kg-path" role="group" aria-label="Find path">
-        <label :for="`${uid}-from`">From</label><select :id="`${uid}-from`" v-model="pathFrom"><option value="">Choose…</option><option v-for="topic in sortedTopics" :key="topic.id" :value="topic.id">{{ topic.label }}</option></select>
-        <label :for="`${uid}-to`">To</label><select :id="`${uid}-to`" v-model="pathTo"><option value="">Choose…</option><option v-for="topic in sortedTopics" :key="topic.id" :value="topic.id">{{ topic.label }}</option></select>
-        <button type="button" class="sc-kg-primary" @click="findPath">Find path</button>
-        <button v-if="path || pathFrom || pathTo" type="button" @click="clearPath">Clear</button>
+      <div class="sc-kg-path" role="group" :aria-label="t({ en: 'Find path', ja: '経路を探す' })">
+        <label :for="`${uid}-from`">{{ t({ en: 'From', ja: '始点' }) }}</label><select :id="`${uid}-from`" v-model="pathFrom"><option value="">{{ t({ en: 'Choose…', ja: '選択…' }) }}</option><option v-for="topic in sortedTopics" :key="topic.id" :value="topic.id">{{ topic.label }}</option></select>
+        <label :for="`${uid}-to`">{{ t({ en: 'To', ja: '終点' }) }}</label><select :id="`${uid}-to`" v-model="pathTo"><option value="">{{ t({ en: 'Choose…', ja: '選択…' }) }}</option><option v-for="topic in sortedTopics" :key="topic.id" :value="topic.id">{{ topic.label }}</option></select>
+        <button type="button" class="sc-kg-primary" @click="findPath">{{ t({ en: 'Find path', ja: '経路を探す' }) }}</button>
+        <button v-if="path || pathFrom || pathTo" type="button" @click="clearPath">{{ t({ en: 'Clear', ja: '解除' }) }}</button>
       </div>
     </div>
     <div class="sc-kg-body">
       <div class="sc-kg-canvas">
         <NetworkGraph
           ref="graph" :selected-id="selectedId" unstyled-node-slots :nodes="shownTopics" :edges="shownLinks" :layout="layoutTopics"
-          :height="'clamp(460px, 44vw, 600px)'" show-minimap :labels="{ region: 'Knowledge map' }"
+          :height="'clamp(460px, 44vw, 600px)'" show-minimap :labels="{ ...labels.graph, region: t({ en: 'Knowledge map', ja: '知識マップ' }) }"
           :match-ids="pathNodes ? undefined : matches" :dimmed-ids="dimmedIds" :related-ids="pathNodes ? undefined : neighbours"
           :highlighted-node-ids="pathNodes" :highlighted-edge-ids="pathEdges"
           @update:selected-id="select($event)"
@@ -476,42 +509,45 @@ function toggleCommunity(index: number) {
             <circle :cx="box.x + box.width / 2" :cy="box.y + box.height / 2" :r="Math.max(node.data.radius, 9)" :fill="colorOf(node.id)" />
           </template>
         </NetworkGraph>
-        <div class="sc-kg-legend" role="group" aria-label="Communities">
+        <div class="sc-kg-legend" role="group" :aria-label="t({ en: 'Communities', ja: 'コミュニティ' })">
           <button
             v-for="community in communities" :key="community.index" type="button" :aria-pressed="!hidden.has(community.index)"
-            :aria-label="`${community.label} community, ${community.size} topics`" @click="toggleCommunity(community.index)"
+            :aria-label="t({ en: `${community.label} community, ${community.size} topics`, ja: `${community.label} のコミュニティ、${community.size} 件の話題` })" @click="toggleCommunity(community.index)"
           >
             <span class="sc-kg-dot" :style="{ background: community.color, color: community.color }" />{{ community.label }}<span class="sc-kg-count">{{ community.size }}</span>
           </button>
         </div>
       </div>
-      <aside class="sc-kg-panel" aria-label="Topic details">
+      <aside class="sc-kg-panel" :aria-label="t({ en: 'Topic details', ja: '話題の詳細' })">
         <template v-if="selected">
           <p class="sc-kg-eyebrow"><span class="sc-kg-dot" :style="{ background: colorOf(selected.id), color: colorOf(selected.id) }" />{{ selected.data.field }}</p>
           <h3>{{ selected.label }}</h3>
-          <p class="sc-kg-muted">In the {{ communities[selected.data.community]!.label }} community</p>
+          <p class="sc-kg-muted">{{ t({ en: `In the ${communities[selected.data.community]!.label} community`, ja: `${communities[selected.data.community]!.label} のコミュニティ` }) }}</p>
           <dl class="sc-kg-metrics">
-            <div><dt>Degree</dt><dd>{{ selected.data.buildsOn.length + selected.data.leadsTo.length }}</dd></div>
+            <div><dt>{{ t({ en: 'Degree', ja: '次数' }) }}</dt><dd>{{ selected.data.buildsOn.length + selected.data.leadsTo.length }}</dd></div>
             <div><dt>PageRank</dt><dd>#{{ selected.data.rank }}</dd></div>
-            <div><dt>Bridging</dt><dd>#{{ bridgingRank.indexOf(selected.id) + 1 }}</dd></div>
+            <div><dt>{{ t({ en: 'Bridging', ja: '媒介' }) }}</dt><dd>#{{ bridgingRank.indexOf(selected.id) + 1 }}</dd></div>
           </dl>
           <div class="sc-kg-actions">
-            <button type="button" @click="setPathEnd('from', selected.id)">Path from here</button>
-            <button type="button" @click="setPathEnd('to', selected.id)">Path to here</button>
+            <button type="button" @click="setPathEnd('from', selected.id)">{{ t({ en: 'Path from here', ja: 'ここを始点に' }) }}</button>
+            <button type="button" @click="setPathEnd('to', selected.id)">{{ t({ en: 'Path to here', ja: 'ここを終点に' }) }}</button>
           </div>
-          <template v-for="list in [{ title: 'Builds on', ids: selected.data.buildsOn }, { title: 'Leads to', ids: selected.data.leadsTo }]" :key="list.title">
+          <template v-for="list in [{ id: 'before', title: t({ en: 'Builds on', ja: '土台となる話題' }), ids: selected.data.buildsOn }, { id: 'after', title: t({ en: 'Leads to', ja: '発展先' }), ids: selected.data.leadsTo }]" :key="list.id">
             <h4>{{ list.title }} <span class="sc-kg-count">{{ list.ids.length }}</span></h4>
             <ul v-if="list.ids.length" class="sc-kg-list">
               <li v-for="id in list.ids" :key="id">
                 <button type="button" :disabled="!shownIds.has(id)" @click="select(id, true)"><span class="sc-kg-dot" :style="{ background: colorOf(id), color: colorOf(id) }" />{{ label(id) }}</button>
               </li>
             </ul>
-            <p v-else class="sc-kg-muted">{{ list.title === 'Builds on' ? 'A foundation: nothing before it.' : 'Nothing builds on it yet.' }}</p>
+            <p v-else class="sc-kg-muted">{{ list.id === 'before' ? t({ en: 'A foundation: nothing before it.', ja: '基礎の話題です。土台となる話題はありません。' }) : t({ en: 'Nothing builds on it yet.', ja: 'この話題を土台にする話題はまだありません。' }) }}</p>
           </template>
         </template>
         <template v-else>
-          <h3>Most central topics</h3>
-          <p class="sc-kg-muted">Ranked by PageRank over the “builds on” links. Select one, or click any star on the map.</p>
+          <h3>{{ t({ en: 'Most central topics', ja: '中心性の高い話題' }) }}</h3>
+          <p class="sc-kg-muted">{{ t({
+            en: 'Ranked by PageRank over the “builds on” links. Select one, or click any star on the map.',
+            ja: '「土台となる」リンクに対する PageRank の順位です。1つ選ぶか、マップ上の星をクリックしてください。',
+          }) }}</p>
           <ol class="sc-kg-list">
             <li v-for="topic in topList" :key="topic.id">
               <button type="button" @click="select(topic.id, true)">
@@ -525,7 +561,10 @@ function toggleCommunity(index: number) {
     </div>
     <div class="sc-kg-foot">
       <p class="sc-kg-status" role="status">{{ status }}</p>
-      <p class="sc-kg-hint">Ctrl + wheel zooms · drag to pan · labels appear as you zoom in · Enter in search jumps to the first match</p>
+      <p class="sc-kg-hint">{{ t({
+        en: 'Ctrl + wheel zooms · drag to pan · labels appear as you zoom in · Enter in search jumps to the first match',
+        ja: 'Ctrl + ホイールで拡大縮小 · ドラッグで移動 · 拡大するとラベルを表示 · 検索で Enter を押すと最初の一致へ移動',
+      }) }}</p>
     </div>
   </section>
 </template>

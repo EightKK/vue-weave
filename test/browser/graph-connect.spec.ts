@@ -1,7 +1,7 @@
 // NetworkGraph editing: connections and ports, typed port rules, edge selection and reconnection, deletion, inline labels
 // and rejected proposals.
 import {
-  expect, test, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphStage, openDemo, openGraphEditor, openNetworkFixture, pageErrors,
+  expect, test, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphStage, openExample, openGraphEditor, openNetworkFixture, pageErrors,
   pressAndMove, pressAndMoveTo, type Page,
 } from './support'
 
@@ -20,7 +20,7 @@ async function clickPath(page: Page, path: ReturnType<Page['locator']>, modifier
 
 test('graph moves are controlled and connections can be accepted or rejected', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   const split = page.getByRole('button', { name: 'Split Operation 101', exact: true })
   const finish = page.getByRole('button', { name: 'Finish Operation 102', exact: true })
@@ -57,7 +57,8 @@ test('graph moves are controlled and connections can be accepted or rejected', a
 
 test('named port drag, edge reconnection and undo preserve the graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Project delivery')
+  await openExample(page, 'graph-and-gantt')
+  await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
   await page.getByLabel('Edit graph').check()
   const source = page.getByRole('button', { name: 'Start connection from Design · Output', exact: true })
   const target = page.getByRole('button', { name: /^(Start connection from|Connect to) Release · Input$/ })
@@ -182,7 +183,7 @@ test('graph deletion by keyboard removes nodes, edges and incident edges, valida
 
 test('inline label editing proposes node and edge labels, validates them and returns focus', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Edit labels').check()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -308,7 +309,7 @@ test('a blank rejection reason rejects label and delete proposals with the defau
 
 test('typed port rules hint valid targets, reject type and limit violations with a reason and allow limit-1 reconnects', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   await page.getByLabel('Typed ports').check()
   const graph = page.getByRole('group', { name: 'Typed port example', exact: true })
@@ -401,5 +402,15 @@ test('arrow keys on a node do not propose a move while a keyboard connection is 
   await expect(page.getByRole('button', { name: 'Connect to N0002', exact: true })).toHaveCount(0)
   await chainNode(page, 'N0002').press('ArrowRight')
   await expect(moves).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
+test('graph editing options and the editing hint are Japanese on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'graph-and-gantt', { locale: 'ja' })
+  await demo.getByRole('checkbox', { name: 'グラフを編集', exact: true }).check()
+  await expect(demo.getByRole('checkbox', { name: 'グリッドに吸着', exact: true })).toBeVisible()
+  await expect(demo.getByText('ポートの間をドラッグして接続します。', { exact: false })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '選択範囲に合わせる', exact: true })).toBeDisabled()
   expect(errors).toEqual([])
 })

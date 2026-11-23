@@ -1,5 +1,5 @@
 import type { GraphEdge } from './graph.js'
-import { duplicateIdError, inContext, invalidIdError, isId } from './ids.js'
+import { duplicateIdError, formatId, inContext, invalidIdError, isId } from './ids.js'
 import { splitDanglingLinks, type DanglingLink } from './windowedData.js'
 
 /**
@@ -17,6 +17,19 @@ export interface GraphExpansionState<N extends { id: string } = { id: string }, 
   readonly expandedIds: ReadonlySet<string>
   /** Nodes whose expansion is in flight (`beginGraphExpansion`). */
   readonly pendingIds: ReadonlySet<string>
+  /**
+   * Nodes expanded for one key only (a direction such as `forward`, or a relation), by key. A node in `expandedIds` is
+   * expanded for every key, whether or not it is listed here. Absent until a keyed page is merged.
+   */
+  readonly expandedIdsByKey?: ReadonlyMap<string, ReadonlySet<string>>
+  /** Nodes whose expansion for one key is in flight, by key. Absent until a keyed expansion begins. */
+  readonly pendingIdsByKey?: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+/** Selects a keyed expansion: what was expanded, for example `forward`, `backward` or a relation name. */
+export interface GraphExpansionKeyOptions {
+  /** A non-empty string. Without it, a call works on the whole expansion of the nodes, as it always has. */
+  key?: string
 }
 
 /** A page of a graph source: the nodes and edges it returned. */
@@ -33,7 +46,10 @@ export interface GraphExpansionView<N extends { id: string } = { id: string }, E
   edges: E[]
   /** Edges with an end that is not loaded yet; they move to `edges` once that node arrives. */
   dangling: DanglingLink<E>[]
-  /** Loaded nodes that are neither expanded nor being expanded, in load order. */
+  /**
+   * Loaded nodes that are neither expanded nor being expanded, in load order. With a `key`, nodes expanded or being
+   * expanded entirely or for that key are left out.
+   */
   frontierIds: string[]
 }
 
@@ -61,19 +77,61 @@ export function createGraphExpansion<N extends { id: string }, E extends GraphEd
   return mergeGraphExpansionPage<N, E>({ nodes: new Map(), edges: new Map(), expandedIds: new Set(), pendingIds: new Set() }, seed)
 }
 
-/** Marks nodes as being expanded, so they leave the frontier until their page is merged or the expansion is cancelled. */
+function expansionKey(options: GraphExpansionKeyOptions | undefined): string | undefined {
+  if (options === undefined) return undefined
+  if (!options || typeof options !== 'object') throw new TypeError('Graph expansion options must be an object')
+  const { key } = options
+  if (key !== undefined && !isId(key)) throw new Error('Invalid graph expansion key: ' + formatId(key))
+  return key
+}
+
+/** A copy of `byKey` with `change` applied to a copy of the set of `key`; a set left empty is removed. */
+function updateKeyed(
+  byKey: ReadonlyMap<string, ReadonlySet<string>> | undefined, key: string, change: (ids: Set<string>) => void,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const next = new Map(byKey)
+  const ids = new Set(byKey?.get(key))
+  change(ids)
+  if (ids.size) next.set(key, ids)
+  else next.delete(key)
+  return next
+}
+
+/**
+ * Marks nodes as being expanded, so they leave the frontier until their page is merged or the expansion is cancelled.
+ * With `options.key`, marks them as being expanded for that key only (in `pendingIdsByKey`); nodes already expanded,
+ * entirely or for that key, are skipped. Throws Error for a key that is not a non-empty string.
+ */
 export function beginGraphExpansion<N extends { id: string }, E extends GraphEdge>(
-  state: GraphExpansionState<N, E>, ids: Iterable<string>,
+  state: GraphExpansionState<N, E>, ids: Iterable<string>, options?: GraphExpansionKeyOptions,
 ): GraphExpansionState<N, E> {
+  const key = expansionKey(options)
+  if (key !== undefined) {
+    const expandedForKey = state.expandedIdsByKey?.get(key)
+    const pendingIdsByKey = updateKeyed(state.pendingIdsByKey, key, pending => {
+      for (const id of ids) if (!state.expandedIds.has(id) && !expandedForKey?.has(id)) pending.add(id)
+    })
+    return { ...state, pendingIdsByKey }
+  }
   const pendingIds = new Set(state.pendingIds)
   for (const id of ids) if (!state.expandedIds.has(id)) pendingIds.add(id)
   return { ...state, pendingIds }
 }
 
-/** Forgets that nodes are being expanded (after a failed or aborted load); they return to the frontier. */
+/**
+ * Forgets that nodes are being expanded (after a failed or aborted load); they return to the frontier. With
+ * `options.key`, forgets only their expansion for that key; without, only their unkeyed expansion.
+ */
 export function cancelGraphExpansion<N extends { id: string }, E extends GraphEdge>(
-  state: GraphExpansionState<N, E>, ids: Iterable<string>,
+  state: GraphExpansionState<N, E>, ids: Iterable<string>, options?: GraphExpansionKeyOptions,
 ): GraphExpansionState<N, E> {
+  const key = expansionKey(options)
+  if (key !== undefined) {
+    const pendingIdsByKey = updateKeyed(state.pendingIdsByKey, key, pending => {
+      for (const id of ids) pending.delete(id)
+    })
+    return { ...state, pendingIdsByKey }
+  }
   const pendingIds = new Set(state.pendingIds)
   for (const id of ids) pendingIds.delete(id)
   return { ...state, pendingIds }
@@ -83,29 +141,59 @@ export function cancelGraphExpansion<N extends { id: string }, E extends GraphEd
  * Merges a page into the state: nodes and edges are added or replaced by ID, so overlapping pages (a cycle reached from
  * two sides, a neighbour shared by two expanded nodes) never duplicate anything, and `expandedIds` (the nodes whose
  * neighbours the page holds) are marked expanded and no longer pending. Throws Error for an item without a non-empty
- * string ID, an ID twice in the page or an edge without string ends. The inputs are not modified.
+ * string ID, an ID twice in the page or an edge without string ends. With `options.key`, `expandedIds` are marked
+ * expanded for that key only (in `expandedIdsByKey`) and no longer pending for it; they stay in the unkeyed frontier.
+ * Without a key they are expanded for every key. Throws Error for a key that is not a non-empty string. The inputs are
+ * not modified.
  */
 export function mergeGraphExpansionPage<N extends { id: string }, E extends GraphEdge>(
   state: GraphExpansionState<N, E>, page: GraphExpansionPage<N, E>, expandedIds: Iterable<string> = [],
+  options?: GraphExpansionKeyOptions,
 ): GraphExpansionState<N, E> {
+  const key = expansionKey(options)
   checkPage(page)
   const nodes = new Map(state.nodes)
   for (const node of page.nodes ?? []) nodes.set(node.id, node)
   const edges = new Map(state.edges)
   for (const edge of page.edges ?? []) edges.set(edge.id, edge)
+  const keyed: { expandedIdsByKey?: ReadonlyMap<string, ReadonlySet<string>>; pendingIdsByKey?: ReadonlyMap<string, ReadonlySet<string>> } = {}
+  if (state.expandedIdsByKey) keyed.expandedIdsByKey = state.expandedIdsByKey
+  if (state.pendingIdsByKey) keyed.pendingIdsByKey = state.pendingIdsByKey
+  if (key !== undefined) {
+    const ids = [...expandedIds]
+    keyed.expandedIdsByKey = updateKeyed(state.expandedIdsByKey, key, expanded => {
+      for (const id of ids) expanded.add(id)
+    })
+    keyed.pendingIdsByKey = updateKeyed(state.pendingIdsByKey, key, pending => {
+      for (const id of ids) pending.delete(id)
+    })
+    return { nodes, edges, expandedIds: state.expandedIds, pendingIds: state.pendingIds, ...keyed }
+  }
   const expanded = new Set(state.expandedIds)
   const pendingIds = new Set(state.pendingIds)
   for (const id of expandedIds) {
     expanded.add(id)
     pendingIds.delete(id)
   }
-  return { nodes, edges, expandedIds: expanded, pendingIds }
+  return { nodes, edges, expandedIds: expanded, pendingIds, ...keyed }
 }
 
-/** The component input of a state: the loaded nodes, the edges between them, the dangling edges and the frontier. */
-export function graphExpansionView<N extends { id: string }, E extends GraphEdge>(state: GraphExpansionState<N, E>): GraphExpansionView<N, E> {
+/**
+ * The component input of a state: the loaded nodes, the edges between them, the dangling edges and the frontier. With
+ * `options.key`, the frontier is that of the key: nodes expanded or pending entirely or for that key are left out.
+ * Throws Error for a key that is not a non-empty string.
+ */
+export function graphExpansionView<N extends { id: string }, E extends GraphEdge>(
+  state: GraphExpansionState<N, E>, options?: GraphExpansionKeyOptions,
+): GraphExpansionView<N, E> {
+  const key = expansionKey(options)
   const { resolved, dangling } = splitDanglingLinks([...state.edges.values()], state.nodes)
+  const expandedForKey = key === undefined ? undefined : state.expandedIdsByKey?.get(key)
+  const pendingForKey = key === undefined ? undefined : state.pendingIdsByKey?.get(key)
   const frontierIds: string[] = []
-  for (const id of state.nodes.keys()) if (!state.expandedIds.has(id) && !state.pendingIds.has(id)) frontierIds.push(id)
+  for (const id of state.nodes.keys()) {
+    if (state.expandedIds.has(id) || state.pendingIds.has(id) || expandedForKey?.has(id) || pendingForKey?.has(id)) continue
+    frontierIds.push(id)
+  }
   return { nodes: [...state.nodes.values()], edges: resolved, dangling, frontierIds }
 }

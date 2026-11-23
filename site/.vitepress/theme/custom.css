@@ -1,0 +1,180 @@
+/* The site theme: VitePress tokens set to the library's own palette (src/styles/style.css and examples/favicon.svg),
+   and the layout of the site's components. Site classes use the `vw-site-` prefix. */
+
+:root {
+  --vp-c-brand-1: #2f55bd;
+  --vp-c-brand-2: #345fd3;
+  --vp-c-brand-3: #345fd3;
+  --vp-c-brand-soft: rgb(52 95 211 / 14%);
+  --vp-c-text-1: #172c3b;
+  --vp-c-text-2: #4c6371;
+  --vp-c-bg-alt: #f3f7fa;
+  --vp-c-bg-soft: #eef3f7;
+  --vp-c-divider: #dce6ed;
+  --vp-c-gutter: #e5edf1;
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #245e96 10%, #345fd3 45%, #2b756b 90%);
+  --vw-site-teal: #2b756b;
+  --vw-site-card-shadow: 0 1px 2px rgb(15 35 50 / 6%), 0 8px 24px rgb(15 35 50 / 7%);
+}
+
+.dark {
+  --vp-c-brand-1: #9db8f5;
+  --vp-c-brand-2: #82a5f0;
+  --vp-c-brand-3: #345fd3;
+  --vp-c-brand-soft: rgb(130 165 240 / 16%);
+  --vp-c-bg: #101c27;
+  --vp-c-bg-alt: #0c1620;
+  --vp-c-bg-soft: #182a37;
+  --vp-c-bg-elv: #182a37;
+  --vp-c-text-1: #e5edf3;
+  --vp-c-text-2: #b1c7d7;
+  --vp-c-divider: #2a4152;
+  --vp-c-gutter: #0c1620;
+  --vp-home-hero-name-background: linear-gradient(120deg, #82badf 10%, #9db8f5 45%, #6fd0bc 90%);
+  --vw-site-teal: #6fd0bc;
+  --vw-site-card-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.VPNavBarTitle .title { font-weight: 700; letter-spacing: -.01em; }
+
+.vw-site-eyebrow { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--vw-site-teal); }
+.vw-site-lead { margin: 0; max-width: 860px; color: var(--vp-c-text-2); font-size: 16px; line-height: 1.6; }
+.vw-site-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--vp-c-divider); border-radius: 999px;
+  background: var(--vp-c-bg); color: var(--vp-c-text-1); font-size: 12px; font-weight: 500; line-height: 1.4; white-space: nowrap;
+  transition: border-color .2s, color .2s;
+}
+.vw-site-chip:hover { border-color: var(--vp-c-brand-1); color: var(--vp-c-brand-1); }
+.vw-site-chip[aria-pressed=true] { background: var(--vp-c-brand-soft); border-color: var(--vp-c-brand-1); color: var(--vp-c-brand-1); }
+
+/* Wide pages (layout: page) share one container. */
+.vw-site-wide { max-width: 1440px; margin: 0 auto; padding: 32px 24px 64px; }
+.vw-site-wide > h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.vw-site-wide > .vw-site-lead { margin-bottom: 28px; }
+
+/* Home */
+.vw-site-home-live, .vw-site-install { box-sizing: content-box; max-width: 1152px; margin: 8px auto 0; padding: 0 24px 48px; }
+@media (min-width: 640px) { .vw-site-home-live, .vw-site-install { padding-inline: 48px; } }
+.vw-site-home-live-hint { margin: 0 0 10px; color: var(--vp-c-text-2); font-size: 14px; }
+.vw-site-home-demo { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--vp-c-divider); border-radius: 14px; background: var(--vp-c-bg-alt); box-shadow: var(--vw-site-card-shadow); }
+.vw-site-home-demo .vw-gantt { --vw-row-label-width: 84px; }
+.vw-site-home-demo .vw-gantt { border: 1px solid var(--vw-border, #dce6ed); border-radius: 8px; overflow: hidden; background: var(--vw-surface, #fff); }
+@media (min-width: 960px) {
+  .vw-site-home-live, .vw-site-install { padding-inline: 64px; }
+  .vw-site-home-demo { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); align-items: start; }
+}
+
+/* Examples and showcase indexes */
+.vw-site-index { display: grid; gap: 28px; }
+@media (min-width: 860px) { .vw-site-index { grid-template-columns: 230px minmax(0, 1fr); } }
+.vw-site-index-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+@media (min-width: 860px) {
+  .vw-site-index-nav { position: sticky; top: calc(var(--vp-nav-height) + 24px); align-self: start; }
+  .vw-site-index-nav ul { flex-direction: column; flex-wrap: nowrap; }
+}
+.vw-site-index-nav button {
+  width: 100%; display: flex; justify-content: space-between; gap: 12px; padding: 7px 12px; border-radius: 8px; text-align: left;
+  color: var(--vp-c-text-2); font-size: 14px; font-weight: 500; transition: background-color .2s, color .2s;
+}
+.vw-site-index-nav button:hover:not(:disabled) { background: var(--vp-c-bg-soft); color: var(--vp-c-text-1); }
+.vw-site-index-nav button[aria-pressed=true] { background: var(--vp-c-brand-soft); color: var(--vp-c-brand-1); font-weight: 600; }
+.vw-site-index-nav button:disabled { opacity: .45; cursor: default; }
+.vw-site-count { font-variant-numeric: tabular-nums; font-size: 12px; opacity: .75; }
+.vw-site-index-main > h2 { margin: 0 0 16px; font-size: 20px; font-weight: 700; }
+.vw-site-index-main > h2 small { margin-left: 8px; color: var(--vp-c-text-2); font-size: 13px; font-weight: 500; }
+.vw-site-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.vw-site-card {
+  height: 100%; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vp-c-divider); border-radius: 12px;
+  background: var(--vp-c-bg); color: inherit; text-decoration: none; transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.vw-site-card:hover { border-color: var(--vp-c-brand-2); box-shadow: var(--vw-site-card-shadow); transform: translateY(-2px); }
+.vw-site-card img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; background: var(--vp-c-bg-soft); border-bottom: 1px solid var(--vp-c-divider); }
+.vw-site-card-body { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 18px; }
+.vw-site-card-tag { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--vw-site-teal); }
+.vw-site-card-title { font-size: 16px; font-weight: 700; color: var(--vp-c-text-1); }
+.vw-site-card-text { font-size: 13.5px; line-height: 1.55; color: var(--vp-c-text-2); }
+
+/* Showcase index: a featured row (one large card beside two smaller ones on wide screens), then a gallery grid. */
+.vw-site-showcase { display: grid; gap: 48px; }
+.vw-site-showcase-heading { display: flex; align-items: baseline; gap: 10px; margin: 0 0 18px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+.vw-site-showcase-heading small { color: var(--vp-c-text-2); font-size: 13px; font-weight: 500; }
+.vw-site-showcase-featured, .vw-site-showcase-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 24px; }
+.vw-site-showcase-featured > li, .vw-site-showcase-grid > li { display: flex; min-width: 0; }
+.vw-site-showcase-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.vw-site-showcase-featured { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+.vw-site-showcase-featured .vw-site-showcase-body { flex: 1 1 auto; padding: 18px 20px 20px; }
+.vw-site-showcase-featured .vw-site-showcase-title { font-size: 20px; }
+.vw-site-showcase-card {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--vp-c-divider); border-radius: 14px;
+  background: var(--vp-c-bg); color: inherit; text-decoration: none; transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.vw-site-showcase-card:hover { border-color: var(--vp-c-brand-2); box-shadow: var(--vw-site-card-shadow); transform: translateY(-3px); }
+.vw-site-showcase-card:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 3px; }
+.vw-site-showcase-card.is-featured { background: linear-gradient(180deg, var(--vp-c-bg) 60%, var(--vp-c-bg-alt)); }
+.vw-site-showcase-thumb { display: block; overflow: hidden; aspect-ratio: 16 / 10; background: var(--vp-c-bg-soft); border-bottom: 1px solid var(--vp-c-divider); }
+.vw-site-showcase-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; transition: transform .4s ease; }
+.vw-site-showcase-card:hover .vw-site-showcase-thumb img { transform: scale(1.025); }
+.vw-site-showcase-body { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 16px 18px 18px; }
+.vw-site-showcase-grid .vw-site-showcase-body { flex: 1 1 auto; }
+.vw-site-showcase-title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--vp-c-text-1); }
+.vw-site-showcase-text { font-size: 14px; line-height: 1.55; color: var(--vp-c-text-2); }
+.vw-site-showcase-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+.vw-site-showcase-tags code {
+  padding: 2px 7px; border: 1px solid var(--vp-c-divider); border-radius: 6px; background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-2); font-family: var(--vp-font-family-mono); font-size: 11.5px; line-height: 1.5;
+}
+.vw-site-showcase-open { color: var(--vp-c-brand-1); font-size: 14px; font-weight: 600; }
+.vw-site-showcase-notes { display: grid; gap: 6px; padding-top: 20px; border-top: 1px solid var(--vp-c-divider); color: var(--vp-c-text-2); font-size: 14px; }
+.vw-site-showcase-notes p { margin: 0; }
+.vw-site-showcase-notes a { color: var(--vp-c-brand-1); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) {
+  .vw-site-showcase-card, .vw-site-showcase-thumb img { transition: none; }
+  .vw-site-showcase-card:hover { transform: none; }
+  .vw-site-showcase-card:hover .vw-site-showcase-thumb img { transform: none; }
+}
+
+/* Example page */
+.vw-site-example { max-width: 1440px; margin: 0 auto; padding: 24px 24px 64px; }
+.vw-site-example.is-full { max-width: none; }
+.vw-site-example-back a { color: var(--vp-c-brand-1); font-size: 14px; font-weight: 500; }
+.vw-site-example-head { margin: 16px 0 24px; }
+.vw-site-example-head h1 { margin: 0 0 8px; font-size: clamp(26px, 3.6vw, 36px); font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
+.vw-site-frame { border: 1px solid var(--vp-c-divider); border-radius: 12px; overflow: hidden; background: var(--vp-c-bg); box-shadow: var(--vw-site-card-shadow); }
+.vw-site-frame-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--vp-c-divider); background: var(--vp-c-bg-alt); }
+.vw-site-frame-title { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--vp-c-text-2); }
+.vw-site-frame-actions { display: flex; gap: 6px; }
+.vw-site-frame-hint { margin: 0; padding: 6px 12px; border-top: 1px solid var(--vp-c-divider); background: var(--vp-c-bg-alt); color: var(--vp-c-text-2); font-size: 12px; }
+/* One column below 1100px; minmax(0, …) keeps long source lines scrolling inside their block instead of widening the page. */
+.vw-site-example-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; margin-top: 32px; }
+@media (min-width: 1100px) { .vw-site-example-details { grid-template-columns: minmax(0, 1fr) 260px; } }
+.vw-site-code.vp-doc h2 { margin: 0 0 12px; padding: 0; border: 0; font-size: 20px; }
+.vw-site-code.vp-doc div[class*='language-'] pre { max-height: 640px; overflow: auto; }
+.vw-site-source-links { font-size: 13px; color: var(--vp-c-text-2); }
+.vw-site-related h2 { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.vw-site-related ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.vw-site-related a { color: var(--vp-c-brand-1); font-size: 14px; font-weight: 500; }
+
+/* The live demo. The demo app's stylesheet (examples/demo.css) is inlined for the site wrapped in `@scope (.vw-site-demo)`
+   (see .vitepress/config.ts), so its element rules reach only the demo. The VitePress preflight resets margins, borders
+   and list and heading styles in its `__vitepress_base` layer; this later layer gives the demo back the browser defaults
+   it was written for, and the demo's own unlayered rules still win over both. */
+.vw-site-demo { overflow: auto; resize: vertical; min-height: 240px; background: #f0f4f7; }
+.dark .vw-site-demo { background: #101c27; }
+.vw-site-demo-body {
+  min-height: 100%; padding: 16px;
+  background: #f0f4f7; color: #162e40; font-family: Inter, "Segoe UI", sans-serif; font-size: 16px; line-height: normal;
+}
+@layer vw-site-demo-defaults {
+  @scope (.vw-site-demo) {
+    *, ::before, ::after { margin: revert; padding: revert; border: revert; }
+    h1, h2, h3, h4, h5, h6 { font-size: revert; font-weight: revert; }
+    a { color: revert; text-decoration: revert; }
+    ol, ul, menu { list-style: revert; }
+    img, svg, video, canvas, iframe { display: revert; }
+    img, video { max-width: revert; height: revert; }
+    button, input, select, optgroup, textarea { color: revert; letter-spacing: revert; border-radius: revert; background-color: revert; }
+    table { border-collapse: revert; text-indent: revert; border-color: revert; }
+    summary { display: revert; }
+  }
+}

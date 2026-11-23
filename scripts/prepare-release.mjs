@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { demoBuildState } from './demo-build.mjs'
+import { demoBuildState, generatedPaths } from './demo-build.mjs'
 import { runReleaseTransaction } from './release-candidate.mjs'
 
 // Prepare verified local candidates only. Publishing and repository administration remain separate actions.
@@ -20,9 +20,9 @@ const failAt = process.env.VW_RELEASE_FAIL_AT || undefined
 const sourcePaths = [
   '.editorconfig', '.github', '.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md',
   'LICENSE', 'README.md', 'README.ja.md', 'Start.cmd', 'THIRD_PARTY_NOTICES.md',
-  'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json',
+  'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', 'tsconfig.typedoc.json', 'typedoc.json',
   'vite.config.ts', 'vite.demo.config.ts', 'playwright.config.ts',
-  'api', 'docs', 'examples', 'scripts', 'src', 'test',
+  'api', 'docs', 'examples', 'scripts', 'site', 'src', 'test',
 ]
 const sha256 = data => createHash('sha256').update(data).digest('hex')
 
@@ -36,6 +36,8 @@ function npm(args, capture = false, env = process.env) {
 async function inventory(directory, paths) {
   const files = []
   async function visit(path) {
+    // The generated type reference is rebuilt by the demo build, like preview/; it is not a source.
+    if (generatedPaths.has(path)) return
     // Keep tar's line-based file list unambiguous and reject links outside the reviewed source.
     assert.ok(!/[\r\n\\]/.test(path) && !path.startsWith('-'), 'Invalid archive path: ' + path)
     assert.ok(!/(^|\/)(?:\.env(?:\..*)?|\.npmrc|\.aws|\.codex|\.agents|node_modules)(\/|$)|\.(?:pem|key|p12|pfx|tgz|log)$/i.test(path), 'Private or generated archive entry: ' + path)
@@ -68,7 +70,7 @@ async function verifyDemo(directory) {
       child.once('exit', code => { clearTimeout(timer); reject(new Error('Demo server exited: ' + code)) })
       child.stdout.on('data', data => {
         output += data
-        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\//)
+        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/vue-weave\//)
         if (match) { clearTimeout(timer); resolve(match[0]) }
       })
     })
@@ -87,6 +89,11 @@ async function verifyDemo(directory) {
       ['', 'POST', 405], ['%00', 'GET', 400], ['%5c', 'GET', 400],
       ['%ZZ', 'GET', 400], ['..%2fpackage.json', 'GET', 403], ['missing.js', 'GET', 404],
     ]) assert.equal((await fetch(base + path, { method })).status, expected, 'Unexpected response: ' + path)
+    // The site is served under /vue-weave/ as on GitHub Pages; the server root and old URLs redirect there.
+    for (const path of ['demo/', 'gallery.html', 'examples/', 'ja/']) assert.equal((await fetch(base + path)).status, 200, 'Missing page: ' + path)
+    const root = await fetch(new URL('/', base), { redirect: 'manual' })
+    assert.equal(root.status, 302)
+    assert.equal(root.headers.get('location'), '/vue-weave/')
     return { passed: true, assets: assets.length, installedDependencies: false, matchesSources: true }
   } finally {
     if (child.exitCode === null) child.kill()

@@ -23,3 +23,7 @@ coverage/
 .vscode/
 .DS_Store
 Thumbs.db
+site/.vitepress/.temp/
+site/.vitepress/cache/
+site/api/reference/
+site/ja/api/reference/

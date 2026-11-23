@@ -39,7 +39,7 @@ import {
 import { validateGanttProps, type GanttLoad } from './ganttChart/validateProps.js'
 import { useBarTooltip } from './ganttChart/useBarTooltip.js'
 import {
-  cascadeChanges, cascadeChangeKey, clampWidth, columnWidthForKey, constraintForKey, createSpan, fitInBounds, freeLane, progressForKey,
+  cascadeChanges, cascadeChangeKey, constraintForKey, createSpan, fitInBounds, freeLane, progressForKey,
   snapToGrid, stepConstraintTime, type CascadeResult,
 } from './ganttChart/editing.js'
 import {
@@ -64,6 +64,7 @@ import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThresho
 import { rejectionReason, useValidatedSource, type ValidatorResult } from './shared/validation.js'
 import type { TimelineViewFilter, TimelineViewSort } from '../core/timelineView.js'
 import { headerColumnIds, sameOption, useHeaderFilters, type HeaderControls } from './ganttChart/headerControls.js'
+import { useColumnResize, type ColumnGesture, type HeaderCell } from './ganttChart/columnResize.js'
 import type { TimelineSheetEdit } from '../core/types.js'
 
 const props = withDefaults(defineProps<{
@@ -596,11 +597,6 @@ const localCollapsed = ref(new Set<string>())
 const collapsed = computed(() => props.collapsedIds ?? localCollapsed.value)
 const summaries = computed(() => validationError.value ? undefined : props.showSummaries || props.columns?.length
   ? summarizeTimelineRows(tree.value, props.bars) : undefined)
-const columnWidth = computed(() => {
-  let width = 0
-  for (const column of props.columns ?? []) width += column.width
-  return width
-})
 /** The rendered element whose data attribute holds `value`. Values are compared directly, so IDs need no CSS escaping. */
 function dataElement(attribute: 'vwBar' | 'vwRowHandle' | 'vwCell' | 'vwCellEditor' | 'vwRowHeading', value: string) {
   return elementWithData(scroller.value, attribute, value)
@@ -882,7 +878,7 @@ type Gesture =
   | { type: 'link'; pointerId: number; target: HTMLElement; x: number; y: number }
   | { type: 'create'; pointerId: number; target: HTMLElement; rowId: string; time: number; x: number; moved: boolean }
   | { type: 'row'; id: string; pointerId: number; target: HTMLElement; y: number; moved: boolean }
-  | { type: 'column'; id: string; pointerId: number; target: HTMLElement; x: number; before: number }
+  | ColumnGesture
   | { type: 'pinch'; distance: number; zoom: number; anchor: number }
 type GestureType = Gesture['type']
 type PointerGesture = Exclude<Gesture, { type: 'pinch' }>
@@ -1375,7 +1371,8 @@ const gestureHandlers: GestureHandlers = {
   progress: { move: moveProgress, finish: finishProgress, cancel: cancelProgress },
   create: { move: moveCreate, finish: finishCreate, cancel: cancelCreate },
   row: { move: moveRowDrag, finish: finishRowDrag, cancel: cancelRowDrag },
-  column: { move: moveColumnResize, finish: finishColumnResize, cancel: cancelColumnResize },
+  // Wrapped: `useColumnResize` runs further down in setup, after this table is built.
+  column: { move: (active, event) => moveColumnResize(active, event), finish: (active, event) => finishColumnResize(active, event), cancel: () => cancelColumnResize() },
   constraint: { move: moveConstraint, finish: finishConstraint, cancel: cancelConstraint },
   pinch: { cancel: () => endGesture('pinch') },
 }
@@ -2074,82 +2071,17 @@ watch(zoom, () => {
   if (gesture && gesture.type !== 'pinch' && gesture.type !== 'row' && gesture.type !== 'column') cancelGestures('source-changed')
 })
 
-// Column resizing (`columnsResizable`). A separator at the inline-end edge of each header cell previews pointer
-// drags and proposes keyboard steps; the parent accepts `column-resize` by setting the column width or `labelWidth`.
-const minColumnSize = computed(() => props.minColumnWidth ?? 48)
-const maxColumnSize = computed(() => Math.max(minColumnSize.value, props.maxColumnWidth ?? 800))
-/** The rendered width of the row label column, read from `--vw-row-label-width` after mounting. */
-const measuredLabelWidth = ref<number>()
-const columnResize = shallowRef<{ id: string; width: number }>()
-function measureLabelColumn() {
-  if (!props.columnsResizable || columnResize.value || !root.value) return
-  const width = parseFloat(getComputedStyle(root.value).getPropertyValue('--vw-row-label-width'))
-  measuredLabelWidth.value = Number.isFinite(width) && width > 0 ? width : undefined
-}
-watch(() => props.columnsResizable, () => { if (mounted) measureLabelColumn() })
-function clampColumnWidth(width: number) {
-  return clampWidth(width, minColumnSize.value, maxColumnSize.value)
-}
-function shownColumnWidth(column: TimelineColumn<R>) {
-  return columnResize.value?.id === column.id ? columnResize.value.width : column.width
-}
-/** Extra width of the columns while a column drag is previewed. */
-const columnResizeDelta = computed(() => {
-  const preview = columnResize.value
-  const column = preview && props.columns?.find(item => item.id === preview.id)
-  return column ? preview.width - column.width : 0
+// Column resizing (`columnsResizable`), see `useColumnResize`: the separators, their preview and the proposal.
+const {
+  columnWidth, columnResizeDelta, labelWidthStyle, resizeHandles, measureLabelColumn, shownColumnWidth, handleCell,
+  moveColumnResize, finishColumnResize, cancelColumnResize,
+} = useColumnResize<R>({
+  props, root, mounted: () => mounted, invalid: () => Boolean(validationError.value), side: () => inlineSide.value, rtl: () => rtl.value,
+  labels: () => ({ rows: messages.value.rows!, resizeColumn: messages.value.resizeColumn!, columnResizeRejected: messages.value.columnResizeRejected! }),
+  settle, propose: change => emit('column-resize', change), reject: (change, reason) => emit('column-resize-rejected', change, reason),
+  inlineClientX, primaryPress, gestureActive, begin: beginGesture, owned: event => gestureOf('column', event),
+  end: endOwnedGesture, release: () => { endGesture('column') },
 })
-/** `labelWidth` or a previewed label column width, set on the canvas so that the default markup stays unchanged. */
-const labelWidthStyle = computed(() => {
-  const preview = columnResize.value
-  const width = preview?.id === timelineLabelColumnId ? preview.width : props.labelWidth
-  return width === undefined ? undefined : { '--vw-row-label-width': width + 'px' }
-})
-const resizeHandles = computed(() => {
-  if (!props.columnsResizable || validationError.value) return []
-  const preview = columnResize.value
-  const label = props.labelWidth ?? measuredLabelWidth.value ?? 154
-  const handles = [{ id: timelineLabelColumnId, label: messages.value.rows, width: label, shown: preview?.id === timelineLabelColumnId ? preview.width : label, offset: 0 }]
-  let offset = 0
-  for (const column of props.columns ?? []) {
-    const shown = shownColumnWidth(column)
-    offset += shown
-    handles.push({ id: column.id, label: column.label, width: column.width, shown, offset })
-  }
-  return handles
-})
-type ResizeHandle = (typeof resizeHandles.value)[number]
-interface HeaderCell {
-  key: string
-  className: string
-  style: Record<string, string>
-  attrs: Record<string, string | number>
-  on: Record<string, (event: Event) => void>
-  text: string
-  /** Sort and filter controls (`sortableColumns`, `filterableColumns`); absent keeps the plain header cell. */
-  controls?: HeaderControls
-}
-function handleCell(handle: ResizeHandle): HeaderCell {
-  const pointer = (event: Event) => event as PointerEvent
-  return {
-    key: '\u0000resize:' + handle.id,
-    className: columnResize.value?.id === handle.id ? 'vw-column-resize vw-is-active' : 'vw-column-resize',
-    style: { [inlineSide.value]: `calc(var(--vw-row-label-width) + ${handle.offset - 8}px)` },
-    attrs: {
-      role: 'separator', tabindex: 0, 'aria-orientation': 'vertical', 'aria-label': `${messages.value.resizeColumn} ${handle.label}`,
-      'aria-valuenow': handle.shown, 'aria-valuemin': minColumnSize.value, 'aria-valuemax': maxColumnSize.value,
-    },
-    on: {
-      pointerdown: event => startColumnResize(pointer(event), handle),
-      pointermove: event => columnPointer(pointer(event), false),
-      pointerup: event => columnPointer(pointer(event), true),
-      pointercancel: event => columnPointer(pointer(event), true),
-      lostpointercapture: event => columnPointer(pointer(event), true),
-      keydown: event => columnResizeKeys(event as KeyboardEvent, handle),
-    },
-    text: '',
-  }
-}
 /** The extra column headers, each followed by its resize separator, after the label column's separator. */
 const headerCells = computed(() => {
   const handles = resizeHandles.value
@@ -2192,49 +2124,6 @@ const headerList = computed<HeaderCell[]>(() => {
   if (!controls) return headerCells.value
   return [{ key: labelHeaderKey, className: 'vw-name-column vw-header-controls', style: {}, attrs: controls.attrs, on: headerControlEvents(controls), text: messages.value.rows, controls }, ...headerCells.value]
 })
-function proposeColumnResize(change: TimelineColumnResize) {
-  if (change.before === change.after) return
-  const reason = settle(props.validateColumnResize?.(change), messages.value.columnResizeRejected!)
-  if (reason !== undefined) emit('column-resize-rejected', change, reason)
-  else emit('column-resize', change)
-}
-function startColumnResize(event: PointerEvent, handle: ResizeHandle) {
-  // The scroller would otherwise treat the press as the start of a pan, selection or new bar.
-  event.stopPropagation()
-  if (!props.columnsResizable || !primaryPress(event)) return
-  // Keep a mouse drag from selecting text; the separator takes focus so that Escape cancels.
-  if (event.pointerType !== 'touch') event.preventDefault()
-  beginGesture(event, event.currentTarget as HTMLElement, { type: 'column', id: handle.id, x: inlineClientX(event.clientX), before: handle.width })
-}
-/** Pointer events of a column separator: a move, or the end (`pointerup`, `pointercancel` or a lost capture) of its drag. */
-function columnPointer(event: PointerEvent, end: boolean) {
-  const active = gestureOf('column', event)
-  if (active && end) endOwnedGesture(active, event)
-  else if (active) moveColumnResize(active, event)
-}
-function moveColumnResize(active: Extract<Gesture, { type: 'column' }>, event: PointerEvent) {
-  // Dragging towards the inline end widens the column: right in left-to-right charts, left in right-to-left charts.
-  const width = clampColumnWidth(active.before + inlineClientX(event.clientX) - active.x)
-  if (columnResize.value?.id !== active.id || columnResize.value.width !== width) columnResize.value = { id: active.id, width }
-}
-function cancelColumnResize() {
-  endGesture('column')
-  columnResize.value = undefined
-}
-function finishColumnResize(active: Extract<Gesture, { type: 'column' }>, event: PointerEvent) {
-  moveColumnResize(active, event)
-  const after = columnResize.value?.width ?? active.before
-  cancelColumnResize()
-  proposeColumnResize({ id: active.id, before: active.before, after, source: 'pointer' })
-}
-function columnResizeKeys(event: KeyboardEvent, handle: ResizeHandle) {
-  const after = columnWidthForKey(event, handle.width, rtl.value, minColumnSize.value, maxColumnSize.value)
-  if (after === undefined) return
-  event.preventDefault()
-  if (gestureActive()) return
-  proposeColumnResize({ id: handle.id, before: handle.width, after, source: 'keyboard' })
-}
-
 // Progress editing (`progressEditable`). A slider at the progress boundary previews pointer drags and proposes
 // keyboard steps; the parent accepts `progress-edit` by setting the bar's progress.
 const progressPreview = ref<{ id: string; value: number }>()

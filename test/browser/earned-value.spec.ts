@@ -1,9 +1,9 @@
 // The earned value demo: KPI tiles, the S-curve, the EVM columns of GanttChart and the status date control.
-import { expect, test, openDemo, pageErrors } from './support'
+import { expect, test, openExample, pageErrors } from './support'
 
 test('the earned value demo recalculates PV, EV, AC and the indicators when the status date changes', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Earned value')
+  await openExample(page, 'earned-value')
   const panel = page.getByRole('region', { name: 'Earned value', exact: true })
   const summary = page.getByRole('status', { name: 'Earned value summary', exact: true })
   const tiles = page.getByRole('definition')
@@ -31,5 +31,15 @@ test('the earned value demo recalculates PV, EV, AC and the indicators when the 
 
   await page.getByRole('combobox', { name: 'EAC method', exact: true }).selectOption('budget')
   await expect(curve).toHaveAccessibleDescription(/forecast \d+\.\dk by/)
+  expect(errors).toEqual([])
+})
+
+test('the earned value demo shows its measures and verdict in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'earned-value', { locale: 'ja' })
+  await expect(demo.getByRole('slider', { name: '状況日付' })).toBeVisible()
+  await expect(demo.getByText('計画価値(PV)', { exact: true }).first()).toBeVisible()
+  await expect(demo.getByRole('status', { name: 'アーンドバリューの概要' })).toContainText('の状況:')
+  await expect(demo.getByRole('region', { name: 'アーンドバリューの計画', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

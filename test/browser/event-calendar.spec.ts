@@ -1,12 +1,14 @@
 // EventCalendar: view switching and navigation, pointer moves, resizes and creation, keyboard edits, cancellation and
 // rejected proposals, in the "Event calendar" demo (UTC, Wednesday, November 11, 2026, hours 7 to 20 at 48 px per hour).
-import { expect, test, animationFrames, dragBy, openDemo, pageErrors, serveFixture, type Locator, type Page } from './support'
+import { expect, test, animationFrames, dragBy, openExample, pageErrors, serveFixture, type Locator, type Page } from './support'
 
 async function openCalendar(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Event calendar')
+  await openExample(page, 'event-calendar')
   const calendar = page.getByRole('region', { name: 'Room bookings', exact: true })
   await expect(calendar).toBeVisible()
+  // Pointer drags use page coordinates, so keep the time grid in the viewport whatever the height of the demo navigation.
+  await calendar.evaluate(element => element.scrollIntoView({ block: 'center' }))
   const status = page.getByRole('status', { name: 'Calendar status', exact: true })
   const event = (name: string | RegExp) => calendar.getByRole('button', { name: typeof name === 'string' ? new RegExp('^' + name + ',') : name })
   const button = (name: string) => calendar.getByRole('button', { name, exact: true })
@@ -16,14 +18,14 @@ async function openCalendar(page: Page) {
 test('the toolbar switches views and navigates, and month days open the day view', async ({ page }) => {
   const { errors, calendar, button } = await openCalendar(page)
   const title = calendar.locator('.vw-calendar-title')
-  await expect(title).toHaveText(/^Nov 9\s–\s15, 2026$/)
+  await expect(title).toHaveText(/^Nov 9 – 15, 2026$/)
   await expect(button('Week')).toHaveAttribute('aria-pressed', 'true')
   await button('Next').click()
-  await expect(title).toHaveText(/^Nov 16\s–\s22, 2026$/)
+  await expect(title).toHaveText(/^Nov 16 – 22, 2026$/)
   await expect(page.getByText(/^Loaded range: Mon, Nov 16 – Sun, Nov 22\./)).toBeVisible()
   await expect(calendar.getByRole('button', { name: /^Team offsite, Tue, Nov 17 – Wed, Nov 18, All day$/ })).toBeVisible()
   await button('Today').click()
-  await expect(title).toHaveText(/^Nov 9\s–\s15, 2026$/)
+  await expect(title).toHaveText(/^Nov 9 – 15, 2026$/)
 
   await button('Month').click()
   await expect(button('Month')).toHaveAttribute('aria-pressed', 'true')
@@ -377,3 +379,42 @@ test('a blank rejection reason from validateEdit rejects with the default text',
   await expect(announcement).toHaveText('This change was rejected.')
   expect(errors).toEqual([])
 })
+
+test('the event calendar demo uses Japanese labels on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'event-calendar', { locale: 'ja' })
+  const calendar = demo.getByRole('region', { name: '会議室の予約', exact: true })
+  await expect(calendar).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '今日', exact: true })).toBeVisible()
+  await expect(calendar.getByRole('button', { name: '週', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(demo.getByRole('button', { name: '元に戻す', exact: true })).toBeDisabled()
+  await calendar.getByRole('button', { name: '月', exact: true }).click()
+  await expect(calendar.getByRole('button', { name: '月', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+// The calendar title and the event names come from Intl formatters, whose spacing differs between Node.js (which renders
+// the page on the server) and the browser. The library writes plain spaces, so the server-rendered calendar hydrates
+// without a mismatch. Vue reports one with console.error in production builds and console.warn in development builds.
+const hydrationPages = [
+  { kind: 'example', id: 'event-calendar', locale: 'en', calendar: true },
+  { kind: 'example', id: 'event-calendar', locale: 'ja', calendar: true },
+  { kind: 'showcase', id: 'calendar', locale: 'en', calendar: false },
+] as const
+for (const { kind, id, locale, calendar } of hydrationPages) {
+  test(`the ${locale} ${kind} page ${id} hydrates its server-rendered markup without a mismatch`, async ({ page }) => {
+    const errors = pageErrors(page)
+    const hydration: string[] = []
+    page.on('console', message => { if (/hydrat/i.test(message.text())) hydration.push(`${message.type()}: ${message.text()}`) })
+    const demo = await openExample(page, id, { kind, locale })
+    if (calendar) {
+      // The server-rendered page holds the calendar title, with plain spaces, and the browser renders the same text.
+      const html = await (await page.request.get(page.url())).text()
+      const title = /<span class="vw-calendar-title">([^<]+)<\/span>/.exec(html)?.[1]
+      expect(title).toMatch(/^[^\u00a0\u2009\u202f]+$/)
+      await expect(demo.locator('.vw-calendar-title')).toHaveText(title!)
+    }
+    expect(hydration).toEqual([])
+    expect(errors).toEqual([])
+  })
+}

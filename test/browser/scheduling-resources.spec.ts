@@ -1,9 +1,9 @@
 // The scheduling demo (calendars, constraints, status date, exports, network view, manual tasks, summary links, actuals, scenarios) and resource planning.
-import { expect, test, dragBy, dragTo, openDemo, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
+import { expect, test, dragBy, dragTo, openExample, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
 
 async function openResourcePlanning(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Resource planning')
+  await openExample(page, 'resource-planning')
   const chart = page.getByRole('region', { name: 'Resource plan', exact: true })
   await expect(chart).toBeVisible()
   return { errors, chart, notice: page.getByRole('status', { name: 'Planning notice', exact: true }), summary: page.getByRole('status', { name: 'Plan summary', exact: true }) }
@@ -39,7 +39,7 @@ const centreY = async (locator: Locator) => { const box = (await locator.boundin
 
 test('the scheduling demo compares two baseline sets, toggles them through baselineIds and exports them', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
   // By default the single original-plan baseline is drawn as before.
@@ -116,7 +116,7 @@ test('the scheduling demo compares two baseline sets, toggles them through basel
 
 test('calendar-aware edits propagate downstream, expose overload and preserve the accepted plan on failure', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const finish = page.getByTestId('schedule-finish')
   const cutting = page.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
   const inspection = page.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
@@ -144,7 +144,7 @@ test('calendar-aware edits propagate downstream, expose overload and preserve th
 
 test('the scheduling demo shades non-working time and describes critical, float, deadline and split bars', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
   const shading = plan.locator('.vw-gantt-non-working')
@@ -208,7 +208,7 @@ test('the scheduling demo shades non-working time and describes critical, float,
 
 test('the scheduling demo shows scheduling constraints, reschedules when one moves and reports an infeasible one', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const finish = page.getByTestId('schedule-finish')
   const toggle = page.getByRole('checkbox', { name: 'Show scheduling constraints', exact: true })
@@ -272,7 +272,7 @@ test('the scheduling demo shows scheduling constraints, reschedules when one mov
 
 test('the scheduling demo previews cascaded operations during a drag and applies them as one batch', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
   const inspection = plan.getByRole('button', { name: /^Inspect order A \d\d Nov.*–/ })
@@ -322,7 +322,7 @@ test('the scheduling demo previews cascaded operations during a drag and applies
 
 test('the scheduling demo draws the status date and progress line and reschedules from the status date', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const line = plan.getByRole('img', { name: 'Status date 09 Nov 12:00', exact: true })
   await expect(line).toBeVisible()
@@ -370,7 +370,7 @@ test('the scheduling demo draws the status date and progress line and reschedule
 
 test('the scheduling demo reports a status date that leaves no room for the done work', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   // At the start of the range the done hour of cutting order B cannot lie before the status date.
   await page.getByRole('slider', { name: 'Status date', exact: true }).fill(String(Date.parse('2026-11-09T08:00:00+09:00')))
   await page.getByRole('button', { name: 'Reschedule from status date', exact: true }).click()
@@ -391,7 +391,7 @@ test('the scheduling demo exports Microsoft Project XML, iCalendar and CSV files
       return create(object)
     }
   })
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const { readFile } = await import('node:fs/promises')
   async function save(name: string) {
     const pending = page.waitForEvent('download')
@@ -425,7 +425,7 @@ test('the scheduling demo exports Microsoft Project XML, iCalendar and CSV files
 
 test('the scheduling demo shows the plan as a network diagram with critical tasks and links highlighted', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const toggle = page.getByRole('checkbox', { name: 'Network diagram', exact: true })
   await expect(page.getByLabel('Schedule network diagram', { exact: true })).toHaveCount(0)
   await toggle.check()
@@ -448,7 +448,7 @@ test('the scheduling demo shows the plan as a network diagram with critical task
 
 test('the scheduling demo pins inspection manually, lists manual conflicts and leaves an inactive order out of the plan', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const equipment = page.getByRole('region', { name: 'Gantt chart', exact: true }).nth(1)
   const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
@@ -565,7 +565,7 @@ test('the scheduling demo pins inspection manually, lists manual conflicts and l
 
 test('the scheduling demo labels a lead and its cascade preview and batch honour the lead', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   await expect(plan.locator('.vw-gantt-lag')).toHaveText('−2 h')
   const other = plan.getByRole('button', { name: /^Cut order B \d\d Nov.*–/ })
@@ -803,7 +803,7 @@ test('resource planning: placement, reassignment and rescheduling propose the sa
 
 test('the scheduling demo draws opt-in links to and from a summary task and edits them like other links', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   // Off by default: the scheduling page keeps its two charts.
   await expect(page.getByRole('region', { name: 'Summary task links timeline', exact: true })).toHaveCount(0)
   await page.getByRole('checkbox', { name: 'Summary task links', exact: true }).check()
@@ -887,7 +887,7 @@ test('the scheduling demo draws opt-in links to and from a summary task and edit
 
 test('plan scenarios: create a candidate, compare, highlight a row, discard, adopt and undo as one step', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Linked views')
+  await openExample(page, 'linked-views')
   await page.getByRole('checkbox', { name: 'Compare plan scenarios' }).check()
   const panel = page.locator('section[aria-labelledby="scenario-title"]')
   const status = panel.getByRole('status', { name: 'Scenario status' })
@@ -969,7 +969,7 @@ test('plan scenarios: create a candidate, compare, highlight a row, discard, ado
 
 test('the scheduling demo shows plan, recorded actuals and remaining forecast from rescheduleFromActuals', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   // Off by default: the scheduling page keeps its charts.
   await expect(page.getByRole('region', { name: 'Recorded actuals timeline', exact: true })).toHaveCount(0)
   await page.getByRole('checkbox', { name: 'Recorded actuals', exact: true }).check()
@@ -1003,5 +1003,16 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
   await expect(chart.getByRole('button', { name: /^Weld frame · forecast/ })).toHaveCount(0)
   await expect(page.getByTestId('actuals-finish')).toHaveText('10:40')
   expect(await actualNames()).toEqual(before)
+  expect(errors).toEqual([])
+})
+
+test('the resource planning example previews a change in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-planning', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: 'リソースの計画', exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '計画の変更を元に戻す', exact: true })).toBeDisabled()
+  await expect(demo.getByRole('status', { name: '計画の概要' })).toContainText('scheduleTasks で計算。')
+  await expect(demo.getByRole('heading', { name: '未計画のタスク', exact: true })).toBeVisible()
+  await expect(demo.getByRole('heading', { name: '計画の診断', exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

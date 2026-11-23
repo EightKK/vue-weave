@@ -17,7 +17,7 @@ const lockfile = packages => JSON.stringify({ lockfileVersion: 3, packages: { ''
 
 async function sources() {
   await put('src/index.ts', 'export const a = 1\n')
-  await put('examples/main.ts', "import '../src'\n")
+  await put('examples/demo/main.ts', "import '../../src'\n")
   await put('package.json', '{"name":"demo","version":"1.0.0"}\n')
   await put('package-lock.json', lockfile({ 'node_modules/vite': { version: '8.0.0' } }))
 }
@@ -53,6 +53,21 @@ describe('demo build stamp', () => {
     await put('src/index.ts', 'export const a = 1\n')
     await put('src/extra.ts', '')
     assert.notEqual(await hashDemoInputs(root), before)
+    // The site's configuration lives in a hidden directory that is listed as an input of its own.
+    const withExtra = await hashDemoInputs(root)
+    await put('site/.vitepress/config.ts', 'export default {}\n')
+    assert.notEqual(await hashDemoInputs(root), withExtra)
+  })
+
+  it('leaves out the type reference that the build generates, but not the TypeDoc configuration', async () => {
+    await sources()
+    await put('site/api/index.md', '# API\n')
+    const before = await hashDemoInputs(root)
+    // A checkout without the generated (gitignored) pages matches the build that wrote them.
+    await put('site/api/reference/core/functions/traverseGraph.md', '# traverseGraph\n')
+    assert.equal(await hashDemoInputs(root), before)
+    await put('typedoc.json', '{}\n')
+    assert.notEqual(await hashDemoInputs(root), before)
   })
 
   it('reports missing, stale and current builds', async () => {
@@ -62,7 +77,7 @@ describe('demo build stamp', () => {
     assert.equal(await demoBuildState(root), 'stale', 'a build without a stamp is treated as stale')
     await writeDemoStamp(root, await hashDemoInputs(root))
     assert.equal(await demoBuildState(root), 'current')
-    await put('examples/main.ts', "import '../src/index.ts'\n")
+    await put('examples/demo/main.ts', "import '../../src/index.ts'\n")
     assert.equal(await demoBuildState(root), 'stale')
     await put('preview/demo-build.json', '{ not json')
     assert.equal(await demoBuildState(root), 'stale')

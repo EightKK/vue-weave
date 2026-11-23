@@ -116,6 +116,40 @@ export interface TimelineViewProjection<R extends TimelineRow = TimelineRow, B e
   diagnostics: TimelineViewDiagnostic[]
 }
 
+/** The parts of a `TimelineViewState` that `projectTimelineRows` reads. A whole `TimelineViewState` fits. */
+export type TimelineRowViewState = Pick<TimelineViewState, 'search' | 'sort' | 'filters' | 'collapsedIds'>
+
+/** The input of `projectTimelineRows`: a row tree with optional columns, compare rules and bars. */
+export interface TimelineRowsInput<R extends TimelineRow = TimelineRow> {
+  rows: readonly R[]
+  /** Needed to resolve the column IDs of the search, the filters and the sort. */
+  columns?: readonly TimelineColumn<R>[]
+  /** Registered compare rules by ID. */
+  sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>
+  /**
+   * Optional bars. The unrestricted search also matches their labels, and columns receive the row summaries
+   * (`summarizeTimelineRows`) as their second argument. Without bars, columns receive no summary.
+   */
+  bars?: readonly TimelineBar[]
+}
+
+/** The row part of a timeline view: what `projectTimelineView` returns for the rows. */
+export interface TimelineRowsProjection<R extends TimelineRow = TimelineRow> {
+  /** The kept rows (matches with their ancestors), siblings sorted stably. The row objects are the input's. */
+  rows: R[]
+  /**
+   * IDs of the rows that matched the search and the filters (without the ancestors that were kept for them), in input
+   * order. Empty without a search or filter.
+   */
+  matchedRowIds: string[]
+  /** WBS codes computed from the original row array, never from the display order. */
+  wbs: Map<string, string>
+  /** The collapsed IDs of the state that name a row, in state order. */
+  collapsedIds: string[]
+  /** `unknown-row`, `unknown-column` (filter or search column) and `unknown-sort-rule` diagnostics. */
+  diagnostics: TimelineViewDiagnostic[]
+}
+
 /** A view that shows every column in declared order with no search, sort or collapsed rows. */
 export function createTimelineViewState(columns: readonly Pick<TimelineColumn, 'id'>[] = [], patch: Partial<Omit<TimelineViewState, 'version'>> = {}): TimelineViewState {
   return {
@@ -298,26 +332,22 @@ function compareValues(a: string | number, b: string | number) {
 }
 
 /**
- * Project the data for display. Rows that match the search and every column filter stay with their ancestors (a
- * filter or sort on `timelineLabelColumnId` reads the row label), siblings are sorted
- * stably, and dependencies to hidden bars are removed and reported. The result passes
- * `validateTimelineData`. Inputs are not changed, and WBS codes come from the original rows.
+ * Project the rows of a view: the search and the column filters keep matching rows with their ancestors (a filter or
+ * sort on `timelineLabelColumnId` reads the row label), siblings are sorted stably by the sort rules with ties in the
+ * original order, and collapsed IDs that name no row are dropped. This is the row part of `projectTimelineView`, for
+ * applications that show the rows in their own tree table. Unknown filter, search and sort columns and unknown collapsed
+ * rows are reported as diagnostics, not thrown. Throws like `createTimelineRowTree` for invalid or duplicate row IDs,
+ * unknown parents and cycles, and an Error for a bar whose row is unknown. Inputs are not changed.
  */
-export function projectTimelineView<R extends TimelineRow, B extends TimelineBar, D extends TimelineDependency = TimelineDependency>(
-  input: TimelineViewInput<R, B, D>, state: TimelineViewState,
-): TimelineViewProjection<R, B, D> {
-  const { rows, bars } = input
-  const dependencies: readonly D[] = input.dependencies ?? []
+export function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsInput<R>, state: TimelineRowViewState): TimelineRowsProjection<R> {
+  const { rows } = input
+  const bars = input.bars ?? []
   const columns = input.columns ?? []
-  checkWindow(state.window)
-  // A loop, not `Math.max(...lanes)`: spreading every bar into one call exceeds the argument limit of large timelines.
-  let laneCount = input.laneCount ?? 1
-  if (input.laneCount === undefined) for (const bar of bars) laneCount = Math.max(laneCount, (bar.lane ?? 0) + 1)
-  validateTimelineData(rows, bars, dependencies, laneCount)
   const tree = createTimelineRowTree(rows)
   const wbs = timelineWbsCodes(rows)
-  const diagnostics: TimelineViewDiagnostic[] = reconcileTimelineViewColumns(state, columns).diagnostics
   const rowIds = new Set(rows.map(row => row.id))
+  for (const bar of bars) if (!rowIds.has(bar.rowId)) throw new Error('Unknown row for bar: ' + bar.id)
+  const diagnostics: TimelineViewDiagnostic[] = []
   for (const id of state.collapsedIds) {
     if (!rowIds.has(id)) diagnostics.push({ code: 'unknown-row', id, message: 'Unknown collapsed row in the saved view: ' + id })
   }
@@ -404,6 +434,31 @@ export function projectTimelineView<R extends TimelineRow, B extends TimelineBar
     }
     shownRows = ordered
   }
+  return { rows: shownRows, matchedRowIds: matched, wbs, collapsedIds, diagnostics }
+}
+
+/**
+ * Project the data for display. Rows that match the search and every column filter stay with their ancestors (a
+ * filter or sort on `timelineLabelColumnId` reads the row label), siblings are sorted
+ * stably, and dependencies to hidden bars are removed and reported. The rows are projected by `projectTimelineRows`.
+ * The result passes `validateTimelineData`. Inputs are not changed, and WBS codes come from the original rows.
+ */
+export function projectTimelineView<R extends TimelineRow, B extends TimelineBar, D extends TimelineDependency = TimelineDependency>(
+  input: TimelineViewInput<R, B, D>, state: TimelineViewState,
+): TimelineViewProjection<R, B, D> {
+  const { rows, bars } = input
+  const dependencies: readonly D[] = input.dependencies ?? []
+  const columns = input.columns ?? []
+  checkWindow(state.window)
+  // A loop, not `Math.max(...lanes)`: spreading every bar into one call exceeds the argument limit of large timelines.
+  let laneCount = input.laneCount ?? 1
+  if (input.laneCount === undefined) for (const bar of bars) laneCount = Math.max(laneCount, (bar.lane ?? 0) + 1)
+  validateTimelineData(rows, bars, dependencies, laneCount)
+  const projected = projectTimelineRows({ rows, bars, columns, sortRules: input.sortRules }, state)
+  const diagnostics: TimelineViewDiagnostic[] = [...reconcileTimelineViewColumns(state, columns).diagnostics, ...projected.diagnostics]
+  const { wbs, collapsedIds, matchedRowIds: matched } = projected
+  const shownRows = projected.rows
+  const kept = new Set(shownRows.map(row => row.id))
 
   // Bars and dependencies.
   const shownBars = bars.filter(bar => kept.has(bar.rowId))

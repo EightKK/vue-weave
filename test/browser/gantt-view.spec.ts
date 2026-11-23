@@ -1,6 +1,6 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
 import {
-  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openDemo, openGanttFixture, openGestureFixture,
+  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openExample, openGanttFixture, openGestureFixture,
   openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
 } from './support'
 
@@ -18,13 +18,14 @@ async function recordWheelDefaults(page: Page) {
 
 test('direction, slots, milestones, theme and virtual rows', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  const demo = await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Direction').selectOption('TB')
   await expect(graphStage(page)).toHaveCSS('height', '470px')
   await page.getByLabel('Custom nodes').check()
   await expect(page.locator('.vw-network-node > rect')).toHaveCount(6)
-  await page.getByLabel('Dark theme').check()
-  await expect(page.locator('.demo')).toHaveClass(/dark/)
+  // The site's dark mode switch also switches the demo.
+  await page.getByRole('switch', { name: 'Appearance' }).first().click()
+  await expect(demo.locator('.vw-site-demo-body')).toHaveClass(/dark/)
   await page.getByRole('button', { name: 'Project delivery', exact: true }).click()
   await expect(page.locator('.vw-gantt-bar.vw-is-milestone')).toHaveCount(1)
   await page.getByRole('button', { name: 'Release 15:00–15:00', exact: true }).press('ArrowRight')
@@ -40,10 +41,10 @@ test('direction, slots, milestones, theme and virtual rows', async ({ page }) =>
 
 test('hierarchy, header bands, baselines and markers compose with controlled edits', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  const demo = await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Planning overlays').check()
-  await expect(page.getByText('Operating window · UTC')).toBeVisible()
-  await expect(page.getByText('Shift review', { exact: true })).toBeVisible()
+  await expect(demo.getByText('Operating window · UTC')).toBeVisible()
+  await expect(demo.getByText('Shift review', { exact: true })).toBeVisible()
   await expect(page.locator('.vw-gantt-row')).toHaveCount(3)
   await expect(page.locator('.vw-gantt-baseline')).toHaveCount(4)
   const baseline = page.locator('.vw-gantt-baseline').first()
@@ -730,7 +731,7 @@ test('gantt marker ranges line up with the time axis in both directions and appe
 
 test('gantt select reports drags, sticky band labels follow the scroll and rounded dependencies draw curves', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Product roadmap')
+  await openExample(page, 'roadmap', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
   // The click that ends a drag carries detail.dragged, so the showcase keeps the message about the move.
   const setup = page.getByRole('button', { name: 'Guided setup Jan 11–Feb 22', exact: true })
@@ -752,8 +753,9 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const padding = parseFloat(await quarter.evaluate(el => getComputedStyle(el).paddingLeft))
   expect(label.x + padding + await indent()).toBeGreaterThan(area.x)
 
-  await page.getByRole('button', { name: 'Sprint plan', exact: true }).click()
-  const links = page.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  const sprint = await openExample(page, 'sprint', { kind: 'showcase' })
+  const links = sprint.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
+  await expect(links.first()).toBeAttached()
   expect(await links.count()).toBeGreaterThan(0)
   for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
   expect(errors).toEqual([])
@@ -761,7 +763,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
 
 test('compressing non-working time widens working bars and keeps edits snapped to valid times', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: 'Cut order A 09 Nov 08:00–09 Nov 11:00', exact: true })
   await expect(cutting).toBeVisible()
@@ -790,7 +792,7 @@ test('compressing non-working time widens working bars and keeps edits snapped t
 
 test('tick labels of a compressed working-time axis never overlap; squeezed ticks keep their grid lines', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const panel = page.getByRole('region', { name: 'Calendar-aware schedule', exact: true })
   await panel.getByRole('checkbox', { name: 'Compress non-working time', exact: true }).check()
   const plan = panel.getByRole('region', { name: 'Gantt chart', exact: true }).first()
@@ -988,5 +990,15 @@ test('gantt sorting or filtering during a drag cancels the gesture as a source c
   await expect(events).toHaveText('["edit-cancel","source-changed",["bar-c"]]')
   await page.mouse.up()
   await expect(chart.getByRole('button', { name: /^Bar Gamma/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('the 1,000 resources example scrolls to its last resource on the Japanese page', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'resource-scale', { locale: 'ja' })
+  await expect(demo.getByText('1,000 行 · 3,000 区間 · UTC')).toBeVisible()
+  await demo.getByRole('button', { name: '最後のリソース', exact: true }).click()
+  await expect(demo.getByText('リソース 1000', { exact: true })).toBeVisible()
+  expect(await demo.locator('.vw-gantt-row').count()).toBeLessThan(15)
   expect(errors).toEqual([])
 })

@@ -1,5 +1,7 @@
 # Architecture and scope
 
+<!-- #region architecture -->
+
 The package has three boundaries.
 
 - src/core contains typed graph/interval inputs, validation, graph traversal, layout, time mapping, interval editing, work calendars, scheduling and resource-load analysis. It has no Vue or browser imports.
@@ -16,11 +18,11 @@ Applications keep three kinds of data apart, and the APIs follow that split.
 | --- | --- | --- |
 | Input | Tasks, dependencies, assignments, calendars, constraints; graph nodes, edges, groups, positions and sizes | An edit is accepted, the server sends an update, a snapshot is restored |
 | Computed | Schedules, work intervals, float, load, diagnostics and traces, layouts | A calculation of the current input succeeds |
-| Projection | What a view draws: resource rows and their bars (`projectResourceTimeline`), collapsed proxies, highlights, search and sort results (`projectTimelineView`), display frames (`useAsyncGraphLayout`) | The computed result or the view settings change |
+| Projection | What a view draws: resource rows and their bars (`projectResourceTimeline`), collapsed proxies, highlights, search and sort results (`projectTimelineView`, and `projectTimelineRows` for the rows alone), display frames (`useAsyncGraphLayout`) | The computed result or the view settings change |
 
 Edits, history (`useEditHistory`, `useEditTransaction`) and snapshots (`serializeWeaveSnapshot`) hold input only. A task shown on two resource rows is still one task; projected bar IDs map back through `origins` and are never saved as task IDs. Load, traces and layouts are recalculated from the input instead of being stored or undone. A view projection never feeds a calculation: schedules and load come from the full input, not from a filtered or sorted display.
 
-Plan scenarios follow the same split. A candidate plan is a second input (a draft that records the revision it was derived from); `comparePlans` is computed from both inputs and their computed results, and keeps input differences and result differences in separate parts; the highlights (`planComparisonTargets`) and the current plan drawn as a baseline set (`planBaselines`) are projections. Adopting a candidate replaces the input in one history entry.
+Plan scenarios follow the same split. A candidate plan is a second input (a draft that records the revision it was derived from); `comparePlans` is computed from both inputs and their computed results, and keeps input differences and result differences in separate parts; the highlights (`planComparisonTargets`) and the current plan drawn as a baseline set (`planBaselines`) are projections. Adopting a candidate replaces the input in one history entry. `diffStructure` is the generic counterpart for other keyed collections, such as two revisions of a bill of materials or a WBS: it compares two resolved inputs and reports field values and parent changes, and computes nothing else.
 
 The ESM root exports Vue components and core functions. The separate core export supports headless use. Vite externalizes Vue. Declaration files preserve props, slots and exposed methods. Consumers load style.css explicitly.
 
@@ -74,6 +76,10 @@ The router never builds a pixel grid. Boxes grown by the clearance go into a uni
 
 Virtualisation and data loading are separate responsibilities. The components virtualise rendering: GanttChart draws only the rows in the scrolled row window and the bars inside the visible time window, and NetworkGraph can cull what is off screen. They still validate and index everything they are given, so the size of the input, not of the screen, bounds validation, indexing and layout. Loading belongs to the application. GanttChart reports the window it renders through `visible-window-change` (after mounting, coalesced, only when it changed); the pure request state in `windowedData.ts` turns windows into chunk-aligned requests, aborts superseded ones, ignores late answers, deduplicates items by ID and keeps a status per cell; `useWindowedData` wires that state to Vue and to the application's `load` function, which does the fetching. `graphExpansion.ts` does the same bookkeeping for a graph loaded one hop at a time. Links to items that are not loaded are kept out of the component input (`splitDanglingLinks`), because the components reject links to unknown items. Loaded data is projection input, not the plan: schedules, load, deadlines and comparisons are computed from complete inputs, never from the loaded subset.
 
+## Tree grid rendering
+
+TreeGrid is a separate renderer, not a mode of GanttChart: it has no time axis, and shares only time-independent parts with the other components (the row tree of `createTimelineRowTree`, the typed field model of `fieldEditing.ts`, the tab-separated text of `sheetEditing.ts`, `moveTimelineRow` for row moves, `WindowedCellStatus` for lazy children, and the shared validation, pointer and focus helpers). Its pure model is `core/treeGrid.ts`: validation and indexing, the displayed lines for a set of expanded rows (an iterative preorder walk with a stack of pending status lines), row and column windows over fixed line heights and cumulative column widths (binary search), the treegrid key mapping, cell resolution and the builders and apply functions of every proposal. The component renders the window lines and columns in keyed lists whose keys are slots of the window, so a scroll patches the elements it keeps. The active line, and inside it the active column, are separate elements between those lists: Vue's keyed diff moves elements only within one list, so the focused element is never moved or removed, and an open editor lives in it. Scope: fixed line heights, one tree column, no column groups, pinning or resizing, and read and edit proposals only; sorting, filtering and aggregation belong to the application (project the rows before passing them, as with `projectTimelineRows`).
+
 ## Timeline rendering and editing
 
 A single horizontal/vertical scroll surface contains the fixed header, sticky row labels and positioned bars. Visible row indices plus overscan determine row DOM. Visible time bounds limit bar and tick rendering. Dependency paths are computed in the same coordinate system. The renderer uses fixed row heights and explicit lanes.
@@ -96,6 +102,7 @@ The components keep rendering, measurement and gesture handling in their single-
 
 - `src/components/networkGraph/`: the drag-preview layout (`previewLayout(context, change)` layers the changed boxes, paths and labels over the saved layout and records which nodes and edges changed, so only those items update), the `avoidNodes` preview rerouting index, the preview placement of edge labels (`edgeLabelPlacement`), group frame geometry, port keys, the move, snap and resize arithmetic, and the default node and marker drawings.
 - `src/components/ganttChart/`: geometry and windowing, prop validation, the edit arithmetic for keys, drag to create and `cascade`, row hierarchy moves, the time overlays, load rows, bar descriptions and segments, baseline strips, constraint markers and handles, link and reconnect handles, context-menu hit-testing, the visible-window report, and the composables for the tooltip, pinch and wheel zoom (`useZoomGestures`), header sorting and filtering (`useHeaderFilters`), cell and field editing (`useCellEditing`) and spreadsheet mode (`useSheet`). One `Gesture` record holds the pointer gesture in flight, started by `beginGesture` and driven by a table of move, finish and cancel handlers per gesture type; previews stay in their own reactive refs.
+- `src/components/treeGrid/`: the split of the window around the active line and column, the slot keys and the scroll arithmetic of TreeGrid.
 - `src/components/shared/`: helpers shared by the components. `validation.ts` holds the one rule for validator results (`rejectionReason`: false or a blank string rejects with the default text) and `useValidatedSource`, which validates props, reports `validation-error` and falls back to the empty state; `pointer.ts` the 4 px drag threshold, safe pointer capture and release, and edge auto-scroll during drags; `focus.ts` the focus that follows an item after the parent applies a keyboard edit.
 
 ## Supported scope
@@ -115,3 +122,5 @@ SVG export is a pure core operation. `renderGraphSvg` and `renderTimelineSvg` bu
 ## Right-to-left layout
 
 GanttChart measures every horizontal position from the inline-start edge of the time axis. In right-to-left mode the same offsets are written as `right` instead of `left`, the scroll offset is read as the distance from the inline start (`-scrollLeft` in a right-to-left scroll container), and pointer deltas are negated. The time scale itself is not mirrored, so `toX`/`toTime` round trips, snapping and edit proposals are identical in both directions. SVG layers (dependency paths and their hit areas) are flipped with a CSS transform. The SVG exporter has no CSS, so it mirrors the axis with `mirrorTimeScale` instead. NetworkGraph geometry is direction-independent; only the controls and label alignment change.
+
+<!-- #endregion architecture -->

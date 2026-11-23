@@ -1,9 +1,9 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openDemo, pageErrors, pressAndMove, type Page } from './support'
+import { expect, test, openExample, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Saved editing')
+  await openExample(page, 'saved-editing')
   const chart = page.getByRole('region', { name: 'Saved timeline', exact: true })
   await expect(chart).toBeVisible()
   return {
@@ -15,7 +15,7 @@ async function openPersistence(page: Page) {
 
 async function openLinkedDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Linked views')
+  await openExample(page, 'linked-views')
   const demo = page.locator('section[aria-labelledby="linked-title"]')
   await expect(demo.getByRole('button', { name: /^Cut order A 10:00/ })).toBeVisible()
   return {
@@ -29,7 +29,7 @@ async function openLinkedDemo(page: Page) {
 
 async function openAsyncDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Async layout')
+  await openExample(page, 'async-layout')
   const demo = page.locator('section[aria-labelledby="async-title"]')
   await expect(demo.getByRole('button', { name: /^Receive/ })).toBeVisible()
   return {
@@ -42,7 +42,7 @@ async function openAsyncDemo(page: Page) {
 
 async function openLargePlanDemo(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Large plan')
+  await openExample(page, 'large-plan')
   const demo = page.locator('section[aria-labelledby="large-plan-title"]')
   const status = demo.getByRole('status', { name: 'Window status' })
   const loaded = demo.getByLabel('Loaded bars', { exact: true })
@@ -229,6 +229,48 @@ test('linked views: a graph selection highlights bars without selecting or delet
   await page.mouse.move(2, 2)
   await expect(summary).toContainText('Nothing selected')
   await expect(node('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: an external task list selects by entity and every view only highlights', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  const list = demo.getByRole('list', { name: 'Task list' })
+  const item = (label: string) => list.getByRole('button', { name: label, exact: true })
+  await item('Cut order A').click()
+  await expect(item('Cut order A')).toHaveAttribute('aria-pressed', 'true')
+  await expect(summary).toContainText('Selected in task list: Cut order A')
+  // No view owns the selection: the graph and the timeline highlight the task without selecting it.
+  await expect(node('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(node('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Cut order A')).toHaveClass(/\bvw-is-highlighted\b/)
+  await expect(bar('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-highlighted')).toHaveCount(2)
+  await expect(demo.locator('.vw-gantt-load-segment.vw-is-selected')).toHaveCount(0)
+
+  // A view selection replaces it, and the list shows that selection too.
+  await bar('Pack').click()
+  await expect(summary).toContainText('Selected in timeline: Pack')
+  await expect(item('Pack')).toHaveAttribute('aria-pressed', 'true')
+  await expect(item('Cut order A')).toHaveAttribute('aria-pressed', 'false')
+  await expect(node('Cut order A')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // Selecting from the list again takes the selection back from the timeline.
+  await item('Inspect').click()
+  await expect(summary).toContainText('Selected in task list: Inspect')
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Inspect')).toHaveClass(/\bvw-is-highlighted\b/)
+  // Clicking the selected list item again clears the selection.
+  await item('Inspect').click()
+  await expect(summary).toContainText('Nothing selected')
+  await expect(item('Inspect')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Inspect')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // Clear selection works for an entity selection.
+  await item('Prepare stock').click()
+  await expect(node('Prepare stock')).toHaveClass(/\bvw-is-highlighted\b/)
+  await demo.getByRole('button', { name: 'Clear selection', exact: true }).click()
+  await expect(summary).toContainText('Nothing selected')
+  await expect(node('Prepare stock')).not.toHaveClass(/\bvw-is-highlighted\b/)
   expect(errors).toEqual([])
 })
 
@@ -586,11 +628,12 @@ test.describe('linked views: the context toolbar and deletion', () => {
     // The toolbar is given the graph component; ask it for a target's rectangle the way the toolbar does.
     // A role query skips a hidden toolbar, so the element is found by CSS here.
     const rect = (target: unknown) => demo.locator('.linked-graph [role="toolbar"]').evaluate((element, value) => {
-      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree.
+      // The toolbar receives the graph as a prop; find its vnode by walking the app's component tree. The site's layout
+      // nests the demo deeply, so the walk allows a deep tree.
       const find = (vnode: any, depth = 0): any => {
-        if (!vnode || typeof vnode !== 'object' || depth > 80) return undefined
+        if (!vnode || typeof vnode !== 'object' || depth > 400) return undefined
         if (vnode.component?.props?.graph) return vnode.component.props.graph
-        const children = [vnode.component?.subTree, ...(Array.isArray(vnode.children) ? vnode.children : [])]
+        const children = [vnode.component?.subTree, vnode.suspense?.activeBranch, ...(Array.isArray(vnode.children) ? vnode.children : [])]
         for (const child of children) { const found = find(child, depth + 1); if (found) return found }
         return undefined
       }
@@ -772,5 +815,14 @@ test('large plan: with Keep positions when expanding, the parts already shown st
     expect(after[i]!.y).toBeCloseTo(before[i]!.y, 1)
     expect(after[i]!.width).toBeCloseTo(before[i]!.width, 1)
   }
+  expect(errors).toEqual([])
+})
+
+test('the saved editing example saves JSON and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'saved-editing', { locale: 'ja' })
+  await expect(demo.getByRole('region', { name: '保存するタイムライン', exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: 'JSON を保存', exact: true }).click()
+  await expect(demo.getByRole('status', { name: 'JSON の状態' })).toContainText('タスク 5 件と表示状態を JSON で保存しました')
   expect(errors).toEqual([])
 })

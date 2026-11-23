@@ -7,6 +7,7 @@ import {
   type FieldValue, type ScheduleResult, type TimelineColumn, type TimelineEdit, type TimelineFieldEdit, type TimelineFieldSpec,
   type TimelineSheetEdit,
 } from '../../src'
+import { componentLabels } from '../i18n'
 
 const props = defineProps<{ ja: boolean }>()
 const t = (ja: string, en: string) => props.ja ? ja : en
@@ -160,7 +161,7 @@ const checkDuration = (edit: TimelineFieldEdit<Row>) =>
   <section class="production-panel"><div class="production-heading"><h2>{{ t('ライン3 改修プロジェクト', 'Line 3 retrofit') }}</h2></div>
     <GanttChart spreadsheet show-summaries summary-dependencies :rows="rows" :columns="columns" :bars="bars" :dependencies="dependencies"
       :highlighted-dependency-ids="critical" :range="range" :non-working-periods="weekends" :pixels-per-unit="22" :tick-steps="[7]"
-      :snap="1" :min-duration="1" :format-time="formatDay" :height="480" :row-height="36" :label-width="150" :labels="{ rows: t('タスク', 'Task') }"
+      :snap="1" :min-duration="1" :format-time="formatDay" :height="480" :row-height="36" :label-width="150" :labels="{ ...componentLabels(ja ? 'ja' : 'en').gantt, rows: t('タスク', 'Task') }"
       :validate-field-edit="checkDuration" :validate-sheet-edit="checkSheet" @edit="applyBar" @field-edit="applyField" @sheet-edit="applySheet"
       @field-edit-rejected="(_, reason) => message = reason" @sheet-edit-rejected="reason => message = reason" />
     <p class="production-caption sheet-status" role="status" :aria-label="t('編集結果', 'Edit result')">{{ message }}</p>

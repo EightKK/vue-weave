@@ -145,7 +145,7 @@ const examples = computed(() => [
           :selected-ids="new Set([selected])" :highlighted-bar-ids="highlighted" :snap="hour" :tick-steps="[2 * hour, 4 * hour]"
           :label-width="106" :pixels-per-unit="42 / hour" :height="230" :row-height="34" :format-time="clock"
           :markers="[{ id: 'shipping', time: deadline, label: text.deadline }]"
-          :labels="{ region: text.gantt, editHint: text.planHelp, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
+          :labels="{ ...text.labels.gantt, region: text.gantt, editHint: text.planHelp, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
           :cascade="cascade" :validate-edit="validate" :validate-edits="changes => validate(changes[0]!)" @select="id => selected = id"
           @edit="change => commitEdits([change])" @edits="commitEdits"
           @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'">
@@ -160,7 +160,7 @@ const examples = computed(() => [
           :pixels-per-unit="42 / hour" :height="224" :load-row-height="34" :format-time="clock"
           :load-rows="loadRows" :load-segments="schedule.load" :highlighted-load-targets="loadFocus"
           :marker-ranges="[{ id: 'maintenance', ...maintenance, label: text.maintenance, tone: 'amber' }]"
-          :labels="{ region: text.load, empty: text.load, editHint: '', loadRegion: text.load, load: text.load, capacity: text.capacity, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
+          :labels="{ ...text.labels.gantt, region: text.load, empty: text.load, editHint: '', loadRegion: text.load, load: text.load, capacity: text.capacity, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
           load-selectable @target-activate="activateLoad">
           <template #row-heading>{{ text.resource }}</template>
         </GanttChart>

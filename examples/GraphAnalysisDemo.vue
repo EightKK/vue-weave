@@ -10,6 +10,9 @@ import {
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
 import StatusLine from './components/StatusLine.vue'
+import { useDemoLocale } from './i18n'
+
+const { t, labels } = useDemoLocale()
 
 // mulberry32: a small deterministic PRNG, so the demo and its tests see the same network every time.
 function seeded(seed: number) {
@@ -79,15 +82,21 @@ const components = graphComponents(nodes, edges)
 const { communities, modularity } = detectGraphCommunities(nodes, edges)
 const groups = graphCommunityGroups(communities, {
   idPrefix: 'community-',
-  label: (members, index) => `Community ${index + 1} · ${members.length} nodes`,
+  label: (members, index) => t({ en: `Community ${index + 1} · ${members.length} nodes`, ja: `コミュニティ ${index + 1} · ${members.length} ノード` }),
   minSize: 2,
 })
 const groupOfNode = new Map<string, string>()
 for (const group of groups) for (const id of group.nodeIds) groupOfNode.set(id, group.id)
-const summary = `${nodes.length} nodes, ${edges.length} edges, ${components.length} components, ${communities.length} communities, modularity ${modularity.toFixed(2)}`
+const summary = t({
+  en: `${nodes.length} nodes, ${edges.length} edges, ${components.length} components, ${communities.length} communities, modularity ${modularity.toFixed(2)}`,
+  ja: `ノード ${nodes.length}、辺 ${edges.length}、連結成分 ${components.length}、コミュニティ ${communities.length}、モジュラリティ ${modularity.toFixed(2)}`,
+})
 
 type Metric = 'none' | 'degree' | 'betweenness' | 'pagerank'
-const metricNames: Record<Exclude<Metric, 'none'>, string> = { degree: 'Degree', betweenness: 'Betweenness', pagerank: 'PageRank' }
+const metricNames: Record<Exclude<Metric, 'none'>, string> = t({
+  en: { degree: 'Degree', betweenness: 'Betweenness', pagerank: 'PageRank' },
+  ja: { degree: '次数', betweenness: '媒介中心性', pagerank: 'PageRank' },
+})
 const cache = new Map<Metric, ReadonlyMap<string, number>>()
 function scoresFor(metric: Metric): ReadonlyMap<string, number> {
   let scores = cache.get(metric)
@@ -104,7 +113,7 @@ const grouped = ref(false)
 const collapsed = ref<ReadonlySet<string>>(new Set())
 const rankBy = ref<Metric>('none')
 const graph = ref<InstanceType<typeof NetworkGraph>>()
-const status = ref('Choose a ranking to highlight the five most central suppliers.')
+const status = ref(t({ en: 'Choose a ranking to highlight the five most central suppliers.', ja: '順位の基準を選ぶと、中心性の高い上位5社を強調表示します。' }))
 
 const top = computed(() => rankBy.value === 'none' ? [] : [...scoresFor(rankBy.value)]
   .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 5).map(([id, score]) => ({ id, label: labelOf.get(id)!, score })))
@@ -126,7 +135,7 @@ async function focus(id: string) {
   }
   try {
     graph.value?.focusNode(id)
-    status.value = `Centered on ${labelOf.get(id)}.`
+    status.value = t({ en: `Centered on ${labelOf.get(id)}.`, ja: `${labelOf.get(id)} を中央に表示しました。` })
   } catch (error) {
     status.value = error instanceof Error ? error.message : String(error)
   }
@@ -134,17 +143,17 @@ async function focus(id: string) {
 </script>
 
 <template>
-  <DemoPanel title-id="analysis-title" title="Graph analysis" subtitle="Components, communities and node rankings of a synthetic supplier network.">
-    <p class="hint">Summary: <output aria-label="Network summary">{{ summary }}</output></p>
-    <div class="options analysis-options" role="group" aria-label="Analysis options">
-      <label><input v-model="grouped" type="checkbox"> Group communities</label>
-      <button type="button" :disabled="!grouped" @click="collapseAll">Collapse all</button>
-      <button type="button" :disabled="!grouped" @click="expandAll">Expand all</button>
-      <label>Rank by
-        <select v-model="rankBy" aria-label="Rank by">
-          <option value="none">None</option>
-          <option value="degree">Degree</option>
-          <option value="betweenness">Betweenness</option>
+  <DemoPanel title-id="analysis-title" :title="t({ en: 'Graph analysis', ja: 'グラフ分析' })" :subtitle="t({ en: 'Components, communities and node rankings of a synthetic supplier network.', ja: '架空の仕入先ネットワークの連結成分、コミュニティ、ノードの順位です。' })">
+    <p class="hint">{{ t({ en: 'Summary:', ja: '概要:' }) }} <output :aria-label="t({ en: 'Network summary', ja: 'ネットワークの概要' })">{{ summary }}</output></p>
+    <div class="options analysis-options" role="group" :aria-label="t({ en: 'Analysis options', ja: '分析のオプション' })">
+      <label><input v-model="grouped" type="checkbox"> {{ t({ en: 'Group communities', ja: 'コミュニティでグループ化' }) }}</label>
+      <button type="button" :disabled="!grouped" @click="collapseAll">{{ t({ en: 'Collapse all', ja: 'すべて折りたたむ' }) }}</button>
+      <button type="button" :disabled="!grouped" @click="expandAll">{{ t({ en: 'Expand all', ja: 'すべて展開' }) }}</button>
+      <label>{{ t({ en: 'Rank by', ja: '順位の基準' }) }}
+        <select v-model="rankBy" :aria-label="t({ en: 'Rank by', ja: '順位の基準' })">
+          <option value="none">{{ t({ en: 'None', ja: 'なし' }) }}</option>
+          <option value="degree">{{ t({ en: 'Degree', ja: '次数' }) }}</option>
+          <option value="betweenness">{{ t({ en: 'Betweenness', ja: '媒介中心性' }) }}</option>
           <option value="pagerank">PageRank</option>
         </select>
       </label>
@@ -152,11 +161,11 @@ async function focus(id: string) {
     <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :layout="layout" :options="nodeSettings"
       :groups="shownGroups" :collapsed-group-ids="shownCollapsed" collapsible-groups
       :highlighted-node-ids="highlighted" :height="480" :show-minimap="true"
-      :labels="{ region: 'Supplier network' }" @update:collapsed-group-ids="collapsed = $event" />
-    <StatusLine label="Analysis status">{{ status }}</StatusLine>
+      :labels="{ ...labels.graph, region: t({ en: 'Supplier network', ja: '仕入先ネットワーク' }) }" @update:collapsed-group-ids="collapsed = $event" />
+    <StatusLine :label="t({ en: 'Analysis status', ja: '分析の状態' })">{{ status }}</StatusLine>
     <template v-if="top.length">
-      <p class="hint">Top 5 by {{ metricNames[rankBy as Exclude<Metric, 'none'>] }}:</p>
-      <ol class="analysis-ranking" aria-label="Top ranked nodes">
+      <p class="hint">{{ t({ en: `Top 5 by ${metricNames[rankBy as Exclude<Metric, 'none'>]}:`, ja: `${metricNames[rankBy as Exclude<Metric, 'none'>]}の上位5件:` }) }}</p>
+      <ol class="analysis-ranking" :aria-label="t({ en: 'Top ranked nodes', ja: '上位のノード' })">
         <li v-for="entry in top" :key="entry.id">
           <button type="button" @click="focus(entry.id)">{{ entry.label }}</button> <span>{{ formatScore(entry.score) }}</span>
         </li>

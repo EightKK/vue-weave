@@ -39,10 +39,17 @@ export function pageErrors(page: Page) {
   return errors
 }
 
-/** Opens the demo app and switches to one of its examples by its navigation button. */
-export async function openDemo(page: Page, name: string) {
-  await page.goto('/gallery.html')
-  await page.getByRole('button', { name, exact: true }).click()
+/**
+ * Opens the page of an example or showcase of the documentation site (site/examples/registry.ts) by its ID, in English
+ * or Japanese, and waits until its demo has loaded and hydrated. Returns the demo panel, which holds only the demo.
+ */
+export async function openExample(page: Page, id: string, { kind = 'example', locale = 'en' }: { kind?: 'example' | 'showcase'; locale?: 'en' | 'ja' } = {}) {
+  await page.goto(`${locale === 'ja' ? 'ja/' : ''}${kind === 'showcase' ? 'showcase' : 'examples'}/${id}/`)
+  await expect(page.locator('.vw-site-frame[data-ready]')).toBeVisible()
+  // The site's navigation bar is fixed to the top of the viewport. Pointer gestures aim at element centres, and an
+  // element scrolled just under the bar would receive the bar instead, so here the bar scrolls away with the page.
+  await page.addStyleTag({ content: '.VPNav, .VPLocalNav { position: absolute !important; }' })
+  return page.locator('.vw-site-demo')
 }
 
 /**
@@ -129,7 +136,7 @@ export async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>[
 
 export async function openTimelineEditing(page: Page) {
   const errors = pageErrors(page)
-  await openDemo(page, 'Timeline editing')
+  await openExample(page, 'timeline-editing')
   const chart = page.getByRole('region', { name: 'Editable timeline', exact: true })
   await expect(chart).toBeVisible()
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
@@ -162,7 +169,7 @@ export async function openGanttFixture(page: Page, search: string) {
 
 export async function openGraphEditor(page: Page) {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByLabel('Edit graph').check()
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })

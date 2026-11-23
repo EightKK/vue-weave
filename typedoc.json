@@ -1,0 +1,29 @@
+{
+  "$schema": "https://typedoc-plugin-markdown.org/schema.json",
+  "entryPoints": [
+    "src/core/index.ts",
+    "src/index.ts"
+  ],
+  "tsconfig": "tsconfig.typedoc.json",
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-vitepress-theme"
+  ],
+  "out": "site/api/reference",
+  "docsRoot": "site",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "intentionallyNotExported": [
+    "SfcExposed",
+    "SfcInstance",
+    "SfcDefaultComponent",
+    "NetworkGraphSfc",
+    "GanttChartSfc",
+    "TaskBoardSfc",
+    "GraphPaletteSfc",
+    "PropertyInspectorSfc",
+    "EventCalendarSfc",
+    "TreeGridSfc"
+  ]
+}

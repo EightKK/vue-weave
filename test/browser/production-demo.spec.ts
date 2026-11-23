@@ -1,8 +1,8 @@
-import { expect, test, dragBy, pageErrors } from './support'
+import { expect, test, dragBy, openExample, pageErrors } from './support'
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /切断Aを予備機へ/ }).click()
@@ -25,7 +25,7 @@ test('production demo edits the schedule, graph and load from the homepage', asy
 
 test('a proposal highlights every task it moved from the adopted plan and reopening the adopted strategy keeps its moves', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   const scenario = page.getByRole('button', { name: /切断Aを予備機へ/ })
   await scenario.click()
@@ -47,7 +47,7 @@ test('a proposal highlights every task it moved from the adopted plan and reopen
 
 test('lot flow keeps the same network as the displayed unit and language change', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: '日本語' }).click()
   await page.getByRole('button', { name: 'ロットの流れ' }).click()
   await expect(page.getByRole('heading', { name: 'ロットの流れ' })).toBeVisible()
@@ -63,14 +63,14 @@ test('lot flow keeps the same network as the displayed unit and language change'
   await page.getByRole('button', { name: 'View code' }).click()
   await expect(page.locator('pre')).toContainText('layoutFlowGraph')
   await page.getByRole('link', { name: 'Examples' }).click()
-  await expect(page).toHaveURL(/gallery\.html$/)
-  await expect(page.getByRole('button', { name: 'Quantity flow', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/vue-weave\/examples\/$/)
+  await expect(page.getByRole('link', { name: /Quantity flow/ }).first()).toBeVisible()
   expect(errors).toEqual([])
 })
 
 test('approval routes support new steps, cycle rejection and undo', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Approval workflow' }).click()
   await page.getByRole('button', { name: 'Add approval step' }).click()
@@ -94,7 +94,7 @@ test('approval routes support new steps, cycle rejection and undo', async ({ pag
 
 test('schedule sheet copies, pastes and fills selected cells atomically', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/')
+  await page.goto('demo/')
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Schedule sheet' }).click()
   const cell = (name: string) => page.getByRole('button', { name, exact: true })
@@ -155,12 +155,30 @@ test.describe('with a Japanese browser locale', () => {
 
   test('the homepage opens in English unless the URL asks for Japanese', async ({ page }) => {
     const errors = pageErrors(page)
-    await page.goto('/')
+    await page.goto('demo/')
     await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('html')).toHaveAttribute('lang', 'en')
-    await page.goto('/?lang=ja')
+    await page.goto('demo/?lang=ja')
     await expect(page.getByRole('button', { name: '日本語' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
     expect(errors).toEqual([])
   })
+})
+
+test('the production showcase page embeds the demo and follows the page language', async ({ page }) => {
+  const errors = pageErrors(page)
+  const english = await openExample(page, 'production', { kind: 'showcase' })
+  await expect(english.getByRole('heading', { name: 'Production planning', exact: true })).toBeVisible()
+  await expect(english.getByRole('region', { name: 'Gantt chart' }).getByRole('button', { name: 'Cut B 10:00–12:00' })).toBeVisible()
+
+  const demo = await openExample(page, 'production', { kind: 'showcase', locale: 'ja' })
+  await expect(demo.getByRole('heading', { name: '製造計画', exact: true })).toBeVisible()
+  await demo.getByRole('button', { name: /切断Aを予備機へ/ }).click()
+  await expect(demo.getByRole('row', { name: /出荷できる時刻/ })).toContainText('19:00')
+  // The plan's chart takes the Japanese copy and the built-in Japanese labels of the components.
+  await expect(demo.getByRole('region', { name: 'ガントチャート' }).getByRole('button', { name: '切断B 13:00–15:00' })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '全体表示', exact: true }).first()).toBeVisible()
+  await demo.getByRole('navigation', { name: 'デモ' }).getByRole('button', { name: 'ロットの流れ', exact: true }).click()
+  await expect(demo.getByRole('heading', { name: 'ロットの流れ', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
 })

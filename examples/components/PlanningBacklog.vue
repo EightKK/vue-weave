@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { BACKLOG_MIME, type BacklogItem, type PlaceRequest } from './types'
+import { useDemoLocale } from '../i18n'
 
 // Reference list of unplanned tasks (spec D1: examples only). Pointer users drag an item onto the chart; keyboard users
 // choose "Place", a row and a start time. Both end in the same `place` request that the parent validates.
@@ -11,6 +12,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ place: [request: PlaceRequest] }>()
 
+const { t } = useDemoLocale()
 const search = ref('')
 const opened = ref<string>()
 const rowChoice = ref('')
@@ -39,28 +41,28 @@ function dragStart(event: DragEvent, item: BacklogItem) {
 
 <template>
   <section class="backlog" aria-labelledby="backlog-title">
-    <h3 id="backlog-title">Unplanned tasks</h3>
-    <label class="search">Search unplanned tasks <input v-model="search" type="search"></label>
-    <ul aria-label="Unplanned task list">
+    <h3 id="backlog-title">{{ t({ en: 'Unplanned tasks', ja: '未計画のタスク' }) }}</h3>
+    <label class="search">{{ t({ en: 'Search unplanned tasks', ja: '未計画のタスクを検索' }) }} <input v-model="search" type="search"></label>
+    <ul :aria-label="t({ en: 'Unplanned task list', ja: '未計画のタスクの一覧' })">
       <li v-for="item in shown" :key="item.id" draggable="true" @dragstart="dragStart($event, item)">
         <div class="head">
           <span><strong>{{ item.label }}</strong><small v-if="item.detail"> · {{ item.detail }}</small></span>
-          <button type="button" :aria-expanded="opened === item.id" @click="open(item)">Place {{ item.label }}</button>
+          <button type="button" :aria-expanded="opened === item.id" @click="open(item)">{{ t({ en: `Place ${item.label}`, ja: `${item.label} を配置` }) }}</button>
         </div>
         <fieldset v-if="opened === item.id" class="place">
-          <legend>Placement of {{ item.label }}</legend>
-          <label>Row for {{ item.label }}
-            <select v-model="rowChoice" :aria-label="'Row for ' + item.label"><option v-for="row in rows" :key="row.id" :value="row.id">{{ row.label }}</option></select>
+          <legend>{{ t({ en: `Placement of ${item.label}`, ja: `${item.label} の配置` }) }}</legend>
+          <label>{{ t({ en: `Row for ${item.label}`, ja: `${item.label} の行` }) }}
+            <select v-model="rowChoice" :aria-label="t({ en: 'Row for ' + item.label, ja: item.label + ' の行' })"><option v-for="row in rows" :key="row.id" :value="row.id">{{ row.label }}</option></select>
           </label>
-          <label>Start for {{ item.label }}
-            <select v-model.number="timeChoice" :aria-label="'Start for ' + item.label"><option v-for="time in times" :key="time.value" :value="time.value">{{ time.label }}</option></select>
+          <label>{{ t({ en: `Start for ${item.label}`, ja: `${item.label} の開始` }) }}
+            <select v-model.number="timeChoice" :aria-label="t({ en: 'Start for ' + item.label, ja: item.label + ' の開始' })"><option v-for="time in times" :key="time.value" :value="time.value">{{ time.label }}</option></select>
           </label>
-          <button type="button" @click="confirm(item)">Confirm placement of {{ item.label }}</button>
+          <button type="button" @click="confirm(item)">{{ t({ en: `Confirm placement of ${item.label}`, ja: `${item.label} の配置を確定` }) }}</button>
         </fieldset>
       </li>
     </ul>
-    <p v-if="!shown.length" class="empty">{{ items.length ? 'No unplanned task matches the search.' : 'Every task is placed.' }}</p>
-    <p class="hint">Drag an item onto a resource row, or use Place.</p>
+    <p v-if="!shown.length" class="empty">{{ items.length ? t({ en: 'No unplanned task matches the search.', ja: '検索に一致する未計画のタスクはありません。' }) : t({ en: 'Every task is placed.', ja: 'すべてのタスクを配置済みです。' }) }}</p>
+    <p class="hint">{{ t({ en: 'Drag an item onto a resource row, or use Place.', ja: '項目をリソースの行へドラッグするか、「配置」を使ってください。' }) }}</p>
   </section>
 </template>
 

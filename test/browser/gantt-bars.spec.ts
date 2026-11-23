@@ -1,7 +1,7 @@
 // GanttChart editing: bar selection, moves and resizes, dependencies and lag, progress, constraints, deletion and
 // rejected proposals.
 import {
-  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openDemo, openGanttFixture, openTimelineEditing, pageErrors,
+  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
   pressAndMove, pressAndMoveTo, releaseLine,
 } from './support'
 
@@ -32,9 +32,9 @@ test('row hierarchy failures notify, cancel pending edits and recover on replace
 
 test('selection, controlled edits, validation and cancellation', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
-  await expect(page).toHaveTitle('Vue Weave — Examples')
-  await expect(page.getByRole('link', { name: `Vue Weave ${releaseLine}`, exact: true })).toBeVisible()
+  await openExample(page, 'graph-and-gantt')
+  await expect(page).toHaveTitle('Graph and Gantt basics | Vue Weave')
+  await expect(page.getByRole('button', { name: `v${releaseLine}`, exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Fit to view', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCount(2)
   await graphZoom(page).getByRole('button', { name: 'Zoom in', exact: true }).click()
@@ -77,7 +77,7 @@ test('selection, controlled edits, validation and cancellation', async ({ page }
 
 test('a move preview shifts the segments of a split bar and a resize preview draws it unsegmented', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Scheduling')
+  await openExample(page, 'scheduling')
   const plan = page.getByRole('region', { name: 'Gantt chart', exact: true }).first()
   const cutting = plan.getByRole('button', { name: /^Cut order A \d\d Nov.*–/ })
   // A requested start of 10:00 splits the cutting order around the lunch break.
@@ -120,7 +120,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
 test('a bar click or drag emits select once and keyboard edits keep focus in a narrow viewport', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const count = page.getByRole('status', { name: 'Select events', exact: true })
   const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
   await expect(plan).toBeVisible()
@@ -147,7 +147,7 @@ test('a bar click or drag emits select once and keyboard edits keep focus in a n
 test('dragging a bar near the viewport edge scrolls the timeline and keeps the preview in sync', async ({ page }) => {
   const errors = pageErrors(page)
   await page.setViewportSize({ width: 640, height: 900 })
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   const region = page.getByRole('region', { name: 'Gantt chart', exact: true })
   const bar = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
@@ -568,5 +568,17 @@ test('gantt dependency lag is labelled between the bars, describes the dependenc
     await link.press('Shift+F10')
     expect(JSON.parse((await out('Last context menu').textContent())!).target).toEqual({ kind: 'dependency', id: 'ab' })
   }
+  expect(errors).toEqual([])
+})
+
+test('the timeline editing demo edits a bar and reports it in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'timeline-editing', { locale: 'ja' })
+  const chart = demo.getByRole('region', { name: '編集できるタイムライン', exact: true })
+  await expect(chart).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'タイムラインの変更を元に戻す', exact: true })).toBeDisabled()
+  await chart.getByRole('button', { name: /^ワイヤーフレーム / }).first().press('ArrowRight')
+  await expect(demo.getByRole('status').filter({ hasText: 'ワイヤーフレーム →' })).toBeVisible()
+  await expect(demo.getByRole('button', { name: 'タイムラインの変更を元に戻す', exact: true })).toBeEnabled()
   expect(errors).toEqual([])
 })

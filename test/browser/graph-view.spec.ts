@@ -1,6 +1,6 @@
 // NetworkGraph viewing: layouts, camera and culling, shapes and markers, minimap, analysis, lanes and quantity flow.
 import {
-  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openDemo,
+  expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openExample,
   openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
 } from './support'
 
@@ -462,7 +462,7 @@ test('nested group rectangles stay inside the fitted view, the minimap and the e
 
 test('the large graph demo preset renders a viewport slice of thousands of nodes', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Large graph')
+  await openExample(page, 'large-graph')
   await expect(page.getByText('3750 nodes')).toBeVisible()
   const nodes = page.getByRole('button', { name: /^Node \d+ Rank \d+$/ })
   await expect(nodes.first()).toBeVisible()
@@ -477,7 +477,7 @@ test('the large graph demo preset renders a viewport slice of thousands of nodes
 
 test('network direction, crossing reduction and layout controls', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const split = page.getByRole('button', { name: /^Split/ }).first()
   await expect(split).toBeVisible()
   for (const direction of ['RL', 'BT', 'LR']) {
@@ -531,7 +531,7 @@ test('right-to-left network graph mirrors the chrome and label alignment but not
 
 test('force graph layout renders selectable nodes without overlapping boxes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const nodes = page.locator('.vw-network-node')
   await expect(nodes.first()).toBeVisible()
   const count = await nodes.count()
@@ -560,7 +560,7 @@ test('force graph layout renders selectable nodes without overlapping boxes', as
 
 test('circular, grid and concentric graph layouts render selectable nodes without overlapping boxes', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const nodes = page.locator('.vw-network-node')
   await expect(nodes.first()).toBeVisible()
   const count = await nodes.count()
@@ -595,7 +595,7 @@ test('circular, grid and concentric graph layouts render selectable nodes withou
 
 test('the demo offers the force layout up to 1,000 nodes and falls back to layered for the large graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const layout = page.getByLabel('Graph layout')
   const force = layout.locator('option', { hasText: 'force' })
   await layout.selectOption('force')
@@ -651,16 +651,16 @@ test('keyboard focus on a selected node is visibly distinct from selection alone
 
 test('unstyledNodeSlots keeps the library hover stroke off custom node content', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Workflow builder')
-  const card = page.getByRole('button', { name: 'Look up customer', exact: true })
+  const demo = await openExample(page, 'workflow', { kind: 'showcase' })
+  const card = demo.getByRole('button', { name: 'Look up customer', exact: true })
   await expect(card).toHaveClass(/vw-is-unstyled/)
   const strokes = () => card.locator('rect').evaluateAll(rects => rects.map(rect => getComputedStyle(rect).strokeWidth))
   const before = await strokes()
   await card.hover()
   expect(await strokes()).toEqual(before)
-  // Without the prop, the main demo's custom nodes still take the stylesheet's hover stroke.
-  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
-  await page.getByLabel('Custom nodes').check()
+  // Without the prop, the custom nodes of the graph and Gantt example still take the stylesheet's hover stroke.
+  const basics = await openExample(page, 'graph-and-gantt')
+  await basics.getByLabel('Custom nodes').check()
   const split = page.locator('.vw-network-node[data-vw-node="split"]')
   await expect(split).not.toHaveClass(/vw-is-unstyled/)
   await split.hover()
@@ -671,8 +671,8 @@ test('unstyledNodeSlots keeps the library hover stroke off custom node content',
 test('the diagram demo draws shapes and markers, spreads parallel edges, animates the main path and exports', async ({ page }) => {
   const { readFile } = await import('node:fs/promises')
   const errors = pageErrors(page)
-  await openDemo(page, 'Diagram styles')
-  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  await openExample(page, 'diagram-styles')
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
   for (const name of ['Order placed', 'In stock?', 'Inventory data store', 'Validate order', 'Delivered']) {
     await expect(page.getByRole('button', { name })).toBeVisible()
   }
@@ -724,8 +724,8 @@ test('the diagram demo draws shapes and markers, spreads parallel edges, animate
 
 test('the diagram demo routes orthogonal edges around the nodes with Avoid nodes', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Diagram styles')
-  await expect(page.getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
+  await openExample(page, 'diagram-styles')
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByRole('heading', { name: 'Diagram styles' })).toBeVisible()
   const paths = () => page.locator('.vw-network-edge').evaluateAll(items => items.map(item => item.getAttribute('d')))
   const avoid = page.getByLabel('Avoid nodes')
   await expect(avoid).not.toBeChecked()
@@ -774,7 +774,7 @@ async function labelOverlaps(page: Page) {
 
 test('the diagram demo places edge labels clear of nodes and each other, on screen and in the SVG export', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Diagram styles')
+  await openExample(page, 'diagram-styles')
   const place = page.getByLabel('Place labels clear')
   await expect(place).not.toBeChecked()
   await page.getByLabel('Edge style').selectOption('orthogonal')
@@ -858,7 +858,7 @@ test('a drag cancelled with Escape puts placed edge labels back at their saved a
 
 test('the analysis demo summarizes the network, groups and collapses communities and ranks nodes', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Graph analysis')
+  await openExample(page, 'graph-analysis')
   const summary = page.getByLabel('Network summary')
   await expect(summary).toHaveText(/^\d+ nodes, \d+ edges, 3 components, \d+ communities, modularity 0\.\d\d$/)
   const communityCount = Number((await summary.textContent())!.match(/(\d+) communities/)![1])
@@ -889,7 +889,7 @@ test('the analysis demo summarizes the network, groups and collapses communities
 
 test('the demo falls back to layered for the circular and concentric layouts of the large graph', async ({ page }) => {
   const errors = pageErrors(page)
-  await page.goto('/gallery.html')
+  await openExample(page, 'graph-and-gantt')
   const layout = page.getByLabel('Graph layout')
   for (const name of ['circular', 'concentric']) {
     await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
@@ -910,7 +910,7 @@ test('the demo falls back to layered for the circular and concentric layouts of 
 
 test('the process lanes demo draws one named lane per department, keeps lane order when a step is added and follows the flow direction', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Process lanes')
+  await openExample(page, 'process-lanes')
   const stage = page.getByLabel('Process lane graph', { exact: true })
   await stage.scrollIntoViewIfNeeded()
   const status = page.getByRole('status', { name: 'Process lane status' })
@@ -958,7 +958,7 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
 
 test('the quantity flow demo draws named bands on one scale, never mixes units and maps a selected band back to its edge', async ({ page }) => {
   const errors = pageErrors(page)
-  await openDemo(page, 'Quantity flow')
+  await openExample(page, 'quantity-flow')
   const stage = page.getByLabel('Quantity flow graph', { exact: true })
   await stage.scrollIntoViewIfNeeded()
   const status = page.getByRole('status', { name: 'Quantity flow status' })
@@ -1010,7 +1010,7 @@ test('the quantity flow demo draws named bands on one scale, never mixes units a
   await expect(band('Overhead → Line A: 300 EUR')).toBeAttached()
   await expect(band('Line B → Inspect: 900 EUR')).toBeAttached()
   await expect(stage.getByRole('button', { name: / pcs$/ })).toHaveCount(0)
-  await expect(page.getByText('Every edge is in EUR.')).toBeVisible()
+  await expect(page.getByText('Every edge is in EUR.', { exact: true })).toBeVisible()
   await expect(totals.getByRole('row', { name: /^Line B/ }).getByRole('cell').nth(2)).toHaveText('−100')
   await page.getByRole('button', { name: 'Export flow SVG', exact: true }).click()
   await expect(status).toHaveText('Exported SVG with 9 bands.')
@@ -1019,5 +1019,14 @@ test('the quantity flow demo draws named bands on one scale, never mixes units a
   await expect(band('Lot L-100 → Line A: 1200 EUR')).toBeAttached()
   await page.getByLabel('Flow unit').selectOption('pcs')
   await expect(band('Lot L-100 → Line A: 60 pcs')).toBeAttached()
+  expect(errors).toEqual([])
+})
+
+test('the large graph example counts its nodes and edges in Japanese', async ({ page }) => {
+  const errors = pageErrors(page)
+  const demo = await openExample(page, 'large-graph', { locale: 'ja' })
+  await expect(demo.getByText('ノード 3750 · 辺 7450', { exact: true })).toBeVisible()
+  await expect(demo.getByLabel('ネットワーク図', { exact: true })).toBeVisible()
+  await expect(demo.getByRole('button', { name: '全体を表示', exact: true }).first()).toBeVisible()
   expect(errors).toEqual([])
 })
