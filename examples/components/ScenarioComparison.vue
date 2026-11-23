@@ -184,9 +184,6 @@ const reasonText = computed(() => {
     reason.kind === 'dependency' ? t({ en: 'after ' + reason.dependencyId, ja: reason.dependencyId + ' の後' }) : reason.kind === 'constraint' ? reason.constraint + ' ' + formatTime(reason.candidateTime!) : reason.kind)
     .join('; ')
 })
-// Escape first cancels a gesture in flight (a pan); only an Escape without one clears the selection. The graph reports
-// every gesture as a start and an end, and the wrapper's capture listener reads the count before the graph ends it.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty graph canvas or Escape in the graph clears the selection shared by the graph and the timeline.
 function clearSelection() {
   if (selection.value.size) selection.value = new Set()
@@ -320,12 +317,10 @@ const selectionText = computed(() => selection.value.size ? [...selection.value]
       }) }}</p>
     </template>
 
-    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-      <NetworkGraph :nodes="network.nodes" :edges="network.edges" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="260"
-        :selected-ids="selection" :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges"
-        :labels="{ ...labels.graph, region: t({ en: 'Scenario network', ja: 'シナリオのネットワーク' }) }" @update:selected-ids="ids => selection = ids"
-        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
-    </div>
+    <NetworkGraph :nodes="network.nodes" :edges="network.edges" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="260"
+      :selected-ids="selection" :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges"
+      :labels="{ ...labels.graph, region: t({ en: 'Scenario network', ja: 'シナリオのネットワーク' }) }" @update:selected-ids="ids => selection = ids"
+      @background-click="clearSelection" @idle-escape="clearSelection" />
     <GanttChart @background-click="clearSelection" :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :pixels-per-unit="48 / hour"
       :tick-steps="[hour, 2 * hour]" :row-height="46" :height="420" :format-time="formatTime"
       :baseline-ids="candidate ? ['current'] : []" :baseline-label="() => t({ en: 'Current plan', ja: '現在の計画' })"

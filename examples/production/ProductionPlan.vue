@@ -88,18 +88,6 @@ function commitEdits(changes: TimelineEdit[]) {
   if (first) move(first.id as TaskId, first.after.start)
 }
 
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
-
 function dismiss() {
   proposal.value = undefined
   status.value = undefined
@@ -152,7 +140,6 @@ const examples = computed(() => [
 
       <section class="production-panel">
         <div class="production-heading"><h2>{{ text.gantt }}</h2><code>GanttChart</code></div>
-        <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
         <GanttChart :rows="rows" :bars="bars" :range="range" :dependencies="schedule.dependencies"
           :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds" :snap="hour" :tick-steps="[2 * hour, 4 * hour]"
           :label-width="106" :pixels-per-unit="42 / hour" :height="230" :row-height="34" :format-time="clock"
@@ -160,10 +147,9 @@ const examples = computed(() => [
           :labels="{ ...text.labels.gantt, region: text.gantt, editHint: text.planHelp, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
           :cascade="cascade" :validate-edit="validate" :validate-edits="changes => validate(changes[0]!)" @select="selectBar"
           @edit="change => commitEdits([change])" @edits="commitEdits"
-          @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'" @background-click="clearSelection" @edit-cancel="noteEditCancel">
+          @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'" @background-click="clearSelection" @idle-escape="clearSelection">
           <template #row-heading>{{ text.task }}</template>
         </GanttChart>
-        </div>
         <p class="production-caption">{{ text.planHelp }} {{ local('Click empty chart space or press Escape to clear the selection.', '何もない所をクリックするか Escape で選択を解除します。') }}</p>
       </section>
 

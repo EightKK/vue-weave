@@ -175,10 +175,6 @@ watch(selectedId, id => {
   ]
   status.value = t({ en: `${id}: ${parts.join(' · ')}.`, ja: `${id}: ${parts.join(' · ')}。` })
 })
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty canvas or Escape in it clears the selected table and its traced relationships.
 function clearSelection() {
   if (selectedId.value === undefined) return
@@ -258,58 +254,56 @@ function relationText(edge: Link) {
         </li>
       </ul>
     </div>
-    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-      <NetworkGraph
-        v-model:selected-id="selectedId" unstyled-node-slots class="sc-schema-graph" :nodes="tables" :edges="edges" :layout="layoutTables" :positions="positions"
-        :height="'clamp(440px, 44vw, 560px)'" edge-style="orthogonal" background="lines" :background-gap="24" draggable show-minimap
-        :highlighted-edge-ids="focusEdges" :highlighted-node-ids="neighbourIds" :dimmed-ids="dimmedIds" :tooltip-delay="250"
-        :labels="{ ...labels.graph, region: t({ en: 'Schema diagram', ja: 'スキーマ図' }) }"
-        @node-move="commitMoves([$event])" @nodes-move="commitMoves" @target-enter="enter" @target-leave="leave"
-        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
-      >
-        <template #node="{ node, box, selected }">
-          <rect class="sc-schema-glow" :class="{ 'sc-schema-is-selected': selected }" x="-4" y="-4" :width="box.width + 8" :height="box.height + 8" rx="12" />
-          <rect class="sc-schema-card" :width="box.width" :height="box.height" rx="8" />
-          <path class="sc-schema-header" :d="headerPath(box.width)" :style="{ fill: node.data.color }" />
-          <path class="sc-schema-top" :d="topEdge(box.width)" :style="{ stroke: node.data.color }" />
-          <g class="sc-schema-glyph" transform="translate(12 13)" :style="{ stroke: node.data.color }">
-            <rect width="13" height="12" rx="2" /><path d="M0 4.5H13M4.5 4.5V12" />
+    <NetworkGraph
+      v-model:selected-id="selectedId" unstyled-node-slots class="sc-schema-graph" :nodes="tables" :edges="edges" :layout="layoutTables" :positions="positions"
+      :height="'clamp(440px, 44vw, 560px)'" edge-style="orthogonal" background="lines" :background-gap="24" draggable show-minimap
+      :highlighted-edge-ids="focusEdges" :highlighted-node-ids="neighbourIds" :dimmed-ids="dimmedIds" :tooltip-delay="250"
+      :labels="{ ...labels.graph, region: t({ en: 'Schema diagram', ja: 'スキーマ図' }) }"
+      @node-move="commitMoves([$event])" @nodes-move="commitMoves" @target-enter="enter" @target-leave="leave"
+      @background-click="clearSelection" @idle-escape="clearSelection"
+    >
+      <template #node="{ node, box, selected }">
+        <rect class="sc-schema-glow" :class="{ 'sc-schema-is-selected': selected }" x="-4" y="-4" :width="box.width + 8" :height="box.height + 8" rx="12" />
+        <rect class="sc-schema-card" :width="box.width" :height="box.height" rx="8" />
+        <path class="sc-schema-header" :d="headerPath(box.width)" :style="{ fill: node.data.color }" />
+        <path class="sc-schema-top" :d="topEdge(box.width)" :style="{ stroke: node.data.color }" />
+        <g class="sc-schema-glyph" transform="translate(12 13)" :style="{ stroke: node.data.color }">
+          <rect width="13" height="12" rx="2" /><path d="M0 4.5H13M4.5 4.5V12" />
+        </g>
+        <text class="sc-schema-name" x="33" y="24">{{ node.label }}</text>
+        <text class="sc-schema-count" :x="box.width - 12" y="24">{{ node.data.columns.length }} {{ t({ en: 'cols', ja: '列' }) }}</text>
+        <g v-for="(column, index) in node.data.columns" :key="column.name" class="sc-schema-row"
+          :class="{ 'sc-schema-row-alt': index % 2 === 1, 'sc-schema-row-hot': hotColumns.has(node.id + '.' + column.name) }"
+          :transform="`translate(0 ${headerHeight + index * rowHeight})`">
+          <rect class="sc-schema-stripe" x="1" :width="box.width - 2" :height="rowHeight" />
+          <g v-if="column.pk" class="sc-schema-key" transform="translate(11 5)">
+            <circle cx="4.6" cy="9.4" r="2.6" /><path d="M6.5 7.5 11.5 2.5M9.6 4.4l1.5 1.5M8.2 5.8l1.2 1.2" />
           </g>
-          <text class="sc-schema-name" x="33" y="24">{{ node.label }}</text>
-          <text class="sc-schema-count" :x="box.width - 12" y="24">{{ node.data.columns.length }} {{ t({ en: 'cols', ja: '列' }) }}</text>
-          <g v-for="(column, index) in node.data.columns" :key="column.name" class="sc-schema-row"
-            :class="{ 'sc-schema-row-alt': index % 2 === 1, 'sc-schema-row-hot': hotColumns.has(node.id + '.' + column.name) }"
-            :transform="`translate(0 ${headerHeight + index * rowHeight})`">
-            <rect class="sc-schema-stripe" x="1" :width="box.width - 2" :height="rowHeight" />
-            <g v-if="column.pk" class="sc-schema-key" transform="translate(11 5)">
-              <circle cx="4.6" cy="9.4" r="2.6" /><path d="M6.5 7.5 11.5 2.5M9.6 4.4l1.5 1.5M8.2 5.8l1.2 1.2" />
-            </g>
-            <g v-else-if="column.fk" class="sc-schema-link" transform="translate(11 5)">
-              <path d="M5.8 8.2 8.2 5.8M6.3 4.3l1-1a2.3 2.3 0 0 1 3.3 3.3l-1 1M7.7 9.7l-1 1a2.3 2.3 0 0 1-3.3-3.3l1-1" />
-            </g>
-            <text class="sc-schema-column" x="32" y="16">{{ column.name }}</text>
-            <text class="sc-schema-type" :x="box.width - 12" y="16">{{ column.type }}<tspan v-if="column.nullable" class="sc-schema-null">?</tspan></text>
+          <g v-else-if="column.fk" class="sc-schema-link" transform="translate(11 5)">
+            <path d="M5.8 8.2 8.2 5.8M6.3 4.3l1-1a2.3 2.3 0 0 1 3.3 3.3l-1 1M7.7 9.7l-1 1a2.3 2.3 0 0 1-3.3-3.3l1-1" />
           </g>
-          <rect class="sc-schema-border" :width="box.width" :height="box.height" rx="8" />
+          <text class="sc-schema-column" x="32" y="16">{{ column.name }}</text>
+          <text class="sc-schema-type" :x="box.width - 12" y="16">{{ column.type }}<tspan v-if="column.nullable" class="sc-schema-null">?</tspan></text>
+        </g>
+        <rect class="sc-schema-border" :width="box.width" :height="box.height" rx="8" />
+      </template>
+      <template #edge="{ edge, path }">
+        <path class="sc-schema-edge" :d="path" />
+        <path class="sc-schema-mark" :d="manyMark(endpoints(path).start, outward(edge.fromPort))" />
+        <path class="sc-schema-mark" :d="oneMark(endpoints(path).end, outward(edge.toPort), edge.data.optional)" />
+        <circle v-if="edge.data.optional" class="sc-schema-optional" :cx="endpoints(path).end.x + outward(edge.toPort) * 13" :cy="endpoints(path).end.y" r="2.8" />
+      </template>
+      <template #tooltip="{ target }">
+        <template v-if="target.kind === 'edge'">
+          <span class="sc-schema-tip-code">{{ relationText(target.edge).from }} → {{ relationText(target.edge).to }}</span>
+          <span class="sc-schema-tip-note">{{ relationText(target.edge).kind }}</span>
         </template>
-        <template #edge="{ edge, path }">
-          <path class="sc-schema-edge" :d="path" />
-          <path class="sc-schema-mark" :d="manyMark(endpoints(path).start, outward(edge.fromPort))" />
-          <path class="sc-schema-mark" :d="oneMark(endpoints(path).end, outward(edge.toPort), edge.data.optional)" />
-          <circle v-if="edge.data.optional" class="sc-schema-optional" :cx="endpoints(path).end.x + outward(edge.toPort) * 13" :cy="endpoints(path).end.y" r="2.8" />
+        <template v-else>
+          <span class="sc-schema-tip-code">{{ target.node.label }}</span>
+          <span class="sc-schema-tip-note">{{ target.node.data.note }}</span>
         </template>
-        <template #tooltip="{ target }">
-          <template v-if="target.kind === 'edge'">
-            <span class="sc-schema-tip-code">{{ relationText(target.edge).from }} → {{ relationText(target.edge).to }}</span>
-            <span class="sc-schema-tip-note">{{ relationText(target.edge).kind }}</span>
-          </template>
-          <template v-else>
-            <span class="sc-schema-tip-code">{{ target.node.label }}</span>
-            <span class="sc-schema-tip-note">{{ target.node.data.note }}</span>
-          </template>
-        </template>
-      </NetworkGraph>
-    </div>
+      </template>
+    </NetworkGraph>
     <p class="sc-schema-status" role="status">{{ status }}</p>
   </section>
 </template>

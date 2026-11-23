@@ -1875,6 +1875,7 @@ validateNodeResize?: (change: GraphNodeResize) => boolean | string | void;
 (evt: "edge-select", id: string) => void
 (evt: "gesture-end", gesture: GraphGestureEnd) => void
 (evt: "gesture-start", gesture: GraphGesture) => void
+(evt: "idle-escape", event: KeyboardEvent) => void
 (evt: "label-edit", change: GraphLabelEdit) => void
 (evt: "label-edit-rejected", change: GraphLabelEdit, reason: string) => void
 (evt: "node-drop", event: GraphDrop) => void
@@ -2061,6 +2062,7 @@ zoomPresets?: readonly TimelineZoomPreset[];
 (evt: "edits-rejected", changes: TimelineEdit[], reason: string) => void
 (evt: "field-edit", change: TimelineFieldEdit<R>) => void
 (evt: "field-edit-rejected", change: TimelineFieldEdit<R>, reason: string) => void
+(evt: "idle-escape", event: KeyboardEvent) => void
 (evt: "progress-edit", change: TimelineProgressEdit) => void
 (evt: "progress-edit-rejected", change: TimelineProgressEdit, reason: string) => void
 (evt: "reconnect", change: TimelineReconnect) => void

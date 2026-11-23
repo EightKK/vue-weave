@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- NetworkGraph and GanttChart emit an opt-in `idle-escape` with the `KeyboardEvent` when Escape is pressed in them and cancels nothing of their own: no gesture, armed connection or open cell editor (so no `gesture-end` or `edit-cancel` for it), not in a text field, not handled by the label editor, a filter dialog or a spreadsheet range, and not part of an input method composition. Applications clear their selection on it as on `background-click`, instead of counting `gesture-start` and `gesture-end` or watching `edit-cancel` around a wrapper element. The examples and showcases use it and no longer carry that bookkeeping.
+
 ### Changed
 
 - The production demo (`/demo/` and the production showcase) is now one linked, saving app built only on existing public APIs. The planning and lot flow views share one `useLinkedSelection`: an operation selected in the graph, the Gantt chart or the load chart is the matching lot step in the lot flow, and a step selected there is the operation in planning, across tab switches. The approval workflow and the schedule sheet have unrelated data and keep their own selection. Every tab saves through one app-wide `useEditTransaction` against the mock server, with a save bar that shows saving, rejected, conflicting and unanswered saves, app-wide undo and redo, and a choice of the server's next answer.

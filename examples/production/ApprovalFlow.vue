@@ -74,10 +74,7 @@ function remove() {
   selected.value = 'request'
 }
 function move(change: GraphNodeMove) { commit({ positions: new Map(flow.value.positions).set(change.id, change.after) }) }
-// A click on the empty canvas or Escape in the graph clears the selection (an empty string). Escape first cancels a
-// gesture in flight (a drag, a connection or a pan); the graph reports every gesture as a start and an end, and the
-// capture listener reads the count before the graph's own Escape handler ends it.
-const gesture = { count: 0, cancelling: false }
+// A click on the empty canvas or Escape in the graph clears the selection (an empty string).
 function clearSelection() {
   selected.value = ''
 }
@@ -98,13 +95,11 @@ function pickRoute(port: string, select: HTMLSelectElement) { route(port, select
       <button @click="add('decision')">{{ t('条件分岐を追加', 'Add decision') }}</button></div></div>
   <div class="production-layout">
     <section class="production-panel"><div class="production-heading"><h2>{{ t('承認経路', 'Approval routes') }}</h2></div>
-      <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-        <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="flow.positions"
-          :options="{ direction: 'LR', nodeWidth: 165, nodeHeight: 64, columnGap: 135 }" :height="360" background="dots" :labels="componentLabels(ja ? 'ja' : 'en').graph"
-          draggable connectable reconnectable :validate-connection="validate" @node-move="move" @connect="connect"
-          @reconnect="connect($event.after, $event.id)" @connect-rejected="(_change, reason) => warning = reason"
-          @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
-      </div>
+      <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="flow.positions"
+        :options="{ direction: 'LR', nodeWidth: 165, nodeHeight: 64, columnGap: 135 }" :height="360" background="dots" :labels="componentLabels(ja ? 'ja' : 'en').graph"
+        draggable connectable reconnectable :validate-connection="validate" @node-move="move" @connect="connect"
+        @reconnect="connect($event.after, $event.id)" @connect-rejected="(_change, reason) => warning = reason"
+        @background-click="clearSelection" @idle-escape="clearSelection" />
     </section>
     <section class="production-panel"><div class="production-heading"><h2>{{ t('ステップの設定', 'Step settings') }}</h2></div>
       <div class="production-content workflow-fields">

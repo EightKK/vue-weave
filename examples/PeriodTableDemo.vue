@@ -261,17 +261,6 @@ function clearSelection() {
   linked.clearSelection()
   status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
 }
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
 const highlightedCells = computed(() => {
   const entities = linked.selectedEntities.value
   return entities.length ? matchTreeGridEntities({ rows, columns: columns.value, cells: cells.value }, entities).cells : []
@@ -318,16 +307,14 @@ const feedText = computed(() => {
       <output :aria-label="t({ en: 'Visible period', ja: '表示中の期間' })">{{ periodText }}</output>
       <output :aria-label="t({ en: 'Data feed', ja: 'データの配信' })">{{ feedText }}</output>
     </p>
-    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart :rows="shownOrderRows" :bars="shownOrderBars" :range="planRange" readonly :height="210" :row-height="44"
       :zoom-presets="presets" :zoom-preset="zoomLevel" :format-time="activePreset.formatTime"
       :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"
       :labels="{ ...labels.gantt, region: t({ en: 'Supply orders', ja: '供給オーダー' }) }"
-      @update:zoom-preset="zoomLevel = $event" @visible-window-change="chartWindow = $event" @target-activate="activateBar" @background-click="clearSelection" @edit-cancel="noteEditCancel">
+      @update:zoom-preset="zoomLevel = $event" @visible-window-change="chartWindow = $event" @target-activate="activateBar" @background-click="clearSelection" @idle-escape="clearSelection">
       <template #row-heading>{{ t({ en: 'Orders', ja: 'オーダー' }) }}</template>
       <template #legend><span class="hint">{{ t({ en: `An order's quantity arrives when its bar ends. Scroll or zoom to move the table's periods. Click empty chart space or press Escape to clear the selection.`, ja: 'オーダーの数量はバーの終わりに入庫します。スクロールや拡大縮小で表の期間が動きます。何もない所をクリックするか Escape で選択を解除します。' }) }}</span></template>
     </GanttChart>
-    </div>
   </DemoPanel>
 </template>
 

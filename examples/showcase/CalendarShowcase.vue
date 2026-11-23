@@ -83,17 +83,6 @@ function clearSelection() {
   selectedIds.value = new Set()
   status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
 }
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field (such as the language select in the legend) clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
 </script>
 
 <template>
@@ -108,12 +97,11 @@ function onChartEscape(event: KeyboardEvent) {
       language, with highlighted ranges from <code>markerRanges</code>: a company-wide code freeze and holidays that close
       single offices.
     </p>
-    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
       :rows="rows" :bars="bars" :range="range" :selected-ids="selectedIds" :zoom-presets="presets" :zoom-preset="active.id" :format-time="active.formatTime"
       :marker-ranges="markerRanges" :row-height="48" :height="260" :labels="{ ...labels.gantt, region: t({ en: 'Calendar views timeline', ja: 'カレンダー表示のタイムライン' }), rows: t({ en: 'Teams', ja: 'チーム' }) }"
       sticky-band-labels @update:zoom-preset="level = $event" @edit="onEdit" @select="onSelect"
-      @background-click="clearSelection" @edit-cancel="noteEditCancel"
+      @background-click="clearSelection" @idle-escape="clearSelection"
     >
       <template #legend>
         <label class="sc-calendar-locale">{{ t({ en: 'Language', ja: '言語' }) }}
@@ -121,7 +109,6 @@ function onChartEscape(event: KeyboardEvent) {
         </label>
       </template>
     </GanttChart>
-    </div>
     <p class="sc-calendar-status" role="status">{{ status }}</p>
   </section>
 </template>

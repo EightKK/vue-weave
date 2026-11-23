@@ -58,6 +58,7 @@ import { loadSegmentMarks, shownLoadRows as loadRowsIn } from './ganttChart/load
 import { barOverlay as overlayOf, segmentGeometry, workSegments as shiftedSegments, type BarOverlay } from './ganttChart/barOverlay.js'
 import { visibleWindowReport } from './ganttChart/visibleWindow.js'
 import { useCellEditing } from './ganttChart/useCellEditing.js'
+import { createIdleEscape } from './shared/escape.js'
 import { contextTarget, isMenuKey, keyboardMenuRequest, pointerMenuRequest } from './ganttChart/contextMenu.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
@@ -423,6 +424,12 @@ const emit = defineEmits<{
   'field-edit-rejected': [change: TimelineFieldEdit<R>, reason: string]
   /** An in-flight edit was cancelled; carries the reason, the bars of the gesture and the cell of a cancelled `cell-editor`. */
   'edit-cancel': [event: TimelineEditCancel]
+  /**
+   * Escape was pressed in the chart and cancelled nothing of the chart's own (no drag, armed connection or open cell
+   * editor, so no `edit-cancel`), outside text fields and closed popups; carries the keyboard event. Applications
+   * typically clear their selection, as on `background-click`.
+   */
+  'idle-escape': [event: KeyboardEvent]
 }>()
 
 const slots = defineSlots<{
@@ -611,6 +618,7 @@ const {
 } = useCellEditing<R>({
   props, emit, labels: () => messages.value, notice, settle, summaries, localCollapsed, rowById: () => rowById.value,
   rowOrder: () => rowOrder.value, dataElement, scroller, hideTooltip: () => hideTooltip(), sheet: (): ReturnType<typeof useSheet<R>> => sheet,
+  onCancel: () => idleEscape.cancelled(),
 })
 const displayedRows = computed(() => {
   const result: typeof tree.value = []
@@ -1337,7 +1345,13 @@ function gestureInFlight(fill = true): { barIds: string[]; rowId?: string } | un
 function cancelGestures(reason: TimelineEditCancelReason, keepFill = false) {
   const info = gestureInFlight(!keepFill)
   resetGestures(keepFill)
-  if (info) emit('edit-cancel', { reason, barIds: info.barIds })
+  if (info) reportCancel({ reason, barIds: info.barIds })
+}
+// Every `edit-cancel` marks the Escape being handled as used, so it is not also reported as `idle-escape`.
+const idleEscape = createIdleEscape(event => emit('idle-escape', event))
+function reportCancel(cancel: TimelineEditCancel) {
+  idleEscape.cancelled()
+  emit('edit-cancel', cancel)
 }
 /** Cancel everything in flight: gestures, an armed connection and an open cell editor. */
 function cancelEdit(reason: TimelineEditCancelReason = 'api') {
@@ -2044,7 +2058,7 @@ watch(summaryAnchors, anchors => {
 function cancelLinkDraft(reason: TimelineEditCancelReason) {
   const fixed = linkDraft.value?.fixed
   cancelLink()
-  if (fixed) emit('edit-cancel', { reason, barIds: [fixed.bar] })
+  if (fixed) reportCancel({ reason, barIds: [fixed.bar] })
 }
 
 // Pinch and Ctrl+wheel zoom (`pinchZoom`, `wheelZoom`). A pinch is the gesture in flight while it lasts.
@@ -2805,7 +2819,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vw-gantt" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-gantt" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined"
+    @keydown.capture="idleEscape.start" @keydown="idleEscape.finish">
     <div class="vw-gantt-toolbar">
       <slot name="legend" />
       <div v-if="zoomPresets?.length" class="vw-gantt-presets" role="group" :aria-label="messages.zoomPresets">

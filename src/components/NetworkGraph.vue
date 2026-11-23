@@ -58,6 +58,7 @@ import {
 import {
   chartDelta, grabPointer, ownsPointer, pointerSession, releaseSession, sessionPastThreshold, type PointerSession,
 } from './networkGraph/pointerSession.js'
+import { createIdleEscape } from './shared/escape.js'
 import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 
@@ -272,6 +273,12 @@ const emit = defineEmits<{
   'label-edit': [change: GraphLabelEdit]
   /** A label proposal was rejected by `validateLabelEdit`; carries the proposal and the reason. */
   'label-edit-rejected': [change: GraphLabelEdit, reason: string]
+  /**
+   * Escape was pressed in the graph and cancelled nothing of the graph's own (no gesture in flight, so no `gesture-end`
+   * for it), outside text fields and the label editor; carries the keyboard event. Applications typically clear their
+   * selection, as on `background-click`.
+   */
+  'idle-escape': [event: KeyboardEvent]
 }>()
 const slots = defineSlots<{
   node(props: NetworkNodeSlot<ShownNode>): unknown
@@ -805,6 +812,13 @@ function endGesture(slot: GestureSlot, outcome: GraphGestureEnd['outcome']) {
   if (!gesture) return
   gestures[slot] = undefined
   emit('gesture-end', { ...gesture, outcome })
+}
+// Escape on the stage cancels the gestures in flight; one that finds none is reported as `idle-escape`.
+const idleEscape = createIdleEscape(event => emit('idle-escape', event))
+function escapeStage() {
+  if (gestures.pointer || gestures.connection) idleEscape.cancelled()
+  cancelInteraction()
+  hideTooltip()
 }
 
 /**
@@ -2777,11 +2791,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow, 'vw-labels-editable': editableLabels }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow, 'vw-labels-editable': editableLabels }" :dir="dir === 'rtl' ? 'rtl' : undefined"
+    @keydown.capture="idleEscape.start" @keydown="idleEscape.finish">
     <svg
       ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ 'vw-is-panning': isPanning }"
       :aria-label="messages.region" tabindex="0"
-      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
+      @keydown.self="panWithKeys" @keydown.esc="escapeStage" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event); enterWithFocus($event)" @focusout="releaseFocus($event); blurTooltip(); leaveWithFocus()"
       @wheel="onWheel" @pointerdown.capture="pressStage($event); trackPointer($event)" @pointerdown="startPan"
       @pointermove="onStagePointerMove" @pointerleave="forgetPointer"
