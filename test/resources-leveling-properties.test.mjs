@@ -47,18 +47,8 @@ function randomLevelingPlan(rng) {
       if (!rng.chance(0.45)) continue
       const assignment = { resourceId: resource.id, taskId: task.id }
       if (rng.chance(0.25)) assignment.units = rng.int(1, 3)
-      // EXCLUSION (engine discrepancy, reported, not fixed here): when the horizon starts before 0, levelResources
-      // does not list a task with a partial assignment (workOffset or workDuration) in unresolvedTaskIds although its
-      // overload remains, against "a plan without unresolvedTaskIds has no overload". Minimal cases:
-      // - range [-2, 18), task d (6), r1 (capacity 1) open [0, 2) and [14, 18), assignment r1 → d with workDuration 3:
-      //   d stays at [-2, 4) with an overload at [-2, 0) and unresolvedTaskIds is [] (with range [0, 20) and the
-      //   same shape, d is listed);
-      // - range [-1, 19), task g (1), r1 closed at [-1, 0), assignments r0 → g (workOffset 1) and r1 → g: g stays at
-      //   [-1, 0) overloaded and unlisted instead of moving to 0.
-      // Until that is decided, plans with a negative horizon start get no partial assignments.
-      const partial = input.range.start >= 0
-      if (partial && rng.chance(0.15)) assignment.workOffset = q * rng.int(0, 3)
-      if (partial && rng.chance(0.15)) assignment.workDuration = q * rng.int(1, 3)
+      if (rng.chance(0.15)) assignment.workOffset = q * rng.int(0, 3)
+      if (rng.chance(0.15)) assignment.workDuration = q * rng.int(1, 3)
       assignments.push(assignment)
     }
   }

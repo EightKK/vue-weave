@@ -183,10 +183,11 @@ interface WorkPiece {
 
 /**
  * Cut a task's work units `[0, duration)` where the set of needed resources changes, with the free work units of each
- * stretch. Stretches that need the same resources share one free list.
+ * stretch. Stretches that need the same resources share one free list. `earliest` is the task's earliest start as a
+ * date: shortages and working periods that end at or before it cannot affect the placement.
  */
 function workPieces(
-  clock: WorkClock, duration: number, spans: ReadonlyMap<Need, TimeRange>, range: TimeRange, from: number,
+  clock: WorkClock, duration: number, spans: ReadonlyMap<Need, TimeRange>, range: TimeRange, earliest: number,
 ): WorkPiece[] {
   const entries = [...spans]
   const cuts = [...new Set([0, duration, ...entries.flatMap(([, span]) => [span.start, span.end])])].sort((a, b) => a - b)
@@ -201,7 +202,8 @@ function workPieces(
     const key = members.join()
     let free = cache.get(key)
     if (!free) {
-      free = freeWork(clock, blockedBy(members.map(index => entries[index]![0]), range, from), from)
+      // `from` counts work units of the task, so the dates passed on must be the earliest start, not `from`.
+      free = freeWork(clock, blockedBy(members.map(index => entries[index]![0]), range, earliest), earliest)
       cache.set(key, free)
     }
     pieces.push({ from, to, free })

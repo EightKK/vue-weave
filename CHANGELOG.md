@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `levelResources` no longer misses capacity shortages before time 0 for tasks with a partial assignment (`workOffset` or `workDuration`) when the horizon starts before 0. Such a task could stay overloaded without being listed in `unresolvedTaskIds`, or keep a start where a resource it needs is closed instead of moving.
+
 ## 1.5.0 - 2026-11-23
 
 Adds an opt-in `background-click` event to NetworkGraph, GanttChart, TaskBoard and EventCalendar, so applications can clear a controlled selection when empty space is clicked, and the examples and showcases now clear their selection on such a click or Escape. Glyph buttons inside the components (zoom, row toggles, add and remove buttons) are drawn as SVG icons and stay centered whatever font an application gives buttons. Every change is backward compatible.
