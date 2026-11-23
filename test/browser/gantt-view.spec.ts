@@ -503,6 +503,40 @@ test('a chart that mounts with invalid data measures its label column once the d
   expect(errors).toEqual([])
 })
 
+test('many small Ctrl+wheel steps keep the time under the pointer where scroll positions are whole pixels', async ({ page }) => {
+  const errors = pageErrors(page)
+  for (const rtl of [false, true]) {
+    const { chart } = await openGanttFixture(page, '?wheel=1' + (rtl ? '&rtl=1' : ''))
+    // WebKit keeps whole-pixel scroll positions of elements: round what the chart writes, as WebKit does.
+    await chart.evaluate(element => {
+      const native = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollLeft')!
+      Object.defineProperty(element, 'scrollLeft', {
+        configurable: true,
+        get() { return native.get!.call(this) },
+        set(value: number) { native.set!.call(this, Math.round(value)) },
+      })
+    })
+    const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+    const taskB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+    await expect(zoom).toHaveText('100%')
+    const box = (await taskB.boundingBox())!
+    // 10.3 px after the start of Task B, so the rounding of each step does not cancel out.
+    const x = rtl ? box.x + box.width - 10.3 : box.x + 10.3
+    const fromStart = async () => {
+      const current = (await taskB.boundingBox())!
+      return rtl ? current.x + current.width - x : x - current.x
+    }
+    await page.mouse.move(x, box.y + box.height / 2)
+    // A trackpad pinch: 20 small deltas add up to one zoom step (135%).
+    await page.keyboard.down('Control')
+    for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -5)
+    await page.keyboard.up('Control')
+    await expect(zoom).toHaveText('135%')
+    await expect.poll(async () => Math.abs(await fromStart() - 10.3 * 1.35)).toBeLessThanOrEqual(1)
+  }
+  expect(errors).toEqual([])
+})
+
 test('gantt Ctrl+wheel zooms around the pointer in both directions while a plain wheel still scrolls', async ({ page }) => {
   const errors = pageErrors(page)
   for (const rtl of [false, true]) {
@@ -679,6 +713,8 @@ test('gantt row headings activate rows from the keyboard through one roving tab 
   // activation.
   await chart.getByRole('button', { name: 'Expand Parent', exact: true }).press('Enter')
   expect(await json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r2' }, source: 'keyboard' })
+  // Centre the heading first: Playwright's own scroll-into-view (Firefox) can leave it under the sticky header row.
+  await heading('Parent').evaluate(element => element.scrollIntoView({ block: 'center' }))
   await heading('Parent').click()
   await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'P' }, source: 'pointer' })
   expect(errors).toEqual([])

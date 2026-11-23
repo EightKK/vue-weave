@@ -39,6 +39,31 @@ const focusedVisible = (page: Page) => page.evaluate(() => {
     && box.left >= view.left + tree - 1 && box.right <= view.left + grid.clientWidth + 1
 })
 
+/**
+ * Holds the demo's lazy load of the archived group (a 600 ms timer) until the returned function releases it, so a test
+ * can open an editor or start a drag before the rows change, however fast the engine runs the steps in between.
+ */
+async function holdLazyLoad(page: Page) {
+  await page.evaluate(() => {
+    const original = window.setTimeout
+    const held: (() => void)[] = []
+    ;(window as any).__vwReleaseLoad = () => {
+      const due = held.splice(0)
+      for (const run of due) run()
+      return due.length
+    }
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 600 && typeof handler === 'function') {
+        held.push(() => handler(...args))
+        return 0
+      }
+      return original(handler, delay, ...args)
+    }) as typeof window.setTimeout
+  })
+  // Exactly one load was requested and held.
+  return async () => expect(await page.evaluate(() => (window as any).__vwReleaseLoad() as number)).toBe(1)
+}
+
 /** Sends a clipboard event to the focused element and returns the copied text. */
 const clipboard = clipboardEvent
 
@@ -284,6 +309,7 @@ test('IME composition commits once, after the composition ends', async ({ page }
 
 test('an open editor is cancelled when the source data changes', async ({ page }) => {
   const { errors, grid, header, status } = await openTreeGrid(page)
+  const releaseLoad = await holdLazyLoad(page)
   await header('Tools').click()
   await page.keyboard.press('Control+End')
   await page.keyboard.press('Home')
@@ -295,6 +321,7 @@ test('an open editor is cancelled when the source data changes', async ({ page }
   await page.keyboard.press('F2')
   await expect(grid.getByRole('textbox', { name: 'Edit SKU for Tools Basic 001', exact: true })).toBeVisible()
   // The lazy load replaces the rows while the editor is open.
+  await releaseLoad()
   await expect(status).toHaveText('Edit cancelled (cell, source-changed).')
   await expect(grid.getByRole('textbox')).toHaveCount(0)
   expect(errors).toEqual([])
@@ -406,6 +433,7 @@ test('row structure: a pointer drag moves a row inside another, and data changes
   await expect(status).toHaveText('Moved Tools Basic 002 into Tools Basic 005.')
   await expect(row('Tools Basic 005')).toHaveAttribute('aria-expanded', 'false')
   // A drag in flight is cancelled when the rows change (the lazy group finishes loading).
+  const releaseLoad = await holdLazyLoad(page)
   await header('Tools').click()
   await page.keyboard.press('Control+End')
   await page.keyboard.press('Home')
@@ -416,6 +444,7 @@ test('row structure: a pointer drag moves a row inside another, and data changes
   await page.mouse.down()
   await page.mouse.move(again.x + 60, again.y + again.height * 3, { steps: 4 })
   await expect(grid.locator('.vw-tree-grid-drop')).toHaveCount(1)
+  await releaseLoad()
   await expect(status).toHaveText('Edit cancelled (row-move, source-changed).')
   await expect(grid.locator('.vw-tree-grid-drop')).toHaveCount(0)
   await page.mouse.up()

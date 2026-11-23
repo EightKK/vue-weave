@@ -189,12 +189,14 @@ test('context-menu events report the target, chart point and source and suppress
 
   // The ContextMenu key reports the centre of the focused node once, even if the browser follows with its own event.
   await node.focus()
+  // Measured before the key: the fixture writes the report into an inline status above the stage, and where that text
+  // wraps depends on the engine's fonts, so the stage can move by a line afterwards.
+  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
   await page.keyboard.press('ContextMenu')
   await expect(events).toHaveText('4')
   const keyboard = await last()
   expect(keyboard.source).toBe('keyboard')
   expect(keyboard.target).toEqual({ kind: 'node', id: 'N0001' })
-  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
   expect(keyboard.clientX).toBeCloseTo(rect.x + rect.width / 2, 3)
   expect(keyboard.clientY).toBeCloseTo(rect.y + rect.height / 2, 3)
   // Shift+F10 on the focused stage reports the canvas at the stage centre.
