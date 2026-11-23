@@ -5,7 +5,7 @@ import ProcessGraph from './ProcessGraph.vue'
 import CodePanel from './CodePanel.vue'
 import { copy, type Copy } from './copy'
 import { excerpt } from './sections'
-import { calculatePlan, clock, deadline, displayRange, downstreamEdits, hour, links, maintenance, proposeStart, range, resourceIds, taskIds, type Plan, type Strategy, type TaskId } from './plan'
+import { clock, deadline, displayRange, downstreamEdits, hour, links, maintenance, proposeStart, range, resourceIds, taskIds, type Plan, type Strategy, type TaskId } from './plan'
 import { useProductionWorkspace } from './workspace'
 import planSource from './plan.ts?raw'
 import viewSource from './ProductionPlan.vue?raw'
@@ -27,7 +27,7 @@ function clearStatus() {
 const draft = computed(() => proposal.value?.plan)
 const strategy = computed(() => draft.value ?? workspace.document.value.plan)
 const current = workspace.adopted
-const changed = computed(() => proposal.value?.changed ?? [])
+const changed = workspace.changed
 const rows = computed(() => taskIds.map(id => ({ id, label: props.text.tasks[id] })))
 const loadRows = computed(() => resourceIds.map(id => ({ id, label: props.text.resources[id] })))
 const highlighted = computed(() => new Set<string>(changed.value))
@@ -66,8 +66,7 @@ function openScenario(value: Exclude<Strategy, 'original'>) {
   // Reopening the strategy in use keeps its manual starts, so an adopted move is not silently dropped.
   const base = strategy.value
   const plan = { strategy: value, starts: value === base.strategy ? base.starts : {} }
-  const next = calculatePlan(plan)!
-  proposal.value = { plan, changed: taskIds.filter(id => current.value.byId.get(id)!.start !== next.byId.get(id)!.start) }
+  proposal.value = { plan }
   clearStatus()
 }
 
@@ -84,9 +83,7 @@ function cascade(change: TimelineEdit) {
 function move(id: TaskId, start: number) {
   const next = proposeStart(strategy.value, id, start)
   if (!next) { rejected.value = true; return }
-  // Compare with the adopted plan, like the baseline bars, so earlier moves of the same proposal stay highlighted.
-  const moved = taskIds.filter(other => other !== id && current.value.byId.get(other)!.start !== next.computed.byId.get(other)!.start)
-  proposal.value = { plan: next.next, changed: moved }
+  proposal.value = { plan: next.next, moved: id }
   clearStatus()
 }
 
@@ -180,7 +177,7 @@ const examples = computed(() => [
             </tbody>
           </table>
           <div class="production-actions">
-            <button v-if="draft" class="primary" type="button" :disabled="workspace.saving.value" @click="workspace.adopt">{{ text.adopt }}</button>
+            <button v-if="draft" class="primary" type="button" :disabled="workspace.locked.value" @click="workspace.adopt">{{ text.adopt }}</button>
             <button v-if="draft" type="button" @click="dismiss">{{ text.dismiss }}</button>
           </div>
         </div>

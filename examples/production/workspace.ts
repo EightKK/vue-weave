@@ -73,8 +73,8 @@ function bindings(schedule: Schedule): ViewBinding[] {
 }
 // demo:end
 
-/** A plan proposal of the planning tab: the plan and the operations it moved relative to the adopted plan. */
-export interface PlanProposal { plan: Plan; changed: readonly TaskId[] }
+/** A plan proposal of the planning tab: the plan and, after a move, the operation the planner moved. */
+export interface PlanProposal { plan: Plan; moved?: TaskId }
 
 export function createProductionWorkspace() {
   // In conflict mode another planner changes the trial run of the schedule sheet first, so the reload shows it. Like
@@ -98,6 +98,14 @@ export function createProductionWorkspace() {
   /** What the tabs show: the candidate while it is being saved, else the accepted document. */
   const document = computed(() => transaction.candidateState.value ?? transaction.acceptedState.value)
   const saving = computed(() => transaction.status.value === 'saving')
+  // demo:unknown
+  // A save whose answer was lost waits for "Check with server". Until then nothing else is saved: useEditTransaction
+  // would start the next save (or an undo or redo) on the version from before the lost one, which the server may have
+  // moved past, and the lost operation could no longer be checked. Proposals can still be opened and edited.
+  const unresolved = computed(() => transaction.status.value === 'uncertain')
+  /** Saving, undo and redo wait while a save is in flight or its outcome is unknown. */
+  const locked = computed(() => saving.value || unresolved.value)
+  // demo:end
   /** Set when the last submit found another save in progress. */
   const busy = ref(false)
 
@@ -107,6 +115,15 @@ export function createProductionWorkspace() {
   const adoptionNotice = ref(false)
   const adopted = computed(() => calculatePlan(document.value.plan)!)
   const schedule = computed(() => proposal.value ? calculatePlan(proposal.value.plan)! : adopted.value)
+  /**
+   * The operations whose start the open proposal changes, except the one the planner moved. Derived, not stored with
+   * the proposal: the plan it is compared with changes when a save in flight is accepted or refused.
+   */
+  const changed = computed(() => {
+    const open = proposal.value
+    if (!open) return []
+    return taskIds.filter(id => id !== open.moved && adopted.value.byId.get(id)!.start !== schedule.value.byId.get(id)!.start)
+  })
 
   const linked = useLinkedSelection({ bindings: () => bindings(schedule.value) })
   linked.select('graph', [{ view: 'graph', kind: 'node', id: 'cutA' }])
@@ -117,22 +134,31 @@ export function createProductionWorkspace() {
       return result
     })
   }
+  /** Refuses a save while one is unknown, as `busy`: the save bar then asks for the check first. */
+  function unlessUnresolved(save: () => Promise<TransactionOutcome<ProductionDocument>>) {
+    return track(unresolved.value ? Promise.resolve({ status: 'busy' }) : save())
+  }
   function submit(change: ProductionChange, source?: 'pointer' | 'keyboard' | 'api') {
-    return track(transaction.submit([change], { source }))
+    return unlessUnresolved(() => transaction.submit([change], { source }))
   }
   // Undo, redo and a reload replace the plan the proposal was based on, so they close it.
   function undo() {
-    proposal.value = undefined
-    return track(transaction.undo())
+    return unlessUnresolved(() => {
+      proposal.value = undefined
+      return transaction.undo()
+    })
   }
   function redo() {
-    proposal.value = undefined
-    return track(transaction.redo())
+    return unlessUnresolved(() => {
+      proposal.value = undefined
+      return transaction.redo()
+    })
   }
   function reload() {
     const latest = server.fetch()
     proposal.value = undefined
     unanswered = undefined
+    busy.value = false
     transaction.refresh(latest.state, latest.version)
   }
 
@@ -158,21 +184,23 @@ export function createProductionWorkspace() {
     if (!operationId) return
     const stored: SaveResult<ProductionDocument> = server.lookup(operationId) ?? { status: 'rejected', operationId, code: 'not-applied' }
     const outcome = transaction.reconcile(stored)
+    // A save refused while this one was unknown is not pending anywhere: the bar shows this result instead.
+    busy.value = false
     if (unanswered?.operationId !== operationId || outcome.status === 'uncertain') return
     const saved = unanswered.proposal
     unanswered = undefined
     if (outcome.status === 'accepted') closeAdopted(saved)
   }
   // demo:end
+  // The save bar offers no dismissal of an unknown result: it may have been applied, so only a check or a reload settles it.
   function dismiss() {
     busy.value = false
-    // A dismissed unknown result is never reconciled: adopting again is a new save, which the server checks afresh.
-    if (transaction.status.value === 'uncertain') unanswered = undefined
     transaction.clearResult()
   }
 
   return {
-    server, transaction, document, saving, busy, proposal, adoptionNotice, adopted, schedule, linked, submit, adopt, undo, redo, reload, reconcile, dismiss,
+    server, transaction, document, saving, unresolved, locked, busy, proposal, changed, adoptionNotice, adopted, schedule, linked,
+    submit, adopt, undo, redo, reload, reconcile, dismiss,
   }
 }
 

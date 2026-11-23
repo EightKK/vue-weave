@@ -22,8 +22,8 @@ const modes: ServerMode[] = ['accept', 'reject', 'conflict', 'uncertain']
       :busy="workspace.busy.value" :version="transaction.acceptedVersion.value"
       @dismiss="workspace.dismiss" @reload="workspace.reload" @reconcile="workspace.reconcile" />
     <div class="production-actions">
-      <button type="button" :disabled="!transaction.canUndo.value || workspace.saving.value" @click="workspace.undo">{{ text.undo }}</button>
-      <button type="button" :disabled="!transaction.canRedo.value || workspace.saving.value" @click="workspace.redo">{{ text.redo }}</button>
+      <button type="button" :disabled="!transaction.canUndo.value || workspace.locked.value" @click="workspace.undo">{{ text.undo }}</button>
+      <button type="button" :disabled="!transaction.canRedo.value || workspace.locked.value" @click="workspace.redo">{{ text.redo }}</button>
       <label>{{ text.serverMode }}
         <select v-model="server.info.mode">
           <option v-for="mode in modes" :key="mode" :value="mode">{{ text.serverModes[mode] }}</option>

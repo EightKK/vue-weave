@@ -38,7 +38,11 @@ const message = computed(() => {
       ja: '版の競合: サーバーは版 ' + props.version + ' ではなく版 ' + props.result?.currentVersion + ' です。何も変わっていません。最新の版を読み込んでから編集し直してください。',
     })
   }
-  if (props.status === 'uncertain') return t({ en: 'Result unknown: the save may or may not have been applied. It is not resent automatically; check with the server.', ja: '結果不明: 保存が適用されたかどうかわかりません。自動では再送しないので、サーバーに確認してください。' })
+  if (props.status === 'uncertain') {
+    // `busy` here means the parent refused a further save until the unknown one is checked.
+    return t({ en: 'Result unknown: the save may or may not have been applied. It is not resent automatically; check with the server.', ja: '結果不明: 保存が適用されたかどうかわかりません。自動では再送しないので、サーバーに確認してください。' })
+      + (props.busy ? t({ en: ' Your last change was not saved: nothing else is saved until this one is checked.', ja: ' 直前の変更は保存されていません。確認が済むまでほかの変更は保存しません。' }) : '')
+  }
   if (props.busy) return t({ en: 'Another save is still in progress. Try again when it has finished.', ja: '別の保存がまだ進行中です。終わってからもう一度試してください。' })
   return t({ en: 'Accepted version ' + props.version + '.', ja: '版 ' + props.version + ' を受理しました。' })
 })
@@ -48,9 +52,10 @@ const message = computed(() => {
   <div class="save-status" :data-state="tone">
     <p role="status" :aria-label="t({ en: 'Save status', ja: '保存の状態' })"><strong>{{ title }}</strong> · {{ message }}</p>
     <span class="actions">
-      <button v-if="status === 'conflict'" type="button" @click="emit('reload')">{{ t({ en: 'Load latest version', ja: '最新の版を読み込む' }) }}</button>
       <button v-if="status === 'uncertain'" type="button" @click="emit('reconcile')">{{ t({ en: 'Check with server', ja: 'サーバーに確認' }) }}</button>
-      <button v-if="status === 'rejected' || status === 'conflict' || status === 'uncertain'" type="button" @click="emit('dismiss')">{{ t({ en: 'Dismiss save message', ja: '保存のメッセージを閉じる' }) }}</button>
+      <button v-if="status === 'conflict' || status === 'uncertain'" type="button" @click="emit('reload')">{{ t({ en: 'Load latest version', ja: '最新の版を読み込む' }) }}</button>
+      <!-- An unknown result is not dismissed: the save may have been applied, so only checking or reloading settles it. -->
+      <button v-if="status === 'rejected' || status === 'conflict'" type="button" @click="emit('dismiss')">{{ t({ en: 'Dismiss save message', ja: '保存のメッセージを閉じる' }) }}</button>
     </span>
   </div>
 </template>
