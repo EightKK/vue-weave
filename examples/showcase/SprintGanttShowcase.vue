@@ -340,6 +340,7 @@ function taskState(row: SprintRow) {
 .sc-sprint .vw-row-toggle { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border-radius: 4px; color: #6c6f86; font-size: 0; }
 .sc-sprint .vw-row-toggle::before { content: ''; border-block: 4px solid transparent; border-left: 5px solid currentColor; transform: translateX(1px) rotate(90deg); transition: transform .15s; }
 .sc-sprint .vw-row-toggle[aria-expanded='false']::before { transform: translateX(1px); }
+.sc-sprint .vw-row-toggle-icon { display: none; }
 .sc-sprint .vw-row-toggle:hover { background: #ececf4; color: #22243a; }
 .sc-sprint-epic, .sc-sprint-task { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sc-sprint-name { overflow: hidden; color: #33354f; text-overflow: ellipsis; white-space: nowrap; }

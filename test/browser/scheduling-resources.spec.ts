@@ -1008,7 +1008,7 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
 
 test('resource planning clears the selection and the inspector on a click on empty chart space or Escape', async ({ page }) => {
   const { errors, chart, notice } = await openResourcePlanning(page)
-  await expect(page.getByText('Click empty chart space or press Escape to clear the selection.', { exact: false })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByText('Click empty chart space or press Escape to clear the selection.', { exact: false })).toBeVisible()
   const inspector = page.getByRole('region', { name: 'Task inspector', exact: true })
   await expect(inspector).toContainText('Select a bar to edit its task.')
   const crew = chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })

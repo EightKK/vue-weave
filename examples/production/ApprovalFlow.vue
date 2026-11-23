@@ -89,9 +89,16 @@ function remove() {
   selected.value = 'request'
 }
 function move(change: GraphNodeMove) { commit({ positions: new Map(flow.value.positions).set(change.id, change.after) }) }
+// A click on the empty canvas or Escape in the graph clears the selection (an empty string). Escape first cancels a
+// gesture in flight (a drag, a connection or a pan); the graph reports every gesture as a start and an end, and the
+// capture listener reads the count before the graph's own Escape handler ends it.
+const gesture = { count: 0, cancelling: false }
+function clearSelection() {
+  selected.value = ''
+}
 function undo() {
   history.undo()
-  if (!step.value) selected.value = 'request'
+  if (selected.value && !step.value) selected.value = 'request'
   warning.value = ''
 }
 function threshold(input: HTMLInputElement) {
@@ -110,14 +117,17 @@ function pickRoute(port: string, select: HTMLSelectElement) { route(port, select
       <button :disabled="!history.canUndo.value" @click="undo">{{ t('元に戻す', 'Undo') }}</button></div></div>
   <div class="production-layout">
     <section class="production-panel"><div class="production-heading"><h2>{{ t('承認経路', 'Approval routes') }}</h2></div>
-      <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="flow.positions"
-        :options="{ direction: 'LR', nodeWidth: 165, nodeHeight: 64, columnGap: 135 }" :height="360" background="dots" :labels="componentLabels(ja ? 'ja' : 'en').graph"
-        draggable connectable reconnectable :validate-connection="validate" @node-move="move" @connect="connect"
-        @reconnect="connect($event.after, $event.id)" @connect-rejected="(_change, reason) => warning = reason" />
+      <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+        <NetworkGraph v-model:selected-id="selected" :nodes="nodes" :edges="edges" :positions="flow.positions"
+          :options="{ direction: 'LR', nodeWidth: 165, nodeHeight: 64, columnGap: 135 }" :height="360" background="dots" :labels="componentLabels(ja ? 'ja' : 'en').graph"
+          draggable connectable reconnectable :validate-connection="validate" @node-move="move" @connect="connect"
+          @reconnect="connect($event.after, $event.id)" @connect-rejected="(_change, reason) => warning = reason"
+          @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
+      </div>
     </section>
     <section class="production-panel"><div class="production-heading"><h2>{{ t('ステップの設定', 'Step settings') }}</h2></div>
       <div class="production-content workflow-fields">
-        <label>{{ t('編集するステップ', 'Selected step') }}<select v-model="selected"><option v-for="s in flow.steps" :key="s.id" :value="s.id">{{ label(s) }}</option></select></label>
+        <label>{{ t('編集するステップ', 'Selected step') }}<select v-model="selected"><option v-if="!step" value="" disabled>{{ t('未選択', 'None') }}</option><option v-for="s in flow.steps" :key="s.id" :value="s.id">{{ label(s) }}</option></select></label>
         <template v-if="step">
           <label>{{ t('表示名', 'Step name') }}<input :value="label(step)" @change="e => { const el = e.target as HTMLInputElement; const name = el.value.trim(); if (name) updateStep({ name: [name, name] }); else el.value = label(step!) }"></label>
           <label v-if="step.kind === 'approval'">{{ t('承認者', 'Approver') }}<input :value="step.assignee" @change="updateStep({ assignee: ($event.target as HTMLInputElement).value.trim() })"></label>
@@ -127,6 +137,7 @@ function pickRoute(port: string, select: HTMLSelectElement) { route(port, select
               <option v-for="s in flow.steps.filter(s => s.kind !== 'start' && s.id !== selected)" :key="s.id" :value="s.id">{{ label(s) }}</option></select></label>
           <button v-if="step.kind === 'approval' || step.kind === 'decision'" @click="remove">{{ t('ステップを削除', 'Delete step') }}</button>
         </template>
+        <p v-else>{{ t('グラフか一覧でステップを選ぶと、その設定を編集できます。', 'Select a step in the graph or the list to edit its settings.') }}</p>
         <p role="status">{{ warning }}</p>
       </div>
     </section>

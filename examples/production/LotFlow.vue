@@ -52,7 +52,8 @@ const diagramEdges = computed<GraphEdge[]>(() => projection.value.bands.filter(b
   id: band.edgeId, from: band.from, to: band.to, label: amount(band.quantity), markerEnd: 'open-arrow',
   ...(band.reference ? { fromPort: 'return', toPort: 'return', animated: true } : {}),
 })))
-const detail = computed(() => totals.value.find(row => row.id === selected.value)!)
+// Undefined while nothing is selected: a click on the empty graph canvas or Escape in it clears the selection.
+const detail = computed(() => totals.value.find(row => row.id === selected.value))
 const examples = computed(() => [{ label: props.text.codeFlow, path: 'LotFlow.vue', code: excerpt(source, 'flow') }])
 
 function changeUnit(next: typeof unit.value) {
@@ -89,11 +90,14 @@ function changeUnit(next: typeof unit.value) {
       <section class="production-panel">
         <div class="production-heading"><h2>{{ text.stepDetail }}</h2></div>
         <div class="production-content" aria-live="polite">
-          <strong>{{ text.steps[selected as Step] }}</strong>
-          <dl><dt>{{ text.input }}</dt><dd>{{ amount(detail.inflow) }}</dd><dt>{{ text.output }}</dt><dd>{{ amount(detail.outflow) }}</dd>
-            <template v-if="selected === 'line-b'"><dt>{{ text.diff }}</dt><dd>{{ amount(detail.difference) }}</dd></template>
-            <template v-if="detail.referenceInflow || detail.referenceOutflow"><dt>{{ text.handling }}</dt><dd>{{ amount(detail.referenceInflow || detail.referenceOutflow) }}</dd></template>
-          </dl>
+          <template v-if="detail">
+            <strong>{{ text.steps[selected as Step] }}</strong>
+            <dl><dt>{{ text.input }}</dt><dd>{{ amount(detail.inflow) }}</dd><dt>{{ text.output }}</dt><dd>{{ amount(detail.outflow) }}</dd>
+              <template v-if="selected === 'line-b'"><dt>{{ text.diff }}</dt><dd>{{ amount(detail.difference) }}</dd></template>
+              <template v-if="detail.referenceInflow || detail.referenceOutflow"><dt>{{ text.handling }}</dt><dd>{{ amount(detail.referenceInflow || detail.referenceOutflow) }}</dd></template>
+            </dl>
+          </template>
+          <p v-else class="production-caption">{{ isJapanese ? 'グラフか表で工程を選ぶと、その数量を表示します。' : 'Select a step in the graph or the table to see its quantities.' }}</p>
         </div>
       </section>
       <section class="production-panel">

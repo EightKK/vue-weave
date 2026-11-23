@@ -279,6 +279,7 @@ function onChartEscape(event: KeyboardEvent) {
 .sc-roadmap .vw-row-toggle { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border-radius: 6px; color: #8a8fa3; font-size: 0; }
 .sc-roadmap .vw-row-toggle::before { content: ''; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-1px) rotate(45deg); transition: transform .15s; }
 .sc-roadmap .vw-row-toggle[aria-expanded='false']::before { transform: translateX(-1px) rotate(-45deg); }
+.sc-roadmap .vw-row-toggle-icon { display: none; }
 .sc-roadmap .vw-row-toggle:hover { background: #eef0f4; color: #1d2030; }
 .sc-roadmap-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .sc-roadmap-glyph { flex: none; width: 16px; height: 16px; }

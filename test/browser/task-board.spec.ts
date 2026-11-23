@@ -168,8 +168,8 @@ test('a click on empty board space or Escape clears the selection, but a drag, a
   await dragBy(page, cell('Review · API team'), 40, 0, { steps: 4 })
   await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
   // A card drag keeps the selection.
-  await drag(page, card('Auth API'), cell('To do · API team'))
-  await expect(status).toHaveText('Moved Auth API to To do by pointer.')
+  await drag(page, card('Auth API'), cell('Doing · Web team'))
+  await expect(status).toHaveText(/^Moved Auth API to Doing/)
   await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
   // A click on an empty cell clears the shared selection, in the board and in the chart.
   await cell('Review · API team').click()

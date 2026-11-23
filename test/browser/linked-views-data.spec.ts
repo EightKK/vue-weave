@@ -1,5 +1,5 @@
 // Linked views, asynchronous layout, saved editing against a mock server and windowed loading of a large plan.
-import { expect, test, openExample, pageErrors, pressAndMove, type Page } from './support'
+import { expect, test, emptyGraphPoint, openExample, pageErrors, pressAndMove, type Page } from './support'
 
 async function openPersistence(page: Page) {
   const errors = pageErrors(page)
@@ -228,6 +228,29 @@ test('linked views: a graph selection highlights bars without selecting or delet
   await page.keyboard.press('Escape')
   await page.mouse.move(2, 2)
   await expect(summary).toContainText('Nothing selected')
+  await expect(node('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
+  expect(errors).toEqual([])
+})
+
+test('linked views: a click on the empty graph canvas clears the selection in every view', async ({ page }) => {
+  const { errors, demo, node, bar, summary } = await openLinkedDemo(page)
+  await expect(demo.getByText('Click the empty graph canvas or press Escape to clear the selection.', { exact: false })).toBeVisible()
+  const stage = demo.getByRole('img', { name: 'Linked network diagram', exact: true })
+  await node('Cut order B').click()
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'true')
+  await expect(bar('Cut order B')).toHaveClass(/\bvw-is-highlighted\b/)
+  await stage.click({ position: await emptyGraphPoint(stage) })
+  await expect(summary).toContainText('Nothing selected')
+  await expect(node('Cut order B')).toHaveAttribute('aria-pressed', 'false')
+  await expect(bar('Cut order B')).not.toHaveClass(/\bvw-is-highlighted\b/)
+
+  // A selection made in the timeline is cleared from the graph canvas as well.
+  await bar('Pack').click()
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'true')
+  await expect(node('Pack')).toHaveClass(/\bvw-is-highlighted\b/)
+  await stage.click({ position: await emptyGraphPoint(stage) })
+  await expect(summary).toContainText('Nothing selected')
+  await expect(bar('Pack')).toHaveAttribute('aria-pressed', 'false')
   await expect(node('Pack')).not.toHaveClass(/\bvw-is-highlighted\b/)
   expect(errors).toEqual([])
 })

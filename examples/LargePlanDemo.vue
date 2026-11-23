@@ -124,6 +124,13 @@ watch(graphView, ({ nodes, edges }) => {
   kept.value = next
 })
 
+// Escape first cancels a gesture in flight (a pan); only an Escape without one clears the selection. The graph reports
+// every gesture as a start and an end, and the wrapper's capture listener reads the count before the graph ends it.
+const gesture = { count: 0, cancelling: false }
+// A click on the empty canvas or Escape in the graph clears the selected part.
+function clearSelection() {
+  selectedPart.value = undefined
+}
 async function expandSelected() {
   const id = selectedPart.value
   if (!id || !canExpand.value) return
@@ -215,8 +222,11 @@ async function expandSelected() {
         <output :aria-label="t({ en: 'Largest move of shown parts', ja: '表示済みの部品の最大移動量' })">{{ largestMove === undefined ? t({ en: 'none yet', ja: 'まだありません' }) : largestMove }}</output></span>
     </div>
     <p v-if="graphError" class="large-plan-error" role="alert">{{ graphError }}</p>
-    <NetworkGraph ref="graphRef" v-model:selected-id="selectedPart" :nodes="shownGraphNodes" :edges="graphView.edges" :height="300"
-      :layout="keepPositions ? keepLayout : undefined" :labels="{ ...labels.graph, region: t({ en: 'Neighbourhood graph', ja: '隣接部品のグラフ' }) }" />
+    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+      <NetworkGraph ref="graphRef" v-model:selected-id="selectedPart" :nodes="shownGraphNodes" :edges="graphView.edges" :height="300"
+        :layout="keepPositions ? keepLayout : undefined" :labels="{ ...labels.graph, region: t({ en: 'Neighbourhood graph', ja: '隣接部品のグラフ' }) }"
+        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
+    </div>
   </DemoPanel>
 </template>
 

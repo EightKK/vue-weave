@@ -1,8 +1,8 @@
 // NetworkGraph editing: clipboard and palette, edge selection under culling, group collapse, edge styles, lasso selection
 // and toolbar, group and minimap slots.
 import {
-  expect, test, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, graphZoom, openGraphEditor, openNetworkFixture, pageErrors, readJson,
-  snapped, openExample,
+  expect, test, chainNode, dragBy, emptyGraphPoint, fixtureStatus, graphMinimap, graphNode, graphStage, graphZoom, openGraphEditor,
+  openNetworkFixture, pageErrors, readJson, snapped, openExample,
 } from './support'
 
 test('culling keeps selected edges rendered; Delete proposes the edge selection', async ({ page }) => {
@@ -281,6 +281,38 @@ test('lasso selection selects the nodes whose centre the outline encloses, keeps
   await page.mouse.up()
   await page.keyboard.up('Shift')
   await expect(lots.last()).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('the graph and Gantt demo clears the shared selection on a click on the empty canvas or Escape, after a cancelled gesture', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'graph-and-gantt')
+  const stage = graphStage(page)
+  const split = stage.getByRole('button', { name: 'Split Operation 101', exact: true })
+  const plan = page.getByRole('button', { name: 'Split · plan 09:00–11:00', exact: true })
+  const status = page.getByRole('status').filter({ hasText: 'Selection cleared.' })
+  // The demo opens with Split selected in the graph and its bars selected in the timeline.
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(plan).toHaveAttribute('aria-pressed', 'true')
+  await stage.click({ position: await emptyGraphPoint(stage) })
+  await expect(split).toHaveAttribute('aria-pressed', 'false')
+  await expect(plan).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toBeVisible()
+
+  // While editing, the first Escape only cancels an armed connection; the next one clears the selection.
+  await page.getByLabel('Edit graph').check()
+  await split.click()
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await expect(plan).toHaveAttribute('aria-pressed', 'true')
+  const handle = stage.getByRole('button', { name: 'Start connection from Split', exact: true })
+  await handle.press('Enter')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await handle.press('Escape')
+  await expect(handle).toHaveAttribute('aria-pressed', 'false')
+  await expect(split).toHaveAttribute('aria-pressed', 'true')
+  await split.press('Escape')
+  await expect(split).toHaveAttribute('aria-pressed', 'false')
+  await expect(plan).toHaveAttribute('aria-pressed', 'false')
   expect(errors).toEqual([])
 })
 

@@ -1,4 +1,4 @@
-import { expect, test, openExample, pageErrors } from './support'
+import { expect, test, emptyGraphPoint, openExample, pageErrors } from './support'
 
 test('the BPMN demo draws pools, lanes, shapes and decorative markers with the labels as accessible names', async ({ page }) => {
   const errors = pageErrors(page)
@@ -56,6 +56,27 @@ test('BPMN steps stay selectable and connectable by accessible name', async ({ p
   await page.getByRole('button', { name: 'Connect to Billed', exact: true }).press('Enter')
   await expect(status).toHaveText('That flow already exists.')
   await expect(edges).toHaveCount(before + 2)
+  expect(errors).toEqual([])
+})
+
+test('a click on the empty BPMN canvas or Escape in it clears the selection', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'bpmn-process')
+  const stage = page.getByRole('img', { name: 'Purchase order process', exact: true })
+  const status = page.getByRole('status', { name: 'BPMN status' })
+  const check = stage.getByRole('button', { name: 'Check order', exact: true })
+  await check.click()
+  await expect(check).toHaveAttribute('aria-pressed', 'true')
+  // A press without movement on a lane or the bare stage is a background click.
+  await stage.click({ position: await emptyGraphPoint(stage) })
+  await expect(check).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+
+  await check.press('Enter')
+  await expect(check).toHaveAttribute('aria-pressed', 'true')
+  await check.press('Escape')
+  await expect(check).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
   expect(errors).toEqual([])
 })
 

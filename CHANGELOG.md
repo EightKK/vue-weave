@@ -4,11 +4,13 @@
 
 ### Added
 
-- NetworkGraph emits `background-click` with the point in graph coordinates when the empty canvas is clicked without panning, so applications can clear a controlled selection. The bill of materials showcase clears its selection on a canvas click or Escape.
+- NetworkGraph, GanttChart, TaskBoard and EventCalendar emit an opt-in `background-click` when empty space is clicked without dragging, so applications can clear a controlled selection (the components keep none of their own). NetworkGraph reports the point in graph coordinates; GanttChart a `TimelineBackgroundClick` `{ time, rowId? }` for an empty part of the time area (not in rows where the click creates a bar); TaskBoard a `TaskBoardBackgroundClick` `{ columnId?, laneId? }`; EventCalendar an `EventCalendarBackgroundClick` `{ time, allDay, resourceId? }` when the click proposes no `create`. Nothing else changes for applications that do not listen.
+- The examples and showcases clear their selection when you click empty space in a graph, chart, board or calendar, or press Escape there (an Escape that cancels a drag keeps the selection).
 
 ### Fixed
 
-- The zoom-in and zoom-out buttons of NetworkGraph and GanttChart draw their plus and minus as SVG icons, so they stay centered and aligned when an application restyles button fonts. Their accessible names are unchanged.
+- The zoom-in and zoom-out buttons of NetworkGraph and GanttChart, the GanttChart row toggle and add button, the TreeGrid row actions (add below, add child, delete) and the PropertyInspector remove button draw their symbols as SVG icons, so they stay centered when an application restyles button fonts. Their accessible names are unchanged. The markup of these buttons changes from a text character to an `svg` element (`vw-zoom-icon`, `vw-row-toggle-icon`, `vw-gantt-create-icon`, `vw-tree-grid-action-icon`, `vw-inspector-remove-icon`); the icons use `currentColor`.
+- The construction showcase no longer applies its button style to the chart's own row toggles, which overlapped neighbouring rows.
 
 ## 1.4.0 - 2026-11-22
 

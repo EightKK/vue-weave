@@ -318,7 +318,7 @@ async function expandAndShow() {
 </script>
 
 <template>
-  <DemoPanel title-id="linked-title" :title="t({ en: 'Linked planning views', ja: '連動する計画ビュー' })" :subtitle="t({ en: 'Act in any view; the others highlight the same tasks. Escape clears the selection.', ja: 'どのビューで操作しても、他のビューが同じタスクを強調表示します。Escape で選択を解除します。' })" @keydown.esc="clear">
+  <DemoPanel title-id="linked-title" :title="t({ en: 'Linked planning views', ja: '連動する計画ビュー' })" :subtitle="t({ en: 'Act in any view; the others highlight the same tasks. Click the empty graph canvas or press Escape to clear the selection.', ja: 'どのビューで操作しても、他のビューが同じタスクを強調表示します。グラフの何もない所をクリックするか Escape で選択を解除します。' })" @keydown.esc="clear">
     <div class="options linked-options" role="group" :aria-label="t({ en: 'Linked view controls', ja: '連動ビューの操作' })">
       <label>{{ t({ en: 'Impact range', ja: '影響範囲' }) }}
         <select v-model="impactDirection" :aria-label="t({ en: 'Impact direction', ja: '影響の方向' })">
@@ -383,7 +383,7 @@ async function expandAndShow() {
         :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges" :related-ids="graphSets.relatedNodeIds"
         :labels="{ ...labels.graph, region: t({ en: 'Linked network diagram', ja: '連動するネットワーク図' }) }"
         @target-enter="enter" @target-leave="leave" @target-activate="activate"
-        @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" @delete="onGraphDelete" />
+        @update:collapsed-group-ids="setGraphCollapsed" @viewport-change="bump" @delete="onGraphDelete" @background-click="clear" />
       <GraphContextToolbar :graph="graph" :target="toolbarTarget" :refresh-key="refreshKey" :label="t({ en: 'Selected graph item', ja: '選択中のグラフの項目' })">
         <template #default="{ target }">
           <strong v-if="target?.kind === 'node'">{{ names[target.id] }}</strong>
@@ -394,7 +394,7 @@ async function expandAndShow() {
       </GraphContextToolbar>
     </div>
 
-    <GanttChart ref="gantt" :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :pixels-per-unit="64 / hour"
+    <GanttChart @background-click="clear" ref="gantt" :rows="rows" :bars="bars" :range="range" :dependencies="dependencies" :pixels-per-unit="64 / hour"
       :tick-steps="[hour, 2 * hour]" :row-height="46" :height="470" :load-rows="loadRows" :load-segments="loadSegments" load-selectable
       :highlighted-load-targets="highlightedLoad" :selected-load-targets="linked.load.value.selected"
       deletable multi-select :selected-ids="timelineSets.selectedBarIds" :highlighted-bar-ids="highlightedBars"
