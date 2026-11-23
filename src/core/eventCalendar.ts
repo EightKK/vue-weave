@@ -149,6 +149,18 @@ export interface EventCalendarEditCancel {
   eventIds: readonly string[]
 }
 
+/**
+ * Payload of the EventCalendar `background-click` event: where a primary click on empty calendar space landed. In the
+ * time grid, `time` is the time at the pointer rounded down to the `snap` step and `allDay` is false; in the all-day row
+ * and the month view, `time` is the start of the day and `allDay` is true. `resourceId` is the resource column in the
+ * per-resource day view.
+ */
+export interface EventCalendarBackgroundClick {
+  time: number
+  allDay: boolean
+  resourceId?: string
+}
+
 /** Localizable texts of EventCalendar. Every field is optional in the `labels` prop. */
 export interface EventCalendarLabels {
   /** Accessible name of the calendar region. Default "Event calendar". */

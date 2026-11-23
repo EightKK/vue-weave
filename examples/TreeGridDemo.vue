@@ -215,6 +215,14 @@ function activateInGraph(event: ViewTargetEvent) {
   gridSelection.value = []
   linked.select('graph', [event.target])
 }
+// A click on the empty graph canvas or Escape in the graph clears the linked selection in both views. Escape first
+// cancels a gesture in flight (a pan); the graph reports every gesture as a start and an end, and the capture listener
+// reads the count before the graph's own Escape handler ends it.
+const gesture = { count: 0, cancelling: false }
+function clearSelection() {
+  gridSelection.value = []
+  linked.clearSelection()
+}
 const matches = computed(() => {
   const entities: EntityRef[] = linked.selectedEntities.value
   return matchTreeGridEntities({ rows: gridRows.value, columns, cells: cells.value }, entities)
@@ -249,8 +257,11 @@ const rtl = ref(false)
       @row-create-rejected="rejected" @row-delete-rejected="rejected" @row-move-rejected="rejected" />
     <StatusLine :label="t({ en: 'Tree grid status', ja: 'ツリーグリッドの状態' })">{{ status }}</StatusLine>
     <StatusLine :label="t({ en: 'Tree grid selection', ja: 'ツリーグリッドの選択' })">{{ selectionText }}</StatusLine>
-    <NetworkGraph :nodes="graphNodes" :edges="graphEdges" :height="260" :options="{ nodeWidth: 150, nodeHeight: 34 }"
-      :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
-      :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph" />
+    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+      <NetworkGraph :nodes="graphNodes" :edges="graphEdges" :height="260" :options="{ nodeWidth: 150, nodeHeight: 34 }"
+        :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
+        :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph"
+        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
+    </div>
   </DemoPanel>
 </template>

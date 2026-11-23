@@ -1,5 +1,5 @@
 // The demo shell, themes, forced colours, reduced motion, print, image export and the showcases of the site.
-import { expect, test, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import { expect, test, emptyGraphPoint, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors } from './support'
 import { examplesOfKind } from '../../site/examples/registry'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
@@ -220,6 +220,29 @@ test('the workflow builder showcase applies step moves and connections through t
   expect(errors).toEqual([])
 })
 
+test('the workflow builder showcase clears the step selection on a click on the empty canvas or Escape', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'workflow', { kind: 'showcase' })
+  const showcase = page.getByRole('region', { name: 'Workflow builder' })
+  const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
+  await expect(showcase.getByText('click the empty canvas or press Escape to clear the selection', { exact: false })).toBeVisible()
+  const canvas = showcase.getByRole('img', { name: 'Workflow canvas', exact: true })
+  const lookup = canvas.getByRole('button', { name: 'Look up customer', exact: true })
+  await lookup.click()
+  await expect(lookup).toHaveAttribute('aria-pressed', 'true')
+  await expect(lookup.locator('.sc-workflow-is-selected')).toHaveCount(1)
+  await canvas.click({ position: await emptyGraphPoint(canvas) })
+  await expect(lookup).toHaveAttribute('aria-pressed', 'false')
+  await expect(lookup.locator('.sc-workflow-is-selected')).toHaveCount(0)
+  await expect(status('Selection cleared.')).toBeVisible()
+
+  await lookup.press('Enter')
+  await expect(lookup).toHaveAttribute('aria-pressed', 'true')
+  await lookup.press('Escape')
+  await expect(lookup).toHaveAttribute('aria-pressed', 'false')
+  expect(errors).toEqual([])
+})
+
 test('the database schema showcase traces relationships and keeps table moves controlled', async ({ page }) => {
   const errors = pageErrors(page)
   await openExample(page, 'schema', { kind: 'showcase' })
@@ -268,6 +291,28 @@ test('org chart showcase traces a reporting line and folds a team', async ({ pag
   expect(errors).toEqual([])
 })
 
+test('org chart showcase clears the selection on a click on the empty canvas or Escape', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'org', { kind: 'showcase' })
+  const showcase = page.getByRole('region', { name: 'Org chart', exact: true })
+  const status = showcase.getByRole('status').last()
+  const chart = showcase.getByRole('img', { name: 'Organisation chart', exact: true })
+  const ceo = chart.getByRole('button', { name: 'Amara Okafor Chief Executive Officer', exact: true })
+  await expect(ceo).toHaveAttribute('aria-pressed', 'true')
+  await chart.click({ position: await emptyGraphPoint(chart) })
+  await expect(ceo).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+  await expect(showcase.locator('.sc-org-link-on')).toHaveCount(0)
+
+  const hana = chart.getByRole('button', { name: 'Hana Sato Backend Engineer', exact: true })
+  await hana.click()
+  await expect(hana).toHaveAttribute('aria-pressed', 'true')
+  await hana.press('Escape')
+  await expect(hana).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+  expect(errors).toEqual([])
+})
+
 test('room bookings showcase moves stays and refuses an overlap', async ({ page }) => {
   const errors = pageErrors(page)
   await openExample(page, 'booking', { kind: 'showcase' })
@@ -284,6 +329,31 @@ test('room bookings showcase moves stays and refuses an overlap', async ({ page 
   await sara.press('ArrowRight')
   await expect(status).toHaveText('Room 302 is taken by Max Müller Sun 29–Wed 2.')
   await expect(sara).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('room bookings showcase clears the selection on a click on empty chart space or Escape', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'booking', { kind: 'showcase' })
+  const showcase = page.getByRole('region', { name: 'Room bookings', exact: true })
+  const status = showcase.getByRole('status').last()
+  await expect(status).toContainText('Click empty chart space or press Escape to clear the selection.')
+  const arjun = showcase.getByRole('button', { name: 'Arjun Mehta Fri 27–Mon 30', exact: true })
+  await arjun.click()
+  await expect(arjun).toHaveAttribute('aria-pressed', 'true')
+  // The Floor 2 heading row has no stays and does not create bars: below Arjun's stay in its time area is empty.
+  const stay = (await arjun.boundingBox())!
+  const floor = (await showcase.locator('.sc-booking-floor').filter({ hasText: 'Floor 2' }).boundingBox())!
+  expect(floor.y).toBeGreaterThan(stay.y + stay.height)
+  await page.mouse.click(stay.x + stay.width / 2, floor.y + floor.height / 2)
+  await expect(arjun).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
+
+  await arjun.click()
+  await expect(arjun).toHaveAttribute('aria-pressed', 'true')
+  await arjun.press('Escape')
+  await expect(arjun).toHaveAttribute('aria-pressed', 'false')
+  await expect(status).toHaveText('Selection cleared.')
   expect(errors).toEqual([])
 })
 
@@ -307,6 +377,41 @@ test('the product roadmap showcase moves projects through controlled edits and k
   await expect(page.getByRole('button', { name: /^Guided setup / })).toHaveCount(0)
   await page.getByRole('button', { name: 'Expand Onboarding', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Guided setup Jan 12–Feb 23', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the product roadmap showcase clears the selection on a click on empty chart space or Escape, but not on an Escape that cancels a drag', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExample(page, 'roadmap', { kind: 'showcase' })
+  const showcase = page.getByRole('region', { name: 'Product roadmap', exact: true })
+  const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
+  await expect(status('Click empty chart space or press Escape to clear the selection.')).toBeVisible()
+  const gallery = showcase.getByRole('button', { name: 'Template gallery Feb 22–Apr 5', exact: true })
+  await gallery.click()
+  await expect(gallery).toHaveAttribute('aria-pressed', 'true')
+  // The Template gallery row is empty before its first bar (Feb 22). Welcome emails starts on Jan 4, the start of the
+  // axis, so 100 px (about a week) left of Template gallery is still in the time area of that row.
+  const bar = (await gallery.boundingBox())!
+  const axisStart = (await showcase.getByRole('button', { name: 'Welcome emails Jan 4–Jan 29', exact: true }).boundingBox())!.x
+  const x = bar.x - 100
+  expect(x).toBeGreaterThan(axisStart + 10)
+  await page.mouse.click(x, bar.y + bar.height / 2)
+  await expect(gallery).toHaveAttribute('aria-pressed', 'false')
+  await expect(status('Selection cleared.')).toBeVisible()
+
+  // Escape during a drag cancels the drag and keeps the selection; the next Escape clears it.
+  await gallery.click()
+  await expect(gallery).toHaveAttribute('aria-pressed', 'true')
+  const box = (await gallery.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 42, box.y + box.height / 2, { steps: 5 })
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(gallery).toBeVisible()
+  await expect(gallery).toHaveAttribute('aria-pressed', 'true')
+  await gallery.press('Escape')
+  await expect(gallery).toHaveAttribute('aria-pressed', 'false')
   expect(errors).toEqual([])
 })
 

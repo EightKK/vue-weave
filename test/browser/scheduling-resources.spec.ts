@@ -1006,6 +1006,33 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
   expect(errors).toEqual([])
 })
 
+test('resource planning clears the selection and the inspector on a click on empty chart space or Escape', async ({ page }) => {
+  const { errors, chart, notice } = await openResourcePlanning(page)
+  await expect(page.getByRole('region', { name: 'Live demo' }).getByText('Click empty chart space or press Escape to clear the selection.', { exact: false })).toBeVisible()
+  const inspector = page.getByRole('region', { name: 'Task inspector', exact: true })
+  await expect(inspector).toContainText('Select a bar to edit its task.')
+  const crew = chart.getByRole('button', { name: 'Mold A · Crew 08:00–11:00', exact: true })
+  await crew.click()
+  await expect(crew).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('region', { name: 'Task Mold A', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Assignments of Mold A', exact: true })).toBeVisible()
+  // Mold A is the only placed task of the Crew row, so the row is empty after 11:00 (60 px per hour).
+  const box = (await crew.boundingBox())!
+  await page.mouse.click(box.x + box.width + 90, box.y + box.height / 2)
+  await expect(crew).toHaveAttribute('aria-pressed', 'false')
+  await expect(notice).toContainText('Selection cleared.')
+  await expect(inspector).toContainText('Select a bar to edit its task.')
+  await expect(page.getByRole('group', { name: 'Assignments of Mold A', exact: true })).toHaveCount(0)
+
+  // Escape in the chart clears it too.
+  await crew.click()
+  await expect(crew).toHaveAttribute('aria-pressed', 'true')
+  await crew.press('Escape')
+  await expect(crew).toHaveAttribute('aria-pressed', 'false')
+  await expect(inspector).toContainText('Select a bar to edit its task.')
+  expect(errors).toEqual([])
+})
+
 test('the resource planning example previews a change in Japanese', async ({ page }) => {
   const errors = pageErrors(page)
   const demo = await openExample(page, 'resource-planning', { locale: 'ja' })

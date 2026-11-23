@@ -569,10 +569,10 @@ function exportSvg() {
 .sc-build-eyebrow { margin: 0 0 4px; color: #f2c14e; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .sc-build-intro { max-width: 720px; margin: 0; color: var(--vw-muted); font-size: 13px; line-height: 1.55; }
 .sc-build-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.sc-build button { height: 32px; padding: 0 14px; border: 1px solid #2d3c4e; border-radius: 8px; background: #17212c; color: #dbe5ef; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.sc-build button:hover:not(:disabled) { border-color: #41566e; background: #1d2a38; }
-.sc-build button:focus-visible, .sc-build input:focus-visible + span { outline: 2px solid var(--vw-accent); outline-offset: 2px; }
-.sc-build button:disabled { opacity: .55; cursor: default; }
+.sc-build :where(.sc-build-actions, .sc-build-exports) button { height: 32px; padding: 0 14px; border: 1px solid #2d3c4e; border-radius: 8px; background: #17212c; color: #dbe5ef; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.sc-build :where(.sc-build-actions, .sc-build-exports) button:hover:not(:disabled) { border-color: #41566e; background: #1d2a38; }
+.sc-build :where(.sc-build-actions, .sc-build-exports) button:focus-visible, .sc-build input:focus-visible + span { outline: 2px solid var(--vw-accent); outline-offset: 2px; }
+.sc-build :where(.sc-build-actions, .sc-build-exports) button:disabled { opacity: .55; cursor: default; }
 .sc-build .sc-build-primary { border-color: #2f7fd0; background: linear-gradient(#3a8ee0, #2b72bd); color: #fff; }
 .sc-build .sc-build-primary:hover:not(:disabled) { border-color: #5aa6f0; background: linear-gradient(#4a9cec, #327dcb); }
 .sc-build-switch { position: relative; display: inline-flex; align-items: center; gap: 9px; padding: 0 12px; height: 32px; border: 1px solid #3b2e1c; border-radius: 8px; background: #1d1810; color: #f6d9a8; font-size: 12.5px; font-weight: 600; cursor: pointer; }

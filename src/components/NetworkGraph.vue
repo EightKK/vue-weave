@@ -262,6 +262,8 @@ const emit = defineEmits<{
   'target-leave': [event: ViewTargetEvent<GraphViewTarget>]
   /** A node, edge or group was activated by click, Enter or Space; carries the target and the source. */
   'target-activate': [event: ViewTargetEvent<GraphViewTarget>]
+  /** The empty canvas was clicked without panning; carries the point in graph coordinates. Applications typically clear their selection. */
+  'background-click': [point: GraphPoint]
   /** A gesture that a new layout would cancel started (drag, resize, reshape, connection, box selection, pan, pinch); carries its kind and source. */
   'gesture-start': [gesture: GraphGesture]
   /** The gesture ended, exactly once per `gesture-start`, after any proposal; carries its kind, source and whether it was committed or cancelled. */
@@ -1277,6 +1279,7 @@ function movePan(event: PointerEvent) {
 
 function stopPan(event: PointerEvent) {
   if (pan?.pointerId !== event.pointerId) return
+  if (!pan.box && event.type === 'pointerup' && !pastThreshold(pan, event)) emit('background-click', worldPoint(event.clientX, event.clientY))
   if (pan.box && event.type === 'pointerup' && pastThreshold(pan, event)) {
     movePan(event)
     const selection = new Set(event.ctrlKey || event.metaKey ? props.selectedIds : [])
@@ -2854,9 +2857,9 @@ onUnmounted(() => {
     </button>
     <span class="vw-sr-only" aria-live="polite">{{ notice }}</span>
     <div v-if="showControls !== false" class="vw-zoom-tools" role="group" :aria-label="messages.zoom">
-      <button type="button" :aria-label="messages.zoomOut" @click="zoom(1 / 1.25)">−</button>
+      <button type="button" :aria-label="messages.zoomOut" @click="zoom(1 / 1.25)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8" /></svg></button>
       <output>{{ Math.round(camera.scale * 100) }}%</output>
-      <button type="button" :aria-label="messages.zoomIn" @click="zoom(1.25)">＋</button>
+      <button type="button" :aria-label="messages.zoomIn" @click="zoom(1.25)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8M6 2v8" /></svg></button>
       <button type="button" class="vw-fit-button" @click="fit()">{{ messages.fit }}</button>
     </div>
   </div>

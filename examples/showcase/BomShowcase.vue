@@ -476,6 +476,14 @@ function onGraphActivate(event: ViewTargetEvent) {
   status.value = t({ en: `${nameOf(event.target.id)} is used in ${count} row${count === 1 ? '' : 's'}.`, ja: `${nameOf(event.target.id)} は ${count} 行で使われています。` })
 }
 
+// A click on the empty canvas or Escape in the graph clears the selection.
+function clearGraphSelection() {
+  if (!linked.selectedEntities.value.length) return
+  gridSelection.value = []
+  linked.clearSelection()
+  status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+
 // ---- where-used: traverseGraph backward over structure edges only, with a node limit and paths ----
 const follow = ref<'structure' | 'alternate'>('structure')
 const limit = ref(8)
@@ -706,13 +714,13 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
     </div>
 
     <div class="sc-bom-bottom">
-      <div class="sc-bom-canvas">
+      <div class="sc-bom-canvas" @keydown.esc="clearGraphSelection">
         <NetworkGraph
           ref="graph" :nodes="graphNodes" :edges="graphEdges" unstyled-node-slots :height="460"
           :options="{ direction: 'LR', nodeWidth: 184, nodeHeight: 44, columnGap: 72, rowGap: 12 }"
           :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="graphHighlightedNodes"
           :highlighted-edge-ids="graphHighlightedEdges" :dimmed-ids="dimmedIds" :labels="{ ...labels.graph, region: t({ en: 'Item structure', ja: '品目の構成' }) }"
-          @target-activate="onGraphActivate"
+          @target-activate="onGraphActivate" @background-click="clearGraphSelection"
         >
           <template #node="{ node, box, selected, highlighted }">
             <g class="sc-bom-node" :class="{ 'sc-bom-is-selected': selected, 'sc-bom-is-on-path': highlighted, 'sc-bom-is-product': node.data.product }" :data-change="node.data.change">
@@ -726,8 +734,8 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
         <div class="sc-bom-graph-foot">
           <label class="sc-bom-check"><input v-model="showParts" type="checkbox"> {{ t({ en: 'Show purchased parts', ja: '購入部品を表示' }) }}</label>
           <p class="sc-bom-hint">{{ t({
-            en: 'Edges are usages labelled with their quantity; dashed edges link alternate parts. The path from the selected item to a product is highlighted.',
-            ja: '辺は数量付きの使用関係で、破線は代替部品を結びます。選んだ品目から製品までの経路を強調表示します。',
+            en: 'Edges are usages labelled with their quantity; dashed edges link alternate parts. The path from the selected item to a product is highlighted. Click the empty canvas or press Escape to clear the selection.',
+            ja: '辺は数量付きの使用関係で、破線は代替部品を結びます。選んだ品目から製品までの経路を強調表示します。何もない所をクリックするか Escape で選択を解除します。',
           }) }}</p>
         </div>
       </div>

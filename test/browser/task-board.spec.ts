@@ -1,5 +1,5 @@
 // TaskBoard: pointer and keyboard card moves, validation, cancellation and the selection shared with GanttChart.
-import { expect, test, boxCenter, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
+import { expect, test, boxCenter, dragBy, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
 
 async function openTaskBoard(page: Page) {
   const errors = pageErrors(page)
@@ -153,6 +153,41 @@ test('the board and the Gantt chart share the selection', async ({ page }) => {
   // Enter on a focused card selects it too.
   await card('Billing API').press('Enter')
   await expect(chart.getByRole('button', { name: 'Billing API 13:00–16:00', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('a click on empty board space or Escape clears the selection, but a drag, a header click or a cancelling Escape does not', async ({ page }) => {
+  const { errors, cell, card, selection, board, chart, status } = await openTaskBoard(page)
+  const wireframesBar = chart.getByRole('button', { name: 'Wireframes 08:00–10:00', exact: true })
+  await card('Wireframes').click()
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
+  // A click on a column header is not empty space.
+  await board.locator('.vw-board-column-head').filter({ hasText: 'Doing' }).click()
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
+  // A drag that starts on empty space is no click.
+  await dragBy(page, cell('Review · API team'), 40, 0, { steps: 4 })
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
+  // A card drag keeps the selection.
+  await drag(page, card('Auth API'), cell('Doing · Web team'))
+  await expect(status).toHaveText(/^Moved Auth API to Doing/)
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
+  // A click on an empty cell clears the shared selection, in the board and in the chart.
+  await cell('Review · API team').click()
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'false')
+  await expect(wireframesBar).toHaveAttribute('aria-pressed', 'false')
+  await expect(selection).toHaveText('Nothing selected.')
+
+  // Escape that cancels a pick-up keeps the selection; the next Escape clears it.
+  await card('Wireframes').click()
+  await expect(selection).toHaveText('Selected: Wireframes (Done, 100%)')
+  await card('Login form').focus()
+  await page.keyboard.press('Space')
+  await page.keyboard.press('Escape')
+  await expect(status).toHaveText('Move of Login form cancelled (escape).')
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Escape')
+  await expect(card('Wireframes')).toHaveAttribute('aria-pressed', 'false')
+  await expect(selection).toHaveText('Nothing selected.')
   expect(errors).toEqual([])
 })
 

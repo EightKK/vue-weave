@@ -476,7 +476,7 @@ defineExpose({
                 </td>
                 <td v-if="!row.readonly">
                   <button type="button" class="vw-inspector-remove" :aria-label="`${messages.remove} ${entry.name}`"
-                    @click="removeRow(row.list, at, row.index)"><span aria-hidden="true">×</span></button>
+                    @click="removeRow(row.list, at, row.index)"><svg class="vw-inspector-remove-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3 3 9" /></svg></button>
                 </td>
               </tr>
             </tbody>

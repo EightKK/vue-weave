@@ -15,7 +15,7 @@ import type { ChartDirection, GanttExportOptions, GanttPngExportOptions, Timelin
 import type {
   BarsDeleteValidator, ProgressEditValidator, TimelineContextMenu, TimelineContextTarget, TimelineFitOptions, TimelineProgressEdit,
 } from '../core/types.js'
-import type { CreateValidator, TimelineCascade, TimelineCreate } from '../core/types.js'
+import type { CreateValidator, TimelineBackgroundClick, TimelineCascade, TimelineCreate } from '../core/types.js'
 import type { RowMoveValidator, TimelineRowMove } from '../core/types.js'
 import type { ColumnResizeValidator, TimelineColumnResize } from '../core/types.js'
 import { renderTimelineSvg } from '../core/exportSvg.js'
@@ -406,6 +406,8 @@ const emit = defineEmits<{
   'target-leave': [event: ViewTargetEvent]
   /** A bar, dependency, row heading or (with `loadSelectable`) load segment was activated by click, Enter or Space. */
   'target-activate': [event: ViewTargetEvent]
+  /** An empty part of the time area was clicked without moving and without proposing a bar; carries the time and the row. Applications typically clear their selection. */
+  'background-click': [click: TimelineBackgroundClick]
   /** Something was dropped on the chart; carries the snapped time, the row under the drop point and `dataTransfer`. Only with `droppable`. */
   'bar-drop': [event: TimelineDrop]
   /**
@@ -703,8 +705,9 @@ function toggleName(row: TimelineRow) {
   return `${collapsed.value.has(row.id) ? messages.value.expandRow : messages.value.collapseRow} ${row.label}`
 }
 /** Glyph of a row's expand toggle: pointing towards the row text when collapsed, down when expanded. */
-function toggleGlyph(id: string) {
-  return collapsed.value.has(id) ? (rtl.value ? '◂' : '▸') : '▾'
+// The toggle draws a filled triangle as SVG, so it stays centred whatever font an application gives the button.
+function toggleIcon(id: string) {
+  return collapsed.value.has(id) ? (rtl.value ? 'M8 6.5 3 10l5 3.5Z' : 'M4 6.5 9 10l-5 3.5Z') : 'M2.5 7.5h7L6 12.5Z'
 }
 function toggleRow(id: string) {
   const next = new Set(collapsed.value)
@@ -1409,6 +1412,7 @@ function movePointer(event: PointerEvent) {
 function pointerReleased(event: PointerEvent) {
   endTouch(event)
   finishGesture(event)
+  releaseBackground(event)
 }
 /** Finish the gesture of the pointer on release; any other event, such as a lost capture, cancels it. */
 function finishGesture(event: PointerEvent) {
@@ -2341,6 +2345,7 @@ function laneAt(rowId: string, clientY: number) {
 function pressRow(event: PointerEvent, row: R) {
   // Bars, handles, cells and the heading column are descendants; only the row's own background is empty.
   const el = scroller.value, area = canvas.value
+  if (event.target === event.currentTarget && !canCreateIn(row)) pressBackground(event, row.id)
   if (event.target !== event.currentTarget || !el || !area || !canCreateIn(row) || !primaryPress(event)) return
   const x = timeAreaOffset(event.clientX, area.getBoundingClientRect())
   if (x < 0 || x > axis.value.width) return
@@ -2410,6 +2415,26 @@ function keyboardContextMenu(event: KeyboardEvent, target: TimelineContextTarget
 function pressScroller(event: PointerEvent) {
   keyboardMenu = undefined
   trackTouch(event)
+  const el = scroller.value
+  // The canvas and the scroller below it are empty; a press on a scroll bar of the scroller is not.
+  if (event.target === canvas.value || (el && event.target === el && event.offsetX < el.clientWidth && event.offsetY < el.clientHeight)) pressBackground(event)
+}
+// A primary press on an empty part of the time area, reported as `background-click` when it is released in place.
+// Rows that create bars propose a bar on a click instead, so they do not record one.
+let backgroundPress: { pointerId: number; x: number; y: number; time: number; rowId?: string } | undefined
+function pressBackground(event: PointerEvent, rowId?: string) {
+  backgroundPress = undefined
+  const area = canvas.value
+  if (!area || !primaryPress(event)) return
+  const x = timeAreaOffset(event.clientX, area.getBoundingClientRect())
+  if (x < 0 || x > axis.value.width) return
+  backgroundPress = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, time: axis.value.toTime(x), rowId }
+}
+function releaseBackground(event: PointerEvent) {
+  const press = backgroundPress
+  backgroundPress = undefined
+  if (!press || press.pointerId !== event.pointerId || event.type !== 'pointerup' || gestureActive() || pastThreshold(press, event)) return
+  emit('background-click', press.rowId === undefined ? { time: press.time } : { time: press.time, rowId: press.rowId })
 }
 function onContextMenu(event: MouseEvent) {
   // A menu opened during a pointer gesture (for example Control-click on macOS) can swallow pointerup, so every
@@ -2788,9 +2813,9 @@ onUnmounted(() => {
           @click="choosePreset(preset.id)">{{ preset.label }}</button>
       </div>
       <div v-if="showControls !== false" class="vw-gantt-zoom" role="group" :aria-label="messages.zoom">
-        <button type="button" :aria-label="messages.zoomOut" :disabled="zoom <= minZoom" @click="setZoom(1 / 1.35)">−</button>
+        <button type="button" :aria-label="messages.zoomOut" :disabled="zoom <= minZoom" @click="setZoom(1 / 1.35)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8" /></svg></button>
         <output>{{ Math.round(zoom * 100) }}%</output>
-        <button type="button" :aria-label="messages.zoomIn" :disabled="zoom >= maxZoom" @click="setZoom(1.35)">＋</button>
+        <button type="button" :aria-label="messages.zoomIn" :disabled="zoom >= maxZoom" @click="setZoom(1.35)"><svg class="vw-zoom-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2 6h8M6 2v8" /></svg></button>
       </div>
     </div>
     <div
@@ -2885,14 +2910,14 @@ onUnmounted(() => {
             <button v-if="row.hasChildren && !row.creatable && !row.reorderable" type="button" class="vw-row-toggle"
               :aria-expanded="!collapsed.has(row.row.id)"
               :aria-label="toggleName(row.row)"
-              @click="toggleRow(row.row.id)">{{ toggleGlyph(row.row.id) }}</button>
+              @click="toggleRow(row.row.id)"><svg class="vw-row-toggle-icon" viewBox="0 0 12 20" aria-hidden="true" focusable="false"><path :d="toggleIcon(row.row.id)" /></svg></button>
             <template v-else-if="row.creatable && !row.reorderable">
               <button v-if="row.hasChildren" type="button" class="vw-row-toggle"
                 :aria-expanded="!collapsed.has(row.row.id)"
                 :aria-label="toggleName(row.row)"
-                @click="toggleRow(row.row.id)">{{ toggleGlyph(row.row.id) }}</button>
+                @click="toggleRow(row.row.id)"><svg class="vw-row-toggle-icon" viewBox="0 0 12 20" aria-hidden="true" focusable="false"><path :d="toggleIcon(row.row.id)" /></svg></button>
               <button type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
-                @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
+                @click="createFromButton($event, row.row)"><svg class="vw-gantt-create-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M6 2.5v7M2.5 6h7" /></svg></button>
             </template>
             <template v-else-if="row.reorderable">
               <button type="button" class="vw-row-move-handle" :data-vw-row-handle="row.row.id"
@@ -2901,9 +2926,9 @@ onUnmounted(() => {
               <button v-if="row.hasChildren" type="button" class="vw-row-toggle"
                 :aria-expanded="!collapsed.has(row.row.id)"
                 :aria-label="toggleName(row.row)"
-                @click="toggleRow(row.row.id)">{{ toggleGlyph(row.row.id) }}</button>
+                @click="toggleRow(row.row.id)"><svg class="vw-row-toggle-icon" viewBox="0 0 12 20" aria-hidden="true" focusable="false"><path :d="toggleIcon(row.row.id)" /></svg></button>
               <button v-if="row.creatable" type="button" class="vw-gantt-create-button" :aria-label="`${messages.createIn} ${row.row.label}`"
-                @click="createFromButton($event, row.row)"><span aria-hidden="true">+</span></button>
+                @click="createFromButton($event, row.row)"><svg class="vw-gantt-create-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M6 2.5v7M2.5 6h7" /></svg></button>
             </template>
             <div class="vw-row-content" role="button" :tabindex="row.row.id === tabbableHeadingId ? 0 : -1" :data-vw-row-heading="row.row.id"
               @click="activateTarget(rowTarget(row.row.id), 'pointer')" @focus="headingFocusId = row.row.id"

@@ -35,7 +35,7 @@ test('GanttChart renders an add button for each creatable row on the server', as
     '<button type="button" class="vw-gantt-create-button" aria-label="Balken hinzufügen zu Row 2">',
   ])
   // The parent row keeps its expand toggle and gets no button; no preview exists before a gesture.
-  assert.match(html, /aria-label="Collapse Parent">▾<\/button><div class="vw-row-content" role="button" tabindex="0" data-vw-row-heading="p">/)
+  assert.match(html, /aria-label="Collapse Parent"><svg class="vw-row-toggle-icon" viewBox="0 0 12 20" aria-hidden="true" focusable="false"><path d="M2\.5 7\.5h7L6 12\.5Z"><\/path><\/svg><\/button><div class="vw-row-content" role="button" tabindex="0" data-vw-row-heading="p">/)
   assert.doesNotMatch(html, /vw-gantt-create-preview|vw-gantt-cascade-preview/)
   assert.equal((await render({ creatable: true })).match(/vw-gantt-create-button/g).length, 3)
   assert.doesNotMatch(await render({ creatable: true, readonly: true }), /vw-gantt-create-button/)

@@ -133,6 +133,46 @@ test('linked selection: a shared item highlights all its rows and its node, and 
   expect(errors).toEqual([])
 })
 
+test('a click on the empty canvas or Escape clears the selection, and a pan keeps it', async ({ page }) => {
+  const { errors, graph, rows, status } = await openBom(page)
+  const seal = graph.getByRole('button', { name: 'Seal cartridge 35 SC-35', exact: true })
+  await seal.click()
+  await expect(status).toHaveText('Seal cartridge 35 is used in 3 rows.')
+  await expect(rows('Seal cartridge 35')).toHaveClass(/vw-is-highlighted/)
+  // A drag on the canvas pans and keeps the selection.
+  const box = (await graph.boundingBox())!
+  await page.mouse.move(box.x + 12, box.y + 12)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 60, box.y + 40, { steps: 4 })
+  await page.mouse.up()
+  await expect(rows('Seal cartridge 35')).toHaveClass(/vw-is-highlighted/)
+  await graph.click({ position: { x: 12, y: 12 } })
+  await expect(status).toHaveText('Selection cleared.')
+  await expect(rows('Seal cartridge 35')).not.toHaveClass(/vw-is-highlighted/)
+
+  await seal.press('Enter')
+  await expect(rows('Seal cartridge 35')).toHaveClass(/vw-is-highlighted/)
+  await seal.press('Escape')
+  await expect(status).toHaveText('Selection cleared.')
+  await expect(rows('Seal cartridge 35')).not.toHaveClass(/vw-is-highlighted/)
+  expect(errors).toEqual([])
+})
+
+test('the zoom-out and zoom-in icons line up with the zoom level despite the showcase button font', async ({ page }) => {
+  const { errors, showcase } = await openBom(page)
+  const tools = showcase.getByRole('group', { name: 'Graph zoom', exact: true })
+  const centre = async (locator: ReturnType<Page['locator']>) => {
+    const box = (await locator.boundingBox())!
+    return box.y + box.height / 2
+  }
+  const level = await centre(tools.locator('output'))
+  for (const name of ['Zoom out', 'Zoom in']) {
+    const icon = tools.getByRole('button', { name, exact: true }).locator('svg')
+    expect(Math.abs(await centre(icon) - level)).toBeLessThan(1.5)
+  }
+  expect(errors).toEqual([])
+})
+
 test('where-used walks structure edges only, traces the path to a product and reports a truncated walk', async ({ page }) => {
   const { errors, showcase, graph, header, status, whereUsed } = await openBom(page)
   await showcase.getByRole('searchbox', { name: 'Search part number or name' }).fill('drain')

@@ -71,6 +71,13 @@ function selectBand(ids: Set<string>) {
     })
     : t({ en: 'Select a band to see its edge ID and quantity.', ja: '帯を選ぶと、その辺の ID と数量を表示します。' })
 }
+// A click on the empty canvas or Escape in the graph clears the band selection. Escape first cancels a gesture in
+// flight (a pan); the graph reports every gesture as a start and an end, and the capture listener reads the count
+// before the graph's own Escape handler ends it.
+const gesture = { count: 0, cancelling: false }
+function clearSelection() {
+  if (selectedEdgeIds.value.size) selectBand(new Set())
+}
 function exportSvg() {
   const svg = graph.value?.exportSvg() ?? ''
   const count = (svg.match(/class="vw-flow-band/g) ?? []).length
@@ -91,15 +98,18 @@ function exportSvg() {
       </label>
       <button type="button" @click="exportSvg">{{ t({ en: 'Export flow SVG', ja: 'フローを SVG で出力' }) }}</button>
     </div>
-    <NetworkGraph ref="graph" :nodes="shownNodes" :edges="shownEdges" :layout="layout" :edge-bands="bands" :options="{ direction }"
-      edges-selectable :selected-edge-ids="selectedEdgeIds" :height="vertical ? 620 : 460" :labels="{ ...labels.graph, region: t({ en: 'Quantity flow graph', ja: '数量フローの図' }) }"
-      @update:selected-edge-ids="selectBand">
-      <!-- Labels sit above each box, which is only as thick as its quantity. Exports use the default node drawing. -->
-      <template #node="{ node, box }">
-        <rect :width="box.width" :height="box.height" rx="2" />
-        <text class="flow-node-label" x="0" y="-7">{{ node.label }}</text>
-      </template>
-    </NetworkGraph>
+    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+      <NetworkGraph ref="graph" :nodes="shownNodes" :edges="shownEdges" :layout="layout" :edge-bands="bands" :options="{ direction }"
+        edges-selectable :selected-edge-ids="selectedEdgeIds" :height="vertical ? 620 : 460" :labels="{ ...labels.graph, region: t({ en: 'Quantity flow graph', ja: '数量フローの図' }) }"
+        @update:selected-edge-ids="selectBand"
+        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--">
+        <!-- Labels sit above each box, which is only as thick as its quantity. Exports use the default node drawing. -->
+        <template #node="{ node, box }">
+          <rect :width="box.width" :height="box.height" rx="2" />
+          <text class="flow-node-label" x="0" y="-7">{{ node.label }}</text>
+        </template>
+      </NetworkGraph>
+    </div>
     <StatusLine :label="t({ en: 'Quantity flow status', ja: '数量フローの状態' })">{{ status }}</StatusLine>
     <div class="flow-details">
       <table :aria-label="t({ en: 'Node totals', ja: 'ノードの合計' })">

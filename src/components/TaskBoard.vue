@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, useId, watch } from 'vue'
 import {
   groupBoardCards, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardCardMoveValidator, type TaskBoardColumn,
-  type TaskBoardColumnStatus, type TaskBoardGroups, type TaskBoardLabels, type TaskBoardLane, type TaskBoardMoveCancel,
+  type TaskBoardColumnStatus, type TaskBoardBackgroundClick, type TaskBoardGroups, type TaskBoardLabels, type TaskBoardLane, type TaskBoardMoveCancel,
   type TaskBoardMoveCancelReason, type TaskBoardPosition,
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
@@ -66,6 +66,11 @@ const emit = defineEmits<{
   'update:collapsedColumnIds': [ids: string[]]
   /** The collapsed lane IDs a toggle proposes; supports `v-model:collapsed-lane-ids`. */
   'update:collapsedLaneIds': [ids: string[]]
+  /**
+   * A primary click landed on empty board space (a cell or the board background, not a card, header or control) and the
+   * pointer did not move past the drag threshold; carries the column and lane of the cell. Use it to clear the selection.
+   */
+  'background-click': [event: TaskBoardBackgroundClick]
   /** Invalid columns, lanes or cards were detected; carries the error. The board then renders its empty state. */
   'validation-error': [error: Error]
 }>()
@@ -452,6 +457,35 @@ function lostCapture(event: PointerEvent) {
 }
 onBeforeUnmount(endMove)
 
+// Clicks on empty board space. A press on a cell or the board background is remembered and reported as
+// `background-click` when the same pointer is released before the drag threshold; cards, headers and controls are not
+// empty space, and a press on the scrollbar is ignored.
+let backgroundPress: { pointerId: number; x: number; y: number; click: TaskBoardBackgroundClick } | undefined
+const notBackground = 'button, a, input, select, textarea, label, summary, [tabindex], [contenteditable], .vw-board-column-head, .vw-board-lane-head'
+function pressBackground(event: PointerEvent) {
+  backgroundPress = undefined
+  if (!event.isPrimary || event.button !== 0 || activeMove.value || pointer || validationError.value) return
+  const target = event.target as Element, view = scroller.value
+  const blocker = target.closest(notBackground)
+  if (!view || (blocker && blocker !== view && view.contains(blocker))) return
+  if (target === view && (event.offsetX >= view.clientWidth || event.offsetY >= view.clientHeight)) return
+  const cell = target.closest<HTMLElement>('[data-vw-cell], [data-vw-collapsed-cell]')
+  const click: TaskBoardBackgroundClick = {}
+  if (cell) {
+    const [lane, column] = (cell.dataset.vwCell ?? cell.dataset.vwCollapsedCell)!.split(':').map(Number) as [number, number]
+    const columnId = props.columns[column]?.id, laneId = laneOf(lane)?.id
+    if (columnId !== undefined) click.columnId = columnId
+    if (laneId !== undefined) click.laneId = laneId
+  }
+  backgroundPress = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, click }
+}
+function releaseBackground(event: PointerEvent) {
+  const press = backgroundPress
+  if (!press || event.pointerId !== press.pointerId) return
+  backgroundPress = undefined
+  if (event.type === 'pointerup' && !activeMove.value && !pastThreshold(press, event)) emit('background-click', press.click)
+}
+
 function cardStyle(card: C) {
   const offset = dragOffset.value
   return offset && activeMove.value?.id === card.id && activeMove.value.source === 'pointer'
@@ -468,7 +502,8 @@ defineExpose({
 
 <template>
   <div ref="root" class="vw-board" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
-    <div ref="scroller" class="vw-board-scroll" role="region" :aria-label="messages.region" tabindex="0" :style="boardStyle">
+    <div ref="scroller" class="vw-board-scroll" role="region" :aria-label="messages.region" tabindex="0" :style="boardStyle"
+      @pointerdown="pressBackground" @pointerup="releaseBackground" @pointercancel="releaseBackground">
       <div v-if="validationError || !columns.length" class="vw-board-empty"><slot name="empty">{{ messages.empty }}</slot></div>
       <div v-else class="vw-board-grid" :class="{ 'vw-has-lanes': laned, 'vw-is-moving': activeMove }"
         :style="gridColumns === undefined ? undefined : { gridTemplateColumns: gridColumns }">
@@ -504,7 +539,7 @@ defineExpose({
           </div>
           <template v-if="!laneView.collapsed">
             <template v-for="(cell, c) in laneView.row.cells" :key="cell.columnId">
-              <div v-if="columnViews[c]!.collapsed" class="vw-board-cell vw-is-collapsed" aria-hidden="true"></div>
+              <div v-if="columnViews[c]!.collapsed" class="vw-board-cell vw-is-collapsed" aria-hidden="true" :data-vw-collapsed-cell="`${r}:${c}`"></div>
               <ul v-else class="vw-board-cell" role="list"
                 :class="{ 'vw-is-over-limit': columnViews[c]!.status.overLimit, 'vw-is-target': dropTarget?.lane === r && dropTarget?.column === c }"
                 :aria-label="cellName(columnViews[c]!.column, laneView.lane)" :aria-describedby="columnViews[c]!.descriptionId" :data-vw-cell="`${r}:${c}`">

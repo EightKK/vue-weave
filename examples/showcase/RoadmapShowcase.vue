@@ -102,8 +102,8 @@ const bars = ref<RoadmapBar[]>(initialBars)
 const selected = ref<ReadonlySet<string>>(new Set())
 const collapsed = ref<ReadonlySet<string>>(new Set())
 const status = ref(t({
-  en: 'Drag a project to reschedule it or drag its ends to resize it. Arrow keys move a focused project by one day.',
-  ja: 'プロジェクトをドラッグして日程を変え、両端をドラッグして期間を変えます。矢印キーでフォーカス中のプロジェクトを1日ずつ動かせます。',
+  en: 'Drag a project to reschedule it or drag its ends to resize it. Arrow keys move a focused project by one day. Click empty chart space or press Escape to clear the selection.',
+  ja: 'プロジェクトをドラッグして日程を変え、両端をドラッグして期間を変えます。矢印キーでフォーカス中のプロジェクトを1日ずつ動かせます。何もない所をクリックするか Escape で選択を解除します。',
 }))
 // The chart is as tall as the expanded rows, so the card grows and shrinks with the hierarchy instead of scrolling.
 const shownRows = computed(() => rows.filter(row => row.parentId === undefined || !collapsed.value.has(row.parentId)).length)
@@ -140,6 +140,23 @@ function onSelect(id: string, detail: TimelineSelectDetail) {
     ? t({ en: `${bar.label} · milestone on ${formatTime(bar.start)}`, ja: `${bar.label} · ${formatTime(bar.start)} のマイルストーン` })
     : `${bar.label} · ${statusLabel[bar.data.status]} · ${t({ en: `${done}% done`, ja: `${done}% 完了` })}${team ? ' · ' + team : ''}`
 }
+// A click on empty chart space or Escape in the chart clears the selection.
+function clearSelection() {
+  if (!selected.value.size) return
+  selected.value = new Set()
+  status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
+// not typed into a field clears the selection.
+let escapeCancelledEdit = false
+function startChartEscape() { escapeCancelledEdit = false }
+function noteEditCancel() { escapeCancelledEdit = true }
+function onChartEscape(event: KeyboardEvent) {
+  const cancelled = escapeCancelledEdit
+  escapeCancelledEdit = false
+  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
+  clearSelection()
+}
 </script>
 
 <template>
@@ -149,12 +166,14 @@ function onSelect(id: string, detail: TimelineSelectDetail) {
       en: 'Pastel status pills with sticky labels, milestone diamonds and glyph and avatar rows from the bar, row and legend slots, with quarter and month bands, a Today marker, tone variables and restyled vw- classes.',
       ja: 'ラベルが追従するパステル調のステータス、マイルストーンのひし形、アイコンとアバターの行をバー・行・凡例のスロットで描き、四半期と月の帯、今日のマーカー、トーン変数、装飾し直した vw- クラスを組み合わせています。',
     }) }}</p>
+    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
       :rows="rows" :bars="bars" :range="range" :pixels-per-unit="14 / day" :tick-steps="[7 * day, 14 * day, 28 * day]"
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :markers="markers" :row-height="rowHeight"
       :height="chartHeight" :selected-ids="selected" :collapsed-ids="collapsed" show-summaries
       :labels="{ ...labels.gantt, region: t({ en: 'Product roadmap timeline', ja: 'プロダクトロードマップのタイムライン' }), rows: t({ en: 'Projects', ja: 'プロジェクト' }) }"
       sticky-band-labels @update:collapsed-ids="collapsed = $event" @edit="onEdit" @select="onSelect"
+      @background-click="clearSelection" @edit-cancel="noteEditCancel"
     >
       <template #legend>
         <ul class="sc-roadmap-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
@@ -201,6 +220,7 @@ function onSelect(id: string, detail: TimelineSelectDetail) {
         </template>
       </template>
     </GanttChart>
+    </div>
     <p class="sc-roadmap-status" role="status">{{ status }}</p>
   </section>
 </template>
@@ -259,6 +279,7 @@ function onSelect(id: string, detail: TimelineSelectDetail) {
 .sc-roadmap .vw-row-toggle { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border-radius: 6px; color: #8a8fa3; font-size: 0; }
 .sc-roadmap .vw-row-toggle::before { content: ''; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.6px 1.6px 0; transform: translateY(-1px) rotate(45deg); transition: transform .15s; }
 .sc-roadmap .vw-row-toggle[aria-expanded='false']::before { transform: translateX(-1px) rotate(-45deg); }
+.sc-roadmap .vw-row-toggle-icon { display: none; }
 .sc-roadmap .vw-row-toggle:hover { background: #eef0f4; color: #1d2030; }
 .sc-roadmap-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .sc-roadmap-glyph { flex: none; width: 16px; height: 16px; }

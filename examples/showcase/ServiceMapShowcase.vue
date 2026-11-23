@@ -354,6 +354,14 @@ function selectService(id: string | undefined) {
     ja: `${info.item.label}: ${healthText[info.metric.health]} · ${formatRps(info.metric.rps)} rps · p95 ${formatMs(info.metric.p95)} ms · エラー ${formatPct(info.metric.err)} · 呼び出し元 ${plural(info.callers.length, 'caller')}、依存先 ${plural(info.callees.length, 'dependency')}。`,
   })
 }
+// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
+// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
+// reads the count before the graph's own Escape handler ends the gesture.
+const gesture = { count: 0, cancelling: false }
+// The panel's close button, a click on the empty map and Escape in it clear the selection.
+function clearSelection() {
+  selectedId.value = undefined
+}
 function startIncident() {
   scenario.value = { ...scenario.value, incidentAt: tick.value - 12 }
   const affected = blast.value.nodeIds.size - 1
@@ -460,12 +468,13 @@ onBeforeUnmount(() => {
       <button type="button" :disabled="scenario.failoverAt !== undefined" @click="failover">{{ t({ en: 'Failover to eu-west', ja: 'eu-west へフェイルオーバー' }) }}</button>
       <button type="button" @click="reset">{{ t({ en: 'Reset', ja: 'リセット' }) }}</button>
     </div>
-    <div class="sc-svc-stage">
+    <div class="sc-svc-stage" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
       <NetworkGraph
         ref="graph" :selected-id="selectedId" unstyled-node-slots class="sc-svc-graph" :nodes="nodes" :edges="calls" :groups="groups" :layout="layoutMap"
         height="clamp(380px, 50vw, 660px)" background="dots" collapsible-groups :collapsed-group-ids="collapsed"
         :highlighted-node-ids="blast.nodeIds" :highlighted-edge-ids="blast.edgeIds" :dimmed-ids="dimmedIds"
         :labels="{ ...labels.graph, region: t({ en: 'Service topology', ja: 'サービス構成' }) }" @update:collapsed-group-ids="commitCollapse" @update:selected-id="selectService"
+        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
       >
         <template #group="{ group, box, depth }">
           <g :class="['sc-svc-group', regionIds.has(group.id) ? 'sc-svc-region' : 'sc-svc-ns']">
@@ -535,6 +544,7 @@ onBeforeUnmount(() => {
         <h3 v-if="isJapanese">インシデントのタイムライン <span>{{ selected ? selected.item.label + ' とその依存関係' : 'すべてのサービス' }} · 直近 30 分</span></h3>
         <h3 v-else>Incident timeline <span>{{ selected ? selected.item.label + ' and its dependency chain' : 'all services' }} · last 30 min</span></h3>
         <GanttChart
+          @background-click="clearSelection"
           :rows="timelineRows" :bars="shownBars" :range="range" :pixels-per-unit="pixelsPerMinute / minute" :tick-steps="[5 * minute]" :format-time="time => clock(time, false)"
           :markers="deploys" show-now :now="now" readonly :row-height="34" :height="timelineHeight" :show-controls="false"
           :selected-ids="selectedBars" :labels="{
@@ -550,7 +560,7 @@ onBeforeUnmount(() => {
             <span :class="['sc-svc-pill', 'sc-svc-' + selected.metric.health]">{{ healthText[selected.metric.health] }}</span>
             <h3>{{ selected.item.label }}</h3>
             <p>{{ selected.item.data.tech }} · {{ groupById.get(groupOfNode.get(selected.item.id)!)!.label }} · {{ selected.item.data.col === 4 ? t({ en: 'external', ja: '外部' }) : selected.item.data.row > 6 ? 'eu-west-1' : 'us-east-1' }}</p>
-            <button type="button" class="sc-svc-close" :aria-label="t({ en: 'Clear selection', ja: '選択を解除' })" @click="selectedId = undefined">×</button>
+            <button type="button" class="sc-svc-close" :aria-label="t({ en: 'Clear selection', ja: '選択を解除' })" @click="clearSelection">×</button>
           </div>
           <dl class="sc-svc-stats">
             <div><dt>{{ t({ en: 'Throughput', ja: 'スループット' }) }}</dt><dd>{{ formatRps(selected.metric.rps) }}<small> rps</small></dd></div>

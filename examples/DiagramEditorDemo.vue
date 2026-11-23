@@ -66,7 +66,7 @@ function commit(change: Partial<Diagram>) {
   }
   history.commit({ ...history.state.value, ...change })
 }
-const selectedId = ref<string>('step-1')
+const selectedId = ref<string | undefined>('step-1')
 const status = ref(t({ en: 'Drag a shape onto the diagram, or focus one and press Enter.', ja: '図形を図へドラッグするか、フォーカスして Enter を押してください。' }))
 const rtl = ref(false)
 
@@ -124,6 +124,13 @@ function deleteElements(deletion: GraphDeletion) {
   const removedEdges = diagram.value.edges.length - edges.length
   commit({ nodes, edges, positions, sizes })
   status.value = t({ en: 'Deleted ' + deletion.nodeIds.length + ' node(s) and ' + removedEdges + ' edge(s).', ja: 'ノード ' + deletion.nodeIds.length + ' 個と辺 ' + removedEdges + ' 本を削除しました。' })
+}
+// A click on the empty canvas or Escape in it clears the selection, and the inspector shows its empty state. Escape
+// first cancels a gesture in flight (a drag or a connection); the graph reports every gesture as a start and an end,
+// and the capture listener reads the count before the graph's own Escape handler ends it.
+const gesture = { count: 0, cancelling: false }
+function clearSelection() {
+  selectedId.value = undefined
 }
 const label = (id: string) => diagram.value.nodes.find(node => node.id === id)?.label ?? id
 
@@ -193,11 +200,14 @@ function rejectChange(_change: InspectorChange, reason: string) {
         <h3>{{ t({ en: 'Shapes', ja: '図形' }) }}</h3>
         <GraphPalette :items="templates" searchable :dir="rtl ? 'rtl' : 'ltr'" :labels="{ ...labels.palette, region: t({ en: 'Shapes', ja: '図形' }) }" @insert="insertNode" />
       </aside>
-      <NetworkGraph ref="graph" v-model:selected-id="selectedId" class="diagram-editor-canvas" :nodes="diagram.nodes" :edges="diagram.edges"
-        :positions="diagram.positions" :sizes="diagram.sizes" :height="460" :snap-grid="grid" background="dots"
-        draggable connectable deletable droppable alignment-guides :validate-connection="validateConnection"
-        :labels="{ ...labels.graph, region: t({ en: 'Diagram canvas', ja: '図のキャンバス' }) }"
-        @node-move="change => moveNodes([change])" @nodes-move="moveNodes" @connect="connect" @delete="deleteElements" @node-drop="dropNode" />
+      <div class="diagram-editor-canvas" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+        <NetworkGraph ref="graph" v-model:selected-id="selectedId" :nodes="diagram.nodes" :edges="diagram.edges"
+          :positions="diagram.positions" :sizes="diagram.sizes" :height="460" :snap-grid="grid" background="dots"
+          draggable connectable deletable droppable alignment-guides :validate-connection="validateConnection"
+          :labels="{ ...labels.graph, region: t({ en: 'Diagram canvas', ja: '図のキャンバス' }) }"
+          @node-move="change => moveNodes([change])" @nodes-move="moveNodes" @connect="connect" @delete="deleteElements" @node-drop="dropNode"
+          @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
+      </div>
       <aside class="diagram-editor-side">
         <h3>{{ t({ en: 'Properties', ja: 'プロパティ' }) }}</h3>
         <PropertyInspector :item="selectedNode" :fields="fields" :validate-change="validateChange" :dir="rtl ? 'rtl' : 'ltr'"
@@ -210,7 +220,7 @@ function rejectChange(_change: InspectorChange, reason: string) {
 
 <style scoped>
 .diagram-editor { display: grid; grid-template-columns: 200px minmax(0, 1fr) 230px; gap: 14px; align-items: start; }
-.diagram-editor-side { min-width: 0; }
+.diagram-editor-side, .diagram-editor-canvas { min-width: 0; }
 .diagram-editor-side h3 { margin: 0 0 8px; font-size: 13px; }
 @media (max-width: 900px) {
   .diagram-editor { grid-template-columns: minmax(0, 1fr); }

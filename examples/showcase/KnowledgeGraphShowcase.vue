@@ -362,6 +362,14 @@ function select(id: string | undefined, centre = false) {
   status.value = describe(topicsById.get(id)!)
   if (centre && graph.value) graph.value.focusNode(id, { scale: Math.max(graph.value.getViewport().scale, 0.9) })
 }
+// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
+// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
+// reads the count before the graph's own Escape handler ends the gesture.
+const gesture = { count: 0, cancelling: false }
+// A click on the empty map or Escape in it clears the selection.
+function clearSelection() {
+  if (selectedId.value !== undefined) select(undefined)
+}
 function onSearchEnter() {
   const first = matches.value && [...matches.value][0]
   if (first) select(first, true)
@@ -480,13 +488,13 @@ function toggleCommunity(index: number) {
       </div>
     </div>
     <div class="sc-kg-body">
-      <div class="sc-kg-canvas">
+      <div class="sc-kg-canvas" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
         <NetworkGraph
           ref="graph" :selected-id="selectedId" unstyled-node-slots :nodes="shownTopics" :edges="shownLinks" :layout="layoutTopics"
           :height="'clamp(460px, 44vw, 600px)'" show-minimap :labels="{ ...labels.graph, region: t({ en: 'Knowledge map', ja: '知識マップ' }) }"
           :match-ids="pathNodes ? undefined : matches" :dimmed-ids="dimmedIds" :related-ids="pathNodes ? undefined : neighbours"
           :highlighted-node-ids="pathNodes" :highlighted-edge-ids="pathEdges"
-          @update:selected-id="select($event)"
+          @update:selected-id="select($event)" @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
         >
           <template #node="{ node, box, selected: isSelected, dimmed, related, highlighted, scale }">
             <g

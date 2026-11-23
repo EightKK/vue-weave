@@ -242,6 +242,16 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 const enter = (event: ViewTargetEvent) => linked.hoverEnter(event.target.view, event.target)
 const leave = (event: ViewTargetEvent) => linked.hoverLeave(event.target.view, event.target)
 const clearIfEmpty = (ids: ReadonlySet<string>) => { if (!ids.size) linked.clearSelection() }
+// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
+// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
+// reads the count before the graph's own Escape handler ends the gesture.
+const gesture = { count: 0, cancelling: false }
+// A click on the empty graph canvas or Escape in it clears the selection in both views.
+function clearSelection() {
+  if (!linked.selectedEntities.value.length) return
+  linked.clearSelection()
+  message.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
 
 // The simulated clock: 1.2 s of run time per 100 ms. The timer exists only while playing and is cleared on unmount.
 let timer: ReturnType<typeof setInterval> | undefined
@@ -367,43 +377,47 @@ const marks: Record<Status, string[]> = {
       </ol>
     </div>
 
-    <NetworkGraph
-      unstyled-node-slots class="sc-pipe-graph" :nodes="nodes" :edges="edges" :layout="layoutJobs" edge-style="orthogonal"
-      height="372px" background="dots" :selected-ids="linked.graph.value.selectedNodeIds"
-      :highlighted-node-ids="linked.graph.value.highlightedNodeIds" :labels="{ ...labels.graph, region: t({ en: 'Pipeline graph', ja: 'パイプラインのグラフ' }) }"
-      @update:selected-ids="clearIfEmpty" @target-activate="activate" @target-enter="enter" @target-leave="leave"
-    >
-      <template #node="{ node, box }">
-        <rect class="sc-pipe-halo" :class="{ 'sc-pipe-is-linked': isLinked(node.id) }" x="-4" y="-4" :width="box.width + 8" :height="box.height + 8" rx="13" />
-        <rect class="sc-pipe-card" :class="['sc-pipe-' + status(node.id), { 'sc-pipe-gate': node.data.gate }]" :width="box.width" :height="box.height" rx="10" />
-        <g class="sc-pipe-ic" :class="'sc-pipe-ic-' + status(node.id)" transform="translate(10 10)">
-          <circle class="sc-pipe-ic-ring" cx="8" cy="8" r="6.6" />
-          <circle v-if="status(node.id) === 'running'" class="sc-pipe-ic-spin" cx="8" cy="8" r="6.6" />
-          <path v-for="d in marks[status(node.id)]" :key="d" :d="d" />
-        </g>
-        <text class="sc-pipe-name" x="32" y="22.5">{{ node.data.name }}</text>
-        <text class="sc-pipe-time" x="12" y="42">{{ status(node.id) === 'waiting' ? t({ en: `waiting ${durationText(node.id)}`, ja: `待機 ${durationText(node.id)}` }) : durationText(node.id) }}</text>
-        <g v-if="node.data.matrix" class="sc-pipe-badge" :transform="`translate(${box.width - 10 - node.data.matrix.length * 5.6 - 10} 31)`">
-          <rect :width="node.data.matrix.length * 5.6 + 10" height="15" rx="4" />
-          <text x="5" y="10.8">{{ node.data.matrix }}</text>
-        </g>
-        <rect class="sc-pipe-track" x="12" :y="box.height - 9" :width="box.width - 24" height="3" rx="1.5" />
-        <rect class="sc-pipe-fill" :class="'sc-pipe-' + status(node.id)" x="12" :y="box.height - 9" :width="(box.width - 24) * progress(node.id)" height="3" rx="1.5" />
-      </template>
-      <template #edge="{ edge, path }">
-        <path v-if="edgeState(edge) === 'active'" class="sc-pipe-edge-glow" :d="path" />
-        <path class="sc-pipe-edge" :class="'sc-pipe-edge-' + edgeState(edge)" :d="path" />
-      </template>
-      <template #node-toolbar="{ node }">
-        <div class="sc-pipe-popover">
-          <button v-if="node.id === 'approval'" type="button" :disabled="!canApprove" @click="approve">{{ t({ en: 'Approve', ja: '承認' }) }}</button>
-          <button v-else-if="node.id === failingJob && canRetry" type="button" @click="retry">{{ t({ en: 'Retry job', ja: 'ジョブを再実行' }) }}</button>
-          <span v-else>{{ statusLabels[status(node.id)] }} · {{ durationText(node.id) }}</span>
-        </div>
-      </template>
-    </NetworkGraph>
+    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+      <NetworkGraph
+        unstyled-node-slots class="sc-pipe-graph" :nodes="nodes" :edges="edges" :layout="layoutJobs" edge-style="orthogonal"
+        height="372px" background="dots" :selected-ids="linked.graph.value.selectedNodeIds"
+        :highlighted-node-ids="linked.graph.value.highlightedNodeIds" :labels="{ ...labels.graph, region: t({ en: 'Pipeline graph', ja: 'パイプラインのグラフ' }) }"
+        @update:selected-ids="clearIfEmpty" @target-activate="activate" @target-enter="enter" @target-leave="leave"
+        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
+      >
+        <template #node="{ node, box }">
+          <rect class="sc-pipe-halo" :class="{ 'sc-pipe-is-linked': isLinked(node.id) }" x="-4" y="-4" :width="box.width + 8" :height="box.height + 8" rx="13" />
+          <rect class="sc-pipe-card" :class="['sc-pipe-' + status(node.id), { 'sc-pipe-gate': node.data.gate }]" :width="box.width" :height="box.height" rx="10" />
+          <g class="sc-pipe-ic" :class="'sc-pipe-ic-' + status(node.id)" transform="translate(10 10)">
+            <circle class="sc-pipe-ic-ring" cx="8" cy="8" r="6.6" />
+            <circle v-if="status(node.id) === 'running'" class="sc-pipe-ic-spin" cx="8" cy="8" r="6.6" />
+            <path v-for="d in marks[status(node.id)]" :key="d" :d="d" />
+          </g>
+          <text class="sc-pipe-name" x="32" y="22.5">{{ node.data.name }}</text>
+          <text class="sc-pipe-time" x="12" y="42">{{ status(node.id) === 'waiting' ? t({ en: `waiting ${durationText(node.id)}`, ja: `待機 ${durationText(node.id)}` }) : durationText(node.id) }}</text>
+          <g v-if="node.data.matrix" class="sc-pipe-badge" :transform="`translate(${box.width - 10 - node.data.matrix.length * 5.6 - 10} 31)`">
+            <rect :width="node.data.matrix.length * 5.6 + 10" height="15" rx="4" />
+            <text x="5" y="10.8">{{ node.data.matrix }}</text>
+          </g>
+          <rect class="sc-pipe-track" x="12" :y="box.height - 9" :width="box.width - 24" height="3" rx="1.5" />
+          <rect class="sc-pipe-fill" :class="'sc-pipe-' + status(node.id)" x="12" :y="box.height - 9" :width="(box.width - 24) * progress(node.id)" height="3" rx="1.5" />
+        </template>
+        <template #edge="{ edge, path }">
+          <path v-if="edgeState(edge) === 'active'" class="sc-pipe-edge-glow" :d="path" />
+          <path class="sc-pipe-edge" :class="'sc-pipe-edge-' + edgeState(edge)" :d="path" />
+        </template>
+        <template #node-toolbar="{ node }">
+          <div class="sc-pipe-popover">
+            <button v-if="node.id === 'approval'" type="button" :disabled="!canApprove" @click="approve">{{ t({ en: 'Approve', ja: '承認' }) }}</button>
+            <button v-else-if="node.id === failingJob && canRetry" type="button" @click="retry">{{ t({ en: 'Retry job', ja: 'ジョブを再実行' }) }}</button>
+            <span v-else>{{ statusLabels[status(node.id)] }} · {{ durationText(node.id) }}</span>
+          </div>
+        </template>
+      </NetworkGraph>
+    </div>
 
     <GanttChart
+      @background-click="clearSelection"
       class="sc-pipe-gantt" :rows="rows" :bars="bars" :range="range" :pixels-per-unit="pixelsPerMinute / 60000"
       :tick-steps="[60000, 120000, 300000]" :format-time="time" show-now :now="clock" readonly :row-height="28" height="auto"
       :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"

@@ -45,6 +45,23 @@ test('a proposal highlights every task it moved from the adopted plan and reopen
   expect(errors).toEqual([])
 })
 
+test('Escape in the plan chart clears the task selection and the operation details show their empty state', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  const gantt = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await expect(page.getByText('Click empty chart space or press Escape to clear the selection.', { exact: false })).toBeVisible()
+  const cutB = gantt.getByRole('button', { name: /^Cut B / })
+  await cutB.click()
+  await expect(cutB).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Move one hour earlier', exact: true })).toBeVisible()
+  await cutB.press('Escape')
+  await expect(cutB).toHaveAttribute('aria-pressed', 'false')
+  await expect(gantt.getByRole('button', { name: /^Cut A / })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByText('Select an operation in the graph or the chart to see its details.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Move one hour earlier', exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test('lot flow keeps the same network as the displayed unit and language change', async ({ page }) => {
   const errors = pageErrors(page)
   await page.goto('demo/')

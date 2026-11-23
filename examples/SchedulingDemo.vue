@@ -524,7 +524,7 @@ const network = computed(() => scheduleToGraph(model.value.plan, dependencies, {
       <div><dt>{{ t({ en: 'Zero-float tasks', ja: '余裕ゼロのタスク' }) }}</dt><dd>{{ criticalCount }} / {{ model.plan.tasks.length }}</dd></div>
       <div><dt>{{ t({ en: 'Resource overload', ja: 'リソースの過負荷' }) }}</dt><dd data-testid="schedule-overload">{{ t({ en: `${overloadHours} resource-hour${overloadHours === 1 ? '' : 's'}`, ja: `${overloadHours} リソース時間` }) }}</dd></div>
     </dl>
-    <GanttChart ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="chartDependencies" :highlighted-dependency-ids="criticalLinks"
+    <GanttChart @background-click="selected = new Set()" ref="chart" :rows="rows" :bars="taskBars" :range="range" :dependencies="chartDependencies" :highlighted-dependency-ids="criticalLinks"
       :columns="columns" :header-bands="headerBands" :row-height="58" :height="325" :pixels-per-unit="18 / hour" :scale="workingScale"
       :tick-steps="[4 * hour, 6 * hour, 12 * hour]" :snap="hour" :format-time="format" :selected-ids="selected"
       :non-working-periods="shade ? nonWorking : undefined" :validate-edit="validateEdit" :cascade="cascade" @select="selected = new Set([$event])"

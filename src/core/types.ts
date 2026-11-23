@@ -704,6 +704,16 @@ export interface TimelineCreate {
   source: 'pointer' | 'keyboard'
 }
 
+/**
+ * A click on an empty part of GanttChart's time area (`background-click`): the background of a row or the empty canvas
+ * below the rows, released without moving and without proposing a bar. `rowId` is absent below the rows.
+ */
+export interface TimelineBackgroundClick {
+  /** The unsnapped time under the pointer. */
+  time: number
+  rowId?: string
+}
+
 /** A place in a row hierarchy: the parent row (absent for a root row) and the zero-based index among its children. */
 export interface TimelineRowPosition {
   parentId?: string

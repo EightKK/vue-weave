@@ -108,6 +108,28 @@ export const graphStage = (scope: Scope, name = 'Network graph') => scope.getByL
 /** The minimap of a NetworkGraph, a button named by `labels.minimap`. */
 export const graphMinimap = (scope: Scope, name = 'Navigate graph overview') => scope.getByRole('button', { name, exact: true })
 
+/**
+ * A point on a NetworkGraph stage, relative to the stage, where a click lands on the empty canvas: on the stage itself
+ * or on a lane or pool, never on a node, an edge, a group, a handle or the controls drawn over the stage. Scans rows
+ * from the top-left corner and keeps clear of the stage edges.
+ */
+export async function emptyGraphPoint(stage: Locator): Promise<{ x: number; y: number }> {
+  await stage.scrollIntoViewIfNeeded()
+  const point = await stage.evaluate((svg) => {
+    const taken = '.vw-network-node, .vw-network-edge, .vw-edge-label, [data-vw-node], [data-vw-edge], [data-vw-group], [role="button"], button, foreignObject'
+    const rect = svg.getBoundingClientRect()
+    for (let y = 12; y < rect.height - 12; y += 16) {
+      for (let x = 12; x < rect.width - 12; x += 16) {
+        const hit = document.elementFromPoint(rect.left + x, rect.top + y)
+        if (hit && svg.contains(hit) && !hit.closest(taken)) return { x, y }
+      }
+    }
+    return null
+  })
+  if (!point) throw new Error('The graph stage has no empty point')
+  return point
+}
+
 /** The zoom buttons of a NetworkGraph. */
 export const graphZoom = (scope: Scope) => scope.getByRole('group', { name: 'Graph zoom', exact: true })
 
