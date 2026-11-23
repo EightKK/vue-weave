@@ -312,9 +312,14 @@ test('a keyboard cut clears the cells when the browser runs the copy but execCom
   await page.evaluate(() => {
     document.execCommand = (command: string) => {
       if (command !== 'copy') return false
+      // Firefox builds the event's clipboard data from dataType and data and ignores clipboardData (see clipboardEvent).
       const data = new DataTransfer()
-      document.activeElement!.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
-      ;(window as any).__vwCut = data.getData('text/plain')
+      const init: ClipboardEventInit & { dataType: string; data: string } = {
+        clipboardData: data, dataType: 'text/plain', data: '', bubbles: true, cancelable: true,
+      }
+      const event = new ClipboardEvent('copy', init)
+      document.activeElement!.dispatchEvent(event)
+      ;(window as any).__vwCut = (event.clipboardData ?? data).getData('text/plain')
       return false
     }
   })

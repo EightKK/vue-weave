@@ -1,5 +1,8 @@
 // The demo shell, themes, forced colours, reduced motion, print, image export and the showcases of the site.
-import { expect, test, emptyGraphPoint, evaluateEach, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import {
+  expect, test, emptyGraphPoint, evaluateEach, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
+  type Locator,
+} from './support'
 import { examplesOfKind } from '../../site/examples/registry'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
@@ -197,6 +200,28 @@ test('the workflow builder showcase applies step moves and connections through t
   const errors = pageErrors(page)
   await openExample(page, 'workflow', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Workflow builder' })
+  // Diagnostics for an intermittent WebKit failure in which an armed keyboard connection disappears without a status:
+  // the input events the canvas receives, attached to the report, so the next failing run shows what reached it.
+  await page.evaluate(() => {
+    const log: string[] = (window as any).__vwInputLog = []
+    const canvas = document.querySelector('.sc-workflow-graph')!
+    for (const type of ['keydown', 'keyup', 'keypress', 'click', 'pointerdown', 'pointerup', 'focusin', 'focusout']) {
+      canvas.addEventListener(type, event => {
+        const target = event.target as Element
+        log.push(`${Math.round(performance.now())} ${type} ${(event as KeyboardEvent).key ?? ''} ${target.getAttribute?.('aria-label') ?? target.tagName}`)
+      }, true)
+    }
+  })
+  try {
+    await workflowConnections(showcase)
+  } finally {
+    const log = await page.evaluate(() => ((window as any).__vwInputLog as string[]).join('\n')).catch(() => 'unavailable')
+    await test.info().attach('workflow input events', { body: log, contentType: 'text/plain' })
+  }
+  expect(errors).toEqual([])
+})
+
+async function workflowConnections(showcase: Locator) {
   // The zoom percentage is an <output>, which also has the status role.
   const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
 
@@ -219,8 +244,7 @@ test('the workflow builder showcase applies step moves and connections through t
   await showcase.getByRole('button', { name: 'Connect to Summarize order · input', exact: true }).press('Enter')
   await expect(status('Rejected: These steps are already connected.')).toBeVisible()
   await expect(edges).toHaveCount(8)
-  expect(errors).toEqual([])
-})
+}
 
 test('the workflow builder showcase clears the step selection on a click on the empty canvas or Escape', async ({ page }) => {
   const errors = pageErrors(page)

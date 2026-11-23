@@ -713,8 +713,6 @@ test('gantt row headings activate rows from the keyboard through one roving tab 
   // activation.
   await chart.getByRole('button', { name: 'Expand Parent', exact: true }).press('Enter')
   expect(await json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'r2' }, source: 'keyboard' })
-  // Centre the heading first: Playwright's own scroll-into-view (Firefox) can leave it under the sticky header row.
-  await heading('Parent').evaluate(element => element.scrollIntoView({ block: 'center' }))
   await heading('Parent').click()
   await expect.poll(() => json('Last target activate')).toEqual({ target: { view: 'timeline', kind: 'row', id: 'P' }, source: 'pointer' })
   expect(errors).toEqual([])
