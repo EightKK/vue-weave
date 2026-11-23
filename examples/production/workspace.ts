@@ -1,6 +1,6 @@
 import { computed, inject, provide, ref, shallowRef, type InjectionKey } from 'vue'
 import {
-  useEditTransaction, useLinkedSelection, type EntityRef, type SaveResult, type TransactionAdapter, type TransactionOutcome,
+  taskViewBindings, useEditTransaction, useLinkedSelection, type EntityRef, type SaveResult, type TransactionAdapter, type TransactionOutcome,
   type ViewBinding,
 } from '../../src'
 import { createTransactionStore } from '../adapters/transactionStore'
@@ -59,20 +59,15 @@ export const stepEntity = (stepId: string): EntityRef =>
 export const stepOf = (entity: EntityRef) =>
   entity.kind === 'operation' ? lotStepOf[entity.id as TaskId] : entity.kind === 'lot-step' ? entity.id : undefined
 
-// Both graphs report as the `graph` view: their node IDs name the same entity or nothing at all in the other graph.
+// The planning views show operations under their own IDs (graph node, bar, row and load); the lot flow graph shows
+// them as its steps. Both graphs report as the `graph` view: a node ID of one names the same entity or nothing in the other.
 function bindings(schedule: Schedule): ViewBinding[] {
   return [
-    ...taskIds.flatMap((id): ViewBinding[] => {
-      const entity = { kind: 'operation', id }
-      const { start, end } = schedule.byId.get(id)!
-      return [
-        { entity, target: { view: 'graph', kind: 'node', id } },
-        { entity, target: { view: 'graph', kind: 'node', id: lotStepOf[id] } },
-        { entity, target: { view: 'timeline', kind: 'bar', id } },
-        { entity, target: { view: 'timeline', kind: 'row', id } },
-        { entity, target: { view: 'load', resourceId: schedule.resourceFor[id], start, end } },
-      ]
+    ...taskViewBindings({
+      tasks: [...schedule.byId.values()], taskKind: 'operation',
+      assignments: taskIds.map(taskId => ({ taskId, resourceId: schedule.resourceFor[taskId] })),
     }),
+    ...taskIds.map((id): ViewBinding => ({ entity: { kind: 'operation', id }, target: { view: 'graph', kind: 'node', id: lotStepOf[id] } })),
     { entity: { kind: 'lot-step', id: 'rework' }, target: { view: 'graph', kind: 'node', id: 'rework' } },
   ]
 }

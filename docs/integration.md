@@ -607,13 +607,12 @@ To show one plan as a graph, a Gantt chart and load rows that follow each other,
 ```vue
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { GanttChart, NetworkGraph, revealLinkedTarget, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from '@eightkk/vue-weave'
+import {
+  GanttChart, NetworkGraph, revealLinkedTarget, taskViewBindings, useLinkedSelection, type ViewTargetEvent,
+} from '@eightkk/vue-weave'
 
-const bindings = computed<ViewBinding[]>(() => tasks.value.flatMap(task => [
-  { entity: { kind: 'task', id: task.id }, target: { view: 'graph', kind: 'node', id: task.id } },
-  { entity: { kind: 'task', id: task.id }, target: { view: 'timeline', kind: 'bar', id: task.id } },
-  ...task.resourceId ? [{ entity: { kind: 'task', id: task.id }, target: { view: 'load', resourceId: task.resourceId, start: task.start, end: task.end } } as ViewBinding] : [],
-]))
+// Each task is bound to its node, bar, row and load ranges, each dependency to its edge and arrow, under the same IDs.
+const bindings = computed(() => taskViewBindings({ tasks: schedule.value.tasks, assignments, dependencies }))
 const linked = useLinkedSelection({ bindings })
 const graph = useTemplateRef('graph')
 
@@ -621,6 +620,7 @@ const graph = useTemplateRef('graph')
 const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
 const enter = (event: ViewTargetEvent) => linked.hoverEnter(event.target.view, event.target)
 const leave = (event: ViewTargetEvent) => linked.hoverLeave(event.target.view, event.target)
+const clear = () => linked.clearSelection()
 
 async function showInGraph(nodeId: string) {
   const result = await revealLinkedTarget({
@@ -638,15 +638,16 @@ async function showInGraph(nodeId: string) {
   <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :groups="groups" :collapsed-group-ids="collapsed"
     :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
     :highlighted-edge-ids="linked.graph.value.highlightedEdgeIds"
-    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" @background-click="clear" @idle-escape="clear" />
   <GanttChart :rows="rows" :bars="bars" :range="range" :load-rows="loadRows" :load-segments="loadSegments" load-selectable
     multi-select :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"
     :selected-load-targets="linked.load.value.selected" :highlighted-load-targets="linked.load.value.highlighted"
-    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" @background-click="clear" @idle-escape="clear" />
 </template>
 ```
 
-- IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities.
+- IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities. `taskViewBindings` covers the common case of views that use the task and dependency IDs as they are; for anything else, write `ViewBinding` objects yourself and spread both into one array.
+- The components keep no selection of their own, so clearing it is yours: `background-click` reports a click on empty space and `idle-escape` an Escape that cancelled nothing of the component's own. Escape first cancels a drag, an armed connection or an open editor (reported through `gesture-end` or `edit-cancel`); only an Escape that finds nothing to cancel, outside text fields, arrives as `idle-escape`.
 - Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
 - For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached. Opt-in `edgeFilter` follows only some relations (it is told the walk direction, so upstream and downstream can follow different ones), `maxNodes` caps the result nearest first and `truncated` lists where a limit stopped the walk (the places to offer "show more"), and `paths: true` lets `graphTracePath(result, id)` rebuild the edges from a start to a node (why it is affected) and lists in `multiplyReachedIds` the nodes reached by more than one path; see [Traversal filters, limits and paths](api.md#traversal-filters-limits-and-paths). `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).

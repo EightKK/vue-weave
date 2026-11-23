@@ -5,6 +5,7 @@
 ### Added
 
 - NetworkGraph and GanttChart emit an opt-in `idle-escape` with the `KeyboardEvent` when Escape is pressed in them and cancels nothing of their own: no gesture, armed connection or open cell editor (so no `gesture-end` or `edit-cancel` for it), not in a text field, not handled by the label editor, a filter dialog or a spreadsheet range, and not part of an input method composition. Applications clear their selection on it as on `background-click`, instead of counting `gesture-start` and `gesture-end` or watching `edit-cancel` around a wrapper element. The examples and showcases use it and no longer carry that bookkeeping.
+- Core: `taskViewBindings({ tasks, assignments?, dependencies?, taskKind?, dependencyKind? })` returns the `ViewBinding[]` of a plan whose views show tasks and dependencies under their own IDs: each task bound to its graph node, timeline bar and row and, per assignment, its load range; each dependency to its graph edge and timeline dependency. Spread it with bindings of your own into `useLinkedSelection`.
 
 ### Changed
 

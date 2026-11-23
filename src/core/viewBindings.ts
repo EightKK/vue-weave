@@ -1,4 +1,4 @@
-import { inContext, invalidIdError, isId } from './ids.js'
+import { checkId, inContext, invalidIdError, isId, unknownReferenceError } from './ids.js'
 
 /** An application-defined entity. `kind` keeps equal IDs of different kinds apart. */
 export interface EntityRef {
@@ -252,5 +252,74 @@ export function resolveLoadTargets<S extends LoadSegmentLike>(
     }
   }
   return { segments: [...hit].sort((a, b) => a - b).map(i => segments[i]!), unknown: [...unknown.values()] }
+}
+
+/** Input of `taskViewBindings`. */
+export interface TaskViewBindingsInput {
+  /**
+   * The tasks. Each becomes the entity `{ kind: taskKind, id }`, bound to the graph node, the timeline bar and the
+   * timeline row with its ID. `start` and `end` are read only for tasks that have assignments.
+   */
+  tasks: readonly { id: string; start?: number; end?: number }[]
+  /** Each binds its task to the load target `[start, end)` of its resource, so load segments link to the task. Default: none. */
+  assignments?: readonly { taskId: string; resourceId: string }[]
+  /** Each becomes the entity `{ kind: dependencyKind, id }`, bound to the graph edge and the timeline dependency with its ID. Default: none. */
+  dependencies?: readonly { id: string }[]
+  /** The entity kind of tasks. Default `'task'`. */
+  taskKind?: string
+  /** The entity kind of dependencies. Default `'dependency'`. */
+  dependencyKind?: string
+}
+
+/**
+ * The bindings of a plan whose views show tasks and dependencies under their own IDs: `scheduleToGraph` nodes and edges,
+ * GanttChart bars, rows and dependencies, and resource load. Pass the result to `useLinkedSelection` or
+ * `buildViewBindingIndex`, and add bindings of your own for anything else. Per task, in input order: its node, bar and
+ * row, then a load target per assignment, in assignment order; then per dependency its edge and timeline dependency.
+ * Throws Error for an invalid or duplicate task or dependency ID, an empty entity kind, an assignment of an unknown task
+ * or with an invalid resource ID, and RangeError for an assigned task whose `start` and `end` are not finite or whose
+ * end is before its start. The input is not modified.
+ */
+export function taskViewBindings(input: TaskViewBindingsInput): ViewBinding[] {
+  const taskKind = input.taskKind ?? 'task'
+  const dependencyKind = input.dependencyKind ?? 'dependency'
+  for (const kind of [taskKind, dependencyKind]) {
+    if (typeof kind !== 'string' || !kind) throw new Error('Invalid entity kind: kind must be a non-empty string')
+  }
+  const tasks = new Map<string, { start?: number; end?: number }>()
+  const seen = new Set<string>()
+  for (const task of input.tasks) tasks.set(checkId('task', task?.id, seen), task)
+  const loads = new Map<string, ViewBinding[]>()
+  for (const assignment of input.assignments ?? []) {
+    const taskId = assignment?.taskId, resourceId = assignment?.resourceId
+    const task = isId(taskId) ? tasks.get(taskId) : undefined
+    if (!task) throw unknownReferenceError('task', 'assignment', taskId)
+    if (!isId(resourceId)) throw inContext(invalidIdError('resource', resourceId), 'assignment of task ' + taskId)
+    const { start, end } = task
+    if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      throw new RangeError('Assigned task ' + taskId + ' needs a finite start and an end that is not before it')
+    }
+    const list = loads.get(taskId!) ?? []
+    list.push({ entity: { kind: taskKind, id: taskId! }, target: { view: 'load', resourceId, start, end } })
+    loads.set(taskId!, list)
+  }
+  const bindings: ViewBinding[] = []
+  for (const id of tasks.keys()) {
+    bindings.push(
+      { entity: { kind: taskKind, id }, target: { view: 'graph', kind: 'node', id } },
+      { entity: { kind: taskKind, id }, target: { view: 'timeline', kind: 'bar', id } },
+      { entity: { kind: taskKind, id }, target: { view: 'timeline', kind: 'row', id } },
+      ...loads.get(id) ?? [],
+    )
+  }
+  const dependencies = new Set<string>()
+  for (const dependency of input.dependencies ?? []) {
+    const id = checkId('dependency', dependency?.id, dependencies)
+    bindings.push(
+      { entity: { kind: dependencyKind, id }, target: { view: 'graph', kind: 'edge', id } },
+      { entity: { kind: dependencyKind, id }, target: { view: 'timeline', kind: 'dependency', id } },
+    )
+  }
+  return bindings
 }
 

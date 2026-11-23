@@ -9,9 +9,9 @@
 import { computed, ref, shallowRef } from 'vue'
 import {
   GanttChart, NetworkGraph, buildViewBindingIndex, calculateResourceLoad, comparePlans, planBaselines, planComparisonTargets,
-  scheduleTasks, scheduleToGraph, traverseGraph, useEditHistory,
+  scheduleTasks, scheduleToGraph, taskViewBindings, traverseGraph, useEditHistory,
   type LoadViewTarget, type PlanComparisonTask, type PlanScenario, type ResourceAssignment, type ResourceCapacity, type ScheduleLink,
-  type TimelineBar, type ViewBinding,
+  type TimelineBar,
 } from '../../src'
 import StatusLine from './StatusLine.vue'
 import { hour, origin } from '../data'
@@ -216,10 +216,7 @@ const bars = computed<TimelineBar[]>(() => shownTasks.value.map(task => {
 }))
 const loadRows = Object.entries(resourceNames).map(([id, label]) => ({ id, label }))
 const loadSegments = computed(() => shown.value.load.filter(segment => segment.load > 0))
-const index = computed(() => buildViewBindingIndex(Object.keys(names).flatMap((id): ViewBinding[] => [
-  { entity: { kind: 'task', id }, target: { view: 'graph', kind: 'node', id } },
-  { entity: { kind: 'task', id }, target: { view: 'timeline', kind: 'bar', id } },
-])))
+const index = computed(() => buildViewBindingIndex(taskViewBindings({ tasks: Object.keys(names).map(id => ({ id })) })))
 /** The tasks a selected comparison row is about. */
 const focusTaskIds = computed<string[]>(() => {
   const c = comparison.value, key = selectedRow.value
