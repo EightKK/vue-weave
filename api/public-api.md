@@ -283,7 +283,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (638)
+## Entry `.`: type-only exports (641)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -341,6 +341,7 @@ in public signatures, so changes to them can break consumers too.
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarBackgroundClick`
 - `EventCalendarComponent`
 - `EventCalendarCreate`
 - `EventCalendarCreateValidator`
@@ -744,6 +745,7 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardBackgroundClick`
 - `TaskBoardCard`
 - `TaskBoardCardMove`
 - `TaskBoardCardMoveValidator`
@@ -775,6 +777,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
 - `TimeScale`
+- `TimelineBackgroundClick`
 - `TimelineBand`
 - `TimelineBar`
 - `TimelineBarActivity`
@@ -1186,7 +1189,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (598)
+## Entry `./core`: type-only exports (601)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1238,6 +1241,7 @@ in public signatures, so changes to them can break consumers too.
 - `EditTransaction`
 - `EditValidator`
 - `EntityRef`
+- `EventCalendarBackgroundClick`
 - `EventCalendarCreate`
 - `EventCalendarCreateValidator`
 - `EventCalendarDay`
@@ -1619,6 +1623,7 @@ in public signatures, so changes to them can break consumers too.
 - `SvgExportThemeInput`
 - `SvgToneColors`
 - `TaskActuals`
+- `TaskBoardBackgroundClick`
 - `TaskBoardCard`
 - `TaskBoardCardMove`
 - `TaskBoardCardMoveValidator`
@@ -1648,6 +1653,7 @@ in public signatures, so changes to them can break consumers too.
 - `TimeRangeTargets`
 - `TimeRangeTargetsOptions`
 - `TimeScale`
+- `TimelineBackgroundClick`
 - `TimelineBand`
 - `TimelineBar`
 - `TimelineBarActivity`
@@ -1856,6 +1862,7 @@ validateNodeResize?: (change: GraphNodeResize) => boolean | string | void;
 ## Component `NetworkGraph`: emits
 
 ```ts
+(evt: "background-click", point: GraphPoint) => void
 (evt: "connect", connection: GraphConnection) => void
 (evt: "connect-rejected", connection: GraphConnection, reason: string) => void
 (evt: "context-menu", event: GraphContextMenu) => void
@@ -2030,6 +2037,7 @@ zoomPresets?: readonly TimelineZoomPreset[];
 ## Component `GanttChart`: emits
 
 ```ts
+(evt: "background-click", click: TimelineBackgroundClick) => void
 (evt: "bar-drop", event: TimelineDrop) => void
 (evt: "bars-delete", ids: string[]) => void
 (evt: "bars-delete-rejected", ids: string[], reason: string) => void
@@ -2230,6 +2238,7 @@ validateCardMove?: TaskBoardCardMoveValidator;
 ## Component `TaskBoard`: emits
 
 ```ts
+(evt: "background-click", event: TaskBoardBackgroundClick) => void
 (evt: "card-activate", id: string) => void
 (evt: "card-move", change: TaskBoardCardMove) => void
 (evt: "card-move-cancel", event: TaskBoardMoveCancel) => void
@@ -2299,6 +2308,7 @@ weekStartsOn?: number;
 ## Component `EventCalendar`: emits
 
 ```ts
+(evt: "background-click", event: EventCalendarBackgroundClick) => void
 (evt: "create", proposal: EventCalendarCreate) => void
 (evt: "create-rejected", proposal: EventCalendarCreate, reason: string) => void
 (evt: "edit", change: EventCalendarEdit) => void
@@ -3043,6 +3053,16 @@ interface EntityRef {
 
 ```ts
 const EventCalendar: EventCalendarComponent;
+```
+
+### `EventCalendarBackgroundClick`
+
+```ts
+interface EventCalendarBackgroundClick {
+    time: number;
+    allDay: boolean;
+    resourceId?: string;
+}
 ```
 
 ### `EventCalendarComponent`
@@ -7484,6 +7504,15 @@ interface TaskActuals {
 const TaskBoard: TaskBoardComponent;
 ```
 
+### `TaskBoardBackgroundClick`
+
+```ts
+interface TaskBoardBackgroundClick {
+    columnId?: string;
+    laneId?: string;
+}
+```
+
 ### `TaskBoardCard`
 
 ```ts
@@ -7812,6 +7841,15 @@ interface TimeScale {
     width: number;
     toX(time: number): number;
     toTime(x: number): number;
+}
+```
+
+### `TimelineBackgroundClick`
+
+```ts
+interface TimelineBackgroundClick {
+    time: number;
+    rowId?: string;
 }
 ```
 
