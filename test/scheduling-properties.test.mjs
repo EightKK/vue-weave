@@ -91,7 +91,8 @@ function checkSuccess(input, model, early, result) {
 
   // ALAP: no ALAP task could end later with every other task where it is. A link into a manual task binds it only
   // when its earliest dates already meet that link; a link from one of its summaries counts as its own, as links from
-  // a summary bind its subtasks in the backward pass.
+  // a summary bind its subtasks in the backward pass. As documented, an SS or SF link from a summary limits the start
+  // of a subtask whose earliest start is the summary's earliest start, even where the summary's start would not move.
   for (const id of model.leafIds) {
     if (info.get(id).task.mode !== 'alap' || model.isManual(id)) continue
     const item = byId.get(id)
@@ -99,13 +100,17 @@ function checkSuccess(input, model, early, result) {
     const own = [id, ...info.get(id).ancestors]
     const manualLinks = model.links.filter(entry => own.includes(entry.link.from) && entry.manualTargets.length)
     const held = manualLinks.filter(entry => model.manualConflicts(earliestDates).every(c => c.dependencyId !== entry.link.id))
+    const startLinks = model.links.filter(entry => info.get(id).ancestors.includes(entry.link.from) &&
+      (entry.type === 'SS' || entry.type === 'SF') && early.dates.get(id).start === early.dates.get(entry.link.from).start)
     for (const start of info.get(id).domain) {
       if (start <= item.start) continue
       const moved = model.place(id, start)
       if (moved.end > result.finish) break
       const dates = model.datesFor(new Map(model.leafIds.filter(l => !model.isManual(l)).map(l => [l, l === id ? start : placed.get(l).start])))
       const brokenManual = model.manualConflicts(dates).some(c => held.some(entry => entry.link.id === c.dependencyId))
-      if (model.violations(dates).length === 0 && !brokenManual) assert.fail(id + ': ALAP task placed at ' + item.start + ' could start at ' + start)
+      const brokenStart = startLinks.some(entry => [...entry.targets, ...(held.includes(entry) ? entry.manualTargets : [])].some(target =>
+        start + entry.lag > (entry.type === 'SS' ? dates.get(target).start : dates.get(target).end)))
+      if (model.violations(dates).length === 0 && !brokenManual && !brokenStart) assert.fail(id + ': ALAP task placed at ' + item.start + ' could start at ' + start)
     }
   }
 

@@ -96,18 +96,6 @@ export function randomPlan(rng, options = {}) {
       dependencies.push(link)
     }
   }
-  // EXCLUSION (doc ambiguity, reported, not resolved here): "As late as possible" says an ALAP task gets the latest
-  // slot that satisfies "every outgoing link". For a subtask whose summary has an outgoing SS or SF link, the engine
-  // also binds the subtask by that link (as the backward pass does for subtasks that start the summary), although
-  // moving the subtask later would not move the summary's start. Minimal case: range [2, 29), summary e with b (3)
-  // and ALAP milestone c, task a (2), link e → a SF: c is placed at 4 although 5 breaks nothing. Until the contract
-  // says which reading holds, ALAP subtasks under such a summary are generated as ASAP.
-  for (const task of tasks) {
-    if (task.mode !== 'alap') continue
-    for (let parent = task.parentId; parent !== undefined; parent = byId.get(parent).parentId) {
-      if (dependencies.some(link => link.from === parent && (link.type === 'SS' || link.type === 'SF'))) delete task.mode
-    }
-  }
   const input = { range, quantum: q, tasks, dependencies }
   if (calendars.length) {
     input.calendars = calendars

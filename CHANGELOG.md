@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- The scheduling guide now states how ALAP subtasks treat links from their summary: an FS or FF link limits their finish, and an SS or SF link limits the start of each subtask whose earliest start is the summary's earliest start, as in the backward pass. The behaviour is unchanged.
+
 ### Fixed
 
 - `levelResources` no longer misses capacity shortages before time 0 for tasks with a partial assignment (`workOffset` or `workDuration`) when the horizon starts before 0. Such a task could stay overloaded without being listed in `unresolvedTaskIds`, or keep a start where a resource it needs is closed instead of moving.
