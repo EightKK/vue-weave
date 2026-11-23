@@ -58,7 +58,7 @@ import { loadSegmentMarks, shownLoadRows as loadRowsIn } from './ganttChart/load
 import { barOverlay as overlayOf, segmentGeometry, workSegments as shiftedSegments, type BarOverlay } from './ganttChart/barOverlay.js'
 import { visibleWindowReport } from './ganttChart/visibleWindow.js'
 import { useCellEditing } from './ganttChart/useCellEditing.js'
-import { createIdleEscape } from './shared/escape.js'
+import { createIdleEscape, emitIdleEscape } from './shared/escape.js'
 import { contextTarget, isMenuKey, keyboardMenuRequest, pointerMenuRequest } from './ganttChart/contextMenu.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
@@ -304,8 +304,9 @@ const props = withDefaults(defineProps<{
    * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the chart and cancelled
    * nothing of the chart's own (no drag, armed connection or open cell editor, so no `edit-cancel`), outside text fields
    * and closed popups; it receives the keyboard event. Applications typically clear their selection, as on
-   * `background-click`. A declared listener prop rather than an emit, so the chart's typed listener props stay within
-   * what vue-tsc can derive from its emits. Opt-in. Default: undefined.
+   * `background-click`. Declared as a listener prop rather than in the emits, so the chart's typed listener props stay
+   * within what vue-tsc can derive from its emits; it is still delivered as a component event, so `.once` works.
+   * Opt-in. Default: undefined.
    */
   onIdleEscape?: (event: KeyboardEvent) => void
 }>(), {
@@ -1355,8 +1356,12 @@ function cancelGestures(reason: TimelineEditCancelReason, keepFill = false) {
   resetGestures(keepFill)
   if (info) reportCancel({ reason, barIds: info.barIds })
 }
-// Every `edit-cancel` marks the Escape being handled as used, so it is not also reported as `idle-escape`.
-const idleEscape = createIdleEscape(event => props.onIdleEscape?.(event))
+// Every `edit-cancel` marks the Escape being handled as used, so it is not also reported as `idle-escape`. An Escape
+// that no handler inside used (on a toolbar button, for example) still cancels what is in flight, without moving focus.
+const idleEscape = createIdleEscape(event => emitIdleEscape(emit, event), () => {
+  cancelGestures('escape')
+  cancelCellEditor('escape', false)
+})
 function reportCancel(cancel: TimelineEditCancel) {
   idleEscape.cancelled()
   emit('edit-cancel', cancel)

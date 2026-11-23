@@ -58,7 +58,7 @@ import {
 import {
   chartDelta, grabPointer, ownsPointer, pointerSession, releaseSession, sessionPastThreshold, type PointerSession,
 } from './networkGraph/pointerSession.js'
-import { createIdleEscape } from './shared/escape.js'
+import { createIdleEscape, emitIdleEscape } from './shared/escape.js'
 import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 
@@ -213,7 +213,8 @@ const props = withDefaults(defineProps<{
    * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the graph and cancelled
    * nothing of the graph's own (no gesture in flight, so no `gesture-end` for it), outside text fields and the label
    * editor; it receives the keyboard event. Applications typically clear their selection, as on `background-click`. A
-   * declared listener prop rather than an emit, like GanttChart's. Opt-in. Default: undefined.
+   * declared listener prop rather than an emit, like GanttChart's; it is still delivered as a component event, so `.once`
+   * works. Opt-in. Default: undefined.
    */
   onIdleEscape?: (event: KeyboardEvent) => void
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
@@ -815,7 +816,8 @@ function endGesture(slot: GestureSlot, outcome: GraphGestureEnd['outcome']) {
   emit('gesture-end', { ...gesture, outcome })
 }
 // Escape on the stage cancels the gestures in flight; one that finds none is reported as `idle-escape`.
-const idleEscape = createIdleEscape(event => props.onIdleEscape?.(event))
+// An Escape that no handler inside used (on a zoom button or the minimap, for example) still cancels them.
+const idleEscape = createIdleEscape(event => emitIdleEscape(emit, event), escapeStage)
 function escapeStage() {
   if (gestures.pointer || gestures.connection) idleEscape.cancelled()
   cancelInteraction()

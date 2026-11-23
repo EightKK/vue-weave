@@ -463,6 +463,33 @@ test('graph idle-escape reports an Escape that cancels no gesture, but not one t
   expect(errors).toEqual([])
 })
 
+test('graph idle-escape: Escape on the zoom buttons or the minimap cancels an armed connection first, and .once listeners fire once', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&connectable=1&minimap=1&gestures=1')
+  const idle = page.getByRole('status', { name: 'Idle escapes' })
+  const once = page.getByRole('status', { name: 'Once listener calls' })
+  const log = page.getByRole('status', { name: 'Gesture events' })
+  const start = page.getByRole('button', { name: 'Start connection from N0002', exact: true })
+  for (const name of ['Zoom in', 'Navigate graph overview']) {
+    await start.press('Enter')
+    await expect(page.getByRole('button', { name: 'Connect to N0003', exact: true })).toHaveCount(1)
+    const outside = page.getByRole('button', { name, exact: true })
+    await outside.focus()
+    await outside.press('Escape')
+    await expect(log).toHaveText(/end connect keyboard cancelled$/)
+    await expect(page.getByRole('button', { name: 'Connect to N0003', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('status', { name: 'Open gestures' })).toHaveText('0')
+    await expect(idle).toHaveText('0')
+  }
+  // Nothing is in flight now: the next Escapes are idle; the `.once` listener hears only the first.
+  const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.press('Escape')
+  await zoomIn.press('Escape')
+  await expect(idle).toHaveText('2')
+  await expect(once).toHaveText('1')
+  expect(errors).toEqual([])
+})
+
 test('graph resize, waypoint and reconnect drags end cancelled without a proposal on Escape, new source data and pointercancel', async ({ page }) => {
   const errors = pageErrors(page)
   await openNetworkFixture(page, '?nodes=6&draggable=1&resizable=1&editableedges=1&reconnectable=1&gestures=1')

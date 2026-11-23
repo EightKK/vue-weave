@@ -638,3 +638,38 @@ test('idle-escape reports an Escape that cancels nothing of the chart, but not o
   await expect(idle).toHaveText('2')
   expect(errors).toEqual([])
 })
+
+test('idle-escape: Escape on the toolbar cancels a connection or drag in flight first, and .once listeners fire once', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?cancels')
+  const idle = out('Idle escapes')
+  const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true })
+  const handle = chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true })
+  // An armed connection stays armed while focus moves to the zoom buttons, outside the scrolling region.
+  await handle.press('Enter')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await zoomIn.focus()
+  await zoomIn.press('Escape')
+  await expect(handle).toHaveAttribute('aria-pressed', 'false')
+  await expect(out('Last edit cancel')).toHaveText('{"reason":"escape","barIds":["a"]}')
+  await expect(idle).toHaveText('0')
+  await expect(out('Once listener calls')).toHaveText('0')
+  // Nothing is in flight now: the next Escape is idle, for `@idle-escape` and `@idle-escape.once` alike.
+  await zoomIn.press('Escape')
+  await expect(idle).toHaveText('1')
+  await expect(out('Once listener calls')).toHaveText('1')
+
+  // A pointer drag is cancelled the same way.
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  await pressAndMove(page, barA, 60, 0)
+  await zoomIn.focus()
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(out('Last edit')).toHaveText('')
+  await expect(idle).toHaveText('1')
+  // A `.once` listener is removed after its first call; the plain listener goes on.
+  await barA.press('Escape')
+  await expect(idle).toHaveText('2')
+  await expect(out('Once listener calls')).toHaveText('1')
+  expect(errors).toEqual([])
+})
