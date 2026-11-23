@@ -607,13 +607,12 @@ To show one plan as a graph, a Gantt chart and load rows that follow each other,
 ```vue
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { GanttChart, NetworkGraph, revealLinkedTarget, useLinkedSelection, type ViewBinding, type ViewTargetEvent } from '@eightkk/vue-weave'
+import {
+  GanttChart, NetworkGraph, revealLinkedTarget, taskViewBindings, useLinkedSelection, type ViewTargetEvent,
+} from '@eightkk/vue-weave'
 
-const bindings = computed<ViewBinding[]>(() => tasks.value.flatMap(task => [
-  { entity: { kind: 'task', id: task.id }, target: { view: 'graph', kind: 'node', id: task.id } },
-  { entity: { kind: 'task', id: task.id }, target: { view: 'timeline', kind: 'bar', id: task.id } },
-  ...task.resourceId ? [{ entity: { kind: 'task', id: task.id }, target: { view: 'load', resourceId: task.resourceId, start: task.start, end: task.end } } as ViewBinding] : [],
-]))
+// Each task is bound to its node, bar, row and load ranges, each dependency to its edge and arrow, under the same IDs.
+const bindings = computed(() => taskViewBindings({ tasks: schedule.value.tasks, assignments, dependencies }))
 const linked = useLinkedSelection({ bindings })
 const graph = useTemplateRef('graph')
 
@@ -621,6 +620,7 @@ const graph = useTemplateRef('graph')
 const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [event.target])
 const enter = (event: ViewTargetEvent) => linked.hoverEnter(event.target.view, event.target)
 const leave = (event: ViewTargetEvent) => linked.hoverLeave(event.target.view, event.target)
+const clear = () => linked.clearSelection()
 
 async function showInGraph(nodeId: string) {
   const result = await revealLinkedTarget({
@@ -638,15 +638,16 @@ async function showInGraph(nodeId: string) {
   <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :groups="groups" :collapsed-group-ids="collapsed"
     :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
     :highlighted-edge-ids="linked.graph.value.highlightedEdgeIds"
-    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" @background-click="clear" @idle-escape="clear" />
   <GanttChart :rows="rows" :bars="bars" :range="range" :load-rows="loadRows" :load-segments="loadSegments" load-selectable
     multi-select :selected-ids="linked.timeline.value.selectedBarIds" :highlighted-bar-ids="linked.timeline.value.highlightedBarIds"
     :selected-load-targets="linked.load.value.selected" :highlighted-load-targets="linked.load.value.highlighted"
-    @target-activate="activate" @target-enter="enter" @target-leave="leave" />
+    @target-activate="activate" @target-enter="enter" @target-leave="leave" @background-click="clear" @idle-escape="clear" />
 </template>
 ```
 
-- IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities.
+- IDs are paired with their kind and view, so a task `A` and a resource `A` never mix. One entity may have several targets (a task shown as two nodes or two resource bars) and one target several entities. `taskViewBindings` covers the common case of views that use the task and dependency IDs as they are; for anything else, write `ViewBinding` objects yourself and spread both into one array.
+- The components keep no selection of their own, so clearing it is yours: `background-click` reports a click on empty space and `idle-escape` an Escape that cancelled nothing of the component's own. Escape first cancels a drag, an armed connection or an open editor (reported through `gesture-end` or `edit-cancel`); only an Escape that finds nothing to cancel, outside text fields, arrives as `idle-escape`.
 - Load segments have no ID and change when load is recalculated. Bind load as resource time ranges; the chart marks the segments that overlap them, and `resolveLoadTargets` tells you which current segments a stored range still touches (a range that touches none is reported as unknown, never moved to another segment).
 - Hover never scrolls. Move to an item only on an explicit action, with `revealNode`, `revealBar` or `revealLinkedTarget`. A hidden item is reported as `hidden-by-collapse` with its visible proxy; expanding is the application's decision and requires the controlled `collapsedGroupIds` or `collapsedIds`. Filters are your own: when your filter hides an item, say so in your UI and offer to clear it.
 - For impact analysis, `traverseGraph(graph, startIds, { direction, maxHops })` returns the node and edge IDs reached. Opt-in `edgeFilter` follows only some relations (it is told the walk direction, so upstream and downstream can follow different ones), `maxNodes` caps the result nearest first and `truncated` lists where a limit stopped the walk (the places to offer "show more"), and `paths: true` lets `graphTracePath(result, id)` rebuild the edges from a start to a node (why it is affected) and lists in `multiplyReachedIds` the nodes reached by more than one path; see [Traversal filters, limits and paths](api.md#traversal-filters-limits-and-paths). `resolveCollapsedTargets` maps IDs of the full graph to the proxies and merged edges shown while groups are collapsed (call `collapseGraphGroups` with the same input as the graph).
@@ -654,6 +655,61 @@ async function showInGraph(nodeId: string) {
 - TreeGrid links the same way; see [Tree grids, matrices and bills of materials](#tree-grids-matrices-and-bills-of-materials).
 - A view of your own (a task table, a list, a diagnostics panel) links through entities instead of a view name: call `linked.selectEntities([{ kind: 'task', id }], { source: 'task-table' })` when the user selects in it, and render its own selected rows from `linked.selectedEntities`, which also follows selections made in the graph or the timeline. No view owns such a selection, so the graph and the Gantt chart only highlight the bound items and never receive them as `selectedIds`. Reporting the same entities with the same `source` again changes nothing and does not call `onSelect`, so a table that echoes its selection back cannot loop; an empty list clears the selection. `linked.selectionSource` tells which of your views made the current selection.
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
+
+## A multi-view app: linked selection, saving and undo
+
+The production demo (`examples/production/`, served at `/demo/`) is a complete app on these parts: a planning tab with a process graph, a Gantt chart and a load chart, a lot flow tab with a second graph and a table, an approval workflow and a schedule sheet. Its wiring is in `workspace.ts`; the steps below follow it.
+
+**1. One document, one transaction.** Keep everything the user edits in one document and save it through one `useEditTransaction`, so saving, conflicts and undo cover every view. A change replaces the part of the document its view owns:
+
+```ts
+type AppChange =
+  | { area: 'plan'; plan: Plan }
+  | { area: 'approval'; flow: Flow }
+  | { area: 'sheet'; tasks: readonly Task[] }
+
+const transaction = useEditTransaction<AppDocument, AppChange>({
+  documentId: 'production', initialState: loaded.document, initialVersion: loaded.version,
+  adapter: {
+    validate(_document, changes) {
+      for (const change of changes) if (change.area === 'sheet' && !scheduleSheet(change.tasks).ok) return 'The sheet cannot be scheduled.'
+    },
+    apply(document, changes) {
+      let next = document
+      for (const change of changes) {
+        if (change.area === 'plan') next = { ...next, plan: change.plan }
+        else if (change.area === 'approval') next = { ...next, approval: change.flow }
+        else next = { ...next, sheet: change.tasks }
+      }
+      return next
+    },
+    save: (request, candidate) => server.save(request, candidate),
+  },
+})
+// Every view renders this: the candidate while it is saved, else the accepted document.
+const document = computed(() => transaction.candidateState.value ?? transaction.acceptedState.value)
+```
+
+Each view derives what it draws from `document` and proposes changes with `transaction.submit([change])`. Check a change with the view's own, localized messages before submitting (the schedule sheet schedules the candidate tasks and shows the cycle it would create); the adapter's `validate` is the last line of defence. Only one save runs at a time: a submit while saving resolves to `busy`, so tell the user, or disable the actions that submit until `status` is no longer `saving`.
+
+**2. One save bar.** Show `status`, `result` and `acceptedVersion` in one place, with app-wide Undo and Redo (`transaction.undo()` and `redo()`, disabled while saving). A `rejected` save leaves the accepted document as it was, so the views show it again. On `conflict`, fetch the latest document and pass it to `transaction.refresh(state, version)`; that resets the history. On `uncertain`, ask the server for the operation's result and pass it to `transaction.reconcile(result)`. The demo's save bar is `examples/components/SaveStatus.vue` with the mock server `examples/adapters/transactionStore.ts`, which can answer with each of these.
+
+Local state that depends on the document, such as an open proposal or a selected step, must follow undo, redo and refresh: the demo closes the plan proposal in its undo, redo and reload functions, and the approval tab moves its selection when an undo removes the selected step.
+
+**3. One linked selection.** Create one `useLinkedSelection` next to the transaction and give every view of the same entities its bindings. The planning operations are the steps of the lot in the lot flow, so the demo binds each operation to its planning node, bar, row and load (`taskViewBindings`) and to its lot flow node:
+
+```ts
+const linked = useLinkedSelection({ bindings: () => [
+  ...taskViewBindings({ tasks: [...schedule.value.byId.values()], taskKind: 'operation', assignments }),
+  ...taskIds.map((id): ViewBinding => ({ entity: { kind: 'operation', id }, target: { view: 'graph', kind: 'node', id: lotStepOf[id] } })),
+] })
+```
+
+Both graphs report as the `graph` view; this works because a node ID of one graph names the same entity, or nothing, in the other. Each graph passes the IDs of `linked.graph.value.selectedNodeIds` that are its own as its selection, and the lot table selects with `selectEntities` because it is not a component view. Detail panels read `linked.selectedEntities`, so the operation selected in planning is the step shown in the lot flow after a tab switch, and the other way round. Link only what is the same entity: the approval workflow and the schedule sheet show other data and keep their own selection.
+
+**4. Clearing.** Wire `background-click` and `idle-escape` of each component to `linked.clearSelection()`. Escape then cancels a drag first and clears the selection on the next press.
+
+The browser scenarios in `test/browser/production-demo.spec.ts` walk through it: a selection that follows a tab switch, a save that the server rejects, a conflict with another writer, a lost answer, and an undo from one tab that reverts an edit made in another.
 
 ## Search, sort and saved views
 

@@ -123,10 +123,6 @@ const status = ref(describe('ceo'))
 function select(id: string) {
   status.value = describe(id)
 }
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty canvas or Escape in the chart clears the selection and its reporting line.
 function clearSelection() {
   if (selectedId.value === undefined) return
@@ -206,64 +202,62 @@ function cardView(id: string, box: GraphBox) {
       <button type="button" class="sc-org-expand" :disabled="!collapsed.size" @click="expandAll">{{ t({ en: 'Expand all', ja: 'すべて展開' }) }}</button>
     </div>
 
-    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-      <NetworkGraph
-        v-model:selected-id="selectedId" unstyled-node-slots :nodes="nodes" :edges="edges" :layout="layoutOrg" :sizes="sizes"
-        :positions="positions" :related-ids="related" :options="{ direction: 'TB' }" edge-style="orthogonal"
-        height="clamp(440px, 54vw, 700px)"
-        :labels="{ ...labels.graph, region: t({ en: 'Organisation chart', ja: '組織図' }) }" @select="select" @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
-      >
-        <template #edge="{ path, related }">
-          <path class="sc-org-link" :class="{ 'sc-org-link-on': related }" :d="path" />
-        </template>
-        <template #node="{ node, box, selected }">
-          <g v-for="c in [cardView(node.id, box)]" :key="c.person.id" class="sc-org-card"
-            :class="[`sc-org-dept-${c.person.department}`, { 'sc-org-lead': c.lead }]">
-            <defs>
-              <linearGradient :id="c.fillId" x1="0" y1="0" x2="1" y2="1">
-                <stop class="sc-org-stop-from" offset="0" />
-                <stop class="sc-org-stop-to" offset="1" />
-              </linearGradient>
-              <clipPath :id="c.clipId">
-                <circle :cx="c.cx" :cy="c.avatarY" :r="c.radius" />
-              </clipPath>
-              <clipPath :id="c.faceId">
-                <rect x="1" :y="c.top" :width="box.width - 2" :height="c.bottom - c.top" rx="16" />
-              </clipPath>
-            </defs>
-            <rect v-if="selected" class="sc-org-ring" x="-4" :y="c.top - 4" :width="box.width + 8" :height="c.bottom - c.top + 8" rx="20" />
-            <rect class="sc-org-face" x="1" :y="c.top" :width="box.width - 2" :height="c.bottom - c.top" rx="16" />
-            <rect class="sc-org-band" x="1" :y="c.top" :width="box.width - 2" :height="c.radius + 6" :clip-path="`url(#${c.faceId})`" />
-            <circle class="sc-org-halo" :cx="c.cx" :cy="c.avatarY" :r="c.radius + 3.5" />
-            <g :clip-path="`url(#${c.clipId})`">
-              <rect class="sc-org-avatar" :x="c.cx - c.radius" :y="c.avatarY - c.radius" :width="c.radius * 2" :height="c.radius * 2"
-                :style="{ fill: `url(#${c.fillId})` }" />
-              <circle class="sc-org-gloss" :cx="c.cx - c.radius * 0.45" :cy="c.avatarY - c.radius * 0.55" :r="c.radius * 0.85" />
-            </g>
-            <text class="sc-org-initials" :x="c.cx" :y="c.avatarY" dy="0.35em">{{ c.initials }}</text>
-            <text class="sc-org-name" :x="c.cx" :y="c.nameY">{{ c.person.name }}</text>
-            <text class="sc-org-title" :x="c.cx" :y="c.titleY">{{ c.person.title }}</text>
-            <rect class="sc-org-chip" :x="c.cx - c.chipWidth / 2" :y="c.chipY - 13" :width="c.chipWidth" height="19" rx="9.5" />
-            <text class="sc-org-chip-text" :x="c.cx" :y="c.chipY - 3.5" dy="0.35em">{{ c.chip }}</text>
-            <g v-if="c.badge" class="sc-org-badge" :class="{ 'sc-org-badge-folded': c.folded }">
-              <rect :x="c.cx - c.badgeWidth / 2" :y="c.bottom - 11" :width="c.badgeWidth" height="22" rx="11" />
-              <text :x="c.cx" :y="c.bottom" dy="0.35em">{{ c.badge }}</text>
-            </g>
+    <NetworkGraph
+      v-model:selected-id="selectedId" unstyled-node-slots :nodes="nodes" :edges="edges" :layout="layoutOrg" :sizes="sizes"
+      :positions="positions" :related-ids="related" :options="{ direction: 'TB' }" edge-style="orthogonal"
+      height="clamp(440px, 54vw, 700px)"
+      :labels="{ ...labels.graph, region: t({ en: 'Organisation chart', ja: '組織図' }) }" @select="select" @background-click="clearSelection" @idle-escape="clearSelection"
+    >
+      <template #edge="{ path, related }">
+        <path class="sc-org-link" :class="{ 'sc-org-link-on': related }" :d="path" />
+      </template>
+      <template #node="{ node, box, selected }">
+        <g v-for="c in [cardView(node.id, box)]" :key="c.person.id" class="sc-org-card"
+          :class="[`sc-org-dept-${c.person.department}`, { 'sc-org-lead': c.lead }]">
+          <defs>
+            <linearGradient :id="c.fillId" x1="0" y1="0" x2="1" y2="1">
+              <stop class="sc-org-stop-from" offset="0" />
+              <stop class="sc-org-stop-to" offset="1" />
+            </linearGradient>
+            <clipPath :id="c.clipId">
+              <circle :cx="c.cx" :cy="c.avatarY" :r="c.radius" />
+            </clipPath>
+            <clipPath :id="c.faceId">
+              <rect x="1" :y="c.top" :width="box.width - 2" :height="c.bottom - c.top" rx="16" />
+            </clipPath>
+          </defs>
+          <rect v-if="selected" class="sc-org-ring" x="-4" :y="c.top - 4" :width="box.width + 8" :height="c.bottom - c.top + 8" rx="20" />
+          <rect class="sc-org-face" x="1" :y="c.top" :width="box.width - 2" :height="c.bottom - c.top" rx="16" />
+          <rect class="sc-org-band" x="1" :y="c.top" :width="box.width - 2" :height="c.radius + 6" :clip-path="`url(#${c.faceId})`" />
+          <circle class="sc-org-halo" :cx="c.cx" :cy="c.avatarY" :r="c.radius + 3.5" />
+          <g :clip-path="`url(#${c.clipId})`">
+            <rect class="sc-org-avatar" :x="c.cx - c.radius" :y="c.avatarY - c.radius" :width="c.radius * 2" :height="c.radius * 2"
+              :style="{ fill: `url(#${c.fillId})` }" />
+            <circle class="sc-org-gloss" :cx="c.cx - c.radius * 0.45" :cy="c.avatarY - c.radius * 0.55" :r="c.radius * 0.85" />
           </g>
-        </template>
-        <template #tooltip="{ target }">
-          <div v-if="target.kind === 'node'" class="sc-org-tip">
-            <strong>{{ target.node.label }}</strong>
-            <span>{{ byId.get(target.node.id)?.title }}</span>
-            <dl>
-              <dt>{{ t({ en: 'Team', ja: 'チーム' }) }}</dt><dd>{{ departments[byId.get(target.node.id)?.department ?? 'exec'].label }}</dd>
-              <dt>{{ t({ en: 'Office', ja: '拠点' }) }}</dt><dd>{{ byId.get(target.node.id)?.location }}</dd>
-              <dt>{{ t({ en: 'Joined', ja: '入社' }) }}</dt><dd>{{ byId.get(target.node.id)?.since }}</dd>
-            </dl>
-          </div>
-        </template>
-      </NetworkGraph>
-    </div>
+          <text class="sc-org-initials" :x="c.cx" :y="c.avatarY" dy="0.35em">{{ c.initials }}</text>
+          <text class="sc-org-name" :x="c.cx" :y="c.nameY">{{ c.person.name }}</text>
+          <text class="sc-org-title" :x="c.cx" :y="c.titleY">{{ c.person.title }}</text>
+          <rect class="sc-org-chip" :x="c.cx - c.chipWidth / 2" :y="c.chipY - 13" :width="c.chipWidth" height="19" rx="9.5" />
+          <text class="sc-org-chip-text" :x="c.cx" :y="c.chipY - 3.5" dy="0.35em">{{ c.chip }}</text>
+          <g v-if="c.badge" class="sc-org-badge" :class="{ 'sc-org-badge-folded': c.folded }">
+            <rect :x="c.cx - c.badgeWidth / 2" :y="c.bottom - 11" :width="c.badgeWidth" height="22" rx="11" />
+            <text :x="c.cx" :y="c.bottom" dy="0.35em">{{ c.badge }}</text>
+          </g>
+        </g>
+      </template>
+      <template #tooltip="{ target }">
+        <div v-if="target.kind === 'node'" class="sc-org-tip">
+          <strong>{{ target.node.label }}</strong>
+          <span>{{ byId.get(target.node.id)?.title }}</span>
+          <dl>
+            <dt>{{ t({ en: 'Team', ja: 'チーム' }) }}</dt><dd>{{ departments[byId.get(target.node.id)?.department ?? 'exec'].label }}</dd>
+            <dt>{{ t({ en: 'Office', ja: '拠点' }) }}</dt><dd>{{ byId.get(target.node.id)?.location }}</dd>
+            <dt>{{ t({ en: 'Joined', ja: '入社' }) }}</dt><dd>{{ byId.get(target.node.id)?.since }}</dd>
+          </dl>
+        </div>
+      </template>
+    </NetworkGraph>
     <p class="sc-org-status" role="status">{{ status }}</p>
   </section>
 </template>

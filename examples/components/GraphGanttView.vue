@@ -537,10 +537,6 @@ function redo() {
   history.redo()
   status.value = t({ en: 'Redid the last edit.', ja: '編集をやり直しました。' })
 }
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty graph canvas or Escape in the graph clears the shared node and bar selection and, while
 // editing, the graph's node and edge selection.
 function clearSelection() {
@@ -606,51 +602,49 @@ defineExpose({ reset })
         </div>
         <span class="hint">{{ t({ en: 'Drag a chip onto the graph, or activate it to add a node at the centre of the view.', ja: 'チップをグラフへドラッグするか、押して表示の中央にノードを追加します。' }) }}</span>
       </div>
-      <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-        <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :labels="labels.graph" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
-          :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
-          :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
-          :positions="positions" :selected-ids="graphEditing ? graphSelection : undefined"
-          :edges-selectable="graphEditing" :selected-edge-ids="graphEditing ? edgeSelection : undefined" @update:selected-edge-ids="edgeSelection = $event"
-          :deletable="graphEditing" :validate-delete="validateDelete" @delete="commitDeletion" @delete-rejected="(_deletion, reason) => status = reason"
-          :context-menu="graphEditing" @context-menu="openMenu"
-          :snap-grid="graphEditing && snapToGrid ? gridSize : undefined" :background="graphEditing && snapToGrid ? 'dots' : 'none'"
-          :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @node-drop="dropNode"
-          :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
-          :collapsible-groups="collapseOn" :collapsed-group-ids="collapseOn ? collapsed : undefined" @update:collapsed-group-ids="commitCollapse"
-          :edge-style="graphEditing ? edgeStyle : 'curve'" :editable-edges="graphEditing && editableEdges" @edge-reshape="commitReshape"
-          :validate-edge-reshape="validateReshape" @edge-reshape-rejected="(_change, reason) => status = reason"
-          :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize"
-          :validate-node-resize="validateResize" @node-resize-rejected="(_change, reason) => status = reason" :lod-threshold="graphEditing ? 0.5 : undefined"
-          :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
-          :editable-labels="graphEditing && labelEditing" :validate-label-edit="validateLabel" @label-edit="commitLabel"
-          @label-edit-rejected="(_change, reason) => status = reason" :selection-mode="graphEditing && lassoSelect ? 'lasso' : 'box'"
-          @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason"
-          @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--">
-          <template v-if="custom" #node="{ node, box, selected: active }">
-            <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vw-surface, #fff)' }" />
-            <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
-          </template>
-          <template v-if="graphEditing && itemSlots" #node-toolbar="{ node }">
-            <button type="button" @click="fitSelection({ kind: 'node', id: node.id })">{{ t({ en: 'Frame', ja: '表示' }) }}</button>
-            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'node', id: node.id }))">{{ t({ en: 'Remove', ja: '削除' }) }}</button>
-          </template>
-          <template v-if="graphEditing && itemSlots" #edge-toolbar="{ edge }">
-            <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'edge', id: edge.id }))">{{ t({ en: 'Remove', ja: '削除' }) }}</button>
-          </template>
-          <template v-if="graphEditing && itemSlots" #group="{ group: item, box, depth }">
-            <rect class="demo-group-frame" :x="box.x" :y="box.y" :width="box.width" :height="box.height" rx="12" />
-            <text class="demo-group-label" :x="box.x + 10" :y="box.y + 15">{{ item.label }}{{ depth ? t({ en: ' (nested)', ja: '(入れ子)' }) : '' }}</text>
-          </template>
-          <template v-if="graphEditing && itemSlots" #minimap-node="{ box, selected: active }">
-            <circle class="demo-minimap-node" :class="{ 'is-selected': active }" :cx="box.x + box.width / 2" :cy="box.y + box.height / 2" :r="Math.min(box.width, box.height) / 2" />
-          </template>
-          <template v-if="graphEditing" #tooltip="{ target }">
-            <template v-if="target.kind === 'node'"><strong>{{ target.node.label }}</strong><br>{{ target.node.detail ?? t({ en: 'No detail', ja: '詳細なし' }) }} · {{ degree(target.node.id) }}</template>
-            <template v-else>{{ nodeLabel(target.edge.from) }} → {{ nodeLabel(target.edge.to) }}<template v-if="target.edge.label"> · {{ target.edge.label }}</template></template>
-          </template>
-        </NetworkGraph>
-      </div>
+      <NetworkGraph ref="graph" v-model:selected-id="selected" :nodes="data.nodes" :edges="data.edges" :options="{ direction, crossingReduction }" :layout="graphLayout" :labels="labels.graph" :height="direction === 'TB' || direction === 'BT' ? 470 : graphEditing || preset === 'large' ? 345 : 245"
+        :draggable="graphEditing" :connectable="graphEditing" :reconnectable="graphEditing" :box-select="graphEditing"
+        :groups="graphGroups" :show-minimap="graphEditing || preset === 'large'" :cull-offscreen="preset === 'large'" :match-ids="matchIds"
+        :positions="positions" :selected-ids="graphEditing ? graphSelection : undefined"
+        :edges-selectable="graphEditing" :selected-edge-ids="graphEditing ? edgeSelection : undefined" @update:selected-edge-ids="edgeSelection = $event"
+        :deletable="graphEditing" :validate-delete="validateDelete" @delete="commitDeletion" @delete-rejected="(_deletion, reason) => status = reason"
+        :context-menu="graphEditing" @context-menu="openMenu"
+        :snap-grid="graphEditing && snapToGrid ? gridSize : undefined" :background="graphEditing && snapToGrid ? 'dots' : 'none'"
+        :alignment-guides="graphEditing && alignmentGuides" :auto-pan="graphEditing" :droppable="graphEditing" @node-drop="dropNode"
+        :clipboard="graphEditing" @copy-selection="copySelection" @paste-request="pasteClipboard" @duplicate-selection="duplicateSelection"
+        :collapsible-groups="collapseOn" :collapsed-group-ids="collapseOn ? collapsed : undefined" @update:collapsed-group-ids="commitCollapse"
+        :edge-style="graphEditing ? edgeStyle : 'curve'" :editable-edges="graphEditing && editableEdges" @edge-reshape="commitReshape"
+        :validate-edge-reshape="validateReshape" @edge-reshape-rejected="(_change, reason) => status = reason"
+        :sizes="sizes" :resizable="graphEditing && resizableNodes" @node-resize="commitResize"
+        :validate-node-resize="validateResize" @node-resize-rejected="(_change, reason) => status = reason" :lod-threshold="graphEditing ? 0.5 : undefined"
+        :validate-connection="validateConnection" @update:selected-ids="graphSelection = $event"
+        :editable-labels="graphEditing && labelEditing" :validate-label-edit="validateLabel" @label-edit="commitLabel"
+        @label-edit-rejected="(_change, reason) => status = reason" :selection-mode="graphEditing && lassoSelect ? 'lasso' : 'box'"
+        @node-move="commitNodes([$event])" @nodes-move="commitNodes" @connect="commitConnection" @reconnect="commitReconnect" @connect-rejected="(_connection, reason) => status = reason"
+        @background-click="clearSelection" @idle-escape="clearSelection">
+        <template v-if="custom" #node="{ node, box, selected: active }">
+          <rect x="3" y="3" :width="box.width - 6" :height="box.height - 6" rx="4" :style="{ fill: active ? '#174878' : 'var(--vw-surface, #fff)' }" />
+          <text x="12" y="24" style="font-size: 14px">{{ node.label }}</text><text x="12" y="44" style="font-size: 10px">{{ node.detail || node.id }}</text>
+        </template>
+        <template v-if="graphEditing && itemSlots" #node-toolbar="{ node }">
+          <button type="button" @click="fitSelection({ kind: 'node', id: node.id })">{{ t({ en: 'Frame', ja: '表示' }) }}</button>
+          <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'node', id: node.id }))">{{ t({ en: 'Remove', ja: '削除' }) }}</button>
+        </template>
+        <template v-if="graphEditing && itemSlots" #edge-toolbar="{ edge }">
+          <button type="button" @click="proposeDeletion(deletionForTarget({ kind: 'edge', id: edge.id }))">{{ t({ en: 'Remove', ja: '削除' }) }}</button>
+        </template>
+        <template v-if="graphEditing && itemSlots" #group="{ group: item, box, depth }">
+          <rect class="demo-group-frame" :x="box.x" :y="box.y" :width="box.width" :height="box.height" rx="12" />
+          <text class="demo-group-label" :x="box.x + 10" :y="box.y + 15">{{ item.label }}{{ depth ? t({ en: ' (nested)', ja: '(入れ子)' }) : '' }}</text>
+        </template>
+        <template v-if="graphEditing && itemSlots" #minimap-node="{ box, selected: active }">
+          <circle class="demo-minimap-node" :class="{ 'is-selected': active }" :cx="box.x + box.width / 2" :cy="box.y + box.height / 2" :r="Math.min(box.width, box.height) / 2" />
+        </template>
+        <template v-if="graphEditing" #tooltip="{ target }">
+          <template v-if="target.kind === 'node'"><strong>{{ target.node.label }}</strong><br>{{ target.node.detail ?? t({ en: 'No detail', ja: '詳細なし' }) }} · {{ degree(target.node.id) }}</template>
+          <template v-else>{{ nodeLabel(target.edge.from) }} → {{ nodeLabel(target.edge.to) }}<template v-if="target.edge.label"> · {{ target.edge.label }}</template></template>
+        </template>
+      </NetworkGraph>
       <p v-if="graphEditing" class="hint">{{ t({
         en: 'Drag between ports to connect. Select an edge to move an endpoint. Shift-drag the canvas to select a region. Press Delete to remove the selection; right-click or press Shift+F10 for more actions. Ctrl+C, Ctrl+V and Ctrl+D (⌘ on macOS) copy, paste and duplicate nodes. Click the empty canvas or press Escape to clear the selection.',
         ja: 'ポートの間をドラッグして接続します。辺を選ぶと端点を動かせます。Shift を押しながらキャンバスをドラッグすると範囲を選択します。Delete で選択を削除し、右クリックか Shift+F10 で他の操作を開きます。Ctrl+C、Ctrl+V、Ctrl+D(macOS では ⌘)でノードをコピー、貼り付け、複製します。何もない所をクリックするか Escape で選択を解除します。',

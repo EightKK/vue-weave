@@ -3,39 +3,19 @@
 // arrows and critical path on the right are derived from it by the core scheduler on every change.
 import { computed, ref } from 'vue'
 import {
-  GanttChart, applyTimelineSheetEdit, formatFieldValue, invertWorkPeriods, scheduleTasks, scheduledBarFields, useEditHistory,
-  type FieldValue, type ScheduleResult, type TimelineColumn, type TimelineEdit, type TimelineFieldEdit, type TimelineFieldSpec,
-  type TimelineSheetEdit,
+  GanttChart, applyTimelineSheetEdit, formatFieldValue, scheduledBarFields, type FieldValue, type ScheduleResult, type TimelineColumn, type TimelineEdit,
+  type TimelineFieldEdit, type TimelineFieldSpec, type TimelineSheetEdit,
 } from '../../src'
 import { componentLabels } from '../i18n'
+import { names, origin, scheduleSheet as schedule, sheetLinks as links, sheetRange as range, weekends, type Task } from './sheet'
+import { useProductionWorkspace } from './workspace'
 
 const props = defineProps<{ ja: boolean }>()
 const t = (ja: string, en: string) => props.ja ? ja : en
+// The task grid is part of the app's saved document: edits are saved through the app-wide transaction.
+const workspace = useProductionWorkspace()
+const tasks = computed(() => workspace.document.value.sheet)
 
-// The model: one entry per row. `start` is a "start no earlier than" constraint, `after` the predecessor IDs.
-interface Task { id: string; parentId?: string; start?: number; duration: number; after: string[]; resource: string | null; done: number }
-const names: Record<string, [string, string]> = {
-  plan: ['計画', 'Planning'], spec: ['要件定義', 'Requirements'], layout: ['レイアウト設計', 'Layout design'], approve: ['設計承認', 'Design approval'],
-  buy: ['調達', 'Procurement'], order: ['部品発注', 'Order parts'], frame: ['フレーム製作', 'Build frame'],
-  install: ['据付', 'Installation'], remove: ['旧設備撤去', 'Remove old line'], assemble: ['組立', 'Assembly'], trial: ['試運転', 'Trial run'], handover: ['引き渡し', 'Handover'],
-}
-const task = (id: string, duration: number, after: string[] = [], resource: string | null = null, done = 0, parentId?: string): Task =>
-  ({ id, parentId, duration, after, resource, done })
-const history = useEditHistory<Task[]>([
-  task('plan', 0),
-  task('spec', 3, [], 'design', 100, 'plan'), task('layout', 5, ['spec'], 'design', 40, 'plan'), task('approve', 0, ['layout'], null, 0, 'plan'),
-  task('buy', 0, ['approve']),
-  task('order', 2, [], 'purchasing', 0, 'buy'), task('frame', 6, ['order'], 'machining', 0, 'buy'),
-  task('install', 0),
-  task('remove', 3, ['approve'], 'maintenance', 0, 'install'), task('assemble', 4, ['frame', 'remove'], 'assembly', 0, 'install'),
-  task('trial', 2, ['assemble'], 'qa', 0, 'install'), task('handover', 0, ['trial'], null, 0, 'install'),
-])
-
-// Time is measured in days from Monday 1 March 2027; Saturdays and Sundays are not working time.
-const range = { start: 0, end: 70 }
-const origin = Date.UTC(2027, 2, 1)
-const workPeriods = Array.from({ length: 10 }, (_, week) => ({ start: week * 7, end: week * 7 + 5 }))
-const weekends = invertWorkPeriods(workPeriods, range)
 const workDays = (start: number, end: number) => Array.from({ length: end - start }, (_, i) => (start + i) % 7 < 5).filter(Boolean).length
 const formatDay = (day: number) => { const date = new Date(origin + day * 86_400_000); return `${date.getUTCMonth() + 1}/${date.getUTCDate()}` }
 function parseDay(text: string): FieldValue | { error: string } {
@@ -44,16 +24,11 @@ function parseDay(text: string): FieldValue | { error: string } {
   return Number.isInteger(day) && day >= range.start && day < range.end ? day : { error: t('3/1〜5/9 の日付を「月/日」で入力してください', 'Enter a date from 3/1 to 5/9 as month/day') }
 }
 
-const links = (tasks: readonly Task[]) => tasks.flatMap(item => item.after.map(from => ({ id: from + '>' + item.id, from, to: item.id, type: 'FS' as const })))
-const schedule = (tasks: readonly Task[]): ScheduleResult => scheduleTasks({
-  range, quantum: 1, calendars: [{ id: 'week', periods: workPeriods }], defaultCalendarId: 'week', dependencies: links(tasks),
-  tasks: tasks.map(({ id, parentId, duration, start }) => ({ id, duration, ...(parentId && { parentId }), ...(start !== undefined && { startNoEarlierThan: start }) })),
-})
-// Only plans that schedule are committed, so the current one always succeeds.
-const plan = computed(() => schedule(history.state.value) as Extract<ScheduleResult, { ok: true }>)
-const isSummary = (id: string) => history.state.value.some(item => item.parentId === id)
+// Only plans that schedule are saved, so the current one always succeeds.
+const plan = computed(() => schedule(tasks.value) as Extract<ScheduleResult, { ok: true }>)
+const isSummary = (id: string) => tasks.value.some(item => item.parentId === id)
 
-const rows = computed(() => history.state.value.map((item, index) => ({
+const rows = computed(() => tasks.value.map((item, index) => ({
   id: item.id, parentId: item.parentId, label: names[item.id]![props.ja ? 0 : 1], number: index + 1, task: item, planned: plan.value.tasks[index]!,
 })))
 type Row = typeof rows.value[number]
@@ -91,7 +66,7 @@ const bars = computed(() => rows.value.filter(leaf).map(row => {
   const { segments: _, ...fields } = scheduledBarFields(row.planned)
   return { id: row.id, rowId: row.id, label: row.label, editable: true, progress: row.task.done / 100, ...fields }
 }))
-const dependencies = computed(() => links(history.state.value))
+const dependencies = computed(() => links(tasks.value))
 const critical = computed(() => new Set(plan.value.criticalDependencyIds))
 
 // Every change goes through `plan`: it schedules the new tasks first and refuses the whole change when that fails.
@@ -109,11 +84,11 @@ function planChange(change: (rows: Row[]) => Row[]): { tasks: Task[] } | { reaso
     ? t(`先行関係が循環するため取り消しました（タスク ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}）。`, `Rejected: the predecessors would form a cycle (tasks ${result.cycles[0]!.taskIds.map(numberOf).join(', ')}).`)
     : t('計画期間に収まらないため取り消しました。', 'Rejected: the plan would not fit in the project window.') }
 }
-function commit(change: (rows: Row[]) => Row[]) {
+function commit(change: (rows: Row[]) => Row[], source?: 'pointer' | 'keyboard') {
   const planned = planChange(change)
   if ('reason' in planned) return void (message.value = planned.reason)
-  history.commit(planned.tasks)
   message.value = ''
+  void workspace.submit({ area: 'sheet', tasks: planned.tasks }, source)
 }
 // Writes one typed edit into a row's task. Throwing here rejects the whole batch before anything is committed.
 function writeField(row: Row, edit: TimelineFieldEdit<Row>): Row {
@@ -134,7 +109,7 @@ function writeField(row: Row, edit: TimelineFieldEdit<Row>): Row {
   return { ...row, task: item }
 }
 // A single cell edit and a whole paste, fill or clear batch use the same helper, so they commit as one undo step each.
-const applyField = (edit: TimelineFieldEdit<Row>) => commit(current => applyTimelineSheetEdit(current, { fieldEdits: [edit] }, { field: writeField }))
+const applyField = (edit: TimelineFieldEdit<Row>) => commit(current => applyTimelineSheetEdit(current, { fieldEdits: [edit] }, { field: writeField }), edit.source)
 const sheetChange = (batch: TimelineSheetEdit<Row>) => (current: Row[]) => applyTimelineSheetEdit(current, batch, { field: writeField })
 const applySheet = (batch: TimelineSheetEdit<Row>) => commit(sheetChange(batch))
 // `validateSheetEdit` checks a whole paste, fill or clear before it is proposed; the chart then emits
@@ -147,7 +122,7 @@ function checkSheet(batch: TimelineSheetEdit<Row>) {
 function applyBar(edit: TimelineEdit) {
   commit(current => current.map(row => row.id !== edit.id ? row : { ...row, task: { ...row.task,
     start: edit.mode === 'end' ? row.task.start : edit.after.start,
-    duration: edit.mode === 'move' ? row.task.duration : workDays(edit.after.start, edit.after.end) } }))
+    duration: edit.mode === 'move' ? row.task.duration : workDays(edit.after.start, edit.after.end) } }), edit.source)
 }
 const checkDuration = (edit: TimelineFieldEdit<Row>) =>
   edit.fieldId !== 'duration' || Number.isInteger(edit.after) || t('期間は日単位で入力してください', 'Durations are whole days')
@@ -156,8 +131,7 @@ const checkDuration = (edit: TimelineFieldEdit<Row>) =>
 <template>
   <div class="production-title"><div><h1>{{ t('工程表', 'Schedule sheet') }}</h1>
     <p>{{ t('表を編集すると、スケジューラーがバー・矢印・クリティカルパスを計算し直します。', 'Edit the task grid; the scheduler recalculates the bars, arrows and critical path.') }}</p></div>
-    <div class="production-actions"><button :disabled="!history.canUndo.value" @click="history.undo">{{ t('元に戻す', 'Undo') }}</button>
-      <button :disabled="!history.canRedo.value" @click="history.redo">{{ t('やり直す', 'Redo') }}</button></div></div>
+    </div>
   <section class="production-panel"><div class="production-heading"><h2>{{ t('ライン3 改修プロジェクト', 'Line 3 retrofit') }}</h2></div>
     <GanttChart spreadsheet show-summaries summary-dependencies :rows="rows" :columns="columns" :bars="bars" :dependencies="dependencies"
       :highlighted-dependency-ids="critical" :range="range" :non-working-periods="weekends" :pixels-per-unit="22" :tick-steps="[7]"

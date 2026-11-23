@@ -607,3 +607,32 @@ test('background-click reports a click on an empty row or below the rows, but no
   await expect(clicks).toHaveText('{"time":10,"rowId":"r1"};{"time":10}')
   expect(errors).toEqual([])
 })
+
+test('idle-escape reports an Escape that cancels nothing of the chart, but not one that cancels a drag or an armed connection', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?cancels')
+  const idle = out('Idle escapes')
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  await barA.focus()
+  await barA.press('Escape')
+  await expect(idle).toHaveText('1')
+
+  // Escape during a drag cancels it and reports `edit-cancel` only.
+  await pressAndMove(page, barA, 60, 0)
+  await page.keyboard.press('Escape')
+  await expect(out('Last edit cancel')).toContainText('"reason":"escape"')
+  await page.mouse.up()
+  await expect(out('Last edit')).toHaveText('')
+  await expect(idle).toHaveText('1')
+
+  // An armed connection is the chart's own as well.
+  const handle = chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true })
+  await handle.press('Enter')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await handle.press('Escape')
+  await expect(handle).toHaveAttribute('aria-pressed', 'false')
+  await expect(idle).toHaveText('1')
+  await barA.press('Escape')
+  await expect(idle).toHaveText('2')
+  expect(errors).toEqual([])
+})

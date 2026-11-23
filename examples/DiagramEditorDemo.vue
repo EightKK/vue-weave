@@ -125,10 +125,7 @@ function deleteElements(deletion: GraphDeletion) {
   commit({ nodes, edges, positions, sizes })
   status.value = t({ en: 'Deleted ' + deletion.nodeIds.length + ' node(s) and ' + removedEdges + ' edge(s).', ja: 'ノード ' + deletion.nodeIds.length + ' 個と辺 ' + removedEdges + ' 本を削除しました。' })
 }
-// A click on the empty canvas or Escape in it clears the selection, and the inspector shows its empty state. Escape
-// first cancels a gesture in flight (a drag or a connection); the graph reports every gesture as a start and an end,
-// and the capture listener reads the count before the graph's own Escape handler ends it.
-const gesture = { count: 0, cancelling: false }
+// A click on the empty canvas or Escape in it clears the selection, and the inspector shows its empty state.
 function clearSelection() {
   selectedId.value = undefined
 }
@@ -200,13 +197,13 @@ function rejectChange(_change: InspectorChange, reason: string) {
         <h3>{{ t({ en: 'Shapes', ja: '図形' }) }}</h3>
         <GraphPalette :items="templates" searchable :dir="rtl ? 'rtl' : 'ltr'" :labels="{ ...labels.palette, region: t({ en: 'Shapes', ja: '図形' }) }" @insert="insertNode" />
       </aside>
-      <div class="diagram-editor-canvas" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+      <div class="diagram-editor-canvas">
         <NetworkGraph ref="graph" v-model:selected-id="selectedId" :nodes="diagram.nodes" :edges="diagram.edges"
           :positions="diagram.positions" :sizes="diagram.sizes" :height="460" :snap-grid="grid" background="dots"
           draggable connectable deletable droppable alignment-guides :validate-connection="validateConnection"
           :labels="{ ...labels.graph, region: t({ en: 'Diagram canvas', ja: '図のキャンバス' }) }"
           @node-move="change => moveNodes([change])" @nodes-move="moveNodes" @connect="connect" @delete="deleteElements" @node-drop="dropNode"
-          @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
+          @background-click="clearSelection" @idle-escape="clearSelection" />
       </div>
       <aside class="diagram-editor-side">
         <h3>{{ t({ en: 'Properties', ja: 'プロパティ' }) }}</h3>

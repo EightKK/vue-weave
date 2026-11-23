@@ -79,6 +79,8 @@
       // gestures=1: every gesture-start and gesture-end in order, and the number of gestures still open.
       const gestureLog = ref([])
       const openGestures = ref(0)
+      // Every `idle-escape`: an Escape that cancelled no gesture.
+      const idleEscapes = ref(0)
       const gestureListeners = query.get('gestures') === '1' ? {
         onGestureStart: ({ kind, source }) => {
           openGestures.value++
@@ -165,11 +167,13 @@
           h('output', { role: 'status', 'aria-label': 'Target events' }, targetLog.value.join(' | ')),
           h('output', { role: 'status', 'aria-label': 'Gesture events' }, gestureLog.value.join(' | ')),
           h('output', { role: 'status', 'aria-label': 'Open gestures' }, String(openGestures.value)),
+          h('output', { role: 'status', 'aria-label': 'Idle escapes' }, String(idleEscapes.value)),
           h('output', { role: 'status', 'aria-label': 'Last label' }, lastLabel.value),
           h('output', { role: 'status', 'aria-label': 'Edit proposals' }, proposalLog.value.join(' ')),
           h('output', { role: 'status', 'aria-label': 'Clone errors' }, cloneErrors.value),
           h(NetworkGraph, {
             highlightedNodeIds: list('highlight'), highlightedEdgeIds: list('highlightedges'), collapsedGroupIds: list('collapse'),
+            onIdleEscape: () => { idleEscapes.value++ },
             routingPolicy: query.get('policy') ?? undefined, edgeStyle: query.get('style') ?? undefined,
             edgeLabelPlacement: query.get('labelplacement') ?? undefined,
             layout: preset === 'ports' ? portLayout : undefined,

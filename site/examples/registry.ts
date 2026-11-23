@@ -552,17 +552,19 @@ export const examples: readonly ExampleEntry[] = [
     category: 'scheduling',
     title: { en: 'Production planning', ja: '生産計画' },
     description: {
-      en: 'Compare plans around a machine outage and see how a moved operation shifts later work, the shipping time and the resource load; follow a lot through the process graph in units or cost; edit an approval workflow; and plan a project in a schedule sheet. In English and Japanese.',
-      ja: '設備の保守停止をはさんで計画案を比べ、作業を動かしたときの後工程、出荷時刻、設備負荷への影響を確かめられます。ロットの流れを個数と原価で工程図に表示し、承認フローの編集と日程表シートでの計画も試せます。日本語と英語に対応しています。',
+      en: 'Compare plans around a machine outage and see how a moved operation shifts later work, the shipping time and the resource load; follow a lot through the process graph in units or cost; edit an approval workflow; and plan a project in a schedule sheet. The planning and lot views share one linked selection, and every edit is saved to a mock server with app-wide undo, redo and visible conflicts. In English and Japanese.',
+      ja: '設備の保守停止をはさんで計画案を比べ、作業を動かしたときの後工程、出荷時刻、設備負荷への影響を確かめられます。ロットの流れを個数と原価で工程図に表示し、承認フローの編集と日程表シートでの計画も試せます。計画とロットの流れは選択を連動し、すべての編集はモックサーバーに保存され、アプリ全体で元に戻す・やり直す・競合の表示ができます。日本語と英語に対応しています。',
     },
     summary: {
       en: 'Plan comparison, lot flow, an approval workflow and a schedule sheet in one app.',
       ja: '計画比較、ロットの流れ、承認フロー、日程表シートを1つのアプリにまとめました。',
     },
-    tags: ['GanttChart', 'NetworkGraph', 'scheduleTasks', 'useEditHistory'],
+    tags: ['GanttChart', 'NetworkGraph', 'scheduleTasks', 'useEditTransaction', 'useLinkedSelection'],
     component: 'examples/production/ProductionShowcase.vue',
     sources: [
       'examples/production/ProductionShowcase.vue',
+      'examples/production/ProductionWorkspace.vue',
+      'examples/production/workspace.ts',
       'examples/production/ProductionPlan.vue',
       'examples/production/plan.ts',
       'examples/production/LotFlow.vue',
@@ -574,7 +576,8 @@ export const examples: readonly ExampleEntry[] = [
       { text: 'Resource load histogram', doc: 'api.md#resource-load-histogram' },
       { text: 'Quantity bands', doc: 'api.md#quantity-bands' },
       { text: 'Spreadsheet editing', doc: 'api.md#spreadsheet-editing' },
-      { text: 'useEditHistory', doc: 'api.md#application-undo-and-redo' },
+      { text: 'useLinkedSelection', doc: 'api.md#linked-views' },
+      { text: 'useEditTransaction', doc: 'api.md#edit-transactions-and-asynchronous-saving' },
     ],
   },
   {

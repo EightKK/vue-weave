@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- NetworkGraph and GanttChart report an opt-in `idle-escape` (`@idle-escape` in templates, declared as the listener prop `onIdleEscape`) with the `KeyboardEvent` when Escape is pressed in them and cancels nothing of their own: no gesture, armed connection or open cell editor (so no `gesture-end` or `edit-cancel` for it), not in a text field, not handled by the label editor, a filter dialog or a spreadsheet range, and not part of an input method composition. Applications clear their selection on it as on `background-click`, instead of counting `gesture-start` and `gesture-end` or watching `edit-cancel` around a wrapper element. The examples and showcases use it and no longer carry that bookkeeping.
+- Core: `taskViewBindings({ tasks, assignments?, dependencies?, taskKind?, dependencyKind? })` returns the `ViewBinding[]` of a plan whose views show tasks and dependencies under their own IDs: each task bound to its graph node, timeline bar and row and, per assignment, its load range; each dependency to its graph edge and timeline dependency. Spread it with bindings of your own into `useLinkedSelection`.
+
 ### Changed
 
+- The production demo (`/demo/` and the production showcase) is now one linked, saving app built only on existing public APIs. The planning and lot flow views share one `useLinkedSelection`: an operation selected in the graph, the Gantt chart or the load chart is the matching lot step in the lot flow, and a step selected there is the operation in planning, across tab switches. The approval workflow and the schedule sheet have unrelated data and keep their own selection. Every tab saves through one app-wide `useEditTransaction` against the mock server, with a save bar that shows saving, rejected, conflicting and unanswered saves, app-wide undo and redo, and a choice of the server's next answer.
 - The scheduling guide now states how ALAP subtasks treat links from their summary: an FS or FF link limits their finish, and an SS or SF link limits the start of each subtask whose earliest start is the summary's earliest start, as in the backward pass. The behaviour is unchanged.
 
 ### Fixed

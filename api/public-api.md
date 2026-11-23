@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (275)
+## Entry `.`: runtime exports (276)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -223,6 +223,7 @@ in public signatures, so changes to them can break consumers too.
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
 - `summarizeTimelineRows: function`
+- `taskViewBindings: function`
 - `timeBucketIndex: function`
 - `timeBucketIndexRange: function`
 - `timeTicks: function`
@@ -283,7 +284,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (641)
+## Entry `.`: type-only exports (642)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -760,6 +761,7 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
 - `TaskBoardPosition`
+- `TaskViewBindingsInput`
 - `TimeBucket`
 - `TimeBucketAggregateOptions`
 - `TimeBucketCell`
@@ -927,7 +929,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (259)
+## Entry `./core`: runtime exports (260)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -1135,6 +1137,7 @@ in public signatures, so changes to them can break consumers too.
 - `snapGraphPoint: function`
 - `splitDanglingLinks: function`
 - `summarizeTimelineRows: function`
+- `taskViewBindings: function`
 - `timeBucketIndex: function`
 - `timeBucketIndexRange: function`
 - `timeTicks: function`
@@ -1189,7 +1192,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (601)
+## Entry `./core`: type-only exports (602)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1636,6 +1639,7 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
 - `TaskBoardPosition`
+- `TaskViewBindingsInput`
 - `TimeBucket`
 - `TimeBucketAggregateOptions`
 - `TimeBucketCell`
@@ -1834,6 +1838,7 @@ lodThreshold?: number;
 matchIds?: ReadonlySet<string>;
 minNodeSize?: GraphNodeSize;
 nodes: readonly N[];
+onIdleEscape?: (event: KeyboardEvent) => void;
 options?: GraphLayeredLayoutOptions;
 parallelEdgeSpacing?: number;
 pools?: readonly GraphSwimlanePoolBand[];
@@ -1988,6 +1993,7 @@ minDuration?: number;
 multiSelect?: boolean;
 nonWorkingPeriods?: readonly TimeRange[];
 now?: number;
+onIdleEscape?: (event: KeyboardEvent) => void;
 pinchZoom?: boolean;
 pixelsPerUnit?: number;
 progressEditable?: boolean;
@@ -7675,6 +7681,27 @@ interface TaskBoardPosition {
 }
 ```
 
+### `TaskViewBindingsInput`
+
+```ts
+interface TaskViewBindingsInput {
+    tasks: readonly {
+        id: string;
+        start?: number;
+        end?: number;
+    }[];
+    assignments?: readonly {
+        taskId: string;
+        resourceId: string;
+    }[];
+    dependencies?: readonly {
+        id: string;
+    }[];
+    taskKind?: string;
+    dependencyKind?: string;
+}
+```
+
 ### `TimeBucket`
 
 ```ts
@@ -10890,6 +10917,12 @@ function splitDanglingLinks<L>(links: readonly L[], present: {
 
 ```ts
 function summarizeTimelineRows(tree: ReturnType<typeof createTimelineRowTree>, bars: readonly TimelineBar[]): Map<string, TimelineSummary>;
+```
+
+### `taskViewBindings`
+
+```ts
+function taskViewBindings(input: TaskViewBindingsInput): ViewBinding[];
 ```
 
 ### `timeBucketIndex`

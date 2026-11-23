@@ -714,13 +714,13 @@ const selectedItem = computed(() => selectedItemId.value ? items.value.get(selec
     </div>
 
     <div class="sc-bom-bottom">
-      <div class="sc-bom-canvas" @keydown.esc="clearGraphSelection">
+      <div class="sc-bom-canvas">
         <NetworkGraph
           ref="graph" :nodes="graphNodes" :edges="graphEdges" unstyled-node-slots :height="460"
           :options="{ direction: 'LR', nodeWidth: 184, nodeHeight: 44, columnGap: 72, rowGap: 12 }"
           :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="graphHighlightedNodes"
           :highlighted-edge-ids="graphHighlightedEdges" :dimmed-ids="dimmedIds" :labels="{ ...labels.graph, region: t({ en: 'Item structure', ja: '品目の構成' }) }"
-          @target-activate="onGraphActivate" @background-click="clearGraphSelection"
+          @target-activate="onGraphActivate" @background-click="clearGraphSelection" @idle-escape="clearGraphSelection"
         >
           <template #node="{ node, box, selected, highlighted }">
             <g class="sc-bom-node" :class="{ 'sc-bom-is-selected': selected, 'sc-bom-is-on-path': highlighted, 'sc-bom-is-product': node.data.product }" :data-change="node.data.change">

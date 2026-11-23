@@ -146,17 +146,6 @@ function clearSelection() {
   selected.value = new Set()
   status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
 }
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
 </script>
 
 <template>
@@ -166,14 +155,13 @@ function onChartEscape(event: KeyboardEvent) {
       en: 'Pastel status pills with sticky labels, milestone diamonds and glyph and avatar rows from the bar, row and legend slots, with quarter and month bands, a Today marker, tone variables and restyled vw- classes.',
       ja: 'ラベルが追従するパステル調のステータス、マイルストーンのひし形、アイコンとアバターの行をバー・行・凡例のスロットで描き、四半期と月の帯、今日のマーカー、トーン変数、装飾し直した vw- クラスを組み合わせています。',
     }) }}</p>
-    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
       :rows="rows" :bars="bars" :range="range" :pixels-per-unit="14 / day" :tick-steps="[7 * day, 14 * day, 28 * day]"
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :markers="markers" :row-height="rowHeight"
       :height="chartHeight" :selected-ids="selected" :collapsed-ids="collapsed" show-summaries
       :labels="{ ...labels.gantt, region: t({ en: 'Product roadmap timeline', ja: 'プロダクトロードマップのタイムライン' }), rows: t({ en: 'Projects', ja: 'プロジェクト' }) }"
       sticky-band-labels @update:collapsed-ids="collapsed = $event" @edit="onEdit" @select="onSelect"
-      @background-click="clearSelection" @edit-cancel="noteEditCancel"
+      @background-click="clearSelection" @idle-escape="clearSelection"
     >
       <template #legend>
         <ul class="sc-roadmap-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
@@ -220,7 +208,6 @@ function onChartEscape(event: KeyboardEvent) {
         </template>
       </template>
     </GanttChart>
-    </div>
     <p class="sc-roadmap-status" role="status">{{ status }}</p>
   </section>
 </template>

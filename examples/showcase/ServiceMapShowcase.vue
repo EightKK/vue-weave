@@ -354,10 +354,6 @@ function selectService(id: string | undefined) {
     ja: `${info.item.label}: ${healthText[info.metric.health]} · ${formatRps(info.metric.rps)} rps · p95 ${formatMs(info.metric.p95)} ms · エラー ${formatPct(info.metric.err)} · 呼び出し元 ${plural(info.callers.length, 'caller')}、依存先 ${plural(info.callees.length, 'dependency')}。`,
   })
 }
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // The panel's close button, a click on the empty map and Escape in it clear the selection.
 function clearSelection() {
   selectedId.value = undefined
@@ -468,13 +464,13 @@ onBeforeUnmount(() => {
       <button type="button" :disabled="scenario.failoverAt !== undefined" @click="failover">{{ t({ en: 'Failover to eu-west', ja: 'eu-west へフェイルオーバー' }) }}</button>
       <button type="button" @click="reset">{{ t({ en: 'Reset', ja: 'リセット' }) }}</button>
     </div>
-    <div class="sc-svc-stage" @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
+    <div class="sc-svc-stage">
       <NetworkGraph
         ref="graph" :selected-id="selectedId" unstyled-node-slots class="sc-svc-graph" :nodes="nodes" :edges="calls" :groups="groups" :layout="layoutMap"
         height="clamp(380px, 50vw, 660px)" background="dots" collapsible-groups :collapsed-group-ids="collapsed"
         :highlighted-node-ids="blast.nodeIds" :highlighted-edge-ids="blast.edgeIds" :dimmed-ids="dimmedIds"
         :labels="{ ...labels.graph, region: t({ en: 'Service topology', ja: 'サービス構成' }) }" @update:collapsed-group-ids="commitCollapse" @update:selected-id="selectService"
-        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
+        @background-click="clearSelection" @idle-escape="clearSelection"
       >
         <template #group="{ group, box, depth }">
           <g :class="['sc-svc-group', regionIds.has(group.id) ? 'sc-svc-region' : 'sc-svc-ns']">

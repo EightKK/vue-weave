@@ -428,6 +428,34 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
   expect(errors).toEqual([])
 })
 
+test('graph idle-escape reports an Escape that cancels no gesture, but not one that cancels a drag or closes the label editor', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&draggable=1&gestures=1&labels=1')
+  const idle = page.getByRole('status', { name: 'Idle escapes' })
+  const node = page.getByRole('button', { name: 'N0002', exact: true })
+  await node.focus()
+  await node.press('Escape')
+  await expect(idle).toHaveText('1')
+
+  // Escape during a drag ends the gesture as cancelled and is not idle.
+  await pressAndMove(page, node, 30, 12)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('status', { name: 'Gesture events' })).toHaveText('start node-drag pointer | end node-drag pointer cancelled')
+  await page.mouse.up()
+  await expect(idle).toHaveText('1')
+
+  // Escape in the label editor discards the text and stays in the editor's hands.
+  await node.press('F2')
+  const editor = page.getByRole('textbox', { name: /^Edit label of/ })
+  await expect(editor).toBeFocused()
+  await editor.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(idle).toHaveText('1')
+  await node.press('Escape')
+  await expect(idle).toHaveText('2')
+  expect(errors).toEqual([])
+})
+
 test('graph resize, waypoint and reconnect drags end cancelled without a proposal on Escape, new source data and pointercancel', async ({ page }) => {
   const errors = pageErrors(page)
   await openNetworkFixture(page, '?nodes=6&draggable=1&resizable=1&editableedges=1&reconnectable=1&gestures=1')
