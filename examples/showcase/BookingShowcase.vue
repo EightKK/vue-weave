@@ -112,8 +112,8 @@ const selectedIds = ref<ReadonlySet<string>>(new Set())
 const collapsedFloors = ref<ReadonlySet<string>>(new Set())
 const zoom = ref(1)
 const status = ref(t({
-  en: 'Drag a stay, or focus it and use the arrow keys: Left and Right move it by a night, Shift and Alt change check-out and check-in, Up and Down change the room.',
-  ja: '宿泊をドラッグするか、フォーカスして矢印キーを使います。左右で1泊ずつ移動、Shift と Alt でチェックアウトとチェックインを変更、上下で客室を変えます。',
+  en: 'Drag a stay, or focus it and use the arrow keys: Left and Right move it by a night, Shift and Alt change check-out and check-in, Up and Down change the room. Click empty chart space or press Escape to clear the selection.',
+  ja: '宿泊をドラッグするか、フォーカスして矢印キーを使います。左右で1泊ずつ移動、Shift と Alt でチェックアウトとチェックインを変更、上下で客室を変えます。何もない所をクリックするか Escape で選択を解除します。',
 }))
 
 const infoOf = (bar: TimelineBar<StayInfo>) => bar.data ?? { status: 'confirmed' as const }
@@ -206,6 +206,23 @@ function select(id: string, selection: TimelineSelectDetail) {
     ja: `${bar.label} · ${roomNumber(bar.rowId)}号室 · ${formatTime(bar.start)}–${formatTime(bar.end)} · ${detail} · ${statusLabels[info.status]}。`,
   })
 }
+// A click on empty chart space or Escape in the chart clears the selection.
+function clearSelection() {
+  if (!selectedIds.value.size) return
+  selectedIds.value = new Set()
+  status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
+// not typed into a field clears the selection.
+let escapeCancelledEdit = false
+function startChartEscape() { escapeCancelledEdit = false }
+function noteEditCancel() { escapeCancelledEdit = true }
+function onChartEscape(event: KeyboardEvent) {
+  const cancelled = escapeCancelledEdit
+  escapeCancelledEdit = false
+  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
+  clearSelection()
+}
 // A stay that began before the visible range keeps its text in view: the part before the axis start is skipped.
 const hiddenLead = (shown: TimeRange) => shown.start < range.start ? `${(range.start - shown.start) / day * pixelsPerDay * zoom.value}px` : undefined
 function onZoom(state: TimelineZoomState) {
@@ -235,6 +252,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
       </dl>
     </div>
 
+    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
       v-model:collapsed-ids="collapsedFloors" :rows="rows" :bars="stays" :range="range" :pixels-per-unit="pixelsPerDay / day"
       :tick-steps="[day]" :snap="day" :min-duration="day" :edit-bounds="editBounds" :format-time="formatTime"
@@ -242,6 +260,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
       :row-height="48" height="auto" row-draggable :validate-edit="validateEdit"
       :labels="{ ...labels.gantt, region: t({ en: 'Room booking calendar', ja: '客室予約カレンダー' }), rows: t({ en: 'Rooms', ja: '客室' }) }"
       sticky-band-labels @edit="applyEdit" @edit-rejected="reject" @select="select" @zoom-change="onZoom"
+      @background-click="clearSelection" @edit-cancel="noteEditCancel"
     >
       <template #legend>
         <ul class="sc-booking-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
@@ -290,6 +309,7 @@ const legend: { status: Status; label: string }[] = (['confirmed', 'checked-in',
         </span>
       </template>
     </GanttChart>
+    </div>
     <p class="sc-booking-status" role="status">{{ status }}</p>
   </section>
 </template>

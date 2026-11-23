@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { GanttChart, useEditHistory, type TimelineBar, type TimelineEdit, type ViewTargetEvent } from '../../src'
 import ProcessGraph from './ProcessGraph.vue'
 import CodePanel from './CodePanel.vue'
-import type { Copy } from './copy'
+import { copy, type Copy } from './copy'
 import { excerpt } from './sections'
 import { calculatePlan, clock, deadline, displayRange, downstreamEdits, hour, links, maintenance, proposeStart, range, resourceIds, taskIds, type Plan, type Strategy, type TaskId } from './plan'
 import planSource from './plan.ts?raw'
@@ -13,6 +13,7 @@ const props = defineProps<{ text: Copy }>()
 const initial: Plan = { strategy: 'original', starts: {} }
 const history = useEditHistory(initial)
 const draft = ref<Plan>()
+// The selected task; an empty string means that nothing is selected.
 const selected = ref('cutA')
 const codeOpen = ref(false)
 const status = ref<'rejected' | 'adopted' | 'undone'>()
@@ -25,8 +26,10 @@ const loadRows = computed(() => resourceIds.map(id => ({ id, label: props.text.r
 const highlighted = computed(() => new Set(changed.value))
 const loadFocus = computed(() => schedule.value.load.filter(segment => segment.taskIds.includes(selected.value))
   .map(({ resourceId, start, end }) => ({ view: 'load' as const, resourceId, start, end })))
-const selectedTask = computed(() => schedule.value.byId.get(selected.value)!)
+const selectedTask = computed(() => schedule.value.byId.get(selected.value))
 const selectedResource = computed(() => schedule.value.resourceFor[selected.value as TaskId])
+const selectedIds = computed(() => new Set(selected.value ? [selected.value] : []))
+const local = (en: string, ja: string) => props.text === copy.ja ? ja : en
 const nodes = computed(() => rows.value.map(row => ({ ...row, detail: displayRange(schedule.value.byId.get(row.id)!) })))
 const positions = new Map([
   ['prep', { x: 0, y: 82 }], ['cutA', { x: 219, y: 24 }], ['cutB', { x: 219, y: 140 }],
@@ -81,6 +84,22 @@ function activateLoad(event: ViewTargetEvent) {
   const { resourceId, start, end } = event.target
   const match = schedule.value.load.find(item => item.resourceId === resourceId && item.start === start && item.end === end)
   if (match?.taskIds[0]) selected.value = match.taskIds[0]
+}
+
+// A click on empty chart space or Escape in the chart clears the selection.
+function clearSelection() {
+  selected.value = ''
+}
+// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
+// not typed into a field clears the selection.
+let escapeCancelledEdit = false
+function startChartEscape() { escapeCancelledEdit = false }
+function noteEditCancel() { escapeCancelledEdit = true }
+function onChartEscape(event: KeyboardEvent) {
+  const cancelled = escapeCancelledEdit
+  escapeCancelledEdit = false
+  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
+  clearSelection()
 }
 
 function dismiss() {
@@ -141,17 +160,19 @@ const examples = computed(() => [
 
       <section class="production-panel">
         <div class="production-heading"><h2>{{ text.gantt }}</h2><code>GanttChart</code></div>
+        <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
         <GanttChart :rows="rows" :bars="bars" :range="range" :dependencies="schedule.dependencies"
-          :selected-ids="new Set([selected])" :highlighted-bar-ids="highlighted" :snap="hour" :tick-steps="[2 * hour, 4 * hour]"
+          :selected-ids="selectedIds" :highlighted-bar-ids="highlighted" :snap="hour" :tick-steps="[2 * hour, 4 * hour]"
           :label-width="106" :pixels-per-unit="42 / hour" :height="230" :row-height="34" :format-time="clock"
           :markers="[{ id: 'shipping', time: deadline, label: text.deadline }]"
           :labels="{ ...text.labels.gantt, region: text.gantt, editHint: text.planHelp, zoom: text.zoom, zoomIn: text.zoomIn, zoomOut: text.zoomOut }"
           :cascade="cascade" :validate-edit="validate" :validate-edits="changes => validate(changes[0]!)" @select="id => selected = id"
           @edit="change => commitEdits([change])" @edits="commitEdits"
-          @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'">
+          @edit-rejected="status = 'rejected'" @edits-rejected="status = 'rejected'" @background-click="clearSelection" @edit-cancel="noteEditCancel">
           <template #row-heading>{{ text.task }}</template>
         </GanttChart>
-        <p class="production-caption">{{ text.planHelp }}</p>
+        </div>
+        <p class="production-caption">{{ text.planHelp }} {{ local('Click empty chart space or press Escape to clear the selection.', '何もない所をクリックするか Escape で選択を解除します。') }}</p>
       </section>
 
       <section class="production-panel">
@@ -193,12 +214,15 @@ const examples = computed(() => [
       <section class="production-panel">
         <div class="production-heading"><h2>{{ text.details }}</h2></div>
         <div class="production-content">
-          <strong>{{ text.tasks[selected as TaskId] }}</strong>
-          <dl><dt>{{ text.schedule }}</dt><dd>{{ displayRange(selectedTask) }}</dd><dt>{{ text.resource }}</dt><dd>{{ text.resources[selectedResource] }}</dd></dl>
-          <div class="production-actions">
-            <button type="button" :aria-label="text.early" @click="move(selected as TaskId, selectedTask.start - hour)">−1{{ text.hours }}</button>
-            <button type="button" :aria-label="text.later" @click="move(selected as TaskId, selectedTask.start + hour)">+1{{ text.hours }}</button>
-          </div>
+          <template v-if="selectedTask">
+            <strong>{{ text.tasks[selected as TaskId] }}</strong>
+            <dl><dt>{{ text.schedule }}</dt><dd>{{ displayRange(selectedTask) }}</dd><dt>{{ text.resource }}</dt><dd>{{ text.resources[selectedResource] }}</dd></dl>
+            <div class="production-actions">
+              <button type="button" :aria-label="text.early" @click="move(selected as TaskId, selectedTask.start - hour)">−1{{ text.hours }}</button>
+              <button type="button" :aria-label="text.later" @click="move(selected as TaskId, selectedTask.start + hour)">+1{{ text.hours }}</button>
+            </div>
+          </template>
+          <p v-else class="production-caption">{{ local('Select an operation in the graph or the chart to see its details.', 'グラフかチャートで作業を選ぶと、その詳細を表示します。') }}</p>
           <p v-if="changed.length" class="production-caption">{{ text.affected }} · {{ changed.map(id => text.tasks[id as TaskId]).join(' / ') }}</p>
           <p v-if="status" role="status" class="production-caption">{{ text[status] }}</p>
         </div>

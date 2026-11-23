@@ -408,6 +408,24 @@ watch(selection, ids => {
   if (origin) selectedTaskId.value = origin.taskId
 })
 const selectedTask = computed(() => model.value.tasks.find(item => item.id === selectedTaskId.value))
+// A click on empty chart space or Escape in the chart clears the selection, so the inspector shows its empty state.
+function clearSelection() {
+  if (!selection.value.size && selectedTaskId.value === undefined) return
+  selection.value = new Set()
+  selectedTaskId.value = undefined
+  notice.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
+// not typed into a field clears the selection.
+let escapeCancelledEdit = false
+function startChartEscape() { escapeCancelledEdit = false }
+function noteEditCancel() { escapeCancelledEdit = true }
+function onChartEscape(event: KeyboardEvent) {
+  const cancelled = escapeCancelledEdit
+  escapeCancelledEdit = false
+  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
+  clearSelection()
+}
 const inspectorFields: InspectorField[] = [
   { label: t({ en: 'Duration', ja: '期間' }), spec: { id: 'duration', kind: 'duration', durationBasis: 'elapsed', unitSize: hour, unitLabel: t({ en: 'h', ja: '時間' }), required: true, min: quantum, get: (item: ScheduleTask) => item.duration } },
   { label: t({ en: 'Leveling priority', ja: '平準化の優先度' }), spec: { id: 'priority', kind: 'number', integer: true, get: (item: ScheduleTask) => item.priority ?? 0 } },
@@ -477,13 +495,15 @@ const summaryDates = computed(() => current.value.plan.ok ? t({ en: 'Finish ', j
     </div>
     <div class="rp-layout">
       <div class="rp-main">
+        <div class="rp-chart" @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
         <GanttChart ref="chart" :rows="projection.rows" :bars="projection.bars" :dependencies="projection.dependencies" :lane-count="projection.laneCount" :range="range"
           :format-time="formatTime" :height="360" :pixels-per-unit="60 / hour" row-draggable droppable v-model:selected-ids="selection" :highlighted-bar-ids="highlighted"
           :load-rows="loadRows" :load-segments="current.load" :labels="{ ...labels.gantt, region: t({ en: 'Resource plan', ja: 'リソースの計画' }), rows: t({ en: 'Resource', ja: 'リソース' }) }" @edit="onEdit" @bar-drop="onDrop" @select="id => selection = new Set([id])"
-          @edit-rejected="(_edit, reason) => notice = reason">
+          @edit-rejected="(_edit, reason) => notice = reason" @background-click="clearSelection" @edit-cancel="noteEditCancel">
           <template #row-heading>{{ t({ en: 'Resource', ja: 'リソース' }) }}</template>
-          <template #legend><span class="hint">{{ t({ en: 'Left and Right move a task in time; Up and Down move it to another resource row. Both changes are previewed before they apply.', ja: '左右キーでタスクの時間を、上下キーで別のリソースの行へ動かします。どちらの変更も適用前にプレビューします。' }) }}</span></template>
+          <template #legend><span class="hint">{{ t({ en: 'Left and Right move a task in time; Up and Down move it to another resource row. Both changes are previewed before they apply. Click empty chart space or press Escape to clear the selection.', ja: '左右キーでタスクの時間を、上下キーで別のリソースの行へ動かします。どちらの変更も適用前にプレビューします。何もない所をクリックするか Escape で選択を解除します。' }) }}</span></template>
         </GanttChart>
+        </div>
         <div class="summary" role="status" :aria-label="t({ en: 'Plan summary', ja: '計画の概要' })">
           <strong>{{ t({ en: `Calculated with ${current.name}.`, ja: `${current.name} で計算。` }) }}</strong> {{ summaryDates }}{{ t({ en: '. ', ja: '。' }) }}{{ capacitySummary(current) }}
           <span v-if="current.name === 'levelResources'">{{ t({ en: ` levelResources ignores a task's ALAP mode.`, ja: ' levelResources はタスクの ALAP 指定を無視します。' }) }}</span>
@@ -524,6 +544,7 @@ const summaryDates = computed(() => current.value.plan.ok ? t({ en: 'Finish ', j
 <style scoped>
 .rp-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; align-items: start; }
 .rp-main, .rp-side { display: grid; gap: 10px; min-width: 0; }
+.rp-chart { min-width: 0; }
 .summary { font-size: 12px; border: 1px solid var(--vw-border, #d9e4ec); border-radius: 6px; padding: 7px 10px; }
 .preview { border: 2px solid var(--vw-accent, #245e96); border-radius: 8px; padding: 10px; font-size: 12px; margin: 0; }
 .preview h3 { margin: 0 0 4px; font-size: 14px; }

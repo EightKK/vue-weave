@@ -58,9 +58,10 @@ const active = computed(() => presets.value.find(preset => preset.id === level.v
 // A long date for the status line, from the same cached Intl formatters.
 const longDate = computed(() => intlTimeFormatter({ locale: locale.value, timeZone, format: { dateStyle: 'full' } }))
 const status = ref(t({
-  en: 'Pick a zoom level or a language. Arrow keys move a focused bar by one snap step.',
-  ja: '表示単位か言語を選んでください。矢印キーでフォーカス中のバーを1スナップ分動かせます。',
+  en: 'Pick a zoom level or a language. Arrow keys move a focused bar by one snap step. Click empty chart space or press Escape to clear the selection.',
+  ja: '表示単位か言語を選んでください。矢印キーでフォーカス中のバーを1スナップ分動かせます。何もない所をクリックするか Escape で選択を解除します。',
 }))
+const selectedIds = ref<ReadonlySet<string>>(new Set())
 
 function describe(bar: TimelineBar) {
   return `${bar.label}: ${longDate.value(bar.start)} – ${longDate.value(bar.end)}`
@@ -72,7 +73,26 @@ function onEdit(change: TimelineEdit) {
 }
 function onSelect(id: string) {
   const bar = bars.value.find(entry => entry.id === id)
-  if (bar) status.value = describe(bar)
+  if (!bar) return
+  selectedIds.value = new Set([id])
+  status.value = describe(bar)
+}
+// A click on empty chart space or Escape in the chart clears the selection.
+function clearSelection() {
+  if (!selectedIds.value.size) return
+  selectedIds.value = new Set()
+  status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
+}
+// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
+// not typed into a field (such as the language select in the legend) clears the selection.
+let escapeCancelledEdit = false
+function startChartEscape() { escapeCancelledEdit = false }
+function noteEditCancel() { escapeCancelledEdit = true }
+function onChartEscape(event: KeyboardEvent) {
+  const cancelled = escapeCancelledEdit
+  escapeCancelledEdit = false
+  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
+  clearSelection()
 }
 </script>
 
@@ -88,10 +108,12 @@ function onSelect(id: string) {
       language, with highlighted ranges from <code>markerRanges</code>: a company-wide code freeze and holidays that close
       single offices.
     </p>
+    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
-      :rows="rows" :bars="bars" :range="range" :zoom-presets="presets" :zoom-preset="active.id" :format-time="active.formatTime"
+      :rows="rows" :bars="bars" :range="range" :selected-ids="selectedIds" :zoom-presets="presets" :zoom-preset="active.id" :format-time="active.formatTime"
       :marker-ranges="markerRanges" :row-height="48" :height="260" :labels="{ ...labels.gantt, region: t({ en: 'Calendar views timeline', ja: 'カレンダー表示のタイムライン' }), rows: t({ en: 'Teams', ja: 'チーム' }) }"
       sticky-band-labels @update:zoom-preset="level = $event" @edit="onEdit" @select="onSelect"
+      @background-click="clearSelection" @edit-cancel="noteEditCancel"
     >
       <template #legend>
         <label class="sc-calendar-locale">{{ t({ en: 'Language', ja: '言語' }) }}
@@ -99,6 +121,7 @@ function onSelect(id: string) {
         </label>
       </template>
     </GanttChart>
+    </div>
     <p class="sc-calendar-status" role="status">{{ status }}</p>
   </section>
 </template>
