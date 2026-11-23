@@ -1,6 +1,6 @@
 // GanttChart editing: keyboard row moves, context menus, creating bars by pointer, touch and keyboard, and indenting,
 // outdenting and dragging rows.
-import { expect, test, ganttRow, openGanttFixture, openTimelineEditing, pageErrors, pressAndMove, pressAndMoveTo, touch, type Page, openExample } from './support'
+import { expect, test, ganttRow, openGanttFixture, openTimelineEditing, pageErrors, pressAndMove, pressAndMoveTo, touch, type Page, openExample, realTouchChromiumOnly } from './support'
 
 /** Pixel positions in the timeline editing demo, measured from Checkout UI (10:00–14:00 in the Web team row, 115 px per hour). */
 async function editingGeometry(chart: ReturnType<Page['getByRole']>, rtl = false) {
@@ -247,7 +247,8 @@ test('gantt create drag follows the visual direction in right-to-left charts and
   expect(errors).toEqual([])
 })
 
-test('gantt create by touch: a tap proposes a bar and the second touch of a pinch cancels the gesture', async ({ page }) => {
+test('gantt create by touch: a tap proposes a bar and the second touch of a pinch cancels the gesture', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const { errors, chart, status } = await openTimelineEditing(page)
   const { at, row } = await editingGeometry(chart)
   const cdp = await page.context().newCDPSession(page)

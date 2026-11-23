@@ -149,6 +149,10 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
   for (const search of ['?constraints=1', '?constraints=1&interactions=1&pinch=1']) {
     const { chart, out } = await openGanttFixture(page, search)
     await allowSyntheticCapture(page)
+    // The pointer ID of the last press. The mouse pointer ID is not fixed across engines (Chromium uses 1), so the synthetic
+    // cancellation events reuse the one the press carried.
+    await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
+    const mousePointer = () => page.evaluate(() => (window as any).__pointerId as number)
     const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
     const element = (await finish.elementHandle())!
     const box = (await finish.boundingBox())!
@@ -180,8 +184,8 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
     // New bars from the parent, even equal ones, are new source data.
     await drag(() => page.getByRole('button', { name: 'Replace bars', exact: true }).dispatchEvent('click'))
     // The browser ends or takes the pointer.
-    await drag(() => element.dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
-    await drag(() => element.dispatchEvent('lostpointercapture', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    await drag(async () => element.dispatchEvent('pointercancel', { pointerId: await mousePointer(), pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    await drag(async () => element.dispatchEvent('lostpointercapture', { pointerId: await mousePointer(), pointerType: 'mouse', isPrimary: true, bubbles: true }))
     // Escape on the focused handle.
     await drag(() => page.keyboard.press('Escape'))
     await expect(out('Constraint edits')).toHaveText('0')
@@ -396,7 +400,10 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
 
   // A pointer connection dragged from one handle to another, and a keyboard connection armed and cancelled.
   const from = await centerOf(button('Start connection from N0000'))
-  const to = await centerOf(button('Start connection from N0005'))
+  // N0003 rather than a node further right: after the zoom above, the last nodes can lie beyond the right edge of the
+  // viewport, where Firefox does not deliver synthetic mouse events at all.
+  const to = await centerOf(button('Start connection from N0003'))
+  expect(to.x).toBeLessThan(page.viewportSize()!.width)
   await pressAndMoveTo(page, from, to, 5)
   await expect(log).toHaveText('start connect pointer')
   await page.mouse.up()

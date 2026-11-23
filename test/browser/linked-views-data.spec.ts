@@ -371,7 +371,12 @@ test('linked views: the context toolbar follows the selected node and hides for 
   // A node hidden by a collapsed group has no on-screen rectangle: the toolbar goes away.
   await node('Cut order A').click()
   await expect(toolbar).toBeVisible()
-  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  // The toolbar floats above the selected node, and where its text is wider (Firefox and WebKit fonts) it covers the
+  // group's collapse button, so the button is used from the keyboard. Focusing it keeps the selection and the toolbar.
+  const collapse = demo.getByRole('button', { name: 'Collapse group Cutting cell' })
+  await collapse.focus()
+  await expect(toolbar).toBeVisible()
+  await collapse.press('Enter')
   await expect(toolbar).toBeHidden()
   await expect(summary).toContainText('Selected in graph: Cut order A')
   expect(errors).toEqual([])
@@ -636,7 +641,12 @@ test('linked views: the context toolbar keeps its size and tracks the target rec
   // A target hidden inside a collapsed group (no rectangle at all) hides the toolbar too.
   await node('Cut order A').click()
   await expect(toolbar).toBeVisible()
-  await demo.getByRole('button', { name: 'Collapse group Cutting cell' }).click()
+  // The toolbar floats above the selected node, and where its text is wider (Firefox and WebKit fonts) it covers the
+  // group's collapse button, so the button is used from the keyboard. Focusing it keeps the selection and the toolbar.
+  const collapse = demo.getByRole('button', { name: 'Collapse group Cutting cell' })
+  await collapse.focus()
+  await expect(toolbar).toBeVisible()
+  await collapse.press('Enter')
   await expect(toolbar).toBeHidden()
   expect(errors).toEqual([])
 })

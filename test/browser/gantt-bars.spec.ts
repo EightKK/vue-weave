@@ -1,7 +1,7 @@
 // GanttChart editing: bar selection, moves and resizes, dependencies and lag, progress, constraints, deletion and
 // rejected proposals.
 import {
-  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
+  expect, test, centerOf, dragBy, evaluateEach, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
   pressAndMove, pressAndMoveTo, releaseLine,
 } from './support'
 
@@ -86,7 +86,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
   const segments = cutting.locator('.vw-gantt-segment')
   await expect(segments).toHaveCount(2)
-  const left = () => segments.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().x))
+  const left = () => evaluateEach(segments, element => element.getBoundingClientRect().x)
   const before = await left()
 
   const box = (await cutting.boundingBox())!
@@ -365,9 +365,11 @@ test('gantt constraint markers describe their bars and their handles drag, snap 
   await expect(out('Constraint edits')).toHaveText('1')
   await expect(finish).toHaveAttribute('aria-valuetext', '3')
   await expect(finish).toBeFocused()
-  // A drag is clamped to editBounds (here the range, from 0).
+  // A drag is clamped to editBounds (here the range, from 0). The pointer stays inside the viewport (Firefox delivers no
+  // synthetic mouse events beyond it) and still goes more than 3 units left of the handle.
   handle = await centre()
-  await dragBy(page, handle, -400, 0)
+  expect(handle.x - 1).toBeGreaterThan(3 * 50)
+  await dragBy(page, handle, 1 - handle.x, 0)
   expect(await json()).toMatchObject({ after: 0, source: 'pointer' })
 
   // Escape ends a drag without a proposal.

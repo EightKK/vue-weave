@@ -1,5 +1,5 @@
 // TaskBoard: pointer and keyboard card moves, validation, cancellation and the selection shared with GanttChart.
-import { expect, test, boxCenter, dragBy, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page } from './support'
+import { expect, test, boxCenter, dragBy, dragTo, openExample, pageErrors, serveFixture, touch, type Locator, type Page, realTouchChromiumOnly } from './support'
 
 async function openTaskBoard(page: Page) {
   const errors = pageErrors(page)
@@ -191,7 +191,8 @@ test('a click on empty board space or Escape clears the selection, but a drag, a
   expect(errors).toEqual([])
 })
 
-test('a touch drag moves a card like a mouse drag', async ({ page }) => {
+test('a touch drag moves a card like a mouse drag', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const { errors, cell, card, status } = await openTaskBoard(page)
   const cdp = await page.context().newCDPSession(page)
   const from = (await card('Dashboard').boundingBox())!

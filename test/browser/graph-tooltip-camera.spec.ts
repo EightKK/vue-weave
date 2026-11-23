@@ -175,7 +175,9 @@ test('context-menu events report the target, chart point and source and suppress
     const shape = el as SVGPathElement
     const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
     const point = new DOMPoint(middle.x, middle.y).matrixTransform(shape.getScreenCTM()!)
-    return { x: point.x, y: point.y }
+    // Firefox delivers synthetic mouse events at whole pixels (truncated, so 207.99 becomes 207). The stroke is under
+    // 2 px wide, so aim at the nearest whole pixel, which stays on it.
+    return { x: Math.round(point.x), y: Math.round(point.y) }
   })
   // The drawn path is thin; without edgesSelectable there is no wider hit area.
   await page.mouse.click(path.x, path.y, { button: 'right' })

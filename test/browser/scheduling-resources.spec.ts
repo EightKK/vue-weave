@@ -1,5 +1,5 @@
 // The scheduling demo (calendars, constraints, status date, exports, network view, manual tasks, summary links, actuals, scenarios) and resource planning.
-import { expect, test, dragBy, dragTo, openExample, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
+import { expect, test, dragBy, dragTo, evaluateEach, openExample, pageErrors, pressAndMove, pressAndMoveTo, type Locator, type Page } from './support'
 
 async function openResourcePlanning(page: Page) {
   const errors = pageErrors(page)
@@ -25,7 +25,7 @@ async function openServerPlanning(page: Page) {
 
 /** Everything a planner sees of the accepted plan: every projected bar, every load segment and B's assignments. */
 async function planState(page: Page, chart: Locator) {
-  const names = (locator: Locator) => locator.evaluateAll(elements => elements.map(element => element.getAttribute('aria-label') ?? '').sort())
+  const names = async (locator: Locator) => (await evaluateEach(locator, element => element.getAttribute('aria-label') ?? '')).sort()
   const assigned = page.getByRole('group', { name: 'Assignments of Mold B', exact: true }).getByRole('button', { name: /^Unassign / })
   await expect(assigned.first()).toBeVisible()
   return {
@@ -174,7 +174,7 @@ test('the scheduling demo shades non-working time and describes critical, float,
   await expect(inspection).toHaveClass(/vw-segmented/)
   await expect(inspection.locator('.vw-gantt-segment')).toHaveCount(2)
   await expect(inspection.locator('.vw-gantt-segment-gap')).toHaveCount(1)
-  const [first, second] = await inspection.locator('.vw-gantt-segment').evaluateAll(elements => elements.map(element => element.getBoundingClientRect()))
+  const [first, second] = await evaluateEach(inspection.locator('.vw-gantt-segment'), element => element.getBoundingClientRect().toJSON() as DOMRect)
   expect(second!.x - (first!.x + first!.width)).toBeCloseTo(18, 0)
 
   // Two moves push packing past the dispatch cut-off: it is marked late and its work is split by the plant closure.
@@ -994,7 +994,7 @@ test('the scheduling demo shows plan, recorded actuals and remaining forecast fr
   await expect(page.getByTestId('actuals-finish')).toHaveText('11:00')
 
   // Without the upward revision welding is finished; successors move while every actual bar stays where it was.
-  const actualNames = () => chart.getByRole('button', { name: / · actual / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')))
+  const actualNames = () => evaluateEach(chart.getByRole('button', { name: / · actual / }), item => item.getAttribute('aria-label'))
   const before = await actualNames()
   expect(before).toHaveLength(3)
   await page.getByRole('checkbox', { name: 'Welding needs 3 h more', exact: true }).uncheck()

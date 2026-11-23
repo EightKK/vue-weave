@@ -1,6 +1,6 @@
 // TreeGrid: treegrid keyboard navigation inside and outside the rendered window, expansion and lazy children,
 // activation payloads and linked highlights, cell and spreadsheet editing, row structure proposals, undo and RTL.
-import { expect, test, openExample, pageErrors, serveFixture, type Page } from './support'
+import { expect, test, animationFrames, clipboardEvent, openExample, pageErrors, serveFixture, type Page } from './support'
 
 async function openTreeGrid(page: Page) {
   const errors = pageErrors(page)
@@ -39,13 +39,8 @@ const focusedVisible = (page: Page) => page.evaluate(() => {
     && box.left >= view.left + tree - 1 && box.right <= view.left + grid.clientWidth + 1
 })
 
-/** Sends clipboard events with a DataTransfer to the focused element and returns the copied text. */
-const clipboard = (page: Page, type: 'copy' | 'cut' | 'paste', text = '') => page.evaluate(([kind, value]) => {
-  const data = new DataTransfer()
-  if (value) data.setData('text/plain', value)
-  document.activeElement!.dispatchEvent(new ClipboardEvent(kind, { clipboardData: data, bubbles: true, cancelable: true }))
-  return data.getData('text/plain')
-}, [type, text] as const)
+/** Sends a clipboard event to the focused element and returns the copied text. */
+const clipboard = clipboardEvent
 
 /** Text of a data cell in the row with this header, by column index (aria-colindex). */
 const cellOf = (row: ReturnType<Awaited<ReturnType<typeof openTreeGrid>>['row']>, colindex: number) => row.locator(`[role="gridcell"][aria-colindex="${colindex}"]`)
@@ -377,7 +372,13 @@ test('row structure: create, delete with descendants, keyboard moves, rejection 
   await page.keyboard.press('Delete')
   await expect(status).toHaveText('Deleted Tools Pro with its rows.')
   await expect(header('Tools Pro')).toHaveCount(0)
+  // The grid renders a window of rows into reused elements. Bring Garden to the middle first and let the window settle,
+  // so the click needs no scrolling of its own (Firefox scrolls a target into view in more cases than Chromium, and
+  // after such a scroll the element under the pointer can show another row).
+  await header('Garden').evaluate(element => element.scrollIntoView({ block: 'center' }))
+  await animationFrames(page)
   await header('Garden').click()
+  await expect(status).toContainText('Activated Garden by pointer')
   await grid.getByRole('button', { name: 'Delete Garden', exact: true }).click()
   await expect(status).toHaveText('Rejected: Top-level categories cannot be deleted.')
   // The row action buttons add a child row.

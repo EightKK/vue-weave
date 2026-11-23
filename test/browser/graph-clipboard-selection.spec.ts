@@ -44,8 +44,10 @@ test('clipboard shortcuts propose copy, paste and duplicate with the focused or 
   const stage = (await page.getByLabel('Network graph', { exact: true }).boundingBox())!
   const pointer = { x: Math.round(stage.x + 300), y: Math.round(stage.y + 200) }
   await page.mouse.move(pointer.x, pointer.y)
-  await page.keyboard.press('Control+v')
+  // Read the chart point before the paste: the fixture writes the proposal into an inline status above the stage, and
+  // where that text wraps depends on the engine's font metrics, so the stage can move down a line after the paste.
   const atPointer = await page.evaluate(({ x, y }) => (window as any).__vw.graph().toGraphPoint(x, y), pointer)
+  await page.keyboard.press('Control+v')
   expect(await readJson(page, 'Last paste')).toEqual({ point: snapped(atPointer, 10) })
   await page.mouse.move(stage.x + 5, stage.y - 20)
   await page.keyboard.press('Control+v')

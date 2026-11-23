@@ -1,7 +1,8 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
 import {
-  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openExample, openGanttFixture, openGestureFixture,
+  expect, test, dragBy, evaluateEach, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openExample, openGanttFixture, openGestureFixture,
   openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
+  realTouchChromiumOnly,
 } from './support'
 
 async function recordWheelDefaults(page: Page) {
@@ -262,7 +263,8 @@ test('gantt zoom presets ignore the active preset and a controlled parent that d
   expect(errors).toEqual([])
 })
 
-test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page }) => {
+test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const { errors, chart } = await openTimelineEditing(page)
   const cdp = await page.context().newCDPSession(page)
   const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
@@ -757,7 +759,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const links = sprint.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
   await expect(links.first()).toBeAttached()
   expect(await links.count()).toBeGreaterThan(0)
-  for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
+  for (const d of await evaluateEach(links, path => path.getAttribute('d') ?? '')) expect(d).toMatch(/ Q /)
   expect(errors).toEqual([])
 })
 
@@ -801,10 +803,10 @@ test('tick labels of a compressed working-time axis never overlap; squeezed tick
   const labels = plan.locator('.vw-gantt-tick')
   await expect(labels.filter({ hasText: '09 Nov 08:00' })).toHaveCount(1)
   await expect(labels.filter({ hasText: '11 Nov 08:00' })).toHaveCount(1)
-  const boxes = await labels.evaluateAll(spans => spans.map(span => {
+  const boxes = (await evaluateEach(labels, span => {
     const rect = span.getBoundingClientRect()
     return { text: span.textContent ?? '', left: rect.left, right: rect.right }
-  }).sort((a, b) => a.left - b.left))
+  })).sort((a, b) => a.left - b.left)
   expect(boxes.length).toBeGreaterThan(1)
   for (let i = 1; i < boxes.length; i++) {
     expect(boxes[i]!.left, `${boxes[i - 1]!.text} overlaps ${boxes[i]!.text}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)

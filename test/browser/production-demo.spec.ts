@@ -1,4 +1,4 @@
-import { expect, test, dragBy, openExample, pageErrors, type Page } from './support'
+import { expect, test, clipboardEvent, dragBy, openExample, pageErrors, type Page } from './support'
 
 // The demo saves every edit through one useEditTransaction against a mock server, and each accepted save gets the next
 // version. Waiting for a version keeps a test from editing while the previous save is still in flight.
@@ -129,11 +129,7 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await page.getByRole('button', { name: 'Schedule sheet' }).click()
   const cell = (name: string) => page.getByRole('button', { name, exact: true })
   const status = page.getByRole('status', { name: 'Edit result' })
-  const paste = (value: string) => page.evaluate(text => {
-    const data = new DataTransfer()
-    data.setData('text/plain', text)
-    document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  }, value)
+  const paste = (value: string) => clipboardEvent(page, 'paste', value)
 
   // A pasted duration reschedules the task and its successors.
   await cell('Requirements · Duration 3d').click()
@@ -161,11 +157,7 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   // Ctrl+D fills the first row of the selection down, and a successful edit clears the message.
   await cell('Order parts · Resource Purchasing').click()
   await cell('Order parts · Resource Purchasing').press('Shift+ArrowDown')
-  const copied = await page.evaluate(() => {
-    const data = new DataTransfer()
-    document.activeElement!.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
-    return data.getData('text/plain')
-  })
+  const copied = await clipboardEvent(page, 'copy')
   expect(copied).toBe('Purchasing\r\nMachining')
   await cell('Build frame · Resource Machining').press('Control+d')
   await expect(cell('Build frame · Resource Purchasing')).toBeVisible()
@@ -253,11 +245,7 @@ test('the save bar reports rejected, conflicting and unanswered saves and undo s
   await page.goto('demo/')
   await page.getByRole('button', { name: 'Schedule sheet' }).click()
   const cell = (name: string) => page.getByRole('button', { name, exact: true })
-  const paste = (value: string) => page.evaluate(text => {
-    const data = new DataTransfer()
-    data.setData('text/plain', text)
-    document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  }, value)
+  const paste = (value: string) => clipboardEvent(page, 'paste', value)
   const saveStatus = page.getByRole('status', { name: 'Save status' })
   const server = page.getByLabel('Server answer')
 
