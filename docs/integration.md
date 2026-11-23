@@ -656,6 +656,61 @@ async function showInGraph(nodeId: string) {
 - A view of your own (a task table, a list, a diagnostics panel) links through entities instead of a view name: call `linked.selectEntities([{ kind: 'task', id }], { source: 'task-table' })` when the user selects in it, and render its own selected rows from `linked.selectedEntities`, which also follows selections made in the graph or the timeline. No view owns such a selection, so the graph and the Gantt chart only highlight the bound items and never receive them as `selectedIds`. Reporting the same entities with the same `source` again changes nothing and does not call `onSelect`, so a table that echoes its selection back cannot loop; an empty list clears the selection. `linked.selectionSource` tells which of your views made the current selection.
 - Planning diagnostics carry `EntityRef` targets, so a diagnostic list can select or reveal its tasks and resources through the same bindings. The reference list, inspector, diagnostics panel and context toolbar of the demo are in `examples/components/`; they are examples to copy and adapt, not part of the package.
 
+## A multi-view app: linked selection, saving and undo
+
+The production demo (`examples/production/`, served at `/demo/`) is a complete app on these parts: a planning tab with a process graph, a Gantt chart and a load chart, a lot flow tab with a second graph and a table, an approval workflow and a schedule sheet. Its wiring is in `workspace.ts`; the steps below follow it.
+
+**1. One document, one transaction.** Keep everything the user edits in one document and save it through one `useEditTransaction`, so saving, conflicts and undo cover every view. A change replaces the part of the document its view owns:
+
+```ts
+type AppChange =
+  | { area: 'plan'; plan: Plan }
+  | { area: 'approval'; flow: Flow }
+  | { area: 'sheet'; tasks: readonly Task[] }
+
+const transaction = useEditTransaction<AppDocument, AppChange>({
+  documentId: 'production', initialState: loaded.document, initialVersion: loaded.version,
+  adapter: {
+    validate(_document, changes) {
+      for (const change of changes) if (change.area === 'sheet' && !scheduleSheet(change.tasks).ok) return 'The sheet cannot be scheduled.'
+    },
+    apply(document, changes) {
+      let next = document
+      for (const change of changes) {
+        if (change.area === 'plan') next = { ...next, plan: change.plan }
+        else if (change.area === 'approval') next = { ...next, approval: change.flow }
+        else next = { ...next, sheet: change.tasks }
+      }
+      return next
+    },
+    save: (request, candidate) => server.save(request, candidate),
+  },
+})
+// Every view renders this: the candidate while it is saved, else the accepted document.
+const document = computed(() => transaction.candidateState.value ?? transaction.acceptedState.value)
+```
+
+Each view derives what it draws from `document` and proposes changes with `transaction.submit([change])`. Check a change with the view's own, localized messages before submitting (the schedule sheet schedules the candidate tasks and shows the cycle it would create); the adapter's `validate` is the last line of defence. Only one save runs at a time: a submit while saving resolves to `busy`, so tell the user, or disable the actions that submit until `status` is no longer `saving`.
+
+**2. One save bar.** Show `status`, `result` and `acceptedVersion` in one place, with app-wide Undo and Redo (`transaction.undo()` and `redo()`, disabled while saving). A `rejected` save leaves the accepted document as it was, so the views show it again. On `conflict`, fetch the latest document and pass it to `transaction.refresh(state, version)`; that resets the history. On `uncertain`, ask the server for the operation's result and pass it to `transaction.reconcile(result)`. The demo's save bar is `examples/components/SaveStatus.vue` with the mock server `examples/adapters/transactionStore.ts`, which can answer with each of these.
+
+Local state that depends on the document, such as an open proposal or a selected step, must follow undo, redo and refresh: the demo closes the plan proposal in its undo, redo and reload functions, and the approval tab moves its selection when an undo removes the selected step.
+
+**3. One linked selection.** Create one `useLinkedSelection` next to the transaction and give every view of the same entities its bindings. The planning operations are the steps of the lot in the lot flow, so the demo binds each operation to its planning node, bar, row and load (`taskViewBindings`) and to its lot flow node:
+
+```ts
+const linked = useLinkedSelection({ bindings: () => [
+  ...taskViewBindings({ tasks: [...schedule.value.byId.values()], taskKind: 'operation', assignments }),
+  ...taskIds.map((id): ViewBinding => ({ entity: { kind: 'operation', id }, target: { view: 'graph', kind: 'node', id: lotStepOf[id] } })),
+] })
+```
+
+Both graphs report as the `graph` view; this works because a node ID of one graph names the same entity, or nothing, in the other. Each graph passes the IDs of `linked.graph.value.selectedNodeIds` that are its own as its selection, and the lot table selects with `selectEntities` because it is not a component view. Detail panels read `linked.selectedEntities`, so the operation selected in planning is the step shown in the lot flow after a tab switch, and the other way round. Link only what is the same entity: the approval workflow and the schedule sheet show other data and keep their own selection.
+
+**4. Clearing.** Wire `background-click` and `idle-escape` of each component to `linked.clearSelection()`. Escape then cancels a drag first and clears the selection on the next press.
+
+The browser scenarios in `test/browser/production-demo.spec.ts` walk through it: a selection that follows a tab switch, a save that the server rejects, a conflict with another writer, a lost answer, and an undo from one tab that reverts an edit made in another.
+
 ## Search, sort and saved views
 
 Keep the source rows, bars and dependencies as they are and render the output of `projectTimelineView` or `useTimelineView(...).projection`. A search keeps each matching row with its ancestors, because a row array without a row's parent is invalid. Dependencies to hidden bars are removed from the displayed array; show `removedDependencyCount` and use `hiddenTargets` to offer a way to reveal the hidden bar. Sorting reorders siblings only. It does not change the business order or the WBS codes, which come from the original rows. Column filters (`TimelineViewState.filters`) keep the ancestors of matching rows like the search. GanttChart can offer both in its header: pass `sortable-columns` and `filterable-columns`, bind `sort` and `filters` to the view state and apply `update:sort` and `update:filters` with `setSort` and `setFilters` (see [Header sorting and filtering](api.md#header-sorting-and-filtering)); the chart never sorts or filters by itself. Turn a sort into a permanent order with a separate row move. Run scheduling, load and diagnostics on the full input. An application that shows the rows in its own tree table, without a chart, can call `projectTimelineRows` with the same view state: it applies the same search, filters, sort and collapsed-ID checks to the rows alone.
