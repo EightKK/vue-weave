@@ -305,6 +305,30 @@ test('touch taps select cells and the fill handle fills by touch', async ({ page
   expect(errors).toEqual([])
 })
 
+test('a keyboard cut clears the cells when the browser runs the copy but execCommand reports false (WebKit)', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { cell, events, clearEvents } = await openGanttSheetFixture(page)
+  // WebKit runs the copy event of execCommand('copy') from a cell that holds no text selection, and returns false.
+  await page.evaluate(() => {
+    document.execCommand = (command: string) => {
+      if (command !== 'copy') return false
+      const data = new DataTransfer()
+      document.activeElement!.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      ;(window as any).__vwCut = data.getData('text/plain')
+      return false
+    }
+  })
+  await clearEvents()
+  await cell('Gamma · Owner Cy').click()
+  await page.keyboard.press('Shift+ArrowDown')
+  await page.keyboard.press('Control+X')
+  expect(await page.evaluate(() => (window as any).__vwCut)).toBe('Cy\r\nDi')
+  await expect(cell('Gamma · Owner')).toBeVisible()
+  await expect(cell('Delta · Owner')).toBeVisible()
+  expect(only(await events(), 'sheet-edit').map(entry => (entry[1] as { action: string }).action)).toEqual(['clear'])
+  expect(errors).toEqual([])
+})
+
 test('collapsed rows stay out of the sheet, slots own their cells, read-only charts reject and RTL arrows follow the view', async ({ page }) => {
   const errors = pageErrors(page)
   const { chart, cell } = await openGanttSheetFixture(page)

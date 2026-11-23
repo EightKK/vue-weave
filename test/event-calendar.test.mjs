@@ -159,7 +159,8 @@ test('EventCalendar renders the week, the per-resource day and the month view on
   assert.match(week, /aria-label="Standup, Wed, Nov 11 09:00–09:30"/)
   assert.match(week, /aria-label="Offsite, Thu, Nov 12 – Fri, Nov 13, All day"/)
   // Plain spaces around the dash, whatever the ICU version (Node.js writes thin spaces), so the title hydrates in a browser.
-  assert.match(week, /<span class="vw-calendar-title">Nov 9 – 15, 2026<\/span>/)
+  // The pattern itself can differ between ICU builds (ja: Node.js and Firefox), so hydration accepts the browser's title.
+  assert.match(week, /<span class="vw-calendar-title" data-allow-mismatch="text">Nov 9 – 15, 2026<\/span>/)
   assert.match(week, /aria-label="Now 10:00"/)
   assert.match(week, /aria-live="polite"/)
   // Two overlapping events share the day column.

@@ -122,11 +122,14 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
     return formatSheetText(options.rows().slice(b.top, b.bottom + 1).map(({ row }) =>
       options.columns().slice(b.left, b.right + 1).map(col => text(row, col))))
   }
+  /** Set by `copy` when it wrote the selection, so a keyboard cut can tell that its copy happened. */
+  let copied = false
   function copy(event: ClipboardEvent) {
     const value = selectionText()
     if (value === undefined || !event.clipboardData) return
     event.clipboardData.setData('text/plain', value)
     event.preventDefault()
+    copied = true
   }
   function cut(event: ClipboardEvent) {
     copy(event)
@@ -270,9 +273,13 @@ export function useSheet<R extends TimelineRow>(options: SheetOptions<R>) {
       return
     }
     if (command && !event.altKey && key.toLowerCase() === 'x') {
-      // Browsers do not cut from a cell that is not editable: copy through the copy event, then clear.
+      // Browsers do not cut from a cell that is not editable: copy through the copy event, then clear. WebKit runs the
+      // copy event (and so `copy` above) but returns false from execCommand when nothing is selected as text, so a
+      // copy that `copy` reports counts as well.
       event.preventDefault()
-      if (document.execCommand('copy')) clear('keyboard')
+      copied = false
+      const executed = document.execCommand('copy')
+      if (executed || copied) clear('keyboard')
       return
     }
     if (command && !event.altKey && key.toLowerCase() === 'd') {
