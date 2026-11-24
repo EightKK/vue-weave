@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- NetworkGraph and `renderGraphSvg` centre the text of plain rectangle nodes on the node height, as they already did for outline shapes. Before, the title and detail lines sat at fixed offsets made for the default height of 58, so a shorter node (for example `nodeHeight: 30`) drew its text across or below its bottom edge, and a taller node drew it near the top. Output at height 58 is unchanged.
+- Documentation site examples: the option bars wrap whole controls onto a new line instead of breaking checkbox and button labels word by word, the Japanese linked-views and scenario graphs widen their nodes to fit the longer detail text, and the construction showcase keeps its milestone table and critical-path dates inside the panel on narrow screens.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { layoutLayeredGraph } from '@eightkk/vue-weave/core'
+import { layoutLayeredGraph, renderGraphSvg } from '@eightkk/vue-weave/core'
 import { NetworkGraph } from '@eightkk/vue-weave'
 import { renderComponent } from './helpers/ssr.mjs'
 
@@ -72,4 +72,17 @@ test('NetworkGraph renders RL and BT and keeps default output unchanged', async 
     assert.ok(!/NaN|Infinity/.test(html))
     assert.notEqual(html, base)
   }
+})
+
+test('rectangle node text is centred on the node height, unchanged at the default height', async () => {
+  const list = [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta', detail: 'second' }]
+  const links = edges(['a', 'b'])
+  const lines = html => [...html.matchAll(/<text x="13" y="([\d.]+)"/g)].map(match => Number(match[1]))
+  // The default height of 58 keeps the former lines.
+  assert.deepEqual(lines(await renderComponent(NetworkGraph, { nodes: list, edges: links })), [34, 24, 43])
+  // A short node keeps its text inside the box instead of drawing it below the bottom edge.
+  const short = { nodeWidth: 80, nodeHeight: 30 }
+  assert.deepEqual(lines(await renderComponent(NetworkGraph, { nodes: list, edges: links, options: short })), [20, 10, 29])
+  const tall = layoutLayeredGraph(list, links, { nodeHeight: 90 })
+  assert.deepEqual(lines(renderGraphSvg(tall, list, links)), [50, 40, 59])
 })

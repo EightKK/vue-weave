@@ -314,7 +314,7 @@ const selectionText = computed(() => selection.value.size ? [...selection.value]
       }) }}</p>
     </template>
 
-    <NetworkGraph :nodes="network.nodes" :edges="network.edges" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="260"
+    <NetworkGraph :nodes="network.nodes" :edges="network.edges" :options="{ nodeWidth: isJapanese ? 270 : 230, nodeHeight: 56 }" :height="260"
       :selected-ids="selection" :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges"
       :labels="{ ...labels.graph, region: t({ en: 'Scenario network', ja: 'シナリオのネットワーク' }) }" @update:selected-ids="ids => selection = ids"
       @background-click="clearSelection" @idle-escape="clearSelection" />

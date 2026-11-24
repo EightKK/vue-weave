@@ -360,7 +360,7 @@ async function expandAndShow() {
 
     <div class="linked-graph">
       <NetworkGraph ref="graph" :nodes="graphNodes" :edges="graphEdges" :groups="graphGroups" collapsible-groups deletable
-        :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: 230, nodeHeight: 56 }" :height="300" edges-selectable
+        :collapsed-group-ids="graphCollapsed" :options="{ nodeWidth: isJapanese ? 270 : 230, nodeHeight: 56 }" :height="300" edges-selectable
         :selected-ids="graphSets.selectedNodeIds" :selected-edge-ids="graphSets.selectedEdgeIds"
         :highlighted-node-ids="highlightedNodes" :highlighted-edge-ids="highlightedEdges" :related-ids="graphSets.relatedNodeIds"
         :labels="{ ...labels.graph, region: t({ en: 'Linked network diagram', ja: '連動するネットワーク図' }) }"

@@ -573,7 +573,8 @@ function graphNodeShape(
     })
   }
   const inset = isGraphTaskMarker(graphNodeMarker(node)) ? 30 : 13
-  return { shape, lines: { title: hasDetail ? 24 : 34, detail: 43, inset } }
+  const rectLines = graphOutlineText(box.width, box.height, hasDetail)
+  return { shape, lines: { title: rectLines.title, detail: rectLines.detail, inset } }
 }
 
 /** One node: its title, its shape, marker and text clipped to the box, and a label below the box for event shapes. */

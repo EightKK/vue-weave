@@ -254,7 +254,7 @@ const rtl = ref(false)
       @row-create-rejected="rejected" @row-delete-rejected="rejected" @row-move-rejected="rejected" />
     <StatusLine :label="t({ en: 'Tree grid status', ja: 'ツリーグリッドの状態' })">{{ status }}</StatusLine>
     <StatusLine :label="t({ en: 'Tree grid selection', ja: 'ツリーグリッドの選択' })">{{ selectionText }}</StatusLine>
-    <NetworkGraph :nodes="graphNodes" :edges="graphEdges" :height="260" :options="{ nodeWidth: 150, nodeHeight: 34 }"
+    <NetworkGraph :nodes="graphNodes" :edges="graphEdges" :height="260" :options="{ nodeWidth: 160, nodeHeight: 34 }"
       :selected-ids="linked.graph.value.selectedNodeIds" :highlighted-node-ids="linked.graph.value.highlightedNodeIds"
       :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph"
       @background-click="clearSelection" @idle-escape="clearSelection" />
