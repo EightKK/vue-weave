@@ -838,7 +838,21 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-calendar-more:hover { background: var(--vw-surface-hover, var(--_vw-surface-hover)); }
 .vw-calendar-week-events { position: absolute; inset: 26px 0 0; pointer-events: none; }
 .vw-calendar-week-events > .vw-calendar-event { pointer-events: auto; }
+/* A long press on an editable event or on creatable space drags; it opens no callout on touch screens. */
+.vw-calendar-event.vw-is-editable, .vw-calendar.vw-is-creatable .vw-calendar-column, .vw-calendar.vw-is-creatable .vw-calendar-cell { -webkit-touch-callout: none; }
+.vw-calendar-agenda { overflow-y: auto; scrollbar-width: thin; }
+.vw-calendar-agenda-days, .vw-calendar-agenda-events { margin: 0; padding: 0; list-style: none; }
+.vw-calendar-agenda-day { display: grid; grid-template-columns: minmax(8em, 13em) minmax(0, 1fr); gap: 4px 12px; padding: 8px 12px; border-bottom: 1px solid var(--vw-border, #e0e9ef); }
+.vw-calendar-agenda-date { padding-block: 4px; font-weight: 700; }
+.vw-calendar-agenda-day.vw-is-today .vw-calendar-agenda-date { color: var(--vw-accent, var(--_vw-accent)); }
+.vw-calendar-agenda-events { display: flex; flex-direction: column; gap: 4px; }
+.vw-calendar-agenda-event { position: relative; z-index: auto; width: 100%; flex-direction: row; align-items: baseline; gap: 10px; padding: 4px 8px; font-size: 12px; }
+.vw-calendar-agenda-time { flex: none; width: 8.5em; }
+.vw-calendar-agenda-content { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.vw-calendar-agenda-resource { color: var(--vw-muted, var(--_vw-muted)); font-size: 11px; }
+.vw-calendar-agenda-event.vw-is-selected { z-index: auto; }
 @media (max-width: 700px) {
+  .vw-calendar-agenda-day { grid-template-columns: minmax(0, 1fr); }
   .vw-calendar { --vw-calendar-gutter: 42px; }
   .vw-calendar-column-head { padding-inline: 4px; }
 }
@@ -857,6 +871,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
   .vw-calendar-nav, .vw-calendar-views, .vw-calendar-handle, .vw-calendar-preview { display: none; }
   .vw-calendar { print-color-adjust: exact; }
   .vw-calendar-scroll { height: auto !important; overflow: visible; }
+  .vw-calendar-agenda { max-height: none !important; overflow: visible; }
 }
 
 /* TreeGrid: a two-dimensionally virtualized tree grid. Rows and cells are absolutely positioned with logical properties,

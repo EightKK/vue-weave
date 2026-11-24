@@ -5,7 +5,7 @@ description: Props, events, slots and helpers of the EventCalendar component, in
 
 # EventCalendar {#top}
 
-`EventCalendar` shows appointments in day, week and month views in an IANA time zone and locale, with an all-day row, a "+N more" overflow in the month grid, a now line and a toolbar. With `resources`, the day view shows one column per room, machine or person. Recurring events follow RFC 5545 rules (`expandRecurringEvents`, `applyRecurringEdit`).
+`EventCalendar` shows appointments in day, week and month views, and in an opt-in agenda list, in an IANA time zone and locale, with an all-day row, a "+N more" overflow in the month grid, a now line and a toolbar. With `resources`, the day view shows one column per room, machine or person. Recurring events follow RFC 5545 rules (`expandRecurringEvents`, `applyRecurringEdit`).
 
 It is an opt-in, controlled component. Moves, resizes and new events are `edit` and `create` proposals, checked by the synchronous `validateEdit` and `validateCreate`; `range-change` reports the visible range so you can load its events. The calendar never reads the clock or the runtime's time zone, so the server and the client render the same text.
 

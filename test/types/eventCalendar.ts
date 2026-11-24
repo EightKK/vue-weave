@@ -1,8 +1,8 @@
 // Type-level checks for EventCalendar and its core helpers. Checked by `npm run typecheck`.
 import { h } from 'vue'
 import {
-  applyRecurringEdit, expandRecurringEvents, layoutCalendarDayEvents, packCalendarEventLanes, eventCalendarRange, parseRecurrenceRule,
-  type CalendarEvent, type EventCalendarEdit, type EventCalendarView, type RecurrenceRule, type TimeRange,
+  applyRecurringEdit, expandRecurringEvents, layoutCalendarAgenda, layoutCalendarDayEvents, packCalendarEventLanes, eventCalendarRange,
+  parseRecurrenceRule, type CalendarAgendaDay, type CalendarAgendaItem, type CalendarEvent, type EventCalendarEdit, type EventCalendarView, type RecurrenceRule, type TimeRange,
 } from '../../src/core/index'
 import { EventCalendar, type EventCalendarExposed } from '../../src/index'
 
@@ -48,3 +48,13 @@ if (edit.occurrence) {
 }
 // @ts-expect-error The scope is 'occurrence', 'following' or 'series'.
 applyRecurringEdit(series, { seriesId: 's', recurrenceId: 0 }, 'delete', 'all')
+
+// The opt-in agenda view: a view value, the offered views and its length, and the core grouping helper.
+void h(EventCalendar, { events, date: 0, view: 'agenda', views: ['week', 'agenda'], agendaDays: 14 })
+assertType<Equal<typeof calendar.$props.views, readonly EventCalendarView[] | undefined>>()
+assertType<Equal<typeof calendar.$props.agendaDays, number | undefined>>()
+assertType<Equal<Parameters<NonNullable<typeof calendar.$props['onUpdate:view']>>[0], EventCalendarView>>()
+const agendaRange: TimeRange = eventCalendarRange('agenda', 0, { agendaDays: 3 })
+const agenda: CalendarAgendaDay[] = layoutCalendarAgenda(events, [agendaRange])
+const item: CalendarAgendaItem | undefined = agenda[0]?.items[0]
+void [item?.allDay, item?.continuesBefore]

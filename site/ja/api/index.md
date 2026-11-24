@@ -30,7 +30,7 @@ import { scheduleTasks, layoutLayeredGraph, toMsProjectXml } from '@eightkk/vue-
 | [GanttChart](./components/gantt-chart.md) | 制御されたガントチャートとタイムライン: 依存関係、ベースライン、列、スプレッドシート編集、負荷ヒストグラム |
 | [TreeGrid](./components/tree-grid.md) | 行と列を同時に仮想化するツリーグリッドとマトリクス。セル、シート、行の編集 |
 | [TaskBoard](./components/task-board.md) | 列、スイムレーン、WIP 制限を持つカンバンボード |
-| [EventCalendar](./components/event-calendar.md) | リソースと繰り返しイベントに対応した日・週・月のカレンダー |
+| [EventCalendar](./components/event-calendar.md) | リソースと繰り返しイベントに対応した日・週・月・予定リストのカレンダー |
 | [GraphPalette と PropertyInspector](./components/diagram-editor.md) | NetworkGraph でダイアグラムエディターを作るための図形パレットとプロパティフォーム |
 
 ### コンポーザブル(`@eightkk/vue-weave`)

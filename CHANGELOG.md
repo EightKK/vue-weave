@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- EventCalendar has an opt-in agenda view: `view: 'agenda'`, offered in the built-in view switch when the new `views` prop lists it (default `['day', 'week', 'month']`, so the toolbar is unchanged). It lists the events of the week that contains `date`, or of the new `agendaDays` (1–366) days from it, by day: all-day entries first, then by start; multi-day events on every day they cover; recurring occurrences as passed. Entries are event buttons with the same names, selection, activation, `event` slot and Left/Right day moves as the other views, Up, Down, Home and End move the focus, and the list is named by the new optional labels `agenda` and `agendaEditHint`. `EventCalendarView` now includes `'agenda'`, and `EventCalendarOptions` has `agendaDays`, which `eventCalendarRange`, `eventCalendarDays` and `shiftEventCalendarDate` follow for `agenda`.
+- Core: `layoutCalendarAgenda(events, days)` returns, for each day, the events that overlap it clipped to the day, with `allDay`, `continuesBefore` and `continuesAfter`, in agenda order (`CalendarAgendaDay`, `CalendarAgendaItem`).
+- EventCalendar touch input: on empty space of a `creatable` calendar, a touch held still for half a second drags to create (the page does not scroll during that drag), and a touch within 14 px of a resizable edge of an event resizes it, so the few-pixel handles need no exact hit. Mouse input is unchanged.
+
+### Fixed
+
+- EventCalendar: a touch swipe that scrolls a `creatable` time grid or month no longer reports `edit-cancel` (`pointer-cancel`) for a create it never showed, and no longer flashes a create preview; a tap still proposes an event. The click of a tap that proposes an event no longer selects the new event drawn under the finger. While a touch or pen gesture is in flight, a long press no longer opens the browser's context menu or callout.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.
