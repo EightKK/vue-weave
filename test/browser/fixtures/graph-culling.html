@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Network graph culling fixture</title>
+    <link rel="stylesheet" href="/graph-culling-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/graph-culling-test/vue.js", "@eightkk/vue-weave": "/graph-culling-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { NetworkGraph } from '@eightkk/vue-weave'
+
+      // A large draggable graph with orthogonal edges that avoid the nodes: columns of 30 nodes, each linked to the node
+      // below and to its neighbour in the next column, and every seventh node to the node three columns back, whose
+      // routes cross the columns between them. Query parameters: nodes (default 900), cull (1 turns on
+      // cullOffscreen), style (edgeStyle, default orthogonal), avoid (0 turns avoidNodes off) and positions (saved
+      // positions as id:x:y separated by commas). Every node-move proposal is applied; "Positions" lists the saved
+      // positions in the same form.
+      const query = new URLSearchParams(location.search)
+      const count = Number(query.get('nodes') ?? 900)
+      const ids = Array.from({ length: count }, (_, i) => 'N' + String(i).padStart(4, '0'))
+      const nodes = ids.map(id => ({ id, label: id }))
+      const edges = []
+      ids.forEach((id, i) => {
+        if (i % 30) edges.push({ id: 'd' + i, from: ids[i - 1], to: id })
+        if (i >= 30) edges.push({ id: 'r' + i, from: ids[i - 30], to: id })
+        if (i >= 90 && i % 7 === 0) edges.push({ id: 's' + i, from: ids[i - 90], to: id })
+      })
+      const positions = shallowRef(new Map((query.get('positions') || '').split(',').filter(Boolean).map(item => {
+        const [id, x, y] = item.split(':')
+        return [id, { x: Number(x), y: Number(y) }]
+      })))
+      const graph = ref()
+      const moves = ref(0)
+      // `place` saves a position without a proposal, as a data refresh from elsewhere would.
+      const place = (id, x, y) => { positions.value = new Map(positions.value).set(id, { x, y }) }
+      window.__vw = { graph: () => graph.value, place }
+      createApp({
+        render: () => h('div', [
+          h('output', { role: 'status', 'aria-label': 'Positions' }, [...positions.value].map(([id, at]) => `${id}:${at.x}:${at.y}`).join(',')),
+          h('output', { role: 'status', 'aria-label': 'Move events' }, String(moves.value)),
+          h('div', { style: 'height:600px;width:1000px' }, [h(NetworkGraph, {
+            ref: graph, nodes, edges, positions: positions.value, height: 600, draggable: true, edgesSelectable: true,
+            cullOffscreen: query.get('cull') === '1', edgeStyle: query.get('style') ?? 'orthogonal', avoidNodes: query.get('avoid') !== '0',
+            onNodeMove: change => {
+              moves.value++
+              positions.value = new Map(positions.value).set(change.id, change.after)
+            },
+          })]),
+        ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>
