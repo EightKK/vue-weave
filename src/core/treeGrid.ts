@@ -5,7 +5,8 @@
 import { formatFieldValue, parseFieldValue, validateFieldValue, type FieldValue, type TimelineFieldSpec } from './fieldEditing.js'
 import { checkId, duplicateIdError, invalidIdError, isId, uniqueIds, unknownReferenceError, withContext } from './ids.js'
 import { formatSheetText, parseSheetText } from './sheetEditing.js'
-import { createTimelineRowTree } from './timeline.js'
+import { createTimelineRowTree, timelineLabelColumnId } from './timeline.js'
+import { filterTimelineRows, type TimelineRowCompare, type TimelineViewDiagnostic, type TimelineViewFilter, type TimelineViewSort } from './timelineView.js'
 import type { ChartTone, TimelineRow, TimelineRowMove, TimelineRowPosition } from './types.js'
 import type { TimeBucketCell } from './timeBuckets.js'
 import type { EntityRef } from './viewBindings.js'
@@ -331,9 +332,29 @@ export interface TreeGridLabels {
   rowDeleteRejected: string
   rowMoveRejected: string
   rowMoveHint: string
+  /** Accessible name prefix of a column resize separator (`columnsResizable`), followed by the column label. Default "Resize column". */
+  resizeColumn?: string
+  /** Announced when `validateColumnResize` returns false. Default "This column resize was rejected." */
+  columnResizeRejected?: string
+  /** Accessible name prefix of a header sort button (`sortableColumns`), followed by the column label. Default "Sort by". */
+  sortBy?: string
+  /** Added in parentheses to the name of a sort button whose column is sorted ascending. Default "ascending". */
+  sortedAscending?: string
+  /** Added in parentheses to the name of a sort button whose column is sorted descending. Default "descending". */
+  sortedDescending?: string
+  /** Accessible name prefix of a header filter button and its dialog (`filterableColumns`), followed by the column label. Default "Filter". */
+  filterBy?: string
+  /** Added in parentheses to the name of a filter button whose column is filtered. Default "filtered". */
+  filtered?: string
+  /** Label of the text box of a filter dialog. Default "Contains". */
+  filterContains?: string
+  /** Legend of the value checkboxes of a filter dialog (columns with a `select` editor). Default "Show values". */
+  filterValues?: string
+  /** Text of the button that clears a column's filter. Default "Clear filter". */
+  clearFilter?: string
 }
 
-export const treeGridDefaultLabels: Readonly<TreeGridLabels> = Object.freeze({
+export const treeGridDefaultLabels: Readonly<Required<TreeGridLabels>> = Object.freeze({
   grid: 'Tree grid', treeColumn: 'Name', empty: 'No rows to display',
   keyboardHint: 'Arrow keys move between cells. Right and Left expand and collapse rows. Enter activates.',
   expand: 'Expand', collapse: 'Collapse',
@@ -346,6 +367,9 @@ export const treeGridDefaultLabels: Readonly<TreeGridLabels> = Object.freeze({
   moveBefore: 'before', moveAfter: 'after', moveInto: 'into',
   rowCreateRejected: 'The new row was rejected.', rowDeleteRejected: 'The deletion was rejected.', rowMoveRejected: 'This row move was rejected.',
   rowMoveHint: 'Alt+Up and Alt+Down move the row, Alt+Shift with an arrow indents or outdents it. Ctrl+Enter adds a row below, Ctrl+Shift+Enter a child row, Delete deletes the row.',
+  resizeColumn: 'Resize column', columnResizeRejected: 'This column resize was rejected.',
+  sortBy: 'Sort by', sortedAscending: 'ascending', sortedDescending: 'descending',
+  filterBy: 'Filter', filtered: 'filtered', filterContains: 'Contains', filterValues: 'Show values', clearFilter: 'Clear filter',
 })
 
 const CELL_STATUSES: ReadonlySet<string> = new Set(['none', 'unknown', 'not-applicable', 'unloaded', 'loading', 'failed'])
@@ -1147,4 +1171,194 @@ export function treeGridCellsFromTimeBuckets(cells: readonly TimeBucketCell[]): 
   const result: TreeGridCell[] = []
   for (const cell of cells) result.push({ rowId: cell?.rowId, columnId: cell?.columnId, ...treeGridCellContentFromTimeBucket(cell) })
   return result
+}
+
+/** Options of `treeGridCellText`: the same `formatValue` and `labels` as the TreeGrid props. */
+export interface TreeGridTextOptions<R extends TreeGridRow = TreeGridRow> {
+  formatValue?: (value: TreeGridValue, context: { row: R; column: TreeGridColumn<R> }) => string
+  /** The words of booleans in columns without an editor `format`. Default `treeGridDefaultLabels.yes` and `no`. */
+  labels?: Partial<Pick<TreeGridLabels, 'yes' | 'no'>>
+}
+
+/**
+ * The text that the default rendering of TreeGrid shows in a cell with a value: its `label`, else `formatValue`, else
+ * `labels.yes` or `labels.no` for a boolean in a column without an editor `format`, else the editor's format, else the
+ * value as text. Cells without a value (empty, none, unknown and the other statuses) give `''`. Throws like
+ * `resolveTreeGridCell` for an unknown row or column.
+ */
+export function treeGridCellText<R extends TreeGridRow>(
+  index: TreeGridIndex<R>, rowId: string, columnId: string, options: TreeGridTextOptions<R> = {},
+): string {
+  const view = resolveTreeGridCell(index, rowId, columnId)
+  if (view.state !== 'value' || view.value === undefined) return ''
+  if (view.label !== undefined) return view.label
+  const column = index.columns[index.columnIndex.get(columnId)!]!
+  const value = view.value
+  if (options.formatValue) return options.formatValue(value, { row: index.rowById.get(rowId)!, column })
+  if (typeof value === 'boolean' && !column.editor?.format) {
+    return value ? options.labels?.yes ?? treeGridDefaultLabels.yes : options.labels?.no ?? treeGridDefaultLabels.no
+  }
+  const spec = treeGridFieldSpec(column)
+  return spec ? formatFieldValue(spec, value) : String(value)
+}
+
+/**
+ * The header state of a TreeGrid view (the `sort` and `filters` props, `v-model:sort` and `v-model:filters`): the same
+ * `TimelineViewSort` and `TimelineViewFilter` lists that GanttChart's header proposes. A rule or filter names a column
+ * ID, or `timelineLabelColumnId` (`'$label'`) for the tree column, which reads the row label.
+ */
+export interface TreeGridViewState {
+  sort?: readonly TimelineViewSort[]
+  filters?: readonly TimelineViewFilter[]
+}
+
+/** The input of `projectTreeGridRows`: a TreeGrid input with optional compare rules and the cell text options. */
+export interface TreeGridViewInput<R extends TreeGridRow = TreeGridRow> extends TreeGridInput<R>, TreeGridTextOptions<R> {
+  /** Registered compare rules by ID; a sort rule with such an ID uses it instead of a column. */
+  sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>
+}
+
+/** The result of `projectTreeGridRows`, ready for the TreeGrid `rows` and `cells` props. */
+export interface TreeGridViewProjection<R extends TreeGridRow = TreeGridRow> {
+  /** The kept rows (matches with their ancestors), siblings sorted stably within their parent. The input's row objects. */
+  rows: R[]
+  /** The sparse cells of the kept rows, in input order (empty without `cells`). */
+  cells: TreeGridCell[]
+  /** IDs of the rows that matched every filter, without the ancestors kept for them, in input order. Empty without filters. */
+  matchedRowIds: string[]
+  /** `unknown-column` for a filter and `unknown-sort-rule` for a sort rule that names no column or rule; both are ignored. */
+  diagnostics: TimelineViewDiagnostic[]
+}
+
+function checkViewState(state: TreeGridViewState) {
+  if (!state || typeof state !== 'object') throw new TypeError('A tree grid view state must be an object')
+  if (state.sort !== undefined) {
+    if (!Array.isArray(state.sort)) throw new TypeError('The sort of a tree grid view must be an array')
+    for (const rule of state.sort) {
+      if (typeof rule?.ruleId !== 'string') throw new TypeError('A tree grid sort rule needs a string ruleId')
+      if (rule.direction !== 'asc' && rule.direction !== 'desc') throw new RangeError(`Unknown sort direction of ${rule.ruleId}: ${String(rule.direction)}`)
+    }
+  }
+  if (state.filters !== undefined) {
+    if (!Array.isArray(state.filters)) throw new TypeError('The filters of a tree grid view must be an array')
+    for (const filter of state.filters) {
+      if (typeof filter?.columnId !== 'string') throw new TypeError('A tree grid filter needs a string columnId')
+      if (filter.text !== undefined && typeof filter.text !== 'string') throw new TypeError(`The text of the filter of ${filter.columnId} must be a string`)
+      if (filter.values === undefined) continue
+      if (!Array.isArray(filter.values)) throw new TypeError(`The values of the filter of ${filter.columnId} must be an array`)
+      for (const value of filter.values) {
+        if (typeof value === 'number' ? !Number.isFinite(value) : typeof value !== 'string') {
+          throw new RangeError(`A value of the filter of ${filter.columnId} must be a string or a finite number: ${String(value)}`)
+        }
+      }
+    }
+  }
+}
+
+/** Two numbers compare as numbers, anything else as text, as `projectTimelineRows` compares column values. */
+function compareKeys(a: string | number, b: string | number) {
+  if (typeof a === 'number' && typeof b === 'number') return a < b ? -1 : a > b ? 1 : 0
+  const left = String(a), right = String(b)
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+/**
+ * Project TreeGrid rows for a header sort and column filters, keeping the hierarchy. A row matches when it meets every
+ * filter: `text` must occur, ignoring case and surrounding whitespace, in the cell text the grid shows
+ * (`treeGridCellText`; the row label for `timelineLabelColumnId`), and `values` must list the cell's raw string or
+ * number value (the row label for the tree column); a cell without a value meets no condition. Matching rows stay with
+ * all their ancestors. Siblings are then sorted within their parent by the rules in order: a column compares cell
+ * values (numbers as numbers, booleans as 0 and 1, anything else as text), `timelineLabelColumnId` compares row labels
+ * and a registered `sortRules` entry uses its function; cells without a value sort after the others in both directions,
+ * and ties keep the input order. The proposals of TreeGrid's `update:sort` and `update:filters` apply directly. Unknown
+ * filter columns and sort rules are reported as diagnostics and ignored. Validates the input like `createTreeGridIndex`
+ * and throws a TypeError or RangeError for a malformed state. Never changes its arguments; iterative, so deep trees do
+ * not overflow the stack.
+ */
+export function projectTreeGridRows<R extends TreeGridRow>(input: TreeGridViewInput<R>, state: TreeGridViewState): TreeGridViewProjection<R> {
+  const index = createTreeGridIndex(input)
+  checkViewState(state)
+  const diagnostics: TimelineViewDiagnostic[] = []
+  const isLabel = (id: string) => id === timelineLabelColumnId && !index.columnIndex.has(id)
+  const text = (row: R, id: string) => isLabel(id) ? row.label : treeGridCellText(index, row.id, id, input)
+  const raw = (row: R, id: string): TreeGridValue | undefined => {
+    if (isLabel(id)) return row.label
+    const view = resolveTreeGridCell(index, row.id, id)
+    return view.state === 'value' ? view.value : undefined
+  }
+
+  const filters: TimelineViewFilter[] = []
+  for (const filter of state.filters ?? []) {
+    if (index.columnIndex.has(filter.columnId) || isLabel(filter.columnId)) {
+      if (filter.text?.trim() || filter.values) filters.push(filter)
+    } else diagnostics.push({ code: 'unknown-column', id: filter.columnId, message: 'Unknown tree grid filter column: ' + filter.columnId })
+  }
+  let rows: R[] = [...input.rows]
+  const matchedRowIds: string[] = []
+  if (filters.length) {
+    rows = filterTimelineRows(rows, row => {
+      for (const filter of filters) {
+        const query = filter.text?.trim().toLowerCase()
+        if (query && !text(row, filter.columnId).toLowerCase().includes(query)) return false
+        if (filter.values) {
+          const value = raw(row, filter.columnId)
+          if ((typeof value !== 'string' && typeof value !== 'number') || !filter.values.includes(value)) return false
+        }
+      }
+      matchedRowIds.push(row.id)
+      return true
+    })
+  }
+
+  const rules: { key?: (row: R) => string | number | undefined; compare?: TimelineRowCompare<R>; sign: number }[] = []
+  for (const rule of state.sort ?? []) {
+    const sign = rule.direction === 'desc' ? -1 : 1
+    const registered = input.sortRules?.[rule.ruleId]
+    if (registered) rules.push({ compare: registered, sign })
+    else if (index.columnIndex.has(rule.ruleId)) {
+      rules.push({ key: row => { const value = raw(row, rule.ruleId); return typeof value === 'boolean' ? Number(value) : value }, sign })
+    } else if (rule.ruleId === timelineLabelColumnId) rules.push({ key: row => row.label, sign })
+    else diagnostics.push({ code: 'unknown-sort-rule', id: rule.ruleId, message: 'Unknown tree grid sort rule: ' + rule.ruleId })
+  }
+  if (rules.length) {
+    const order = new Map<string, number>()
+    input.rows.forEach((row, i) => order.set(row.id, i))
+    // Each key is read once per row, not once per comparison.
+    const keys = rules.map(rule => rule.key ? new Map(rows.map(row => [row.id, rule.key!(row)])) : undefined)
+    const children = new Map<string | undefined, R[]>()
+    for (const row of rows) {
+      const group = children.get(row.parentId)
+      if (group) group.push(row)
+      else children.set(row.parentId, [row])
+    }
+    for (const group of children.values()) {
+      group.sort((a, b) => {
+        for (let r = 0; r < rules.length; r++) {
+          const rule = rules[r]!
+          let result: number
+          if (rule.compare) result = rule.compare(a, b) * rule.sign
+          else {
+            const left = keys[r]!.get(a.id), right = keys[r]!.get(b.id)
+            // Cells without a value go last in both directions.
+            if (left === undefined || right === undefined) result = left === right ? 0 : left === undefined ? 1 : -1
+            else result = compareKeys(left, right) * rule.sign
+          }
+          if (result) return result
+        }
+        return order.get(a.id)! - order.get(b.id)!
+      })
+    }
+    const ordered: R[] = []
+    const stack = (children.get(undefined) ?? []).slice().reverse()
+    while (stack.length) {
+      const row = stack.pop()!
+      ordered.push(row)
+      const group = children.get(row.id)
+      if (group) for (let i = group.length - 1; i >= 0; i--) stack.push(group[i]!)
+    }
+    rows = ordered
+  }
+  const kept = new Set(rows.map(row => row.id))
+  const cells = (input.cells ?? []).filter(cell => kept.has(cell.rowId))
+  return { rows, cells, matchedRowIds, diagnostics }
 }

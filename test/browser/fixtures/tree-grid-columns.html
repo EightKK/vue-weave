@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TreeGrid columns fixture</title>
+    <link rel="stylesheet" href="/tree-grid-columns-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/tree-grid-columns-test/vue.js", "@eightkk/vue-weave": "/tree-grid-columns-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { computed, createApp, h, ref, shallowRef } from 'vue'
+      import { TreeGrid, applyTreeGridEdits, projectTreeGridRows, timelineLabelColumnId } from '@eightkk/vue-weave'
+
+      // A TreeGrid with resizable, sortable and filterable columns. Rows: Tools (Saw 30, Drill 120, Hammer 15) and Garden
+      // (Hose 25, Rake 8); Drill and Rake are discontinued. The parent applies every proposal: widths, the sort and the
+      // filters (through projectTreeGridRows) and cell edits. Query parameters: rtl (dir="rtl"), sorted (start sorted by
+      // Price, descending). A tree column narrower than 150 px is rejected. Events are logged as JSON lines to the
+      // "Events" status. window.touchRows() replaces the rows with an equal copy, as new data from a server would.
+      const query = new URLSearchParams(location.search)
+      const item = (id, parentId, label, price, status) => ({ id, parentId, label, data: { price, status } })
+      const rows = shallowRef([
+        { id: 'tools', label: 'Tools' },
+        item('saw', 'tools', 'Saw', 30, 'active'),
+        item('drill', 'tools', 'Drill', 120, 'discontinued'),
+        item('hammer', 'tools', 'Hammer', 15, 'active'),
+        { id: 'garden', label: 'Garden' },
+        item('hose', 'garden', 'Hose', 25, 'active'),
+        item('rake', 'garden', 'Rake', 8, 'discontinued'),
+      ])
+      const widths = ref({ price: 100, status: 140 })
+      const treeWidth = ref(200)
+      const sort = ref(query.has('sorted') ? [{ ruleId: 'price', direction: 'desc' }] : [])
+      const filters = ref([])
+      const expanded = ref(['tools', 'garden'])
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      const columns = computed(() => [
+        { id: 'price', label: 'Price', width: widths.value.price, value: row => row.data?.price, editable: row => row.parentId !== undefined,
+          editor: { kind: 'number', min: 0 }, update: (row, value) => ({ ...row, data: { ...row.data, price: value } }) },
+        { id: 'status', label: 'Status', width: widths.value.status, value: row => row.data?.status,
+          editor: { kind: 'select', choices: [{ value: 'active', label: 'Active' }, { value: 'discontinued', label: 'Discontinued' }] } },
+      ])
+      const projection = computed(() => projectTreeGridRows({ rows: rows.value, columns: columns.value }, { sort: sort.value, filters: filters.value }))
+      window.touchRows = () => { rows.value = rows.value.map(row => ({ ...row })) }
+      createApp({
+        setup: () => () => {
+          const list = columns.value
+          const view = projection.value
+          return h('div', [
+            h('label', ['Notes ', h('input', { type: 'text' })]),
+            h(TreeGrid, {
+              rows: view.rows, columns: list, expandedIds: expanded.value, height: 300, treeColumnWidth: treeWidth.value,
+              dir: query.has('rtl') ? 'rtl' : 'ltr', editable: true, spreadsheet: true,
+              columnsResizable: true, minColumnWidth: 60, maxColumnWidth: 300, sortableColumns: true, filterableColumns: true,
+              sort: sort.value, filters: filters.value,
+              validateColumnResize: change => change.id !== timelineLabelColumnId || change.after >= 150 || 'The name column needs 150 px',
+              'onUpdate:expandedIds': ids => { expanded.value = ids },
+              'onUpdate:sort': next => { record('sort', next); sort.value = next },
+              'onUpdate:filters': next => { record('filters', next); filters.value = next },
+              'onColumn-resize': change => {
+                record('column-resize', change.id, change.before, change.after, change.source)
+                if (change.id === timelineLabelColumnId) treeWidth.value = change.after
+                else widths.value = { ...widths.value, [change.id]: change.after }
+              },
+              'onColumn-resize-rejected': (change, reason) => record('column-resize-rejected', change.id, change.after, reason),
+              'onCell-edit': change => {
+                record('cell-edit', change.rowId, change.columnId, change.before, change.after)
+                rows.value = applyTreeGridEdits({ rows: rows.value, columns: list }, [change]).rows
+              },
+              'onCell-activate': activation => record('cell-activate', activation.rowId, activation.columnId),
+            }),
+            h('pre', { role: 'status', 'aria-label': 'Events' }, log.value.join('\n')),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

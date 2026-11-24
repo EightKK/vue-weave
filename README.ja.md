@@ -145,7 +145,7 @@ const activate = (event: ViewTargetEvent) => linked.select(event.target.view, [e
 | --- | --- | --- |
 | `NetworkGraph` | 階層・ツリー・放射・力学・スイムレーンのレイアウト、BPMN・フローチャートの図形、数量フロー、グループ、変更案としての編集、大規模グラフ向けのミニマップと描画の間引き | [API](https://eightkk.github.io/vue-weave/ja/api/components/network-graph.html) · [作例](https://eightkk.github.io/vue-weave/ja/examples/#graph) |
 | `GanttChart` | 依存関係、ベースライン、クリティカルパス、資源負荷の行、スプレッドシート編集、カレンダーとタイムゾーン、行と時間の仮想表示 | [API](https://eightkk.github.io/vue-weave/ja/api/components/gantt-chart.html) · [作例](https://eightkk.github.io/vue-weave/ja/examples/#timeline) |
-| `TreeGrid` | 行ツリー×列やマトリクスを縦横に仮想表示し、セル・範囲・行構造を編集 | [API](https://eightkk.github.io/vue-weave/ja/api/components/tree-grid.html) · [作例](https://eightkk.github.io/vue-weave/ja/examples/#tree-grid) |
+| `TreeGrid` | 行ツリー×列やマトリクスを縦横に仮想表示し、セル・範囲・行構造の編集と、見出しでの並べ替え・絞り込み・列幅の変更に対応 | [API](https://eightkk.github.io/vue-weave/ja/api/components/tree-grid.html) · [作例](https://eightkk.github.io/vue-weave/ja/examples/#tree-grid) |
 | `TaskBoard`、`EventCalendar` | WIP制限とスイムレーンのあるカンバン、資源別表示と繰り返し予定に対応した日・週・月のカレンダー | [TaskBoard](https://eightkk.github.io/vue-weave/ja/api/components/task-board.html) · [EventCalendar](https://eightkk.github.io/vue-weave/ja/api/components/event-calendar.html) |
 | `GraphPalette`、`PropertyInspector` | ダイアグラムエディタの部品：図形パレットと型付きのプロパティパネル | [API](https://eightkk.github.io/vue-weave/ja/api/components/diagram-editor.html) |
 | コンポーザブル | ビューの連動選択、元に戻す・やり直す、サーバーへの保存、表示状態、表示範囲だけの読み込み、Workerでのレイアウト | [API](https://eightkk.github.io/vue-weave/ja/api/composables.html) |

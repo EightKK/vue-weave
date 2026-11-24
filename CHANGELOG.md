@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- TreeGrid: opt-in column resizing, header sorting and header filtering, as in GanttChart. `columnsResizable` (with `minColumnWidth`, `maxColumnWidth` and `validateColumnResize`) adds a separator to the tree column header and each column header that proposes `column-resize` (`TimelineColumnResize`; `timelineLabelColumnId` names the tree column, accepted through `treeColumnWidth`) by pointer drag or arrow keys, or `column-resize-rejected`. `sortableColumns` and `filterableColumns` add sort buttons (`aria-sort` on the header of the first rule) and filter dialogs that propose `update:sort` and `update:filters` (`v-model:sort`, `v-model:filters`) from the controlled `sort` and `filters`. New optional `TreeGridLabels`: `resizeColumn`, `columnResizeRejected`, `sortBy`, `sortedAscending`, `sortedDescending`, `filterBy`, `filtered`, `filterContains`, `filterValues` and `clearFilter`. Without the new props the grid renders and behaves as before.
+- Core: `projectTreeGridRows(input, { sort, filters })` applies those proposals while keeping the hierarchy (siblings sorted within their parent, filtered rows with all their ancestors, the sparse cells of the kept rows), and `treeGridCellText(index, rowId, columnId, options?)` gives the text the grid shows in a cell. The "Tree grid" example adds a cost breakdown with these header controls.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.
