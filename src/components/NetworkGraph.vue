@@ -12,7 +12,9 @@ import { graphNodesInPolygon } from '../core/graphLasso.js'
 import { applyGraphPositions, applyGraphSizes, graphEdgeEndpoint, indexGraph, layoutLayeredGraph, routeGraphPorts, type GraphEdge, type GraphLayeredLayoutOptions, type GraphPoint, type GraphNodeMove, type GraphConnection, type GraphPort, type GraphReconnect, type GraphLayout, type GraphNodeSize } from '../core/graph.js'
 import type { GraphEdgeReshape, GraphNodeResize } from '../core/types.js'
 import { collapseGraphGroups, type GraphShownEdge, type GraphShownNode } from '../core/graphCollapse.js'
-import { graphParallelSlots, routeGraphEdgesWithSlots, type GraphEdgeStyle } from '../core/graphRouting.js'
+import {
+  createGraphRouteCache, createGraphRouteRecorder, graphParallelSlots, graphRouteCacheExtents, routeGraphEdgesWithSlots, type GraphEdgeStyle,
+} from '../core/graphRouting.js'
 import { resolveObstacleAvoidance, type GraphObstacleAvoidance } from '../core/graphObstacleRouting.js'
 import { placeGraphEdgeLabels, type GraphEdgeLabelPlacement } from '../core/graphLabelPlacement.js'
 import { graphPolygonPoints } from '../core/graphShapes.js'
@@ -21,7 +23,8 @@ import { completeGraphLayout } from '../core/graphLayoutRequests.js'
 import { resolveCollapsedTargets } from '../core/graphTraversal.js'
 import type { GraphViewTarget, RevealOptions, RevealResult, ViewTarget, ViewTargetEvent, ViewTargetSource } from '../core/viewBindings.js'
 import {
-  cullGraphElements, graphCameraAt, graphLayoutBounds, graphPathBounds, graphPathEndpoints, graphRectsIntersect, graphViewportRect, type GraphRect,
+  cullGraphElements, graphCameraAt, graphPathBounds, graphPathEndpoints, graphRectsIntersect, graphViewportRect, type GraphBounds,
+  type GraphRect,
 } from '../core/graphView.js'
 import { graphDeletion, type GraphDeletion } from '../core/graphEditing.js'
 import { createGraphConnectionChecker, type GraphPortRules } from '../core/graphPortRules.js'
@@ -36,6 +39,7 @@ import { keep, keepIds, sameGeometry, sameRecord } from './networkGraph/equality
 import { placeBox, sortExtents, type Extent } from './networkGraph/previewGeometry.js'
 import { hasPorts, previewLayout, type ParallelSlots, type PreviewContext } from './networkGraph/previewLayout.js'
 import { indexAvoidedRoutes, obstructedEdges } from './networkGraph/obstructedEdges.js'
+import { updateLayoutBounds } from './networkGraph/layoutBounds.js'
 import { edgePathBounds, placePreviewLabels, resolveEdgeLabelPlacement, withBandWidths } from './networkGraph/labelPlacement.js'
 import {
   addGroupChain, groupBounds, groupRect, groupShapes, groupTree as buildGroupTree, type GroupBounds, type GroupRect, type GroupShape,
@@ -514,9 +518,18 @@ const parallelSlots = computed(() => parallelSpacing.value === undefined ? undef
 const savedLayout = computed(() => arrange(viewPositions.value, props.sizes))
 // With the preserve policy, the layout's own paths are kept while they fit (see isGraphRouteValid).
 const savedPorted = computed(() => routeGraphPorts(savedLayout.value, nodesById.value, viewEdges.value, direction.value, { policy: policy.value }))
-const savedRouted = computed(() => routeGraphEdgesWithSlots(
-  savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value }, parallelSlots.value, true,
-))
+// With `cullOffscreen`, one route cache spans the saved layouts, so a saved change reroutes only the edges whose
+// inputs changed (the result is the same as routing every edge). Without it, each routing uses a recorder that
+// reuses nothing and only records how far each route reaches (see savedRouteExtents).
+const routeCache = createGraphRouteCache()
+const savedRouting = computed(() => {
+  const cache = props.cullOffscreen ? routeCache : createGraphRouteRecorder()
+  const layout = routeGraphEdgesWithSlots(
+    savedPorted.value, viewEdges.value, nodesById.value, { ...routeOptions.value, policy: policy.value, cache }, parallelSlots.value, true,
+  )
+  return { layout, reach: graphRouteCacheExtents(cache) }
+})
+const savedRouted = computed(() => savedRouting.value.layout)
 // Opt-in label placement over the routed layout; without it the saved geometry is the routed layout itself.
 // `edgeBands`, validated once per change.
 const edgeBands = computed(() => {
@@ -589,15 +602,16 @@ function routeOne(
     route: single.routes?.get(edge.id),
   }
 }
-// Route extents of the saved layout, computed once a preview needs them. Paths that the preserve policy keeps do not
-// stretch the layout.
+// Route extents of the saved layout, computed once a preview needs them: how far each styled route stretches the
+// layout, as routing the edge on its own (routeOne) gives it, read from the saved routing. Paths that the preserve
+// policy keeps do not stretch the layout.
 const savedRouteExtents = computed(() => {
-  const ported = savedPorted.value, nodes = nodesById.value, preserve = policy.value === 'preserve'
+  const ported = savedPorted.value, nodes = nodesById.value, preserve = policy.value === 'preserve', reach = savedRouting.value.reach
   const list: Extent[] = []
   for (const edge of viewEdges.value) {
     if (!styled(edge) || (preserve && isGraphRouteValid(ported, nodes, edge))) continue
-    const route = routeOne(ported.boxes, edge, ported.paths.get(edge.id)!, ported.edgeLabels.get(edge.id))
-    list.push({ id: edge.id, width: route.width, height: route.height })
+    const drawn = reach.get(edge.id)
+    list.push({ id: edge.id, width: Math.max(0, drawn?.right ?? 0), height: Math.max(0, drawn?.bottom ?? 0) })
   }
   return sortExtents(list)
 })
@@ -1760,7 +1774,18 @@ function leaveWithFocus() {
 }
 // Bounds come from the saved layout, so a drag preview does not re-parse every edge path. Dragged nodes and
 // the edges attached to them are kept rendered separately instead (see `visible`).
-const layoutBounds = computed(() => props.cullOffscreen ? graphLayoutBounds(savedGeometry.value) : undefined)
+// Each saved layout measures only the paths and labels that differ from the previous one.
+let lastBounds: { layout: GraphLayout; bounds: GraphBounds } | undefined
+const layoutBounds = computed(() => {
+  if (!props.cullOffscreen) {
+    lastBounds = undefined
+    return undefined
+  }
+  const layout = savedGeometry.value
+  const bounds = updateLayoutBounds(layout, lastBounds?.layout, lastBounds?.bounds)
+  lastBounds = { layout, bounds }
+  return bounds
+})
 const incidentEdges = computed(() => {
   const index = new Map<string, string[]>()
   for (const edge of viewEdges.value) {

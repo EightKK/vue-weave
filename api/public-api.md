@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (276)
+## Entry `.`: runtime exports (277)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -53,6 +53,7 @@ in public signatures, so changes to them can break consumers too.
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
+- `createGraphRouteCache: function`
 - `createResourceTimelineProjector: function`
 - `createTimeBucketColumns: function`
 - `createTimeScale: function`
@@ -284,7 +285,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (642)
+## Entry `.`: type-only exports (643)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -495,6 +496,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphRadialLayoutOptions`
 - `GraphReconnect`
 - `GraphRect`
+- `GraphRouteCache`
 - `GraphRouteEnd`
 - `GraphRoutingPolicy`
 - `GraphSearchOptions`
@@ -929,7 +931,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (260)
+## Entry `./core`: runtime exports (261)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -970,6 +972,7 @@ in public signatures, so changes to them can break consumers too.
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
+- `createGraphRouteCache: function`
 - `createResourceTimelineProjector: function`
 - `createTimeBucketColumns: function`
 - `createTimeScale: function`
@@ -1192,7 +1195,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (602)
+## Entry `./core`: type-only exports (603)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1388,6 +1391,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphRadialLayoutOptions`
 - `GraphReconnect`
 - `GraphRect`
+- `GraphRouteCache`
 - `GraphRouteEnd`
 - `GraphRoutingPolicy`
 - `GraphSearchOptions`
@@ -3839,6 +3843,7 @@ interface GraphEdgeRouteOptions {
     policy?: GraphRoutingPolicy;
     parallelSpacing?: number;
     avoidNodes?: boolean | GraphObstacleAvoidance;
+    cache?: GraphRouteCache;
 }
 ```
 
@@ -4782,6 +4787,14 @@ interface GraphRect {
     y: number;
     width: number;
     height: number;
+}
+```
+
+### `GraphRouteCache`
+
+```ts
+interface GraphRouteCache {
+    readonly graphRouteCache: true;
 }
 ```
 
@@ -9798,6 +9811,12 @@ function createGraphConnectionChecker(nodes: readonly IdentifiedNode[], edges: r
 function createGraphExpansion<N extends {
     id: string;
 }, E extends GraphEdge = GraphEdge>(seed?: GraphExpansionPage<N, E>): GraphExpansionState<N, E>;
+```
+
+### `createGraphRouteCache`
+
+```ts
+function createGraphRouteCache(): GraphRouteCache;
 ```
 
 ### `createResourceTimelineProjector`

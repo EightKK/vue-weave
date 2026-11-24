@@ -52,8 +52,8 @@ export { collapseGraphGroups } from './graphCollapse.js'
 export type {
   GraphCollapsedGroup, GraphCollapsedNode, GraphCollapsedNodeData, GraphCollapseOptions, GraphCollapseResult, GraphShownEdge, GraphShownNode,
 } from './graphCollapse.js'
-export { routeGraphEdges, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
-export type { GraphEdgeStyle, GraphEdgeRouteOptions } from './graphRouting.js'
+export { routeGraphEdges, createGraphRouteCache, graphPolylinePath, graphSmoothPath } from './graphRouting.js'
+export type { GraphEdgeStyle, GraphEdgeRouteOptions, GraphRouteCache } from './graphRouting.js'
 export { findOrthogonalRoute } from './graphObstacleRouting.js'
 export type { GraphObstacleAvoidance, GraphRouteEnd } from './graphObstacleRouting.js'
 export { placeGraphEdgeLabels } from './graphLabelPlacement.js'

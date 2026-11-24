@@ -103,8 +103,9 @@ function visitNear(index: GraphObstacleIndex, area: Rect, visit: (id: number) =>
 // Per-route exceptions: an obstacle grown around an end is tested at its own size (1), or ignored (0) when even its
 // box holds the end, so ends close to other nodes can still be reached.
 type Overrides = ReadonlyMap<number, 0 | 1>
+type OverrideLookup = Pick<Overrides, 'get'>
 
-function rectOf(index: GraphObstacleIndex, id: number, overrides: Overrides): Rect | undefined {
+function rectOf(index: GraphObstacleIndex, id: number, overrides: OverrideLookup): Rect | undefined {
   const mode = overrides.get(id)
   return mode === undefined ? index.inflated[id] : mode === 1 ? index.raw[id] : undefined
 }
@@ -114,7 +115,7 @@ function strictlyInside(rect: Rect, point: GraphPoint) {
 }
 
 // Whether an axis-aligned segment passes through the interior of an obstacle. Running along a border is allowed.
-function blocked(index: GraphObstacleIndex, overrides: Overrides, x1: number, y1: number, x2: number, y2: number) {
+function blocked(index: GraphObstacleIndex, overrides: OverrideLookup, x1: number, y1: number, x2: number, y2: number) {
   const area = { x1: Math.min(x1, x2), y1: Math.min(y1, y2), x2: Math.max(x1, x2), y2: Math.max(y1, y2) }
   return visitNear(index, area, (id) => {
     const rect = rectOf(index, id, overrides)
@@ -127,8 +128,8 @@ function blocked(index: GraphObstacleIndex, overrides: Overrides, x1: number, y1
  * `except`.
  */
 export function graphPolylineClear(index: GraphObstacleIndex, points: readonly GraphPoint[], except: ReadonlySet<string>) {
-  const overrides = new Map<number, 0 | 1>()
-  index.ids.forEach((id, i) => overrides.set(i, except.has(id) ? 0 : 1))
+  // Every box is tested at its own size, the excepted ones not at all.
+  const overrides: OverrideLookup = { get: (i: number) => except.has(index.ids[i]!) ? 0 : 1 }
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!, b = points[i]!
     if (blocked(index, overrides, a.x, a.y, b.x, b.y)) return false
@@ -310,20 +311,71 @@ function searchRegion(
   return points
 }
 
-/** Internal: `findOrthogonalRoute` over a prebuilt index. The ends are assumed valid. */
+/**
+ * Internal: what one obstacle search read beyond its two ends, so a route cache can tell whether a later index would
+ * give the same route (see `isSearchTraceCurrent`). `regions` are the regions searched, in order; the last one holds
+ * the others.
+ */
+export interface GraphSearchTrace {
+  s: GraphPoint
+  e: GraphPoint
+  frame: Rect
+  reach: number
+  /** Whether the search kept the route at or above 0. */
+  nonnegative: boolean
+  regions: Rect[]
+}
+
+// The whole routing area of a search between the stub points `s` and `e`: every grown box and both ends with a margin,
+// kept at or above 0 when the input is.
+function routingFrame(index: GraphObstacleIndex, s: GraphPoint, e: GraphPoint, low: (value: number) => number): Rect {
+  const margin = Math.max(index.clearance, 8)
+  const bounds = index.bounds ?? { x1: s.x, y1: s.y, x2: s.x, y2: s.y }
+  return {
+    x1: Math.min(low(Math.min(bounds.x1, s.x, e.x) - margin), s.x, e.x),
+    y1: Math.min(low(Math.min(bounds.y1, s.y, e.y) - margin), s.y, e.y),
+    x2: Math.max(bounds.x2, s.x, e.x) + margin,
+    y2: Math.max(bounds.y2, s.y, e.y) + margin,
+  }
+}
+
+function routingRegion(frame: Rect, s: GraphPoint, e: GraphPoint, reach: number): Rect {
+  return {
+    x1: Math.max(frame.x1, Math.min(s.x, e.x) - reach), y1: Math.max(frame.y1, Math.min(s.y, e.y) - reach),
+    x2: Math.min(frame.x2, Math.max(s.x, e.x) + reach), y2: Math.min(frame.y2, Math.max(s.y, e.y) + reach),
+  }
+}
+
+function coversFrame(region: Rect, frame: Rect) {
+  return region.x1 <= frame.x1 && region.y1 <= frame.y1 && region.x2 >= frame.x2 && region.y2 >= frame.y2
+}
+
+function lowFor(nonnegative: boolean) {
+  return (value: number) => nonnegative ? Math.max(0, value) : value
+}
+
+/**
+ * Internal: `findOrthogonalRoute` over a prebuilt index. The ends are assumed valid. With `trace`, records what the
+ * search read (see `GraphSearchTrace`).
+ */
 export function routeAroundObstacles(
-  index: GraphObstacleIndex, from: GraphRouteEnd, to: GraphRouteEnd, bendPenalty: number,
+  index: GraphObstacleIndex, from: GraphRouteEnd, to: GraphRouteEnd, bendPenalty: number, trace?: GraphSearchTrace,
 ): GraphPoint[] | undefined {
   const c = index.clearance
   // With every input at nonnegative coordinates the route stays there too, so a stub towards a negative coordinate
   // stops at 0.
   const nonnegative = index.nonnegative && from.x >= 0 && from.y >= 0 && to.x >= 0 && to.y >= 0
-  const low = (value: number) => nonnegative ? Math.max(0, value) : value
+  const low = lowFor(nonnegative)
   const stubPoint = (end: GraphRouteEnd) => {
     const direction = sideDirection[end.side]
     return { x: low(end.x + DX[direction]! * c), y: low(end.y + DY[direction]! * c) }
   }
   const s = stubPoint(from), e = stubPoint(to)
+  const frame = routingFrame(index, s, e, low)
+  // Search a region around both ends first and grow it fourfold until it covers the frame.
+  let reach = Math.max(4 * index.cell, 4 * c, 64)
+  if (trace) Object.assign(trace, { s, e, frame, reach, nonnegative, regions: [] })
+  if (Math.abs(s.x - e.x) < eps && Math.abs(s.y - e.y) < eps) return simplifyRoute([from, s, to])
   const overrides = new Map<number, 0 | 1>()
   for (const point of [s, e]) {
     visitNear(index, { x1: point.x, y1: point.y, x2: point.x, y2: point.y }, (id) => {
@@ -331,28 +383,72 @@ export function routeAroundObstacles(
       overrides.set(id, strictlyInside(index.raw[id]!, point) ? 0 : 1)
     })
   }
-  if (Math.abs(s.x - e.x) < eps && Math.abs(s.y - e.y) < eps) return simplifyRoute([from, s, to])
-  // The whole routing area: every grown box and both ends with a margin, kept at or above 0 when the input is.
-  const margin = Math.max(c, 8)
-  const bounds = index.bounds ?? { x1: s.x, y1: s.y, x2: s.x, y2: s.y }
-  const frame = {
-    x1: Math.min(low(Math.min(bounds.x1, s.x, e.x) - margin), s.x, e.x),
-    y1: Math.min(low(Math.min(bounds.y1, s.y, e.y) - margin), s.y, e.y),
-    x2: Math.max(bounds.x2, s.x, e.x) + margin,
-    y2: Math.max(bounds.y2, s.y, e.y) + margin,
-  }
-  // Search a region around both ends first and grow it fourfold until it covers the frame.
-  let reach = Math.max(4 * index.cell, 4 * c, 64)
   for (;;) {
-    const region = {
-      x1: Math.max(frame.x1, Math.min(s.x, e.x) - reach), y1: Math.max(frame.y1, Math.min(s.y, e.y) - reach),
-      x2: Math.min(frame.x2, Math.max(s.x, e.x) + reach), y2: Math.min(frame.y2, Math.max(s.y, e.y) + reach),
-    }
+    const region = routingRegion(frame, s, e, reach)
+    trace?.regions.push(region)
     const route = searchRegion(index, overrides, region, s, e, from, to, bendPenalty)
     if (route) return simplifyRoute([from, ...route, to])
-    if (region.x1 <= frame.x1 && region.y1 <= frame.y1 && region.x2 >= frame.x2 && region.y2 >= frame.y2) return undefined
+    if (coversFrame(region, frame)) return undefined
     reach *= 4
   }
+}
+
+// The sorted values of `list` from `low` to `high`, both included.
+function sliceBetween(list: readonly number[], low: number, high: number) {
+  let a = 0, b = list.length
+  while (a < b) {
+    const m = (a + b) >> 1
+    if (list[m]! < low) a = m + 1
+    else b = m
+  }
+  const start = a
+  b = list.length
+  while (a < b) {
+    const m = (a + b) >> 1
+    if (list[m]! <= high) a = m + 1
+    else b = m
+  }
+  return { start, end: a }
+}
+
+function sameSlice(before: readonly number[], after: readonly number[], low: number, high: number) {
+  if (before === after) return true
+  const x = sliceBetween(before, low, high), y = sliceBetween(after, low, high)
+  if (x.end - x.start !== y.end - y.start) return false
+  for (let i = 0; i < x.end - x.start; i++) if (before[x.start + i] !== after[y.start + i]) return false
+  return true
+}
+
+/** Internal: whether a rectangle meets a closed rectangle grown by a small margin. */
+export function rectNear(a: Rect, b: Rect, margin = 1e-6) {
+  return a.x1 <= b.x2 + margin && b.x1 <= a.x2 + margin && a.y1 <= b.y2 + margin && b.y1 <= a.y2 + margin
+}
+
+/**
+ * Internal: whether a search recorded over `before` would read the same data over `after`, so that it finds the same
+ * route between the same ends. `changed` lists the old and new grown boxes of every box that differs between the two
+ * indexes (moved, resized, added or removed). The search reads the frame (through the bounds of all boxes), the
+ * regions it grew through, the boxes that reach into its last region and the box edges whose coordinates lie in its
+ * range along either axis; the test is conservative, so a false answer only costs a search.
+ */
+export function isSearchTraceCurrent(
+  trace: GraphSearchTrace, before: GraphObstacleIndex, after: GraphObstacleIndex, changed: readonly Rect[],
+): boolean {
+  if (before.clearance !== after.clearance || before.nonnegative !== after.nonnegative || before.cell !== after.cell) return false
+  if (!trace.regions.length) return true
+  const { s, e } = trace
+  const frame = routingFrame(after, s, e, lowFor(trace.nonnegative))
+  let reach = trace.reach
+  for (const region of trace.regions) {
+    const next = routingRegion(frame, s, e, reach)
+    if (next.x1 !== region.x1 || next.y1 !== region.y1 || next.x2 !== region.x2 || next.y2 !== region.y2) return false
+    if (coversFrame(next, frame) !== coversFrame(region, trace.frame)) return false
+    reach *= 4
+  }
+  const last = trace.regions[trace.regions.length - 1]!
+  for (const rect of changed) if (rectNear(rect, last)) return false
+  return sameSlice(before.xBorders, after.xBorders, last.x1 - 1e-6, last.x2 + 1e-6)
+    && sameSlice(before.yBorders, after.yBorders, last.y1 - 1e-6, last.y2 + 1e-6)
 }
 
 function assertEnd(end: GraphRouteEnd, name: string) {
