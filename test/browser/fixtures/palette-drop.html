@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Palette drop fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/palette-drop-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/palette-drop-test/vue.js", "@eightkk/vue-weave": "/palette-drop-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { GanttChart, GraphPalette, NetworkGraph, readPaletteDrop } from '@eightkk/vue-weave'
+
+      // A GraphPalette next to a droppable NetworkGraph and a droppable GanttChart. Every `insert`, `node-drop` and
+      // `bar-drop` is read with readPaletteDrop and logged as a JSON line in the "Log" status. The palette's own
+      // dragstart data is recorded in window.__dragstarts. Two foreign drag sources, "Foreign text" (text/plain only) and
+      // "Broken payload" (the palette type with malformed JSON), drop without a palette payload. Query parameters: rtl,
+      // slot (an item slot), nosearch (no filter box).
+      const query = new URLSearchParams(location.search)
+      const hour = 3_600_000
+      const items = [
+        { id: 'start', label: 'Start', shape: 'ellipse', tone: 'teal', section: 'Flow', keywords: ['begin'], data: { kind: 'event' } },
+        { id: 'step', label: 'Step', section: 'Flow' },
+        { id: 'decision', label: 'Decision', detail: 'Branch', shape: 'diamond', section: 'Flow', keywords: ['gateway'] },
+        { id: 'store', label: 'Data store', shape: 'hexagon', section: 'Data' },
+        { id: 'locked', label: 'Locked', section: 'Data', disabled: true },
+      ]
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+      window.__dragstarts = []
+      document.addEventListener('dragstart', event => {
+        const data = event.dataTransfer
+        window.__dragstarts.push({
+          types: [...data.types], effectAllowed: data.effectAllowed,
+          payload: data.getData('application/x-vue-weave-palette+json'), text: data.getData('text/plain'),
+        })
+      })
+
+      createApp({
+        setup() {
+          const palette = ref()
+          const graph = ref()
+          const nodes = shallowRef([{ id: 'seed', label: 'Seed' }])
+          const positions = shallowRef(new Map([['seed', { x: 40, y: 40 }]]))
+          const rows = [{ id: 'r1', label: 'Row one' }, { id: 'r2', label: 'Row two' }]
+          const bars = [{ id: 'b1', rowId: 'r1', label: 'Bar one', start: hour, end: 3 * hour }]
+          const lookup = hit => items.find(item => item.id === hit?.id)
+          const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
+          return () => h('main', { style: 'display: grid; gap: 12px; padding: 12px; width: 900px' }, [
+            h('div', { style: 'display: flex; gap: 8px; flex-wrap: wrap' }, [
+              control('Focus Decision', async () => record('focus', 'decision', await palette.value.focusItem('decision'))),
+              control('Focus Locked', async () => record('focus', 'locked', await palette.value.focusItem('locked'))),
+              control('Focus missing', async () => record('focus', 'missing', await palette.value.focusItem('missing'))),
+              control('Focus default', async () => record('focus', 'default', await palette.value.focusItem())),
+              h('div', { draggable: 'true', role: 'button', tabindex: 0, 'aria-label': 'Foreign text', onDragstart: event => event.dataTransfer.setData('text/plain', 'hello') }, 'Foreign text'),
+              h('div', { draggable: 'true', role: 'button', tabindex: 0, 'aria-label': 'Broken payload', onDragstart: event => event.dataTransfer.setData('application/x-vue-weave-palette+json', '{bad') }, 'Broken payload'),
+            ]),
+            h('div', { style: 'display: grid; grid-template-columns: 220px 1fr; gap: 12px' }, [
+              h(GraphPalette, {
+                ref: palette, items, searchable: !query.has('nosearch'), dir: query.has('rtl') ? 'rtl' : 'ltr', labels: { region: 'Fixture palette' },
+                onInsert: item => record('insert', item.id, item.data ?? null),
+              }, query.has('slot') ? { item: ({ item, active }) => h('span', { class: 'slotted' }, `${item.label}${active ? ' (active)' : ''}`) } : undefined),
+              h(NetworkGraph, {
+                ref: graph, nodes: nodes.value, edges: [], positions: positions.value, droppable: true, height: 260, labels: { region: 'Drop graph' },
+                onNodeDrop: drop => {
+                  const hit = readPaletteDrop(drop)
+                  const item = lookup(hit)
+                  const at = graph.value.toGraphPoint(drop.clientX, drop.clientY)
+                  record('node-drop', hit ?? null, { x: Math.round(at.x), y: Math.round(at.y) })
+                  if (item) {
+                    const id = `${item.id}-${nodes.value.length}`
+                    nodes.value = [...nodes.value, { id, label: item.label }]
+                    positions.value = new Map(positions.value).set(id, { x: Math.max(0, at.x - 60), y: Math.max(0, at.y - 20) })
+                  }
+                },
+              }),
+            ]),
+            h(GanttChart, {
+              rows, bars, range: { start: 0, end: 6 * hour }, droppable: true, height: 180, labels: { region: 'Drop chart' },
+              onBarDrop: drop => record('bar-drop', readPaletteDrop(drop) ?? null, drop.rowId ?? null),
+            }),
+            h('pre', { role: 'status', 'aria-label': 'Log' }, log.value.join('\n')),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

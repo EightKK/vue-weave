@@ -343,3 +343,156 @@ export type LinkedFixture = {
   /** Make the Effort field of a row read `value` from a ref outside `rows`, without new props. */
   setExternalEffort(rowId: string, value: number): void
 }
+
+/** The rules `expectStructuralAccessibility` checks; its `ignore` option takes these names. */
+export type StructuralRule = 'name' | 'duplicate-id' | 'reference' | 'owned-roles'
+
+/**
+ * Checks the structure of the accessibility tree under `scope` with DOM APIs only (no axe): every visible interactive
+ * element has a non-empty accessible name; no `id` occurs twice; `aria-labelledby`, `aria-describedby`, `aria-controls`
+ * and `aria-activedescendant` name existing elements; and grid/row/gridcell, listbox/option, tree/treeitem and
+ * tablist/tab roles have the owned and owning roles they require. Elements inside `aria-hidden` or hidden subtrees are
+ * not checked. Fails with one line per violation. `ignore` leaves out whole rules; a caller that uses it says why.
+ */
+export async function expectStructuralAccessibility(scope: Scope, { ignore = [] }: { ignore?: StructuralRule[] } = {}) {
+  const root = 'goto' in scope ? scope.locator('body') : scope
+  const violations = await root.evaluate((rootElement, skipped) => {
+    const found: string[] = []
+    const describe = (element: Element) => {
+      const id = element.id ? '#' + element.id : ''
+      const role = element.getAttribute('role')
+      const cls = typeof element.className === 'string' && element.className ? '.' + element.className.trim().split(/\s+/).join('.') : ''
+      return `<${element.tagName.toLowerCase()}${id}${cls}${role ? ` role=${role}` : ''}>`
+    }
+    const hiddenSubtree = (element: Element) => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        if (node.getAttribute('aria-hidden') === 'true' || node.hasAttribute('hidden') || node.hasAttribute('inert')) return true
+        const style = getComputedStyle(node)
+        if (style.display === 'none' || style.visibility === 'hidden') return true
+      }
+      return false
+    }
+    const all = [rootElement, ...rootElement.querySelectorAll('*')].filter(element => !hiddenSubtree(element))
+    const byIds = (value: string | null) => (value?.split(/\s+/) ?? []).map(id => document.getElementById(id)).filter((target): target is HTMLElement => !!target)
+    // The text a name is built from: aria-label, alternative text, an SVG title or the content of the subtree.
+    const textOf = (element: Element): string => {
+      if (hiddenSubtree(element)) return ''
+      const label = element.getAttribute('aria-label')?.trim()
+      if (label) return label
+      if (element instanceof HTMLImageElement && element.alt.trim()) return element.alt.trim()
+      if (element instanceof SVGElement) {
+        const title = element.querySelector(':scope > title')?.textContent?.trim()
+        if (title) return title
+      }
+      let text = ''
+      for (const child of element.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) text += child.textContent
+        else if (child instanceof Element) text += ' ' + textOf(child)
+      }
+      return text.replace(/\s+/g, ' ').trim()
+    }
+    const nameFromContent = /^(button|link|checkbox|radio|switch|option|tab|menuitem|menuitemcheckbox|menuitemradio|treeitem|gridcell|cell|row|columnheader|rowheader|heading)$/
+    const accessibleName = (element: Element) => {
+      const referenced = byIds(element.getAttribute('aria-labelledby')).map(textOf).join(' ').trim()
+      if (referenced) return referenced
+      const label = element.getAttribute('aria-label')?.trim()
+      if (label) return label
+      if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+        const labels = [...(element.labels ?? [])].map(textOf).join(' ').trim()
+        if (labels) return labels
+        if (element instanceof HTMLInputElement && ['button', 'submit', 'reset'].includes(element.type) && element.value.trim()) return element.value.trim()
+      }
+      const role = element.getAttribute('role')
+      const implicit = element instanceof HTMLButtonElement || element instanceof HTMLAnchorElement || element.tagName === 'SUMMARY'
+      if (implicit || (role && nameFromContent.test(role))) {
+        let content = ''
+        for (const child of element.childNodes) {
+          if (child.nodeType === Node.TEXT_NODE) content += child.textContent
+          else if (child instanceof Element) content += ' ' + textOf(child)
+        }
+        content = content.replace(/\s+/g, ' ').trim()
+        if (content) return content
+      }
+      return element.getAttribute('title')?.trim() ?? ''
+    }
+    const interactiveRoles = /^(button|link|checkbox|radio|switch|slider|spinbutton|textbox|searchbox|combobox|option|tab|menuitem|menuitemcheckbox|menuitemradio|treeitem|scrollbar)$/
+    const interactive = (element: Element) => {
+      const role = element.getAttribute('role')
+      if (role === 'presentation' || role === 'none') return false
+      if (element instanceof HTMLInputElement) return element.type !== 'hidden'
+      if (element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement || element instanceof HTMLButtonElement || element.tagName === 'SUMMARY') return true
+      if (element instanceof HTMLAnchorElement) return element.hasAttribute('href')
+      const tabindex = element.getAttribute('tabindex')
+      if (tabindex !== null && tabindex !== '-1') return true
+      return !!role && interactiveRoles.test(role)
+    }
+    if (!skipped.includes('name')) {
+      for (const element of all) if (interactive(element) && !accessibleName(element)) found.push(`name: ${describe(element)} has no accessible name`)
+    }
+    if (!skipped.includes('duplicate-id')) {
+      const seen = new Map<string, Element>()
+      for (const element of [rootElement, ...rootElement.querySelectorAll('[id]')]) {
+        if (!element.id) continue
+        if (seen.has(element.id)) found.push(`duplicate-id: id "${element.id}" is used by ${describe(seen.get(element.id)!)} and ${describe(element)}`)
+        else seen.set(element.id, element)
+      }
+    }
+    if (!skipped.includes('reference')) {
+      for (const element of [rootElement, ...rootElement.querySelectorAll('*')]) {
+        for (const name of ['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-activedescendant']) {
+          const value = element.getAttribute(name)
+          if (value === null) continue
+          const ids = value.split(/\s+/).filter(Boolean)
+          if (ids.length === 0) found.push(`reference: ${describe(element)} has an empty ${name}`)
+          for (const id of ids) if (!document.getElementById(id)) found.push(`reference: ${describe(element)} ${name} names missing id "${id}"`)
+        }
+      }
+    }
+    if (!skipped.includes('owned-roles')) {
+      const owners: Record<string, string[]> = {
+        grid: ['row', 'rowgroup'], treegrid: ['row', 'rowgroup'], listbox: ['option', 'group'], tree: ['treeitem', 'group'], tablist: ['tab'],
+        row: ['gridcell', 'cell', 'columnheader', 'rowheader'],
+      }
+      const parents: Record<string, string[]> = {
+        gridcell: ['row'], columnheader: ['row'], rowheader: ['row'], option: ['listbox', 'group'], treeitem: ['tree', 'group', 'treeitem'], tab: ['tablist'],
+        row: ['grid', 'treegrid', 'table', 'rowgroup'],
+      }
+      const explicitRole = (element: Element) => {
+        const role = element.getAttribute('role')
+        return role && role !== 'presentation' && role !== 'none' ? role : null
+      }
+      // The explicit roles directly below an element, looking through containers without a role and through aria-owns.
+      const rolesBelow = (element: Element) => {
+        const roles = new Set<string>()
+        const stack: Element[] = [...element.children, ...byIds(element.getAttribute('aria-owns'))]
+        while (stack.length) {
+          const node = stack.pop()!
+          if (hiddenSubtree(node)) continue
+          const role = explicitRole(node)
+          if (role) roles.add(role)
+          else stack.push(...node.children)
+        }
+        return roles
+      }
+      for (const element of all) {
+        const role = explicitRole(element)
+        if (!role) continue
+        if (owners[role] && element.getAttribute('aria-busy') !== 'true') {
+          const below = rolesBelow(element)
+          if (!owners[role].some(child => below.has(child))) found.push(`owned-roles: ${describe(element)} owns no ${owners[role].join(' or ')}`)
+        }
+        if (parents[role]) {
+          let ancestor = element.parentElement
+          while (ancestor && !explicitRole(ancestor)) ancestor = ancestor.parentElement
+          const parentRole = ancestor ? explicitRole(ancestor) : null
+          const owned = element.id && [...document.querySelectorAll('[aria-owns]')].some(candidate => candidate.getAttribute('aria-owns')!.split(/\s+/).includes(element.id))
+          if (!owned && (!parentRole || !parents[role].includes(parentRole))) {
+            found.push(`owned-roles: ${describe(element)} must be inside ${parents[role].join(' or ')}, not ${parentRole ?? 'a container without a role'}`)
+          }
+        }
+      }
+    }
+    return found
+  }, ignore)
+  expect(violations, 'structural accessibility violations').toEqual([])
+}

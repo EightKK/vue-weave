@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaskBoard contract fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/board-more-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/board-more-test/vue.js", "@eightkk/vue-weave": "/board-more-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref, shallowRef } from 'vue'
+      import { TaskBoard, applyBoardCardMove } from '@eightkk/vue-weave'
+
+      // A TaskBoard of 5 cards in 4 columns, with two lanes unless `nolanes`. Every event is logged as a JSON line to the
+      // "Board log" status. The parent applies moves, collapsed IDs and the selection. Query parameters: nolanes, rtl,
+      // readonly, strict (validateCardMove refuses a column already at its WIP limit), slots (card, column-header and
+      // empty slots), german (labels), collapsible. Controls call the exposed focusCard and cancelMove, replace the cards
+      // with equal new objects and reload the page state.
+      const query = new URLSearchParams(location.search)
+      const lanes = query.has('nolanes') ? undefined : [{ id: 'web', label: 'Web', detail: 'Front end' }, { id: 'api', label: 'API' }]
+      const columns = [
+        { id: 'todo', label: 'To do' }, { id: 'doing', label: 'Doing', wipLimit: 2 },
+        { id: 'review', label: 'Review', wipMin: 1 }, { id: 'done', label: 'Done', detail: 'Shipped' },
+      ]
+      const initial = [
+        { id: 'alpha', columnId: 'todo', laneId: 'web', label: 'Alpha' },
+        { id: 'bravo', columnId: 'doing', laneId: 'web', label: 'Bravo' },
+        { id: 'charlie', columnId: 'doing', laneId: 'api', label: 'Charlie' },
+        { id: 'delta', columnId: 'todo', laneId: 'api', label: 'Pinned', draggable: false },
+        { id: 'echo', columnId: 'done', laneId: 'web', label: 'Echo', detail: 'Released' },
+      ]
+      const german = { region: 'Aufgabenbrett', moveHint: 'Leertaste hebt die Karte an.', pickedUp: 'Angehoben:', moved: 'Verschoben:', moveCancelled: 'Abgebrochen.', collapse: 'Einklappen', expand: 'Ausklappen', emptyCell: 'Leer' }
+      const log = ref([])
+      const record = (...entry) => { log.value = [...log.value, JSON.stringify(entry)] }
+
+      createApp({
+        setup() {
+          const board = ref()
+          const cards = shallowRef(initial)
+          const selected = ref()
+          const collapsedColumns = ref([])
+          const collapsedLanes = ref([])
+          const control = (label, action) => h('button', { type: 'button', onClick: action }, label)
+          const validateCardMove = change => {
+            if (!query.has('strict')) return true
+            const target = cards.value.filter(card => card.columnId === change.after.columnId && card.id !== change.id).length
+            if (change.after.columnId === 'doing' && change.before.columnId !== 'doing' && target >= 2) return 'Doing is full.'
+          }
+          return () => h('main', { style: 'padding: 12px; width: 1000px' }, [
+            h('div', { style: 'display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px' }, [
+              ...['alpha', 'echo', 'missing'].map(id => control('Focus ' + id, () => record('focusCard', id, board.value.focusCard(id) ?? null))),
+              control('Cancel move', () => board.value.cancelMove()),
+              control('Replace cards', () => { cards.value = cards.value.map(card => ({ ...card })) }),
+              control('Outside', () => {}),
+            ]),
+            h(TaskBoard, {
+              ref: board, columns, lanes, cards: cards.value, selectedId: selected.value,
+              dir: query.has('rtl') ? 'rtl' : 'ltr', readonly: query.has('readonly'), collapsible: query.has('collapsible'),
+              collapsedColumnIds: collapsedColumns.value, collapsedLaneIds: collapsedLanes.value, validateCardMove,
+              labels: query.has('german') ? german : { region: 'Fixture board' },
+              'onUpdate:selectedId': id => { selected.value = id; record('select', id) },
+              'onUpdate:collapsedColumnIds': ids => { collapsedColumns.value = ids; record('collapse-columns', ids) },
+              'onUpdate:collapsedLaneIds': ids => { collapsedLanes.value = ids; record('collapse-lanes', ids) },
+              onCardActivate: id => record('activate', id),
+              onBackgroundClick: click => record('background', click),
+              onCardMove: change => {
+                cards.value = applyBoardCardMove(cards.value, change, { columns, lanes })
+                record('move', change.id, change.after.columnId, change.after.laneId ?? null, change.after.index, change.source)
+              },
+              onCardMoveRejected: (change, reason) => record('rejected', change.id, reason),
+              onCardMoveCancel: event => record('cancel', event.id, event.reason, event.source),
+            }, query.has('slots') ? {
+              card: ({ card, selected: isSelected, moving, column, lane }) => h('span', { class: 'slot-card' }, `${card.label} in ${column.label}${lane ? ' / ' + lane.label : ''}${isSelected ? ' selected' : ''}${moving ? ' moving' : ''}`),
+              'column-header': ({ column, status }) => h('span', { class: 'slot-head' }, `${column.label}: ${status.count}${status.overLimit ? ' over' : status.atLimit ? ' full' : ''}${status.underMinimum ? ' short' : ''}`),
+              empty: ({ column, lane }) => h('em', { class: 'slot-empty' }, `Nothing in ${column?.label}${lane ? ' / ' + lane.label : ''}`),
+            } : undefined),
+            h('pre', { role: 'status', 'aria-label': 'Board log' }, log.value.join('\n')),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>
