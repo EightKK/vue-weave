@@ -106,7 +106,7 @@ add('scheduleTasks (weekday calendar, FS + SS links)', [100, 1000, 10000],
   size => scheduleInput(size), input => core.scheduleTasks(input))
 add('scheduleTasks (no calendar)', [100, 1000, 10000],
   size => scheduleInput(size, { calendar: false }), input => core.scheduleTasks(input))
-add('levelResources (1 task per 20 resources)', [100, 1000, 3000],
+add('levelResources (1 task per 20 resources)', [100, 1000, 3000, 10000],
   size => levelInput(size), input => core.levelResources(input))
 add('layoutLayeredGraph', [100, 1000, 5000],
   size => graphInput(size), ({ nodes, edges }) => core.layoutLayeredGraph(nodes, edges))

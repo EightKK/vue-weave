@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- `levelResources` is much faster on long horizons: placing a task now reads remaining capacity and free working time only as far as that task's placement needs, instead of from its earliest start to the end of the horizon. In the benchmark of `docs/performance.md`, 3,000 tasks went from about 1 s to under 0.2 s and 10,000 tasks from about 13 s to under 1 s. Results are unchanged: the same dates, leveled tasks, delays, overloads, unresolved tasks, traces and errors.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.

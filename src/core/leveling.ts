@@ -1,5 +1,5 @@
 import { calculateResourceLoad, type ResourceAssignment, type ResourceCapacity, type ResourceLoadSegment } from './resourceLoad.js'
-import { appendJoined, firstIndex, joinTouching, rangesOverlap, subtractPeriods } from './intervals.js'
+import { appendJoined, firstIndex, joinTouching } from './intervals.js'
 import {
   buildScheduleModel, diagnose, limitsOf, lowerBounds, manualSlot, slotFor, summarySlot, topologicalOrder, type ModelTask,
   type ScheduleModel, type Slot, type WorkClock,
@@ -11,7 +11,6 @@ import {
 } from './scheduleTrace.js'
 import { scheduleTasks, type ScheduleFailure, type ScheduleInput, type ScheduleSuccess, type ScheduleTask } from './scheduling.js'
 import type { TimeRange } from './timeline.js'
-import { normalizeWorkPeriods } from './workCalendar.js'
 import { assignmentWorkRange, createAssignmentChecker, resourceCapacitySteps, sliceWork, type CapacityStep } from './resourceCapacity.js'
 import { checkId } from './ids.js'
 import { MinHeap } from './graphHeap.js'
@@ -108,52 +107,97 @@ class Profile {
   indexAt(time: number): number {
     return Math.max(0, firstIndex(this.times.length, i => this.times[i]! > time) - 1)
   }
-  /**
-   * Intervals where fewer than `units` remain, sorted and merged. Shortages that end at or before `from` are left out;
-   * the first interval can start before it.
-   */
-  blocked(units: number, rangeEnd: number, from = -Infinity): TimeRange[] {
-    const result: TimeRange[] = []
-    for (let i = this.indexAt(from); i < this.times.length; i++) {
-      if (this.values[i]! >= units) continue
-      appendJoined(result, this.times[i]!, this.times[i + 1] ?? rangeEnd)
-    }
-    return result
-  }
 }
 
 /**
- * Free intervals of a task clock, expressed as merged work-unit ranges. Working periods that end at or before `from`
- * are skipped, so the first range can start later than it would otherwise, but never after `clock.workAt(from)`.
+ * Sorted, disjoint ranges that are computed only as far as they are read, so that placing a task near the start of a
+ * long horizon does not pay for the rest of it. Each call of `fill` appends the next ranges, if any, possibly extending
+ * the last one, and returns the new frontier, or Infinity once nothing is left: every range that starts before the
+ * frontier is in `items`, and only the last one, while it ends at the frontier, can still grow.
  */
-function freeWork(clock: WorkClock, blocked: readonly TimeRange[], from = -Infinity): TimeRange[] {
-  const { periods } = clock
-  const result: TimeRange[] = []
-  for (const part of subtractPeriods(periods, blocked, firstIndex(periods.length, i => periods[i]!.end > from))) {
-    appendJoined(result, clock.workAt(part.start), clock.workAt(part.end))
+class LazyRanges {
+  private readonly items: TimeRange[] = []
+  private frontier = -Infinity
+  constructor(private readonly fill: (out: TimeRange[]) => number) {}
+  /** Range `index` if it starts before `limit`, reading no further than needed to tell. */
+  startingBefore(index: number, limit: number): TimeRange | undefined {
+    while (this.items.length <= index && this.frontier < limit) this.frontier = this.fill(this.items)
+    const item = this.items[index]
+    return item && item.start < limit ? item : undefined
   }
-  return result
+  /**
+   * The end of range `index`, which must have been read: its final end, or an end for which `enough` holds already.
+   * `enough` must stay true for any later end, so that a decision taken on it is the one the final end gives.
+   */
+  endOf(index: number, enough: (end: number) => boolean): number {
+    const item = this.items[index]!
+    while (item.end === this.frontier && !enough(item.end)) this.frontier = this.fill(this.items)
+    return item.end
+  }
+  /** Index of the first range that ends after `time`, or the number of ranges when none does. */
+  firstEndingAfter(time: number): number {
+    while (this.frontier <= time) this.frontier = this.fill(this.items)
+    const { items } = this
+    return firstIndex(items.length, k => items[k]!.end > time)
+  }
+}
+
+/** Whether sorted, disjoint `a` overlaps any of the lazy ranges `b`, reading `b` only as far as needed. */
+function overlapsLazy(a: readonly TimeRange[], b: LazyRanges): boolean {
+  let j = 0
+  for (const range of a) {
+    let cut = b.startingBefore(j, range.end)
+    while (cut && b.endOf(j, end => end > range.start) <= range.start) cut = b.startingBefore(++j, range.end)
+    if (cut) return true
+  }
+  return false
+}
+
+/**
+ * Free intervals of a task clock, expressed as merged work-unit ranges and read on demand. Working periods that end
+ * at or before `from` are skipped, so the first range can start later than it would otherwise, but never after
+ * `clock.workAt(from)`. Each working period has the blocked intervals cut out of it, as `subtractPeriods` does.
+ */
+function freeWork(clock: WorkClock, blocked: LazyRanges, from = -Infinity): LazyRanges {
+  const { periods } = clock
+  let p = firstIndex(periods.length, i => periods[i]!.end > from), c = 0
+  return new LazyRanges(out => {
+    if (p >= periods.length) return Infinity
+    const period = periods[p++]!
+    let start = period.start
+    let cut = blocked.startingBefore(c, period.end)
+    while (cut && blocked.endOf(c, end => end > start) <= start) cut = blocked.startingBefore(++c, period.end)
+    for (let i = c; cut; cut = blocked.startingBefore(++i, period.end)) {
+      if (cut.start > start) appendJoined(out, clock.workAt(start), clock.workAt(cut.start))
+      start = Math.max(start, blocked.endOf(i, end => end >= period.end))
+      // Every later cut starts after this one ends, so none of them falls in this period.
+      if (start >= period.end) break
+    }
+    if (start < period.end) appendJoined(out, clock.workAt(start), clock.workAt(period.end))
+    return clock.workAt(period.end)
+  })
 }
 
 /** Earliest uninterrupted work range within the free ranges. */
-function contiguous(free: readonly TimeRange[], first: number, duration: number, lastStart: number): TimeRange[] | undefined {
-  for (const range of free) {
+function contiguous(free: LazyRanges, first: number, duration: number, lastStart: number): TimeRange[] | undefined {
+  for (let i = 0, range = free.startingBefore(0, Infinity); range; range = free.startingBefore(++i, Infinity)) {
     const start = Math.max(range.start, first)
     if (start > lastStart) return undefined
-    if (start + duration <= range.end) return [{ start, end: start + duration }]
+    if (start + duration <= free.endOf(i, end => start + duration <= end)) return [{ start, end: start + duration }]
   }
   return undefined
 }
 
 /** Earliest free work units, possibly interrupted. */
-function interrupted(free: readonly TimeRange[], first: number, duration: number, lastStart: number, lastEnd: number) {
+function interrupted(free: LazyRanges, first: number, duration: number, lastStart: number, lastEnd: number) {
   const chunks: TimeRange[] = []
   let remaining = duration
-  for (const range of free) {
+  for (let i = 0, range = free.startingBefore(0, Infinity); range; range = free.startingBefore(++i, Infinity)) {
     const start = Math.max(range.start, first)
-    if (start >= range.end) continue
+    const end = free.endOf(i, reached => reached - start >= remaining)
+    if (start >= end) continue
     if (!chunks.length && start > lastStart) return undefined
-    const take = Math.min(range.end - start, remaining)
+    const take = Math.min(end - start, remaining)
     chunks.push({ start, end: start + take })
     remaining -= take
     if (!remaining) break
@@ -178,7 +222,7 @@ function needSlices(need: Need, slices: readonly TimeRange[]): TimeRange[] {
 interface WorkPiece {
   from: number
   to: number
-  free: TimeRange[]
+  free: LazyRanges
 }
 
 /**
@@ -191,7 +235,7 @@ function workPieces(
 ): WorkPiece[] {
   const entries = [...spans]
   const cuts = [...new Set([0, duration, ...entries.flatMap(([, span]) => [span.start, span.end])])].sort((a, b) => a - b)
-  const cache = new Map<string, TimeRange[]>()
+  const cache = new Map<string, LazyRanges>()
   const pieces: WorkPiece[] = []
   for (let i = 0; i < cuts.length - 1; i++) {
     const from = cuts[i]!, to = cuts[i + 1]!
@@ -212,41 +256,64 @@ function workPieces(
 }
 
 /**
- * The sorted, merged intervals in which any of `needs` finds too little capacity, leaving out shortages that end at or
- * before `from`. One need's intervals are already sorted and merged.
+ * The sorted, merged intervals in which any of `needs` finds too little capacity, read on demand, leaving out shortages
+ * that end at or before `from`. Each need counts from the start of its profile segment that holds `from`, and the
+ * profiles are swept together, one boundary at a time.
  */
-function blockedBy(needs: readonly Need[], range: TimeRange, from: number): TimeRange[] {
-  if (needs.length === 1) return needs[0]!.profile.blocked(needs[0]!.units, range.end, from)
-  return normalizeWorkPeriods(needs.flatMap(need => need.profile.blocked(need.units, range.end, from)), range)
+function blockedBy(needs: readonly Need[], range: TimeRange, from: number): LazyRanges {
+  const cursors = needs.map(need => need.profile.indexAt(from))
+  let time = Infinity
+  needs.forEach((need, k) => {
+    time = Math.min(time, need.profile.times[cursors[k]!]!)
+  })
+  return new LazyRanges(out => {
+    if (time >= range.end) return Infinity
+    // Segment cursors[k] of a need holds `time` once it has started; the next boundary of any need ends this step.
+    let next = range.end, short = false
+    needs.forEach((need, k) => {
+      const { times, values } = need.profile, i = cursors[k]!
+      if (times[i]! > time) next = Math.min(next, times[i]!)
+      else {
+        next = Math.min(next, times[i + 1] ?? range.end)
+        if (values[i]! < need.units) short = true
+      }
+    })
+    if (short) appendJoined(out, time, next)
+    needs.forEach((need, k) => {
+      const { times } = need.profile, i = cursors[k]!
+      if (times[i]! <= time && (times[i + 1] ?? range.end) === next) cursors[k] = i + 1
+    })
+    return time = next
+  })
 }
 
-/** The closed intervals `[start, end]` common to two sorted lists of disjoint closed intervals. */
-function intersectClosed(a: readonly (readonly [number, number])[], b: readonly (readonly [number, number])[]) {
-  const result: [number, number][] = []
-  let i = 0, j = 0
-  while (i < a.length && j < b.length) {
-    const start = Math.max(a[i]![0], b[j]![0]), end = Math.min(a[i]![1], b[j]![1])
-    if (start <= end) result.push([start, end])
-    if (a[i]![1] < b[j]![1]) i++
-    else j++
-  }
-  return result
-}
-
-/** Earliest uninterrupted work range in which every stretch lies in its own free work units. */
+/**
+ * Earliest uninterrupted work range in which every stretch lies in its own free work units. A free range [s, e) holds
+ * a stretch for every task start in [s - from, e - to], so the result starts at the earliest start in `[first,
+ * lastStart]` that every stretch allows, as intersecting those start intervals would give. The candidate start only
+ * grows, so each stretch reads its free ranges once and only as far as the result.
+ */
 function contiguousPieces(pieces: readonly WorkPiece[], first: number, duration: number, lastStart: number): TimeRange[] | undefined {
-  if (first > lastStart) return undefined
-  let valid: (readonly [number, number])[] = [[first, lastStart]]
-  for (const piece of pieces) {
-    const length = piece.to - piece.from
-    // A free range [s, e) holds the stretch for every task start in [s - from, e - to].
-    const starts = piece.free.filter(range => range.end - range.start >= length)
-      .map(range => [range.start - piece.from, range.end - piece.to] as const)
-    valid = intersectClosed(valid, starts)
-    if (!valid.length) return undefined
+  const cursors = pieces.map(() => 0)
+  let start = first
+  // Stop once every stretch in a row allows the candidate start.
+  for (let k = 0, settled = 0; settled < pieces.length; k = (k + 1) % pieces.length) {
+    if (start > lastStart) return undefined
+    const { from, to, free } = pieces[k]!
+    let range = free.startingBefore(cursors[k]!, Infinity)
+    while (range) {
+      const fits = (end: number) => !(end - range!.start < to - from || end - to < start)
+      if (fits(free.endOf(cursors[k]!, fits))) break
+      range = free.startingBefore(++cursors[k]!, Infinity)
+    }
+    if (!range) return undefined
+    // A later start is checked again with this stretch too, in case rounding left its range empty.
+    if (range.start - from > start) {
+      start = range.start - from
+      settled = 0
+    } else settled++
   }
-  const start = valid[0]![0]
-  return [{ start, end: start + duration }]
+  return start > lastStart ? undefined : [{ start, end: start + duration }]
 }
 
 /** Earliest free work units, possibly interrupted, taking each stretch in turn from its own free work units. */
@@ -256,10 +323,12 @@ function interruptedPieces(pieces: readonly WorkPiece[], first: number, lastStar
   for (const piece of pieces) {
     let remaining = piece.to - piece.from
     const { free } = piece
-    for (let i = firstIndex(free.length, k => free[k]!.end > cursor); i < free.length && remaining; i++) {
-      const start = Math.max(free[i]!.start, cursor)
+    for (let i = free.firstEndingAfter(cursor); remaining; i++) {
+      const range = free.startingBefore(i, Infinity)
+      if (!range) break
+      const start = Math.max(range.start, cursor)
       if (!chunks.length && start > lastStart) return undefined
-      const take = Math.min(free[i]!.end - start, remaining)
+      const take = Math.min(free.endOf(i, end => end - start >= remaining) - start, remaining)
       appendJoined(chunks, start, start + take)
       remaining -= take
       cursor = start + take
@@ -518,14 +587,14 @@ function placeManual(state: LevelingState, task: ModelTask, needs: readonly Need
         const own = needSlices(need, slices)
         if (!own.length) continue
         windows.set(need, need.part ? { start: own[0]!.start, end: own.at(-1)!.end } : slot)
-        if (rangesOverlap(own, need.profile.blocked(need.units, range.end, slot.start))) short = true
+        if (overlapsLazy(own, blockedBy([need], range, slot.start))) short = true
       }
       if (short) {
         unresolved.add(task.id)
         if (trace) recordCapacity(state, trace, task, [...windows.keys()], slot, true, slot, slot, windows)
       }
     } else {
-      if (rangesOverlap(slices, blockedBy(needs, range, slot.start))) {
+      if (overlapsLazy(slices, blockedBy(needs, range, slot.start))) {
         unresolved.add(task.id)
         if (trace) recordCapacity(state, trace, task, needs, slot, true, slot, slot)
       }

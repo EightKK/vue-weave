@@ -95,3 +95,74 @@ function resourcePlanDigest() {
   return sha256Json(outputs)
 }
 
+// Seeded plans with many tasks per resource on shift calendars that run far past the work, so that the free time a
+// task can use spans many working periods and lies behind long runs of reservations. The digest was produced by the
+// build before leveling read capacity and free time only as far as each placement needs; it must not change.
+test('leveling over long shift calendars with capacity periods and partial assignments is unchanged', () => {
+  assert.equal(longHorizonDigest(), '2f233ee1944f78acce480d80456b9a21a44442e79f9124b048d3bb0c731af161')
+})
+
+function longHorizonDigest() {
+  const { pick } = seededRandom(1124026)
+  const outputs = []
+  const run = fn => attempt(fn, error => error.constructor.name + ': ' + error.message)
+  for (let plan = 0; plan < 60; plan++) {
+    const quantum = 1 + pick(2), day = 24 * quantum, days = 30 + pick(90), half = Math.floor(days / 2)
+    const origin = -pick(20) * day
+    const range = { start: origin, end: origin + days * day }
+    const at = (d, hour) => origin + d * day + hour * quantum
+    const shifts = []
+    for (let d = 0; d < days; d++) if (d % 7 < 5 || pick(10) === 0) shifts.push({ start: at(d, 8), end: at(d, [12, 16, 20][pick(3)]) })
+    const calendars = [{ id: 'shift', periods: shifts }, { id: 'all', periods: [range] }]
+    const count = 20 + pick(60), lanes = 1 + pick(8)
+    const tasks = [], dependencies = []
+    for (let i = 0; i < count; i++) {
+      const task = { id: 't' + i, duration: (pick(20) === 0 ? 0 : 1 + pick(10)) * quantum }
+      const roll = pick(20)
+      if (roll === 0) task.calendarId = 'all'
+      if (roll === 1) task.startNoEarlierThan = at(pick(half), 0)
+      if (roll === 2) task.manual = { start: at(pick(half), 8), end: at(half + pick(half), 8) }
+      if (roll === 3) task.finishNoLaterThan = at(half + pick(half), 0)
+      if (roll === 4) task.inactive = true
+      if (pick(4) === 0) task.splittable = true
+      if (pick(3) === 0) task.priority = pick(4) - 1
+      tasks.push(task)
+      if (i >= lanes && pick(5)) {
+        dependencies.push({ id: 'l' + i, from: 't' + (i - lanes), to: 't' + i, type: ['FS', 'FS', 'SS', 'FF', 'SF'][pick(5)], lag: (pick(7) - 2) * quantum })
+      }
+    }
+    const resources = []
+    for (let r = 0, n = 1 + pick(3); r < n; r++) {
+      const resource = { id: 'r' + r, capacity: 1 + pick(2) }
+      if (pick(3) === 0) resource.periods = shifts.filter(() => pick(5))
+      if (pick(2)) {
+        resource.capacityPeriods = []
+        for (let t = origin + pick(100) * quantum; t < range.end; t += (1 + pick(200)) * quantum) {
+          const end = Math.min(range.end, t + (1 + pick(100)) * quantum)
+          resource.capacityPeriods.push({ start: t, end, capacity: pick(4) })
+          t = end
+        }
+      }
+      resources.push(resource)
+    }
+    const assignments = []
+    for (const task of tasks) {
+      for (const resource of resources) {
+        if (resources.length > 1 && pick(resources.length)) continue
+        const assignment = { resourceId: resource.id, taskId: task.id }
+        if (pick(4) === 0) assignment.units = 1 + pick(2)
+        if (pick(5) === 0) assignment.workOffset = pick(4) * quantum
+        if (pick(5) === 0) assignment.workDuration = (1 + pick(4)) * quantum
+        assignments.push(assignment)
+      }
+    }
+    const input = { range, quantum, calendars, defaultCalendarId: 'shift', tasks, dependencies, resources, assignments }
+    const leveled = run(() => core.levelResources(input, { explain: true }))
+    const plain = run(() => core.levelResources(input))
+    assertLevelingInvariants(range, leveled, plan)
+    assertLevelingInvariants(range, plain, plan)
+    outputs.push([withPlainTrace(leveled), plain, run(() => core.toPlanningDiagnostics(leveled))])
+  }
+  return sha256Json(outputs)
+}
+

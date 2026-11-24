@@ -72,9 +72,10 @@ Inputs are generated with a fixed seed (`scripts/bench-core.mjs`). Scheduling in
 | scheduleTasks (no calendar) | 100 | 0.43 | 0.39 | 0.59 |
 | scheduleTasks (no calendar) | 1000 | 4.19 | 2.98 | 10.7 |
 | scheduleTasks (no calendar) | 10000 | 69.5 | 64.0 | 97.3 |
-| levelResources | 100 | 7.52 | 3.39 | 36.9 |
-| levelResources | 1000 | 85.2 | 78.6 | 102 |
-| levelResources | 3000 | 730 | 668 | 795 |
+| levelResources | 100 | 16.4 | 9.68 | 27.6 |
+| levelResources | 1000 | 101 | 45.4 | 166 |
+| levelResources | 3000 | 171 | 121 | 233 |
+| levelResources | 10000 | 617 | 481 | 786 |
 | layoutLayeredGraph | 100 | 0.35 | 0.31 | 0.91 |
 | layoutLayeredGraph | 1000 | 6.46 | 1.90 | 11.7 |
 | layoutLayeredGraph | 5000 | 20.8 | 13.6 | 33.0 |
@@ -96,7 +97,7 @@ Inputs are generated with a fixed seed (`scripts/bench-core.mjs`). Scheduling in
 
 Worth knowing:
 
-- `levelResources` grows faster than linearly in this input: 3 times the tasks (1000 to 3000) took about 9 times as long (85 ms to 730 ms). Leveling thousands of tasks at once is the slowest core operation measured. If you level on every edit, measure your own data, and consider leveling on demand or on a worker.
+- `levelResources` rows were measured on 2026-11-24 with the other conditions above, while other work kept the container's four cores busy (load average about 12), so their spread is wide and the times are likely higher than on an idle machine. Placing a task reads remaining capacity and free working time only as far as that placement needs, so the cost grows a little faster than linearly in this input (the calendar and the profiles also grow with the task count): 3.3 times the tasks (3,000 to 10,000) took about 3.6 times as long (171 ms to 617 ms). Before this, the leveler read each task's free time from its earliest start to the end of the horizon, and the same input took about 0.9 to 1.1 s for 3,000 tasks and about 13 s for 10,000. Leveling still runs `scheduleTasks` twice and does more work per task than scheduling, so for thousands of tasks it remains one of the slower core operations measured. If you level on every edit, measure your own data, and consider leveling on demand or on a worker for plans of tens of thousands of tasks.
 - `scheduleTasks` stays close to linear and takes roughly 80 to 130 ms for 10,000 tasks on a calendar (this container's run-to-run spread is wide: 78 ms fastest, 177 ms slowest in the last run).
 - Orthogonal routing with `avoidNodes` costs far more than curve routing (38 ms against 0.07 ms for 1,000 edges), as expected from the search it runs.
 - The TreeGrid core is cheap: indexing 50,000 rows takes tens of milliseconds, flattening them with a third of the parents expanded about 10 ms, and the row window, column window and cell lookups of 1,000 scroll steps (360,000 cells) about 12 to 17 ms. The index is built once per data change, not per scroll step. Repeated runs of the same case differ by up to 2 times here (for example `createTreeGridIndex` at 50,000 rows measured 18 ms and 46 ms in two sessions), so read single figures as orders of magnitude.
