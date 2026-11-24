@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (279)
+## Entry `.`: runtime exports (283)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -53,6 +53,7 @@ in public signatures, so changes to them can break consumers too.
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
+- `createGraphRouteCache: function`
 - `createResourceTimelineProjector: function`
 - `createTimeBucketColumns: function`
 - `createTimeScale: function`
@@ -188,8 +189,11 @@ in public signatures, so changes to them can break consumers too.
 - `rejectWindowedRequest: function`
 - `removeGraphElements: function`
 - `removeTimelineBars: function`
+- `renderEventCalendarSvg: function`
 - `renderGraphSvg: function`
+- `renderTaskBoardSvg: function`
 - `renderTimelineSvg: function`
+- `renderTreeGridSvg: function`
 - `rescheduleFromActuals: function`
 - `rescheduleFromStatusDate: function`
 - `resetWindowedData: function`
@@ -287,7 +291,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (648)
+## Entry `.`: type-only exports (660)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -356,9 +360,13 @@ in public signatures, so changes to them can break consumers too.
 - `EventCalendarEditCancel`
 - `EventCalendarEditCancelReason`
 - `EventCalendarEditValidator`
+- `EventCalendarExportOptions`
 - `EventCalendarExposed`
 - `EventCalendarLabels`
 - `EventCalendarOptions`
+- `EventCalendarPngExportOptions`
+- `EventCalendarSvgLabels`
+- `EventCalendarSvgOptions`
 - `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
@@ -500,6 +508,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphRadialLayoutOptions`
 - `GraphReconnect`
 - `GraphRect`
+- `GraphRouteCache`
 - `GraphRouteEnd`
 - `GraphRoutingPolicy`
 - `GraphSearchOptions`
@@ -759,13 +768,17 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardColumn`
 - `TaskBoardColumnStatus`
 - `TaskBoardComponent`
+- `TaskBoardExportOptions`
 - `TaskBoardExposed`
 - `TaskBoardGroups`
 - `TaskBoardLabels`
 - `TaskBoardLane`
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
+- `TaskBoardPngExportOptions`
 - `TaskBoardPosition`
+- `TaskBoardSvgLabels`
+- `TaskBoardSvgOptions`
 - `TaskViewBindingsInput`
 - `TimeBucket`
 - `TimeBucketAggregateOptions`
@@ -879,6 +892,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridEditCancelReason`
 - `TreeGridEditor`
 - `TreeGridEntityMatches`
+- `TreeGridExportOptions`
 - `TreeGridExposed`
 - `TreeGridIndex`
 - `TreeGridInput`
@@ -889,6 +903,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridLine`
 - `TreeGridLines`
 - `TreeGridMissingCell`
+- `TreeGridPngExportOptions`
 - `TreeGridPosition`
 - `TreeGridRange`
 - `TreeGridRow`
@@ -900,6 +915,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridSheetEdit`
 - `TreeGridSheetEditValidator`
 - `TreeGridSpan`
+- `TreeGridSvgOptions`
 - `TreeGridTextOptions`
 - `TreeGridValidatorResult`
 - `TreeGridValue`
@@ -938,7 +954,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (263)
+## Entry `./core`: runtime exports (267)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -979,6 +995,7 @@ in public signatures, so changes to them can break consumers too.
 - `countGraphCrossings: function`
 - `createGraphConnectionChecker: function`
 - `createGraphExpansion: function`
+- `createGraphRouteCache: function`
 - `createResourceTimelineProjector: function`
 - `createTimeBucketColumns: function`
 - `createTimeScale: function`
@@ -1112,8 +1129,11 @@ in public signatures, so changes to them can break consumers too.
 - `rejectWindowedRequest: function`
 - `removeGraphElements: function`
 - `removeTimelineBars: function`
+- `renderEventCalendarSvg: function`
 - `renderGraphSvg: function`
+- `renderTaskBoardSvg: function`
 - `renderTimelineSvg: function`
+- `renderTreeGridSvg: function`
 - `rescheduleFromActuals: function`
 - `rescheduleFromStatusDate: function`
 - `resetWindowedData: function`
@@ -1204,7 +1224,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (608)
+## Entry `./core`: type-only exports (620)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1266,8 +1286,12 @@ in public signatures, so changes to them can break consumers too.
 - `EventCalendarEditCancel`
 - `EventCalendarEditCancelReason`
 - `EventCalendarEditValidator`
+- `EventCalendarExportOptions`
 - `EventCalendarLabels`
 - `EventCalendarOptions`
+- `EventCalendarPngExportOptions`
+- `EventCalendarSvgLabels`
+- `EventCalendarSvgOptions`
 - `EventCalendarView`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
@@ -1402,6 +1426,7 @@ in public signatures, so changes to them can break consumers too.
 - `GraphRadialLayoutOptions`
 - `GraphReconnect`
 - `GraphRect`
+- `GraphRouteCache`
 - `GraphRouteEnd`
 - `GraphRoutingPolicy`
 - `GraphSearchOptions`
@@ -1647,12 +1672,16 @@ in public signatures, so changes to them can break consumers too.
 - `TaskBoardCell`
 - `TaskBoardColumn`
 - `TaskBoardColumnStatus`
+- `TaskBoardExportOptions`
 - `TaskBoardGroups`
 - `TaskBoardLabels`
 - `TaskBoardLane`
 - `TaskBoardMoveCancel`
 - `TaskBoardMoveCancelReason`
+- `TaskBoardPngExportOptions`
 - `TaskBoardPosition`
+- `TaskBoardSvgLabels`
+- `TaskBoardSvgOptions`
 - `TaskViewBindingsInput`
 - `TimeBucket`
 - `TimeBucketAggregateOptions`
@@ -1764,6 +1793,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridEditCancelReason`
 - `TreeGridEditor`
 - `TreeGridEntityMatches`
+- `TreeGridExportOptions`
 - `TreeGridIndex`
 - `TreeGridInput`
 - `TreeGridKeyAction`
@@ -1773,6 +1803,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridLine`
 - `TreeGridLines`
 - `TreeGridMissingCell`
+- `TreeGridPngExportOptions`
 - `TreeGridPosition`
 - `TreeGridRange`
 - `TreeGridRow`
@@ -1784,6 +1815,7 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridSheetEdit`
 - `TreeGridSheetEditValidator`
 - `TreeGridSpan`
+- `TreeGridSvgOptions`
 - `TreeGridTextOptions`
 - `TreeGridValidatorResult`
 - `TreeGridValue`
@@ -2297,6 +2329,8 @@ empty(props: {
 
 ```ts
 cancelMove: () => void;
+exportPng: (options?: TaskBoardPngExportOptions<C>) => Promise<Blob>;
+exportSvg: (options?: TaskBoardExportOptions<C>) => string;
 focusCard: (id: string) => boolean;
 ```
 
@@ -2375,6 +2409,8 @@ toolbar(props: {
 
 ```ts
 cancelEdit: () => void;
+exportPng: (options?: EventCalendarPngExportOptions<E>) => Promise<Blob>;
+exportSvg: (options?: EventCalendarExportOptions<E>) => string;
 scrollToTime: (time: number) => void;
 ```
 
@@ -3193,6 +3229,20 @@ type EventCalendarEditCancelReason = 'escape' | 'source-changed' | 'pointer-canc
 type EventCalendarEditValidator = (change: EventCalendarEdit) => boolean | string | void;
 ```
 
+### `EventCalendarExportOptions`
+
+```ts
+interface EventCalendarExportOptions<E extends CalendarEvent = CalendarEvent> {
+    background?: boolean;
+    title?: string;
+    theme?: SvgExportThemeInput;
+    width?: number;
+    heading?: string | false;
+    includeSelection?: boolean;
+    eventLabel?: (event: E) => string;
+}
+```
+
 ### `EventCalendarExposed`
 
 ```ts
@@ -3235,6 +3285,40 @@ interface EventCalendarOptions {
     timeZone?: string;
     weekStartsOn?: number;
     agendaDays?: number;
+}
+```
+
+### `EventCalendarPngExportOptions`
+
+```ts
+interface EventCalendarPngExportOptions<E extends CalendarEvent = CalendarEvent> extends EventCalendarExportOptions<E>, PngExportOptions {
+}
+```
+
+### `EventCalendarSvgLabels`
+
+```ts
+type EventCalendarSvgLabels = Pick<EventCalendarLabels, 'allDay' | 'more' | 'resources' | 'now'> & Pick<Required<EventCalendarLabels>, 'recurring'>;
+```
+
+### `EventCalendarSvgOptions`
+
+```ts
+interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent> extends SvgExportOptions, EventCalendarOptions {
+    view?: EventCalendarView;
+    locale?: string | readonly string[];
+    resources?: readonly CalendarResource[];
+    dayStart?: number;
+    dayEnd?: number;
+    hourHeight?: number;
+    width?: number;
+    maxMonthLanes?: number;
+    now?: number;
+    selectedId?: string;
+    formatTime?: (time: number) => string;
+    labels?: Partial<EventCalendarSvgLabels>;
+    heading?: string | false;
+    eventLabel?: (event: E) => string;
 }
 ```
 
@@ -3886,6 +3970,7 @@ interface GraphEdgeRouteOptions {
     policy?: GraphRoutingPolicy;
     parallelSpacing?: number;
     avoidNodes?: boolean | GraphObstacleAvoidance;
+    cache?: GraphRouteCache;
 }
 ```
 
@@ -4829,6 +4914,14 @@ interface GraphRect {
     y: number;
     width: number;
     height: number;
+}
+```
+
+### `GraphRouteCache`
+
+```ts
+interface GraphRouteCache {
+    readonly graphRouteCache: true;
 }
 ```
 
@@ -7646,6 +7739,20 @@ type TaskBoardComponent = (new <C extends TaskBoardCard = TaskBoardCard>(props: 
 } & Record<string, unknown>) => SfcInstance<TaskBoardSfc<C & TaskBoardCard>>) & SfcDefaultComponent<TaskBoardSfc<TaskBoardCard>>;
 ```
 
+### `TaskBoardExportOptions`
+
+```ts
+interface TaskBoardExportOptions<C extends TaskBoardCard = TaskBoardCard> {
+    background?: boolean;
+    title?: string;
+    theme?: SvgExportThemeInput;
+    includeSelection?: boolean;
+    columnWidth?: number;
+    cardLabel?: (card: C) => string;
+    cardDetail?: (card: C) => string | undefined;
+}
+```
+
 ### `TaskBoardExposed`
 
 ```ts
@@ -7718,6 +7825,13 @@ interface TaskBoardMoveCancel {
 type TaskBoardMoveCancelReason = 'escape' | 'pointer-cancel' | 'no-target' | 'blur' | 'data-change' | 'api';
 ```
 
+### `TaskBoardPngExportOptions`
+
+```ts
+interface TaskBoardPngExportOptions<C extends TaskBoardCard = TaskBoardCard> extends TaskBoardExportOptions<C>, PngExportOptions {
+}
+```
+
 ### `TaskBoardPosition`
 
 ```ts
@@ -7725,6 +7839,32 @@ interface TaskBoardPosition {
     columnId: string;
     laneId?: string;
     index: number;
+}
+```
+
+### `TaskBoardSvgLabels`
+
+```ts
+type TaskBoardSvgLabels = Pick<TaskBoardLabels, 'empty' | 'emptyCell' | 'of' | 'overLimit' | 'underMinimum'>;
+```
+
+### `TaskBoardSvgOptions`
+
+```ts
+interface TaskBoardSvgOptions<C extends TaskBoardCard = TaskBoardCard> extends SvgExportOptions {
+    lanes?: readonly TaskBoardLane[];
+    filter?: (card: C) => boolean;
+    collapsedColumnIds?: Iterable<string>;
+    collapsedLaneIds?: Iterable<string>;
+    selectedId?: string;
+    labels?: Partial<TaskBoardSvgLabels>;
+    columnWidth?: number;
+    collapsedColumnWidth?: number;
+    padding?: number;
+    cardLabel?: (card: C) => string;
+    cardDetail?: (card: C) => string | undefined;
+    wipWarningColor?: string;
+    wipUnderColor?: string;
 }
 ```
 
@@ -8964,6 +9104,26 @@ interface TreeGridEntityMatches {
 }
 ```
 
+### `TreeGridExportOptions`
+
+```ts
+interface TreeGridExportOptions {
+    background?: boolean;
+    title?: string;
+    theme?: SvgExportThemeInput;
+    rowRange?: {
+        start: number;
+        end: number;
+    };
+    columnRange?: {
+        start: number;
+        end: number;
+    };
+    includeTreeColumn?: boolean;
+    includeHighlight?: boolean;
+}
+```
+
 ### `TreeGridExposed`
 
 ```ts
@@ -9130,6 +9290,13 @@ interface TreeGridLines<R extends TreeGridRow = TreeGridRow> {
 type TreeGridMissingCell = 'empty' | 'none' | 'unknown' | 'not-applicable';
 ```
 
+### `TreeGridPngExportOptions`
+
+```ts
+interface TreeGridPngExportOptions extends TreeGridExportOptions, PngExportOptions {
+}
+```
+
 ### `TreeGridPosition`
 
 ```ts
@@ -9228,6 +9395,43 @@ type TreeGridSheetEditValidator = (change: TreeGridSheetEdit) => TreeGridValidat
 interface TreeGridSpan {
     start: number;
     end: number;
+}
+```
+
+### `TreeGridSvgOptions`
+
+```ts
+interface TreeGridSvgOptions<R extends TreeGridRow = TreeGridRow> extends SvgExportOptions {
+    cells?: readonly TreeGridCell[];
+    missingCell?: TreeGridMissingCell;
+    expandedIds?: Iterable<string> | 'all';
+    formatValue?: (value: TreeGridValue, context: {
+        row: R;
+        column: TreeGridColumn<R>;
+    }) => string;
+    labels?: Partial<TreeGridLabels>;
+    rowHeight?: number;
+    headerHeight?: number;
+    treeColumnWidth?: number;
+    indent?: number;
+    sort?: readonly TimelineViewSort[];
+    filters?: readonly TimelineViewFilter[];
+    sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>;
+    applyView?: boolean;
+    rowRange?: {
+        start: number;
+        end: number;
+    };
+    columnRange?: {
+        start: number;
+        end: number;
+    };
+    includeTreeColumn?: boolean;
+    selectedRowIds?: Iterable<string>;
+    highlightedRowIds?: Iterable<string>;
+    highlightedCells?: readonly TreeGridCellRef[];
+    highlightColor?: string;
+    selectedColor?: string;
 }
 ```
 
@@ -9895,6 +10099,12 @@ function createGraphConnectionChecker(nodes: readonly IdentifiedNode[], edges: r
 function createGraphExpansion<N extends {
     id: string;
 }, E extends GraphEdge = GraphEdge>(seed?: GraphExpansionPage<N, E>): GraphExpansionState<N, E>;
+```
+
+### `createGraphRouteCache`
+
+```ts
+function createGraphRouteCache(): GraphRouteCache;
 ```
 
 ### `createResourceTimelineProjector`
@@ -10786,16 +10996,34 @@ function removeTimelineBars<B extends TimelineBar, D extends TimelineDependency>
 };
 ```
 
+### `renderEventCalendarSvg`
+
+```ts
+function renderEventCalendarSvg<E extends CalendarEvent>(events: readonly E[], date: number, options?: EventCalendarSvgOptions<E>): string;
+```
+
 ### `renderGraphSvg`
 
 ```ts
 function renderGraphSvg<N extends NetworkNode, E extends GraphEdge>(layout: GraphLayout, nodes: readonly N[], edges: readonly E[], options?: GraphSvgOptions<N, E>): string;
 ```
 
+### `renderTaskBoardSvg`
+
+```ts
+function renderTaskBoardSvg<C extends TaskBoardCard>(cards: readonly C[], columns: readonly TaskBoardColumn[], options?: TaskBoardSvgOptions<C>): string;
+```
+
 ### `renderTimelineSvg`
 
 ```ts
 function renderTimelineSvg<R extends TimelineRow, B extends TimelineBar>(rows: readonly R[], bars: readonly B[], dependencies: readonly TimelineDependency[], scale: TimeScale, options?: TimelineSvgOptions<R, B>): string;
+```
+
+### `renderTreeGridSvg`
+
+```ts
+function renderTreeGridSvg<R extends TreeGridRow>(rows: readonly R[], columns: readonly TreeGridColumn<R>[], options?: TreeGridSvgOptions<R>): string;
 ```
 
 ### `rescheduleFromActuals`
