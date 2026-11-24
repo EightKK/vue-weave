@@ -137,10 +137,6 @@ function tileFill(kind: StepKind) {
   return kind === 'ai' ? `url(#${ids.spark})` : kinds[kind].color
 }
 
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty canvas or Escape in it clears the step selection.
 function clearSelection() {
   if (selectedId.value === undefined) return
@@ -227,54 +223,52 @@ function commitReconnect(change: GraphReconnect) {
         </div>
       </div>
     </div>
-    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-      <NetworkGraph
-        v-model:selected-id="selectedId" unstyled-node-slots class="sc-workflow-graph" :nodes="steps" :edges="edges" :layout="layoutSteps" :positions="positions"
-        :height="'clamp(440px, 40vw, 520px)'" :edge-style="edgeStyle" background="dots" :snap-grid="grid"
-        draggable connectable reconnectable show-minimap :labels="{ ...labels.graph, region: t({ en: 'Workflow canvas', ja: 'ワークフローのキャンバス' }) }"
-        :validate-connection="validateConnection"
-        @node-move="commitMoves([$event])" @nodes-move="commitMoves" @connect="commitConnection" @reconnect="commitReconnect"
-        @connect-rejected="(_connection, reason) => status = t({ en: 'Rejected: ', ja: '却下: ' }) + reason"
-        @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--"
-      >
-        <template #node="{ node, box, selected }">
-          <rect class="sc-workflow-ring" x="-5" y="-5" :width="box.width + 10" :height="box.height + 10" rx="16" />
-          <rect class="sc-workflow-card" :class="{ 'sc-workflow-is-selected': selected }" :width="box.width" :height="box.height" rx="12" :filter="`url(#${ids.shadow})`" />
-          <rect class="sc-workflow-tile" x="16" y="22" width="40" height="40" rx="10" :style="{ fill: tileFill(node.data.kind) }" />
-          <rect class="sc-workflow-tile" x="16" y="22" width="40" height="40" rx="10" :style="{ fill: `url(#${ids.gloss})` }" />
-          <g class="sc-workflow-icon" transform="translate(25 31) scale(.92)">
-            <path v-for="d in kinds[node.data.kind].icon" :key="d" :d="d" />
+    <NetworkGraph
+      v-model:selected-id="selectedId" unstyled-node-slots class="sc-workflow-graph" :nodes="steps" :edges="edges" :layout="layoutSteps" :positions="positions"
+      :height="'clamp(440px, 40vw, 520px)'" :edge-style="edgeStyle" background="dots" :snap-grid="grid"
+      draggable connectable reconnectable show-minimap :labels="{ ...labels.graph, region: t({ en: 'Workflow canvas', ja: 'ワークフローのキャンバス' }) }"
+      :validate-connection="validateConnection"
+      @node-move="commitMoves([$event])" @nodes-move="commitMoves" @connect="commitConnection" @reconnect="commitReconnect"
+      @connect-rejected="(_connection, reason) => status = t({ en: 'Rejected: ', ja: '却下: ' }) + reason"
+      @background-click="clearSelection" @idle-escape="clearSelection"
+    >
+      <template #node="{ node, box, selected }">
+        <rect class="sc-workflow-ring" x="-5" y="-5" :width="box.width + 10" :height="box.height + 10" rx="16" />
+        <rect class="sc-workflow-card" :class="{ 'sc-workflow-is-selected': selected }" :width="box.width" :height="box.height" rx="12" :filter="`url(#${ids.shadow})`" />
+        <rect class="sc-workflow-tile" x="16" y="22" width="40" height="40" rx="10" :style="{ fill: tileFill(node.data.kind) }" />
+        <rect class="sc-workflow-tile" x="16" y="22" width="40" height="40" rx="10" :style="{ fill: `url(#${ids.gloss})` }" />
+        <g class="sc-workflow-icon" transform="translate(25 31) scale(.92)">
+          <path v-for="d in kinds[node.data.kind].icon" :key="d" :d="d" />
+        </g>
+        <text class="sc-workflow-kind" x="70" y="30">{{ kinds[node.data.kind].category }}</text>
+        <text class="sc-workflow-title" x="70" y="49">{{ node.label }}</text>
+        <text class="sc-workflow-subtitle" x="70" y="66">{{ node.data.subtitle }}</text>
+        <g class="sc-workflow-pill" :class="'sc-workflow-pill-' + node.data.status"
+          :transform="`translate(${box.width - 12 - statuses[node.data.status].width} 16)`">
+          <rect :width="statuses[node.data.status].width" height="19" rx="9.5" />
+          <circle cx="10" cy="9.5" r="3" />
+          <text x="18" y="13.3">{{ statuses[node.data.status].label }}</text>
+        </g>
+        <template v-if="node.data.kind === 'condition'">
+          <line class="sc-workflow-divider" x1="1" :x2="box.width - 1" y1="84" y2="84" />
+          <text class="sc-workflow-branch" x="16" y="106">{{ t({ en: 'Order is paid', ja: '支払い済み' }) }}</text>
+          <text class="sc-workflow-branch" x="16" y="124">{{ t({ en: 'Otherwise', ja: 'それ以外' }) }}</text>
+          <g class="sc-workflow-chip sc-workflow-chip-true" :transform="`translate(${box.width - 50} 94)`">
+            <rect width="36" height="16" rx="4" /><text x="18" y="11.6">true</text>
           </g>
-          <text class="sc-workflow-kind" x="70" y="30">{{ kinds[node.data.kind].category }}</text>
-          <text class="sc-workflow-title" x="70" y="49">{{ node.label }}</text>
-          <text class="sc-workflow-subtitle" x="70" y="66">{{ node.data.subtitle }}</text>
-          <g class="sc-workflow-pill" :class="'sc-workflow-pill-' + node.data.status"
-            :transform="`translate(${box.width - 12 - statuses[node.data.status].width} 16)`">
-            <rect :width="statuses[node.data.status].width" height="19" rx="9.5" />
-            <circle cx="10" cy="9.5" r="3" />
-            <text x="18" y="13.3">{{ statuses[node.data.status].label }}</text>
+          <g class="sc-workflow-chip sc-workflow-chip-false" :transform="`translate(${box.width - 50} 112)`">
+            <rect width="36" height="16" rx="4" /><text x="18" y="11.6">false</text>
           </g>
-          <template v-if="node.data.kind === 'condition'">
-            <line class="sc-workflow-divider" x1="1" :x2="box.width - 1" y1="84" y2="84" />
-            <text class="sc-workflow-branch" x="16" y="106">{{ t({ en: 'Order is paid', ja: '支払い済み' }) }}</text>
-            <text class="sc-workflow-branch" x="16" y="124">{{ t({ en: 'Otherwise', ja: 'それ以外' }) }}</text>
-            <g class="sc-workflow-chip sc-workflow-chip-true" :transform="`translate(${box.width - 50} 94)`">
-              <rect width="36" height="16" rx="4" /><text x="18" y="11.6">true</text>
-            </g>
-            <g class="sc-workflow-chip sc-workflow-chip-false" :transform="`translate(${box.width - 50} 112)`">
-              <rect width="36" height="16" rx="4" /><text x="18" y="11.6">false</text>
-            </g>
-          </template>
         </template>
-        <template #edge="{ edge, path }">
-          <template v-if="runEdgeIds.has(edge.id)">
-            <path class="sc-workflow-edge-glow" :d="path" />
-            <path class="sc-workflow-edge sc-workflow-edge-run" :d="path" />
-          </template>
-          <path v-else class="sc-workflow-edge" :d="path" />
+      </template>
+      <template #edge="{ edge, path }">
+        <template v-if="runEdgeIds.has(edge.id)">
+          <path class="sc-workflow-edge-glow" :d="path" />
+          <path class="sc-workflow-edge sc-workflow-edge-run" :d="path" />
         </template>
-      </NetworkGraph>
-    </div>
+        <path v-else class="sc-workflow-edge" :d="path" />
+      </template>
+    </NetworkGraph>
     <div class="sc-workflow-foot">
       <p class="sc-workflow-status" role="status">{{ status }}</p>
       <p class="sc-workflow-hint">{{ t({

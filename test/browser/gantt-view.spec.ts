@@ -1,7 +1,8 @@
 // GanttChart viewing: hierarchy, bands and markers, baselines, zoom and pinch, grid lines, tooltips, fitting, right-to-left layout, target events and reveal.
 import {
-  expect, test, dragBy, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openExample, openGanttFixture, openGestureFixture,
+  expect, test, dragBy, evaluateEach, fixtureStatus, ganttBar, ganttRegion, graphStage, openComponentFixture, openExample, openGanttFixture, openGestureFixture,
   openLinkedGanttFixture, openTimelineEditing, pageErrors, pressAndMove, serveFixture, touch, type LinkedFixture, type Page,
+  realTouchChromiumOnly,
 } from './support'
 
 async function recordWheelDefaults(page: Page) {
@@ -262,7 +263,8 @@ test('gantt zoom presets ignore the active preset and a controlled parent that d
   expect(errors).toEqual([])
 })
 
-test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page }) => {
+test('gantt real two-finger touch pinch survives a drifting midpoint without native panning', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const { errors, chart } = await openTimelineEditing(page)
   const cdp = await page.context().newCDPSession(page)
   const output = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
@@ -498,6 +500,40 @@ test('a chart that mounts with invalid data measures its label column once the d
   // A narrow label column widens the visible time area, so the bar near the inline-end edge is rendered.
   await control('Narrow labels').click()
   await expect(page.getByRole('button', { name: 'Edge bar 54–57', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('many small Ctrl+wheel steps keep the time under the pointer where scroll positions are whole pixels', async ({ page }) => {
+  const errors = pageErrors(page)
+  for (const rtl of [false, true]) {
+    const { chart } = await openGanttFixture(page, '?wheel=1' + (rtl ? '&rtl=1' : ''))
+    // WebKit keeps whole-pixel scroll positions of elements: round what the chart writes, as WebKit does.
+    await chart.evaluate(element => {
+      const native = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollLeft')!
+      Object.defineProperty(element, 'scrollLeft', {
+        configurable: true,
+        get() { return native.get!.call(this) },
+        set(value: number) { native.set!.call(this, Math.round(value)) },
+      })
+    })
+    const zoom = page.getByRole('group', { name: 'Timeline zoom', exact: true }).locator('output')
+    const taskB = chart.getByRole('button', { name: 'Task B 4–6', exact: true })
+    await expect(zoom).toHaveText('100%')
+    const box = (await taskB.boundingBox())!
+    // 10.3 px after the start of Task B, so the rounding of each step does not cancel out.
+    const x = rtl ? box.x + box.width - 10.3 : box.x + 10.3
+    const fromStart = async () => {
+      const current = (await taskB.boundingBox())!
+      return rtl ? current.x + current.width - x : x - current.x
+    }
+    await page.mouse.move(x, box.y + box.height / 2)
+    // A trackpad pinch: 20 small deltas add up to one zoom step (135%).
+    await page.keyboard.down('Control')
+    for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -5)
+    await page.keyboard.up('Control')
+    await expect(zoom).toHaveText('135%')
+    await expect.poll(async () => Math.abs(await fromStart() - 10.3 * 1.35)).toBeLessThanOrEqual(1)
+  }
   expect(errors).toEqual([])
 })
 
@@ -757,7 +793,7 @@ test('gantt select reports drags, sticky band labels follow the scroll and round
   const links = sprint.getByRole('region', { name: 'Sprint plan', exact: true }).locator('.vw-gantt-links > path')
   await expect(links.first()).toBeAttached()
   expect(await links.count()).toBeGreaterThan(0)
-  for (const d of await links.evaluateAll(paths => paths.map(path => path.getAttribute('d') ?? ''))) expect(d).toMatch(/ Q /)
+  for (const d of await evaluateEach(links, path => path.getAttribute('d') ?? '')) expect(d).toMatch(/ Q /)
   expect(errors).toEqual([])
 })
 
@@ -801,10 +837,10 @@ test('tick labels of a compressed working-time axis never overlap; squeezed tick
   const labels = plan.locator('.vw-gantt-tick')
   await expect(labels.filter({ hasText: '09 Nov 08:00' })).toHaveCount(1)
   await expect(labels.filter({ hasText: '11 Nov 08:00' })).toHaveCount(1)
-  const boxes = await labels.evaluateAll(spans => spans.map(span => {
+  const boxes = (await evaluateEach(labels, span => {
     const rect = span.getBoundingClientRect()
     return { text: span.textContent ?? '', left: rect.left, right: rect.right }
-  }).sort((a, b) => a.left - b.left))
+  })).sort((a, b) => a.left - b.left)
   expect(boxes.length).toBeGreaterThan(1)
   for (let i = 1; i < boxes.length; i++) {
     expect(boxes[i]!.left, `${boxes[i - 1]!.text} overlaps ${boxes[i]!.text}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)

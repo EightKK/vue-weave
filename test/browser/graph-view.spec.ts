@@ -2,6 +2,7 @@
 import {
   expect, test, boxCenter, centerOf, chainNode, dragBy, dragTo, fixtureStatus, graphNode, graphStage, openComponentFixture, openExample,
   openGestureFixture, openGraphEditor, openNetworkFixture, pageErrors, pressAndMove, readCamera, serveFixture, touch, type Camera, type Page,
+  realTouchChromiumOnly,
 } from './support'
 
 async function openStylesFixture(page: Page, search = '') {
@@ -344,7 +345,8 @@ test('getTargetClientRect measures nodes, edges and groups and setViewportCenter
   expect(errors).toEqual([])
 })
 
-test('two-finger pinch zooms around the midpoint, clamps, pans and leaves one-finger gestures alone', async ({ page }) => {
+test('two-finger pinch zooms around the midpoint, clamps, pans and leaves one-finger gestures alone', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const errors = pageErrors(page)
   await openNetworkFixture(page, '?nodes=3&draggable=1')
   const cdp = await page.context().newCDPSession(page)
@@ -920,10 +922,13 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
   for (const name of names) await expect(lane(name)).toBeAttached()
   await expect(stage.locator('.vw-swimlane')).toHaveCount(4)
   const box = async (locator: ReturnType<typeof lane>) => (await locator.boundingBox())!
-  const order = async (axis: 'x' | 'y') => Promise.all(names.map(async name => (await box(lane(name)))[axis]))
+  // The geometry of a lane is its band. The box of the whole group also covers the nested <svg> that clips the title,
+  // which engines measure differently (Firefox reports a taller box).
+  const band = (name: string) => lane(name).locator('.vw-swimlane-band')
+  const order = async (axis: 'x' | 'y') => Promise.all(names.map(async name => (await box(band(name)))[axis]))
   const ascending = (values: number[]) => values.every((value, i) => i === 0 || value > values[i - 1]!)
   const within = async (node: string, name: string) => {
-    const a = await box(step(node)), b = await box(lane(name))
+    const a = await box(step(node)), b = await box(band(name))
     return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
   }
   expect(ascending(await order('y'))).toBe(true)
@@ -938,7 +943,7 @@ test('the process lanes demo draws one named lane per department, keeps lane ord
   expect(ascending(await order('y'))).toBe(true)
 
   // Dragging a step onto another lane is a proposal that the demo turns into a lane change.
-  const from = await box(step('Deburr')), target = await box(lane('Inspection'))
+  const from = await box(step('Deburr')), target = await box(band('Inspection'))
   await dragTo(page, from, { x: boxCenter(from).x, y: boxCenter(target).y }, { steps: 8 })
   await expect(status).toHaveText('Deburr moved to Inspection.')
   await expect.poll(() => within('Deburr', 'Inspection')).toBe(true)

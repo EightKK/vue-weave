@@ -83,8 +83,23 @@ test('GanttChart labels a non-zero lag on the connector and describes the depend
 
   const custom = await render({ dependencies: link({ lag: 3 }), formatLag: lag => `${lag} units` })
   assert.match(custom, />3 units<\/text>/)
-  // Right to left: the same inline coordinates; the stylesheet mirrors the layer and turns each label back.
-  assert.match(await render({ dependencies: link({ lag: hour }), dir: 'rtl' }), /class="vw-gantt-lag" x="44" y="132" text-anchor="start"/)
+  // Right to left: the same inline coordinates. The stylesheet mirrors the layer, and each label turns back by its own
+  // transform, a flip about its anchor x, with the start anchor drawn as an end anchor so the text covers the same span.
+  // No CSS transform: WebKit does not apply transform-box: fill-box to SVG text.
+  const rtl = await render({ dependencies: link({ lag: hour }), dir: 'rtl' })
+  assert.match(rtl, /class="vw-gantt-lag" x="44" y="132" text-anchor="end" transform="matrix\(-1 0 0 1 88 0\)"/)
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL(import.meta.resolve('@eightkk/vue-weave/style.css')), 'utf8')
+  assert.doesNotMatch(css, /\.vw-gantt-lag\s*\{[^}]*transform/)
+  // A label above a link within one row keeps its middle anchor and turns about it.
+  const sameRow = await render({
+    bars: [...bars, { id: 'c', rowId: 'r2', label: 'C', start: 8 * hour, end: 9 * hour }], dependencies: [{ id: 'bc', from: 'b', to: 'c', lag: hour }], dir: 'rtl',
+  })
+  const middle = /class="vw-gantt-lag" x="([\d.]+)" y="[\d.]+" text-anchor="middle" transform="matrix\(-1 0 0 1 ([\d.]+) 0\)"/.exec(sameRow)
+  assert.ok(middle, 'a mirrored same-row label')
+  assert.equal(Number(middle[2]), 2 * Number(middle[1]))
+  // Left to right: no transform.
+  assert.doesNotMatch(await render({ dependencies: link({ lag: hour }) }), /class="vw-gantt-lag"[^>]*transform=/)
 })
 
 test('GanttChart reports a non-finite lag through validation-error', async () => {

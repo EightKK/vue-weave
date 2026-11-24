@@ -58,6 +58,7 @@ import { loadSegmentMarks, shownLoadRows as loadRowsIn } from './ganttChart/load
 import { barOverlay as overlayOf, segmentGeometry, workSegments as shiftedSegments, type BarOverlay } from './ganttChart/barOverlay.js'
 import { visibleWindowReport } from './ganttChart/visibleWindow.js'
 import { useCellEditing } from './ganttChart/useCellEditing.js'
+import { createIdleEscape, emitIdleEscape } from './shared/escape.js'
 import { contextTarget, isMenuKey, keyboardMenuRequest, pointerMenuRequest } from './ganttChart/contextMenu.js'
 import { elementWithData } from './shared/focus.js'
 import { DRAG_THRESHOLD, capturePointer, edgeScrollDelta, frameLoop, pastThreshold, releasePointer } from './shared/pointer.js'
@@ -299,6 +300,15 @@ const props = withDefaults(defineProps<{
    * `false` or a reason string to reject.
    */
   validateFieldEdit?: (change: TimelineFieldEdit<R>) => boolean | string | void
+  /**
+   * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the chart and cancelled
+   * nothing of the chart's own (no drag, armed connection or open cell editor, so no `edit-cancel`), outside text fields
+   * and closed popups; it receives the keyboard event. Applications typically clear their selection, as on
+   * `background-click`. Declared as a listener prop rather than in the emits, so the chart's typed listener props stay
+   * within what vue-tsc can derive from its emits; it is still delivered as a component event, so `.once` works.
+   * Opt-in. Default: undefined.
+   */
+  onIdleEscape?: (event: KeyboardEvent) => void
 }>(), {
   dir: 'ltr',
   progressStep: 0.05,
@@ -611,6 +621,7 @@ const {
 } = useCellEditing<R>({
   props, emit, labels: () => messages.value, notice, settle, summaries, localCollapsed, rowById: () => rowById.value,
   rowOrder: () => rowOrder.value, dataElement, scroller, hideTooltip: () => hideTooltip(), sheet: (): ReturnType<typeof useSheet<R>> => sheet,
+  onCancel: () => idleEscape.cancelled(),
 })
 const displayedRows = computed(() => {
   const result: typeof tree.value = []
@@ -1181,8 +1192,13 @@ function DependencyLayers(_props: Record<string, never>, { slots }: { slots: Slo
 }
 // Lag labels have their own layer, stacked above the marker, now and status-date lines (and the bars, whose gaps they
 // sit in), so a line crossing a label does not cover its text. A chart without lags renders no layer.
+// In a right-to-left chart the stylesheet mirrors the layer as a whole, and each label is turned back by its own
+// transform attribute: a flip about its anchor, with a start anchor drawn as an end anchor, so the text covers the same
+// span as before and reads normally. (A CSS flip about the label's centre needs `transform-box: fill-box` on SVG text,
+// which WebKit does not apply: it flipped the labels about the layer's origin, away from their dependencies.)
 const lagShapes = computed(() => {
   const shapes: (LinkShapeProps & { key: string })[] = []
+  const mirrored = rtl.value
   for (const line of shownLines.value) {
     const label = line.lag
     if (!label) continue
@@ -1191,7 +1207,8 @@ const lagShapes = computed(() => {
       tag: 'text',
       attrs: {
         id: label.id, class: { 'vw-gantt-lag': true, 'vw-is-highlighted': props.highlightedDependencyIds?.has(line.id) },
-        x: label.x, y: label.y, 'text-anchor': label.anchor, 'aria-label': label.description,
+        x: label.x, y: label.y, 'text-anchor': mirrored && label.anchor === 'start' ? 'end' : label.anchor,
+        transform: mirrored ? `matrix(-1 0 0 1 ${2 * label.x} 0)` : undefined, 'aria-label': label.description,
       },
       text: label.text,
     })
@@ -1337,7 +1354,17 @@ function gestureInFlight(fill = true): { barIds: string[]; rowId?: string } | un
 function cancelGestures(reason: TimelineEditCancelReason, keepFill = false) {
   const info = gestureInFlight(!keepFill)
   resetGestures(keepFill)
-  if (info) emit('edit-cancel', { reason, barIds: info.barIds })
+  if (info) reportCancel({ reason, barIds: info.barIds })
+}
+// Every `edit-cancel` marks the Escape being handled as used, so it is not also reported as `idle-escape`. An Escape
+// that no handler inside used (on a toolbar button, for example) still cancels what is in flight, without moving focus.
+const idleEscape = createIdleEscape(event => emitIdleEscape(emit, event), () => {
+  cancelGestures('escape')
+  cancelCellEditor('escape', false)
+})
+function reportCancel(cancel: TimelineEditCancel) {
+  idleEscape.cancelled()
+  emit('edit-cancel', cancel)
 }
 /** Cancel everything in flight: gestures, an armed connection and an open cell editor. */
 function cancelEdit(reason: TimelineEditCancelReason = 'api') {
@@ -2044,7 +2071,7 @@ watch(summaryAnchors, anchors => {
 function cancelLinkDraft(reason: TimelineEditCancelReason) {
   const fixed = linkDraft.value?.fixed
   cancelLink()
-  if (fixed) emit('edit-cancel', { reason, barIds: [fixed.bar] })
+  if (fixed) reportCancel({ reason, barIds: [fixed.bar] })
 }
 
 // Pinch and Ctrl+wheel zoom (`pinchZoom`, `wheelZoom`). A pinch is the gesture in flight while it lasts.
@@ -2805,7 +2832,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vw-gantt" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-gantt" :class="{ 'vw-rtl': rtl }" :dir="dir === 'rtl' ? 'rtl' : undefined"
+    @keydown.capture="idleEscape.start" @keydown="idleEscape.finish">
     <div class="vw-gantt-toolbar">
       <slot name="legend" />
       <div v-if="zoomPresets?.length" class="vw-gantt-presets" role="group" :aria-label="messages.zoomPresets">

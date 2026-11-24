@@ -1,6 +1,6 @@
 // TreeGrid: treegrid keyboard navigation inside and outside the rendered window, expansion and lazy children,
 // activation payloads and linked highlights, cell and spreadsheet editing, row structure proposals, undo and RTL.
-import { expect, test, openExample, pageErrors, serveFixture, type Page } from './support'
+import { expect, test, animationFrames, clipboardEvent, openExample, pageErrors, serveFixture, type Page } from './support'
 
 async function openTreeGrid(page: Page) {
   const errors = pageErrors(page)
@@ -39,13 +39,33 @@ const focusedVisible = (page: Page) => page.evaluate(() => {
     && box.left >= view.left + tree - 1 && box.right <= view.left + grid.clientWidth + 1
 })
 
-/** Sends clipboard events with a DataTransfer to the focused element and returns the copied text. */
-const clipboard = (page: Page, type: 'copy' | 'cut' | 'paste', text = '') => page.evaluate(([kind, value]) => {
-  const data = new DataTransfer()
-  if (value) data.setData('text/plain', value)
-  document.activeElement!.dispatchEvent(new ClipboardEvent(kind, { clipboardData: data, bubbles: true, cancelable: true }))
-  return data.getData('text/plain')
-}, [type, text] as const)
+/**
+ * Holds the demo's lazy load of the archived group (a 600 ms timer) until the returned function releases it, so a test
+ * can open an editor or start a drag before the rows change, however fast the engine runs the steps in between.
+ */
+async function holdLazyLoad(page: Page) {
+  await page.evaluate(() => {
+    const original = window.setTimeout
+    const held: (() => void)[] = []
+    ;(window as any).__vwReleaseLoad = () => {
+      const due = held.splice(0)
+      for (const run of due) run()
+      return due.length
+    }
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 600 && typeof handler === 'function') {
+        held.push(() => handler(...args))
+        return 0
+      }
+      return original(handler, delay, ...args)
+    }) as typeof window.setTimeout
+  })
+  // Exactly one load was requested and held.
+  return async () => expect(await page.evaluate(() => (window as any).__vwReleaseLoad() as number)).toBe(1)
+}
+
+/** Sends a clipboard event to the focused element and returns the copied text. */
+const clipboard = clipboardEvent
 
 /** Text of a data cell in the row with this header, by column index (aria-colindex). */
 const cellOf = (row: ReturnType<Awaited<ReturnType<typeof openTreeGrid>>['row']>, colindex: number) => row.locator(`[role="gridcell"][aria-colindex="${colindex}"]`)
@@ -289,6 +309,7 @@ test('IME composition commits once, after the composition ends', async ({ page }
 
 test('an open editor is cancelled when the source data changes', async ({ page }) => {
   const { errors, grid, header, status } = await openTreeGrid(page)
+  const releaseLoad = await holdLazyLoad(page)
   await header('Tools').click()
   await page.keyboard.press('Control+End')
   await page.keyboard.press('Home')
@@ -300,6 +321,7 @@ test('an open editor is cancelled when the source data changes', async ({ page }
   await page.keyboard.press('F2')
   await expect(grid.getByRole('textbox', { name: 'Edit SKU for Tools Basic 001', exact: true })).toBeVisible()
   // The lazy load replaces the rows while the editor is open.
+  await releaseLoad()
   await expect(status).toHaveText('Edit cancelled (cell, source-changed).')
   await expect(grid.getByRole('textbox')).toHaveCount(0)
   expect(errors).toEqual([])
@@ -377,7 +399,13 @@ test('row structure: create, delete with descendants, keyboard moves, rejection 
   await page.keyboard.press('Delete')
   await expect(status).toHaveText('Deleted Tools Pro with its rows.')
   await expect(header('Tools Pro')).toHaveCount(0)
+  // The grid renders a window of rows into reused elements. Bring Garden to the middle first and let the window settle,
+  // so the click needs no scrolling of its own (Firefox scrolls a target into view in more cases than Chromium, and
+  // after such a scroll the element under the pointer can show another row).
+  await header('Garden').evaluate(element => element.scrollIntoView({ block: 'center' }))
+  await animationFrames(page)
   await header('Garden').click()
+  await expect(status).toContainText('Activated Garden by pointer')
   await grid.getByRole('button', { name: 'Delete Garden', exact: true }).click()
   await expect(status).toHaveText('Rejected: Top-level categories cannot be deleted.')
   // The row action buttons add a child row.
@@ -405,6 +433,7 @@ test('row structure: a pointer drag moves a row inside another, and data changes
   await expect(status).toHaveText('Moved Tools Basic 002 into Tools Basic 005.')
   await expect(row('Tools Basic 005')).toHaveAttribute('aria-expanded', 'false')
   // A drag in flight is cancelled when the rows change (the lazy group finishes loading).
+  const releaseLoad = await holdLazyLoad(page)
   await header('Tools').click()
   await page.keyboard.press('Control+End')
   await page.keyboard.press('Home')
@@ -415,6 +444,7 @@ test('row structure: a pointer drag moves a row inside another, and data changes
   await page.mouse.down()
   await page.mouse.move(again.x + 60, again.y + again.height * 3, { steps: 4 })
   await expect(grid.locator('.vw-tree-grid-drop')).toHaveCount(1)
+  await releaseLoad()
   await expect(status).toHaveText('Edit cancelled (row-move, source-changed).')
   await expect(grid.locator('.vw-tree-grid-drop')).toHaveCount(0)
   await page.mouse.up()

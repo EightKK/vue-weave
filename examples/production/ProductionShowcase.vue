@@ -5,10 +5,7 @@
 import { computed, ref } from 'vue'
 import { useDemoLocale } from '../i18n'
 import { copy, type Language } from './copy'
-import ApprovalFlow from './ApprovalFlow.vue'
-import WorkSheet from './WorkSheet.vue'
-import LotFlow from './LotFlow.vue'
-import ProductionPlan from './ProductionPlan.vue'
+import ProductionWorkspace from './ProductionWorkspace.vue'
 import './production.css'
 
 const { locale } = useDemoLocale()
@@ -25,12 +22,7 @@ const view = ref<'planning' | 'lot' | 'approval' | 'sheet'>('planning')
         :aria-current="view === item ? 'page' : undefined" @click="view = item">{{ text[item] }}</button>
     </nav>
     <div class="production-page">
-      <KeepAlive>
-        <ProductionPlan v-if="view === 'planning'" :text="text" />
-        <LotFlow v-else-if="view === 'lot'" :text="text" :is-japanese="ja" />
-        <ApprovalFlow v-else-if="view === 'approval'" :ja="ja" />
-        <WorkSheet v-else :ja="ja" />
-      </KeepAlive>
+      <ProductionWorkspace :text="text" :ja="ja" :view="view" />
     </div>
   </div>
 </template>

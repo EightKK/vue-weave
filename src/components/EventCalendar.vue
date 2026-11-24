@@ -218,6 +218,9 @@ const resourceById = computed(() => new Map((props.resources ?? []).map(resource
 
 const visibleDays = computed<EventCalendarDay[]>(() => valid.value ? eventCalendarDays(view.value, localDate.value, options.value) : [])
 const visibleRange = computed<TimeRange | undefined>(() => valid.value ? eventCalendarRange(view.value, localDate.value, options.value) : undefined)
+// The title is rendered with data-allow-mismatch="text": its Intl patterns differ between ICU builds, not only in the
+// spaces `cachedDateFormat` evens out (for ja, Node.js formats the week as "2026/11/09～2026/11/15" where Firefox writes
+// "2026年11月9日～15日"), so hydration takes the browser's text without reporting a mismatch.
 const title = computed(() => {
   const days = visibleDays.value
   if (!days.length) return ''
@@ -868,7 +871,7 @@ const hintIds = (event: E, area: Area) => editable(event) ? `${uid}-${view.value
             <span class="vw-calendar-nav-icon" aria-hidden="true">›</span>
           </button>
         </div>
-        <span class="vw-calendar-title">{{ title }}</span>
+        <span class="vw-calendar-title" data-allow-mismatch="text">{{ title }}</span>
         <div class="vw-calendar-views" role="group" :aria-label="messages.views">
           <button v-for="item in viewNames" :key="item.id" type="button" :aria-pressed="view === item.id" @click="setView(item.id)">
             {{ item.label }}

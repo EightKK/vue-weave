@@ -105,7 +105,8 @@ export function placePreviewLabels<E extends GraphEdge>(
       const bounds = current.get(edge.id) ?? savedBounds.get(edge.id)
       if (bounds) areas.push(grown(bounds, reachOf(edge)))
     }
-    areas.push(...boxes)
+    // A loop, not `push(...boxes)`: a move of very many nodes has more boxes than a call takes arguments.
+    for (const box of boxes) areas.push(box)
   }
   if (!replace.size && !labels.size) return { layout: preview, edges: [...edgeIds] }
   const restored: GraphLayout = labels.size ? { ...preview, edgeLabels: new LayeredMap(preview.edgeLabels, labels) } : preview

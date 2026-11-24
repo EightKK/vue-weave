@@ -1,5 +1,8 @@
 // The demo shell, themes, forced colours, reduced motion, print, image export and the showcases of the site.
-import { expect, test, emptyGraphPoint, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors } from './support'
+import {
+  expect, test, emptyGraphPoint, evaluateEach, ganttRegion, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
+  type Locator,
+} from './support'
 import { examplesOfKind } from '../../site/examples/registry'
 
 test('demo built-in theme switch applies the stylesheet theme classes', async ({ page }) => {
@@ -72,7 +75,9 @@ test('forced colors use system colours for bars and selection', async ({ page })
     const cs = getComputedStyle(el)
     return { adjust: cs.forcedColorAdjust, border: cs.borderTopColor, canvasText }
   })
-  expect(styles.adjust).toBe('none')
+  // WebKit has no forced-color-adjust property (Safari has no forced colours mode); where it exists it must be none.
+  const adjustable = await page.evaluate(() => CSS.supports('forced-color-adjust', 'none'))
+  expect(styles.adjust).toBe(adjustable ? 'none' : undefined)
   expect(styles.border).toBe(styles.canvasText)
   await bar.focus()
   await expect(bar).toHaveCSS('outline-style', 'solid')
@@ -195,6 +200,28 @@ test('the workflow builder showcase applies step moves and connections through t
   const errors = pageErrors(page)
   await openExample(page, 'workflow', { kind: 'showcase' })
   const showcase = page.getByRole('region', { name: 'Workflow builder' })
+  // Diagnostics for an intermittent WebKit failure in which an armed keyboard connection disappears without a status:
+  // the input events the canvas receives, attached to the report, so the next failing run shows what reached it.
+  await page.evaluate(() => {
+    const log: string[] = (window as any).__vwInputLog = []
+    const canvas = document.querySelector('.sc-workflow-graph')!
+    for (const type of ['keydown', 'keyup', 'keypress', 'click', 'pointerdown', 'pointerup', 'focusin', 'focusout']) {
+      canvas.addEventListener(type, event => {
+        const target = event.target as Element
+        log.push(`${Math.round(performance.now())} ${type} ${(event as KeyboardEvent).key ?? ''} ${target.getAttribute?.('aria-label') ?? target.tagName}`)
+      }, true)
+    }
+  })
+  try {
+    await workflowConnections(showcase)
+  } finally {
+    const log = await page.evaluate(() => ((window as any).__vwInputLog as string[]).join('\n')).catch(() => 'unavailable')
+    await test.info().attach('workflow input events', { body: log, contentType: 'text/plain' })
+  }
+  expect(errors).toEqual([])
+})
+
+async function workflowConnections(showcase: Locator) {
   // The zoom percentage is an <output>, which also has the status role.
   const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
 
@@ -217,8 +244,7 @@ test('the workflow builder showcase applies step moves and connections through t
   await showcase.getByRole('button', { name: 'Connect to Summarize order · input', exact: true }).press('Enter')
   await expect(status('Rejected: These steps are already connected.')).toBeVisible()
   await expect(edges).toHaveCount(8)
-  expect(errors).toEqual([])
-})
+}
 
 test('the workflow builder showcase clears the step selection on a click on the empty canvas or Escape', async ({ page }) => {
   const errors = pageErrors(page)
@@ -387,12 +413,16 @@ test('the product roadmap showcase clears the selection on a click on empty char
   const status = (text: string) => showcase.getByRole('status').filter({ hasText: text })
   await expect(status('Click empty chart space or press Escape to clear the selection.')).toBeVisible()
   const gallery = showcase.getByRole('button', { name: 'Template gallery Feb 22–Apr 5', exact: true })
-  await gallery.click()
-  await expect(gallery).toHaveAttribute('aria-pressed', 'true')
   // The Template gallery row is empty before its first bar (Feb 22). Welcome emails starts on Jan 4, the start of the
   // axis, so 100 px (about a week) left of Template gallery is still in the time area of that row.
   const bar = (await gallery.boundingBox())!
   const axisStart = (await showcase.getByRole('button', { name: 'Welcome emails Jan 4–Jan 29', exact: true }).boundingBox())!.x
+  // The bar runs past the right edge of the scroller. locator.click() would first scroll it into view, which Firefox
+  // does for a partly visible element (and Chromium does not), moving the axis; a mouse click on its visible start
+  // selects it the way a user does, without scrolling.
+  const selectGallery = () => page.mouse.click(bar.x + 40, bar.y + bar.height / 2)
+  await selectGallery()
+  await expect(gallery).toHaveAttribute('aria-pressed', 'true')
   const x = bar.x - 100
   expect(x).toBeGreaterThan(axisStart + 10)
   await page.mouse.click(x, bar.y + bar.height / 2)
@@ -400,7 +430,7 @@ test('the product roadmap showcase clears the selection on a click on empty char
   await expect(status('Selection cleared.')).toBeVisible()
 
   // Escape during a drag cancels the drag and keeps the selection; the next Escape clears it.
-  await gallery.click()
+  await selectGallery()
   await expect(gallery).toHaveAttribute('aria-pressed', 'true')
   const box = (await gallery.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
@@ -471,10 +501,10 @@ test('the calendar views showcase switches calendar zoom presets and locales and
   // Golden Week shades the Tokyo row, Ascension Day the Berlin row and Corpus Christi the Lisbon row.
   await expect(showcase.locator('.vw-gantt-range.vw-is-row')).toHaveCount(3)
   // The range labels share the header strip; none of them is drawn over another one.
-  const labels = await showcase.locator('.vw-gantt-range-label').evaluateAll(elements => elements.map(element => {
+  const labels = await evaluateEach(showcase.locator('.vw-gantt-range-label'), element => {
     const rect = element.getBoundingClientRect()
     return { text: element.textContent, start: rect.left, end: rect.right }
-  })).then(list => list.sort((a, b) => a.start - b.start))
+  }).then(list => list.sort((a, b) => a.start - b.start))
   expect(labels.map(entry => entry.text)).toEqual(['Golden Week', 'Ascension Day', 'Code freeze', 'Corpus Christi'])
   for (let index = 1; index < labels.length; index++) expect(labels[index]!.start).toBeGreaterThanOrEqual(labels[index - 1]!.end - 0.5)
   const band = (await showcase.locator('.vw-gantt-range:not(.vw-is-row)').first().boundingBox())!

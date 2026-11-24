@@ -456,19 +456,38 @@ const hydrationPages = [
   { kind: 'showcase', id: 'calendar', locale: 'en', calendar: false },
 ] as const
 for (const { kind, id, locale, calendar } of hydrationPages) {
-  test(`the ${locale} ${kind} page ${id} hydrates its server-rendered markup without a mismatch`, async ({ page }) => {
+  test(`the ${locale} ${kind} page ${id} hydrates its server-rendered markup without a mismatch`, async ({ page, browserName }) => {
     const errors = pageErrors(page)
     const hydration: string[] = []
     page.on('console', message => { if (/hydrat/i.test(message.text())) hydration.push(`${message.type()}: ${message.text()}`) })
     const demo = await openExample(page, id, { kind, locale })
     if (calendar) {
-      // The server-rendered page holds the calendar title, with plain spaces, and the browser renders the same text.
+      // The server-rendered page holds the calendar title, with plain spaces. Chromium formats it like Node.js and renders
+      // the same text; other engines may use another ICU pattern (Firefox, ja), which the title accepts on hydration.
       const html = await (await page.request.get(page.url())).text()
-      const title = /<span class="vw-calendar-title">([^<]+)<\/span>/.exec(html)?.[1]
+      const title = /<span class="vw-calendar-title"[^>]*>([^<]+)<\/span>/.exec(html)?.[1]
       expect(title).toMatch(/^[^\u00a0\u2009\u202f]+$/)
-      await expect(demo.locator('.vw-calendar-title')).toHaveText(title!)
+      if (browserName === 'chromium') await expect(demo.locator('.vw-calendar-title')).toHaveText(title!)
+      else await expect(demo.locator('.vw-calendar-title')).toHaveText(/^[^\u00a0\u2009\u202f]+$/)
     }
     expect(hydration).toEqual([])
     expect(errors).toEqual([])
   })
 }
+
+test('a calendar title that the browser formats differently from the server hydrates to the browser text without a mismatch', async ({ page }) => {
+  const errors = pageErrors(page)
+  const hydration: string[] = []
+  page.on('console', message => { if (/hydrat/i.test(message.text())) hydration.push(`${message.type()}: ${message.text()}`) })
+  // Stand in for an ICU build that formats the week with another pattern (as Node.js and Firefox do for ja).
+  await page.route('**/examples/event-calendar/', async route => {
+    const response = await route.fetch()
+    const html = (await response.text()).replace(/(<span class="vw-calendar-title"[^>]*>)[^<]+(<\/span>)/, '$1Server pattern$2')
+    await route.fulfill({ response, body: html })
+  })
+  const demo = await openExample(page, 'event-calendar')
+  await expect(demo.locator('.vw-calendar-title')).not.toHaveText('Server pattern')
+  await expect(demo.locator('.vw-calendar-title')).toHaveText(/\d/)
+  expect(hydration).toEqual([])
+  expect(errors).toEqual([])
+})

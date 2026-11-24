@@ -195,17 +195,6 @@ function clearSelection() {
   selected.value = new Set()
   status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
 }
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
 /** Task state glyph in the task list: to do, in progress or done. */
 function taskState(row: SprintRow) {
   const progress = barOf.value.get(row.id)?.progress ?? 0
@@ -220,7 +209,6 @@ function taskState(row: SprintRow) {
       en: 'A task list with Start, Days and % columns (only % on narrow screens), weekday headers from the tick slot, shaded weekends, epic rollups, restyled finish-to-start arrows and draggable progress; moves that break a link are rejected.',
       ja: '開始・日数・% の列を持つタスク一覧(狭い画面では % のみ)、目盛りスロットで描く曜日の見出し、週末の網掛け、エピックの集約、装飾し直した終了-開始の矢印、ドラッグできる進捗を備えています。依存関係を崩す移動は拒否されます。',
     }) }}</p>
-    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart
       :rows="rows" :bars="bars" :dependencies="dependencies" :range="range" :pixels-per-unit="31 / day" :tick-steps="[day]"
       :snap="day" :format-time="formatTime" :header-bands="headerBands" :non-working-periods="weekends" :row-height="rowHeight"
@@ -229,7 +217,7 @@ function taskState(row: SprintRow) {
       :labels="{ ...labels.gantt, region: t({ en: 'Sprint plan timeline', ja: 'スプリント計画のタイムライン' }), rows: t({ en: 'Task name', ja: 'タスク名' }), now: t({ en: 'Today', ja: '今日' }) }"
       @update:collapsed-ids="collapsed = $event" @edit="onEdit" @edit-rejected="onRejected" @progress-edit="onProgress"
       dependency-style="rounded" sticky-band-labels @select="onSelect"
-      @background-click="clearSelection" @edit-cancel="noteEditCancel"
+      @background-click="clearSelection" @idle-escape="clearSelection"
     >
       <template #legend>
         <ul class="sc-sprint-legend" :aria-label="t({ en: 'Legend', ja: '凡例' })">
@@ -273,7 +261,6 @@ function taskState(row: SprintRow) {
         <span v-else class="sc-sprint-bar-label">{{ item.label }}</span>
       </template>
     </GanttChart>
-    </div>
     <p class="sc-sprint-status" role="status">{{ status }}</p>
   </section>
 </template>

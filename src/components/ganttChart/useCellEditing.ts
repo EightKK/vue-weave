@@ -52,6 +52,8 @@ export interface CellEditingOptions<R extends TimelineRow> {
   hideTooltip: () => void
   /** The spreadsheet state of the chart (`useSheet`); read only in event handlers. */
   sheet: () => ReturnType<typeof useSheet<R>>
+  /** Called when an open `cell-editor` is cancelled, just before `edit-cancel`. */
+  onCancel?: () => void
 }
 
 export function useCellEditing<R extends TimelineRow>(options: CellEditingOptions<R>) {
@@ -179,6 +181,7 @@ export function useCellEditing<R extends TimelineRow>(options: CellEditingOption
     const state = cellEditor.value
     if (!state) return
     closeCellEditor(returnFocus)
+    options.onCancel?.()
     emit('edit-cancel', { reason, barIds: [], cell: { rowId: state.rowId, columnId: state.columnId } })
   }
   function editorTarget() {

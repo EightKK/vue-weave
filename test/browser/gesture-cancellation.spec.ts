@@ -149,6 +149,10 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
   for (const search of ['?constraints=1', '?constraints=1&interactions=1&pinch=1']) {
     const { chart, out } = await openGanttFixture(page, search)
     await allowSyntheticCapture(page)
+    // The pointer ID of the last press. The mouse pointer ID is not fixed across engines (Chromium uses 1), so the synthetic
+    // cancellation events reuse the one the press carried.
+    await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
+    const mousePointer = () => page.evaluate(() => (window as any).__pointerId as number)
     const finish = chart.getByRole('slider', { name: 'Finish no later than · Task A', exact: true })
     const element = (await finish.elementHandle())!
     const box = (await finish.boundingBox())!
@@ -180,8 +184,8 @@ test('a context menu, new bars, a second pointer, pointercancel or lost capture 
     // New bars from the parent, even equal ones, are new source data.
     await drag(() => page.getByRole('button', { name: 'Replace bars', exact: true }).dispatchEvent('click'))
     // The browser ends or takes the pointer.
-    await drag(() => element.dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
-    await drag(() => element.dispatchEvent('lostpointercapture', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    await drag(async () => element.dispatchEvent('pointercancel', { pointerId: await mousePointer(), pointerType: 'mouse', isPrimary: true, bubbles: true }))
+    await drag(async () => element.dispatchEvent('lostpointercapture', { pointerId: await mousePointer(), pointerType: 'mouse', isPrimary: true, bubbles: true }))
     // Escape on the focused handle.
     await drag(() => page.keyboard.press('Escape'))
     await expect(out('Constraint edits')).toHaveText('0')
@@ -396,7 +400,10 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
 
   // A pointer connection dragged from one handle to another, and a keyboard connection armed and cancelled.
   const from = await centerOf(button('Start connection from N0000'))
-  const to = await centerOf(button('Start connection from N0005'))
+  // N0003 rather than a node further right: after the zoom above, the last nodes can lie beyond the right edge of the
+  // viewport, where Firefox does not deliver synthetic mouse events at all.
+  const to = await centerOf(button('Start connection from N0003'))
+  expect(to.x).toBeLessThan(page.viewportSize()!.width)
   await pressAndMoveTo(page, from, to, 5)
   await expect(log).toHaveText('start connect pointer')
   await page.mouse.up()
@@ -425,6 +432,61 @@ test('graph gesture events: every gesture-start has exactly one gesture-end, on 
     expect(all[i]).toMatch(/^start /)
     expect(all[i + 1]).toMatch(new RegExp('^end ' + all[i]!.slice('start '.length) + ' (committed|cancelled)$'))
   }
+  expect(errors).toEqual([])
+})
+
+test('graph idle-escape reports an Escape that cancels no gesture, but not one that cancels a drag or closes the label editor', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&draggable=1&gestures=1&labels=1')
+  const idle = page.getByRole('status', { name: 'Idle escapes' })
+  const node = page.getByRole('button', { name: 'N0002', exact: true })
+  await node.focus()
+  await node.press('Escape')
+  await expect(idle).toHaveText('1')
+
+  // Escape during a drag ends the gesture as cancelled and is not idle.
+  await pressAndMove(page, node, 30, 12)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('status', { name: 'Gesture events' })).toHaveText('start node-drag pointer | end node-drag pointer cancelled')
+  await page.mouse.up()
+  await expect(idle).toHaveText('1')
+
+  // Escape in the label editor discards the text and stays in the editor's hands.
+  await node.press('F2')
+  const editor = page.getByRole('textbox', { name: /^Edit label of/ })
+  await expect(editor).toBeFocused()
+  await editor.press('Escape')
+  await expect(editor).toHaveCount(0)
+  await expect(idle).toHaveText('1')
+  await node.press('Escape')
+  await expect(idle).toHaveText('2')
+  expect(errors).toEqual([])
+})
+
+test('graph idle-escape: Escape on the zoom buttons or the minimap cancels an armed connection first, and .once listeners fire once', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openNetworkFixture(page, '?nodes=6&connectable=1&minimap=1&gestures=1')
+  const idle = page.getByRole('status', { name: 'Idle escapes' })
+  const once = page.getByRole('status', { name: 'Once listener calls' })
+  const log = page.getByRole('status', { name: 'Gesture events' })
+  const start = page.getByRole('button', { name: 'Start connection from N0002', exact: true })
+  for (const name of ['Zoom in', 'Navigate graph overview']) {
+    await start.press('Enter')
+    await expect(page.getByRole('button', { name: 'Connect to N0003', exact: true })).toHaveCount(1)
+    const outside = page.getByRole('button', { name, exact: true })
+    await outside.focus()
+    await outside.press('Escape')
+    await expect(log).toHaveText(/end connect keyboard cancelled$/)
+    await expect(page.getByRole('button', { name: 'Connect to N0003', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('status', { name: 'Open gestures' })).toHaveText('0')
+    await expect(idle).toHaveText('0')
+  }
+  // Nothing is in flight now: the next Escapes are idle; the `.once` listener hears only the first.
+  const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true })
+  await zoomIn.press('Escape')
+  await zoomIn.press('Escape')
+  await expect(idle).toHaveText('2')
+  await expect(once).toHaveText('1')
   expect(errors).toEqual([])
 })
 

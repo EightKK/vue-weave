@@ -58,6 +58,7 @@ import {
 import {
   chartDelta, grabPointer, ownsPointer, pointerSession, releaseSession, sessionPastThreshold, type PointerSession,
 } from './networkGraph/pointerSession.js'
+import { createIdleEscape, emitIdleEscape } from './shared/escape.js'
 import { capturePointer, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, type ValidatorResult } from './shared/validation.js'
 
@@ -208,6 +209,14 @@ const props = withDefaults(defineProps<{
    * other edges. Widths must be finite and at least 0; unknown IDs are ignored. Opt-in. Default: undefined.
    */
   edgeBands?: ReadonlyMap<string, GraphEdgeBand>
+  /**
+   * Listener of the `idle-escape` event (`@idle-escape` in templates): Escape was pressed in the graph and cancelled
+   * nothing of the graph's own (no gesture in flight, so no `gesture-end` for it), outside text fields and the label
+   * editor; it receives the keyboard event. Applications typically clear their selection, as on `background-click`. A
+   * declared listener prop rather than an emit, like GanttChart's; it is still delivered as a component event, so `.once`
+   * works. Opt-in. Default: undefined.
+   */
+  onIdleEscape?: (event: KeyboardEvent) => void
 }>(),{ showControls: true, cullOverscan: 200, dir: 'ltr', tooltipDelay: 400, background: 'none', guideThreshold: 6, edgeStyle: 'curve' })
 const emit = defineEmits<{
   /** A node was selected by click or Enter/Space; carries its ID. */
@@ -805,6 +814,14 @@ function endGesture(slot: GestureSlot, outcome: GraphGestureEnd['outcome']) {
   if (!gesture) return
   gestures[slot] = undefined
   emit('gesture-end', { ...gesture, outcome })
+}
+// Escape on the stage cancels the gestures in flight; one that finds none is reported as `idle-escape`.
+// An Escape that no handler inside used (on a zoom button or the minimap, for example) still cancels them.
+const idleEscape = createIdleEscape(event => emitIdleEscape(emit, event), escapeStage)
+function escapeStage() {
+  if (gestures.pointer || gestures.connection) idleEscape.cancelled()
+  cancelInteraction()
+  hideTooltip()
 }
 
 /**
@@ -2777,11 +2794,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow, 'vw-labels-editable': editableLabels }" :dir="dir === 'rtl' ? 'rtl' : undefined">
+  <div ref="root" class="vw-network" :class="{ 'vw-rtl': rtl, 'vw-network-patterned': pattern, 'vw-lod-low': lodLow, 'vw-labels-editable': editableLabels }" :dir="dir === 'rtl' ? 'rtl' : undefined"
+    @keydown.capture="idleEscape.start" @keydown="idleEscape.finish">
     <svg
       ref="svg" class="vw-network-stage" :style="{ height: typeof height === 'number' ? height + 'px' : height }" :class="{ 'vw-is-panning': isPanning }"
       :aria-label="messages.region" tabindex="0"
-      @keydown.self="panWithKeys" @keydown.esc="cancelInteraction(); hideTooltip()" @keydown="onStageKeydown" @contextmenu="openContextMenu"
+      @keydown.self="panWithKeys" @keydown.esc="escapeStage" @keydown="onStageKeydown" @contextmenu="openContextMenu"
       @focusin="trackFocus($event); focusTooltip($event); enterWithFocus($event)" @focusout="releaseFocus($event); blurTooltip(); leaveWithFocus()"
       @wheel="onWheel" @pointerdown.capture="pressStage($event); trackPointer($event)" @pointerdown="startPan"
       @pointermove="onStagePointerMove" @pointerleave="forgetPointer"

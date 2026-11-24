@@ -6,11 +6,16 @@ import ProcessGraph from './ProcessGraph.vue'
 import type { Copy } from './copy'
 import { flows } from './lot-transfers'
 import { excerpt } from './sections'
+import { stepEntity, stepOf, useProductionWorkspace } from './workspace'
 import source from './LotFlow.vue?raw'
 
 const props = defineProps<{ text: Copy; isJapanese: boolean }>()
 const unit = ref<'pcs' | 'EUR'>('pcs')
-const selected = ref('pack')
+const { linked } = useProductionWorkspace()
+// The step shown in the details: the first selected entity that is a step of this lot, selected here or in planning.
+const selected = computed(() => linked.selectedEntities.value.map(stepOf).find(id => id !== undefined) ?? '')
+const graphSelected = computed(() => [...linked.graph.value.selectedNodeIds].find(id => positions.has(id)) ?? '')
+const selectStep = (id: string) => linked.selectEntities([stepEntity(id)], { source: 'lot-table' })
 const codeOpen = ref(false)
 const ids = ['lot', 'overhead', 'line-a', 'line-b', 'inspect', 'pack', 'rework'] as const
 type Step = typeof ids[number]
@@ -58,7 +63,7 @@ const examples = computed(() => [{ label: props.text.codeFlow, path: 'LotFlow.vu
 
 function changeUnit(next: typeof unit.value) {
   unit.value = next
-  if (next === 'pcs' && selected.value === 'overhead') selected.value = 'lot'
+  if (next === 'pcs' && selected.value === 'overhead') selectStep('lot')
 }
 </script>
 
@@ -77,8 +82,9 @@ function changeUnit(next: typeof unit.value) {
   <div class="production-layout flow-layout">
     <section class="production-panel">
       <div class="production-heading"><h2>{{ text.lotLabel }}</h2><code>NetworkGraph</code></div>
-      <ProcessGraph v-model:selected="selected" :text="text" :label="text.lotLabel" :nodes="diagramNodes" :edges="diagramEdges"
-        :positions="positions" :symbols="symbols" :height="420" />
+      <ProcessGraph :selected-id="graphSelected" :linked-ids="linked.graph.value.highlightedNodeIds" :text="text" :label="text.lotLabel"
+        :nodes="diagramNodes" :edges="diagramEdges" :positions="positions" :symbols="symbols" :height="420"
+        @select="id => linked.select('graph', [{ view: 'graph', kind: 'node', id }])" @clear="linked.clearSelection()" />
       <div class="production-content production-note">
         <strong><span class="return-line" aria-hidden="true"></span>{{ text.handling }} {{ amount(reference.quantity) }}</strong>
         <p>{{ text.returnNote }}</p>
@@ -98,6 +104,7 @@ function changeUnit(next: typeof unit.value) {
             </dl>
           </template>
           <p v-else class="production-caption">{{ isJapanese ? 'グラフか表で工程を選ぶと、その数量を表示します。' : 'Select a step in the graph or the table to see its quantities.' }}</p>
+          <p class="production-caption">{{ text.lotSelectionNote }}</p>
         </div>
       </section>
       <section class="production-panel">
@@ -106,7 +113,7 @@ function changeUnit(next: typeof unit.value) {
             <thead><tr><th scope="col">{{ text.step }}</th><th scope="col">{{ text.input }}</th><th scope="col">{{ text.output }}</th></tr></thead>
             <tbody>
               <tr v-for="row in totals" :key="row.id" :class="{ active: row.id === selected }">
-                <th scope="row"><button type="button" :aria-pressed="row.id === selected" @click="selected = row.id">{{ text.steps[row.id as Step] }}</button></th>
+                <th scope="row"><button type="button" :aria-pressed="row.id === selected" @click="selectStep(row.id)">{{ text.steps[row.id as Step] }}</button></th>
                 <td>{{ amount(row.inflow) }}</td><td>{{ amount(row.outflow) }}</td>
               </tr>
             </tbody>

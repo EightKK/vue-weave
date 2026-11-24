@@ -1,4 +1,9 @@
-import { expect, test, dragBy, openExample, pageErrors } from './support'
+import { expect, test, clipboardEvent, dragBy, openExample, pageErrors, type Page } from './support'
+
+// The demo saves every edit through one useEditTransaction against a mock server, and each accepted save gets the next
+// version. Waiting for a version keeps a test from editing while the previous save is still in flight.
+const saved = (page: Page, version: string, ja = false) =>
+  expect(page.getByRole('status', { name: ja ? '保存の状態' : 'Save status' })).toContainText(ja ? '版 ' + version + ' を受理しました。' : 'Accepted version ' + version + '.')
 
 test('production demo edits the schedule, graph and load from the homepage', async ({ page }) => {
   const errors = pageErrors(page)
@@ -18,8 +23,11 @@ test('production demo edits the schedule, graph and load from the homepage', asy
 
   await page.getByRole('button', { name: 'この案を採用' }).click()
   await expect(page.getByRole('status').filter({ hasText: '変更案を採用しました。' })).toBeVisible()
-  await page.getByRole('button', { name: '採用を取り消す' }).click()
+  await saved(page, 'v2', true)
+  // Undo is app-wide: it restores the previous document through the same transaction.
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click()
   await expect(page.getByRole('row', { name: /出荷できる時刻/ })).toContainText('17:00')
+  await saved(page, 'v3', true)
   expect(errors).toEqual([])
 })
 
@@ -91,19 +99,24 @@ test('approval routes support new steps, cycle rejection and undo', async ({ pag
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('button', { name: 'Approval workflow' }).click()
   await page.getByRole('button', { name: 'Add approval step' }).click()
+  await saved(page, 'v2')
   const selected = page.getByLabel('Selected step')
   await page.getByLabel('Step name').fill('Finance review')
   await page.getByLabel('Step name').press('Tab')
+  await saved(page, 'v3')
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption('done')
+  await saved(page, 'v4')
   await selected.selectOption('director')
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption({ label: 'Finance review' })
+  await saved(page, 'v5')
   await selected.selectOption({ label: 'Finance review' })
   await page.getByRole('combobox', { name: 'Next step', exact: true }).selectOption('director')
   await expect(page.getByRole('status').filter({ hasText: 'cycle' })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Next step', exact: true })).toHaveValue('done')
   await page.getByRole('button', { name: 'Delete step' }).click()
   await expect(selected.locator('option', { hasText: 'Finance review' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await saved(page, 'v6')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await selected.selectOption('director')
   await expect(page.getByRole('combobox', { name: 'Next step', exact: true }).locator('option:checked')).toHaveText('Finance review')
   expect(errors).toEqual([])
@@ -116,11 +129,7 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await page.getByRole('button', { name: 'Schedule sheet' }).click()
   const cell = (name: string) => page.getByRole('button', { name, exact: true })
   const status = page.getByRole('status', { name: 'Edit result' })
-  const paste = (value: string) => page.evaluate(text => {
-    const data = new DataTransfer()
-    data.setData('text/plain', text)
-    document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  }, value)
+  const paste = (value: string) => clipboardEvent(page, 'paste', value)
 
   // A pasted duration reschedules the task and its successors.
   await cell('Requirements · Duration 3d').click()
@@ -128,6 +137,7 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   await expect(cell('Requirements · Duration 5d')).toBeVisible()
   await expect(cell('Requirements 3/1–3/6')).toBeVisible()
   await expect(cell('Layout design · Start 3/8')).toBeVisible()
+  await saved(page, 'v2')
 
   // Text the field cannot read is rejected with a visible reason.
   await cell('Requirements · Duration 5d').click()
@@ -147,23 +157,22 @@ test('schedule sheet copies, pastes and fills selected cells atomically', async 
   // Ctrl+D fills the first row of the selection down, and a successful edit clears the message.
   await cell('Order parts · Resource Purchasing').click()
   await cell('Order parts · Resource Purchasing').press('Shift+ArrowDown')
-  const copied = await page.evaluate(() => {
-    const data = new DataTransfer()
-    document.activeElement!.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
-    return data.getData('text/plain')
-  })
+  const copied = await clipboardEvent(page, 'copy')
   expect(copied).toBe('Purchasing\r\nMachining')
   await cell('Build frame · Resource Machining').press('Control+d')
   await expect(cell('Build frame · Resource Purchasing')).toBeVisible()
   await expect(status).toBeEmpty()
+  await saved(page, 'v3')
 
-  await page.getByRole('button', { name: 'Undo' }).click()
+  // Undo and redo are disabled while a save is in flight, so each click waits for the previous one.
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(cell('Build frame · Resource Machining')).toBeVisible()
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(cell('Requirements 3/1–3/4')).toBeVisible()
   await expect(cell('Layout design · Start 3/4')).toBeVisible()
-  await page.getByRole('button', { name: 'Redo' }).click()
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await saved(page, 'v6')
   expect(errors).toEqual([])
 })
 
@@ -197,5 +206,246 @@ test('the production showcase page embeds the demo and follows the page language
   await expect(demo.getByRole('button', { name: '全体表示', exact: true }).first()).toBeVisible()
   await demo.getByRole('navigation', { name: 'デモ' }).getByRole('button', { name: 'ロットの流れ', exact: true }).click()
   await expect(demo.getByRole('heading', { name: 'ロットの流れ', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a selection made in planning shows in the lot flow, and one made in the lot flow shows in planning', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  const gantt = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  await gantt.getByRole('button', { name: /^Cut B / }).click()
+  await expect(page.getByRole('button', { name: 'Move one hour earlier', exact: true })).toBeVisible()
+
+  // Cut B is the lot's line B: the lot flow opens with its quantities and its table row pressed.
+  await page.getByRole('button', { name: 'Lot flow', exact: true }).click()
+  const details = page.locator('.production-content[aria-live]')
+  await expect(details).toContainText('Line B')
+  await expect(details).toContainText('-4 pcs')
+  const table = page.locator('.production-table')
+  await expect(table.getByRole('button', { name: 'Line B' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.production-node.linked')).toHaveCount(1)
+
+  // Inspection is one step in both views. Choosing it in the lot table selects it in planning too.
+  await table.getByRole('button', { name: 'Inspect' }).click()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByRole('complementary').getByText('Inspect', { exact: true })).toBeVisible()
+  const inspect = gantt.getByRole('button', { name: /^Inspect / })
+  await expect(inspect).toHaveClass(/vw-is-highlighted/)
+  await expect(inspect).toHaveAttribute('aria-pressed', 'false')
+  // Rework has no planning operation: selecting it leaves planning without an operation.
+  await page.getByRole('button', { name: 'Lot flow', exact: true }).click()
+  await table.getByRole('button', { name: 'Rework' }).click()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByText('Select an operation in the graph or the chart to see its details.', { exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the save bar reports rejected, conflicting and unanswered saves and undo stays app-wide', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  const cell = (name: string) => page.getByRole('button', { name, exact: true })
+  const paste = (value: string) => clipboardEvent(page, 'paste', value)
+  const saveStatus = page.getByRole('status', { name: 'Save status' })
+  const server = page.getByLabel('Server answer')
+
+  await cell('Requirements · Duration 3d').click()
+  await paste('5')
+  await saved(page, 'v2')
+
+  // A rejected save changes nothing: the sheet shows the accepted document again.
+  await server.selectOption({ label: 'Reject' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('6')
+  await expect(saveStatus).toContainText('Rejected by the server (server-validation). Nothing changed.')
+  await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await page.getByRole('button', { name: 'Dismiss save message' }).click()
+
+  // Another planner saved first: nothing is written, and loading the latest version shows their change.
+  await server.selectOption({ label: 'Conflict' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('7')
+  await expect(saveStatus).toContainText('Version conflict')
+  await expect(cell('Trial run · Duration 2d')).toBeVisible()
+  await page.getByRole('button', { name: 'Load latest version' }).click()
+  await expect(cell('Trial run · Duration 3d')).toBeVisible()
+  await expect(cell('Requirements · Duration 5d')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+
+  // No answer: the save may have been applied; asking the server settles it.
+  await server.selectOption({ label: 'No answer' })
+  await cell('Requirements · Duration 5d').click()
+  await paste('4')
+  await expect(saveStatus).toContainText('Result unknown')
+  await page.getByRole('button', { name: 'Check with server' }).click()
+  await saved(page, 'v4')
+  await expect(cell('Requirements · Duration 4d')).toBeVisible()
+
+  // Undo covers every tab: an adopted plan is undone from the sheet's save bar too.
+  await server.selectOption({ label: 'Accept' })
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await saved(page, 'v5')
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['19:00'])
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await saved(page, 'v6')
+  await expect(cell('Requirements · Duration 4d')).toBeVisible()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['17:00'])
+  expect(errors).toEqual([])
+})
+
+test('loading the latest version after a conflict keeps the schedule sheet working when the trial run ends the window', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  const cell = (name: string) => page.getByRole('button', { name, exact: true })
+  const sheet = page.getByRole('region', { name: 'Gantt chart', exact: true })
+  /** Types `value` into a cell through its editor and commits it with Enter. */
+  async function edit(name: string | RegExp, field: string, value: string) {
+    await page.getByRole('button', { name }).dblclick()
+    const input = sheet.getByRole('textbox', { name: field, exact: true })
+    await input.fill(value)
+    await input.press('Enter')
+  }
+  // The trial run moves to Thursday 6 May and takes 2 working days, the last ones in the window. That schedules.
+  await edit(/^Trial run · Start /, 'Trial run · Start', '5/6')
+  await expect(cell('Trial run · Start 5/6')).toBeVisible()
+  await saved(page, 'v2')
+
+  // Another planner saves first. Lengthening the trial run by a day would push it past the window, which the server
+  // refuses too, so the change it stores still schedules; loading it shows it instead of breaking the sheet.
+  await page.getByLabel('Server answer').selectOption({ label: 'Conflict' })
+  await edit('Requirements · Duration 3d', 'Requirements · Duration', '4')
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Version conflict')
+  await page.getByRole('button', { name: 'Load latest version' }).click()
+  await expect(cell('Trial run · Duration 1d')).toBeVisible()
+  await expect(cell('Trial run · Start 5/6')).toBeVisible()
+  await expect(cell('Requirements · Duration 3d')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('a proposal opened while the previous one is being adopted stays open after that save', async ({ page }) => {
+  const errors = pageErrors(page)
+  // A fake clock holds the mock server's answer until the test lets it through.
+  await page.clock.install()
+  await page.goto('demo/')
+  await page.getByRole('button', { name: /Wait for maintenance/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Saving')
+  // The next proposal is opened before the server answers the first one.
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await expect(page.getByRole('button', { name: /Move cut A to backup/ })).toHaveAttribute('aria-pressed', 'true')
+  await page.clock.runFor(1000)
+  await saved(page, 'v2')
+  // The adopted plan is the first proposal; the second one is still open with its own figures, ready to adopt.
+  const shipping = page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')
+  await expect(page.getByRole('button', { name: /Move cut A to backup/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toBeVisible()
+  await expect(shipping).toHaveCount(2)
+  await expect(page.getByText('Plan adopted.', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await page.clock.runFor(1000)
+  await saved(page, 'v3')
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toHaveCount(0)
+  await expect(shipping).toHaveCount(1)
+  expect(errors).toEqual([])
+})
+
+test('a proposal whose unanswered save the server confirms is closed and cannot be adopted twice', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  await page.getByLabel('Server answer').selectOption({ label: 'No answer' })
+  await page.getByRole('button', { name: /Move cut A to backup/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  const saveStatus = page.getByRole('status', { name: 'Save status' })
+  await expect(saveStatus).toContainText('Result unknown')
+  // Until the result is known the proposal stays open, since the save may have been lost.
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toBeVisible()
+  await page.getByRole('button', { name: 'Check with server' }).click()
+  await saved(page, 'v2')
+  // The server applied it: the proposal is the adopted plan now, so it is closed like after a direct answer.
+  await expect(page.getByRole('button', { name: 'Adopt plan' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Close proposal' })).toHaveCount(0)
+  await expect(page.getByText('Plan adopted.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')).toHaveText(['19:00'])
+  expect(errors).toEqual([])
+})
+
+test('a save with an unknown result blocks further saves, undo and redo until it is checked with the server', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.goto('demo/')
+  const saveStatus = page.getByRole('status', { name: 'Save status' })
+  const adopt = page.getByRole('button', { name: 'Adopt plan' })
+  const undo = page.getByRole('button', { name: 'Undo', exact: true })
+  const backup = page.getByRole('button', { name: /Move cut A to backup/ })
+  const wait = page.getByRole('button', { name: /Wait for maintenance/ })
+  await wait.click()
+  await adopt.click()
+  await saved(page, 'v2')
+  await expect(undo).toBeEnabled()
+
+  await page.getByLabel('Server answer').selectOption({ label: 'No answer' })
+  await backup.click()
+  await adopt.click()
+  await expect(saveStatus).toContainText('Result unknown')
+  // Adopting again, undo and redo would build on a version the server may have moved past: they wait for the check.
+  await expect(adopt).toBeDisabled()
+  await expect(undo).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled()
+  // Proposals can still be opened and edited.
+  await wait.click()
+  await expect(wait).toHaveAttribute('aria-pressed', 'true')
+  await backup.click()
+  await expect(backup).toHaveAttribute('aria-pressed', 'true')
+  // An edit in another tab is refused with a reason, and the operation can still be checked.
+  await page.getByRole('button', { name: 'Schedule sheet' }).click()
+  await page.getByRole('button', { name: 'Requirements · Duration 3d', exact: true }).dblclick()
+  const input = page.getByRole('textbox', { name: 'Requirements · Duration', exact: true })
+  await input.fill('4')
+  await input.press('Enter')
+  await expect(saveStatus).toContainText('Your last change was not saved')
+  await expect(page.getByRole('button', { name: 'Requirements · Duration 3d', exact: true })).toBeVisible()
+  // The save may have been applied, so its result is checked or reloaded, never just dismissed.
+  await expect(page.getByRole('button', { name: 'Dismiss save message' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Load latest version' })).toBeVisible()
+  await page.getByRole('button', { name: 'Check with server' }).click()
+  await saved(page, 'v3')
+  await expect(page.getByRole('button', { name: 'Requirements · Duration 3d', exact: true })).toBeVisible()
+
+  // The history matches the server: one undo goes back to the plan of v2, saved as v4.
+  await expect(undo).toBeEnabled()
+  await page.getByRole('button', { name: 'Production planning', exact: true }).click()
+  const shipping = page.getByRole('row', { name: /Ready to ship/ }).getByRole('cell')
+  await page.getByRole('button', { name: 'Close proposal' }).click()
+  await expect(shipping).toHaveText(['19:00'])
+  await page.getByLabel('Server answer').selectOption({ label: 'Accept' })
+  await undo.click()
+  await saved(page, 'v4')
+  await expect(wait).toHaveAttribute('aria-pressed', 'true')
+  expect(errors).toEqual([])
+})
+
+test('the rescheduled operations of a proposal follow the plan it is compared with when an earlier save is refused', async ({ page }) => {
+  const errors = pageErrors(page)
+  await page.clock.install()
+  await page.goto('demo/')
+  await page.getByLabel('Server answer').selectOption({ label: 'Reject' })
+  await page.getByRole('button', { name: /Wait for maintenance/ }).click()
+  await page.getByRole('button', { name: 'Adopt plan' }).click()
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Saving')
+  const backup = page.getByRole('button', { name: /Move cut A to backup/ })
+  await backup.click()
+  await page.clock.runFor(1000)
+  await expect(page.getByRole('status', { name: 'Save status' })).toContainText('Rejected')
+  // Compared with the plan that stays adopted, moving cut A to the backup machine leaves cut A's own start alone.
+  const affected = page.getByText(/^Rescheduled operations · /)
+  await expect(affected).toHaveText('Rescheduled operations · Cut B / Inspect / Pack')
+  // Reopening the same proposal gives the same list.
+  await backup.click()
+  await expect(affected).toHaveText('Rescheduled operations · Cut B / Inspect / Pack')
   expect(errors).toEqual([])
 })

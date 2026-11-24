@@ -198,3 +198,21 @@ test('pauses interrupt work and successors follow the interrupted finish', () =>
   assert.throws(() => scheduleTasks({ range, quantum: 2, tasks: [task('a', 2, { pauses: [{ start: 1, end: 2 }] })] }), RangeError)
   assert.throws(() => scheduleTasks({ range, tasks: [task('a', 2, { pauses: [{ start: 2, end: 2 }] })] }), RangeError)
 })
+
+test('a summary with more successor links than a call takes arguments passes its finish limits to its subtasks', () => {
+  // FS links from summary S each limit the finish of its ALAP subtask L, which inherits them as one list. With
+  // 150,000 of them, L gets the same dates as with three.
+  const plan = n => {
+    const tasks = [{ id: 'S', duration: 0 }, { id: 'L', parentId: 'S', duration: 1, mode: 'alap' }]
+    const dependencies = []
+    for (let i = 0; i < n; i++) {
+      tasks.push({ id: 's' + i, duration: 1 + (i % 3) })
+      dependencies.push({ id: 'd' + i, from: 'S', to: 's' + i, type: 'FS' })
+    }
+    const result = scheduleTasks({ range: { start: 0, end: 100 }, tasks, dependencies })
+    assert.ok(result.ok)
+    const { start, end, latestStart, latestEnd } = result.tasks.find(task => task.id === 'L')
+    return { start, end, latestStart, latestEnd }
+  }
+  assert.deepEqual(plan(150_000), plan(3))
+})

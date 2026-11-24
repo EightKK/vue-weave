@@ -58,17 +58,6 @@ function clearSelection() {
   selectedDependency.value = undefined
   status.value = t({ en: 'Selection cleared.', ja: '選択を解除しました。' })
 }
-// Escape first cancels an edit in flight (reported through `edit-cancel`); only an Escape that cancels nothing and is
-// not typed into a field clears the selection.
-let escapeCancelledEdit = false
-function startChartEscape() { escapeCancelledEdit = false }
-function noteEditCancel() { escapeCancelledEdit = true }
-function onChartEscape(event: KeyboardEvent) {
-  const cancelled = escapeCancelledEdit
-  escapeCancelledEdit = false
-  if (cancelled || event.defaultPrevented || (event.target as Element | null)?.closest('input, textarea, select')) return
-  clearSelection()
-}
 const status = ref(t({ en: 'Select bars with Ctrl, Meta or Shift. Use link handles to add dependencies.', ja: 'Ctrl、Meta、Shift でバーを複数選択できます。リンクのハンドルで依存関係を追加します。' }))
 const labels = computed(() => new Map(model.value.bars.map(bar => [bar.id, bar.label])))
 const rows = computed(() => model.value.rows)
@@ -391,7 +380,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       <label class="import-file">{{ t({ en: 'Import CSV', ja: 'CSV を読み込む' }) }} <input type="file" accept=".csv,text/csv" @change="importCsv"></label>
       <label class="import-file">{{ t({ en: 'Import MS Project XML', ja: 'MS Project XML を読み込む' }) }} <input type="file" accept=".xml,application/xml,text/xml" @change="importMsProject"></label>
     </div>
-    <div @keydown.esc.capture="startChartEscape" @keydown.esc="onChartEscape">
     <GanttChart ref="chart" :dir="rtl ? 'rtl' : 'ltr'" :rows="rows" :bars="shownBars" :dependencies="model.dependencies" :range="range" :format-time="formatTime"
       :height="430" :lane-count="laneCount" :row-height="rowHeight" connectable reconnectable multi-select row-draggable pinch-zoom :wheel-zoom="wheel" show-now :now="origin + 3.5 * hour"
       progress-editable deletable context-menu creatable :validate-create="validateCreate" :columns="columns"
@@ -408,14 +396,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
       @edit-rejected="(_change, reason) => status = reason" @edits-rejected="(_changes, reason) => status = reason"
       @progress-edit="applyProgress" @bars-delete="deleteBars" @bars-delete-rejected="(_ids, reason) => status = reason"
       @create="create" @create-rejected="(_proposal, reason) => status = reason" @context-menu="openMenu"
-      @background-click="clearSelection" @edit-cancel="noteEditCancel">
+      @background-click="clearSelection" @idle-escape="clearSelection">
       <template #row-heading>{{ t({ en: 'Team', ja: 'チーム' }) }}</template>
       <template #legend><span class="hint">{{ t({ en: 'Drag across an empty row or press + to add a task · Ctrl/Shift-click selects several bars · Up/Down moves rows · Delete removes · Right-click or Shift+F10 for actions · Pinch to zoom on touch · Click the empty space below the rows or press Escape to clear the selection', ja: '空いている行をドラッグするか + でタスクを追加 · Ctrl/Shift+クリックで複数選択 · 上下キーで行を移動 · Delete で削除 · 右クリックか Shift+F10 で操作 · タッチではピンチで拡大縮小 · 行の下の何もない所をクリックするか Escape で選択を解除' }) }}</span></template>
       <template #tooltip="{ bar, range: shown }">
         <strong>{{ bar.label }}</strong><br>{{ formatTime(shown.start) }}–{{ formatTime(shown.end) }} · {{ Math.round((bar.progress ?? 0) * 100) }}{{ t({ en: '% complete', ja: '% 完了' }) }}
       </template>
     </GanttChart>
-    </div>
     <StatusLine>{{ status }}</StatusLine>
     <div v-if="menu" ref="menuElement" class="context-menu" role="menu" :aria-label="menu.title"
       :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @keydown="menuKeys">

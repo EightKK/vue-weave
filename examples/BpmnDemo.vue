@@ -118,10 +118,6 @@ function select(id: string) {
   const node = nodes.value.find(item => item.id === id)
   if (node) status.value = t({ en: 'Selected ' + node.label + '.', ja: node.label + ' を選択しました。' })
 }
-// Escape first cancels a gesture in flight (a drag, a connection or a box selection); only an Escape without one
-// clears the selection. The graph reports every gesture as a start and an end, and the wrapper's capture listener
-// reads the count before the graph's own Escape handler ends the gesture.
-const gesture = { count: 0, cancelling: false }
 // A click on the empty canvas or Escape in the graph clears the selection.
 function clearSelection() {
   if (selectedId.value === undefined) return
@@ -175,12 +171,10 @@ const chartLayout: GraphLayoutFunction = (list, links) => layoutLayeredGraph(lis
       <button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button>
       <button type="button" @click="reset">{{ t({ en: 'Reset process', ja: 'プロセスをリセット' }) }}</button>
     </div>
-    <div @keydown.esc.capture="gesture.cancelling = gesture.count > 0" @keydown.esc="gesture.cancelling || clearSelection()">
-      <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :pools="swimlanes.pools"
-        :edge-style="edgeStyle" :dir="rtl ? 'rtl' : 'ltr'" connectable :validate-connection="validateConnection" show-minimap :height="560"
-        :labels="{ ...labels.graph, region: t({ en: 'Purchase order process', ja: '発注プロセス' }) }" v-model:selected-id="selectedId" @connect="connect" @select="select"
-        @connect-rejected="(_connection, reason) => status = reason" @background-click="clearSelection" @gesture-start="gesture.count++" @gesture-end="gesture.count--" />
-    </div>
+    <NetworkGraph ref="graph" :nodes="nodes" :edges="edges" :layout="layout" :lanes="swimlanes.lanes" :pools="swimlanes.pools"
+      :edge-style="edgeStyle" :dir="rtl ? 'rtl' : 'ltr'" connectable :validate-connection="validateConnection" show-minimap :height="560"
+      :labels="{ ...labels.graph, region: t({ en: 'Purchase order process', ja: '発注プロセス' }) }" v-model:selected-id="selectedId" @connect="connect" @select="select"
+      @connect-rejected="(_connection, reason) => status = reason" @background-click="clearSelection" @idle-escape="clearSelection" />
     <StatusLine :label="t({ en: 'BPMN status', ja: 'BPMN の状態' })">{{ status }}</StatusLine>
     <h3 class="bpmn-heading">{{ t({ en: 'Flowchart', ja: 'フローチャート' }) }}</h3>
     <NetworkGraph :nodes="chartNodes" :edges="chartEdges" :layout="chartLayout" edge-style="orthogonal" :height="360"

@@ -102,6 +102,21 @@ export function useZoomGestures(options: ZoomGestureOptions) {
   let wheelTarget: HTMLElement | undefined
   /** The time and anchor of a zoom whose scroll position is not applied yet; later events in the same tick build on it. */
   let wheelPending: { time: number; offset: number } | undefined
+  /**
+   * The scroll start the last wheel zoom asked for, what the scroller then reported and the zoom it was for. WebKit keeps
+   * whole-pixel scroll positions, so reading the scroller back would lose up to half a pixel per event and a trackpad
+   * pinch (many small events) would drift away from the pointer. While the scroller still reports what it reported then,
+   * at the same zoom, the next event starts from the requested position instead. Where scroll positions keep the
+   * fraction, the two are equal and nothing changes.
+   */
+  let wheelScroll: { el: HTMLElement; requested: number; reported: number; zoom: number } | undefined
+  function wheelScrollStart(el: HTMLElement) {
+    const reported = options.scrollStart(el), last = wheelScroll
+    if (last && last.el === el && last.zoom === zoom.value && last.reported === reported && Math.abs(last.requested - reported) < 1) {
+      return last.requested
+    }
+    return reported
+  }
   function wheelDelta(event: WheelEvent, el: HTMLElement) {
     if (event.deltaMode === 1) return event.deltaY * 16
     if (event.deltaMode === 2) return event.deltaY * el.clientHeight
@@ -125,13 +140,15 @@ export function useZoomGestures(options: ZoomGestureOptions) {
     const pending = wheelPending
     const axis = options.axis()
     // Until a pending zoom has scrolled, its anchor time defines where the axis will be.
-    const time = pending ? axis.toTime(axis.toX(pending.time) - pending.offset + offset) : axis.toTime(options.scrollStart(el) + offset)
+    const time = pending ? axis.toTime(axis.toX(pending.time) - pending.offset + offset) : axis.toTime(wheelScrollStart(el) + offset)
     zoom.value = next
     const mine = wheelPending = { time, offset }
     await nextTick()
     if (wheelPending !== mine) return
     wheelPending = undefined
-    options.setScrollStart(el, options.axis().toX(time) - offset)
+    const requested = options.axis().toX(time) - offset
+    options.setScrollStart(el, requested)
+    wheelScroll = { el, requested, reported: options.scrollStart(el), zoom: zoom.value }
     options.syncViewport()
   }
   function syncWheelListener() {

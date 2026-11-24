@@ -295,8 +295,7 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-gantt.vw-rtl .vw-gantt-marker { border-left: 0; border-inline-start: 1px dashed var(--vw-marker, #a74f08); }
 .vw-gantt.vw-rtl .vw-gantt-now { border-left: 0; border-inline-start: 2px solid var(--vw-now, #c23b22); }
 .vw-gantt.vw-rtl .vw-gantt-links, .vw-gantt.vw-rtl .vw-gantt-lag-layer, .vw-gantt.vw-rtl .vw-gantt-link-hits, .vw-gantt.vw-rtl .vw-gantt-link-preview { transform: scaleX(-1); }
-/* The dependency layer is mirrored as a whole; each lag label is flipped back in place so its text reads normally. */
-.vw-gantt.vw-rtl .vw-gantt-lag { transform: scaleX(-1); transform-box: fill-box; transform-origin: center; }
+/* The dependency layer is mirrored as a whole; each lag label is flipped back in place by its transform attribute. */
 .vw-gantt.vw-rtl .vw-gantt-link-preview { left: auto; inset-inline-start: var(--vw-label-area-width); }
 .vw-gantt.vw-rtl .vw-gantt-load-segment { border-right: 0; border-inline-end: 1px solid var(--vw-surface, var(--_vw-surface)); }
 .vw-gantt.vw-rtl .vw-extra-column { border-left: 0; border-inline-start: 1px solid var(--vw-border, #d8e2e9); }

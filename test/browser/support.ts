@@ -87,6 +87,21 @@ export async function openNetworkFixture(page: Page, search: string) {
   await expect(page.getByLabel('Network graph', { exact: true })).toBeVisible()
 }
 
+/**
+ * Runs `fn` on each element a locator matches, in document order, like `locator.evaluateAll(list => list.map(fn))`.
+ * evaluateAll resolves the selector with Playwright's injected script in the page's own JavaScript world; on the site's
+ * Gantt pages that crashed the Firefox content process ("Page crashed") in CI, whereas element handles are found in
+ * Playwright's isolated world and only adopted into the page's world, which works there. Use this on those pages.
+ */
+export async function evaluateEach<R>(locator: Locator, fn: (element: HTMLElement | SVGElement) => R) {
+  const handles = await locator.elementHandles()
+  try {
+    return await Promise.all(handles.map(handle => handle.evaluate(fn)))
+  } finally {
+    await Promise.all(handles.map(handle => handle.dispose()))
+  }
+}
+
 /** Where a query starts: the whole page or one element, such as a demo section or a chart region. */
 export type Scope = Page | Locator
 
@@ -152,6 +167,14 @@ export const chainNode = (page: Page, name?: string) => name
 
 export type TouchPoint = { x: number; y: number; id: number }
 
+/**
+ * Why the tests that drive real touch input run on Chromium only. They press, move and lift touch points through the
+ * Chrome DevTools Protocol (`Input.dispatchTouchEvent`), so the browser itself turns them into pointer events, applies
+ * `touch-action` and fires the click of a tap. Playwright offers no such input for Firefox or WebKit: CDP sessions are
+ * Chromium-only and `page.touchscreen` can only tap, with no touch-move and no second touch point.
+ */
+export const realTouchChromiumOnly = 'Real touch input (touchStart/touchMove/touchEnd, several touch points) needs a Chromium CDP session; Playwright has no touch-move or multi-touch input for Firefox or WebKit'
+
 export async function touch(cdp: Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>, type: 'touchStart' | 'touchMove' | 'touchEnd', points: TouchPoint[]) {
   await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
 }
@@ -196,6 +219,25 @@ export async function openGraphEditor(page: Page) {
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   const status = (text: string) => page.getByRole('status').filter({ hasText: text })
   return { errors, button, status, edges: page.locator('.vw-network-edge'), nodes: page.locator('.vw-network-node') }
+}
+
+/**
+ * Dispatches a synthetic `copy`, `cut` or `paste` event carrying `text` (for a paste) to the focused element and returns
+ * the plain text the event's clipboard data holds afterwards (what a copy or cut wrote). Chromium and WebKit take a
+ * DataTransfer through `clipboardData`; Firefox ignores that member and builds the event's clipboard data from its own
+ * `dataType` and `data` members, so both are given and the text is read back from the event, not from the DataTransfer.
+ */
+export function clipboardEvent(page: Page, type: 'copy' | 'cut' | 'paste', text = '') {
+  return page.evaluate(([kind, value]) => {
+    const data = new DataTransfer()
+    if (value) data.setData('text/plain', value)
+    const init: ClipboardEventInit & { dataType: string; data: string } = {
+      clipboardData: data, dataType: 'text/plain', data: value, bubbles: true, cancelable: true,
+    }
+    const event = new ClipboardEvent(kind, init)
+    document.activeElement!.dispatchEvent(event)
+    return (event.clipboardData ?? data).getData('text/plain')
+  }, [type, text] as const)
 }
 
 export const fixtureStatus = (page: Page, name: string) => page.getByRole('status', { name, exact: true })

@@ -2,7 +2,7 @@
 // aggregateTimeBuckets) that follow a GanttChart's visible window. Covers load states that are never shown as 0, a
 // mid-week shortage inside a positive week, demand edits that recompute balances with undo, the chart window driving the
 // table's periods, linked order highlights and the day/week toggle.
-import { expect, test, openExample, pageErrors, type Page } from './support'
+import { expect, test, clipboardEvent, openExample, pageErrors, type Page } from './support'
 
 async function openPeriodTable(page: Page) {
   const errors = pageErrors(page)
@@ -109,11 +109,7 @@ test('period table: editing a demand cell recalculates the balances, and undo re
 
   // A spreadsheet paste is one proposal and one history entry.
   await (await cell('Bracket demand', 'Mon, Jun 8')).click()
-  await page.evaluate(() => {
-    const data = new DataTransfer()
-    data.setData('text/plain', '20\t20')
-    document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  })
+  await clipboardEvent(page, 'paste', '20\t20')
   await expect(status).toHaveText('paste: 2 demand cells changed. Balances recalculated.')
   await expect(await cell('Bracket demand', 'Tue, Jun 9')).toHaveText('20')
   await expect(await cell('Bracket projected balance', 'Tue, Jun 9')).toHaveText('110')

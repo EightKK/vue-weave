@@ -175,7 +175,9 @@ test('context-menu events report the target, chart point and source and suppress
     const shape = el as SVGPathElement
     const middle = shape.getPointAtLength(shape.getTotalLength() / 2)
     const point = new DOMPoint(middle.x, middle.y).matrixTransform(shape.getScreenCTM()!)
-    return { x: point.x, y: point.y }
+    // Firefox delivers synthetic mouse events at whole pixels (truncated, so 207.99 becomes 207). The stroke is under
+    // 2 px wide, so aim at the nearest whole pixel, which stays on it.
+    return { x: Math.round(point.x), y: Math.round(point.y) }
   })
   // The drawn path is thin; without edgesSelectable there is no wider hit area.
   await page.mouse.click(path.x, path.y, { button: 'right' })
@@ -187,12 +189,14 @@ test('context-menu events report the target, chart point and source and suppress
 
   // The ContextMenu key reports the centre of the focused node once, even if the browser follows with its own event.
   await node.focus()
+  // Measured before the key: the fixture writes the report into an inline status above the stage, and where that text
+  // wraps depends on the engine's fonts, so the stage can move by a line afterwards.
+  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
   await page.keyboard.press('ContextMenu')
   await expect(events).toHaveText('4')
   const keyboard = await last()
   expect(keyboard.source).toBe('keyboard')
   expect(keyboard.target).toEqual({ kind: 'node', id: 'N0001' })
-  const rect = await node.evaluate(el => el.getBoundingClientRect().toJSON())
   expect(keyboard.clientX).toBeCloseTo(rect.x + rect.width / 2, 3)
   expect(keyboard.clientY).toBeCloseTo(rect.y + rect.height / 2, 3)
   // Shift+F10 on the focused stage reports the canvas at the stage centre.

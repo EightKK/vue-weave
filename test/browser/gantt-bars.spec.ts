@@ -1,7 +1,7 @@
 // GanttChart editing: bar selection, moves and resizes, dependencies and lag, progress, constraints, deletion and
 // rejected proposals.
 import {
-  expect, test, centerOf, dragBy, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
+  expect, test, centerOf, dragBy, evaluateEach, ganttBar, graphZoom, openComponentFixture, openExample, openGanttFixture, openTimelineEditing, pageErrors,
   pressAndMove, pressAndMoveTo, releaseLine,
 } from './support'
 
@@ -86,7 +86,7 @@ test('a move preview shifts the segments of a split bar and a resize preview dra
   await expect(cutting).toHaveAttribute('aria-label', 'Cut order A 09 Nov 10:00–09 Nov 14:00')
   const segments = cutting.locator('.vw-gantt-segment')
   await expect(segments).toHaveCount(2)
-  const left = () => segments.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().x))
+  const left = () => evaluateEach(segments, element => element.getBoundingClientRect().x)
   const before = await left()
 
   const box = (await cutting.boundingBox())!
@@ -365,9 +365,11 @@ test('gantt constraint markers describe their bars and their handles drag, snap 
   await expect(out('Constraint edits')).toHaveText('1')
   await expect(finish).toHaveAttribute('aria-valuetext', '3')
   await expect(finish).toBeFocused()
-  // A drag is clamped to editBounds (here the range, from 0).
+  // A drag is clamped to editBounds (here the range, from 0). The pointer stays inside the viewport (Firefox delivers no
+  // synthetic mouse events beyond it) and still goes more than 3 units left of the handle.
   handle = await centre()
-  await dragBy(page, handle, -400, 0)
+  expect(handle.x - 1).toBeGreaterThan(3 * 50)
+  await dragBy(page, handle, 1 - handle.x, 0)
   expect(await json()).toMatchObject({ after: 0, source: 'pointer' })
 
   // Escape ends a drag without a proposal.
@@ -605,5 +607,69 @@ test('background-click reports a click on an empty row or below the rows, but no
   const rowB = (await chart.getByRole('button', { name: 'Task B 4–6', exact: true }).boundingBox())!
   await page.mouse.click(at(10), rowB.y + rowB.height + 40)
   await expect(clicks).toHaveText('{"time":10,"rowId":"r1"};{"time":10}')
+  expect(errors).toEqual([])
+})
+
+test('idle-escape reports an Escape that cancels nothing of the chart, but not one that cancels a drag or an armed connection', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?cancels')
+  const idle = out('Idle escapes')
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  await barA.focus()
+  await barA.press('Escape')
+  await expect(idle).toHaveText('1')
+
+  // Escape during a drag cancels it and reports `edit-cancel` only.
+  await pressAndMove(page, barA, 60, 0)
+  await page.keyboard.press('Escape')
+  await expect(out('Last edit cancel')).toContainText('"reason":"escape"')
+  await page.mouse.up()
+  await expect(out('Last edit')).toHaveText('')
+  await expect(idle).toHaveText('1')
+
+  // An armed connection is the chart's own as well.
+  const handle = chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true })
+  await handle.press('Enter')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await handle.press('Escape')
+  await expect(handle).toHaveAttribute('aria-pressed', 'false')
+  await expect(idle).toHaveText('1')
+  await barA.press('Escape')
+  await expect(idle).toHaveText('2')
+  expect(errors).toEqual([])
+})
+
+test('idle-escape: Escape on the toolbar cancels a connection or drag in flight first, and .once listeners fire once', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { chart, out } = await openGanttFixture(page, '?cancels')
+  const idle = out('Idle escapes')
+  const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true })
+  const handle = chart.getByRole('button', { name: 'Start dependency from finish of Task A', exact: true })
+  // An armed connection stays armed while focus moves to the zoom buttons, outside the scrolling region.
+  await handle.press('Enter')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await zoomIn.focus()
+  await zoomIn.press('Escape')
+  await expect(handle).toHaveAttribute('aria-pressed', 'false')
+  await expect(out('Last edit cancel')).toHaveText('{"reason":"escape","barIds":["a"]}')
+  await expect(idle).toHaveText('0')
+  await expect(out('Once listener calls')).toHaveText('0')
+  // Nothing is in flight now: the next Escape is idle, for `@idle-escape` and `@idle-escape.once` alike.
+  await zoomIn.press('Escape')
+  await expect(idle).toHaveText('1')
+  await expect(out('Once listener calls')).toHaveText('1')
+
+  // A pointer drag is cancelled the same way.
+  const barA = chart.getByRole('button', { name: 'Task A 0–2', exact: true })
+  await pressAndMove(page, barA, 60, 0)
+  await zoomIn.focus()
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(out('Last edit')).toHaveText('')
+  await expect(idle).toHaveText('1')
+  // A `.once` listener is removed after its first call; the plain listener goes on.
+  await barA.press('Escape')
+  await expect(idle).toHaveText('2')
+  await expect(out('Once listener calls')).toHaveText('1')
   expect(errors).toEqual([])
 })

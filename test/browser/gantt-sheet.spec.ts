@@ -1,10 +1,13 @@
 // GanttChart spreadsheet mode (`spreadsheet`): selection, clipboard, clear, fill, typing to edit and atomic rejection.
-import { expect, test, centerOf, openGanttSheetFixture, pageErrors, touch, type Page } from './support'
+import { expect, test, centerOf, openGanttSheetFixture, pageErrors, touch, type Page, realTouchChromiumOnly } from './support'
 
 async function writeClipboard(page: Page, text: string) {
   await page.evaluate(value => navigator.clipboard.writeText(value), text)
 }
 async function readClipboard(page: Page) {
+  // WebKit denies navigator.clipboard.readText() to scripts (it needs a user gesture and a permission Playwright cannot
+  // grant), so there the text the chart wrote into the last copy event is read instead (see beforeEach).
+  if (page.context().browser()?.browserType().name() === 'webkit') return page.evaluate(() => (window as any).__vwCopied as string)
   return page.evaluate(() => navigator.clipboard.readText())
 }
 /** Events of one kind from the fixture log. */
@@ -12,8 +15,15 @@ function only(events: unknown[][], kind: string) {
   return events.filter(entry => entry[0] === kind)
 }
 
-test.beforeEach(async ({ context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+test.beforeEach(async ({ context, browserName }) => {
+  // The clipboard permission names exist in Chromium only; Firefox and WebKit reject them.
+  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  // A window listener runs after the chart's own copy handler, so it sees the text the chart put into the event.
+  if (browserName === 'webkit') {
+    await context.addInitScript(() => window.addEventListener('copy', event => {
+      (window as any).__vwCopied = event.clipboardData?.getData('text/plain')
+    }))
+  }
 })
 
 test('paste proposes plain and typed cells as one batch, and copy writes tab-separated text', async ({ page }) => {
@@ -274,7 +284,8 @@ test('a fill handle drag reports Escape, cancelEdit() and new rows through edit-
   expect(errors).toEqual([])
 })
 
-test('touch taps select cells and the fill handle fills by touch', async ({ page }) => {
+test('touch taps select cells and the fill handle fills by touch', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', realTouchChromiumOnly)
   const errors = pageErrors(page)
   const { chart, cell, events } = await openGanttSheetFixture(page)
   const cdp = await page.context().newCDPSession(page)
@@ -291,6 +302,35 @@ test('touch taps select cells and the fill handle fills by touch', async ({ page
   await touch(cdp, 'touchEnd', [])
   await expect(cell('Gamma · Hours 1')).toBeVisible()
   expect(only(await events(), 'sheet-edit')).toHaveLength(1)
+  expect(errors).toEqual([])
+})
+
+test('a keyboard cut clears the cells when the browser runs the copy but execCommand reports false (WebKit)', async ({ page }) => {
+  const errors = pageErrors(page)
+  const { cell, events, clearEvents } = await openGanttSheetFixture(page)
+  // WebKit runs the copy event of execCommand('copy') from a cell that holds no text selection, and returns false.
+  await page.evaluate(() => {
+    document.execCommand = (command: string) => {
+      if (command !== 'copy') return false
+      // Firefox builds the event's clipboard data from dataType and data and ignores clipboardData (see clipboardEvent).
+      const data = new DataTransfer()
+      const init: ClipboardEventInit & { dataType: string; data: string } = {
+        clipboardData: data, dataType: 'text/plain', data: '', bubbles: true, cancelable: true,
+      }
+      const event = new ClipboardEvent('copy', init)
+      document.activeElement!.dispatchEvent(event)
+      ;(window as any).__vwCut = (event.clipboardData ?? data).getData('text/plain')
+      return false
+    }
+  })
+  await clearEvents()
+  await cell('Gamma · Owner Cy').click()
+  await page.keyboard.press('Shift+ArrowDown')
+  await page.keyboard.press('Control+X')
+  expect(await page.evaluate(() => (window as any).__vwCut)).toBe('Cy\r\nDi')
+  await expect(cell('Gamma · Owner')).toBeVisible()
+  await expect(cell('Delta · Owner')).toBeVisible()
+  expect(only(await events(), 'sheet-edit').map(entry => (entry[1] as { action: string }).action)).toEqual(['clear'])
   expect(errors).toEqual([])
 })
 

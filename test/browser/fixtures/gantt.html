@@ -74,6 +74,9 @@
       const lastDelete = ref('')
       const lastMenu = ref('')
       const backgroundClicks = ref([])
+      const idleEscapes = ref(0)
+      // `@idle-escape.once` compiles to the listener `onIdleEscapeOnce`.
+      const idleEscapesOnce = ref(0)
       const chart = ref()
       const interactions = query.has('interactions')
       // Lets tests call exposed methods such as fitToBars directly.
@@ -98,6 +101,8 @@
           output('Last delete', lastDelete.value),
           output('Last context menu', lastMenu.value),
           output('Background clicks', backgroundClicks.value.join(';')),
+          output('Idle escapes', idleEscapes.value),
+          output('Once listener calls', idleEscapesOnce.value),
           h('button', { type: 'button', onClick: () => chart.value.fitToBars(['b'], { padding: 0 }) }, 'Fit Task B'),
           ...(ranges ? [
             output('Exported ranges', exported.value),
@@ -142,6 +147,8 @@
             ...(summarized ? { showSummaries: true, summaryDependencies: summaryLinks.value } : {}),
             ...(summarized || cancels ? { onEditCancel: event => { lastCancel.value = JSON.stringify(event) } } : {}),
             onEdit: change => { lastEdit.value = JSON.stringify(change) },
+            onIdleEscape: () => { idleEscapes.value++ },
+            onIdleEscapeOnce: () => { idleEscapesOnce.value++ },
             onBackgroundClick: click => { backgroundClicks.value = [...backgroundClicks.value, JSON.stringify({ ...click, time: Math.round(click.time * 10) / 10 })] },
             ...(blankReject ? {
               validateEdit: () => '  ', validateConnection: () => '',

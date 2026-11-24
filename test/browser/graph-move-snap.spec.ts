@@ -1,7 +1,7 @@
 // NetworkGraph editing: node and group moves, drag previews under culling, routing during drags, snapping, alignment
 // guides, auto-pan, waypoints and resizing.
 import {
-  expect, test, animationFrames, boxCenter, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, openExample, openGraphEditor,
+  expect, test, animationFrames, boxCenter, centerOf, chainNode, dragBy, fixtureStatus, graphMinimap, graphNode, openExample, openGraphEditor,
   openNetworkFixture, pageErrors, pressAndMove, pressAndMoveTo, readCamera, readJson, type Point,
 } from './support'
 
@@ -402,7 +402,10 @@ test('demo nodes resize by pointer and keyboard with undo', async ({ page }) => 
   await expect.poll(async () => Number(await frame.getAttribute('width'))).toBeGreaterThan(60)
   // validateNodeResize rejects an oversized node; Escape cancels a drag without a proposal.
   const width = await frame.getAttribute('width')
-  await dragBy(page, corner, 600, 0)
+  // As far right as the viewport allows (Firefox delivers no synthetic mouse events beyond it): wider than 360.
+  const reach = page.viewportSize()!.width - 4 - (await centerOf(corner)).x
+  expect(reach).toBeGreaterThan(400)
+  await dragBy(page, corner, reach, 0)
   await expect(status('Keep nodes within 360 × 200.')).toBeVisible()
   await expect(frame).toHaveAttribute('width', width!)
   const handle = (await corner.boundingBox())!

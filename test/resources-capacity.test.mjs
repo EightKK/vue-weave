@@ -342,6 +342,29 @@ test('a manual task with a partial assignment is checked only over its part', ()
   assert.deepEqual(tight.overloads.map(item => [item.start, item.end, item.taskIds]), [[4, 5, ['m', 'n']]])
 })
 
+test('leveling with partial assignments sees shortages before 0 when the horizon starts there', () => {
+  // The work units of a part were once passed on as dates, so shortages that end at or before the part's work offset
+  // were ignored, which only matters before 0.
+  for (const origin of [-3, -2, -1, 0, 3]) {
+    // d needs r1 for its first 3 of 6 hours; r1 is open only at origin + [2, 4) and [16, 20), which cannot hold that
+    // part before the end of the horizon, so d stays at its earliest dates and is unresolved.
+    const d = levelResources({
+      range: { start: origin, end: origin + 20 }, tasks: [{ id: 'd', duration: 6 }],
+      resources: [{ id: 'r1', capacity: 1, periods: [{ start: origin + 2, end: origin + 4 }, { start: origin + 16, end: origin + 20 }] }],
+      assignments: [{ resourceId: 'r1', taskId: 'd', workDuration: 3 }],
+    })
+    assert.deepEqual([d.tasks[0].start, d.tasks[0].end, d.unresolvedTaskIds], [origin, origin + 6, ['d']], 'origin ' + origin)
+    assert.deepEqual(d.overloads.map(item => [item.start, item.end, item.overload]), [[origin, origin + 2, 1]], 'origin ' + origin)
+    // g's part on r0 starts after its work, so it takes no capacity; r1 is closed for g's first hour, so g moves by one.
+    const g = levelResources({
+      range: { start: origin, end: origin + 20 }, tasks: [{ id: 'g', duration: 1 }],
+      resources: [{ id: 'r0', capacity: 2 }, { id: 'r1', capacity: 2, periods: [{ start: origin + 1, end: origin + 5 }] }],
+      assignments: [{ resourceId: 'r0', taskId: 'g', workOffset: 1, workDuration: 1 }, { resourceId: 'r1', taskId: 'g' }],
+    })
+    assert.deepEqual([g.tasks[0].start, g.tasks[0].end, g.unresolvedTaskIds, g.overloads], [origin + 1, origin + 2, [], []], 'origin ' + origin)
+  }
+})
+
 test('consumers of resources and assignments keep or check the new fields', () => {
   // projectResourceTimeline shows the whole task on the row of a partial assignment, once; replacing the resource keeps the part.
   const projection = projectResourceTimeline({

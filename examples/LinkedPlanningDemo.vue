@@ -7,9 +7,9 @@
 import { computed, nextTick, ref, shallowRef, useTemplateRef } from 'vue'
 import {
   GanttChart, NetworkGraph, buildViewBindingIndex, revealLinkedTarget, calculateResourceLoad, removeGraphElements, resolveEntityRefs, resolveLoadTargets, resolveViewTargets,
-  scheduleTasks, scheduleToGraph, traverseGraph, useLinkedSelection,
+  scheduleTasks, scheduleToGraph, taskViewBindings, traverseGraph, useLinkedSelection,
   type EntityRef, type GraphDeletion, type GraphViewTarget, type LoadViewTarget, type RevealResult, type ScheduleLink, type ScheduleTask,
-  type TimelineBar, type TimelineLoadSegment, type ViewBinding, type ViewTarget, type ViewTargetEvent,
+  type TimelineBar, type TimelineLoadSegment, type ViewTarget, type ViewTargetEvent,
 } from '../src'
 import GraphContextToolbar from './components/GraphContextToolbar.vue'
 import ScenarioComparison from './components/ScenarioComparison.vue'
@@ -64,28 +64,10 @@ const loadRows = resources.map(({ id, label }) => ({ id, label }))
 const loadSegments: TimelineLoadSegment[] = calculateResourceLoad(range, plan.tasks, resources, assignments)
   .filter(segment => segment.load > 0)
 
-// Entities: tasks and dependencies. Each is bound to what every view shows for it. The bindings are data, so a task
-// could just as well map to several nodes or bars.
+// Entities: tasks and dependencies. Each is bound to what every view shows for it under the same ID: its node or edge,
+// its bar and row or dependency arrow, and its load. The bindings are data, so a task could also map to more targets.
 const taskById = new Map(plan.tasks.map(task => [task.id, task]))
-const bindings: ViewBinding[] = [
-  ...plan.tasks.flatMap((task): ViewBinding[] => {
-    const entity: EntityRef = { kind: 'task', id: task.id }
-    const load = assignments.find(item => item.taskId === task.id)
-    return [
-      { entity, target: { view: 'graph', kind: 'node', id: task.id } },
-      { entity, target: { view: 'timeline', kind: 'bar', id: task.id } },
-      { entity, target: { view: 'timeline', kind: 'row', id: task.id } },
-      ...load ? [{ entity, target: { view: 'load', resourceId: load.resourceId, start: task.start, end: task.end } } as ViewBinding] : [],
-    ]
-  }),
-  ...dependencies.flatMap((dependency): ViewBinding[] => {
-    const entity: EntityRef = { kind: 'dependency', id: dependency.id }
-    return [
-      { entity, target: { view: 'graph', kind: 'edge', id: dependency.id } },
-      { entity, target: { view: 'timeline', kind: 'dependency', id: dependency.id } },
-    ]
-  }),
-]
+const bindings = taskViewBindings({ tasks: plan.tasks, assignments, dependencies })
 const index = buildViewBindingIndex(bindings)
 // Plan scenario comparison (opt-in): a separate panel with its own copy of this plan, see ScenarioComparison.vue.
 const scenariosOpen = ref(false)
