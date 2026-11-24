@@ -116,6 +116,31 @@ add('routeGraphEdges (curve)', [100, 1000, 5000],
 add('routeGraphEdges (orthogonal, avoid nodes)', [100, 500, 1000],
   size => { const g = graphInput(size); return { ...g, layout: core.layoutLayeredGraph(g.nodes, g.edges) } },
   ({ edges, byId, layout }) => core.routeGraphEdges(layout, edges, byId, { style: 'orthogonal', avoidNodes: true }))
+// A saved change of a large two-dimensional graph: one node moved back and forth, every call routing the whole graph,
+// with and without a route cache (both give the same result).
+function movedGridInput(count) {
+  const nodes = [], edges = []
+  for (let i = 0; i < count; i++) {
+    nodes.push({ id: 'n' + i })
+    if (i % 30) edges.push({ id: 'd' + i, from: 'n' + (i - 1), to: 'n' + i })
+    if (i >= 30) edges.push({ id: 'r' + i, from: 'n' + (i - 30), to: 'n' + i })
+  }
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  const base = core.layoutLayeredGraph(nodes, edges)
+  const id = 'n' + (count >> 1), box = base.boxes.get(id)
+  const moved = core.applyGraphPositions(base, edges, new Map([[id, { x: box.x + 40, y: box.y + 20 }]]), 'LR')
+  const layouts = [base, moved].map(layout => core.routeGraphPorts(layout, byId, edges, 'LR'))
+  const cache = core.createGraphRouteCache?.()
+  if (cache) core.routeGraphEdges(layouts[0], edges, byId, { style: 'orthogonal', avoidNodes: true, cache })
+  return { edges, byId, layouts, cache, turn: 0 }
+}
+const routeMoved = useCache => input => core.routeGraphEdges(input.layouts[++input.turn % 2], input.edges, input.byId, {
+  style: 'orthogonal', avoidNodes: true, ...useCache && { cache: input.cache },
+})
+add('routeGraphEdges (orthogonal, avoid nodes, grid, one node moved)', [1000, 3000], movedGridInput, routeMoved(false))
+if (typeof core.createGraphRouteCache === 'function') {
+  add('routeGraphEdges (orthogonal, avoid nodes, grid, one node moved, route cache)', [1000, 3000], movedGridInput, routeMoved(true))
+}
 
 if (typeof core.createTreeGridIndex === 'function' && typeof core.flattenTreeGrid === 'function') {
   // TreeGrid rows: build the index once, then flatten with a third of the parents expanded.

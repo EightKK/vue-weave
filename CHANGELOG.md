@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- Core: `createGraphRouteCache()` and the opt-in `cache` option of `routeGraphEdges`. A call with a cache routes again only the edges whose inputs changed since the previous call with it (with `avoidNodes`, also those whose obstacle search a changed box can affect) and returns the same layout as a call without one. On a two-dimensional 3,000-node graph with `avoidNodes`, routing after one node moved took 66 ms instead of 215 ms in the benchmark.
+- Docs: [Running core calculations in a Worker](docs/integration.md#running-core-calculations-in-a-worker) shows a Worker for `graphLayoutWorkerAdapter` and a plain module Worker for routing, `scheduleTasks` and `levelResources`, with what can be posted and how to drop stale results.
+
+### Changed
+
+- NetworkGraph with `cullOffscreen` keeps a route cache and the culling bounds across saved layouts, so a saved change such as a drop routes and measures again only the edges it can affect. The routes, labels and markers drawn, exports, the minimap and `fit` are unchanged; layout and routing still cover every node and edge. Without `cullOffscreen` nothing changes.
+- NetworkGraph no longer routes every styled edge a second time when a drag, resize or waypoint preview starts; the extent of each route now comes from the saved routing. With orthogonal edges and `avoidNodes` this removes a pause of about one full routing from the first move of a drag. The previews are unchanged.
+- `npm run bench:render` measures a culled graph with orthogonal edges and `avoidNodes` (`graph-culled-avoid`), and `npm run bench:core` routing after one node moved, with and without a route cache.
+
 ## 1.6.0 - 2026-11-23
 
 Adds an opt-in `idle-escape` to NetworkGraph and GanttChart and the core helper `taskViewBindings`, so applications clear a selection on Escape and link task views without bookkeeping of their own. The production demo is now one linked, saving app, the scheduler is checked by property tests and a brute-force oracle, and a leveling fault they found is fixed.

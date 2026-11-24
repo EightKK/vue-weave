@@ -84,6 +84,10 @@ Inputs are generated with a fixed seed (`scripts/bench-core.mjs`). Scheduling in
 | routeGraphEdges (orthogonal, avoid nodes) | 100 | 8.53 | 4.43 | 16.6 |
 | routeGraphEdges (orthogonal, avoid nodes) | 500 | 17.9 | 13.9 | 22.7 |
 | routeGraphEdges (orthogonal, avoid nodes) | 1000 | 38.5 | 35.2 | 57.8 |
+| routeGraphEdges (orthogonal, avoid nodes, grid, one node moved) | 1000 | 59.9 | 49.3 | 88.5 |
+| routeGraphEdges (orthogonal, avoid nodes, grid, one node moved) | 3000 | 215 | 159 | 282 |
+| routeGraphEdges (orthogonal, avoid nodes, grid, one node moved, route cache) | 1000 | 46.5 | 40.6 | 55.8 |
+| routeGraphEdges (orthogonal, avoid nodes, grid, one node moved, route cache) | 3000 | 65.8 | 50.8 | 107 |
 | createTreeGridIndex | 1000 | 0.46 | 0.42 | 3.25 |
 | createTreeGridIndex | 10000 | 4.32 | 2.31 | 6.99 |
 | createTreeGridIndex | 50000 | 46.2 | 24.0 | 49.6 |
@@ -99,6 +103,7 @@ Worth knowing:
 - `levelResources` grows faster than linearly in this input: 3 times the tasks (1000 to 3000) took about 9 times as long (85 ms to 730 ms). Leveling thousands of tasks at once is the slowest core operation measured. If you level on every edit, measure your own data, and consider leveling on demand or on a worker.
 - `scheduleTasks` stays close to linear and takes roughly 80 to 130 ms for 10,000 tasks on a calendar (this container's run-to-run spread is wide: 78 ms fastest, 177 ms slowest in the last run).
 - Orthogonal routing with `avoidNodes` costs far more than curve routing (38 ms against 0.07 ms for 1,000 edges), as expected from the search it runs.
+- The "grid, one node moved" rows route a two-dimensional graph (columns of 30 nodes, each linked to the node below and to its neighbour in the next column) after one node moved, every call routing the whole graph. With a route cache (`createGraphRouteCache`, which NetworkGraph uses with `cullOffscreen`) only the edges the move can affect are searched again, and the result is the same: 66 ms instead of 215 ms at 3,000 nodes. These four rows come from a later run (2026-11-24, median of 15 runs) on a busier machine. When nothing can be reused, a cached call costs about the same as an uncached one, up to about 15% more for keeping the cache. See [Running core calculations in a Worker](integration.md#running-core-calculations-in-a-worker) to move such work off the main thread.
 - The TreeGrid core is cheap: indexing 50,000 rows takes tens of milliseconds, flattening them with a third of the parents expanded about 10 ms, and the row window, column window and cell lookups of 1,000 scroll steps (360,000 cells) about 12 to 17 ms. The index is built once per data change, not per scroll step. Repeated runs of the same case differ by up to 2 times here (for example `createTreeGridIndex` at 50,000 rows measured 18 ms and 46 ms in two sessions), so read single figures as orders of magnitude.
 
 ## Rendering in the browser
@@ -110,11 +115,13 @@ Each component is mounted with generated data in a 600 px tall viewport. First r
 | gantt | 100 | 165 | 36.6 | 16.7 / 16.8 | 0.60 / 4.30 | 0.80 | 14.8 |
 | gantt | 1000 | 165 | 47.1 | 16.7 / 16.8 | 0.80 / 5.80 | 1.10 | 14.2 |
 | gantt | 5000 | 165 | 55.6 | 16.7 / 16.7 | 0.50 / 4.80 | 1.00 | 18.2 |
-| graph | 100 | 726 | 51.2 | 16.7 / 16.8 | 2.20 / 3.70 | 0.60 | 12.4 |
-| graph | 1000 | 7026 | 188 | 16.7 / 16.7 | 7.70 / 12.0 | 0.50 | 10.9 |
-| graph | 3000 | 21026 | 445 | 16.7 / 16.8 | 16.2 / 22.6 | 0.50 | 15.8 |
-| graph-culled | 1000 | 1782 | 87.9 | 16.7 / 16.8 | 1.70 / 5.30 | 0.50 | 14.1 |
-| graph-culled | 3000 | 1782 | 116 | 16.7 / 16.7 | 1.50 / 5.50 | 0.60 | 20.7 |
+| graph | 100 | 726 | 67.6 | 16.7 / 16.8 | 2.70 / 4.90 | 0.60 | 9.90 |
+| graph | 1000 | 7026 | 259 | 16.7 / 16.7 | 6.90 / 11.9 | 0.50 | 12.2 |
+| graph | 3000 | 21026 | 696 | 16.7 / 16.8 | 20.0 / 33.6 | 0.50 | 21.1 |
+| graph-culled | 1000 | 1782 | 147 | 16.7 / 16.8 | 1.80 / 8.10 | 0.60 | 13.1 |
+| graph-culled | 3000 | 1782 | 175 | 16.7 / 16.8 | 1.60 / 5.60 | 0.50 | 17.2 |
+| graph-culled-avoid | 1000 | 1782 | 215 | 16.7 / 16.8 | 4.20 / 19.7 | 0.50 | 57.7 |
+| graph-culled-avoid | 3000 | 1782 | 435 | 16.7 / 16.8 | 8.20 / 41.1 | 0.40 | 174 |
 | treegrid | 1000 x 20 | 415 | 34.7 | 16.7 / 16.8 | n/a / n/a | n/a | n/a |
 | treegrid | 10000 x 50 | 415 | 57.9 | 16.7 / 16.8 | n/a / n/a | n/a | n/a |
 | treegrid | 50000 x 100 | 415 | 83.5 | 16.7 / 16.7 | n/a / n/a | n/a | n/a |
@@ -122,8 +129,9 @@ Each component is mounted with generated data in a 600 px tall viewport. First r
 Worth knowing:
 
 - GanttChart renders only the visible rows, so its DOM size and interaction times barely change from 100 to 5,000 rows; first render grows from 37 ms to 56 ms.
-- NetworkGraph draws every node and edge by default. At 3,000 nodes that is about 21,000 elements, a first render of 445 ms and drag moves of about 16 ms (more than one frame at 60 Hz). With `cullOffscreen` the same graph keeps the DOM small (1,782 elements) and its first render 4 times faster, and drag moves stay at 1 to 6 ms. Use `cullOffscreen` for graphs of more than about a thousand nodes.
-- The first render of the culled graph still grows with the node count (88 ms at 1,000, 116 ms at 3,000) because layout and routing run on all nodes.
+- The graph rows (graph, graph-culled and graph-culled-avoid) come from a later run (2026-11-24, 5 runs each) on the same container under a heavier load from other work: the first renders of the unchanged unculled graph rose by about 1.5 times against the run of the other rows. Compare the graph rows with each other, not with the Gantt and TreeGrid rows. graph-culled-avoid is the culled graph with `edgeStyle="orthogonal"` and `avoidNodes`.
+- NetworkGraph draws every node and edge by default. At 3,000 nodes that is about 21,000 elements, and drag moves take 20 to 34 ms here (more than one frame at 60 Hz). With `cullOffscreen` the same graph keeps the DOM small (1,782 elements) and its first render about 4 times faster, and drag moves stay at 2 to 6 ms. Use `cullOffscreen` for graphs of more than about a thousand nodes.
+- Culling limits rendering, not geometry: layout and routing still run on every node and edge, because the layout size, the minimap, `fit`, export, keyboard navigation and `routingPolicy: 'preserve'` read every route. So the first render of the culled graph still grows with the node count, most with `avoidNodes` (215 ms at 1,000 and 435 ms at 3,000 nodes). With `cullOffscreen`, saved changes reuse that work: the component keeps a route cache and the culling bounds of the previous saved layout, so a drop routes and measures again only the edges it can affect, with the same result. Release to painted change of the culled graph fell from about 30 ms to 15 ms at 3,000 nodes in an interleaved before-and-after run (graph-culled). In graph-culled-avoid every route spans the graph's three rows, so a move with a vertical part routes every edge again and the drop stays at 150 to 230 ms either way; in two-dimensional graphs the route cache saves most of the search (see the core rows). The first drag move of the avoidNodes graph no longer routes every edge a second time to size the preview: its slowest move fell from about 190 ms to 55 ms at 3,000 nodes in that run.
 - Frame times while scrolling or panning never exceeded one frame here, because both only move existing elements.
 - TreeGrid renders only the visible window of rows and columns: the DOM stays at 415 elements from 1,000 x 20 to 50,000 x 100 cells, and first render grows from 35 ms to 84 ms. Its drag and edit columns are n/a because the benchmark mounts it read-only.
 

@@ -78,12 +78,13 @@
               },
             }),
           }
-        } else if (kind === 'graph' || kind === 'graph-culled') {
+        } else if (kind === 'graph' || kind === 'graph-culled' || kind === 'graph-culled-avoid') {
           const data = graphData(size)
           const positions = shallowRef(new Map())
           root = {
             render: () => h('div', { style: 'height:600px' }, [h(lib.NetworkGraph, {
-              ref: holder, nodes: data.nodes, edges: data.edges, positions: positions.value, draggable: true, height: 600, cullOffscreen: kind === 'graph-culled',
+              ref: holder, nodes: data.nodes, edges: data.edges, positions: positions.value, draggable: true, height: 600, cullOffscreen: kind !== 'graph',
+              ...kind === 'graph-culled-avoid' && { edgeStyle: 'orthogonal', avoidNodes: true },
               onNodeMove: change => {
                 record.proposalAt = performance.now()
                 const next = new Map(positions.value)

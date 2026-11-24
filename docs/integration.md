@@ -592,7 +592,7 @@ A fully collapsed interval is not invertible and needs a separately defined edit
 
 ## Reusing calculations
 
-Use the core entry in a worker or server to compute layouts, transform times or validate input. NetworkGraph's `layout` callback is synchronous. For an asynchronously computed layout, use `useAsyncGraphLayout` (see [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)), or store the result in application state yourself and supply a synchronous callback that returns it. Either way, update data and matching geometry together.
+Use the core entry in a worker or server to compute layouts, transform times or validate input (see [Running core calculations in a Worker](#running-core-calculations-in-a-worker)). NetworkGraph's `layout` callback is synchronous. For an asynchronously computed layout, use `useAsyncGraphLayout` (see [Asynchronous layouts and preserved routes](#asynchronous-layouts-and-preserved-routes)), or store the result in application state yourself and supply a synchronous callback that returns it. Either way, update data and matching geometry together.
 
 Geometry types use Maps. Convert them to entries arrays when serializing them across JSON boundaries, then reconstruct Maps at the consuming side.
 
@@ -1043,6 +1043,123 @@ const svg = renderGraphSvg(routed, nodes, edges, { theme })
 ```
 
 `renderGraphSvg` draws the paths it is given, so the export matches the screen without any routing option of its own.
+
+### Running core calculations in a Worker
+
+`useAsyncGraphLayout` with `graphLayoutWorkerAdapter` is the way to lay out NetworkGraph's graphs in a Worker: it keys, cancels and orders the requests and holds results during gestures. Its Worker only has to answer the messages described above, for example with the built-in layered layout:
+
+```ts
+// graphLayout.worker.ts: answers graphLayoutWorkerAdapter with the built-in layered layout.
+import { layoutLayeredGraph, parseGraphLayoutMessage } from '@eightkk/vue-weave/core'
+
+self.onmessage = (event: MessageEvent) => {
+  const message = parseGraphLayoutMessage(event.data)
+  // A synchronous engine cannot stop a layout it is computing; the adapter discards the result of a cancelled request.
+  if (message.type !== 'request') return
+  const { requestId, inputKey, scope, nodes, edges, direction } = message.request
+  try {
+    self.postMessage({ type: 'success', requestId, inputKey, scope, layout: layoutLayeredGraph(nodes, edges, { direction }) })
+  } catch (error) {
+    self.postMessage({ type: 'failure', requestId, inputKey, scope, message: error instanceof Error ? error.message : String(error) })
+  }
+}
+```
+
+Other heavy core calculations, such as routing a large graph for a custom renderer or an export, `scheduleTasks` and `levelResources`, run in a plain module Worker the same way. Everything they take and return is structured-cloneable: plain objects and arrays, and the Maps of a `GraphLayout`. Three things are not. Functions (a NetworkGraph `layout` callback, `formatTime`, or a function in node `data`) cannot be posted; leave them out of the message. Vue's reactive proxies cannot be cloned either; post `toRaw(nodes.value)` or a plain copy. A `GraphRouteCache` stays in the Worker that created it. Results lose no data in the clone, but a layout routed on one side and routed again on the other with `policy: 'preserve'` no longer knows which of its paths the built-in router drew, so run that whole chain (`applyGraphPositions`, `routeGraphPorts`, `routeGraphEdges`) in one place.
+
+```ts
+// heavy.worker.ts: a module Worker for the core's heavy calculations.
+import {
+  createGraphRouteCache, layoutLayeredGraph, levelResources, routeGraphEdges, routeGraphPorts, scheduleTasks,
+  type GraphEdge, type GraphEdgeRouteOptions, type GraphLayoutDirection, type LevelResourcesInput, type NetworkNode,
+  type ScheduleInput,
+} from '@eightkk/vue-weave/core'
+
+export type Job =
+  | { kind: 'graph'; input: { nodes: NetworkNode[]; edges: GraphEdge[]; direction?: GraphLayoutDirection; routing?: GraphEdgeRouteOptions } }
+  | { kind: 'schedule'; input: ScheduleInput }
+  | { kind: 'level'; input: LevelResourcesInput }
+
+// Route caches cannot be cloned, so the worker keeps its own: each graph job reuses the routes the previous one drew
+// where nothing that affects them changed.
+const routes = createGraphRouteCache()
+
+function compute(job: Job) {
+  switch (job.kind) {
+    case 'graph': {
+      const { nodes, edges, direction = 'LR', routing } = job.input
+      const nodesById = new Map(nodes.map(node => [node.id, node]))
+      const layout = layoutLayeredGraph(nodes, edges, { direction })
+      const ported = routeGraphPorts(layout, nodesById, edges, direction)
+      return routeGraphEdges(ported, edges, nodesById, { ...routing, direction, cache: routes })
+    }
+    case 'schedule': return scheduleTasks(job.input)
+    case 'level': return levelResources(job.input)
+  }
+}
+
+// The newest job of each kind. Jobs run after the messages already queued have arrived, so a burst of edits computes
+// only its last input; the jobs it replaced are answered as stale.
+const waiting = new Map<Job['kind'], { id: number; job: Job }>()
+
+self.onmessage = (event: MessageEvent<{ id: number; job: Job }>) => {
+  const { id, job } = event.data
+  const replaced = waiting.get(job.kind)
+  if (replaced) self.postMessage({ id: replaced.id, stale: true })
+  waiting.set(job.kind, { id, job })
+  setTimeout(runWaiting)
+}
+
+function runWaiting() {
+  for (const [kind, { id, job }] of waiting) {
+    waiting.delete(kind)
+    try {
+      self.postMessage({ id, result: compute(job) })
+    } catch (error) {
+      self.postMessage({ id, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+}
+```
+
+A Worker answers one message at a time and cannot stop a calculation once it has started. The Worker above therefore keeps only the newest job of each kind while messages are still queued, and the main thread ignores any answer that a newer job of the same kind has replaced, so a slow result never overwrites a newer one:
+
+```ts
+// heavyWork.ts: the main-thread side. `run` resolves to the result, or to undefined when a newer job of the same kind
+// was sent before the result arrived, so a late answer never overwrites a newer one.
+import type { Job } from './heavy.worker'
+
+type Reply = { id: number; result?: unknown; stale?: true; error?: string }
+
+export function heavyWork(worker: Pick<Worker, 'postMessage' | 'addEventListener'>) {
+  let lastId = 0
+  const newest = new Map<Job['kind'], number>()
+  const pending = new Map<number, { kind: Job['kind']; resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+  worker.addEventListener('message', (event: MessageEvent<Reply>) => {
+    const reply = event.data, request = pending.get(reply.id)
+    if (!request) return
+    pending.delete(reply.id)
+    if (reply.error !== undefined) request.reject(new Error(reply.error))
+    else request.resolve(reply.stale || newest.get(request.kind) !== reply.id ? undefined : reply.result)
+  })
+  return function run(job: Job): Promise<unknown> {
+    const id = ++lastId
+    newest.set(job.kind, id)
+    const answer = new Promise<unknown>((resolve, reject) => pending.set(id, { kind: job.kind, resolve, reject }))
+    worker.postMessage({ id, job })
+    return answer
+  }
+}
+```
+
+```ts
+const worker = new Worker(new URL('./heavy.worker.ts', import.meta.url), { type: 'module' })
+const run = heavyWork(worker)
+const result = await run({ kind: 'schedule', input: toRaw(plan.value) })
+if (result) schedule.value = result as ScheduleResult
+```
+
+To abandon a long job, terminate the Worker and start a new one (its route cache starts empty again). A routed layout from the Worker is ready for `renderGraphSvg` or a custom renderer; for NetworkGraph, pass node boxes through `useAsyncGraphLayout` instead, since the component routes edges itself.
 
 <!-- #endregion async-layouts -->
 
