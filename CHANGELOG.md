@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- `levelResources` is much faster on long horizons: placing a task now reads remaining capacity and free working time only as far as that task's placement needs, instead of from its earliest start to the end of the horizon. In the benchmark of `docs/performance.md`, 3,000 tasks went from about 1 s to under 0.2 s and 10,000 tasks from about 13 s to under 1 s. Results are unchanged: the same dates, leveled tasks, delays, overloads, unresolved tasks, traces and errors.
+
 ### Fixed
 
 - NetworkGraph and `renderGraphSvg` centre the text of plain rectangle nodes on the node height, as they already did for outline shapes. Before, the title and detail lines sat at fixed offsets made for the default height of 58, so a shorter node (for example `nodeHeight: 30`) drew its text across or below its bottom edge, and a taller node drew it near the top. Output at height 58 is unchanged.
