@@ -5,7 +5,8 @@
 import { h, ref, useTemplateRef } from 'vue'
 import {
   TreeGrid, applyTreeGridEdits, createTreeGridIndex, deleteTreeGridRows, flattenTreeGrid, insertTreeGridRow, matchTreeGridEntities,
-  moveTimelineRow,
+  moveTimelineRow, projectTreeGridRows, timelineLabelColumnId, treeGridCellText,
+  type TimelineColumnResize, type TimelineViewFilter, type TimelineViewSort, type TreeGridViewProjection,
   type TimelineRowMove, type TreeGridActivation, type TreeGridCell, type TreeGridCellEdit, type TreeGridColumn, type TreeGridEditCancel,
   type TreeGridExposed, type TreeGridPosition, type TreeGridRow, type TreeGridRowCreate, type TreeGridRowDelete, type TreeGridSheetEdit,
 } from '../../src'
@@ -48,9 +49,19 @@ function move(change: TimelineRowMove) { rows.value = moveTimelineRow(rows.value
 function cancelled(event: TreeGridEditCancel) { return event.reason === 'source-changed' }
 function rejected(_change: TreeGridCellEdit, reason: string) { return reason }
 
+// Header sorting, filtering and column resizing: the projection keeps the row type.
+const sort = ref<TimelineViewSort[]>([{ ruleId: timelineLabelColumnId, direction: 'asc' }])
+const filters = ref<TimelineViewFilter[]>([{ columnId: 'rev', values: ['B'] }])
+const view: TreeGridViewProjection<BomRow> = projectTreeGridRows({ rows: rows.value, columns, cells: cells.value }, { sort: sort.value, filters: filters.value })
+const projectedRevision: string = view.rows[0]!.revision
+const shownText: string = treeGridCellText(index, 'a', 'qty', { formatValue: (value, { row }) => row.revision + value })
+// @ts-expect-error A sort direction is asc or desc.
+const badSort: TimelineViewSort = { ruleId: 'qty', direction: 'up' }
+function resize(change: TimelineColumnResize) { return change.after - change.before + (change.source === 'pointer' ? 0 : 1) }
+
 const grid = useTemplateRef<TreeGridExposed<BomRow>>('grid')
 const instance = ref<InstanceType<typeof TreeGrid>>()
-void [noWidth, badCell, badStatus, sameFunction, revision, applied, inserted, deleted, matched,
+void [noWidth, badCell, badStatus, sameFunction, projectedRevision, shownText, badSort, revision, applied, inserted, deleted, matched,
   grid.value?.revealRow('a', { focus: true }).status, grid.value?.cancelEdit(), grid.value?.copySelection(), instance.value?.focusCell({ rowId: 'a' }),
   h(TreeGrid, { rows: rows.value, columns })]
 </script>
@@ -68,4 +79,10 @@ void [noWidth, badCell, badStatus, sameFunction, revision, applied, inserted, de
     <template #row-header="{ row, line }">{{ row.revision }} {{ line.level }}</template>
     <template #status="{ text }">{{ text }}</template>
   </TreeGrid>
+  <TreeGrid v-model:sort="sort" v-model:filters="filters" :rows="view.rows" :columns="columns" :cells="view.cells" columns-resizable
+    :min-column-width="40" :max-column-width="400" :validate-column-resize="change => change.after > 50 || 'Too narrow'"
+    sortable-columns :filterable-columns="['rev', timelineLabelColumnId]" :labels="{ sortBy: 'Order by', clearFilter: 'Clear' }"
+    @column-resize="resize" @column-resize-rejected="(change, reason) => change.id + reason" />
+  <!-- @vue-expect-error The sort is a list of rules. -->
+  <TreeGrid :rows="rows" :columns="columns" :sort="'qty'" />
 </template>

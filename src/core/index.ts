@@ -200,6 +200,7 @@ export {
   treeGridCellValue, isTreeGridCellEditable, treeGridFieldSpec, matchTreeGridEntities, treeGridRangeBounds, treeGridRangeText,
   buildTreeGridPaste, buildTreeGridClear, buildTreeGridFill, applyTreeGridEdits, treeGridRowCreate, insertTreeGridRow,
   deleteTreeGridRows, treeGridRowMoveForKey, treeGridDropAt, treeGridCellContentFromTimeBucket, treeGridCellsFromTimeBuckets,
+  treeGridCellText, projectTreeGridRows,
 } from './treeGrid.js'
 export type {
   TreeGridValue, TreeGridRow, TreeGridCellStatus, TreeGridMissingCell, TreeGridCellState, TreeGridCellContent, TreeGridCell,
@@ -207,5 +208,6 @@ export type {
   TreeGridCursor, TreeGridRange, TreeGridSpan, TreeGridCellView, TreeGridKeyInput, TreeGridKeyContext, TreeGridKeyAction,
   TreeGridActivation, TreeGridCellEdit, TreeGridSheetEdit, TreeGridRowCreate, TreeGridRowDelete, TreeGridEditCancelReason,
   TreeGridEditCancel, TreeGridValidatorResult, TreeGridCellEditValidator, TreeGridSheetEditValidator, TreeGridRowCreateValidator,
-  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild,
+  TreeGridRowDeleteValidator, TreeGridDrop, TreeGridLabels, TreeGridEntityMatches, TreeGridSheetBuild, TreeGridTextOptions,
+  TreeGridViewState, TreeGridViewInput, TreeGridViewProjection,
 } from './treeGrid.js'

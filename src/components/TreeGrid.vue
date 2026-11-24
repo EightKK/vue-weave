@@ -16,10 +16,14 @@ import {
   type TreeGridSheetEdit, type TreeGridSheetEditValidator, type TreeGridSpan, type TreeGridValue,
 } from '../core/treeGrid.js'
 import { formatFieldValue, parseFieldValue, validateFieldValue, type FieldParseResult, type FieldValue, type TimelineFieldSpec } from '../core/fieldEditing.js'
-import type { ChartDirection, RowMoveValidator, TimelineRowMove, TimelineRowPosition } from '../core/types.js'
+import { timelineLabelColumnId } from '../core/timeline.js'
+import type { TimelineViewFilter, TimelineViewSort } from '../core/timelineView.js'
+import type { ChartDirection, ColumnResizeValidator, GanttLabels, RowMoveValidator, TimelineColumnResize, TimelineRowMove, TimelineRowPosition } from '../core/types.js'
 import type { RevealResult } from '../core/viewBindings.js'
+import { headerColumnIds, sameOption, useHeaderFilters, type HeaderControls } from './ganttChart/headerControls.js'
 import { edgeScroller, pastThreshold } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
+import { useTreeGridColumnResize } from './treeGrid/columnResize.js'
 import { scrollToShow, slotKey, splitAround } from './treeGrid/lineSegments.js'
 
 type IdList = readonly string[] | ReadonlySet<string>
@@ -78,12 +82,39 @@ const props = withDefaults(defineProps<{
   validateRowCreate?: TreeGridRowCreateValidator
   validateRowDelete?: TreeGridRowDeleteValidator
   validateRowMove?: RowMoveValidator
+  /**
+   * Shows a resize separator on the tree column header and each column header, proposing new widths through
+   * `column-resize` (pointer drag or arrow keys). Opt-in. Default false.
+   */
+  columnsResizable?: boolean
+  /** Smallest width in pixels that a column resize may propose. Default 48. */
+  minColumnWidth?: number
+  /** Largest width in pixels that a column resize may propose; at least `minColumnWidth`. Default 800. */
+  maxColumnWidth?: number
+  /** Synchronous check of a `column-resize` proposal: true or nothing accepts, false or a reason rejects. */
+  validateColumnResize?: ColumnResizeValidator
+  /**
+   * Header sort buttons: `true` for the tree column (`timelineLabelColumnId`) and every column, or a list of column IDs.
+   * A button proposes the next sort (`nextTimelineSort`) through `update:sort`; the grid never reorders rows itself.
+   */
+  sortableColumns?: boolean | readonly string[]
+  /** The applied sort rules, shown by the sort buttons and `aria-sort`; supports `v-model:sort`. */
+  sort?: readonly TimelineViewSort[]
+  /**
+   * Header filter buttons with a small dialog: `true` for the tree column and every column, or a list of column IDs.
+   * The dialog proposes the new column filters through `update:filters`; the grid never filters rows itself.
+   */
+  filterableColumns?: boolean | readonly string[]
+  /** The applied column filters, shown by the filter buttons and dialogs; supports `v-model:filters`. */
+  filters?: readonly TimelineViewFilter[]
 }>(), {
   cells: undefined, missingCell: 'empty', expandedIds: undefined, activeCell: undefined, selectedRowIds: undefined,
   highlightedRowIds: undefined, highlightedCells: undefined, formatValue: undefined, rowHeight: 32, headerHeight: 36,
   treeColumnWidth: 240, height: 400, initialWidth: 960, overscan: 6, columnOverscan: 2, labels: undefined, dir: 'ltr',
   editable: false, validateCellEdit: undefined, spreadsheet: false, validateSheetEdit: undefined, maxSheetCells: 10_000,
   rowsEditable: false, validateRowCreate: undefined, validateRowDelete: undefined, validateRowMove: undefined,
+  columnsResizable: false, minColumnWidth: undefined, maxColumnWidth: undefined, validateColumnResize: undefined,
+  sortableColumns: undefined, sort: undefined, filterableColumns: undefined, filters: undefined,
 })
 
 const emit = defineEmits<{
@@ -116,6 +147,17 @@ const emit = defineEmits<{
   'row-move-rejected': [change: TimelineRowMove, reason: string]
   /** Invalid rows, columns or cells; the grid then renders its empty state. */
   'validation-error': [error: Error]
+  /**
+   * Proposal for a new column width (`columnsResizable`): `id` is the column ID, or `timelineLabelColumnId` for the tree
+   * column. Accept it by setting that column's `width`, or `treeColumnWidth`.
+   */
+  'column-resize': [change: TimelineColumnResize]
+  /** A column resize was rejected by `validateColumnResize`; carries the proposal and the reason. */
+  'column-resize-rejected': [change: TimelineColumnResize, reason: string]
+  /** A header sort button (`sortableColumns`) proposes a new sort; supports `v-model:sort`. Apply it with `projectTreeGridRows`. */
+  'update:sort': [sort: TimelineViewSort[]]
+  /** A header filter (`filterableColumns`) proposes new column filters; supports `v-model:filters`. Apply them with `projectTreeGridRows`. */
+  'update:filters': [filters: TimelineViewFilter[]]
 }>()
 
 const slots = defineSlots<{
@@ -129,7 +171,7 @@ const slots = defineSlots<{
   empty(): unknown
 }>()
 
-const messages = computed<TreeGridLabels>(() => ({ ...treeGridDefaultLabels, ...props.labels }))
+const messages = computed<Required<TreeGridLabels>>(() => ({ ...treeGridDefaultLabels, ...props.labels }) as Required<TreeGridLabels>)
 const uid = useId()
 const root = ref<HTMLElement>()
 const scroller = ref<HTMLElement>()
@@ -147,7 +189,60 @@ const { value: model, error: validationError } = useValidatedSource(
 )
 const index = computed(() => model.value?.index)
 const columns = computed(() => model.value?.index.columns ?? [])
-const offsets = computed(() => model.value?.offsets ?? [0])
+
+// Header options (`columnsResizable`, `sortableColumns`, `filterableColumns`). Lists are compared by value, so an inline
+// literal in a parent template does not count as a change. Invalid options are reported like invalid rows.
+const stableSortable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.sortableColumns))
+const stableFilterable = computed<boolean | readonly string[] | undefined>(previous => sameOption(previous, props.filterableColumns))
+const columnList = () => Array.isArray(props.columns) ? props.columns : []
+const sortableIds = computed(() => headerColumnIds(stableSortable.value, columnList()))
+const filterableIds = computed(() => headerColumnIds(stableFilterable.value, columnList()))
+const headerOptIn = computed(() => props.columnsResizable || sortableIds.value.size > 0 || filterableIds.value.size > 0)
+function checkHeaderOption(name: string, option: boolean | readonly string[] | undefined) {
+  if (option === undefined || typeof option === 'boolean') return
+  if (!Array.isArray(option)) throw new Error(name + ' must be a boolean or a list of column IDs')
+  const known = new Set([timelineLabelColumnId, ...columnList().map(column => column.id)])
+  for (const id of option) if (!known.has(id)) throw new Error(`Unknown column in ${name}: ${String(id)}`)
+}
+const { error: optionError } = useValidatedSource(
+  [() => props.columns, () => props.minColumnWidth, () => props.maxColumnWidth, () => props.columnsResizable, stableSortable, stableFilterable],
+  () => {
+    const min = props.minColumnWidth ?? 48
+    if (typeof min !== 'number' || !Number.isFinite(min) || min <= 0) throw new RangeError('minColumnWidth must be finite and positive')
+    const max = props.maxColumnWidth
+    if (max !== undefined && (typeof max !== 'number' || !Number.isFinite(max) || max < min)) {
+      throw new RangeError('maxColumnWidth must be finite and at least minColumnWidth')
+    }
+    if (headerOptIn.value && columnList().some(column => column?.id === timelineLabelColumnId)) {
+      throw new Error('The column ID is reserved for the tree column: ' + timelineLabelColumnId)
+    }
+    checkHeaderOption('sortableColumns', stableSortable.value)
+    checkHeaderOption('filterableColumns', stableFilterable.value)
+  },
+  { report: error => emit('validation-error', error), fallback: undefined },
+)
+const invalid = computed(() => validationError.value ?? optionError.value)
+const resizer = useTreeGridColumnResize({
+  props, rtl: () => rtl.value,
+  labels: () => ({ resizeColumn: messages.value.resizeColumn, columnResizeRejected: messages.value.columnResizeRejected }),
+  propose: change => emit('column-resize', change),
+  reject: (change, reason) => {
+    emit('column-resize-rejected', change, reason)
+    notice.value = reason
+  },
+})
+/** The tree column width, with the preview of a separator drag. */
+const treeWidth = computed(() => resizer.shownWidth(timelineLabelColumnId, props.treeColumnWidth))
+/** The column offsets, with the preview of a separator drag. */
+const offsets = computed(() => {
+  const base = model.value?.offsets ?? [0]
+  const preview = resizer.drag.value
+  const at = preview && preview.id !== timelineLabelColumnId ? model.value?.index.columnIndex.get(preview.id) : undefined
+  if (at === undefined) return base
+  const delta = preview!.width - columns.value[at]!.width
+  return base.map((offset, i) => i > at ? offset + delta : offset)
+})
+const columnWidth = (c: number) => resizer.shownWidth(columns.value[c]!.id, columns.value[c]!.width)
 const idKey = (ids: readonly string[] | undefined) => JSON.stringify([...new Set(ids ?? [])].sort())
 const expandedKey = computed(() => idKey(props.expandedIds))
 const expandedSet = computed(() => new Set<string>(JSON.parse(expandedKey.value) as string[]))
@@ -168,7 +263,7 @@ watch(() => props.dir, () => readDirection())
 const numericHeight = computed(() => typeof props.height === 'number' ? props.height : 400)
 const viewport = shallowRef({ top: 0, start: 0, width: props.initialWidth, height: numericHeight.value })
 const bodyView = computed(() => Math.max(0, viewport.value.height - props.headerHeight))
-const axisView = computed(() => Math.max(0, viewport.value.width - props.treeColumnWidth))
+const axisView = computed(() => Math.max(0, viewport.value.width - treeWidth.value))
 const sameSpan = (a: TreeGridSpan | undefined, b: TreeGridSpan) => a !== undefined && a.start === b.start && a.end === b.end
 const rowWindow = computed<TreeGridSpan>(previous => {
   const next = treeGridRowWindow({ scrollTop: viewport.value.top, viewport: bodyView.value, rowHeight: props.rowHeight, count: lines.value.length, overscan: props.overscan })
@@ -244,7 +339,7 @@ function scrollIntoView(at: TreeGridCursor) {
   if (!el) return
   const top = scrollToShow(at.line * props.rowHeight, props.rowHeight, el.scrollTop, bodyView.value)
   const now = scrollStartOf(el)
-  const start = at.column === 0 ? now : scrollToShow(offsets.value[at.column - 1]!, columns.value[at.column - 1]!.width, now, axisView.value)
+  const start = at.column === 0 ? now : scrollToShow(offsets.value[at.column - 1]!, columnWidth(at.column - 1), now, axisView.value)
   if (top !== el.scrollTop) el.scrollTop = top
   if (start !== now) el.scrollLeft = rtl.value ? -start : start
   setViewport({ top: el.scrollTop, start: scrollStartOf(el) })
@@ -259,7 +354,10 @@ function moveTo(next: TreeGridCursor) {
   setActive(next)
   void nextTick(focusActive)
 }
-function onFocusin() { focusInside = true }
+/** Whether an event target is in the header row (its sort, filter and resize controls), which is not grid navigation. */
+const inHead = (target: EventTarget | null) => Boolean((target as HTMLElement | null)?.closest?.('.vw-tree-grid-head'))
+// The header controls are outside the roving focus: while they hold the focus, new lines do not move it to a cell.
+function onFocusin(event: FocusEvent) { focusInside = !inHead(event.target) }
 function onFocusout(event: FocusEvent) {
   const next = event.relatedTarget as Node | null
   if (next && scroller.value?.contains(next)) return
@@ -531,18 +629,18 @@ function pasteText(text: string, source: TreeGridSheetEdit['source'] = 'keyboard
   proposeSheet('paste', buildTreeGridPaste(index.value!, flat.value, range.value!, text, { maxCells: props.maxSheetCells, source }), source)
 }
 function onCopy(event: ClipboardEvent) {
-  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor')) return
+  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor, .vw-tree-grid-head')) return
   event.clipboardData?.setData('text/plain', copySelection())
   event.preventDefault()
 }
 function onCut(event: ClipboardEvent) {
-  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor')) return
+  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor, .vw-tree-grid-head')) return
   event.clipboardData?.setData('text/plain', copySelection())
   event.preventDefault()
   if (props.editable) proposeSheet('cut', buildTreeGridClear(index.value!, flat.value, range.value!), 'keyboard')
 }
 function onPaste(event: ClipboardEvent) {
-  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor')) return
+  if (!canSheet() || (event.target as HTMLElement).closest?.('.vw-tree-grid-editor, .vw-tree-grid-head')) return
   event.preventDefault()
   pasteText(event.clipboardData?.getData('text/plain') ?? '')
 }
@@ -638,6 +736,10 @@ watch(lines, () => {
   cancelFill('source-changed')
   cancelRowDrag('source-changed')
 })
+// A separator drag ends without a proposal when the data, a width or the direction changes under it.
+watch(() => [
+  props.rows, props.columns, props.cells, props.treeColumnWidth, props.minColumnWidth, props.maxColumnWidth, props.columnsResizable, props.dir, invalid.value,
+], () => { resizer.cancel() })
 
 /** Cancels the open editor, fill drag or row drag (reason `api`). Returns whether one was in flight. */
 function cancelEdit() {
@@ -646,7 +748,7 @@ function cancelEdit() {
 
 // Keyboard.
 function onKeydown(event: KeyboardEvent) {
-  if (editing.value || !cursor.value || !index.value) return
+  if (editing.value || !cursor.value || !index.value || inHead(event.target)) return
   if ((event.target as HTMLElement).closest('button')) {
     if (event.key !== 'Escape') return
   }
@@ -953,7 +1055,7 @@ defineExpose({
 // Rendering. The body is a functional component of render functions, so one line's markup serves the window lists
 // and the active line (see treeGrid/lineSegments.ts).
 const lineStyle = (i: number) => ({ transform: `translateY(${props.headerHeight + i * props.rowHeight}px)` })
-const columnStyle = (c: number) => ({ insetInlineStart: props.treeColumnWidth + offsets.value[c]! + 'px', width: columns.value[c]!.width + 'px' })
+const columnStyle = (c: number) => ({ insetInlineStart: treeWidth.value + offsets.value[c]! + 'px', width: columnWidth(c) + 'px' })
 
 type BodyProps = { cellSlot?: typeof slots.cell; headerSlot?: (typeof slots)['row-header']; statusSlot?: typeof slots.status }
 const GridBody: FunctionalComponent<BodyProps> = ({ cellSlot, headerSlot, statusSlot }) => {
@@ -1084,12 +1186,104 @@ const headerColumns = computed(() => {
   for (let c = columnWindow.value.start; c < columnWindow.value.end; c++) list.push(c)
   return list
 })
+
+// Header sorting and filtering (`sortableColumns`, `filterableColumns`), with GanttChart's header logic: the grid shows
+// the controlled `sort` and `filters` and proposes changes; the parent applies them, for example with
+// `projectTreeGridRows`. The filter dialog of one column is open at a time and never renders on the server.
+const {
+  headerControls, headerControlEvents, openFilter, toggleFilter, closeFilter, filterKeys, filterText, clearFilter, choiceShown,
+  toggleChoice, sortGlyph, toggleSort, sortButtonName, filterName, filterButtonName,
+} = useHeaderFilters<R>({
+  root, sort: () => props.sort, filters: () => props.filters, sortableIds: () => sortableIds.value, filterableIds: () => filterableIds.value,
+  // The shared header logic reads only these names of its labels.
+  labels: () => ({
+    sortBy: messages.value.sortBy, sortedAscending: messages.value.sortedAscending, sortedDescending: messages.value.sortedDescending,
+    filterBy: messages.value.filterBy, filtered: messages.value.filtered,
+  }) as GanttLabels,
+  error: () => invalid.value, proposeSort: sort => emit('update:sort', sort), proposeFilters: filters => emit('update:filters', filters),
+})
+/** The controls of a header, with the choices of a column whose editor is a `select` of texts and numbers. */
+function controlsOf(id: string, label: string, column: TreeGridColumn<R> | undefined): HeaderControls | undefined {
+  const controls = headerControls(id, label)
+  const choices = column?.editor?.kind === 'select' ? column.editor.choices : undefined
+  if (!controls || !choices?.every(choice => typeof choice.value === 'string' || typeof choice.value === 'number')) return controls
+  return { ...controls, choices: choices as { value: string | number; label?: string }[] }
+}
+function filterDialog(controls: HeaderControls): VNode {
+  const m = messages.value
+  return h('div', {
+    class: 'vw-column-filter-popover', role: 'dialog', 'aria-label': filterName(controls),
+    onPointerdown: (event: Event) => event.stopPropagation(), onKeydown: filterKeys,
+  }, [
+    h('label', { class: 'vw-column-filter-text' }, [
+      h('span', m.filterContains),
+      h('input', {
+        type: 'search', autocomplete: 'off', value: controls.filter?.text ?? '',
+        onInput: (event: Event) => filterText(controls, event), onCompositionend: (event: Event) => filterText(controls, event),
+      }),
+    ]),
+    controls.choices
+      ? h('fieldset', { class: 'vw-column-filter-values' }, [
+        h('legend', m.filterValues),
+        ...controls.choices.map((choice, i) => h('label', { key: i }, [
+          h('input', { type: 'checkbox', checked: choiceShown(controls, choice.value), onChange: (event: Event) => toggleChoice(controls, choice.value, event) }),
+          ' ' + (choice.label ?? String(choice.value)),
+        ])),
+      ])
+      : createCommentVNode(''),
+    h('button', { type: 'button', class: 'vw-column-filter-clear', disabled: !controls.filter, onClick: () => clearFilter(controls) }, m.clearFilter),
+  ])
+}
+/**
+ * A header cell with the opt-in controls: the tree column header (`c` = -1) or the header of column `c`. Its name is
+ * the column label alone, so the names of its buttons and separator do not join it. `aria-sort` marks the column of the
+ * first sort rule; other sortable columns without a rule get `none`.
+ */
+const HeadCell: FunctionalComponent<{ c: number }> = ({ c }) => {
+  const tree = c < 0
+  const column = tree ? undefined : columns.value[c]!
+  const id = tree ? timelineLabelColumnId : column!.id
+  const label = tree ? messages.value.treeColumn : column!.label
+  const controls = invalid.value ? undefined : controlsOf(id, label, column)
+  const separator = props.columnsResizable && !invalid.value ? resizer.separator(id, label, tree ? props.treeColumnWidth : column!.width) : undefined
+  const children: (VNode | string)[] = []
+  const title = h('span', { class: 'vw-column-title' }, label)
+  if (controls?.sortable) {
+    children.push(h('button', {
+      type: 'button', class: ['vw-column-sort', { 'vw-is-sorted': controls.direction }], 'aria-label': sortButtonName(controls),
+      onPointerdown: (event: Event) => event.stopPropagation(), onClick: () => toggleSort(id),
+    }, [title, h('span', { class: 'vw-sort-indicator', 'aria-hidden': 'true' }, sortGlyph(controls.direction))]))
+  } else children.push(controls ? title : label)
+  if (controls?.filterable) {
+    children.push(h('button', {
+      type: 'button', class: ['vw-column-filter', { 'vw-is-active': controls.filtered }], 'data-vw-column-filter': '',
+      'aria-haspopup': 'dialog', 'aria-expanded': String(openFilter.value === id), 'aria-label': filterButtonName(controls),
+      onPointerdown: (event: Event) => event.stopPropagation(), onClick: () => toggleFilter(id),
+      onKeydown: (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return
+        event.stopPropagation()
+        closeFilter(true)
+      },
+    }, [h('span', { 'aria-hidden': 'true' }, '⏷')]))
+    if (openFilter.value === id) children.push(filterDialog(controls))
+  }
+  if (separator) children.push(separator)
+  const first = props.sort?.[0]
+  const sorted = controls?.sortable ? (first?.ruleId === id ? (first.direction === 'asc' ? 'ascending' : 'descending')
+    : props.sort?.some(rule => rule.ruleId === id) ? undefined : 'none') : undefined
+  return h('div', {
+    class: [tree ? 'vw-tree-grid-corner' : 'vw-tree-grid-column-head', { 'vw-header-controls': controls }], role: 'columnheader',
+    'aria-colindex': tree ? 1 : c + 2, 'aria-label': controls || separator ? label : undefined, 'aria-sort': sorted,
+    style: tree ? undefined : columnStyle(c), ...controls?.attrs, ...controls ? headerControlEvents(controls) : {},
+  }, children)
+}
+HeadCell.props = ['c']
 const gridStyle = computed(() => ({
   height: typeof props.height === 'number' ? props.height + 'px' : props.height,
   '--vw-tree-grid-row-height': props.rowHeight + 'px', '--vw-tree-grid-header-height': props.headerHeight + 'px',
-  '--vw-tree-grid-tree-width': props.treeColumnWidth + 'px',
+  '--vw-tree-grid-tree-width': treeWidth.value + 'px',
 }))
-const showEmpty = computed(() => Boolean(validationError.value) || !lines.value.length)
+const showEmpty = computed(() => Boolean(invalid.value) || !lines.value.length)
 </script>
 
 <template>
@@ -1103,8 +1297,14 @@ const showEmpty = computed(() => Boolean(validationError.value) || !lines.value.
       <div v-if="showEmpty" class="vw-tree-grid-empty" role="row" aria-rowindex="1">
         <div role="gridcell"><slot name="empty">{{ messages.empty }}</slot></div>
       </div>
-      <div v-else class="vw-tree-grid-canvas" :style="{ width: treeColumnWidth + axisWidth + 'px', height: headerHeight + lines.length * rowHeight + 'px' }">
-        <div class="vw-tree-grid-head" role="row" aria-rowindex="1">
+      <div v-else class="vw-tree-grid-canvas" :style="{ width: treeWidth + axisWidth + 'px', height: headerHeight + lines.length * rowHeight + 'px' }">
+        <!-- With columnsResizable, sortableColumns or filterableColumns, the header cells get their controls (HeadCell) and
+          are keyed by column, so a focused control stays with its column; otherwise the default markup is unchanged. -->
+        <div v-if="headerOptIn" class="vw-tree-grid-head" role="row" aria-rowindex="1">
+          <HeadCell :c="-1" />
+          <HeadCell v-for="c in headerColumns" :key="columns[c]!.id" :c="c" />
+        </div>
+        <div v-else class="vw-tree-grid-head" role="row" aria-rowindex="1">
           <div class="vw-tree-grid-corner" role="columnheader" aria-colindex="1">{{ messages.treeColumn }}</div>
           <div v-for="c in headerColumns" :key="c % Math.max(1, headerColumns.length)" class="vw-tree-grid-column-head" role="columnheader"
             :aria-colindex="c + 2" :style="columnStyle(c)">{{ columns[c]!.label }}</div>

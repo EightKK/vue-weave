@@ -108,6 +108,9 @@ const japanese: ComponentLabels = Object.freeze({
     moveBefore: 'の前へ', moveAfter: 'の後へ', moveInto: 'の中へ',
     rowCreateRejected: '新しい行は却下されました。', rowDeleteRejected: 'この削除は却下されました。', rowMoveRejected: 'この行の移動は却下されました。',
     rowMoveHint: 'Alt+上下キーで行を移動、Alt+Shift+矢印でインデント・アウトデントします。Ctrl+Enter で下に行を、Ctrl+Shift+Enter で子の行を追加し、Delete で行を削除します。',
+    resizeColumn: '列幅を変更', columnResizeRejected: 'この列幅の変更は却下されました。',
+    sortBy: '並べ替え:', sortedAscending: '昇順', sortedDescending: '降順', filterBy: '絞り込み', filtered: '絞り込み中',
+    filterContains: '含む文字', filterValues: '表示する値', clearFilter: '絞り込みを解除',
   },
   taskBoard: {
     region: 'タスクボード', empty: '表示する列がありません', emptyCell: 'カードなし', card: '枚', cards: '枚', wipLimit: 'WIP 上限',

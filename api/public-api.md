@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (276)
+## Entry `.`: runtime exports (278)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -178,6 +178,7 @@ in public signatures, so changes to them can break consumers too.
 - `projectResourceTimeline: function`
 - `projectTimelineRows: function`
 - `projectTimelineView: function`
+- `projectTreeGridRows: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
 - `readPaletteDrop: function`
@@ -252,6 +253,7 @@ in public signatures, so changes to them can break consumers too.
 - `topologicalOrder: function`
 - `traverseGraph: function`
 - `treeGridCellContentFromTimeBucket: function`
+- `treeGridCellText: function`
 - `treeGridCellValue: function`
 - `treeGridCellsFromTimeBuckets: function`
 - `treeGridColumnAt: function`
@@ -284,7 +286,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (642)
+## Entry `.`: type-only exports (646)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -895,8 +897,12 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridSheetEdit`
 - `TreeGridSheetEditValidator`
 - `TreeGridSpan`
+- `TreeGridTextOptions`
 - `TreeGridValidatorResult`
 - `TreeGridValue`
+- `TreeGridViewInput`
+- `TreeGridViewProjection`
+- `TreeGridViewState`
 - `UseAsyncGraphLayoutOptions`
 - `UseEditTransactionOptions`
 - `UseLinkedSelectionOptions`
@@ -929,7 +935,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (260)
+## Entry `./core`: runtime exports (262)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -1094,6 +1100,7 @@ in public signatures, so changes to them can break consumers too.
 - `projectResourceTimeline: function`
 - `projectTimelineRows: function`
 - `projectTimelineView: function`
+- `projectTreeGridRows: function`
 - `propagateEdit: function`
 - `proposeResourceAssignment: function`
 - `reconcileTimelineViewColumns: function`
@@ -1166,6 +1173,7 @@ in public signatures, so changes to them can break consumers too.
 - `topologicalOrder: function`
 - `traverseGraph: function`
 - `treeGridCellContentFromTimeBucket: function`
+- `treeGridCellText: function`
 - `treeGridCellValue: function`
 - `treeGridCellsFromTimeBuckets: function`
 - `treeGridColumnAt: function`
@@ -1192,7 +1200,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (602)
+## Entry `./core`: type-only exports (606)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1770,8 +1778,12 @@ in public signatures, so changes to them can break consumers too.
 - `TreeGridSheetEdit`
 - `TreeGridSheetEditValidator`
 - `TreeGridSpan`
+- `TreeGridTextOptions`
 - `TreeGridValidatorResult`
 - `TreeGridValue`
+- `TreeGridViewInput`
+- `TreeGridViewProjection`
+- `TreeGridViewState`
 - `ViewBinding`
 - `ViewBindingIndex`
 - `ViewTarget`
@@ -9038,6 +9050,16 @@ interface TreeGridLabels {
     rowDeleteRejected: string;
     rowMoveRejected: string;
     rowMoveHint: string;
+    resizeColumn?: string;
+    columnResizeRejected?: string;
+    sortBy?: string;
+    sortedAscending?: string;
+    sortedDescending?: string;
+    filterBy?: string;
+    filtered?: string;
+    filterContains?: string;
+    filterValues?: string;
+    clearFilter?: string;
 }
 ```
 
@@ -9174,6 +9196,18 @@ interface TreeGridSpan {
 }
 ```
 
+### `TreeGridTextOptions`
+
+```ts
+interface TreeGridTextOptions<R extends TreeGridRow = TreeGridRow> {
+    formatValue?: (value: TreeGridValue, context: {
+        row: R;
+        column: TreeGridColumn<R>;
+    }) => string;
+    labels?: Partial<Pick<TreeGridLabels, 'yes' | 'no'>>;
+}
+```
+
 ### `TreeGridValidatorResult`
 
 ```ts
@@ -9184,6 +9218,34 @@ type TreeGridValidatorResult = boolean | string | void | undefined;
 
 ```ts
 type TreeGridValue = string | number | boolean;
+```
+
+### `TreeGridViewInput`
+
+```ts
+interface TreeGridViewInput<R extends TreeGridRow = TreeGridRow> extends TreeGridInput<R>, TreeGridTextOptions<R> {
+    sortRules?: Readonly<Record<string, TimelineRowCompare<R>>>;
+}
+```
+
+### `TreeGridViewProjection`
+
+```ts
+interface TreeGridViewProjection<R extends TreeGridRow = TreeGridRow> {
+    rows: R[];
+    cells: TreeGridCell[];
+    matchedRowIds: string[];
+    diagnostics: TimelineViewDiagnostic[];
+}
+```
+
+### `TreeGridViewState`
+
+```ts
+interface TreeGridViewState {
+    sort?: readonly TimelineViewSort[];
+    filters?: readonly TimelineViewFilter[];
+}
 ```
 
 ### `UseAsyncGraphLayoutOptions`
@@ -10615,6 +10677,12 @@ function projectTimelineRows<R extends TimelineRow>(input: TimelineRowsInput<R>,
 function projectTimelineView<R extends TimelineRow, B extends TimelineBar, D extends TimelineDependency = TimelineDependency>(input: TimelineViewInput<R, B, D>, state: TimelineViewState): TimelineViewProjection<R, B, D>;
 ```
 
+### `projectTreeGridRows`
+
+```ts
+function projectTreeGridRows<R extends TreeGridRow>(input: TreeGridViewInput<R>, state: TreeGridViewState): TreeGridViewProjection<R>;
+```
+
 ### `propagateEdit`
 
 ```ts
@@ -11098,6 +11166,12 @@ function traverseGraph<E extends GraphEdge = GraphEdge>(graph: {
 function treeGridCellContentFromTimeBucket(cell: TimeBucketCell, extra?: Omit<TreeGridCellContent, 'value' | 'status'>): TreeGridCellContent;
 ```
 
+### `treeGridCellText`
+
+```ts
+function treeGridCellText<R extends TreeGridRow>(index: TreeGridIndex<R>, rowId: string, columnId: string, options?: TreeGridTextOptions<R>): string;
+```
+
 ### `treeGridCellValue`
 
 ```ts
@@ -11138,7 +11212,7 @@ function treeGridColumnWindow(offsets: readonly number[], options: {
 ### `treeGridDefaultLabels`
 
 ```ts
-const treeGridDefaultLabels: Readonly<TreeGridLabels>;
+const treeGridDefaultLabels: Readonly<Required<TreeGridLabels>>;
 ```
 
 ### `treeGridDropAt`

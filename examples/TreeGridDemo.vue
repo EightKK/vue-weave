@@ -13,6 +13,7 @@ import {
   type TreeGridRowCreate, type TreeGridRowDelete, type TreeGridSheetEdit, type ViewBinding, type ViewTargetEvent,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
+import TreeGridColumnsDemo from './TreeGridColumnsDemo.vue'
 import StatusLine from './components/StatusLine.vue'
 import { useDemoLocale } from './i18n'
 
@@ -259,4 +260,6 @@ const rtl = ref(false)
       :labels="{ ...labels.graph, region: t({ en: 'Categories and suppliers', ja: 'カテゴリーと仕入先' }) }" @target-activate="activateInGraph"
       @background-click="clearSelection" @idle-escape="clearSelection" />
   </DemoPanel>
+  <!-- The opt-in header controls (column widths, sorting and filtering) on a smaller grid. -->
+  <TreeGridColumnsDemo />
 </template>

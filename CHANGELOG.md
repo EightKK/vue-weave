@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- TreeGrid: opt-in column resizing, header sorting and header filtering, as in GanttChart. `columnsResizable` (with `minColumnWidth`, `maxColumnWidth` and `validateColumnResize`) adds a separator to the tree column header and each column header that proposes `column-resize` (`TimelineColumnResize`; `timelineLabelColumnId` names the tree column, accepted through `treeColumnWidth`) by pointer drag or arrow keys, or `column-resize-rejected`. `sortableColumns` and `filterableColumns` add sort buttons (`aria-sort` on the header of the first rule) and filter dialogs that propose `update:sort` and `update:filters` (`v-model:sort`, `v-model:filters`) from the controlled `sort` and `filters`. New optional `TreeGridLabels`: `resizeColumn`, `columnResizeRejected`, `sortBy`, `sortedAscending`, `sortedDescending`, `filterBy`, `filtered`, `filterContains`, `filterValues` and `clearFilter`. Without the new props the grid renders and behaves as before.
+- Core: `projectTreeGridRows(input, { sort, filters })` applies those proposals while keeping the hierarchy (siblings sorted within their parent, filtered rows with all their ancestors, the sparse cells of the kept rows), and `treeGridCellText(index, rowId, columnId, options?)` gives the text the grid shows in a cell. The "Tree grid" example adds a cost breakdown with these header controls.
+
 ### Changed
 
 - `levelResources` is much faster on long horizons: placing a task now reads remaining capacity and free working time only as far as that task's placement needs, instead of from its earliest start to the end of the horizon. In the benchmark of `docs/performance.md`, 3,000 tasks went from about 1 s to under 0.2 s and 10,000 tasks from about 13 s to under 1 s. Results are unchanged: the same dates, leveled tasks, delays, overloads, unresolved tasks, traces and errors.

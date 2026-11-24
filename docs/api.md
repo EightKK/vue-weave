@@ -100,6 +100,7 @@ The prop checks of GanttChart and NetworkGraph follow the same class rule: a Ran
 - [TreeGrid](#treegrid)
   - [Tree grid editing](#tree-grid-editing)
   - [Tree grid row structure](#tree-grid-row-structure)
+  - [Tree grid column widths, sorting and filtering](#tree-grid-column-widths-sorting-and-filtering)
   - [Tree grid helpers](#tree-grid-helpers)
 - [Core entry point](#core-entry-point)
   - [Graph routing](#graph-routing)
@@ -1347,6 +1348,9 @@ An opt-in controlled component that unifies a tree grid and a matrix: a tree of 
 | editable, validateCellEdit | boolean / false, TreeGridCellEditValidator / undefined | Cell editing in the columns that have an `editor`; see [Editing](#tree-grid-editing) |
 | spreadsheet, validateSheetEdit, maxSheetCells | boolean / false, TreeGridSheetEditValidator / undefined, number / 10000 | Range selection, copy, cut, paste, clear and fill down |
 | rowsEditable, validateRowCreate, validateRowDelete, validateRowMove | boolean / false, validators / undefined | Row create, delete and move proposals; see [Row structure](#tree-grid-row-structure) |
+| columnsResizable, minColumnWidth, maxColumnWidth, validateColumnResize | boolean / false, number / 48, number / 800, ColumnResizeValidator / undefined | Resize separators on the tree column and each column header that propose new widths; see [Column widths, sorting and filtering](#tree-grid-column-widths-sorting-and-filtering) |
+| sortableColumns, sort | boolean or readonly string[] / undefined, readonly TimelineViewSort[] / undefined | Header sort buttons that propose the next sort through `update:sort` (`v-model:sort`); see the same section |
+| filterableColumns, filters | boolean or readonly string[] / undefined, readonly TimelineViewFilter[] / undefined | Header filter buttons with a small dialog that propose column filters through `update:filters` (`v-model:filters`); see the same section |
 
 | Event | Payload | Meaning |
 | --- | --- | --- |
@@ -1358,6 +1362,8 @@ An opt-in controlled component that unifies a tree grid and a matrix: a tree of 
 | sheet-edit, sheet-edit-rejected | TreeGridSheetEdit, (change, reason) | A spreadsheet batch and its rejection (`validateSheetEdit`, a value its editor cannot read, or a paste that does not fit; a batch rejected before it was built has empty `edits`) |
 | edit-cancel | TreeGridEditCancel | An open editor (`kind: 'cell'`), a fill handle drag (`fill`) or a row drag (`row-move`) ended without a proposal: `reason` is `escape`, `source-changed` (new `rows`, `columns` or `cells`, or a change of `editable`, `spreadsheet` or `rowsEditable`), `hidden` (the edited row is no longer displayed), `blur` (the editor lost focus with a value that could not be proposed), `pointer-cancel` or `api` |
 | row-create, row-delete, row-move | TreeGridRowCreate, TreeGridRowDelete, TimelineRowMove | Row structure proposals, each with a `-rejected` event (change, reason) |
+| column-resize, column-resize-rejected | TimelineColumnResize, (change, reason) | A column width proposal (`columnsResizable`) and its rejection by `validateColumnResize` |
+| update:sort, update:filters | TimelineViewSort[], TimelineViewFilter[] | Header sort and filter proposals (`sortableColumns`, `filterableColumns`) |
 | validation-error | Error | Invalid rows, columns or cells (the errors of `createTreeGridIndex`). The grid renders its empty state and the error is rethrown, as in the other components |
 
 Slots are `cell({ row, column, cell, text, active, highlighted })` with the resolved `TreeGridCellView`, `row-header({ row, line, active, highlighted, selected })` (after the expand toggle), `status({ row, status, text })` for the status line of children that are not loaded, and `empty()`. Keep slot content non-interactive: the cells take the focus. Methods are `focusCell(position)`, `revealRow(rowId, { focus?, columnId? })` (a `RevealResult`: `revealed`, `hidden-by-collapse` with the nearest displayed ancestor as `proxyId`, or `unknown`), `startEdit(position?)`, `cancelEdit()`, `copySelection()` (the range as tab-separated text) and `pasteText(text)`. The public component type is `TreeGridComponent`, and `TreeGridExposed<R>` types a template ref.
@@ -1411,6 +1417,38 @@ const onRowMove = (change: TimelineRowMove) => commit({ rows: moveTimelineRow(hi
 //   @row-delete="onRowDelete" @row-move="onRowMove" />
 ```
 
+### Tree grid column widths, sorting and filtering
+
+Opt-in with `columnsResizable`, `sortableColumns` and `filterableColumns`; they work like GanttChart's [Column resizing](#column-resizing) and [Header sorting and filtering](#header-sorting-and-filtering), with the same payloads. Without them the header markup, names and events are unchanged. The grid stays controlled: it previews a separator drag and proposes widths, shows the `sort` and `filters` props and proposes changes, and never resizes, reorders or filters anything itself. The tree column's ID in proposals, sort rules, filters and option lists is `timelineLabelColumnId` (`'$label'`), which no column may use while one of these options is on.
+
+| API | Behavior |
+| --- | --- |
+| Header cells | With one of the options, the header cells are keyed by column, so a focused control stays with its column while the columns scroll. A header with a control or separator is named by its label alone (`aria-label`), and one with sort or filter controls gets `vw-header-controls`. The header controls are tabbable and outside the grid's roving focus: keys in them do not move the active cell, and new rows from an applied sort or filter do not take the focus from them. Option lists may name only `timelineLabelColumnId` and column IDs; an unknown ID, a `minColumnWidth` that is not finite and positive, or a `maxColumnWidth` below it is reported through `validation-error`. |
+| columnsResizable | A separator (`vw-column-resize`, `role="separator"`, `aria-orientation="vertical"`, focusable) on the inline-end edge of the tree column header and of each column header, named `labels.resizeColumn` ("Resize column") and the column label, with `aria-valuenow` (the width), `aria-valuemin` and `aria-valuemax` (`minColumnWidth` and `maxColumnWidth`, defaults 48 and 800). ArrowRight and ArrowLeft move the edge 10 px on screen (40 px with Shift; ArrowLeft widens in right-to-left grids), Home proposes the minimum and End the maximum. A pointer drag previews the width in the header and the cells and proposes it on release (`source: 'pointer'`); Escape, pointer cancellation, lost capture and a change of `rows`, `columns`, `cells`, `treeColumnWidth`, the limits, `columnsResizable` or `dir` cancel it without a proposal. |
+| column-resize(change) | `TimelineColumnResize`: `id` (the column ID, or `timelineLabelColumnId` for the tree column), `before`, `after` (whole pixels within the limits) and `source`. Accept it by setting the column's `width`, or `treeColumnWidth`. An unchanged width is not proposed. `validateColumnResize` rejects with false (`labels.columnResizeRejected`, "This column resize was rejected.") or a reason: `column-resize-rejected(change, reason)`, announced in the live region. |
+| Sort button | `vw-column-sort`, named `labels.sortBy` ("Sort by") and the column label, with `labels.sortedAscending` or `labels.sortedDescending` in parentheses when `sort` has a rule for the column ("Sort by Budget (descending)"), and the ▲ or ▼ glyph (`vw-is-sorted`). The column header of the first rule has `aria-sort` `ascending` or `descending`; sortable headers without a rule have `none`. Click, Enter or Space proposes `nextTimelineSort(sort, columnId)` through `update:sort`: a new rule comes first, ascending; an ascending rule turns descending; a descending rule is removed. |
+| Filter button and dialog | `vw-column-filter` (`aria-haspopup="dialog"`, `aria-expanded`), named `labels.filterBy` ("Filter") and the column label, plus `labels.filtered` in parentheses while the column has a filter (`vw-is-active`). It opens a dialog (`vw-column-filter-popover`) under the header with a text box (`labels.filterContains`, "Contains"), for a column whose editor is a `select` of texts or numbers a group of checkboxes (`labels.filterValues`, "Show values"), and a `labels.clearFilter` button. Typing or toggling proposes `update:filters` at once (composed text once, when the composition ends), and the controls show the applied `filters` again afterwards. Escape closes it and returns focus to the button; a press or focus outside the header cell closes it. It never renders on the server. |
+| update:sort(sort), update:filters(filters) | `TimelineViewSort[]` and `TimelineViewFilter[]`, as GanttChart proposes them. |
+
+Apply the proposals with `projectTreeGridRows({ rows, columns, cells }, { sort, filters })`: it keeps the rows that match every filter with all their ancestors, sorts siblings within their parent, and returns the `rows` and the `cells` of the kept rows for the grid. Edits still apply to the full data. With a sort or filter applied, the sibling positions of `row-create` and `row-move` refer to the displayed siblings, so turn `rowsEditable` off or map the positions while a view is applied.
+
+```ts
+import { projectTreeGridRows, timelineLabelColumnId, type TimelineColumnResize, type TimelineViewFilter, type TimelineViewSort } from '@eightkk/vue-weave/core'
+
+const sort = ref<TimelineViewSort[]>([])
+const filters = ref<TimelineViewFilter[]>([])
+const treeWidth = ref(240)
+const view = computed(() => projectTreeGridRows({ rows: rows.value, columns: columns.value, cells: cells.value }, { sort: sort.value, filters: filters.value }))
+function onColumnResize(change: TimelineColumnResize) {
+  if (change.id === timelineLabelColumnId) treeWidth.value = change.after
+  else columns.value = columns.value.map(column => column.id === change.id ? { ...column, width: change.after } : column)
+}
+// <TreeGrid :rows="view.rows" :cells="view.cells" :columns="columns" :tree-column-width="treeWidth" columns-resizable
+//   sortable-columns filterable-columns v-model:sort="sort" v-model:filters="filters" @column-resize="onColumnResize" />
+```
+
+The CSS classes are GanttChart's (`vw-column-resize`, `vw-header-controls`, `vw-column-sort`, `vw-column-title`, `vw-sort-indicator`, `vw-column-filter`, `vw-column-filter-popover`, `vw-column-filter-text`, `vw-column-filter-values`, `vw-column-filter-clear`); they use the existing theme variables, add no new one, and the separators and filter controls are hidden in print.
+
 ### Tree grid helpers
 
 These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
@@ -1431,6 +1469,8 @@ These functions are part of `@eightkk/vue-weave/core` and do not need Vue.
 | treeGridRowCreate(rows, id, placement), insertTreeGridRow(rows, change, row) | A create proposal, and the rows (in tree preorder) with the new row in place |
 | deleteTreeGridRows({ rows, cells? }, { ids, includeDescendants }) | New `{ rows, cells }` without the deleted rows |
 | treeGridRowMoveForKey(key, rows, id, rtl?), treeGridDropAt(index, lines, id, line, fraction) | The target of a row move key (`'ignore'` for other keys, undefined when the row cannot move) and the drop place of a row drag |
+| treeGridCellText(index, rowId, columnId, { formatValue?, labels? }) | The text the default rendering shows in a cell with a value (its `label`, `formatValue`, `labels.yes` or `labels.no` for booleans without an editor `format`, the editor's format, else the value as text); `''` for a cell without a value |
+| projectTreeGridRows({ rows, columns, cells?, missingCell?, sortRules?, formatValue?, labels? }, { sort?, filters? }) | `TreeGridViewProjection`: the kept `rows` (matches with all their ancestors; the input's row objects), their `cells`, `matchedRowIds` and `diagnostics`. A filter's `text` must occur, ignoring case, in the shown cell text (`treeGridCellText`; the row label for `timelineLabelColumnId`), and its `values` must list the cell's raw string or number value; a cell without a value meets no condition. Siblings are sorted stably within their parent: numbers as numbers, booleans as 0 and 1, anything else as text, cells without a value last in both directions; `timelineLabelColumnId` compares row labels and a `sortRules` entry with the rule's ID wins. Unknown columns and rules become `unknown-column` and `unknown-sort-rule` diagnostics. Validates like `createTreeGridIndex`, throws a TypeError or RangeError for a malformed state, never changes its input and is iterative |
 
 <!-- #endregion tree-grid -->
 
