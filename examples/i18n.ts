@@ -126,7 +126,8 @@ const japanese: ComponentLabels = Object.freeze({
     dayEditHint: '左右の矢印キーで予定を1日ずつ移動し、Shift で終了を伸縮します。Escape でドラッグを取り消します。',
     monthEditHint: '左右の矢印キーで1日、上下キーで1週ずつ移動し、Shift+左右で終日予定の終了を伸縮します。Escape でドラッグを取り消します。',
     rejected: 'この変更は却下されました。', createRejected: 'この新しい予定は却下されました。',
-    resources: '資源', now: '現在', empty: '表示する予定がありません', recurring: '繰り返し',
+    resources: '資源', now: '現在', empty: '表示する予定がありません', recurring: '繰り返し', agenda: '予定リスト',
+    agendaEditHint: '上下の矢印キーで予定の間を移動します。左右キーで予定を1日ずつ移動し、Shift+左右で終日予定の終了を伸縮します。',
   },
   palette: { region: '図形パレット', search: '図形を絞り込む', noMatches: '一致する図形がありません。' },
   inspector: {

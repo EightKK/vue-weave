@@ -319,8 +319,8 @@ export const examples: readonly ExampleEntry[] = [
     category: 'calendar-board',
     title: { en: 'Event calendar', ja: 'イベントカレンダー' },
     description: {
-      en: 'Room bookings in day, week and month views with rooms and all-day events. Moves, resizes and new bookings are proposals that the parent checks for double bookings, and a weekly recurring meeting can be edited once, from one date on or as a series.',
-      ja: '会議室の予約を日・週・月表示で、部屋ごとの列や終日予定とともに表示します。移動、長さの変更、新規予約は提案として親が二重予約を確認して適用し、毎週の定例会議は1回分、以降すべて、シリーズ全体のいずれかで編集できます。',
+      en: 'Room bookings in day, week, month and agenda views with rooms and all-day events. Moves, resizes and new bookings are proposals that the parent checks for double bookings, and a weekly recurring meeting can be edited once, from one date on or as a series.',
+      ja: '会議室の予約を日・週・月・予定リスト表示で、部屋ごとの列や終日予定とともに表示します。移動、長さの変更、新規予約は提案として親が二重予約を確認して適用し、毎週の定例会議は1回分、以降すべて、シリーズ全体のいずれかで編集できます。',
     },
     component: 'examples/EventCalendarDemo.vue',
     sources: ['examples/EventCalendarDemo.vue'],

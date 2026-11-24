@@ -1,4 +1,4 @@
-// Calendar arithmetic and event layout for EventCalendar (day, week and month views), in epoch milliseconds.
+// Calendar arithmetic and event layout for EventCalendar (day, week, month and agenda views), in epoch milliseconds.
 // Days and weeks follow local dates in an IANA time zone (default UTC), so a day across a daylight-saving change has
 // 23 or 25 hours and still starts at local midnight. Intervals are half-open `[start, end)`; a zero-duration event is
 // a point in time. Nothing here reads the runtime's clock, locale or time zone.
@@ -10,8 +10,12 @@ import type { ChartTone } from './types.js'
 
 const dayMs = 86_400_000
 
-/** A view of EventCalendar: one day, one week or the weeks of one month. */
-export type EventCalendarView = 'day' | 'week' | 'month'
+/**
+ * A view of EventCalendar: one day, one week, the weeks of one month, or `agenda`, a chronological list of the events
+ * of a week (or of `agendaDays` days) grouped by day. `agenda` is opt-in: the built-in view switch offers it only when
+ * the `views` prop lists it.
+ */
+export type EventCalendarView = 'day' | 'week' | 'month' | 'agenda'
 
 /** An appointment of EventCalendar. `D` types the opaque `data`. */
 export interface CalendarEvent<D = unknown> {
@@ -63,6 +67,12 @@ export interface EventCalendarOptions {
   timeZone?: string
   /** First day of a week, 0 = Sunday to 6 = Saturday. Default 1 (Monday). */
   weekStartsOn?: number
+  /**
+   * Length of the `agenda` view in days, an integer from 1 to 366. Without it, the agenda shows the week that contains
+   * the date (from `weekStartsOn`) and steps by weeks, like the `week` view; with it, the agenda shows that many days
+   * from the local day of the date and steps by that many days. Other views ignore it.
+   */
+  agendaDays?: number
 }
 
 /** One local day of a calendar view. */
@@ -107,6 +117,30 @@ export interface CalendarEventLaneLayout {
   segments: CalendarEventLane[]
   /** Number of lanes used (the largest lane plus one, or 0). */
   lanes: number
+}
+
+/** One entry of a day of the agenda (`layoutCalendarAgenda`): an event, or the part of a multi-day event on that day. */
+export interface CalendarAgendaItem {
+  id: string
+  /** The event interval clipped to the day. */
+  start: number
+  end: number
+  /** The event is `allDay`, or covers the whole day: it starts at or before the day's start and ends at or after its end. */
+  allDay: boolean
+  /** The event starts before this day, or ends after it. */
+  continuesBefore: boolean
+  continuesAfter: boolean
+}
+
+/** One day of the agenda (`layoutCalendarAgenda`) with its entries. */
+export interface CalendarAgendaDay {
+  /** Index of the day in the `days` argument. */
+  index: number
+  /** The day's range, copied from the `days` argument. */
+  start: number
+  end: number
+  /** The events of the day in agenda order; empty for a day without events. */
+  items: CalendarAgendaItem[]
 }
 
 /** Proposal of EventCalendar `edit`: a move or resize of one event, and optionally a new resource. */
@@ -199,9 +233,16 @@ export interface EventCalendarLabels {
   empty: string
   /** Last part of the accessible name of an occurrence of a recurring series (with `seriesId`). Default "Recurring". */
   recurring?: string
+  /** Name of the `agenda` view in the view switch and of its list of days. Default "Agenda". */
+  agenda?: string
+  /**
+   * Description of editable events of the `agenda` view. Default: an English hint naming Up and Down (move between
+   * events) and Left and Right (move by a day), or `dayEditHint` when only that is given.
+   */
+  agendaEditHint?: string
 }
 
-const views: readonly EventCalendarView[] = ['day', 'week', 'month']
+const views: readonly EventCalendarView[] = ['day', 'week', 'month', 'agenda']
 
 function checkTime(name: string, time: number) {
   if (typeof time !== 'number' || !Number.isFinite(time)) throw new RangeError(`${name} must be finite`)
@@ -212,9 +253,12 @@ function checkView(view: EventCalendarView) {
 }
 
 function resolve(options: EventCalendarOptions = {}) {
-  const { timeZone = 'UTC', weekStartsOn = 1 } = options
+  const { timeZone = 'UTC', weekStartsOn = 1, agendaDays } = options
   if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('weekStartsOn must be 0 to 6')
-  return { zone: zoneFormat(timeZone), weekStartsOn }
+  if (agendaDays !== undefined && (!Number.isInteger(agendaDays) || agendaDays < 1 || agendaDays > 366)) {
+    throw new RangeError('agendaDays must be an integer from 1 to 366')
+  }
+  return { zone: zoneFormat(timeZone), weekStartsOn, agendaDays }
 }
 
 type Zone = Intl.DateTimeFormat
@@ -242,10 +286,11 @@ function weekStartWall(midnight: number, weekStartsOn: number) {
 }
 
 /** The first and last-plus-one wall midnights of the days a view shows around `date`. */
-function viewWalls(view: EventCalendarView, date: number, zone: Zone, weekStartsOn: number) {
+function viewWalls(view: EventCalendarView, date: number, zone: Zone, weekStartsOn: number, agendaDays?: number) {
   const midnight = wallMidnight(zone, date)
   if (view === 'day') return { first: midnight, end: midnight + dayMs }
-  if (view === 'week') {
+  if (view === 'agenda' && agendaDays !== undefined) return { first: midnight, end: midnight + agendaDays * dayMs }
+  if (view === 'week' || view === 'agenda') {
     const first = weekStartWall(midnight, weekStartsOn)
     return { first, end: first + 7 * dayMs }
   }
@@ -259,27 +304,29 @@ function viewWalls(view: EventCalendarView, date: number, zone: Zone, weekStarts
 
 /**
  * The half-open time range a view shows around `date`: the local day, the week that contains it (from `weekStartsOn`),
- * or the whole weeks of the month grid, including the leading and trailing days of the neighbouring months. Load the
- * events that overlap this range. Throws RangeError for an unknown view, a non-finite date, an invalid `weekStartsOn`
+ * or the whole weeks of the month grid, including the leading and trailing days of the neighbouring months. `agenda`
+ * covers the same week as `week`, or with `agendaDays` that many local days from the day of `date`. Load the events that
+ * overlap this range. Throws RangeError for an unknown view, a non-finite date, an invalid `weekStartsOn`, `agendaDays`
  * or time zone.
  */
 export function eventCalendarRange(view: EventCalendarView, date: number, options?: EventCalendarOptions): TimeRange {
   checkView(view)
   checkTime('date', date)
-  const { zone, weekStartsOn } = resolve(options)
-  const { first, end } = viewWalls(view, date, zone, weekStartsOn)
+  const { zone, weekStartsOn, agendaDays } = resolve(options)
+  const { first, end } = viewWalls(view, date, zone, weekStartsOn, agendaDays)
   return { start: zonedInstant(zone, first), end: zonedInstant(zone, end) }
 }
 
 /**
- * The local days a view shows around `date`, in order: one for `day`, seven for `week` and the 28 to 42 days of the
- * month grid for `month` (`inMonth` is false for days of the neighbouring months).
+ * The local days a view shows around `date`, in order: one for `day`, seven for `week`, the 28 to 42 days of the
+ * month grid for `month` (`inMonth` is false for days of the neighbouring months) and seven or `agendaDays` for
+ * `agenda`.
  */
 export function eventCalendarDays(view: EventCalendarView, date: number, options?: EventCalendarOptions): EventCalendarDay[] {
   checkView(view)
   checkTime('date', date)
-  const { zone, weekStartsOn } = resolve(options)
-  const walls = viewWalls(view, date, zone, weekStartsOn)
+  const { zone, weekStartsOn, agendaDays } = resolve(options)
+  const walls = viewWalls(view, date, zone, weekStartsOn, agendaDays)
   const days: EventCalendarDay[] = []
   for (let wall = walls.first; wall < walls.end; wall += dayMs) {
     days.push(dayAt(zone, wall, walls.monthStart === undefined || (wall >= walls.monthStart && wall < walls.monthEnd!)))
@@ -296,17 +343,21 @@ export function eventCalendarMonthGrid(date: number, options?: EventCalendarOpti
 }
 
 /**
- * The anchor date `steps` views before (negative) or after `date`: whole local days for `day`, weeks for `week` and
- * months for `month`, keeping the local time of day. A month step keeps the day of the month, clamped to the length of
- * the target month (January 31 + 1 month is February 28 or 29). Throws RangeError for a non-integer `steps`.
+ * The anchor date `steps` views before (negative) or after `date`: whole local days for `day`, weeks for `week`,
+ * months for `month`, and weeks or `agendaDays` days for `agenda`, keeping the local time of day. A month step keeps
+ * the day of the month, clamped to the length of the target month (January 31 + 1 month is February 28 or 29). Throws
+ * RangeError for a non-integer `steps`.
  */
 export function shiftEventCalendarDate(view: EventCalendarView, date: number, steps: number, options?: EventCalendarOptions): number {
   checkView(view)
   checkTime('date', date)
   if (!Number.isInteger(steps)) throw new RangeError('steps must be an integer')
-  const { zone } = resolve(options)
+  const { zone, agendaDays } = resolve(options)
   const wall = wallOf(zone, date)
-  if (view !== 'month') return zonedInstant(zone, wall + steps * (view === 'week' ? 7 : 1) * dayMs)
+  if (view !== 'month') {
+    const days = view === 'day' ? 1 : view === 'agenda' && agendaDays !== undefined ? agendaDays : 7
+    return zonedInstant(zone, wall + steps * days * dayMs)
+  }
   const at = new Date(wall)
   const target = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + steps, 1))
   const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
@@ -400,6 +451,18 @@ export function layoutCalendarDayEvents(
   return result
 }
 
+function checkDays(days: readonly TimeRange[]) {
+  if (!Array.isArray(days as unknown)) throw new RangeError('days must be an array')
+  for (let index = 0; index < days.length; index++) {
+    const day = days[index]!
+    checkTime('day start', day?.start)
+    checkTime('day end', day.end)
+    if (day.end <= day.start || (index > 0 && day.start < days[index - 1]!.end)) {
+      throw new RangeError('days must be ascending, non-overlapping ranges with end after start')
+    }
+  }
+}
+
 /**
  * Lanes for events over a row of days, such as a week of the month view or the all-day row of the week view. `days`
  * are ascending, non-overlapping ranges (usually `EventCalendarDay`s). Each event that overlaps a day (a zero-duration
@@ -410,14 +473,7 @@ export function layoutCalendarDayEvents(
 export function packCalendarEventLanes(
   events: readonly { id: string; start: number; end: number }[], days: readonly TimeRange[],
 ): CalendarEventLaneLayout {
-  for (let index = 0; index < days.length; index++) {
-    const day = days[index]!
-    checkTime('day start', day.start)
-    checkTime('day end', day.end)
-    if (day.end <= day.start || (index > 0 && day.start < days[index - 1]!.end)) {
-      throw new RangeError('days must be ascending, non-overlapping ranges with end after start')
-    }
-  }
+  checkDays(days)
   const seen = new Set<string>()
   const covered: (CalendarEventLane & { start: number })[] = []
   for (const event of events) {
@@ -448,6 +504,43 @@ export function packCalendarEventLanes(
     return { ...segment, lane }
   })
   return { segments, lanes: laneEnds.length }
+}
+
+/**
+ * The entries of an agenda: for each of `days` (ascending, non-overlapping ranges, usually the `EventCalendarDay`s of
+ * the `agenda` view), the events that overlap it (a zero-duration event when its time is inside it). A multi-day event
+ * is listed on every day it covers, clipped to the day, with `continuesBefore` and `continuesAfter`; on a day it covers
+ * completely it counts as all-day, like an `allDay` event. Order within a day: all-day entries first, then by start,
+ * longer first, then ID, so the result does not depend on input order. Every day is returned, with empty `items` when
+ * it has no events. Throws Error for an invalid or duplicate event ID and RangeError for an invalid interval or day.
+ * Returns new objects and leaves its arguments unchanged.
+ */
+export function layoutCalendarAgenda(
+  events: readonly { id: string; start: number; end: number; allDay?: boolean }[], days: readonly TimeRange[],
+): CalendarAgendaDay[] {
+  if (!Array.isArray(events as unknown)) throw new RangeError('events must be an array')
+  checkDays(days)
+  const seen = new Set<string>()
+  for (const event of events) {
+    checkId('event', event?.id, seen)
+    checkInterval(event)
+  }
+  const sorted = [...events].sort(compareEvents)
+  return days.map((day, index) => {
+    const items: (CalendarAgendaItem & { order: number })[] = []
+    sorted.forEach((event, order) => {
+      const point = event.end === event.start
+      const overlaps = point ? event.start >= day.start && event.start < day.end : event.start < day.end && event.end > day.start
+      if (!overlaps) return
+      items.push({
+        id: event.id, start: Math.max(event.start, day.start), end: Math.min(event.end, day.end), order,
+        allDay: Boolean(event.allDay) || (!point && event.start <= day.start && event.end >= day.end),
+        continuesBefore: event.start < day.start, continuesAfter: event.end > day.end,
+      })
+    })
+    items.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.order - b.order)
+    return { index, start: day.start, end: day.end, items: items.map(({ order: _order, ...item }) => item) }
+  })
 }
 
 /**

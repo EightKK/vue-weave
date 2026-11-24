@@ -163,12 +163,13 @@ export type {
 } from './graphIncremental.js'
 export {
   eventCalendarRange, eventCalendarDays, eventCalendarMonthGrid, shiftEventCalendarDate, eventCalendarTimeOfDay, eventCalendarTimeAt,
-  layoutCalendarDayEvents, packCalendarEventLanes, validateCalendarEvents,
+  layoutCalendarDayEvents, packCalendarEventLanes, layoutCalendarAgenda, validateCalendarEvents,
 } from './eventCalendar.js'
 export type {
   EventCalendarView, CalendarEvent, CalendarResource, EventCalendarOptions, EventCalendarDay, CalendarEventColumn, CalendarEventLane,
   CalendarEventLaneLayout, EventCalendarEdit, EventCalendarCreate, EventCalendarEditValidator, EventCalendarCreateValidator,
   EventCalendarEditCancelReason, EventCalendarEditCancel, EventCalendarBackgroundClick, EventCalendarLabels,
+  CalendarAgendaItem, CalendarAgendaDay,
 } from './eventCalendar.js'
 export {
   parseRecurrenceRule, formatRecurrenceRule, expandRecurrence, expandRecurringEvents, applyRecurringEdit,

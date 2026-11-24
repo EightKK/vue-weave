@@ -16,7 +16,9 @@ const { t, labels, intlLocale } = useDemoLocale()
 // and `validateCreate` reject double bookings. All times are UTC, so the demo never depends on the local zone. The weekly
 // sync is a recurring series (`recurrence`): the calendar shows its occurrences from `expandRecurringEvents`, and an edit
 // of one occurrence is applied with `applyRecurringEdit` to this event, this and following events, or all of them.
+// The view switch also offers the opt-in agenda view (`views`), a list of the week's bookings by day.
 const at = (date: string, time = '00:00') => Date.parse(`2026-11-${date}T${time}:00Z`)
+const views: EventCalendarView[] = ['day', 'week', 'month', 'agenda']
 const rooms: CalendarResource[] = [
   { id: 'atlas', label: 'Atlas', detail: t({ en: '12 seats', ja: '12 席' }) },
   { id: 'borealis', label: 'Borealis', detail: t({ en: '6 seats', ja: '6 席' }) },
@@ -153,7 +155,7 @@ function redo() {
 </script>
 
 <template>
-  <DemoPanel title-id="event-calendar-title" :title="t({ en: 'Event calendar', ja: 'イベントカレンダー' })" :subtitle="t({ en: 'Day, week and month views with rooms, all-day events and bookings the parent validates and applies.', ja: '部屋、終日予定、親が検証して適用する予約を、日・週・月で表示します。' })">
+  <DemoPanel title-id="event-calendar-title" :title="t({ en: 'Event calendar', ja: 'イベントカレンダー' })" :subtitle="t({ en: 'Day, week, month and agenda views with rooms, all-day events and bookings the parent validates and applies.', ja: '部屋、終日予定、親が検証して適用する予約を、日・週・月・予定リストで表示します。' })">
     <template #options>
       <label><input v-model="showRooms" type="checkbox"> {{ t({ en: 'Rooms in day view', ja: '日表示で部屋ごとに表示' }) }}</label>
       <label><input v-model="readonly" type="checkbox"> {{ t({ en: 'Read-only', ja: '読み取り専用' }) }}</label>
@@ -163,7 +165,7 @@ function redo() {
       <button type="button" :disabled="!history.canRedo.value" @click="redo">{{ t({ en: 'Redo', ja: 'やり直す' }) }}</button>
     </template>
     <EventCalendar
-      v-model:view="view" v-model:date="date" v-model:selected-id="selectedId"
+      v-model:view="view" v-model:date="date" v-model:selected-id="selectedId" :views="views"
       :events="shown" :resources="showRooms ? rooms : undefined" :now="now" :day-start="7" :day-end="20" :height="440"
       :readonly="readonly" creatable :labels="{ ...labels.eventCalendar, region: t({ en: 'Room bookings', ja: '会議室の予約' }) }" :locale="intlLocale" :dir="rtl ? 'rtl' : 'ltr'" :validate-edit="validateEdit" :validate-create="validateCreate"
       @edit="applyEdit" @edit-rejected="rejected" @create="create" @create-rejected="rejected" @select="select"
@@ -172,8 +174,8 @@ function redo() {
     />
     <StatusLine :label="t({ en: 'Calendar status', ja: 'カレンダーの状態' })">{{ status }}</StatusLine>
     <p class="hint">{{ t({
-      en: `Loaded range: ${loadedText}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes. Escape clears the selection, and so does a click on empty space in read-only mode.`,
-      ja: `読み込んだ範囲: ${loadedText}。フォーカスした予約は矢印キーで移動、Shift+矢印で伸縮し、日表示では左右キーで別の部屋へ移動します。週次定例は毎週火曜日に繰り返し、「繰り返し予定の編集」で編集の対象を選びます。Escape で選択を解除します。読み取り専用では空いている所をクリックしても解除します。`,
+      en: `Loaded range: ${loadedText}. Arrow keys move a focused booking, Shift+arrows resize it, and in the day view Left and Right move it to another room; in the agenda, Up and Down move between bookings. The weekly sync repeats every Tuesday; "Recurring edits" chooses which of its occurrences an edit changes. Escape clears the selection, and so does a click on empty space in read-only mode.`,
+      ja: `読み込んだ範囲: ${loadedText}。フォーカスした予約は矢印キーで移動、Shift+矢印で伸縮し、日表示では左右キーで別の部屋へ移動します。予定リストでは上下キーで予約間を移動します。週次定例は毎週火曜日に繰り返し、「繰り返し予定の編集」で編集の対象を選びます。Escape で選択を解除します。読み取り専用では空いている所をクリックしても解除します。`,
     }) }}</p>
   </DemoPanel>
 </template>
