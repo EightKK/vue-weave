@@ -13,6 +13,8 @@ import type { ChartDirection } from '../core/types.js'
 import { elementWithData, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
+import { renderEventCalendarSvg, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 const minute = 60_000
 const hour = 3_600_000
@@ -842,7 +844,33 @@ function scrollToTime(time: number) {
   element.scrollTop = Math.max(0, pxOf(timeOfDay(day.start, time)))
 }
 
-defineExpose({ cancelEdit, scrollToTime })
+/**
+ * A standalone SVG document of the shown view with the default rendering and the current theme colours: the whole time
+ * grid from `dayStart` to `dayEnd` whatever is scrolled into view, or the whole month. Slots and the toolbar buttons are
+ * not drawn. Throws the validation error of invalid props, and a RangeError for a view the export does not support.
+ */
+function exportSvg(options: EventCalendarExportOptions<E> = {}) {
+  if (validationError.value) throw validationError.value
+  const { includeSelection = true, theme, width, heading, ...rest } = options
+  return renderEventCalendarSvg(props.events, localDate.value, {
+    ...rest,
+    view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, locale: props.locale, resources: props.resources,
+    dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,
+    formatTime: timeText.value, selectedId: includeSelection ? localSelected.value : undefined,
+    labels: { allDay: messages.value.allDay, more: messages.value.more, resources: messages.value.resources, now: messages.value.now, recurring: messages.value.recurring ?? '' },
+    width: width ?? (root.value?.clientWidth || undefined), heading: heading ?? (title.value || false),
+    direction: isRtl() ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: EventCalendarPngExportOptions<E> = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+
+defineExpose({ cancelEdit, scrollToTime, exportSvg, exportPng })
 
 function eventClasses(event: E, extra: Record<string, boolean>) {
   return [`vw-tone-${event.tone ?? 'blue'}`, {

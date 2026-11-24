@@ -60,6 +60,14 @@ export { placeGraphEdgeLabels } from './graphLabelPlacement.js'
 export type { GraphEdgeLabelPlacement, GraphEdgeLabelPlacementOptions, GraphEdgeLabelSize } from './graphLabelPlacement.js'
 export * from './leveling.js'
 export * from './exportSvg.js'
+export { renderTaskBoardSvg } from './exportBoardSvg.js'
+export type { TaskBoardSvgLabels, TaskBoardSvgOptions, TaskBoardExportOptions, TaskBoardPngExportOptions } from './exportBoardSvg.js'
+export { renderEventCalendarSvg } from './exportCalendarSvg.js'
+export type {
+  EventCalendarSvgLabels, EventCalendarSvgOptions, EventCalendarExportOptions, EventCalendarPngExportOptions,
+} from './exportCalendarSvg.js'
+export { renderTreeGridSvg } from './exportGridSvg.js'
+export type { TreeGridSvgOptions, TreeGridExportOptions, TreeGridPngExportOptions } from './exportGridSvg.js'
 export {
   timelineWbsCodes, timelineRowPosition, moveTimelineRow, indentTimelineRow, outdentTimelineRow,
 } from './rowHierarchy.js'

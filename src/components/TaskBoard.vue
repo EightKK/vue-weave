@@ -6,6 +6,8 @@ import {
   type TaskBoardMoveCancelReason, type TaskBoardPosition,
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
+import { renderTaskBoardSvg, type TaskBoardExportOptions, type TaskBoardPngExportOptions } from '../core/exportBoardSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 import { usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
@@ -492,11 +494,42 @@ function cardStyle(card: C) {
     ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined
 }
 
+/**
+ * A standalone SVG document of the board with the default rendering and the current theme colours: every column, lane
+ * and shown card (respecting `filter` and the collapsed columns and lanes), whatever is scrolled into view. Slots are
+ * not used. Throws the validation error of invalid props.
+ */
+function exportSvg(options: TaskBoardExportOptions<C> = {}) {
+  if (validationError.value) throw validationError.value
+  const { includeSelection = true, theme, ...rest } = options
+  const style = root.value ? getComputedStyle(root.value) : undefined
+  const read = (name: string) => style?.getPropertyValue(name).trim() || undefined
+  return renderTaskBoardSvg(props.cards, props.columns, {
+    ...rest,
+    lanes: props.lanes, filter: props.filter, collapsedColumnIds: collapsedColumns.value, collapsedLaneIds: collapsedLanes.value,
+    selectedId: includeSelection ? props.selectedId : undefined,
+    labels: { empty: messages.value.empty, emptyCell: messages.value.emptyCell, of: messages.value.of, overLimit: messages.value.overLimit, underMinimum: messages.value.underMinimum },
+    wipWarningColor: read('--vw-board-wip-warning'), wipUnderColor: read('--vw-board-wip-under'),
+    direction: isRtl() ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: TaskBoardPngExportOptions<C> = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+
 defineExpose({
   /** Move the keyboard focus to a card. Returns false when the card is not shown. */
   focusCard,
   /** Cancel a pick-up or drag in progress, reporting `card-move-cancel` with reason `api`. */
   cancelMove: () => cancelMove('api'),
+  /** A standalone SVG document of the board; see `TaskBoardExportOptions`. */
+  exportSvg,
+  /** A PNG blob of `exportSvg(options)` at `scale` device pixels per CSS pixel. Browser only. */
+  exportPng,
 })
 </script>
 

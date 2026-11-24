@@ -25,6 +25,8 @@ import { edgeScroller, pastThreshold } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { useTreeGridColumnResize } from './treeGrid/columnResize.js'
 import { scrollToShow, slotKey, splitAround } from './treeGrid/lineSegments.js'
+import { renderTreeGridSvg, type TreeGridExportOptions, type TreeGridPngExportOptions } from '../core/exportGridSvg.js'
+import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
 
 type IdList = readonly string[] | ReadonlySet<string>
 
@@ -1029,7 +1031,41 @@ onBeforeUnmount(() => {
   stopWindowPointer()
 })
 
+/**
+ * A standalone SVG document of the grid with the default rendering and the current theme colours: every displayed line
+ * (respecting the expanded rows) and every column, not only the rendered window, with the sort and filter marks of the
+ * header. The rows are drawn as passed: apply `sort` and `filters` to them as usual. Slots are not used. Throws the
+ * validation error of invalid props.
+ */
+function exportSvg(options: TreeGridExportOptions = {}) {
+  if (invalid.value) throw invalid.value
+  const { includeHighlight = true, theme, ...rest } = options
+  const style = root.value ? getComputedStyle(root.value) : undefined
+  const read = (name: string) => style?.getPropertyValue(name).trim() || undefined
+  return renderTreeGridSvg(props.rows, props.columns, {
+    ...rest,
+    cells: props.cells, missingCell: props.missingCell, expandedIds: expandedSet.value, formatValue: props.formatValue, labels: messages.value,
+    rowHeight: props.rowHeight, headerHeight: props.headerHeight, treeColumnWidth: props.treeColumnWidth,
+    indent: Number.parseFloat(read('--vw-tree-grid-indent') ?? '') || undefined,
+    sort: props.sort, filters: props.filters, applyView: false,
+    ...includeHighlight && { selectedRowIds: selectedSet.value, highlightedRowIds: highlightedSet.value, highlightedCells: props.highlightedCells },
+    highlightColor: read('--vw-tree-grid-highlight'), selectedColor: read('--vw-tree-grid-selected'),
+    direction: rtl.value ? 'rtl' : 'ltr',
+    theme: root.value ? readExportTheme(root.value, theme) : theme,
+    fontFamily: root.value ? exportFont(root.value) : undefined,
+  })
+}
+/** Rasterize `exportSvg(options)` to a PNG blob in the browser. */
+async function exportPng(options: TreeGridPngExportOptions = {}) {
+  const { scale = 1, ...rest } = options
+  return rasterizeSvg(exportSvg(rest), scale)
+}
+
 defineExpose({
+  /** A standalone SVG document of the grid; see `TreeGridExportOptions`. */
+  exportSvg,
+  /** A PNG blob of `exportSvg(options)` at `scale` device pixels per CSS pixel. Browser only. */
+  exportPng,
   /** Makes a displayed cell the active cell and focuses it. Returns false when it is not displayed. */
   focusCell,
   /** Scrolls a row into view; see `RevealResult`. */
