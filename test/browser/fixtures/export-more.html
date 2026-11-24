@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>TaskBoard, EventCalendar and TreeGrid export fixture</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/export-more-test/style.css">
+    <script type="importmap">
+      { "imports": { "vue": "/export-more-test/vue.js", "@eightkk/vue-weave": "/export-more-test/index.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref } from 'vue'
+      import { EventCalendar, TaskBoard, TreeGrid } from '@eightkk/vue-weave'
+
+      const params = new URLSearchParams(location.search)
+      const dir = params.get('rtl') ? 'rtl' : 'ltr'
+      const at = (day, time) => Date.parse(`2026-11-${day}T${time}:00Z`)
+
+      const columns = [
+        { id: 'todo', label: 'To do', detail: 'Backlog' },
+        { id: 'doing', label: 'Doing', wipLimit: 1 },
+        { id: 'done', label: 'Done' },
+      ]
+      const lanes = [{ id: 'web', label: 'Web' }, { id: 'api', label: 'API' }]
+      const cards = [
+        { id: 'a', columnId: 'todo', laneId: 'web', label: 'Login & <signup>', detail: 'Design review', tone: 'teal' },
+        { id: 'b', columnId: 'doing', laneId: 'web', label: 'Search' },
+        { id: 'c', columnId: 'doing', laneId: 'api', label: 'Rate limits', tone: 'amber' },
+        { id: 'd', columnId: 'done', laneId: 'api', label: 'Auth tokens' },
+      ]
+      // Events from 02:00 to 22:00, so the time grid scrolls and the export must still include all of them.
+      const events = [
+        { id: 'early', label: 'Early call', start: at(11, '02:00'), end: at(11, '03:00') },
+        { id: 'review', label: 'Design review', start: at(11, '10:00'), end: at(11, '11:00'), tone: 'teal' },
+        { id: 'late', label: 'Late deploy', start: at(12, '21:00'), end: at(12, '22:00'), tone: 'amber' },
+        { id: 'offsite', label: 'Offsite', start: at(10, '00:00'), end: at(12, '00:00'), allDay: true },
+      ]
+      // Enough rows that only a window of them is rendered.
+      const rows = [{ id: 'root', label: 'Root assembly' }]
+      for (let i = 0; i < 300; i++) rows.push({ id: 'part' + i, parentId: 'root', label: 'Part ' + i, data: { qty: i } })
+      const gridColumns = [
+        { id: 'qty', label: 'Quantity', width: 90, value: row => row.data?.qty },
+        { id: 'note', label: 'Note', width: 140 },
+      ]
+      const cells = [{ rowId: 'part299', columnId: 'note', value: 'Last part' }]
+
+      window.exportRefs = {}
+      createApp({
+        setup() {
+          const board = ref(), calendar = ref(), grid = ref()
+          const view = ref(params.get('view') ?? 'week')
+          Object.assign(window.exportRefs, { board, calendar, grid })
+          return () => h('main', [
+            h('section', { 'aria-label': 'Board export fixture' }, [
+              h(TaskBoard, { ref: board, columns, lanes, cards, dir, selectedId: 'c', labels: { region: 'Export board' } }),
+            ]),
+            h('section', { 'aria-label': 'Calendar export fixture' }, [
+              h(EventCalendar, {
+                ref: calendar, events, date: at(11, '12:00'), view: view.value, 'onUpdate:view': next => { view.value = next },
+                height: 240, dir, now: at(11, '10:30'), labels: { region: 'Export calendar' },
+              }),
+            ]),
+            h('section', { 'aria-label': 'Grid export fixture' }, [
+              h(TreeGrid, {
+                ref: grid, rows, columns: gridColumns, cells, expandedIds: ['root'], height: 200, dir,
+                sort: [{ ruleId: 'qty', direction: 'asc' }], labels: { grid: 'Export grid' },
+              }),
+            ]),
+          ])
+        },
+      }).mount('#app')
+    </script>
+  </body>
+</html>

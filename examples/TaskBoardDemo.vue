@@ -3,13 +3,14 @@
 // card moves and the chart proposes bar and progress edits, and this parent applies them to one `cards` array. The
 // selection is one shared ref. "Doing" and "Review" have WIP limits that only warn; the one hard rule is in
 // `validateCardMove`: a task reaches Done only at 100% progress (raise it with the Gantt progress slider).
-import { computed, ref } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import {
   GanttChart, TaskBoard, applyBoardCardMove,
   type ChartTone, type TaskBoardCard, type TaskBoardCardMove, type TaskBoardColumn, type TaskBoardLane, type TaskBoardMoveCancel,
   type TimelineBar, type TimelineEdit, type TimelineProgressEdit,
 } from '../src'
 import DemoPanel from './components/DemoPanel.vue'
+import { download } from './download'
 import StatusLine from './components/StatusLine.vue'
 import { formatTime, hour, origin, range } from './data'
 import { useDemoLocale } from './i18n'
@@ -127,6 +128,13 @@ function clearSelection() {
 function escapeSelection(event: KeyboardEvent) {
   if (event.key === 'Escape' && !event.defaultPrevented) clearSelection()
 }
+const board = useTemplateRef('board')
+function exportSvg() {
+  const svg = board.value?.exportSvg({ title: t({ en: 'Sprint board', ja: 'スプリントのボード' }) })
+  if (!svg) return
+  download(svg, 'task-board.svg')
+  status.value = t({ en: `Exported SVG (${svg.length} characters).`, ja: `SVG を出力しました(${svg.length} 文字)。` })
+}
 function reset() {
   cards.value = initialCards
   selectedId.value = undefined
@@ -143,8 +151,9 @@ function reset() {
       <label><input v-model="useLanes" type="checkbox"> {{ t({ en: 'Team lanes', ja: 'チームのレーン' }) }}</label>
       <label>{{ t({ en: 'Filter cards', ja: 'カードを絞り込む' }) }} <input v-model="query" type="search" :placeholder="t({ en: 'Label contains', ja: '名前に含む文字' })"></label>
       <button type="button" @click="reset">{{ t({ en: 'Reset board', ja: 'ボードをリセット' }) }}</button>
+      <button type="button" @click="exportSvg">{{ t({ en: 'Export SVG', ja: 'SVG で出力' }) }}</button>
     </template>
-    <TaskBoard v-model:selected-id="selectedId" v-model:collapsed-column-ids="collapsedColumnIds"
+    <TaskBoard ref="board" v-model:selected-id="selectedId" v-model:collapsed-column-ids="collapsedColumnIds"
       v-model:collapsed-lane-ids="collapsedLaneIds" collapsible :filter="filter" :columns="columns" :lanes="useLanes ? lanes : undefined" :cards="boardCards"
       :validate-card-move="validateCardMove" :labels="{ ...labels.taskBoard, region: t({ en: 'Sprint board', ja: 'スプリントのボード' }) }"
       @card-move="moveCard" @card-move-rejected="rejectMove" @card-move-cancel="cancelMove" @background-click="clearSelection"
