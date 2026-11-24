@@ -336,8 +336,13 @@ const monthGrid: ViewRenderer = frame => {
   return { height: y - top, body: out }
 }
 
-/** The renderer of each view the export supports. A new view adds its renderer here. */
-const viewRenderers: Readonly<Partial<Record<string, ViewRenderer>>> = Object.freeze({ day: timeGrid, week: timeGrid, month: monthGrid })
+/**
+ * The renderer of each view the export supports. A new view adds its renderer here. Keep this a plain object literal:
+ * a module-level call such as `Object.freeze(...)` counts as a side effect for bundlers and would keep every renderer
+ * (and what they import) in bundles that never call `renderEventCalendarSvg`. The table is module-private, so nothing
+ * can change it.
+ */
+const viewRenderers: Readonly<Partial<Record<string, ViewRenderer>>> = { day: timeGrid, week: timeGrid, month: monthGrid }
 
 /** The title of the EventCalendar toolbar for a view. */
 function viewTitle(view: EventCalendarView, date: number, days: EventCalendarDay[], locale: string | readonly string[], timeZone: string) {
