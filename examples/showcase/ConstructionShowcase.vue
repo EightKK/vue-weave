@@ -715,7 +715,7 @@ function exportSvg() {
 .sc-build-ahead { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: ahead; }
 .sc-build-ahead li { display: flex; align-items: center; gap: 8px; font-size: 12px; counter-increment: ahead; }
 .sc-build-ahead li::before { content: counter(ahead); display: grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: rgb(255 122 61 / 16%); color: #ff9a66; font-size: 10.5px; font-weight: 700; }
-.sc-build-ahead span { overflow: hidden; color: #dfe7ef; text-overflow: ellipsis; white-space: nowrap; }
+.sc-build-ahead span { min-width: 0; overflow: hidden; color: #dfe7ef; text-overflow: ellipsis; white-space: nowrap; }
 .sc-build-ahead small { margin-left: auto; color: #8b9aab; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sc-build-exports { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; }
 .sc-build-exports > span { margin-right: 4px; color: #6f8195; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -731,6 +731,11 @@ function exportSvg() {
   .sc-build-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sc-build .vw-gantt { --vw-row-label-width: 170px; }
   .sc-build-milestones th, .sc-build-milestones td { padding: 8px 4px; }
+  .sc-build-milestones thead th { letter-spacing: 0; white-space: normal; }
+  .sc-build-milestones td { white-space: normal; }
+  .sc-build-ahead li { flex-wrap: wrap; row-gap: 2px; }
+  .sc-build-ahead span { flex: 1 1 0; }
+  .sc-build-ahead small { flex-basis: 100%; padding-left: 26px; margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sc-build-animating .vw-gantt-bar, .sc-build-animating .vw-gantt-float, .sc-build-animating .vw-gantt-summary { transition: none; }

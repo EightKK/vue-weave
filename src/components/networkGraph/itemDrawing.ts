@@ -22,13 +22,14 @@ export function defaultNode(node: NetworkNode, box: GraphBox, rtl: boolean) {
   if (!outline) {
     // A task icon in the corner moves the text away from it.
     const inset = isGraphTaskMarker(marker) ? 30 : 13
+    const lines = graphOutlineText(box.width, box.height, Boolean(node.detail))
     return [
       h('rect', { x: '2', y: '2', width: box.width - 4, height: box.height - 4, rx: node.shape === 'rounded' ? 19 : 8, ...eventClass && { class: eventClass } }),
       ...decorations,
       ...below ? [] : [
-        h('text', { x: rtl ? box.width - inset : inset, y: node.detail ? 24 : 34, class: 'vw-node-title' }, toDisplayString(node.label)),
+        h('text', { x: rtl ? box.width - inset : inset, y: lines.title, class: 'vw-node-title' }, toDisplayString(node.label)),
         node.detail
-          ? h('text', { key: 0, x: rtl ? box.width - inset : inset, y: '43', class: 'vw-node-detail' }, toDisplayString(node.detail))
+          ? h('text', { key: 0, x: rtl ? box.width - inset : inset, y: lines.detail, class: 'vw-node-detail' }, toDisplayString(node.detail))
           : createCommentVNode('', true),
       ],
     ]

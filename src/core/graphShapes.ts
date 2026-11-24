@@ -112,7 +112,10 @@ export function graphOutlineAlong(box: Rect, shape: GraphOutlineShape, point: Gr
   return { x: point.x, y: side === 'bottom' ? cy + reach : cy - reach }
 }
 
-/** The text anchors of a node label and detail centred in a shape of `height`; they match the box text at height 58. */
+/**
+ * The text anchors of a node label and detail centred in a shape of `height`. Plain rectangles use the same lines, so at
+ * the default height of 58 they are 34 for a title alone, and 24 and 43 for a title with a detail line.
+ */
 export function graphOutlineText(width: number, height: number, detail: boolean, shape?: GraphOutlineShape) {
   // A cylinder moves its text below the rim of its top, by half the rim height.
   const shift = shape === 'cylinder' ? flowchartSizes(Math.max(0, width - 4), Math.max(0, height - 4)).rim / 2 : 0
