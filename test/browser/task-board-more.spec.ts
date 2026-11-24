@@ -135,15 +135,18 @@ test('moving the focus away from a picked-up card cancels the move with reason b
   expect(errors).toEqual([])
 })
 
-test('pointer cancellation and new source data end a drag without a proposal', async ({ page }) => {
+test('pointer cancellation and new source data end a drag without a proposal', async ({ page, browserName }) => {
   const { errors, board, card, press, lines } = await openBoard(page)
+  // The mouse pointer ID is not fixed across engines (Chromium uses 1), so the synthetic cancellation reuses the ID of the press.
+  await page.evaluate(() => document.addEventListener('pointerdown', event => { (window as any).__pointerId = event.pointerId }, true))
   const box = (await card('Alpha').boundingBox())!
   const start = boxCenter(box)
   await page.mouse.move(start.x, start.y)
   await page.mouse.down()
   await page.mouse.move(start.x + 300, start.y + 20, { steps: 5 })
   await expect(board.locator('.vw-board-drop')).toHaveCount(1)
-  await card('Alpha').dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true })
+  const pointerId = await page.evaluate(() => (window as any).__pointerId as number)
+  await card('Alpha').dispatchEvent('pointercancel', { pointerId, pointerType: 'mouse', isPrimary: true, bubbles: true })
   expect(await lines()).toEqual([['cancel', 'alpha', 'pointer-cancel', 'pointer']])
   await expect(board.locator('.vw-board-drop')).toHaveCount(0)
   await page.mouse.up()
@@ -157,7 +160,10 @@ test('pointer cancellation and new source data end a drag without a proposal', a
   await expect.poll(async () => (await lines()).length).toBe(2)
   expect((await lines())[1]).toEqual(['cancel', 'alpha', 'data-change', 'pointer'])
   await page.mouse.up()
-  expect((await lines()).map(line => line[0])).toEqual(['cancel', 'cancel'])
+  // Releasing after the drag was cancelled by new data proposes nothing. WebKit then delivers the click of the press to the
+  // card, which selects it as any click does; the other engines send no click, so only WebKit may add these two entries.
+  const trailing = browserName === 'webkit' ? ['select', 'activate'] : []
+  expect((await lines()).map(line => line[0])).toEqual(['cancel', 'cancel', ...trailing])
   await expect(board.locator('.vw-board-drop')).toHaveCount(0)
   expect(errors).toEqual([])
 })
