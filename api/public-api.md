@@ -5,7 +5,7 @@ fails when the built API differs. Review every change: in 1.x, a removed or chan
 exposed member or CSS custom property is a breaking change. "Internal" declarations are not exported but appear
 in public signatures, so changes to them can break consumers too.
 
-## Entry `.`: runtime exports (278)
+## Entry `.`: runtime exports (279)
 
 - `EventCalendar: object`
 - `GanttChart: object`
@@ -143,6 +143,7 @@ in public signatures, so changes to them can break consumers too.
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
 - `isTreeGridCellEditable: function`
+- `layoutCalendarAgenda: function`
 - `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
@@ -286,7 +287,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (646)
+## Entry `.`: type-only exports (648)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -303,6 +304,8 @@ in public signatures, so changes to them can break consumers too.
 - `AsyncGraphLayoutError`
 - `BarsDeleteValidator`
 - `BatchEditValidator`
+- `CalendarAgendaDay`
+- `CalendarAgendaItem`
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
@@ -935,7 +938,7 @@ in public signatures, so changes to them can break consumers too.
 - `WorkShift`
 - `WorkWeek`
 
-## Entry `./core`: runtime exports (262)
+## Entry `./core`: runtime exports (263)
 
 - `WeaveSnapshotError: function`
 - `actualsTimelineBars: function`
@@ -1065,6 +1068,7 @@ in public signatures, so changes to them can break consumers too.
 - `invertWorkPeriods: function`
 - `isGraphRouteValid: function`
 - `isTreeGridCellEditable: function`
+- `layoutCalendarAgenda: function`
 - `layoutCalendarDayEvents: function`
 - `layoutCircularGraph: function`
 - `layoutConcentricGraph: function`
@@ -1200,7 +1204,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (606)
+## Entry `./core`: type-only exports (608)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1211,6 +1215,8 @@ in public signatures, so changes to them can break consumers too.
 - `AssignLanesResult`
 - `BarsDeleteValidator`
 - `BatchEditValidator`
+- `CalendarAgendaDay`
+- `CalendarAgendaItem`
 - `CalendarBandLocalTime`
 - `CalendarBandOptions`
 - `CalendarBandUnit`
@@ -2297,6 +2303,7 @@ focusCard: (id: string) => boolean;
 ## Component `EventCalendar`: props
 
 ```ts
+agendaDays?: number;
 creatable?: boolean;
 createDuration?: number;
 date: number;
@@ -2320,6 +2327,7 @@ timeZone?: string;
 validateCreate?: EventCalendarCreateValidator;
 validateEdit?: EventCalendarEditValidator;
 view?: EventCalendarView;
+views?: readonly EventCalendarView[];
 weekStartsOn?: number;
 ```
 
@@ -2665,6 +2673,30 @@ type BarsDeleteValidator = (ids: readonly string[]) => boolean | string | void;
 
 ```ts
 type BatchEditValidator = (changes: readonly TimelineEdit[]) => boolean | string | void;
+```
+
+### `CalendarAgendaDay`
+
+```ts
+interface CalendarAgendaDay {
+    index: number;
+    start: number;
+    end: number;
+    items: CalendarAgendaItem[];
+}
+```
+
+### `CalendarAgendaItem`
+
+```ts
+interface CalendarAgendaItem {
+    id: string;
+    start: number;
+    end: number;
+    allDay: boolean;
+    continuesBefore: boolean;
+    continuesAfter: boolean;
+}
 ```
 
 ### `CalendarBandLocalTime`
@@ -3191,6 +3223,8 @@ interface EventCalendarLabels {
     now: string;
     empty: string;
     recurring?: string;
+    agenda?: string;
+    agendaEditHint?: string;
 }
 ```
 
@@ -3200,13 +3234,14 @@ interface EventCalendarLabels {
 interface EventCalendarOptions {
     timeZone?: string;
     weekStartsOn?: number;
+    agendaDays?: number;
 }
 ```
 
 ### `EventCalendarView`
 
 ```ts
-type EventCalendarView = 'day' | 'week' | 'month';
+type EventCalendarView = 'day' | 'week' | 'month' | 'agenda';
 ```
 
 ### `ExplainedLevelResourcesResult`
@@ -10447,6 +10482,17 @@ function isGraphRouteValid(layout: GraphLayout, nodes: ReadonlyMap<string, Ident
 
 ```ts
 function isTreeGridCellEditable(index: TreeGridIndex<any>, rowId: string, columnId: string): boolean;
+```
+
+### `layoutCalendarAgenda`
+
+```ts
+function layoutCalendarAgenda(events: readonly {
+    id: string;
+    start: number;
+    end: number;
+    allDay?: boolean;
+}[], days: readonly TimeRange[]): CalendarAgendaDay[];
 ```
 
 ### `layoutCalendarDayEvents`
