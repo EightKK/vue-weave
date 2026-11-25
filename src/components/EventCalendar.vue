@@ -14,7 +14,7 @@ import { elementWithData, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { renderEventCalendarSvg, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
-import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 const minute = 60_000
 const hour = 3_600_000
@@ -991,7 +991,14 @@ function scrollToTime(time: number) {
 function exportSvg(options: EventCalendarExportOptions<E> = {}) {
   if (validationError.value) throw validationError.value
   const { includeSelection = true, theme, width, heading, ...rest } = options
-  return renderEventCalendarSvg(props.events, localDate.value, {
+  // Event colours such as var(--brand) or currentColor are written as the colour computed on the calendar, since the
+  // standalone SVG has no stylesheet to resolve them; one whose var() has no value falls back to the tone, as on screen.
+  const events = withExportColours(root.value, resolve => props.events.map(event => {
+    if (event.color === undefined) return event
+    const color = resolve(event.color)
+    return color === event.color ? event : { ...event, color }
+  }))
+  return renderEventCalendarSvg(events, localDate.value, {
     ...rest,
     view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays, locale: props.locale, resources: props.resources,
     dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,

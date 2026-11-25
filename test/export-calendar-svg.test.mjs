@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   defaultSvgExportTheme, eventCalendarDays, eventCalendarRange, expandRecurringEvents, layoutCalendarAgenda, layoutCalendarDayEvents,
-  renderEventCalendarSvg,
+  renderEventCalendarSvg, renderTaskBoardSvg, renderTreeGridSvg,
 } from '@eightkk/vue-weave/core'
 import { assertWellFormed, hostile, svgSize, svgTexts } from './helpers/svg.mjs'
 
@@ -258,4 +258,22 @@ test('the agenda export escapes text, is deterministic and does not change its i
   assertWellFormed(empty)
   assert.ok(!empty.includes('<b>'))
   assert.throws(() => renderEventCalendarSvg(events, date, { view: 'agenda', labels: { empty: 3 } }), TypeError)
+})
+
+test('the core renderers write colours that need a stylesheet as given, like renderGraphSvg and renderTimelineSvg', () => {
+  // Without a DOM nothing can compute var() or currentColor: a colour that passes the colour check is written as is
+  // (the components resolve such colours before they call these renderers), and a reference to a resource throws.
+  for (const colour of ['var(--booking-color)', 'var(--booking-color, #123456)', 'currentColor', 'color-mix(in srgb, red 40%, blue)']) {
+    const pattern = new RegExp('fill="' + colour.replace(/[()+.,%]/g, '\\$&') + '"')
+    const calendar = renderEventCalendarSvg([{ id: 'b', start: at(11, 9), end: at(11, 10), label: 'Booking', color: colour }], date)
+    assert.match(calendar, pattern, colour)
+    assertWellFormed(calendar)
+    const board = renderTaskBoardSvg([{ id: 'a', columnId: 'c', label: 'A' }, { id: 'b', columnId: 'c', label: 'B' }], [{ id: 'c', label: 'C', wipLimit: 1 }], { wipWarningColor: colour })
+    assert.match(board, pattern, colour)
+    const grid = renderTreeGridSvg([{ id: 'r', label: 'R' }], [{ id: 'x', label: 'X', width: 50 }], { highlightedRowIds: ['r'], highlightColor: colour, selectedRowIds: ['r'], selectedColor: colour })
+    assert.match(grid, pattern, colour)
+  }
+  for (const colour of ['url(#p)', 'var(--x) url(#p)', 'red;fill:url(#p)']) {
+    assert.throws(() => renderEventCalendarSvg([{ id: 'b', start: at(11, 9), end: at(11, 10), label: 'B', color: colour }], date), RangeError, colour)
+  }
 })

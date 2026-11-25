@@ -26,7 +26,7 @@ import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { useTreeGridColumnResize } from './treeGrid/columnResize.js'
 import { scrollToShow, slotKey, splitAround } from './treeGrid/lineSegments.js'
 import { renderTreeGridSvg, type TreeGridExportOptions, type TreeGridPngExportOptions } from '../core/exportGridSvg.js'
-import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 type IdList = readonly string[] | ReadonlySet<string>
 
@@ -1049,7 +1049,8 @@ function exportSvg(options: TreeGridExportOptions = {}) {
     indent: Number.parseFloat(read('--vw-tree-grid-indent') ?? '') || undefined,
     sort: props.sort, filters: props.filters, applyView: false,
     ...includeHighlight && { selectedRowIds: selectedSet.value, highlightedRowIds: highlightedSet.value, highlightedCells: props.highlightedCells },
-    highlightColor: read('--vw-tree-grid-highlight'), selectedColor: read('--vw-tree-grid-selected'),
+    // currentColor or a colour function in these properties becomes the colour computed on the grid.
+    ...withExportColours(root.value, resolve => ({ highlightColor: resolve(read('--vw-tree-grid-highlight')), selectedColor: resolve(read('--vw-tree-grid-selected')) })),
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,

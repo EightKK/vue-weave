@@ -34,6 +34,44 @@ export function readExportTheme(element: Element, overrides: SvgExportThemeInput
   return { ...theme, ...rest, tones } as SvgExportThemeInput
 }
 
+/**
+ * Calls `use` with a function that turns a CSS colour into the colour the page computes for it on `element`: a
+ * `var()` reference, `currentColor` (the element's `color`), `light-dark()` or a relative colour becomes a plain
+ * `rgb()` or `color()` value, which a standalone SVG and the PNG rasterized from it paint the same way. A value whose
+ * `var()` has no value gives undefined, so the exporter uses its fallback colour, as the stylesheet does on screen. A
+ * value the browser does not accept as a colour, and any value outside a browser, is returned unchanged for the core
+ * renderer to check. Browser only: the colours are read from a hidden probe element that is removed afterwards.
+ */
+export function withExportColours<T>(element: Element | undefined, use: (resolve: (value: string | undefined) => string | undefined) => T): T {
+  if (!element || typeof document === 'undefined' || typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return use(value => value)
+  let probe: HTMLElement | undefined, unset = ''
+  const known = new Map<string, string | undefined>()
+  try {
+    return use(value => {
+      const colour = value?.trim()
+      if (!colour || !CSS.supports('color', colour)) return value
+      if (known.has(colour)) return known.get(colour)
+      if (!probe) {
+        // A custom property with a var() that has no value is invalid at computed-value time, so the fallback of the
+        // probe's colour then applies; that fallback marks the value as unset.
+        probe = document.createElement('span')
+        probe.setAttribute('aria-hidden', 'true')
+        probe.style.display = 'none'
+        probe.style.color = 'var(--vw-export-colour, rgba(1, 2, 3, 0.5))'
+        element.appendChild(probe)
+        unset = getComputedStyle(probe).color
+      }
+      probe.style.setProperty('--vw-export-colour', colour)
+      const computed = getComputedStyle(probe).color
+      const resolved = computed && computed !== unset ? computed : undefined
+      known.set(colour, resolved)
+      return resolved
+    })
+  } finally {
+    probe?.remove()
+  }
+}
+
 export function exportFont(element: Element) {
   return getComputedStyle(element).fontFamily || undefined
 }
