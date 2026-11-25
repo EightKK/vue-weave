@@ -349,6 +349,16 @@ test('inspector list fields stay controlled and work right to left in the dark t
   expect(errors).toEqual([])
 })
 
+test('focusField on a read-only list field focuses its first control that can take the focus', async ({ page }) => {
+  const { errors, resources, events } = await openInspectorFixture(page, '?readonly')
+  // The selects of a read-only table are disabled; its units box is read-only and still takes the focus.
+  await expect(resources.getByRole('combobox', { name: 'Resource for Crane', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Focus resources', exact: true }).click()
+  await expect(resources.getByRole('textbox', { name: 'Units for Crane', exact: true })).toBeFocused()
+  await expect(events).toHaveText('["focus",true]')
+  expect(errors).toEqual([])
+})
+
 test('the diagram editor speaks Japanese on the Japanese page', async ({ page }) => {
   const errors = pageErrors(page)
   const demo = await openExample(page, 'diagram-editor', { locale: 'ja' })

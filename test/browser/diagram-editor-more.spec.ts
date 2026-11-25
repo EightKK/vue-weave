@@ -345,7 +345,7 @@ test('read-only fields cannot be edited, though they can be focused', async ({ p
   expect(errors).toEqual([])
 })
 
-test('focusField focuses the control of a field and resolves false for an unknown one', async ({ page }) => {
+test('focusField focuses the control of a field and resolves false for an unknown one or a disabled control', async ({ page }) => {
   const { errors, field, button, lines } = await openFields(page)
   await button('Focus name').click()
   await expect(field('Name')).toBeFocused()
@@ -353,8 +353,13 @@ test('focusField focuses the control of a field and resolves false for an unknow
   await expect(field('Count')).toBeFocused()
   await button('Focus state').click()
   await expect(field('State')).toBeFocused()
+  // A read-only checkbox is disabled and cannot take the focus: the call says so instead of claiming success.
+  await button('Focus lockedDone').click()
+  await expect(button('Focus lockedDone')).toBeFocused()
   await button('Focus missing').click()
-  expect(await lines()).toEqual([['focus', 'name', true], ['focus', 'count', true], ['focus', 'state', true], ['focus', 'missing', false]])
+  expect(await lines()).toEqual([
+    ['focus', 'name', true], ['focus', 'count', true], ['focus', 'state', true], ['focus', 'lockedDone', false], ['focus', 'missing', false],
+  ])
   expect(errors).toEqual([])
 })
 

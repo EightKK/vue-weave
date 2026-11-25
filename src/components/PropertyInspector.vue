@@ -382,14 +382,18 @@ function slotProps(row: FieldRow): PropertyInspectorFieldSlot<T> {
 }
 
 defineExpose({
-  /** Moves keyboard focus to the control of a field. Returns false when the field is not shown. */
+  /**
+   * Moves keyboard focus to the control of a field. Returns false when the field is not shown or its control cannot take
+   * the focus (the disabled control of a read-only checkbox, select or colour field).
+   */
   focusField(id: string) {
     const index = fields.value.findIndex(field => field.id === id)
     const target = index < 0 ? null : root.value?.querySelector<HTMLElement>(`[id="${inputId(index)}"]`)
-    // A list field's ID is on its table group: focus its first control.
-    const element = target?.dataset.vwList ? target.querySelector<HTMLElement>('select, input, button:not(:disabled)') : target
+    // A list field's ID is on its table group: focus its first control that can take the focus (a read-only table has
+    // disabled selects and read-only boxes).
+    const element = target?.dataset.vwList ? target.querySelector<HTMLElement>('select:not(:disabled), input:not(:disabled), button:not(:disabled)') : target
     element?.focus()
-    return Boolean(element)
+    return Boolean(element) && element === document.activeElement
   },
   /** Drops every draft and message without a proposal. */
   cancelEdits() {

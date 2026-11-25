@@ -17,8 +17,9 @@
 
       // PropertyInspector with an assignments and a dependencies list field for one task. The parent applies every
       // `list-change`; validateListChange rejects more than 3 units in total and a start-to-finish link. Query
-      // parameters: rtl, dark, ignore (the parent ignores every proposal). Events are logged in order to the "Events"
+      // parameters: rtl, dark, ignore (the parent ignores every proposal), readonly (read-only list fields). Events are logged in order to the "Events"
       // status as JSON lines; window.changeRemotely sets the crane to 2 units, as another user might, without moving focus.
+      // The "Focus resources" button calls the exposed focusField and logs its result.
       const query = new URLSearchParams(location.search)
       const hour = 3_600_000
       const task = shallowRef({
@@ -28,9 +29,9 @@
       })
       const fields = [
         { id: 'label', kind: 'text', label: 'Label', get: item => item.label },
-        { id: 'assignments', kind: 'assignments', label: 'Resources', get: item => item.assignments,
+        { id: 'assignments', kind: 'assignments', label: 'Resources', get: item => item.assignments, readonly: query.has('readonly'),
           options: [{ value: 'crane', label: 'Crane' }, { value: 'crew', label: 'Crew' }, { value: 'truck', label: 'Truck' }] },
-        { id: 'links', kind: 'dependencies', label: 'Predecessors', get: item => item.links, lagUnitSize: hour, lagUnitLabel: 'h',
+        { id: 'links', kind: 'dependencies', label: 'Predecessors', get: item => item.links, lagUnitSize: hour, lagUnitLabel: 'h', readonly: query.has('readonly'),
           options: [{ value: 'design', label: 'Design' }, { value: 'permit', label: 'Permit' }] },
       ]
       const log = ref([])
@@ -42,10 +43,12 @@
       window.changeRemotely = () => {
         task.value = { ...task.value, assignments: task.value.assignments.map(row => row.resourceId === 'crane' ? { ...row, units: 2 } : row) }
       }
+      const inspector = ref()
       createApp({
         setup: () => () => h('div', { class: query.has('dark') ? 'vw-theme-dark' : undefined, style: 'width: 360px; padding: 12px' }, [
+          h('button', { type: 'button', onClick: () => record('focus', inspector.value.focusField('assignments')) }, 'Focus resources'),
           h(PropertyInspector, {
-            item: task.value, fields, validateListChange, dir: query.has('rtl') ? 'rtl' : 'ltr', labels: { region: 'Task properties' },
+            ref: inspector, item: task.value, fields, validateListChange, dir: query.has('rtl') ? 'rtl' : 'ltr', labels: { region: 'Task properties' },
             'onList-change': change => {
               record('list-change', change)
               if (!query.has('ignore')) task.value = { ...task.value, [change.field]: change.after }
