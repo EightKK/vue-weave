@@ -6,7 +6,7 @@ import { layoutGraphIncrementally, type GraphKnownPosition } from './graphIncrem
 import type { GraphEdgeStyle } from './graphRouting.js'
 import type { ChartTone, NetworkNode } from './types.js'
 import { defaultNodeHeight, defaultNodeWidth } from './graphOptions.js'
-import { parseXml, predefinedEntities, referencedCharacter, xmlAttribute, type XmlElement } from './interchangeXml.js'
+import { dropInvalidXmlChars, parseXml, predefinedEntities, referencedCharacter, xmlAttribute, type XmlElement } from './interchangeXml.js'
 import {
   checkGraphInterchangeInput, createGraphCollector, formatNumber, graphDrawioMarkers, graphShapeFormat, isChartTone,
   readGraphMarker, readGraphShape, readNumber, splitLabel, uniqueName,
@@ -140,7 +140,9 @@ export function toDrawio(graph: GraphInterchangeInput, options: DrawioOptions = 
     let style = graphShapeFormat(node.shape).drawio
     if (isChartTone(node.tone)) style += `fillColor=${toneColors[node.tone].fill};strokeColor=${toneColors[node.tone].stroke};vwTone=${node.tone};`
     // A label with a line break is kept whole in `vwLabel`, so the reader does not split it into label and detail.
-    if (node.label.includes('\n')) style += `vwLabel=${encodeURIComponent(node.label)};`
+    // The characters the XML writer drops are dropped here too: the label then still starts the written value, and an
+    // unpaired surrogate cannot make encodeURIComponent throw.
+    if (node.label.includes('\n')) style += `vwLabel=${encodeURIComponent(dropInvalidXmlChars(node.label))};`
     const value = node.detail === undefined ? node.label : node.label + '\n' + node.detail
     const owner = ownerOf.get(node.id)
     lines.push(`        <mxCell id="${xmlAttribute(node.id)}" value="${xmlAttribute(value)}" style="${xmlAttribute(style)}"`
@@ -342,9 +344,11 @@ function readModel(model: XmlElement, collector: GraphCollector): GraphInterchan
   const groupCells = [...cells.values()].filter(cell => containers.has(cell.id))
     .map((cell, index) => ({ cell, index, level: groupDepth(cell) }))
     .sort((a, b) => a.level - b.level || a.index - b.index)
-  for (const { cell } of groupCells) {
+  for (const { cell, level } of groupCells) {
+    // A container on a parent cycle is at the top level (its parent has the same depth), so the groups never form one.
     const parent = parentVertex(cell)
-    collector.addGroup({ id: cell.id, label: cellText(cell), ...(parent && containers.has(parent.id) ? { parentId: parent.id } : {}) })
+    const nested = parent !== undefined && containers.has(parent.id) && depths.get(parent.id)! < level
+    collector.addGroup({ id: cell.id, label: cellText(cell), ...(nested ? { parentId: parent.id } : {}) })
   }
   const edgeLabels = new Map<string, string[]>()
   for (const cell of cells.values()) {
