@@ -7,7 +7,7 @@ import {
 } from '../core/taskBoard.js'
 import type { ChartDirection } from '../core/types.js'
 import { renderTaskBoardSvg, type TaskBoardExportOptions, type TaskBoardPngExportOptions } from '../core/exportBoardSvg.js'
-import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 import { usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
@@ -516,7 +516,8 @@ function exportSvg(options: TaskBoardExportOptions<C> = {}) {
     lanes: props.lanes, filter: props.filter, collapsedColumnIds: collapsedColumns.value, collapsedLaneIds: collapsedLanes.value,
     selectedId: includeSelection ? props.selectedId : undefined,
     labels: { empty: messages.value.empty, emptyCell: messages.value.emptyCell, of: messages.value.of, overLimit: messages.value.overLimit, underMinimum: messages.value.underMinimum },
-    wipWarningColor: read('--vw-board-wip-warning'), wipUnderColor: read('--vw-board-wip-under'),
+    // currentColor or a colour function in these properties becomes the colour computed on the board.
+    ...withExportColours(root.value, resolve => ({ wipWarningColor: resolve(read('--vw-board-wip-warning')), wipUnderColor: resolve(read('--vw-board-wip-under')) })),
     direction: isRtl() ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,

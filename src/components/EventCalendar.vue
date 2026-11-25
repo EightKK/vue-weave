@@ -1,10 +1,11 @@
-<script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
+<script setup lang="ts" generic="E extends CalendarEvent = CalendarEvent, V extends EventCalendarViewName = EventCalendarView">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch, type Ref } from 'vue'
 import {
   eventCalendarDays, eventCalendarRange, eventCalendarTimeAt, eventCalendarTimeOfDay, layoutCalendarAgenda, layoutCalendarDayEvents,
   packCalendarEventLanes, shiftEventCalendarDate, validateCalendarEvents, type CalendarAgendaItem, type CalendarEvent, type EventCalendarBackgroundClick, type CalendarResource, type EventCalendarCreate,
   type EventCalendarCreateValidator, type EventCalendarDay, type EventCalendarEdit, type EventCalendarEditCancel,
   type EventCalendarEditCancelReason, type EventCalendarEditValidator, type EventCalendarLabels, type EventCalendarView,
+  type EventCalendarViewName,
 } from '../core/eventCalendar.js'
 import { intlTimeFormatter } from '../core/calendarFormat.js'
 import { cachedDateFormat, zoneFormat } from '../core/timeZone.js'
@@ -14,7 +15,7 @@ import { elementWithData, usePendingFocus } from './shared/focus.js'
 import { capturePointer, edgeScroller, pastThreshold, releasePointer } from './shared/pointer.js'
 import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { renderEventCalendarSvg, type EventCalendarExportOptions, type EventCalendarPngExportOptions } from '../core/exportCalendarSvg.js'
-import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 const minute = 60_000
 const hour = 3_600_000
@@ -39,10 +40,13 @@ const props = withDefaults(defineProps<{
   events: readonly E[]
   /** Anchor date of the view (epoch milliseconds); the view shows its day, week or month. Supports `v-model:date`. Required. */
   date: number
-  /** `day`, `week`, `month` or `agenda` (opt-in). Supports `v-model:view`. Default `week`. */
-  view?: EventCalendarView
+  /**
+   * `day`, `week`, `month` or `agenda` (opt-in). Supports `v-model:view`. Default `week`. A calendar whose `view` or
+   * `views` can be `agenda` (`V`, inferred from them) emits and passes `EventCalendarViewName`; others `EventCalendarView`.
+   */
+  view?: EventCalendarView | V
   /** The views the built-in view switch offers, in order. Default `['day', 'week', 'month']`; add `agenda` to offer the agenda. */
-  views?: readonly EventCalendarView[]
+  views?: readonly (EventCalendarView | V)[]
   /**
    * Length of the `agenda` view in days, an integer from 1 to 366: that many days from the day of `date`, stepped by
    * that many days. Default: the week that contains `date`, like the `week` view.
@@ -109,9 +113,9 @@ const emit = defineEmits<{
   /** Navigation by the toolbar or a month day button; supports `v-model:date`. */
   'update:date': [date: number]
   /** The view switch or a month day button; supports `v-model:view`. */
-  'update:view': [view: EventCalendarView]
+  'update:view': [view: EventCalendarView | V]
   /** The visible range changed (and once after mounting): load the events that overlap it. */
-  'range-change': [range: TimeRange, view: EventCalendarView]
+  'range-change': [range: TimeRange, view: EventCalendarView | V]
   /** An event was selected by click, Enter or Space. */
   select: [id: string]
   /** The selected event changed; supports `v-model:selected-id`. */
@@ -140,11 +144,11 @@ const emit = defineEmits<{
 
 defineSlots<{
   /** Content of an event button (in the agenda, after the time). Use non-interactive content. */
-  event(props: { event: E; range: TimeRange; selected: boolean; allDay: boolean; view: EventCalendarView }): unknown
+  event(props: { event: E; range: TimeRange; selected: boolean; allDay: boolean; view: EventCalendarView | V }): unknown
   /** Replaces the content of the toolbar. */
   toolbar(props: {
-    title: string; view: EventCalendarView; date: number
-    previous: () => void; next: () => void; today: () => void; setView: (view: EventCalendarView) => void
+    title: string; view: EventCalendarView | V; date: number
+    previous: () => void; next: () => void; today: () => void; setView: (view: EventCalendarView | V) => void
   }): unknown
   empty(): unknown
 }>()
@@ -164,7 +168,7 @@ const messages = computed<EventCalendarLabels>(() => ({
 }))
 
 // View, date and selection are controlled but keep local state, so a calendar without v-model still navigates.
-const localView = ref<EventCalendarView>(props.view ?? 'week')
+const localView = ref<EventCalendarView | V>(props.view ?? 'week') as Ref<EventCalendarView | V>
 const localDate = ref(props.date)
 const localSelected = ref(props.selectedId)
 watch(() => props.view, view => { if (view !== undefined) localView.value = view })
@@ -461,7 +465,7 @@ function setDate(date: number) {
   localDate.value = date
   emit('update:date', date)
 }
-function setView(next: EventCalendarView) {
+function setView(next: EventCalendarView | V) {
   if (next === view.value) return
   localView.value = next
   emit('update:view', next)
@@ -991,7 +995,14 @@ function scrollToTime(time: number) {
 function exportSvg(options: EventCalendarExportOptions<E> = {}) {
   if (validationError.value) throw validationError.value
   const { includeSelection = true, theme, width, heading, ...rest } = options
-  return renderEventCalendarSvg(props.events, localDate.value, {
+  // Event colours such as var(--brand) or currentColor are written as the colour computed on the calendar, since the
+  // standalone SVG has no stylesheet to resolve them; one whose var() has no value falls back to the tone, as on screen.
+  const events = withExportColours(root.value, resolve => props.events.map(event => {
+    if (event.color === undefined) return event
+    const color = resolve(event.color)
+    return color === event.color ? event : { ...event, color }
+  }))
+  return renderEventCalendarSvg(events, localDate.value, {
     ...rest,
     view: view.value, timeZone: props.timeZone, weekStartsOn: props.weekStartsOn, agendaDays: props.agendaDays, locale: props.locale, resources: props.resources,
     dayStart: props.dayStart, dayEnd: props.dayEnd, hourHeight: props.hourHeight, maxMonthLanes: props.maxMonthLanes, now: props.now,

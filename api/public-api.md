@@ -291,7 +291,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `.`: type-only exports (660)
+## Entry `.`: type-only exports (661)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -368,6 +368,7 @@ in public signatures, so changes to them can break consumers too.
 - `EventCalendarSvgLabels`
 - `EventCalendarSvgOptions`
 - `EventCalendarView`
+- `EventCalendarViewName`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -1224,7 +1225,7 @@ in public signatures, so changes to them can break consumers too.
 - `windowedCoverage: function`
 - `workCalendarsFromMsProject: function`
 
-## Entry `./core`: type-only exports (620)
+## Entry `./core`: type-only exports (621)
 
 - `ActualsDiagnostic`
 - `ActualsDiagnosticCode`
@@ -1293,6 +1294,7 @@ in public signatures, so changes to them can break consumers too.
 - `EventCalendarSvgLabels`
 - `EventCalendarSvgOptions`
 - `EventCalendarView`
+- `EventCalendarViewName`
 - `ExplainedLevelResourcesResult`
 - `ExplainedLevelResourcesSuccess`
 - `ExplainedScheduleResult`
@@ -2363,8 +2365,8 @@ snap?: number;
 timeZone?: string;
 validateCreate?: EventCalendarCreateValidator;
 validateEdit?: EventCalendarEditValidator;
-view?: EventCalendarView;
-views?: readonly EventCalendarView[];
+view?: EventCalendarView | V;
+views?: readonly (EventCalendarView | V)[];
 weekStartsOn?: number;
 ```
 
@@ -2378,11 +2380,11 @@ weekStartsOn?: number;
 (evt: "edit-cancel", event: EventCalendarEditCancel) => void
 (evt: "edit-rejected", change: EventCalendarEdit, reason: string) => void
 (evt: "event-activate", id: string, source: "pointer" | "keyboard") => void
-(evt: "range-change", range: TimeRange, view: EventCalendarView) => void
+(evt: "range-change", range: TimeRange, view: EventCalendarView | V) => void
 (evt: "select", id: string) => void
 (evt: "update:date", date: number) => void
 (evt: "update:selectedId", id: string) => void
-(evt: "update:view", view: EventCalendarView) => void
+(evt: "update:view", view: EventCalendarView | V) => void
 (evt: "validation-error", error: Error) => void
 ```
 
@@ -2395,16 +2397,16 @@ event(props: {
     range: TimeRange;
     selected: boolean;
     allDay: boolean;
-    view: EventCalendarView;
+    view: EventCalendarView | V;
 }): unknown;
 toolbar(props: {
     title: string;
-    view: EventCalendarView;
+    view: EventCalendarView | V;
     date: number;
     previous: () => void;
     next: () => void;
     today: () => void;
-    setView: (view: EventCalendarView) => void;
+    setView: (view: EventCalendarView | V) => void;
 }): unknown;
 ```
 
@@ -3157,10 +3159,12 @@ interface EventCalendarBackgroundClick {
 ### `EventCalendarComponent`
 
 ```ts
-type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent>(props: {
+type EventCalendarComponent = (new <E extends CalendarEvent = CalendarEvent, V extends EventCalendarViewName = EventCalendarView>(props: {
     events: readonly E[];
     date: number;
-} & Record<string, unknown>) => SfcInstance<EventCalendarSfc<E & CalendarEvent>>) & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>;
+    view?: EventCalendarView | V;
+    views?: readonly (EventCalendarView | V)[];
+} & Record<string, unknown>) => SfcInstance<EventCalendarSfc<E & CalendarEvent, V>>) & SfcDefaultComponent<EventCalendarSfc<CalendarEvent>>;
 ```
 
 ### `EventCalendarCreate`
@@ -3308,7 +3312,7 @@ type EventCalendarSvgLabels = Pick<EventCalendarLabels, 'allDay' | 'more' | 'res
 
 ```ts
 interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent> extends SvgExportOptions, EventCalendarOptions {
-    view?: EventCalendarView;
+    view?: EventCalendarViewName;
     locale?: string | readonly string[];
     resources?: readonly CalendarResource[];
     dayStart?: number;
@@ -3328,7 +3332,13 @@ interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent> exten
 ### `EventCalendarView`
 
 ```ts
-type EventCalendarView = 'day' | 'week' | 'month' | 'agenda';
+type EventCalendarView = 'day' | 'week' | 'month';
+```
+
+### `EventCalendarViewName`
+
+```ts
+type EventCalendarViewName = EventCalendarView | 'agenda';
 ```
 
 ### `ExplainedLevelResourcesResult`
@@ -10256,7 +10266,7 @@ function escapeXml(value: string): string;
 ### `eventCalendarDays`
 
 ```ts
-function eventCalendarDays(view: EventCalendarView, date: number, options?: EventCalendarOptions): EventCalendarDay[];
+function eventCalendarDays(view: EventCalendarViewName, date: number, options?: EventCalendarOptions): EventCalendarDay[];
 ```
 
 ### `eventCalendarMonthGrid`
@@ -10268,7 +10278,7 @@ function eventCalendarMonthGrid(date: number, options?: EventCalendarOptions): E
 ### `eventCalendarRange`
 
 ```ts
-function eventCalendarRange(view: EventCalendarView, date: number, options?: EventCalendarOptions): TimeRange;
+function eventCalendarRange(view: EventCalendarViewName, date: number, options?: EventCalendarOptions): TimeRange;
 ```
 
 ### `eventCalendarTimeAt`
@@ -11226,7 +11236,7 @@ function settleTransaction<S>(state: TransactionCoreState<S>, operationId: strin
 ### `shiftEventCalendarDate`
 
 ```ts
-function shiftEventCalendarDate(view: EventCalendarView, date: number, steps: number, options?: EventCalendarOptions): number;
+function shiftEventCalendarDate(view: EventCalendarViewName, date: number, steps: number, options?: EventCalendarOptions): number;
 ```
 
 ### `shortestGraphPath`
@@ -11733,7 +11743,7 @@ function workCalendarsFromMsProject(project: {
 ### Internal `EventCalendarSfc (dist/types/index.d.ts)`
 
 ```ts
-type EventCalendarSfc<E extends CalendarEvent> = typeof EventCalendarVue<E>;
+type EventCalendarSfc<E extends CalendarEvent, V extends EventCalendarViewName = EventCalendarView> = typeof EventCalendarVue<E, V>;
 ```
 
 ### Internal `GanttChartSfc (dist/types/index.d.ts)`

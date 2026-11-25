@@ -1313,7 +1313,7 @@ export function projectTreeGridRows<R extends TreeGridRow>(input: TreeGridViewIn
   const rules: { key?: (row: R) => string | number | undefined; compare?: TimelineRowCompare<R>; sign: number }[] = []
   for (const rule of state.sort ?? []) {
     const sign = rule.direction === 'desc' ? -1 : 1
-    const registered = input.sortRules?.[rule.ruleId]
+    const registered = input.sortRules && Object.hasOwn(input.sortRules, rule.ruleId) ? input.sortRules[rule.ruleId] : undefined
     if (registered) rules.push({ compare: registered, sign })
     else if (index.columnIndex.has(rule.ruleId)) {
       rules.push({ key: row => { const value = raw(row, rule.ruleId); return typeof value === 'boolean' ? Number(value) : value }, sign })

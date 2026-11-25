@@ -881,6 +881,8 @@ path.vw-network-pattern { fill: none; stroke: var(--vw-background-pattern, var(-
 .vw-tree-grid-scroll:focus-visible { outline: 2px solid var(--vw-accent, var(--_vw-accent)); outline-offset: -2px; }
 .vw-tree-grid-empty { padding: 24px 16px; text-align: center; color: var(--vw-muted, var(--_vw-muted)); }
 .vw-tree-grid-canvas { position: relative; }
+/* The empty text under a kept header (a grid with header controls and no lines) stays in view when scrolled sideways. */
+.vw-tree-grid-body > .vw-tree-grid-empty { position: sticky; inset-inline-start: 0; box-sizing: border-box; }
 .vw-tree-grid-head { position: sticky; top: 0; z-index: 3; height: var(--vw-tree-grid-header-height); background: var(--vw-tree-grid-header, var(--vw-surface-muted, #f3f7fa)); border-bottom: 2px solid var(--vw-border, #d8e2e9); }
 .vw-tree-grid-corner, .vw-tree-grid-column-head { display: flex; align-items: center; height: 100%; padding-inline: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; color: var(--vw-muted, var(--_vw-muted)); }
 .vw-tree-grid-corner { position: sticky; inset-inline-start: 0; z-index: 4; width: var(--vw-tree-grid-tree-width); background: inherit; border-inline-end: 1px solid var(--vw-border, #d8e2e9); }

@@ -5,7 +5,7 @@
 import {
   eventCalendarDays, eventCalendarTimeOfDay, layoutCalendarAgenda, layoutCalendarDayEvents, packCalendarEventLanes,
   validateCalendarEvents, type CalendarAgendaItem, type CalendarEvent, type CalendarResource, type EventCalendarDay, type EventCalendarLabels, type EventCalendarOptions,
-  type EventCalendarView,
+  type EventCalendarViewName,
 } from './eventCalendar.js'
 import { intlTimeFormatter } from './calendarFormat.js'
 import { cachedDateFormat, zoneFormat, type CachedDateFormat } from './timeZone.js'
@@ -35,7 +35,7 @@ export interface EventCalendarSvgOptions<E extends CalendarEvent = CalendarEvent
    * `day`, `week`, `month` or `agenda`, as EventCalendar `view`. Default `week`. Other values throw a RangeError
    * (`Unsupported event calendar export view`). The length of the agenda follows `agendaDays`, as on screen.
    */
-  view?: EventCalendarView
+  view?: EventCalendarViewName
   /** BCP 47 locale of the labels. Default `en-US`. */
   locale?: string | readonly string[]
   /** Resources; the day view draws one column per resource, as EventCalendar `resources`. */
@@ -91,7 +91,7 @@ const defaultLabels: SvgLabels = {
 /** Everything a view renderer needs: validated options, formats and the shared drawing helpers. */
 interface CalendarFrame<E extends CalendarEvent> {
   events: readonly E[]
-  view: EventCalendarView
+  view: EventCalendarViewName
   date: number
   days: EventCalendarDay[]
   zone: { timeZone: string; weekStartsOn: number; agendaDays?: number }
@@ -425,7 +425,7 @@ const viewRenderers: Readonly<Partial<Record<string, ViewRenderer>>> = {
 }
 
 /** The title of the EventCalendar toolbar for a view. */
-function viewTitle(view: EventCalendarView, date: number, days: EventCalendarDay[], locale: string | readonly string[], timeZone: string) {
+function viewTitle(view: EventCalendarViewName, date: number, days: EventCalendarDay[], locale: string | readonly string[], timeZone: string) {
   const format = (options: Intl.DateTimeFormatOptions) => cachedDateFormat(locale, { ...options, timeZone })
   if (view === 'day' || days.length === 1) return format({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(days[0]!.start)
   if (view === 'month') return format({ year: 'numeric', month: 'long' }).format(date)

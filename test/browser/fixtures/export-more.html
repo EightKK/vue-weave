@@ -15,7 +15,12 @@
       import { createApp, h, ref } from 'vue'
       import { EventCalendar, TaskBoard, TreeGrid } from '@eightkk/vue-weave'
 
+      // Query parameters: rtl, view, agendaDays, and colors, which gives the sections colours as CSS references: an
+      // event coloured var(--booking-color) (defined on its section) and an event whose var() has no value, a TaskBoard
+      // whose --vw-board-wip-warning is currentColor and a TreeGrid whose highlight and selection colours are
+      // currentColor and var(--grid-selected), with a highlighted and a selected row.
       const params = new URLSearchParams(location.search)
+      const colors = params.has('colors')
       const dir = params.get('rtl') ? 'rtl' : 'ltr'
       const at = (day, time) => Date.parse(`2026-11-${day}T${time}:00Z`)
 
@@ -37,6 +42,10 @@
         { id: 'review', label: 'Design review', start: at(11, '10:00'), end: at(11, '11:00'), tone: 'teal' },
         { id: 'late', label: 'Late deploy', start: at(12, '21:00'), end: at(12, '22:00'), tone: 'amber' },
         { id: 'offsite', label: 'Offsite', start: at(10, '00:00'), end: at(12, '00:00'), allDay: true },
+        ...colors ? [
+          { id: 'booking', label: 'Booking', start: at(13, '09:00'), end: at(13, '12:00'), color: 'var(--booking-color)' },
+          { id: 'unset', label: 'Unset colour', start: at(14, '09:00'), end: at(14, '12:00'), color: 'var(--no-such-color)', tone: 'teal' },
+        ] : [],
       ]
       // Enough rows that only a window of them is rendered.
       const rows = [{ id: 'root', label: 'Root assembly' }]
@@ -54,20 +63,24 @@
           const view = ref(params.get('view') ?? 'week')
           Object.assign(window.exportRefs, { board, calendar, grid })
           return () => h('main', [
-            h('section', { 'aria-label': 'Board export fixture' }, [
+            h('section', { 'aria-label': 'Board export fixture', style: colors ? 'color: rgb(20, 110, 40); --vw-board-wip-warning: currentColor' : undefined }, [
               h(TaskBoard, { ref: board, columns, lanes, cards, dir, selectedId: 'c', labels: { region: 'Export board' } }),
             ]),
-            h('section', { 'aria-label': 'Calendar export fixture' }, [
+            h('section', { 'aria-label': 'Calendar export fixture', style: colors ? '--booking-color: rgb(200, 30, 120)' : undefined }, [
               h(EventCalendar, {
                 ref: calendar, events, date: at(11, '12:00'), view: view.value, 'onUpdate:view': next => { view.value = next },
                 height: 240, dir, now: at(11, '10:30'), labels: { region: 'Export calendar' },
                 views: ['day', 'week', 'month', 'agenda'], agendaDays: params.get('agendaDays') ? Number(params.get('agendaDays')) : undefined,
               }),
             ]),
-            h('section', { 'aria-label': 'Grid export fixture' }, [
+            h('section', {
+              'aria-label': 'Grid export fixture',
+              style: colors ? 'color: rgb(30, 60, 200); --grid-selected: rgb(250, 220, 90); --vw-tree-grid-highlight: currentColor; --vw-tree-grid-selected: var(--grid-selected)' : undefined,
+            }, [
               h(TreeGrid, {
                 ref: grid, rows, columns: gridColumns, cells, expandedIds: ['root'], height: 200, dir,
                 sort: [{ ruleId: 'qty', direction: 'asc' }], labels: { grid: 'Export grid' },
+                ...colors ? { highlightedRowIds: ['part0'], selectedRowIds: ['part1'] } : {},
               }),
             ]),
           ])

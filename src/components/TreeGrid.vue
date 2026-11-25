@@ -26,7 +26,7 @@ import { rejectionReason, useValidatedSource } from './shared/validation.js'
 import { useTreeGridColumnResize } from './treeGrid/columnResize.js'
 import { scrollToShow, slotKey, splitAround } from './treeGrid/lineSegments.js'
 import { renderTreeGridSvg, type TreeGridExportOptions, type TreeGridPngExportOptions } from '../core/exportGridSvg.js'
-import { exportFont, rasterizeSvg, readExportTheme } from './exportImage.js'
+import { exportFont, rasterizeSvg, readExportTheme, withExportColours } from './exportImage.js'
 
 type IdList = readonly string[] | ReadonlySet<string>
 
@@ -1049,7 +1049,8 @@ function exportSvg(options: TreeGridExportOptions = {}) {
     indent: Number.parseFloat(read('--vw-tree-grid-indent') ?? '') || undefined,
     sort: props.sort, filters: props.filters, applyView: false,
     ...includeHighlight && { selectedRowIds: selectedSet.value, highlightedRowIds: highlightedSet.value, highlightedCells: props.highlightedCells },
-    highlightColor: read('--vw-tree-grid-highlight'), selectedColor: read('--vw-tree-grid-selected'),
+    // currentColor or a colour function in these properties becomes the colour computed on the grid.
+    ...withExportColours(root.value, resolve => ({ highlightColor: resolve(read('--vw-tree-grid-highlight')), selectedColor: resolve(read('--vw-tree-grid-selected')) })),
     direction: rtl.value ? 'rtl' : 'ltr',
     theme: root.value ? readExportTheme(root.value, theme) : theme,
     fontFamily: root.value ? exportFont(root.value) : undefined,
@@ -1319,21 +1320,27 @@ const gridStyle = computed(() => ({
   '--vw-tree-grid-row-height': props.rowHeight + 'px', '--vw-tree-grid-header-height': props.headerHeight + 'px',
   '--vw-tree-grid-tree-width': treeWidth.value + 'px',
 }))
-const showEmpty = computed(() => Boolean(invalid.value) || !lines.value.length)
+/**
+ * With header controls (`columnsResizable`, `sortableColumns`, `filterableColumns`), a valid grid without lines keeps
+ * its header, as GanttChart does, so a filter that matches nothing can be edited or cleared in place; the empty text is
+ * then a row of the body. Otherwise (and for invalid input) the grid shows its plain empty state.
+ */
+const emptyBody = computed(() => !invalid.value && !lines.value.length && headerOptIn.value)
+const showEmpty = computed(() => Boolean(invalid.value) || (!lines.value.length && !emptyBody.value))
 </script>
 
 <template>
   <div ref="root" class="vw-tree-grid" :class="{ 'vw-rtl': rtl, 'vw-is-editable': editable, 'vw-is-spreadsheet': spreadsheet }"
     :dir="dir === 'auto' ? undefined : dir">
-    <div ref="scroller" class="vw-tree-grid-scroll" role="treegrid" :aria-label="messages.grid" :aria-rowcount="lines.length + 1"
+    <div ref="scroller" class="vw-tree-grid-scroll" role="treegrid" :aria-label="messages.grid" :aria-rowcount="lines.length + (emptyBody ? 2 : 1)"
       :aria-colcount="columnCount" :aria-readonly="editable ? undefined : 'true'"
-      :aria-multiselectable="spreadsheet || selectedRowIds !== undefined ? 'true' : undefined" :tabindex="showEmpty ? 0 : undefined"
+      :aria-multiselectable="spreadsheet || selectedRowIds !== undefined ? 'true' : undefined" :tabindex="showEmpty || emptyBody ? 0 : undefined"
       :style="gridStyle" @scroll.passive="onScroll" @keydown="onKeydown" @focusin="onFocusin" @focusout="onFocusout"
       @pointerdown="onPointerdown" @dblclick="onDblclick" @copy="onCopy" @cut="onCut" @paste="onPaste">
       <div v-if="showEmpty" class="vw-tree-grid-empty" role="row" aria-rowindex="1">
         <div role="gridcell"><slot name="empty">{{ messages.empty }}</slot></div>
       </div>
-      <div v-else class="vw-tree-grid-canvas" :style="{ width: treeWidth + axisWidth + 'px', height: headerHeight + lines.length * rowHeight + 'px' }">
+      <div v-else class="vw-tree-grid-canvas" :style="{ width: treeWidth + axisWidth + 'px', height: emptyBody ? undefined : headerHeight + lines.length * rowHeight + 'px' }">
         <!-- With columnsResizable, sortableColumns or filterableColumns, the header cells get their controls (HeadCell) and
           are keyed by column, so a focused control stays with its column; otherwise the default markup is unchanged. -->
         <div v-if="headerOptIn" class="vw-tree-grid-head" role="row" aria-rowindex="1">
@@ -1346,7 +1353,11 @@ const showEmpty = computed(() => Boolean(invalid.value) || !lines.value.length)
             :aria-colindex="c + 2" :style="columnStyle(c)">{{ columns[c]!.label }}</div>
         </div>
         <div class="vw-tree-grid-body" role="rowgroup">
-          <GridBody :cell-slot="$slots.cell" :header-slot="$slots['row-header']" :status-slot="$slots.status" />
+          <!-- No lines, for example after a filter that matches nothing: the empty text in the body, under the header. -->
+          <div v-if="emptyBody" class="vw-tree-grid-empty" role="row" aria-rowindex="2" :style="{ width: Math.min(viewport.width, treeWidth + axisWidth) + 'px' }">
+            <div role="gridcell"><slot name="empty">{{ messages.empty }}</slot></div>
+          </div>
+          <GridBody v-else :cell-slot="$slots.cell" :header-slot="$slots['row-header']" :status-slot="$slots.status" />
         </div>
       </div>
     </div>

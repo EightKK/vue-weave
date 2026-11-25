@@ -193,6 +193,61 @@ test('TreeGrid exports every displayed row, not only the rendered window', async
   expect(errors).toEqual([])
 })
 
+test('exports write colours given as var() or currentColor as the computed colour, so a standalone SVG and PNG paint them', async ({ page }) => {
+  const errors = pageErrors(page)
+  await openExportFixture(page, '?colors')
+  const calendar = page.getByRole('region', { name: 'Export calendar' })
+  // On screen the stripe of the booking uses the variable defined on an ancestor of the calendar.
+  const booking = calendar.getByRole('button', { name: /^Booking/ })
+  await expect(booking).toHaveCSS('border-inline-start-color', 'rgb(200, 30, 120)')
+  const stripes = await page.evaluate(() => {
+    const svg: string = (window as any).exportRefs.calendar.value.exportSvg()
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+    const stripe = (label: string) => {
+      const group = [...doc.querySelectorAll('g.vw-calendar-event')].find(g => g.querySelector('title')?.textContent?.startsWith(label))!
+      const rect = [...group.querySelectorAll('rect')].find(r => r.getAttribute('width') === '3')!
+      return { fill: rect.getAttribute('fill'), x: Number(rect.getAttribute('x')), y: Number(rect.getAttribute('y')), height: Number(rect.getAttribute('height')) }
+    }
+    return { svg, booking: stripe('Booking'), unset: stripe('Unset colour'), teal: stripe('Design review') }
+  })
+  expect(stripes.svg).not.toContain('var(')
+  expect(stripes.booking.fill).toBe('rgb(200, 30, 120)')
+  // A var() without a value paints the tone colour on screen, and so does the export.
+  expect(stripes.unset.fill).toBe(stripes.teal.fill)
+  await expect(calendar.getByRole('button', { name: /^Unset colour/ })).toHaveCSS('border-inline-start-color', await calendar.getByRole('button', { name: /^Design review/ }).evaluate(el => getComputedStyle(el).borderInlineStartColor))
+  // The PNG, rasterized from the standalone SVG, paints the stripe in that colour, not black.
+  const pixel = await page.evaluate(async ({ x, y }) => {
+    const blob: Blob = await (window as any).exportRefs.calendar.value.exportPng({ scale: 2 })
+    const bitmap = await createImageBitmap(blob)
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const context = canvas.getContext('2d')!
+    context.drawImage(bitmap, 0, 0)
+    return [...context.getImageData(Math.round(x * 2), Math.round(y * 2), 1, 1).data]
+  }, { x: stripes.booking.x + 1.5, y: stripes.booking.y + stripes.booking.height / 2 })
+  expect(pixel).toEqual([200, 30, 120, 255])
+
+  // TaskBoard: the over-limit warning colour is currentColor, written as the text colour computed on the board's root.
+  const board = await page.evaluate(() => {
+    const ref = (window as any).exportRefs.board.value
+    const root = document.querySelector('section[aria-label="Board export fixture"] .vw-board')!
+    return { svg: ref.exportSvg() as string, color: getComputedStyle(root).color }
+  })
+  expect(board.svg).not.toMatch(/currentColor|var\(/i)
+  expect(board.svg).toContain(`fill="${board.color}"`)
+  // TreeGrid: the highlight is currentColor and the selection var(--grid-selected).
+  const grid = await page.evaluate(() => {
+    const ref = (window as any).exportRefs.grid.value
+    const root = document.querySelector('section[aria-label="Grid export fixture"] .vw-tree-grid')!
+    return { svg: ref.exportSvg() as string, color: getComputedStyle(root).color }
+  })
+  expect(grid.svg).not.toMatch(/currentColor|var\(/i)
+  expect(grid.svg).toContain(`"${grid.color}"`)
+  expect(grid.svg).toContain('fill="rgb(250, 220, 90)"')
+  expect(errors).toEqual([])
+})
+
 test('exports mirror right-to-left components', async ({ page }) => {
   const errors = pageErrors(page)
   await openExportFixture(page, '?rtl=1')
