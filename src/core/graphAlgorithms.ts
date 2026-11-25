@@ -133,6 +133,10 @@ export interface GraphFilterOptions extends GraphSearchOptions {
 
 export type GraphNodeMatch<N> = string | ((node: N) => boolean)
 
+function checkSearchFields(fields: readonly ('id' | 'label')[]) {
+  for (const field of fields) if (field !== 'id' && field !== 'label') throw new RangeError('Unknown search field')
+}
+
 function textMatcher<N extends IdentifiedNode>(query: string, fields: readonly ('id' | 'label')[]): (node: N) => boolean {
   const needle = query.trim().toLowerCase()
   return node => {
@@ -148,7 +152,7 @@ function textMatcher<N extends IdentifiedNode>(query: string, fields: readonly (
 /** Case-insensitive substring search over node id and label. An empty query matches every node. Returns a new array in input order. */
 export function searchGraphNodes<N extends IdentifiedNode>(nodes: readonly N[], query: string, options: GraphSearchOptions = {}): N[] {
   const { fields = ['id', 'label'] } = options
-  for (const field of fields) if (field !== 'id' && field !== 'label') throw new RangeError('Unknown search field')
+  checkSearchFields(fields)
   return nodes.filter(textMatcher<N>(query, fields))
 }
 
@@ -165,6 +169,8 @@ export function filterGraph<N extends IdentifiedNode, E extends GraphEdge>(
   const { neighborhood = 0, fields = ['id', 'label'] } = options
   checkLayoutNumber('neighborhood', neighborhood, 'nonnegativeInteger')
   indexGraph(nodes, edges)
+  // As in searchGraphNodes: an unknown field throws instead of silently matching nothing.
+  if (typeof match === 'string') checkSearchFields(fields)
   const test = typeof match === 'string' ? textMatcher<N>(match, fields) : match
   const matches = nodes.filter(node => test(node)).map(node => node.id)
   // One walk from every match at once: each node is expanded once per direction, however many matches reach it.
